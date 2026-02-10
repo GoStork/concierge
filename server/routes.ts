@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { storage, DatabaseStorage } from "./storage"; // Import DatabaseStorage class for instanceof check
+import passport from "passport";
+import { storage, DatabaseStorage } from "./storage";
 import { setupAuth, requireAuth, requireTier, requireRole } from "./auth";
 import { api } from "@shared/routes";
 import { z } from "zod";
@@ -22,16 +23,14 @@ export async function registerRoutes(
   // === AUTH ROUTES ===
 
   app.post(api.auth.login.path, (req, res, next) => {
-    // Basic Passport Login
-    // Note: The actual authentication happens inside passport.authenticate
-    // This wrapper handles the response
-    const passportAuth = (req as any).passportAuth || require("passport").authenticate("local");
-    
-    passportAuth(req, res, (err: any) => {
+    passport.authenticate("local", (err: any, user: any) => {
       if (err) return next(err);
-      if (!req.user) return res.status(401).json({ message: "Invalid credentials" });
-      res.json(req.user);
-    });
+      if (!user) return res.status(401).json({ message: "Invalid credentials" });
+      req.logIn(user, (err) => {
+        if (err) return next(err);
+        res.json(user);
+      });
+    })(req, res, next);
   });
 
   app.post(api.auth.logout.path, (req, res, next) => {
