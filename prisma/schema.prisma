@@ -12,29 +12,51 @@ datasource db {
   provider  = "postgresql"
 }
 
-model Organization {
-  id        String     @id @default(uuid())
-  name      String
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  providers Provider[]
-  users     User[]
+model Provider {
+  id          String            @id @default(uuid())
+  name        String            // e.g., "Circle Surrogacy"
+  services    ProviderService[] 
+  locations   ProviderLocation[]
+  users       User[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+model ProviderType {
+  id       String            @id @default(uuid())
+  name     String            @unique // e.g., "Egg Bank", "Surrogacy Agency"
+  services ProviderService[]
+}
+
+model ProviderService {
+  id             String       @id @default(uuid())
+  providerId     String
+  provider       Provider     @relation(fields: [providerId], references: [id])
+  providerTypeId String
+  providerType   ProviderType @relation(fields: [providerTypeId], references: [id])
+  
+  // Single source of truth for visibility
+  status         String       @default("NEW") // "NEW", "IN_PROGRESS", "APPROVED", "DECLINED"
+
+  @@unique([providerId, providerTypeId]) 
+}
+
+model ProviderLocation {
+  id         String   @id @default(uuid())
+  providerId String
+  provider   Provider @relation(fields: [providerId], references: [id])
+  address    String
+  city       String
+  state      String
+  zip        String
 }
 
 model User {
-  id             String       @id @default(uuid())
-  email          String       @unique
-  name           String?
-  role           String       @default("USER") // e.g., GOSTORK_ADMIN, PROVIDER, PARENT
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
-}
-
-model Provider {
-  id             String       @id @default(uuid())
-  name           String
-  type           String       // e.g., SURROGACY, EGG_DONOR, CLINIC
-  metadata       Json?        // Flexible field for unique provider attributes
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  id         String    @id @default(uuid())
+  email      String    @unique
+  password   String?
+  name       String?
+  role       String    @default("USER")
+  providerId String?   
+  provider   Provider? @relation(fields: [providerId], references: [id])
 }
