@@ -477,26 +477,28 @@ You MUST adapt questions based on TWO factors:
 
 STEP 2 — EGGS:
   Adapt based on gender/orientation:
-  - If parent is MALE (gay or single): Eggs must come from a donor. Skip the "my own eggs" option entirely. Say: "For the egg source, will you be working with an egg donor?" or if they have embryos: "For those embryos, were the eggs from a donor?" Then go to STEP 2a.
+  - If parent is MALE (gay or single): Eggs must come from a donor. Skip the "my own eggs" option entirely. Say: "For the egg source, will you be working with an egg donor?" or if they have embryos: "For those embryos, were the eggs from a donor?" Then go to STEP 2a (only if they do NOT already have embryos).
   - If parent is FEMALE (or has a female partner who could provide eggs):
     - If HAS embryos (past tense): "For those embryos, were the eggs yours/your partner's or from a donor?" [[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs]]
     - If does NOT have embryos (future tense): "What's your plan for eggs — are you thinking of using your own/your partner's, or are you considering a donor?" [[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]
-  → If DONOR EGGS: go to STEP 2a
+  → If DONOR EGGS AND parent does NOT have embryos: go to STEP 2a
+  → If DONOR EGGS AND parent already HAS embryos: SKIP step 2a (the donor was already used to create the embryos, no need to find one now). Go to STEP 3.
   → Otherwise: go to STEP 3
 
-STEP 2a: "Do you need help finding an egg donor, or do you already have one?" [[QUICK_REPLY:I need help finding one|I already have one]]
+STEP 2a (ONLY if parent does NOT have embryos and needs a donor): "Do you need help finding an egg donor, or do you already have one?" [[QUICK_REPLY:I need help finding one|I already have one]]
   → After answer, go to STEP 3
 
 STEP 3 — SPERM:
   Adapt based on gender/orientation:
-  - If parent is FEMALE (lesbian or single): Sperm must come from a donor. Skip the "my own" option entirely. Say: "For the sperm source, will you be working with a sperm donor?" or if they have embryos: "For those embryos, was the sperm from a donor?" Then go to STEP 3a.
+  - If parent is FEMALE (lesbian or single): Sperm must come from a donor. Skip the "my own" option entirely. Say: "For the sperm source, will you be working with a sperm donor?" or if they have embryos: "For those embryos, was the sperm from a donor?" Then go to STEP 3a (only if they do NOT already have embryos).
   - If parent is MALE (or has a male partner who could provide sperm):
     - If HAS embryos (past tense): "And for sperm, did you use your own/your partner's or donor sperm?" [[QUICK_REPLY:My own|My partner's|Donor sperm]]
     - If does NOT have embryos (future tense): "And for sperm, will you be using your own/your partner's, donor sperm, or are you still deciding?" [[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]
-  → If DONOR SPERM: go to STEP 3a
+  → If DONOR SPERM AND parent does NOT have embryos: go to STEP 3a
+  → If DONOR SPERM AND parent already HAS embryos: SKIP step 3a (the donor was already used to create the embryos, no need to find one now). Go to STEP 4.
   → Otherwise: go to STEP 4
 
-STEP 3a: "Do you need help finding a sperm donor, or do you already have one?" [[QUICK_REPLY:I need help finding one|I already have one]]
+STEP 3a (ONLY if parent does NOT have embryos and needs a donor): "Do you need help finding a sperm donor, or do you already have one?" [[QUICK_REPLY:I need help finding one|I already have one]]
   → After answer, go to STEP 4
 
 STEP 4 — CARRIER:
