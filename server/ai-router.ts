@@ -405,7 +405,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         parts.push(partnerInfo + ".");
       }
       parts.push(`Location: ${location}.`);
-      parts.push(`Looking for: ${service}.`);
+      parts.push(`Registered interest in: ${service} (but you MUST still ask them in STEP 5 what services they actually need help finding — do NOT assume from registration).`);
       if (userRecord.dateOfBirth) {
         const age = Math.floor((Date.now() - new Date(userRecord.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
         parts.push(`Age: ${age}.`);
@@ -474,7 +474,10 @@ STEP 4: "And who is planning to carry the pregnancy?" [[QUICK_REPLY:Me|My partne
 STEP 4a: "Do you need help finding a surrogate, or do you already have one?" [[QUICK_REPLY:I need help finding one|I already have one]]
   → After answer, go to STEP 5
 
-STEP 5 — SERVICE DEEP DIVES (ask ALL that apply based on the user's registered interested services, in this order):
+STEP 5: "Now that I understand your biological plan, let me make sure I help you with the right services. Which of these do you need help finding?" [[QUICK_REPLY:Fertility clinic|Egg donor|Surrogate|Fertility clinic & egg donor|Fertility clinic & surrogate|All three]]
+  → Use the user's answer to determine which STEP 5 sub-sections to ask. Do NOT assume from registration data. Only ask the deep dive sections the user explicitly selects here.
+
+STEP 5 — SERVICE DEEP DIVES (ask ONLY the sections the user selected in STEP 5 above, in this order):
 
 STEP 5-CLINIC (only if user is looking for a Fertility Clinic — ask ALL of these in order, one per message):
   5-CLINIC-A: "Since you're looking for a clinic, what's your main reason for seeking one out?" [[QUICK_REPLY:Medically necessary|Single parent|LGBTQ+|Changing clinics]]
