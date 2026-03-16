@@ -179,40 +179,47 @@ function OtpInput({
   value: string[];
   onChange: (val: string[]) => void;
 }) {
-  const refs = useRef<(HTMLInputElement | null)[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const joined = value.join("");
 
-  const handleChange = (index: number, char: string) => {
-    if (!/^\d?$/.test(char)) return;
-    const next = [...value];
-    next[index] = char;
+  const handleChange = (raw: string) => {
+    const digits = raw.replace(/\D/g, "").slice(0, 6);
+    const next = Array.from({ length: 6 }, (_, i) => digits[i] || "");
     onChange(next);
-    if (char && index < 5) {
-      refs.current[index + 1]?.focus();
-    }
-  };
-
-  const handleKeyDown = (index: number, e: React.KeyboardEvent) => {
-    if (e.key === "Backspace" && !value[index] && index > 0) {
-      refs.current[index - 1]?.focus();
-    }
   };
 
   return (
-    <div className="flex gap-3 justify-center">
-      {value.map((digit, i) => (
+    <div className="flex flex-col items-center gap-4">
+      <div className="relative w-full max-w-[280px]" onClick={() => inputRef.current?.focus()}>
+        <div className="flex gap-3 justify-center pointer-events-none">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div
+              key={i}
+              className={`w-10 h-14 flex items-center justify-center text-2xl font-semibold border-b-2 transition-colors ${
+                i === joined.length && document.activeElement === inputRef.current
+                  ? "border-primary"
+                  : value[i]
+                    ? "border-primary"
+                    : "border-border"
+              }`}
+            >
+              {value[i] || ""}
+            </div>
+          ))}
+        </div>
         <input
-          key={i}
-          ref={el => { refs.current[i] = el; }}
+          ref={inputRef}
           type="text"
           inputMode="numeric"
-          maxLength={1}
-          value={digit}
-          onChange={e => handleChange(i, e.target.value)}
-          onKeyDown={e => handleKeyDown(i, e)}
-          data-testid={`input-otp-${i}`}
-          className="w-12 h-14 text-center text-2xl font-semibold border-b-2 border-border focus:border-primary outline-none bg-transparent transition-colors"
+          autoComplete="one-time-code"
+          maxLength={6}
+          value={joined}
+          onChange={e => handleChange(e.target.value)}
+          data-testid="input-otp"
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          autoFocus
         />
-      ))}
+      </div>
     </div>
   );
 }
