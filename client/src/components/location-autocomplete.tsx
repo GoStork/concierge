@@ -163,6 +163,15 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
 
   const [geoError, setGeoError] = useState<string | null>(null);
 
+  const getPosition = (): Promise<GeolocationPosition> =>
+    new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: false,
+        timeout: 15000,
+        maximumAge: 600000,
+      });
+    });
+
   const handleUseCurrentLocation = async () => {
     if (!navigator.geolocation) {
       setGeoError("Location services are not available in this browser.");
@@ -171,13 +180,12 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
     setGeoLoading(true);
     setGeoError(null);
     try {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: false,
-          timeout: 10000,
-          maximumAge: 300000,
-        });
-      });
+      let position: GeolocationPosition;
+      try {
+        position = await getPosition();
+      } catch {
+        position = await getPosition();
+      }
       const { latitude, longitude } = position.coords;
       const res = await fetch(
         `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1`,
