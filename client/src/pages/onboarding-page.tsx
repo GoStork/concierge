@@ -972,7 +972,7 @@ function StepPartner({
           type="text"
           value={firstName}
           onChange={e => onFirstNameChange(e.target.value)}
-          placeholder="Partner's first name"
+          placeholder="Partner's full name"
           autoFocus
           data-testid="input-partner-name"
           className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
