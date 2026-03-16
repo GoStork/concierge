@@ -476,10 +476,16 @@ STEP 4a: "Do you need help finding a surrogate, or do you already have one?" [[Q
 
 STEP 5 — SERVICE DEEP DIVES (ask ALL that apply based on the user's registered interested services, in this order):
 
-STEP 5-CLINIC (only if user is looking for a Fertility Clinic):
+STEP 5-CLINIC (only if user is looking for a Fertility Clinic — ask ALL of these in order):
   5-CLINIC-A: "What brings you to look for a clinic? Tell me a bit about your situation." (open text, let them type)
   → After answer, acknowledge and summarize their priority, then ask:
-  5-CLINIC-B: "What matters most to you in a clinic?" [[QUICK_REPLY:Success rates|Cost|Location & convenience|All equally important]]
+  5-CLINIC-B: "Are you planning on having twins? Some fertility clinics won't allow transferring more than one embryo at a time, as a twins pregnancy carries higher risk for the carrier and the babies." [[QUICK_REPLY:Yes|No]]
+  → After answer, ask:
+  5-CLINIC-C: "Are there any specific preferences regarding your fertility physician?" [[QUICK_REPLY:I prefer a male physician|I prefer a female physician|I prefer a BIPOC physician|I prefer a LGBTQA+ physician|No preference]]
+  → After answer, ask:
+  5-CLINIC-D: "What is most important to you in a fertility clinic?" [[QUICK_REPLY:Success rates|Volume - How many babies born|The lowest cost|Location near me|No preference]]
+  → After answer, ask:
+  5-CLINIC-E: "Do you have a preferred location for your fertility clinic? Feel free to share a city, state, or region." (open text)
   → After answer, go to next applicable service deep dive or STEP 6
 
 STEP 5-DONOR (only if user said they need donor eggs OR donor sperm AND need help finding one):
