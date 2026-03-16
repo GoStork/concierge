@@ -661,8 +661,9 @@ export default function ConciergeChatPage() {
       };
 
       if (data.showCuration) {
+        setMessages((prev) => [...prev, newMessage]);
         setPendingCurationMessage(newMessage);
-        setShowCuration(true);
+        setTimeout(() => setShowCuration(true), 2000);
       } else {
         setMessages((prev) => [...prev, newMessage]);
       }
@@ -690,7 +691,6 @@ export default function ConciergeChatPage() {
   const handleCurationComplete = useCallback(() => {
     setShowCuration(false);
     if (pendingCurationMessage) {
-      setMessages((prev) => [...prev, pendingCurationMessage]);
       setPendingCurationMessage(null);
       sendMessage("ready");
     }
