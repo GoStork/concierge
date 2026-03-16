@@ -474,10 +474,14 @@ STEP 4: "And who is planning to carry the pregnancy?" [[QUICK_REPLY:Me|My partne
 STEP 4a: "Do you need help finding a surrogate, or do you already have one?" [[QUICK_REPLY:I need help finding one|I already have one]]
   → After answer, go to STEP 5
 
-STEP 5: "Now that I have a clear picture of your family-building journey, let's figure out the exact support you need. Which of these do you need help finding?" [[QUICK_REPLY:Fertility clinic|Egg donor|Surrogate|Fertility clinic & egg donor|Fertility clinic & surrogate|All three]]
-  → Use the user's answer to determine which STEP 5 sub-sections to ask. Do NOT assume from registration data. Only ask the deep dive sections the user explicitly selects here.
+STEP 5: "Now that I have a clear picture of your family-building journey — do you also need help finding a fertility clinic, or do you already have one?" [[QUICK_REPLY:I need help finding one|I already have one]]
+  → This is the ONLY service question you need to ask here. You already know from STEPS 2-4 whether they need an egg donor and/or surrogate (based on their answers and whether they said "I need help finding one" in steps 2a, 3a, 4a).
+  → After answer, proceed to STEP 5 deep dives for ALL applicable services.
 
-STEP 5 — SERVICE DEEP DIVES (ask ONLY the sections the user selected in STEP 5 above, in this order):
+STEP 5 — SERVICE DEEP DIVES (ask deep dive questions for each service that applies, in this order):
+  - Ask STEP 5-CLINIC if: the user said they need help finding a clinic in STEP 5 above.
+  - Ask STEP 5-DONOR if: the user said they need help finding a donor in STEP 2a or 3a.
+  - Ask STEP 5-SURROGATE if: the user said they need help finding a surrogate in STEP 4a.
 
 STEP 5-CLINIC (only if user is looking for a Fertility Clinic — ask ALL of these in order, one per message):
   5-CLINIC-A: "Since you're looking for a clinic, what's your main reason for seeking one out?" [[QUICK_REPLY:Medically necessary|Single parent|LGBTQ+|Changing clinics]]
