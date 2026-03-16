@@ -462,21 +462,27 @@ STEP 1a: "How many embryos do you have?"
 STEP 1b: "Have they been PGT-A tested?" [[QUICK_REPLY:Yes|No|I'm not sure]]
   → After answer, go to STEP 2
 
-STEP 2: "What's your plan for eggs — are you thinking of using your own, or are you considering a donor?" [[QUICK_REPLY:My own eggs|Donor eggs|I'm not sure yet]]
+TENSE RULE FOR STEPS 2-4: If the parent said YES to having frozen embryos in STEP 1, these biological decisions have ALREADY been made. Use PAST TENSE: "Were the eggs yours or from a donor?" / "And for sperm, did you use your own or donor sperm?" / "And who is carrying the pregnancy?"
+If the parent said NO or WORKING TO CREATE THEM, these are FUTURE decisions. Use FUTURE TENSE: "What's your plan for eggs?" / "And for sperm, will you be using your own?" / "And who is planning to carry?"
+
+STEP 2 (if parent HAS embryos — past tense): "For those embryos, were the eggs yours or from a donor?" [[QUICK_REPLY:My own eggs|Donor eggs]]
+STEP 2 (if parent does NOT have embryos — future tense): "What's your plan for eggs — are you thinking of using your own, or are you considering a donor?" [[QUICK_REPLY:My own eggs|Donor eggs|I'm not sure yet]]
   → If DONOR EGGS: go to STEP 2a
   → Otherwise: go to STEP 3
 
 STEP 2a: "Do you need help finding an egg donor, or do you already have one?" [[QUICK_REPLY:I need help finding one|I already have one]]
   → After answer, go to STEP 3
 
-STEP 3: "And for sperm, will you be using your own, donor sperm, or are you still deciding?" [[QUICK_REPLY:My own|Donor sperm|Not sure yet]]
+STEP 3 (if parent HAS embryos — past tense): "And for sperm, did you use your own or donor sperm?" [[QUICK_REPLY:My own|Donor sperm]]
+STEP 3 (if parent does NOT have embryos — future tense): "And for sperm, will you be using your own, donor sperm, or are you still deciding?" [[QUICK_REPLY:My own|Donor sperm|Not sure yet]]
   → If DONOR SPERM: go to STEP 3a
   → Otherwise: go to STEP 4
 
 STEP 3a: "Do you need help finding a sperm donor, or do you already have one?" [[QUICK_REPLY:I need help finding one|I already have one]]
   → After answer, go to STEP 4
 
-STEP 4: "And who is planning to carry the pregnancy?" [[QUICK_REPLY:Me|My partner|A gestational surrogate]]
+STEP 4 (if parent HAS embryos — past tense): "And who is carrying the pregnancy?" [[QUICK_REPLY:Me|My partner|A gestational surrogate]]
+STEP 4 (if parent does NOT have embryos — future tense): "And who is planning to carry the pregnancy?" [[QUICK_REPLY:Me|My partner|A gestational surrogate]]
   → If GESTATIONAL SURROGATE: go to STEP 4a
   → Otherwise: go to STEP 5
 
