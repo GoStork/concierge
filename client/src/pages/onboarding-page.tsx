@@ -179,7 +179,6 @@ function OtpInput({
   value: string[];
   onChange: (val: string[]) => void;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
   const joined = value.join("");
 
   const handleChange = (raw: string) => {
@@ -189,37 +188,19 @@ function OtpInput({
   };
 
   return (
-    <div className="flex flex-col items-center gap-4">
-      <div className="relative w-full max-w-[280px]" onClick={() => inputRef.current?.focus()}>
-        <div className="flex gap-3 justify-center pointer-events-none">
-          {Array.from({ length: 6 }, (_, i) => (
-            <div
-              key={i}
-              className={`w-10 h-14 flex items-center justify-center text-2xl font-semibold border-b-2 transition-colors ${
-                i === joined.length && document.activeElement === inputRef.current
-                  ? "border-primary"
-                  : value[i]
-                    ? "border-primary"
-                    : "border-border"
-              }`}
-            >
-              {value[i] || ""}
-            </div>
-          ))}
-        </div>
-        <input
-          ref={inputRef}
-          type="text"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          maxLength={6}
-          value={joined}
-          onChange={e => handleChange(e.target.value)}
-          data-testid="input-otp"
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-          autoFocus
-        />
-      </div>
+    <div className="flex justify-center">
+      <input
+        type="text"
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        maxLength={6}
+        value={joined}
+        onChange={e => handleChange(e.target.value)}
+        placeholder="000000"
+        data-testid="input-otp"
+        className="w-full max-w-[240px] text-center text-3xl font-semibold tracking-[0.5em] border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/20 transition-colors"
+        autoFocus
+      />
     </div>
   );
 }
