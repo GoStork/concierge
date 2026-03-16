@@ -15,7 +15,7 @@ const GOALS = ["Fertility Clinic", "Egg Donor", "Surrogate", "Sperm Donor"];
 const GENDERS = ["I'm a woman", "I'm a man", "I'm non-binary"];
 const ORIENTATIONS = ["Straight", "Gay", "Lesbian", "Bi", "Queer"];
 const RELATIONSHIPS = ["Single", "Partnered", "Married", "Separated/Divorced/Widowed"];
-const SOURCES = ["Google", "Social Media", "Friend", "Other"];
+const SOURCES = ["Google", "Friend", "Social Media", "Fertility Clinic", "Egg Donor Agency", "Surrogacy Agency", "Fertility Lawyer", "Progyny", "Carrot"];
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
