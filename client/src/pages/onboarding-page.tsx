@@ -234,10 +234,7 @@ export default function OnboardingPage() {
       navigate("/dashboard", { replace: true });
     }
   }, [isLoading, user, navigate]);
-  const [mockOtp] = useState(() => {
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    return code;
-  });
+  const [otpSending, setOtpSending] = useState(false);
 
   const [data, setData] = useState<OnboardingData>({
     email: "",
@@ -399,12 +396,37 @@ export default function OnboardingPage() {
       handleSubmit();
     } else if (step === lastStep) {
       handleSubmit();
+    } else if (step === 10) {
+      setOtpSending(true);
+      try {
+        const fullPhone = `${data.countryCode}${data.phone.replace(/\D/g, "")}`;
+        const res = await apiRequest("POST", "/api/auth/send-otp", { phone: fullPhone });
+        const result = await res.json();
+        if (result.devCode) {
+          (window as any).__devOtpCode = result.devCode;
+        }
+        goNext();
+      } catch (err: any) {
+        let msg = "Please check your number and try again.";
+        try {
+          const parsed = JSON.parse(err.message.replace(/^\d+:\s*/, ""));
+          if (parsed.message) msg = parsed.message;
+        } catch { if (err.message) msg = err.message; }
+        toast({ title: "Could not send code", description: msg, variant: "destructive" });
+      } finally {
+        setOtpSending(false);
+      }
     } else if (step === 11) {
       const entered = data.otp.join("");
-      if (entered === mockOtp) {
+      setOtpSending(true);
+      try {
+        const fullPhone = `${data.countryCode}${data.phone.replace(/\D/g, "")}`;
+        await apiRequest("POST", "/api/auth/verify-otp", { phone: fullPhone, code: entered });
         goNext();
-      } else {
-        toast({ title: "Invalid code", description: "Please enter the correct verification code.", variant: "destructive" });
+      } catch {
+        toast({ title: "Invalid code", description: "The code you entered is incorrect or has expired.", variant: "destructive" });
+      } finally {
+        setOtpSending(false);
       }
     } else {
       goNext();
@@ -526,7 +548,6 @@ export default function OnboardingPage() {
               phone={data.phone}
               onCountryCodeChange={v => update({ countryCode: v })}
               onPhoneChange={v => update({ phone: v })}
-              mockOtp={mockOtp}
             />
           )}
           {step === 11 && (
@@ -534,6 +555,10 @@ export default function OnboardingPage() {
               otp={data.otp}
               onChange={v => update({ otp: v })}
               phone={`${data.countryCode} ${data.phone}`}
+              onResend={async () => {
+                const fullPhone = `${data.countryCode}${data.phone.replace(/\D/g, "")}`;
+                await apiRequest("POST", "/api/auth/send-otp", { phone: fullPhone });
+              }}
             />
           )}
           {step === 12 && (
@@ -557,7 +582,7 @@ export default function OnboardingPage() {
         <div className="px-6 pb-8 pt-2">
           <button
             onClick={handleContinue}
-            disabled={!canContinue() || submitting}
+            disabled={!canContinue() || submitting || otpSending}
             data-testid="btn-onboarding-continue"
             className={`w-full py-4 rounded-full text-lg font-semibold transition-all duration-200 ${
               canContinue()
@@ -565,7 +590,7 @@ export default function OnboardingPage() {
                 : "bg-muted text-muted-foreground cursor-not-allowed"
             }`}
           >
-            {submitting ? (
+            {submitting || otpSending ? (
               <Loader2 className="w-5 h-5 animate-spin mx-auto" />
             ) : step === 10 ? (
               "Verify phone number"
@@ -977,13 +1002,11 @@ function StepPhone({
   phone,
   onCountryCodeChange,
   onPhoneChange,
-  mockOtp,
 }: {
   countryCode: string;
   phone: string;
   onCountryCodeChange: (v: string) => void;
   onPhoneChange: (v: string) => void;
-  mockOtp: string;
 }) {
   const [showCodes, setShowCodes] = useState(false);
   const selected = COUNTRY_CODES.find(c => c.code === countryCode) || COUNTRY_CODES[0];
@@ -1044,10 +1067,6 @@ function StepPhone({
         <Lock className="w-4 h-4" />
         <span>Your number will never be shared with anyone</span>
       </div>
-
-      <div className="mt-6 p-3 bg-[hsl(var(--accent))]/10 rounded-lg text-sm text-[hsl(var(--accent))] text-center">
-        Demo mode: Your verification code is <strong>{mockOtp}</strong>
-      </div>
     </div>
   );
 }
@@ -1056,11 +1075,28 @@ function StepVerification({
   otp,
   onChange,
   phone,
+  onResend,
 }: {
   otp: string[];
   onChange: (v: string[]) => void;
   phone: string;
+  onResend: () => Promise<void>;
 }) {
+  const [resending, setResending] = useState(false);
+  const [resent, setResent] = useState(false);
+
+  const handleResend = async () => {
+    setResending(true);
+    try {
+      await onResend();
+      setResent(true);
+      setTimeout(() => setResent(false), 3000);
+    } catch {
+    } finally {
+      setResending(false);
+    }
+  };
+
   return (
     <div>
       <h1
@@ -1078,9 +1114,19 @@ function StepVerification({
         You should receive the code within 30s
       </p>
       <p className="text-center text-sm mt-1">
-        <button type="button" className="underline text-foreground" data-testid="btn-resend-code">
-          Didn't receive the code?
-        </button>
+        {resent ? (
+          <span className="text-[hsl(var(--brand-success))]" data-testid="text-code-resent">Code sent!</span>
+        ) : (
+          <button
+            type="button"
+            onClick={handleResend}
+            disabled={resending}
+            className="underline text-foreground disabled:opacity-50"
+            data-testid="btn-resend-code"
+          >
+            {resending ? "Sending..." : "Didn't receive the code?"}
+          </button>
+        )}
       </p>
     </div>
   );

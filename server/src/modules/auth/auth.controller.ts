@@ -127,4 +127,33 @@ export class AuthController {
 
     return { message: "Password has been reset successfully" };
   }
+
+  @Post("send-otp")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Send OTP verification code via SMS" })
+  async sendOtp(@Body() body: { phone: string }) {
+    if (!body.phone?.trim()) {
+      throw new BadRequestException("Phone number is required");
+    }
+    try {
+      const result = await this.authService.sendOtp(body.phone);
+      return { success: true, sent: result.sent, devCode: result.devCode };
+    } catch (err: any) {
+      throw new BadRequestException(err.message);
+    }
+  }
+
+  @Post("verify-otp")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Verify OTP code" })
+  async verifyOtp(@Body() body: { phone: string; code: string }) {
+    if (!body.phone?.trim() || !body.code?.trim()) {
+      throw new BadRequestException("Phone and code are required");
+    }
+    const valid = this.authService.verifyOtp(body.phone, body.code);
+    if (!valid) {
+      throw new BadRequestException("Invalid or expired verification code");
+    }
+    return { verified: true };
+  }
 }
