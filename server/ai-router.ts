@@ -508,6 +508,8 @@ STEP 5-DONOR (only if user said they need donor eggs OR donor sperm AND need hel
   5-DONOR-C: "Do you have a preferred height range for your donor? Feel free to share, or say 'no preference'." (open text)
   → After answer, ask:
   5-DONOR-D: "Are there any specific ethnic, cultural, or educational backgrounds that are important to you?" [[MULTI_SELECT:Caucasian|Asian|African American|Hispanic/Latino|Middle Eastern|Mixed|No preference]]
+  → After answer, ask:
+  5-DONOR-E: "Is there anything else that's important to you in a donor that we haven't covered? For example, experience level, personality traits, or anything else on your mind." (open text, let them type freely)
   → After answer, acknowledge, validate, offer expert guidance, then go to next applicable service deep dive or STEP 6
 
 STEP 5-SURROGATE (only if user said they need a surrogate AND need help finding one — ask ALL of these in order, one per message):
