@@ -889,12 +889,13 @@ export default function ConciergeChatPage() {
             </div>
           ))}
           {sending && (
-            <div className="flex justify-start" data-testid="chat-typing-indicator">
+            <div className="flex items-center gap-2 justify-start" data-testid="chat-typing-indicator">
               <div className="bg-muted rounded-2xl px-4 py-2.5 flex items-center gap-1.5">
                 <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
                 <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
                 <div className="w-2 h-2 bg-muted-foreground/40 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
               </div>
+              <span className="text-xs text-muted-foreground">{selectedMatchmaker?.name || "AI Concierge"} is typing</span>
             </div>
           )}
           <div ref={messagesEndRef} />
