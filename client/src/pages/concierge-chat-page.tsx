@@ -525,6 +525,10 @@ export default function ConciergeChatPage() {
   const selectedMatchmaker = matchmakers.find((m) => m.id === matchmakerId);
   const brandColor = brand?.primaryColor || "#004D4D";
 
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   const parentProfileQuery = useQuery<{ interestedServices?: string[] }>({
     queryKey: ["/api/parent-profile"],
     queryFn: async () => {
