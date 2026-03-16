@@ -1,0 +1,47 @@
+-- 1. CLEANUP (Careful: This wipes current data to avoid ID conflicts)
+TRUNCATE "User", "ProviderService", "ProviderLocation", "Provider", "ProviderType" RESTART IDENTITY CASCADE;
+
+-- 2. INSERT PROVIDER TYPES
+INSERT INTO "ProviderType" (id, name) VALUES 
+  (gen_random_uuid(), 'Surrogacy Agency'),
+  (gen_random_uuid(), 'Egg Donor Agency'),
+  (gen_random_uuid(), 'IVF Clinic'),
+  (gen_random_uuid(), 'Egg Bank')
+ON CONFLICT (name) DO NOTHING;
+
+-- 3. INSERT PROVIDERS
+-- Using specific names so we can link them easily in the next steps
+INSERT INTO "Provider" (id, name, "updatedAt") VALUES
+  (gen_random_uuid(), 'Hatch', NOW()), 
+  (gen_random_uuid(), 'Los Angeles Surrogacy', NOW()),
+  (gen_random_uuid(), 'The Chosen One', NOW()),
+  (gen_random_uuid(), 'Pacific Fertility Center Los-Angeles (PFCLA)', NOW()),
+  (gen_random_uuid(), 'Asian Egg Bank', NOW());
+
+-- 4. LINK SERVICES (Approved Status)
+-- Hatch gets both Surrogacy and Egg Donor roles
+INSERT INTO "ProviderService" (id, "providerId", "providerTypeId", status)
+SELECT gen_random_uuid(), p.id, t.id, 'APPROVED'
+FROM "Provider" p, "ProviderType" t
+WHERE 
+  (p.name = 'Hatch' AND t.name IN ('Surrogacy Agency', 'Egg Donor Agency')) OR
+  (p.name = 'Los Angeles Surrogacy' AND t.name = 'Surrogacy Agency') OR
+  (p.name = 'The Chosen One' AND t.name = 'Egg Donor Agency') OR
+  (p.name = 'Pacific Fertility Center Los-Angeles (PFCLA)' AND t.name = 'IVF Clinic') OR
+  (p.name = 'Asian Egg Bank' AND t.name = 'Egg Bank');
+
+-- 5. INSERT USERS (Linked to Providers)
+INSERT INTO "User" (id, email, password, name, role, "providerId")
+VALUES 
+  (gen_random_uuid(), 'eran.amir@gostork.com', 'GoStork2026!', 'Eran Amir', 'GOSTORK_ADMIN', NULL),
+  (gen_random_uuid(), 'parent@test.com', 'GoStork2026!', 'Jane Doe', 'PARENT', NULL),
+  (gen_random_uuid(), 'admin@hatch.com', 'GoStork2026!', 'Hatch Admin', 'PROVIDER', (SELECT id FROM "Provider" WHERE name = 'Hatch' LIMIT 1)),
+  (gen_random_uuid(), 'admin@lasurrogacy.com', 'GoStork2026!', 'LA Admin', 'PROVIDER', (SELECT id FROM "Provider" WHERE name = 'Los Angeles Surrogacy' LIMIT 1)),
+  (gen_random_uuid(), 'admin@thechosenone.com', 'GoStork2026!', 'Chosen Admin', 'PROVIDER', (SELECT id FROM "Provider" WHERE name = 'The Chosen One' LIMIT 1)),
+  (gen_random_uuid(), 'admin@pfcla.com', 'GoStork2026!', 'PFCLA Admin', 'PROVIDER', (SELECT id FROM "Provider" WHERE name = 'Pacific Fertility Center Los-Angeles (PFCLA)' LIMIT 1)),
+  (gen_random_uuid(), 'admin@asianeggbank.com', 'GoStork2026!', 'Asian Bank Admin', 'PROVIDER', (SELECT id FROM "Provider" WHERE name = 'Asian Egg Bank' LIMIT 1));
+
+-- 6. ADD LOCATIONS
+INSERT INTO "ProviderLocation" (id, "providerId", address, city, state, zip)
+SELECT gen_random_uuid(), id, '123 Main St', 'Los Angeles', 'CA', '90001'
+FROM "Provider";

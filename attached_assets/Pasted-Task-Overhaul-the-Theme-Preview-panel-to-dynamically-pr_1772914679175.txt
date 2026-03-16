@@ -1,0 +1,21 @@
+Task: Overhaul the "Theme Preview" panel to dynamically preview Dropdowns, Inputs, Badges, and fix hardcoded border radiuses.
+
+Context: The "Theme Preview" card on the Admin Brand Settings page currently has hardcoded shape classes (like rounded-md) that ignore our new global Hinge-style pill shapes. Furthermore, the admin needs to see how the configurations affect complex UI elements like Popovers, Inputs, and Badges in real-time before saving a brand template.
+
+Action Plan:
+
+Locate the Preview Component: Open client/src/pages/admin-brand-settings-page.tsx and find the code rendering the right-hand sticky "Theme Preview" card.
+
+Remove Hardcoded Shapes: Strip out any hardcoded rounded-md, rounded-lg, or similar classes from the existing Buttons, Alerts, and the Sample Card in this preview section. They must use the actual <Button> components or standard classes so they perfectly inherit the new global --radius variable.
+
+Inject Input Preview: Add a new row under the buttons showcasing a standard <Input placeholder="Type a message..." />. This is crucial to test the Input background, border, and the Ring color when focused.
+
+Inject Dropdown Preview: Add a <Select> component (with a trigger and a few dummy items like "Option 1", "Option 2"). This will allow the admin to open it and verify the popover background, popover-foreground text, and the new soft muted hover states we just implemented.
+
+Inject Profile Tags Preview: Add a row displaying a few <Badge> components (e.g., "New York", "Monogamy", "6'0""). Ensure these show the newly configured rounded-full pill shape.
+
+Layout Adjustments: Ensure all these new preview elements have appropriate spacing (gap-4, flex-col, etc.) so the preview card looks clean and organized.
+
+Strict Guardrails: - You must use the actual components imported from client/src/components/ui/ (like <Select>, <Input>, <Badge>) for these previews, so they automatically react to the CSS variables manipulated by the color pickers in real-time.
+
+Execute this update and output a summary when the preview panel is fully populated.

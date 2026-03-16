@@ -1,0 +1,48 @@
+TASK NAME: Implement Expert Consultant Mode & Premium Match Handoff
+
+Description:
+The technical plumbing is done, but now we need to refine the AI's "soul." We want to move from a "survey bot" to an "Expert Consultant." The AI should guide the parent, offer corrections, and handle open-ended conversation before showing the final matches.
+
+Step 1: The "Expert" Personality & Guidance Loop
+
+The Logic: Instead of just asking for a list of traits, the AI should ask broad questions first to understand the parent's why.
+
+Guidance: If a parent expresses a preference (e.g., "I want a donor with a master's degree"), the AI should acknowledge it and provide an Expert Tip (e.g., "That’s a great goal. We find that focusing on the donor's family health history is just as critical for long-term success. Let's look for both.").
+
+Tone: Use the "Amata" transitions: "Noted," "Understood," "I'm on it," and "Perfect."
+
+Step 2: Interactive UI Components (Hybrid Chat)
+
+Technical Data: Use the interactive buttons/cards the Agent just built for the "Technical" bits (Frozen Embryos: [Yes/No], PGT-A: [Checkbox]).
+
+Emotional Preferences: Use Open Text for the deep dives.
+
+Egg Donor: "What are the most important qualities or backgrounds you're looking for in a donor?"
+
+Surrogacy: "What are your biggest questions or concerns about the surrogacy journey so far?"
+
+Logic: The AI should listen to the free text, validate it, and then summarize: "Based on that, it sounds like [Priority] is your top goal. Noted!"
+
+Step 3: The "Curation" Transition (End of Chat)
+
+When the interview is complete, the AI says: "Thank you, [First Name]. I have everything I need to find your perfect matches. I am going to curate your personalized results now. Ready to see them?"
+
+The Animation: Trigger a full-screen Curation Loader overlay.
+
+Typewriter Text: Cycle through:
+
+"Analyzing your family-building goals..."
+
+"Matching your criteria with 1,000+ providers..."
+
+"Finalizing your personalized results..."
+
+Duration: 3 seconds of "active" loading.
+
+Step 4: The Match Reveal (The Conversion)
+
+After the animation, return to the chat. The AI presents a Match Card (Name, Photo, and 2-3 "Expert Reasons" why they were chosen).
+
+The Closer: The AI asks: "Would you like me to reach out and check their availability for a match call with you?"
+
+Action: Clicking "Yes" must trigger the [[HOT_LEAD]] tag to n

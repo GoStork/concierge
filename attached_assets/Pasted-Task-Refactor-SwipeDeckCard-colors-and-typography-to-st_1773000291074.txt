@@ -1,0 +1,27 @@
+Task: Refactor SwipeDeckCard colors and typography to strictly inherit from the global GoStork brand theme.
+
+Context: We have successfully built the structural layout and UX of a premium swipe deck. However, the UI styling (colors, fonts, badge backgrounds) is currently using hardcoded, generic Tailwind values. We need to tie this component directly into the app's global theme configuration (theme.json or tailwind.config.ts) so it looks natively branded to GoStork.
+
+Action Plan:
+
+Typography: Ensure all text (names, labels, badges) relies strictly on the global font family (remove any hardcoded font families if they exist, let it inherit the root font-sans). Maintain the font-semibold and text-sm/text-base sizing from the previous prompt, but let the font-family be the brand default.
+
+Brand Badges (matched_bubbles):
+
+The "Matched Preferences" badges should leverage the brand's primary color to signal a positive match.
+
+Update the matched badge styling to use theme variables: e.g., bg-primary/20 text-primary-foreground or whatever best represents the brand's active state, instead of arbitrary colors.
+
+The <Check> icon inside the matched badge should also compliment the primary brand color.
+
+Standard Badges (standard_bubbles):
+
+Standard badges should use a clean, neutral theme variable (e.g., bg-muted text-muted-foreground or a translucent dark/light overlay that fits the brand system) rather than hardcoded grays.
+
+Action Buttons:
+
+While the 5 action buttons should retain distinct semantic colors (Red for Pass, Green for Save, Purple/Primary for Chat), ensure those specific hexes or Tailwind variables align with the overall GoStork brand palette if applicable. If the brand has a specific "Success" green or "Destructive" red defined in the theme, use those variables (e.g., text-destructive or text-success).
+
+The Chat button (center) should use the brand's primary color variable to drive the core conversion.
+
+Execute this theme integration to ensure the component is 100% on-brand.

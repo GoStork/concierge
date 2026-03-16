@@ -1,0 +1,42 @@
+Act as an expert Full-Stack Developer specializing in React, TypeScript, and Supabase. >
+I need to build a natively integrated, HIPAA-compliant telehealth video conferencing feature for my platform, GoStork. We are using the Zoom Meeting SDK (Component View) so the video room lives seamlessly inside our website, rather than sending users to an external Zoom link.
+
+Please generate the code and configuration for the following four layers:
+
+1. Database Schema (Supabase / PostgreSQL)
+Create a consultations table with the following requirements:
+
+id (UUID, primary key)
+
+provider_id (UUID, references users - the host)
+
+parent_id (UUID, references users - the attendee)
+
+zoom_meeting_id (String)
+
+status (Enum: scheduled, in-progress, completed)
+
+started_at and ended_at (Timestamps for tracking duration)
+
+2. Backend Endpoints (Node.js / Edge Functions)
+Write secure server-side functions that handle the Zoom API interaction. I will provide my ZOOM_ACCOUNT_ID, ZOOM_CLIENT_ID, ZOOM_CLIENT_SECRET, ZOOM_SDK_KEY, and ZOOM_SDK_SECRET in the .env file.
+
+Create Meeting: Use Zoom Server-to-Server (S2S) OAuth to generate an access token, then call the Zoom API to create a new meeting when a consultation is booked. Save the returned meeting_id to the Supabase database.
+
+Generate Signature: Create an endpoint (/api/zoom/signature) that accepts a meetingNumber and role. Use the KJUR crypto library to generate a JSON Web Token (JWT) SDK signature.
+
+Webhooks: Create an endpoint to listen for Zoom Webhooks (meeting.started, participant.joined, participant.left, meeting.ended). When these events fire, update the status and timestamps in the Supabase consultations table so we can track attendance and duration.
+
+3. Frontend Video Room (React / TypeScript)
+Create a dynamic route at /consultation/[id] that serves as the video room.
+
+The page should have GoStork-branded headers and navigation on the outside, with an embedded <div id="zoom-embedded-container"></div> in the center.
+
+Use the @zoomus/websdk package. Initialize the SDK in Component View so it binds strictly to the container div.
+
+On component mount: Fetch the consultation details from Supabase. Determine the current user's role: if the user is a Provider or internal Admin, assign role: 1 (Host). If the user is a Parent, assign role: 0 (Attendee).
+
+Call the /api/zoom/signature endpoint to get the auth token, and then call ZoomMtg.join() to start the embedded video feed.
+
+4. Styling & Error Handling
+Provide the necessary CSS to ensure the Zoom Component View renders responsively on both desktop and mobile web browsers without breaking the outer GoStork layout. Add loading states and clear error messages if the meeting hasn't started yet or the user is unauthorized.

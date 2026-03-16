@@ -1,0 +1,48 @@
+Task: Connect the live eggDonors database query to the new SwipeDeckCard component on the Marketplace page.
+
+Context: The SwipeDeckCard is currently only being tested with mock data in a "Swipe Test" tab. We need to wire it up to the actual live database data in the "Egg Donors" tab. We will replace the old <DonorGrid> with the new swipe experience. Since the raw database schema may differ slightly from the SwipeDeckProfile interface, we need an adapter function to safely map the data.
+
+Action Plan:
+
+Create the DB-to-UI Adapter (swipe-mappers.ts):
+
+Open client/src/components/marketplace/swipe-mappers.ts.
+
+Export a new function: export function mapDatabaseDonorToSwipeProfile(dbDonor: any): SwipeDeckProfile { ... }
+
+Inside this function, map the raw database fields to the SwipeDeckProfile interface.
+
+Critical mappings: - Ensure providerType: "donor" is explicitly set.
+
+Safely map photos: If dbDonor.images or dbDonor.photos exists, use it. Otherwise, fallback to an array containing dbDonor.photoUrl or a placeholder.
+
+Safely map ID, age, location, and the medical/financial fields, providing fallback values (like null) if the database row is missing them.
+
+Setup Swipe State (marketplace-page.tsx):
+
+Open client/src/pages/marketplace-page.tsx.
+
+Add a new state variable near the top of the component to track the live swipe index: const [liveDonorIndex, setLiveDonorIndex] = useState(0);
+
+Create a swipe handler for the live data:
+const handleLiveSwipe = (action: string) => { if (action === 'PASS' || action === 'SAVE') setLiveDonorIndex(prev => prev + 1); };
+
+Replace the Egg Donor Render Block:
+
+Locate the render block for activeTab === "egg-donors".
+
+Remove the old <DonorGrid donors={eggDonors} ... />.
+
+Replace it with logic that checks if eggDonors exists and liveDonorIndex < eggDonors.length.
+
+If true, get the current donor: const rawDonor = eggDonors[liveDonorIndex];
+
+Map it: const profile = mapDatabaseDonorToSwipeProfile(rawDonor);
+
+Calculate the layout: const matched = getMatchedPreferences(profile, []); and const tabs = getDonorTabs(profile, matched);
+
+Render the generic <SwipeDeckCard> (wrapped in the same w-full h-[80vh] sm:max-w-md sm:mx-auto container as the test tab), passing it the calculated tabs, title, photos, and the handleLiveSwipe callbacks.
+
+If liveDonorIndex >= eggDonors.length, render an "End of Stack" empty state message.
+
+Execute this data connection so the "Egg Donors" tab is officially powered by the live database swipe engine.

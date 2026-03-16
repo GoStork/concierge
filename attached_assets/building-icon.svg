@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <!-- Center tall building -->
+  <rect x="35" y="10" width="30" height="100" stroke="currentColor" stroke-width="4.5" stroke-linejoin="round"/>
+  <!-- Center building top piece -->
+  <rect x="42" y="4" width="16" height="8" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round"/>
+  <!-- Antenna -->
+  <line x1="50" y1="4" x2="50" y2="0" stroke="currentColor" stroke-width="3"/>
+  <!-- Left building -->
+  <rect x="8" y="40" width="27" height="70" stroke="currentColor" stroke-width="4.5" stroke-linejoin="round"/>
+  <!-- Right building -->
+  <rect x="65" y="30" width="27" height="80" stroke="currentColor" stroke-width="4.5" stroke-linejoin="round"/>
+  <!-- Center building windows row 1 -->
+  <rect x="40" y="18" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="48" y="18" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="56" y="18" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <!-- Center building windows row 2 -->
+  <rect x="40" y="32" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="48" y="32" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="56" y="32" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <!-- Center building windows row 3 -->
+  <rect x="40" y="46" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="48" y="46" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="56" y="46" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <!-- Center building windows row 4 -->
+  <rect x="40" y="60" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="48" y="60" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="56" y="60" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <!-- Center building windows row 5 -->
+  <rect x="40" y="74" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="48" y="74" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="56" y="74" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <!-- Center door -->
+  <rect x="45" y="94" width="10" height="16" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <!-- Left building windows row 1 -->
+  <rect x="13" y="48" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="21" y="48" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="28" y="48" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <!-- Left building windows row 2 -->
+  <rect x="13" y="62" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="21" y="62" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="28" y="62" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <!-- Left building windows row 3 -->
+  <rect x="13" y="76" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="21" y="76" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="28" y="76" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <!-- Left building windows row 4 -->
+  <rect x="13" y="90" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="21" y="90" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="28" y="90" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <!-- Right building windows row 1 -->
+  <rect x="70" y="38" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="78" y="38" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="85" y="38" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <!-- Right building windows row 2 -->
+  <rect x="70" y="52" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="78" y="52" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="85" y="52" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <!-- Right building windows row 3 -->
+  <rect x="70" y="66" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="78" y="66" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="85" y="66" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <!-- Right building windows row 4 -->
+  <rect x="70" y="80" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="78" y="80" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="85" y="80" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <!-- Right building windows row 5 -->
+  <rect x="70" y="94" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="78" y="94" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <rect x="85" y="94" width="5" height="7" rx="1" stroke="currentColor" stroke-width="2.5"/>
+  <!-- Ground line -->
+  <line x1="4" y1="110" x2="96" y2="110" stroke="currentColor" stroke-width="4"/>
+</svg>

@@ -1,0 +1,94 @@
+Objective: Fix the EDC Post-Login Routing Trap in server/src/modules/providers/donor-sync.service.ts to support Eggceptional's custom /Recipient/DonorDashboard route and AJAX endpoints.
+
+Task 1: Smart Post-Login Routing in runSyncJob
+
+Locate if (isLoginPage && sessionCookies) { ... } around line 687.
+
+Replace the contents of that if block entirely with this smarter routing loop:
+
+TypeScript
+    if (isLoginPage && sessionCookies) {
+      console.log(`[donor-sync] Page appears to be a login form, trying known EDC dashboard URLs after auth...`);
+      const origin = new URL(sourceUrl).origin;
+      const endpoints = [
+        "/Recipient/DonorDashboardMatching",
+        "/Recipient/DonorDashboard",
+        "/Recipient/Dashboard"
+      ];
+      
+      let foundDashboard = false;
+      for (const endpoint of endpoints) {
+        const dashHtml = await fetchHtml(origin + endpoint, sessionCookies);
+        if (!dashHtml.includes('type="password"')) {
+          mainHtml = dashHtml;
+          sourceUrl = origin + endpoint;
+          foundDashboard = true;
+          break;
+        }
+      }
+      
+      if (!foundDashboard) {
+        mainHtml = await fetchHtml(origin + "/", sessionCookies);
+        sourceUrl = origin + "/";
+      }
+      console.log(`[donor-sync] Fetched post-auth page from ${sourceUrl} (${mainHtml.length} chars)`);
+    }
+Task 2: Dynamic AJAX Endpoint Detection (tryFetchEdcDonorData)
+
+Replace the entire tryFetchEdcDonorData function with this updated version that checks for both endpoint formats:
+
+TypeScript
+async function tryFetchEdcDonorData(
+  pageHtml: string,
+  sourceUrl: string,
+  cookies?: string,
+): Promise<string | null> {
+  try {
+    const base = new URL(sourceUrl);
+
+    if (pageHtml.includes("donorCardDiv") && pageHtml.includes("donorStatus")) {
+      console.log(`[donor-sync] Current page already contains donor cards, returning directly`);
+      return pageHtml;
+    }
+
+    let ajaxEndpoint = null;
+    if (pageHtml.includes("_DonorDashboardMatching")) {
+      ajaxEndpoint = "/Recipient/_DonorDashboardMatching";
+    } else if (pageHtml.includes("_DonorDashboard")) {
+      ajaxEndpoint = "/Recipient/_DonorDashboard";
+    }
+
+    if (ajaxEndpoint) {
+      console.log(`[donor-sync] Found AJAX endpoint: ${ajaxEndpoint}`);
+      return await fetchEdcAjaxDonors(pageHtml, base.origin, ajaxEndpoint, cookies);
+    }
+
+    const dashboardLink = pageHtml.match(/href="([^"]*(?:DonorDashboardMatching|DonorDashboard|Dashboard)[^"]*)"/i);
+    if (dashboardLink) {
+      console.log(`[donor-sync] Found EDC dashboard link: ${dashboardLink[1]}`);
+      const dashUrl = new URL(dashboardLink[1], base).href;
+      const dashHtml = await fetchHtml(dashUrl, cookies);
+      
+      if (dashHtml.includes("donorCardDiv")) return dashHtml;
+      
+      if (dashHtml.includes("_DonorDashboardMatching")) {
+        return await fetchEdcAjaxDonors(dashHtml, base.origin, "/Recipient/_DonorDashboardMatching", cookies);
+      } else if (dashHtml.includes("_DonorDashboard")) {
+        return await fetchEdcAjaxDonors(dashHtml, base.origin, "/Recipient/_DonorDashboard", cookies);
+      }
+    }
+
+    return null;
+  } catch (err: any) {
+    console.error(`[donor-sync] EDC fetch error: ${err.message}`);
+    return null;
+  }
+}
+Task 3: Update fetchEdcAjaxDonors Signature
+
+Update the signature of fetchEdcAjaxDonors so it accepts the new dynamic ajaxEndpoint parameter:
+async function fetchEdcAjaxDonors(dashboardHtml: string, origin: string, ajaxEndpoint: string, cookies?: string)
+
+Inside fetchEdcAjaxDonors, change the fetch URL from explicitly hardcoding ${origin}/Recipient/_DonorDashboardMatching to using the dynamic parameter: ${origin}${ajaxEndpoint}.
+
+Please execute these 3 tasks using Extended Thinking mode.

@@ -1,0 +1,50 @@
+TASK NAME: Implement Silent Passthrough & Provider Response Portal
+
+Description:
+Now that the RAG engine is live, we need to implement the "Silent Passthrough" protocol. This allows Eva to get answers from a Provider "behind the curtain" when the Knowledge Base is insufficient, without connecting the Parent and Provider prematurely.
+
+Step 1: The "Silent Query" Database Model
+
+Create a SilentQuery model in Prisma.
+
+Fields: id, parentUserId, providerId, questionText, answerText (nullable), status (PENDING, ANSWERED), createdAt, updatedAt.
+
+Important: This must remain anonymous. The Provider should see the question but not the Parent's name or contact info.
+
+Step 2: The Trigger Logic (AI Router)
+
+Update the AI Router's "Insufficient Knowledge" logic.
+
+Action: When Eva triggers the "I don't have that specific detail" response, automatically create a SilentQuery record tagged to the relevant providerId.
+
+The AI Message: "I don't have that specific administrative detail in my records yet, but I've just whispered a message to the clinic's coordinator. I'll have that answer for you as soon as they reply!"
+
+Step 3: Provider "Whisper" UI
+
+In the Provider Dashboard > Knowledge tab, add a new section: "Unanswered AI Questions".
+
+UI: A list of pending questions.
+
+Functionality: An input field for the Provider to type the answer.
+
+Logic: When the Provider hits "Send to AI":
+
+Update the SilentQuery status to ANSWERED.
+
+Automatically ingest this answer into the Provider's KnowledgeChunk table so Eva learns it for the next time.
+
+Step 4: The Relay Notification (Parent Side)
+
+When a SilentQuery is answered, trigger an in-app notification for the Parent: "Eva has an update for you regarding your question for [Provider Name]."
+
+When the Parent opens the chat, Eva presents the answer: "I have an update! I spoke with [Provider] and they confirmed that [Answer Text]. Does that clarify things for you, or are you ready to schedule a match call to discuss this in person?"
+
+Step 5: The "Match Call" Handoff (3-Way Bridge)
+
+Rule: Only if the Parent selects [Request Consultation/Match Call], then:
+
+Create a Conversation record (3-Way Chat) between the IP, Provider, and Eva.
+
+Trigger the [[HOT_LEAD]] notification to the Admin.
+
+Reveal the Provider's identity/booking link.

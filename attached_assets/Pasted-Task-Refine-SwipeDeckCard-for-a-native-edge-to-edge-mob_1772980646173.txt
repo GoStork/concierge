@@ -1,0 +1,27 @@
+Task: Refine SwipeDeckCard for a native edge-to-edge mobile layout, immersive glassmorphism buttons, fixed tap zones, and clean data tags.
+
+Context: The current swipe test card looks like a standard web component rather than an immersive native app. We need to strip the mobile margins, move the reordered action buttons inside the photo, fix the CSS pointer events blocking the tap zones, and completely clean up the duplicated, raw-key tags (e.g., changing "religion: Matched" to just "Jewish").
+
+Action Plan:
+
+Edge-to-Edge Mobile Layout: - In client/src/pages/marketplace-page.tsx, remove the max-w-sm and min-h-[700px] constraints for the mobile view of the Swipe Test tab. Make the container a full flex layout that takes up the screen height with zero padding/margins on mobile (w-full h-full px-0), retaining a max-width and padding only for desktop (sm:max-w-md sm:p-4).
+
+In SwipeDeckCard.tsx, ensure the motion.div and image container fill this new w-full h-full space, creating a true full-screen immersive feel on mobile.
+
+Immersive 5-Button Array: - Move the action buttons inside the relative image container, positioned absolute bottom-6 w-full px-4 z-50.
+
+Reorder them (Left to Right): Undo (Amber), Pass (Red X), Chat (Purple, Center), Save (Green Heart), Compare (Blue).
+
+Apply glassmorphism styling to the buttons so the photo blurs through them: bg-black/40 backdrop-blur-md border-0 text-white.
+
+Fix Tap Zones (The Half-Photo Bug): - Apply pointer-events-none to the dark gradient and text overlay container so clicks pass through to the underlying left/right tap navigation zones.
+
+Apply pointer-events-auto only to the interactive buttons and Up Arrow inside that overlay so they remain clickable.
+
+Align Up Arrow: - Move the <ChevronUp /> button down to be vertically centered and inline on the far right of the Profile Name/Age row.
+
+Clean & Deduplicate Tags: - Refactor getMatchedPreferences. It must output the human-readable value (e.g., "Jewish", "Green Eyes") instead of raw keys like "religion: Matched".
+
+Crucial deduplication: If a tag value is shown in the top "Matched Preferences" section, it MUST be removed/filtered out from the standard tag list directly below it to prevent the clutter seen in the current UI.
+
+Execute these comprehensive UI fixes and let me know when it is ready to test on mobile.

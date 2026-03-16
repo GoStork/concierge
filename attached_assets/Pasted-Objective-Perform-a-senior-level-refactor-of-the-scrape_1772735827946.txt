@@ -1,0 +1,33 @@
+Objective: Perform a senior-level refactor of the scrapeProviderWebsite function in server/src/modules/providers/scrape.service.ts and the findClinicWebsite function in server/src/modules/providers/clinic-enrichment.service.ts. The current regex-based scraping is missing critical team members, phone numbers, and photos, and the CDC enrichment search is failing on obvious clinics.
+
+Task 1: Overhaul HTML Parsing & JSON-LD Extraction (scrape.service.ts)
+
+Stop using raw regex to strip <script> tags blindly. Install and import cheerio to parse the fetched HTML properly.
+
+Extract JSON-LD: Before stripping scripts, use Cheerio to find all <script type="application/ld+json"> tags. Parse them and extract any entities of type Physician, MedicalClinic, LocalBusiness, or Organization. This is where the highly accurate phone numbers, addresses, and team member photos are hiding.
+
+Pass this structured JSON-LD data into the final Gemini prompt in Phase 4 as a high-confidence data source.
+
+Task 2: Deep Discovery & Phone Number Fallbacks
+
+Increase the subpage discovery limit from 12 to 25.
+
+Ensure Cheerio explicitly targets a[href^="tel:"] across the homepage and all subpages, especially inside <footer> elements, to catch phone numbers hidden behind "Click to Call" buttons.
+
+Increase the fetch timeout from 15 seconds to 45 seconds to accommodate the deeper crawl.
+
+Task 3: Photo Directory Guessing & Alt-Tag Matching
+
+When processing team members, if a doctor's name is found but no photo URL is linked, implement a "directory guessing" fallback. Construct common image paths (e.g., /wp-content/uploads/{firstname}-{lastname}.jpg or /images/team/{firstname}-{lastname}.png) and issue a quick HEAD request to see if they exist.
+
+Scan all <img> tags on the site and build a map of alt attributes to src URLs. Cross-reference this map with the doctor names discovered in the text.
+
+Task 4: Fix CDC Enrichment Search (clinic-enrichment.service.ts)
+
+The findClinicWebsite function is currently failing to find obvious clinics like "Advanced Fertility Center of Texas", "Alabama Fertility Specialists", and "Atlanta Center for Reproductive Medicine".
+
+Implement exponential backoff and retry logic (up to 3 retries) to handle Gemini API rate limits (429 Too Many Requests).
+
+Update the Gemini system prompt for the search tool to strictly enforce a raw URL string output. Instruct it to search for [Clinic Name] [City] [State] official website. Add validation to ensure it doesn't return conversational text like "Here is the website: https..."
+
+Please output the plan and then proceed to update both files.

@@ -1,0 +1,35 @@
+NEXT TASK: Implement Provider Consultation Booking
+Description: We need to allow parents to book their initial Consultation Call directly from the chat or the provider's profile. This is the first official step in the provider's funnel.
+Step 1: Provider Dashboard - Consultation Settings
+* Add a consultationBookingUrl field to the Provider model (distinct from a specific match call link).
+* UI: In Provider Settings, add a section: "How should parents book their initial consultation?" with options for a URL (Calendly/Acuity) or a "Request Manual Callback" toggle.
+Step 2: The "Book Consultation" Card (AI Chat)
+* When Eva or the Human Concierge identifies a strong match, they present a Consultation Card.
+* The Text: "I've found that [Provider Name] is a perfect fit for your [Specific Need]. Would you like to schedule an initial consultation to meet their team?"
+* The Button: [Book Consultation].
+Step 3: The "In-App" Booking Experience
+* Clicking the button opens a modal.
+* If URL provided: Load the provider's booking page in a clean iframe.
+* If Manual Request: Open a simple form: "What are your preferred days/times for a call?"
+Step 4: Funnel State Management
+* Once the parent interacts with the booking card, update the IntendedParentProfile journey stage to "Consultation Requested."
+* Notification: Send an email/notification to the Provider: "New Consultation Request from [Parent First Name] via GoStork."
+
+
+NEXT TASK: Implement Provider Calendar Integration & Booking Flow
+Description: Now that we have the "Match Call Preparation" document being delivered, we need to provide the actual tool to book that call. We need to implement a structured "Booking Flow" that tracks the transition from "Interested" to "Scheduled."
+Step 1: Provider Profile Update (Booking Links)
+* Add a bookingUrl field to the Provider model in Prisma.
+* Update the Provider Dashboard > Profile Settings to include a field where they can paste their Calendly, Acuity, or other scheduling links.
+Step 2: The "Booking Card" UI (Chat Component)
+* Create a new "Smart Card" for the AI Concierge chat: The Booking Card.
+* Features:
+    * Provider Photo and Name.
+    * A clear [Book Match Call] button.
+    * When clicked, it should open a modal with an iframe of the provider's bookingUrl.
+Step 3: Conversion Tracking (The Funnel Update)
+* Implement a webhook or a "Confirmation" button: "I've scheduled my call."
+* Logic: When a booking is confirmed, update the IntendedParentProfile journey stage to "Consultation Scheduled."
+* Notification: Trigger a "Consultation Scheduled" notification to the GoStork Admin.
+Step 4: The "Post-Booking" Automation
+* Once the stage is updated to "Consultation Scheduled," Eva should say: "Fantastic! Your call is on the calendar. Remember to review the Match Call Preparation Guide I sent earlier. Would you like me to set a reminder for you 24 hours before the call?"

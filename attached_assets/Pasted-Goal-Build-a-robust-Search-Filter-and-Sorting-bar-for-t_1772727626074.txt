@@ -1,0 +1,54 @@
+Goal: Build a robust Search, Filter, and Sorting bar for the Admin Providers Dashboard (src/pages/admin-providers-page.tsx) to easily manage the database of clinics and agencies.
+
+1. Strict Branding Rule:
+
+Do NOT hardcode colors (e.g., no bg-gray-100 or text-blue-500). Use existing dynamic Tailwind CSS variables (e.g., bg-card, border-border, text-muted-foreground, bg-background) to respect GoStork brand settings.
+
+2. Backend Optimization (server/src/modules/providers/providers.controller.ts):
+
+Update the list method to accept @Query() query: any.
+
+In the non-parent (admin) block for this.prisma.provider.findMany, construct a dynamic where object based on the query parameters:
+
+Search: If query.search exists, add { name: { contains: query.search, mode: 'insensitive' } }.
+
+Location: If query.location exists, add: { locations: { some: { OR: [{ city: { contains: query.location, mode: 'insensitive' } }, { state: { contains: query.location, mode: 'insensitive' } }] } } }.
+
+Provider Type & Status (Combined): If query.providerType (not "All") or query.status (not "All") exists, filter the services relationship. Ensure you combine them correctly so it searches for a service matching the conditions. Example:
+services: { some: { ...(query.providerType !== 'All' && { providerType: { name: query.providerType } }), ...(query.status !== 'All' && { status: query.status }) } }
+
+Construct a dynamic orderBy array based on query.sortBy:
+
+newest (default): [{ createdAt: 'desc' }]
+
+oldest: [{ createdAt: 'asc' }]
+
+alphabetical: [{ name: 'asc' }]
+
+3. Frontend UI Component (src/pages/admin-providers-page.tsx):
+
+Above the existing Table of providers, insert a new Card component (bg-card mb-6 p-4) to serve as the control bar.
+
+Inside the card, create a responsive grid layout containing these 5 controls:
+
+Search: An Input with a magnifying glass icon placeholder (e.g., "Search provider name..."). Use lucide-react for the icon.
+
+Location: An Input with a map pin icon placeholder ("City or state...").
+
+Provider Type: A Select dropdown (Options: "All Types", "IVF Clinic", "Surrogacy Agency", "Egg Donor Bank").
+
+Status: A Select dropdown (Options: "All Statuses", "APPROVED", "PENDING", "REJECTED").
+
+Sort By: A Select dropdown (Options: "Newest First", "Oldest First", "Alphabetical (A-Z)").
+
+Use our existing shadcn/ui components for all inputs.
+
+4. State & Wiring (src/pages/admin-providers-page.tsx):
+
+Create state variables for the filters: searchQuery (string, initially empty), locationSearch (string, initially empty), providerType (string, initially "All Types"), statusFilter (string, initially "All Statuses"), and sortBy (string, initially "newest").
+
+Optional but recommended: Implement a debounced value for the searchQuery and locationSearch text inputs so they don't fire an API request on every single keystroke.
+
+Update the useQuery hook that fetches /api/providers (likely using the useProviders hook or a direct fetch). The URL must now include the query parameters (e.g., /api/providers?search=${searchQuery}&location=${locationSearch}&providerType=${providerType}&status=${statusFilter}&sortBy=${sortBy}).
+
+CRITICAL: Add ALL five state variables (searchQuery, locationSearch, providerType, statusFilter, sortBy) to the queryKey array within the useQuery hook. This ensures React Query automatically refetches the data whenever an admin changes any filter.

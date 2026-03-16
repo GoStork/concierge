@@ -1,0 +1,58 @@
+We have successfully implemented a Google Calendar integration (OAuth/REST) and mapped out our Microsoft Outlook integration (OAuth/REST) for GoStork. Now, I want to build a unified CalDAV integration to support both Apple Calendar (iCloud) and Yahoo Calendar.
+
+Important Architectural Note: Unlike Google and Microsoft, Apple and Yahoo do not provide standard OAuth2 REST APIs for calendar access. We will need to use the CalDAV protocol. Users will authenticate by providing their account email and an App-Specific Password.
+
+Before writing any code, please review our existing calendar implementations. Then, map out how we adapt our system for CalDAV. Look specifically at:
+
+Authentication & Storage: How we securely encrypt and store CalDAV credentials (email + App-Specific Password) in our database.
+
+Server Routing: How we dynamically set the CalDAV server URL based on whether the user is connecting an Apple or Yahoo account.
+
+CRUD Operations: How we translate our existing event logic into standard CalDAV XML requests. Please recommend a reliable, production-ready CalDAV library.
+
+Data Syncing/Polling: Explain how we will use CalDAV sync-collection or polling to detect calendar changes.
+
+UI/UX Requirements:
+We need custom connection modals for Apple and Yahoo because of the App-Specific Password requirement. When you build the frontend UI for these modals, please use the following exact copy:
+
+[For Apple Calendar Modal]
+Title: Connect Your Apple Calendar
+Subtitle: Because Apple prioritizes security, you will need to generate a one-time "App-Specific Password" to connect your calendar. It only takes a minute!
+Steps:
+
+Go to https://www.google.com/search?q=appleid.apple.com and sign in.
+
+Select Sign-In and Security.
+
+Select App-Specific Passwords.
+
+Click Generate an app-specific password.
+
+Name the password "GoStork" and click Create.
+
+Enter your Apple ID email below and paste the password.
+
+[For Yahoo Calendar Modal]
+Title: Connect Your Yahoo Calendar
+Subtitle: To securely sync your calendar, Yahoo requires a one-time "App Password."
+Steps:
+
+Sign in to your Yahoo account and go to your Account Security page.
+
+Click Generate app password or Manage app passwords.
+
+Select Other App and type "GoStork".
+
+Click Generate.
+
+Enter your Yahoo email below and paste the password.
+
+Your Task:
+
+Analyze: Outline the key architectural differences between our current OAuth setup and the required CalDAV approach.
+
+Technical Proposal: Recommend the best library for handling CalDAV in our stack.
+
+Plan: Provide a step-by-step implementation plan, including database schema changes and the new UI modals.
+
+Please present the analysis and the step-by-step plan first so we can review the new architecture together before you write the full code.

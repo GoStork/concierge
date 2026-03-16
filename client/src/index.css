@@ -1,0 +1,456 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+:root {
+  /* Medical/Clean Theme: Teal, Blue, White, Soft Gray */
+  /* Primary: Trustworthy Teal */
+  --primary: 183 100% 25%; /* #004D4D - Deep Teal */
+  --primary-foreground: 0 0% 100%;
+  
+  /* Secondary: Soft Sage/Mint */
+  --secondary: 160 30% 96%;
+  --secondary-foreground: 183 100% 25%;
+  
+  /* Accent: Energetic Coral/Blue */
+  --accent: 199 89% 48%; /* #0DA4EA - Bright Blue */
+  --accent-foreground: 0 0% 100%;
+  
+  /* Backgrounds */
+  --background: 210 20% 96%; /* Light blue-gray — lifts pure-white cards */
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  
+  /* UI Elements */
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 47.4% 11.2%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 183 100% 25%;
+  --radius: 0.5rem;
+
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+
+  --brand-success: 142 72% 29%;
+  --brand-warning: 38 92% 50%;
+  --brand-error: 0 84% 60%;
+
+  /* Fonts */
+  --font-body: 'DM Sans', sans-serif;
+  --font-display: 'Playfair Display', serif;
+
+  /* Typography Scale & Weights */
+  --type-scale-ratio: 1.25;
+  --font-size-small: 14px;
+  --font-weight-body: 400;
+  --font-weight-heading: 700;
+  --font-weight-ui: 500;
+  --line-height-body: 1.6;
+  --line-height-heading: 1.2;
+  --letter-spacing-heading: normal;
+  --button-text-case: none;
+  --link-decoration: none;
+  --link-decoration-hover: underline;
+
+  --swipe-pass: #FF4B4B;
+  --swipe-save: #2DE182;
+  --swipe-undo: #FFB300;
+  --swipe-chat: #9B51E0;
+  --swipe-compare: #2D9CDB;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
+    font-family: var(--font-body);
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    font-weight: var(--font-weight-heading);
+    line-height: var(--line-height-heading);
+    letter-spacing: var(--letter-spacing-heading);
+    @apply text-foreground;
+  }
+
+  body {
+    font-weight: var(--font-weight-body);
+    line-height: var(--line-height-body);
+  }
+
+  button, [role="button"], .btn {
+    text-transform: var(--button-text-case);
+  }
+
+  a:not([class*="no-underline"]):not(button a):not([role="button"] a) {
+    text-decoration: var(--link-decoration);
+  }
+  a:not([class*="no-underline"]):not(button a):not([role="button"] a):hover {
+    text-decoration: var(--link-decoration-hover);
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    @apply bg-white/70 backdrop-blur-xl border border-white/20 shadow-xl;
+  }
+  
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent;
+  }
+}
+
+.gallery-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+input[type="date"],
+input[type="time"] {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+}
+input[type="date"]::-webkit-date-and-time-value,
+input[type="time"]::-webkit-date-and-time-value {
+  text-align: left;
+}
+
+/* ── Fantastical-inspired react-big-calendar overrides ── */
+
+.calendar-wrapper .rbc-calendar {
+  font-family: var(--font-body);
+  background-color: hsl(var(--card));
+}
+
+/* Header row: day names */
+.calendar-wrapper .rbc-header {
+  padding: 12px 4px;
+  font-weight: var(--font-weight-ui);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: hsl(var(--muted-foreground));
+  border-bottom: 1px solid hsl(var(--border));
+  background-color: hsl(var(--muted));
+}
+.calendar-wrapper .rbc-header + .rbc-header {
+  border-left: 1px solid hsl(var(--border));
+}
+
+/* Today column highlight */
+.calendar-wrapper .rbc-today {
+  background-color: hsl(var(--primary) / 0.04);
+}
+
+/* Off-range (month view) */
+.calendar-wrapper .rbc-off-range-bg {
+  background-color: hsl(var(--muted));
+}
+
+/* Outer view container */
+.calendar-wrapper .rbc-time-view {
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  overflow: visible !important;
+  background-color: hsl(var(--card));
+  scrollbar-width: none;
+}
+.calendar-wrapper .rbc-time-view::-webkit-scrollbar {
+  display: none;
+}
+.calendar-wrapper .rbc-month-view {
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  overflow: hidden;
+  background-color: hsl(var(--card));
+}
+
+/* Time content area — no inner scroll, expand naturally */
+.calendar-wrapper .rbc-time-content {
+  border-top: 1px solid hsl(var(--border));
+  overflow-y: visible !important;
+  overflow-x: visible !important;
+  max-height: none !important;
+  scrollbar-width: none;
+}
+.calendar-wrapper .rbc-time-content::-webkit-scrollbar {
+  display: none;
+}
+.calendar-wrapper .rbc-time-header-content {
+  border-left: 1px solid hsl(var(--border));
+}
+
+/* Remove subdivision lines inside day slots */
+.calendar-wrapper .rbc-day-slot .rbc-time-slot {
+  border-top: none;
+}
+
+/* Timeslot group (each hour row) */
+.calendar-wrapper .rbc-timeslot-group {
+  border-bottom: 1px solid hsl(var(--border));
+  min-height: 72px;
+}
+
+/* Time labels */
+.calendar-wrapper .rbc-time-slot {
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  font-weight: var(--font-weight-ui);
+}
+.calendar-wrapper .rbc-time-gutter {
+  min-width: 55px !important;
+  width: 55px !important;
+  flex-shrink: 0 !important;
+  overflow: visible !important;
+}
+.calendar-wrapper .rbc-time-header > .rbc-row > *:first-child,
+.calendar-wrapper .rbc-time-header > .rbc-row:first-child {
+  min-width: 0;
+}
+.calendar-wrapper .rbc-time-header-gutter {
+  min-width: 55px !important;
+  width: 55px !important;
+  flex-shrink: 0 !important;
+}
+.calendar-wrapper .rbc-time-gutter .rbc-timeslot-group {
+  padding-right: 8px;
+}
+.calendar-wrapper .rbc-time-gutter .rbc-label {
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  font-weight: var(--font-weight-ui);
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  white-space: nowrap;
+}
+@media (max-width: 639px) {
+  .calendar-wrapper .rbc-time-gutter,
+  .calendar-wrapper .rbc-time-header-gutter {
+    min-width: 48px !important;
+    width: 48px !important;
+  }
+  .calendar-wrapper .rbc-time-gutter .rbc-label {
+    font-size: 10px;
+    padding: 0 2px;
+  }
+}
+
+/* Current time indicator: red line + dot */
+.calendar-wrapper .rbc-current-time-indicator {
+  background-color: hsl(var(--destructive));
+  height: 2px;
+}
+.calendar-wrapper .rbc-current-time-indicator::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: -4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: hsl(var(--destructive));
+}
+
+/* Event cards: Fantastical-style left border bar */
+.calendar-wrapper .rbc-event {
+  padding: 3px 8px;
+  font-size: 12px;
+  border-radius: 6px !important;
+  box-shadow: none;
+  outline: none;
+  transition: opacity 0.15s ease, box-shadow 0.15s ease;
+  border: none;
+  cursor: pointer;
+}
+.calendar-wrapper .rbc-event:hover {
+  opacity: 0.85;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.calendar-wrapper .rbc-event.rbc-selected {
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.2);
+}
+.calendar-wrapper .rbc-event-label {
+  font-size: 10px;
+  font-weight: var(--font-weight-ui);
+  opacity: 0.7;
+}
+.calendar-wrapper .rbc-event-content {
+  font-weight: var(--font-weight-heading);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* Month view day cell hover */
+.calendar-wrapper .rbc-day-bg:hover {
+  background-color: hsl(var(--primary) / 0.02);
+}
+
+/* Show more link */
+.calendar-wrapper .rbc-show-more {
+  color: hsl(var(--primary));
+  font-size: 12px;
+  font-weight: var(--font-weight-ui);
+}
+
+/* Date cells in month view */
+.calendar-wrapper .rbc-date-cell {
+  padding: 6px 8px;
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+  font-weight: var(--font-weight-ui);
+}
+.calendar-wrapper .rbc-date-cell.rbc-now {
+  font-weight: var(--font-weight-heading);
+  color: hsl(var(--primary));
+}
+
+/* Month row dividers */
+.calendar-wrapper .rbc-month-row + .rbc-month-row {
+  border-top: 1px solid hsl(var(--border));
+}
+.calendar-wrapper .rbc-day-bg + .rbc-day-bg {
+  border-left: 1px solid hsl(var(--border));
+}
+
+/* Overflowing time header */
+.calendar-wrapper .rbc-time-header.rbc-overflowing {
+  border-right: 1px solid hsl(var(--border));
+}
+
+/* Event container spacing */
+.calendar-wrapper .rbc-day-slot .rbc-events-container {
+  margin-right: 2px;
+}
+
+/* Hide allday row */
+.calendar-wrapper .rbc-allday-cell {
+  display: none;
+}
+.calendar-wrapper .rbc-time-view .rbc-allday-cell + .rbc-time-content {
+  border-top: none;
+}
+
+/* ── Right-side time gutter (DOM-injected) ── */
+
+.right-gutter-col {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 48px;
+  border-left: 1px solid hsl(var(--border));
+  pointer-events: none;
+}
+@media (max-width: 639px) {
+  .right-gutter-col {
+    display: none;
+  }
+}
+.right-gutter-slot {
+  height: 72px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding-right: 6px;
+  position: relative;
+}
+.right-gutter-label {
+  font-size: 11px;
+  font-weight: var(--font-weight-ui);
+  color: hsl(var(--muted-foreground));
+  position: relative;
+  top: -7px;
+}
+.calendar-wrapper .rbc-time-content {
+  position: relative;
+}
+.calendar-wrapper .rbc-time-header.rbc-overflowing {
+  margin-right: 0;
+}
+.calendar-wrapper *::-webkit-scrollbar {
+  display: none;
+}
+.calendar-wrapper * {
+  scrollbar-width: none;
+}
+
+[data-testid^="button-pass-"]:hover {
+  border-color: color-mix(in srgb, var(--swipe-pass) 40%, transparent) !important;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--swipe-pass) 30%, transparent) !important;
+}
+[data-testid^="button-save-"]:hover {
+  border-color: color-mix(in srgb, var(--swipe-save) 40%, transparent) !important;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--swipe-save) 30%, transparent) !important;
+}
+[data-testid^="button-undo-"]:hover {
+  border-color: color-mix(in srgb, var(--swipe-undo) 40%, transparent) !important;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--swipe-undo) 30%, transparent) !important;
+}
+[data-testid^="button-chat-"]:hover {
+  border-color: color-mix(in srgb, var(--swipe-chat) 40%, transparent) !important;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--swipe-chat) 30%, transparent) !important;
+}
+[data-testid^="button-compare-"]:hover {
+  border-color: color-mix(in srgb, var(--swipe-compare) 40%, transparent) !important;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--swipe-compare) 30%, transparent) !important;
+}
+
+.underline-tab-trigger {
+  color: var(--tab-color, hsl(var(--primary)));
+  border-bottom: 2px solid transparent;
+}
+.underline-tab-trigger:hover {
+  color: var(--tab-hover-color, hsl(var(--secondary-foreground)));
+}
+.underline-tab-trigger[data-state="active"] {
+  color: var(--tab-active-color, hsl(var(--primary)));
+  border-bottom: 2px solid var(--tab-active-color, hsl(var(--primary)));
+}
+
+.desktop-nav-inactive {
+  color: var(--tab-color, hsl(var(--primary)));
+}
+.desktop-nav-inactive:hover {
+  background-color: var(--tab-hover-color, hsl(var(--secondary)));
+  color: hsl(var(--secondary-foreground));
+  border-radius: 9999px;
+}
+.desktop-nav-active-pill {
+  background-color: var(--tab-active-color, hsl(var(--primary)));
+  color: hsl(var(--primary-foreground));
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  border-radius: 9999px;
+}
+
+[data-header-nav-style="underline"] .desktop-nav-inactive {
+  border-bottom: 2px solid transparent;
+}
+[data-header-nav-style="underline"] .desktop-nav-inactive:hover {
+  background: transparent;
+  color: var(--tab-hover-color, hsl(var(--secondary)));
+  border-bottom: 2px solid var(--tab-hover-color, hsl(var(--secondary)));
+  border-radius: 0;
+}
+[data-header-nav-style="underline"] .desktop-nav-active-pill {
+  background: transparent;
+  color: var(--tab-active-color, hsl(var(--primary)));
+  border-bottom: 2px solid var(--tab-active-color, hsl(var(--primary)));
+  box-shadow: none;
+  border-radius: 0;
+}
+

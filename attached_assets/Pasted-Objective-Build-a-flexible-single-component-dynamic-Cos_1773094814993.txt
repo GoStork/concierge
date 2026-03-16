@@ -1,0 +1,89 @@
+Objective:
+Build a flexible, single-component dynamic "Costs" system for GoStork providers (Surrogacy Agencies, Egg Donors, IVF Clinics). The system must use AI (Gemini) to parse PDF/Excel cost sheets into a standardized schema, support an admin approval workflow with version history, dynamically calculate total costs by overriding template defaults with specific donor/surrogate compensations, allow providers to generate custom bespoke quotes for specific parents, and provide full file management capabilities.
+
+1. Database Schema Updates (Prisma):
+Create or update the schema to support dynamic costs, categorization, compensation overrides, and client-specific quotes.
+
+CostTemplate: Admin-managed table storing mandatory fields per providerType.
+
+Fields: id, providerType (EGG_DONOR, SURROGACY, IVF), category (e.g., Agency Fees, Legal, Medical), fieldName, fieldDescription, isMandatory (boolean), isBaseCompensation (boolean), allowMultiple (boolean - allows providers to add variants like "Standard" and "Premium").
+
+ProviderCostSheet: Represents a cost sheet submission.
+
+Fields: id, providerId, parentClientId (nullable - if null, this is the master global sheet; if populated, it is a custom quote for a specific parent), fileUrl (Supabase Storage URL), originalFileName (string), status (PENDING, APPROVED, REJECTED, SENT_TO_PARENT), adminFeedback (text), version (integer), createdAt, updatedAt.
+
+CostItem: The line items linked to a ProviderCostSheet.
+
+Fields: id, providerCostSheetId, categoryId, key (name of the cost), minValue (float), maxValue (float), isCustom (boolean), comment (text - visible to parents), isIncluded (boolean).
+
+2. Backend (NestJS):
+
+Storage Endpoints (/costs/files): * POST /upload: Upload raw files to Supabase Storage (provider-cost-sheets bucket).
+
+DELETE /:sheetId/file: Deletes the file from Supabase Storage and nullifies the fileUrl in the database.
+
+AI Parsing Service: Use the installed @google/genai or @google/generative-ai SDK. Send the PDF to Gemini with system instructions to:
+
+Map recognized line items to the GoStork mandatory fields in CostTemplate.
+
+Extract range values (minValue, maxValue).
+
+Categorize unmapped fees and flag them as isCustom: true.
+
+Handle bundled packages by marking covered items as isIncluded: true with a 0 value.
+
+Master Workflow Endpoints: * POST /costs/submit: Saves global parsed data as PENDING. Triggers SendGrid email to GoStork Admin.
+
+POST /costs/approve/:id: Changes status to APPROVED. Archives previous master versions.
+
+POST /costs/reject/:id: Changes status to REJECTED. Sends a SendGrid email to the provider with adminFeedback.
+
+Custom Parent Quote Endpoints:
+
+POST /costs/custom-quote/:parentId: Forks the currently APPROVED master ProviderCostSheet into a new draft sheet tied to parentClientId.
+
+POST /costs/send-quote/:sheetId: Changes the custom quote status to SENT_TO_PARENT.
+
+3. Frontend (React/Vite & shadcn/ui):
+
+Dynamic Single Component: Create <ProviderCostsTab providerType={type} providerId={id} isAdminView={boolean} />. Group the rendered UI by category.
+
+File Management UI:
+
+If a file is uploaded, display a document card showing the originalFileName.
+
+Include action buttons to "Download" (opens fileUrl in a new tab) and "Delete" (prompts for confirmation, then removes the file from storage and clears the current draft form).
+
+Provider View (Master Settings):
+
+File upload dropzone (hidden if a file is already uploaded).
+
+Editable data grid post-AI extraction.
+
+Highlight isCustom: true fields.
+
+"Add Variant" button next to fields where allowMultiple is true.
+
+A dedicated comment text input on every row (UI must indicate these are visible to parents).
+
+Validation: Prevent submission unless all isMandatory template fields are filled.
+
+Admin View (admin-provider-edit-page.tsx):
+
+The GoStork admin must have the exact same functional view and CRUD capabilities as the provider (can upload, edit, download, delete files, and change data values directly).
+
+Diff view: Compare PENDING sheet side-by-side with the current APPROVED sheet to highlight changes.
+
+Action buttons: "Approve" and "Reject" (opens a dialog for feedback).
+
+Provider View (Client Quote Mode):
+
+When viewing a specific lead/parent, provide a "Create Custom Cost Sheet" button.
+
+Loads <ProviderCostsTab /> pre-filled with master approved costs to adjust numbers before hitting "Send to Parent".
+
+Dynamic Total Cost Calculation Logic: * Utility function calculateTotalCost(providerCostSheet, specificProfile?).
+
+If a specificProfile (Egg Donor or Surrogate) is passed with a compensation value, replace the CostItem flagged as isBaseCompensation with the profile's specific value before summing ranges.
+
+Fallback to the default base compensation if no specific profile is provided.

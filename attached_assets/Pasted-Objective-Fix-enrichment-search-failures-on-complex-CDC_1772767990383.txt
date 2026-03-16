@@ -1,0 +1,28 @@
+Objective: Fix enrichment search failures on complex CDC clinic names and upgrade verifyClinicUrl to prevent valid URLs from being discarded due to bot protection or strict relevance checks.
+
+Task 1: Overhaul the Gemini Search Prompt (providers/clinic-enrichment.service.ts)
+
+Locate the const prompt = ... definition inside findClinicWebsite.
+
+Replace it entirely with this specific instruction set:
+const prompt = \Find the official website URL for the fertility clinic: "${clinicName}" ${locationPart ? `located in ${locationPart}` : ""}. \n\nINSTRUCTIONS FOR SEARCHING:\n1. The name is from a government database and is messy. You MUST clean it before searching.\n2. Remove legal suffixes: LLC, Inc, PC, PA, SC, LTD, LLP, Corporation.\n3. Remove doctor credentials: MD, DO, FACOG, FACS.\n4. Handle "dba": If the name contains "dba", search ONLY for the name AFTER "dba" (e.g., "X dba Y" -> search for "Y").\n5. Handle commas/acronyms: If there are multiple names (e.g., "F.I.R.S.T., Florida Institute..."), search the distinct parts.\n6. For hospital networks (e.g., AHN, Aurora Health, Brooke Army), find the specific sub-page for their Reproductive Medicine or Fertility department.\n7. For franchises (e.g., Boston IVF), find the specific location page.\n\nOUTPUT FORMAT:\nReturn ONLY the bare URL string starting with https:// or www. Do not include any other words. NEVER return aggregator sites (Yelp, Healthgrades, FertilityIQ, WebMD, Facebook, Vitals, Doximity). If you absolutely cannot find it, return exactly "null".`;`
+
+Task 2: Upgrade Anti-Bot Headers in verifyClinicUrl
+
+In verifyClinicUrl, replace the headers object inside the fetch call with the Chrome-spoofing headers used in the scraper:
+"Accept-Language": "en-US,en;q=0.9",
+"Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+"Sec-Ch-Ua-Platform": '"macOS"',
+"Sec-Fetch-Dest": "document",
+"Sec-Fetch-Mode": "navigate",
+"Sec-Fetch-Site": "none",
+"Upgrade-Insecure-Requests": "1",
+"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+Task 3: Broaden the Relevance Check
+
+In verifyClinicUrl, locate the regex assignment: const isRelevant = /\b(fertility|ivf|reproductive...
+
+Add gynecology, obgyn, obstetrics, women's health, and pregnancy to the list of words in the regex so it doesn't reject solo practitioners.
+
+Please execute these 3 tasks using Extended Thinking mode.

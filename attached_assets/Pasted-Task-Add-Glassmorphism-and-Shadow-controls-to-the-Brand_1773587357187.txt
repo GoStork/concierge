@@ -1,0 +1,44 @@
+Task: Add Glassmorphism and Shadow controls to the Brand Settings for the mobile bottom navigation bar, and hardcode a taller native app height.
+
+Context: The mobile bottom navigation needs to mimic a premium native app (taller height, frosted glass, subtle shadow). We are hardcoding the height to 68px, but the shadow size, blur intensity, and background opacity must be fully controllable from the Admin Brand Settings page.
+
+Action Plan:
+
+1. Update the Brand Settings Schema (shared/schema.ts and client/src/hooks/use-brand-settings.ts):
+
+Add three new properties to the BrandSettings type and database schema:
+
+bottomNavOpacity: number (default: 100)
+
+bottomNavBlur: string (default: "none")
+
+bottomNavShadow: string (default: "lg")
+
+Ensure these are included in BRAND_DEFAULTS.
+
+2. Update the Brand Settings UI (client/src/pages/admin-brand-settings-page.tsx):
+
+Locate the "Bottom App Navigation" section in the form.
+
+Add a Slider for Background Opacity: Maps to bottomNavOpacity (min: 0, max: 100, step: 1).
+
+Add a Select dropdown for Background Blur: Maps to bottomNavBlur. Options: "none" (None), "sm" (Small), "md" (Medium), "lg" (Large), "xl" (Extra Large), "2xl" (Maximum).
+
+Add a Select dropdown for Shadow: Maps to bottomNavShadow. Options: "none" (None), "sm" (Small), "md" (Medium), "lg" (Large), "xl" (Extra Large).
+
+3. Update the Mobile Layout Shell (client/src/components/layout-shell.tsx):
+
+Locate the mobile bottom <nav> element.
+
+Hardcode the height: Find the inner container <div className="flex items-stretch justify-around h-14 px-1"> and change h-14 to h-[68px] and px-1 to px-2. Also, change the icon padding from p-1 to p-1.5 to fit the taller bar.
+
+Dynamic Styling: Update the <nav> element to use the new brand settings.
+
+Replace the static shadow class with a dynamic one based on brandSettings?.bottomNavShadow.
+
+Add a dynamic backdrop-blur-{size} class based on brandSettings?.bottomNavBlur (only apply if it's not "none").
+
+Update the backgroundColor style to use CSS color-mix with the new opacity setting. It should look similar to this:
+backgroundColor: brandSettings?.bottomNavBgColor ? \color-mix(in srgb, ${brandSettings.bottomNavBgColor} ${brandSettings.bottomNavOpacity ?? 100}%, transparent)` : 'var(--card)'`
+
+Execute this to give the administrator full UI control over the frosted glass and shadow effects while enforcing a strict native app height.

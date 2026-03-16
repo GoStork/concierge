@@ -1,0 +1,40 @@
+TASK NAME: Extract AI Concierge to Dedicated Settings Page & Implement Missing Logic
+
+Description:
+You just successfully implemented the AI Matchmakers, but I am pivoting the architecture. Do not keep the Matchmaker configuration inside the Brand Settings or the Branding Page. I want a dedicated Admin Settings page specifically for the AI Concierge. We also need to add missing fields and wire up the initial greeting logic.
+
+Step 1: Database & Schema Refactoring
+
+Update the existing Matchmaker Prisma model you just created.
+
+Add two new fields: isActive (boolean, default true) and initialGreeting (text).
+
+(You can keep the sortOrder field you already made instead of displayOrder).
+
+Run the necessary Prisma migrations and regenerate the client.
+
+Step 2: Extract to Dedicated Admin UI (client/src/pages/AdminConciergePage.tsx)
+
+Remove the MatchmakersAdmin component from the Branding Page.
+
+Create a new page: client/src/pages/AdminConciergePage.tsx.
+
+Move the entire Matchmaker CRUD interface (including the avatar upload) into this new page.
+
+Add form inputs for the two new fields: an isActive toggle and an initialGreeting textarea.
+
+In client/src/App.tsx, add the route: <Route path="/admin/concierge" element={<ProtectedRoute><AdminConciergePage /></ProtectedRoute>} />. Update the admin sidebar/navigation to link to this new page.
+
+Step 3: Update Matchmaker Selection Page
+
+In client/src/pages/MatchmakerSelectionPage.tsx, update the fetch logic to only display matchmakers where isActive === true, and ensure they are sorted by sortOrder.
+
+Step 4: Update Concierge Chat Page
+
+Update ConciergeChatPage.tsx so that the very first message the user sees in the chat UI is the initialGreeting pulled from the selected Matchmaker's profile in the database.
+
+Ensure the backend chat history array is initialized with this initialGreeting so the LLM has context of how the conversation started.
+
+Styling Rules:
+
+Continue to strictly use the dynamic Tailwind variables from our branding engine (e.g., bg-primary, rounded-[var(--radius)], font-display, font-body). No hard-coded hex codes.

@@ -1,0 +1,54 @@
+Task: Add a "Shadow Effect" control for the mobile bottom navigation bar in Brand Settings.
+
+Context: We are converting the bottom mobile navigation into a floating pill. To make the floating effect work, the administrator needs to be able to control the drop shadow from the Brand Settings page. Currently, the shadow is hardcoded in layout-shell.tsx.
+
+Action Plan:
+
+1. Update the Brand Settings Schema & Types:
+
+Locate the BrandSettings schema and type definitions (likely in shared/schema.ts and client/src/hooks/use-brand-settings.ts).
+
+Add a new optional string field: bottomNavShadow.
+
+Ensure BRAND_DEFAULTS includes bottomNavShadow: 'shadow-lg'.
+
+2. Update the Admin Brand Settings Page (client/src/pages/admin-brand-settings-page.tsx):
+
+Locate the "Bottom App Navigation" section inside the BrandSettingsForm component.
+
+Add a new Select dropdown for "Shadow Effect" below the "Bar Shape" control.
+
+Use this exact code for the new input:
+
+TypeScript
+<div className="space-y-1.5">
+  <Label className="text-sm font-medium">Shadow Effect</Label>
+  <Select
+    value={form.bottomNavShadow || "shadow-lg"}
+    onValueChange={(v) => updateField("bottomNavShadow", v)}
+    disabled={formDisabled}
+  >
+    <SelectTrigger data-testid="select-bottom-nav-shadow">
+      <SelectValue />
+    </SelectTrigger>
+    <SelectContent>
+      <SelectItem value="none">None</SelectItem>
+      <SelectItem value="shadow-sm">Small (Subtle)</SelectItem>
+      <SelectItem value="shadow-md">Medium</SelectItem>
+      <SelectItem value="shadow-lg">Large (Floating)</SelectItem>
+      <SelectItem value="shadow-xl">Extra Large (High Hover)</SelectItem>
+      <SelectItem value="shadow-2xl">Maximum Hover</SelectItem>
+    </SelectContent>
+  </Select>
+</div>
+3. Update the Mobile Layout Shell (client/src/components/layout-shell.tsx):
+
+Locate the inner <nav> element for the mobile bottom navigation.
+
+Remove the hardcoded shadow-[0_-2px_10px_rgba(0,0,0,0.08)] class from its className.
+
+Dynamically apply the shadow class based on the brand settings. The className string should look something like this:
+
+TypeScript
+className={`transition-all duration-300 ${brandSettings?.bottomNavShadow || 'shadow-lg'}`}
+Execute this so the administrator can instantly change how high the navigation pill appears to float above the content.

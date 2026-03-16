@@ -1,0 +1,35 @@
+Task: Upgrade the Template Engine to a Dual-Radius System by adding a containerRadius setting.
+
+Context: Currently, a single borderRadius variable controls everything. We need independent control over action elements (buttons) and structural containers (cards, inputs). We must add a new containerRadius variable to the database, UI, and CSS injection, and map our container components to use it.
+
+Action Plan:
+
+Database & Backend:
+
+Add a containerRadius (Float, default 0.5) field to SiteSettings and ProviderBrandSettings in prisma/schema.prisma. Run DB push and generate.
+
+Update server/src/modules/brand/brand.controller.ts to allow and validate containerRadius.
+
+State & CSS Injection:
+
+Add containerRadius to the BrandSettings frontend interface and defaults.
+
+In the applyBrandToDocument function, inject a new CSS variable: root.style.setProperty("--container-radius", \${settings.containerRadius}rem`);`
+
+UI Updates (Brand Settings Page):
+
+In client/src/pages/admin-brand-settings-page.tsx, rename the current radius section to "Action Shape (Buttons & Tags)".
+
+Add a second, identical set of controls (Dropdown + Slider) directly below it labeled "Container Shape (Cards & Inputs)" wired to form.containerRadius.
+
+Component Mapping:
+
+Open client/src/components/ui/card.tsx. Update its base class to use the new variable (e.g., replace rounded-xl or rounded-lg with a custom style or tailwind arbitrary value like rounded-[length:var(--container-radius)]). Ensure overflow-hidden is present so internal headers clip correctly.
+
+Open client/src/components/ui/input.tsx and apply the same rounded-[length:var(--container-radius)] logic.
+
+Provider Page Header Fix:
+
+Open the provider profile page file and locate the dark green header blocks (e.g., "Company Information", "CDC Success Rates"). Remove any explicit rounded-t-full or rounded-t-[calc(var(--radius))] classes, allowing the parent Card's overflow-hidden to handle the corners cleanly.
+
+Execute this full stack update and output a summary when complete.

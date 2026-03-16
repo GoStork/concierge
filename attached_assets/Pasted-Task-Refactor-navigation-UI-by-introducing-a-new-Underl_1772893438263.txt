@@ -1,0 +1,61 @@
+Task: Refactor navigation UI by introducing a new "Underline Tabs" component for main pages and completely removing tabs from the Auth page in favor of a classic text-link toggle.
+
+Context: We are abandoning the chunky "pill" style tabs for top-level navigation and auth.
+
+Main pages (Marketplace, Meetings) need a sleek, modern "underline" tab design.
+
+The Login/Auth screen needs to drop tabs entirely and use a traditional view-state toggle with text links at the bottom (e.g., "Don't have an account? Join us").
+
+We must keep the original tabs.tsx intact for small UI toggles (like grid vs. list view).
+
+Phase 1: Create and Apply Underline Tabs
+
+Create Component: Create a new file at client/src/components/ui/underline-tabs.tsx.
+
+Copy the base Radix UI imports and structure from tabs.tsx.
+
+Style TabsList as: flex h-10 items-center justify-start border-b border-border bg-transparent p-0
+
+Style TabsTrigger as: inline-flex items-center justify-center whitespace-nowrap px-4 py-2 text-sm font-ui text-muted-foreground ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none bg-transparent
+
+Export Tabs, TabsList, TabsTrigger, and TabsContent.
+
+Apply to Marketplace: Open client/src/pages/marketplace-page.tsx and change the import for the Tabs components to point to @/components/ui/underline-tabs.
+
+Apply to Meetings: Locate the page containing the Meetings/Appointments tabs (Upcoming, Past, etc.) and change its import to @/components/ui/underline-tabs.
+
+Phase 2: Refactor the Auth Page
+
+Open client/src/pages/auth-page.tsx.
+
+Remove the Tabs, TabsList, TabsTrigger, and TabsContent wrapper elements entirely.
+
+Introduce local state: const [authView, setAuthView] = useState<'login' | 'register'>('login');
+
+Update Header:
+
+If authView === 'login', render the header as "Login" (using font-heading text-primary or text-foreground).
+
+If authView === 'register', render the header as "Create Account".
+
+Remove the old "Welcome Back" text.
+
+Render Forms: Conditionally render the login form or registration form based on authView (do not wrap them in Tab components). Ensure all existing useAuth logic and form submissions remain perfectly intact.
+
+Add Footer Links:
+
+Below the Login form, add a container with two links: "Forgot password?" and "Don't have an account? Join us".
+
+Wire the "Join us" text to onClick={() => setAuthView('register')}.
+
+Below the Register form, add: "Already have an account? Login". Wire it to onClick={() => setAuthView('login')}.
+
+Style these links using text-sm text-muted-foreground hover:text-primary cursor-pointer transition-colors.
+
+Strict Guardrails:
+
+Do NOT alter client/src/components/ui/tabs.tsx in any way.
+
+Do NOT break existing authentication hooks or logic in auth-page.tsx.
+
+Execute this plan sequentially and output a summary of the files modified.

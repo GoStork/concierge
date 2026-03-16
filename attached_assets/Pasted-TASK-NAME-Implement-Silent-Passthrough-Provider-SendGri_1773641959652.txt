@@ -1,0 +1,44 @@
+TASK NAME: Implement Silent Passthrough & Provider SendGrid Notification
+
+Description:
+Now that the RAG engine is live, we need to bridge the gap when Eva "doesn't know." We need to implement the Silent Query database model, the Provider's response UI, and the automated SendGrid notification.
+
+Step 1: Database Model (Prisma)
+
+Create a SilentQuery model.
+
+Fields: id, parentUserId (hidden from provider), providerId, questionText, answerText (nullable), status (PENDING/ANSWERED), createdAt.
+
+Note: Ensure a many-to-one relation with the Provider model.
+
+Step 2: Trigger Logic & SendGrid Integration
+
+The AI Logic: Update the AI Router. When the RAG search returns low confidence and Eva says "I've whispered a message to the clinic," the system must:
+
+Create the SilentQuery record.
+
+Trigger a SendGrid Email to the Provider's admin email.
+
+Email Data: Send the questionText, the providerName, and a deep-link to the Provider's new "Unanswered Questions" dashboard.
+
+System Prompt Update: Instruct Eva to use the specific phrase: "I don't have that specific detail yet, but I've just whispered a message to the clinic's coordinator. I'll have that answer for you as soon as they reply!"
+
+Step 3: Provider "Whisper" UI (Dashboard)
+
+Add a new section to Provider Dashboard > Knowledge: "Unanswered AI Questions".
+
+UI: A clean table showing PENDING questions.
+
+Action: An "Answer" button that opens a text area.
+
+Logic: On submit, update the SilentQuery to ANSWERED and automatically create a new KnowledgeChunk from the answer so Eva learns it for the future.
+
+Step 4: The Relay Notification (Parent Side)
+
+When the Provider submits the answer, trigger a real-time notification (via Socket.io or In-App Notification) to the Parent.
+
+Eva's Follow-up: The next time the Parent opens the chat, Eva should lead with: "I have an update! I spoke with the clinic and they confirmed: [Answer]. Does that help, or are you ready to schedule a match call?"
+
+Step 5: The "Meet" Handoff
+
+Only if the Parent clicks [Schedule Match Call], trigger the [[HOT_LEAD]] tag and the 3-Way Chat bridge.

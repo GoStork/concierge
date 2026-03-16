@@ -1,0 +1,45 @@
+Task: Refine SwipeDeckCard UI for full immersion, fix tap zones, clean up badge data, and update the 5-button conversion array.
+
+Context: We need to finalize the swipe deck UI to match a premium native app. The card needs to be taller, buttons must float inside the image, tap zones are currently blocked by overlays, tags are showing raw object keys, and we are reprioritizing the action buttons to make "Chat" the center conversion event.
+
+Action Plan:
+
+Immersive Card & Layout:
+
+Increase the card's height to be highly immersive (e.g., h-[75vh] maxed at 800px, or aspect-[9/16]).
+
+Move the 5-button action row inside the main image container. Position it absolutely at the very bottom of the card, floating above the dark gradient.
+
+Update button styling: give them a dark translucent background (e.g., bg-black/40 backdrop-blur-md border-none or similar) so the colored icons pop cleanly against the photo.
+
+The New 5-Button Conversion Array:
+
+Reorder the buttons (Left to Right):
+
+Undo (Small, Amber)
+
+Pass (Large, Red X) -> Keep wired to swipe left physics.
+
+Chat (Small/Medium, Purple/Primary Accent) -> Center position.
+
+Save (Large, Green Heart) -> Keep wired to swipe right physics.
+
+Compare (Small, Blue)
+
+Fix Tap Zones (The Half-Photo Bug):
+
+The dark gradient and text overlay are intercepting click events. Apply pointer-events-none to the container holding the text/gradient so clicks pass through to the left/right tap zones.
+
+Re-enable pointer events only for specific clickable elements inside the overlay (Action Buttons, Up Arrow) using pointer-events-auto.
+
+Up Arrow Alignment:
+
+Move the "Up Arrow" button down so it is horizontally aligned with the Profile Name / Age row on the right side.
+
+Clean Up Tag Rendering:
+
+The Smart Preferences logic is currently rendering raw keys (e.g., "religion: Matched"). Update the rendering logic to display the human-readable value (e.g., "Jewish", "Green Eyes").
+
+Ensure tags are not duplicated. If a trait is highlighted as a "Matched Preference" at the top, omit it from the standard list below on Tab 1.
+
+Execute these UI refinements and let me know when it is ready to test.

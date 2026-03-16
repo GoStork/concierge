@@ -1,0 +1,49 @@
+Task: Implement a "Brand Templates" management system on the Admin Brand Settings page to allow saving, previewing, editing, and activating full brand configurations.
+
+Context: The current admin-brand-settings-page.tsx allows users to edit colors, typography, and logos, but only saves a single active state. We need to introduce a "Templates" feature so the admin can save the entire current configuration as a named template, easily swap between templates to preview them in the UI, and set one as the live active theme for the app.
+
+Action Plan:
+
+1. Database & Schema Updates:
+
+Create a new schema/table for brand_templates.
+
+Fields required: id (uuid/serial), name (string, e.g., "Dark Mode", "Hinge Style"), config (JSONB - this must store the complete payload of colors, typography settings, and logo/favicon URLs), and isActive (boolean).
+
+Create the necessary backend API routes (GET, POST, PUT, DELETE) to handle CRUD operations for brand_templates.
+
+Ensure the route to "Activate" a template sets isActive = true for the chosen template and isActive = false for all others, and instantly applies those settings to the global app configuration.
+
+2. Frontend UI - Template Manager:
+
+Open client/src/pages/admin-brand-settings-page.tsx.
+
+At the very top of the page, add a new Card component titled "Brand Templates".
+
+Inside this card, implement a dropdown menu (Select component) listing all saved templates.
+
+Add the following action buttons next to the dropdown:
+
+"Save Current as New": Opens a small dialog asking for a template name, then saves the current form state as a new template in the database.
+
+"Update Template": Overwrites the currently selected template with any new changes made in the form below.
+
+"Delete": Deletes the selected template (disable this button if it is the active template).
+
+"Activate Theme": Applies the currently selected template to the live application.
+
+3. State Management & Preview Logic:
+
+When the admin selects a different template from the dropdown, populate the entire Brand Settings form (colors, typography dropdowns, logo previews) with that template's config data.
+
+This should immediately update the existing "Theme Preview" cards on the right side of the screen so the admin can see the template before hitting "Activate Theme".
+
+Strict Guardrails:
+
+Do NOT break or remove the existing color pickers, typography selectors, or logo upload components.
+
+Ensure the JSON payload for the template explicitly captures every single variable currently managed on this page.
+
+Ensure that changing the dropdown only changes the local form state (preview) and does NOT change the live app until the "Activate Theme" button is clicked.
+
+Execute this plan step-by-step. Output a summary of the database changes and the files modified once complete.

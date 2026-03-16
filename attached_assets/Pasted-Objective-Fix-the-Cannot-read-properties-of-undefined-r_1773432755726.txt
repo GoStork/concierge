@@ -1,0 +1,108 @@
+Objective: Fix the "Cannot read properties of undefined (reading 'files')" crash in profile-sync.controller.ts by replacing FilesInterceptor with the custom parseMultipart logic used elsewhere in the app. The server does not use multer.
+
+Task 1: Remove Multer Dependencies
+
+In server/src/modules/providers/profile-sync.controller.ts, remove UseInterceptors and UploadedFiles from the @nestjs/common import.
+
+Remove import { FilesInterceptor } from "@nestjs/platform-express";.
+
+Task 2: Refactor the uploadPdfs Endpoint
+
+In profile-sync.controller.ts, locate the @Post("sync/pdf") endpoint.
+
+Remove @UseInterceptors(FilesInterceptor("files", 50)).
+
+Change the method signature to: async uploadPdfs(@Param("providerId") providerId: string, @Req() req: any, @Res() res: any)
+
+Replace the entire body of the uploadPdfs method with the following manual parsing logic (ensure you import parseMultipart from uploads.controller or copy the utility function into this file):
+
+TypeScript
+    const user = req.user;
+    if (!user) return res.status(403).json({ message: "Not authenticated" });
+
+    const isGostorkAdmin = user.roles?.includes("GOSTORK_ADMIN");
+    const isProviderAdmin = user.roles?.includes("PROVIDER_ADMIN");
+    if (!isGostorkAdmin && !isProviderAdmin) {
+      return res.status(403).json({ message: "Only admins can upload PDF profiles" });
+    }
+    if (!isGostorkAdmin && user.providerId !== providerId) {
+      return res.status(403).json({ message: "You can only upload to your own provider" });
+    }
+
+    const provider = await this.prisma.provider.findUnique({ where: { id: providerId } });
+    if (!provider) return res.status(404).json({ message: "Provider not found" });
+
+    const activeJob = getActiveSyncJob(providerId, "surrogate");
+    if (activeJob) {
+      return res.status(400).json({ message: "A sync job is already running for surrogates. Stop it first." });
+    }
+
+    const contentType = req.headers["content-type"] || "";
+    if (!contentType.includes("multipart/form-data")) {
+      return res.status(400).json({ message: "Content-Type must be multipart/form-data" });
+    }
+
+    const boundaryMatch = contentType.match(/boundary=(.+)/);
+    if (!boundaryMatch) {
+      return res.status(400).json({ message: "Missing boundary in content-type" });
+    }
+
+    const chunks: Buffer[] = [];
+    let totalSize = 0;
+    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB limit for bulk PDFs
+
+    req.on("data", (chunk: Buffer) => {
+      totalSize += chunk.length;
+      if (totalSize > MAX_FILE_SIZE) {
+        req.destroy();
+        return res.status(413).json({ message: "Payload too large. Maximum size is 50MB." });
+      }
+      chunks.push(chunk);
+    });
+
+    req.on("end", () => {
+      try {
+        const body = Buffer.concat(chunks);
+        const boundary = boundaryMatch[1];
+        
+        // Minimal inline multipart parser for multiple files
+        const boundaryBuffer = Buffer.from(\`--\${boundary}\`);
+        const parts: Buffer[] = [];
+        let start = 0;
+        while (true) {
+          const idx = body.indexOf(boundaryBuffer, start);
+          if (idx === -1) break;
+          if (start > 0) parts.push(body.subarray(start, idx));
+          start = idx + boundaryBuffer.length;
+        }
+
+        const pdfFiles: Array<{ originalname: string; buffer: Buffer }> = [];
+        for (const part of parts) {
+          const headerEnd = part.indexOf("\\r\\n\\r\\n");
+          if (headerEnd === -1) continue;
+          const headerStr = part.subarray(0, headerEnd).toString("utf-8");
+          if (!headerStr.includes("filename=")) continue;
+          
+          const filenameMatch = headerStr.match(/filename="([^"]+)"/);
+          const filename = filenameMatch?.[1] || "upload.pdf";
+          
+          if (!filename.toLowerCase().endsWith(".pdf") && !headerStr.includes("application/pdf")) continue;
+
+          let dataStart = headerEnd + 4;
+          let dataEnd = part.length;
+          if (part[dataEnd - 1] === 0x0a && part[dataEnd - 2] === 0x0d) dataEnd -= 2;
+          
+          pdfFiles.push({ originalname: filename, buffer: part.subarray(dataStart, dataEnd) });
+        }
+
+        if (pdfFiles.length === 0) {
+          return res.status(400).json({ message: "No valid PDF files found in upload" });
+        }
+
+        const jobId = startPdfSync(this.prisma, this.storageService, providerId, pdfFiles);
+        return res.status(201).json({ jobId });
+      } catch (err) {
+        return res.status(500).json({ message: "Failed to process upload" });
+      }
+    });
+Please execute these 2 tasks using Extended Thinking mode.

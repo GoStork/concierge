@@ -1,0 +1,59 @@
+Task: Build the comprehensive SwipeDeckCard component with drag/tap physics, 5-button action row, and exact GoStork data tab mappings.
+
+Context: We are building a mobile-first swipe deck for the Marketplace. It requires complex framer-motion physics (drag to pass/save), invisible tap zones to cycle through photo tabs, and highly specific data rendering for Egg Donors and Surrogates, including floating status badges and financial data.
+
+Action Plan:
+
+Component Architecture & Types: * Create client/src/components/marketplace/swipe-deck-card.tsx.
+
+Define strict TypeScript interfaces for the profileData prop to include providerType ('donor' | 'surrogate'), statusBadge ('New' | 'Experienced' | null), and attributes matching the GoStork schema (Age, Height, BMI, Comp, Total Cost, Pregnancy History summary, etc.).
+
+Physics & Navigation (Framer Motion):
+
+Wrap the card in a motion.div with drag="x".
+
+Set thresholds: Dragging far left triggers onPass(). Dragging far right triggers onSave().
+
+Tap Zones: Create absolute-positioned left (50%) and right (50%) invisible divs over the image. Clicking them updates activeTabIndex to cycle photos. Ensure tap zones do not block the drag gesture.
+
+Add segmented progress bars at the top of the image reflecting images.length and highlighting activeTabIndex.
+
+The "Smart Pin" Preference Engine:
+
+Write a helper function that compares profileData.attributes against a userPreferences array.
+
+If there are matches, render a highlighted tag on Tab 0 saying "Matched {count} Preferences" followed by those specific tags.
+
+Dynamic Tab Data & Overlays:
+
+Render a dark gradient overlay at the bottom. Include an "Up Arrow" button on the right edge to "View Full Profile".
+
+Floating Status: Above the Name/Age, conditionally render a custom Badge for statusBadge (e.g., "Experienced Surrogate") that stays visible across all tabs.
+
+Donor Tabs: * Tab 0: ID, Age, Location, [Smart Tags].
+
+Tab 1: Height, Weight, Hair, Eye, Ethnicity, Religion.
+
+Tab 2: Education, Donation Type, Compensation, Total Cost.
+
+Surrogate Tabs:
+
+Tab 0: ID, Age, Location, [Smart Tags].
+
+Tab 1: BMI, COVID Vax, Live Births, C-Sections, Last Delivery Year.
+
+Tab 2: Relationship, Occupation, Agrees to Twins, Agrees to Reduction.
+
+Tab 3: Compensation, Total Cost.
+
+Use the standard <Badge> component for all data tags so they inherit the global pill radius.
+
+The 5-Button Action Row:
+
+Below the photo, build a flex container with 5 circular buttons (Small, Large, Small, Large, Small).
+
+Icons: Undo (Yellow), Pass (Red X), Compare (Blue), Save (Green Heart), Message (Purple).
+
+Wire the Pass and Save buttons to trigger the exact same framer-motion swipe animations.
+
+Execute this comprehensive build and output a summary when ready to test.

@@ -1,0 +1,51 @@
+TASK NAME: Build Provider Self-Service Knowledge Base & Secure RAG Engine
+
+Description:
+I need to implement the "Hierarchy of Truth" (Pillar 2) to ensure the AI Concierge provides 100% accurate, proprietary information. This requires setting up a Vector Database (pgvector), a provider-facing document vault, and a "Global Guidance" dashboard for GoStork Admins.
+
+Step 1: Database & Vector Setup (The Brain's Library)
+
+Vector Architecture: Enable pgvector in the database. Create a KnowledgeEmbeddings table to store text chunks, metadata, and 1536-dimensional vectors.
+
+Multi-Tenant Permissions: Every embedding must be tagged with a sourceTier (1-4) and a providerId (if applicable).
+
+The Permission Firewall: Update the RAG search logic so that when the AI is discussing "Clinic A," it is strictly forbidden from accessing "Clinic B’s" private documents.
+
+Step 2: Provider Self-Service Portal (The "Vault")
+
+Provider Admin UI: Build a "Knowledge & AI Settings" tab in the Provider Dashboard.
+
+Document Uploader: A drag-and-drop zone for PDF, Docx, and CSV files (Cost Sheets, Contracts, Medical FAQs).
+
+Website Sync: Display their current website_url with a "Sync AI Memory" button. Clicking this should trigger a background crawl of their site to update Eva's memory.
+
+Step 3: GoStork Admin Knowledge Dashboard
+
+Build a "Knowledge Management" tab in the GoStork Admin Settings.
+
+Bulk Sync: A "Sync All Providers" button that crawls the URLs of all 1,000+ providers in the database using a rate-limited scraper.
+
+Expert Guidance Rules: Add a specialized text area for "If/Then" logic.
+
+Example: "If a user asks about Mexico surrogacy, mention that GoStork only works with clinics that have on-site legal teams."
+
+These rules must be injected into the AI's "Expert Consultant" guidance loop.
+
+Step 4: Implement the "Hierarchy of Truth" RAG Protocol
+Update the AI Concierge backend to follow this retrieval sequence:
+
+Tier 1 (Private Vault): Check the specific Provider's uploaded files and website data.
+
+Tier 2 (Global KB): Check GoStork's internal guidelines and expert rules.
+
+Tier 3 (General Memory): Use general knowledge only for conversational empathy.
+
+The 95% Confidence Rule: If the answer is not found in Tiers 1 or 2, the AI must say: "I don't have that specific administrative detail in my records yet, but I've pinged the provider to get that for you." (Triggering the Passthrough Protocol).
+
+Step 5: Technical Processing
+
+Use text-embedding-3-small for embeddings.
+
+Use a library like pdf-parse for document extraction.
+
+Ensure the scraper handles basic Javascript-rendered content (use a lightweight headless browser if necessary).

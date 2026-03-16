@@ -1,0 +1,48 @@
+ASK NAME: Extract AI Concierge to Dedicated Settings Page & Implement Backend Logic
+
+Description:
+I am pivoting the architecture for the AI Matchmakers. Do not keep the Matchmaker configuration inside the Brand Settings or the Branding Page. I want a dedicated Admin Settings page specifically for the AI Concierge. We also need to add missing fields and wire up the backend AI system prompt logic.
+
+Step 1: Database & Schema Refactoring
+
+Remove the matchmakers array from the BrandSettings schema if you already added it.
+
+Create a new, independent database table/schema for Matchmakers.
+
+The schema must include: id (string), name (string), title (string), description (string), avatarUrl (string), personalityPrompt (text), isActive (boolean), initialGreeting (text), and displayOrder (number).
+
+Create a dedicated API route (/api/matchmakers) to handle CRUD operations for this table.
+
+Step 2: Create Dedicated Admin UI (client/src/pages/AdminConciergePage.tsx)
+
+Create this new page for managing the AI Concierge.
+
+Build a CRUD interface to add, edit, delete, and reorder matchmakers.
+
+Include the image upload component for the avatarUrl.
+
+Add form inputs for the new fields: an isActive toggle, an initialGreeting textarea, and a displayOrder number input.
+
+In client/src/App.tsx, add the route: <Route path="/admin/concierge" element={<ProtectedRoute><AdminConciergePage /></ProtectedRoute>} />. Update the admin sidebar/navigation to link to this new page.
+
+Step 3: Update Frontend Hooks & Selection Page
+
+Create a new hook (use-matchmakers.ts) to fetch the data from the new /api/matchmakers endpoint.
+
+In client/src/pages/MatchmakerSelectionPage.tsx, use this new hook. Only display matchmakers where isActive === true, and sort the grid by displayOrder.
+
+Update ConciergeChatPage.tsx so the very first message the user sees in the chat UI is the initialGreeting pulled from the selected Matchmaker's profile.
+
+Step 4: Backend AI Integration (The Brains)
+
+Create or update the backend chat endpoint (e.g., /api/chat/concierge).
+
+When the frontend sends a chat payload, it must include the selected matchmakerId.
+
+System Prompt Injection: On the backend, retrieve the personalityPrompt for that matchmakerId. You must inject this directly into the LLM's system prompt (e.g., "You are an AI Concierge for GoStork. Your personality is: [personalityPrompt]").
+
+Ensure the backend chat history array is initialized with the initialGreeting so the LLM has context of how the conversation started.
+
+Styling Rules:
+
+Continue to strictly use the dynamic Tailwind variables from our branding engine (e.g., bg-primary, rounded-[var(--radius)], font-display, font-body). No hard-coded hex codes.

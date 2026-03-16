@@ -1,0 +1,26 @@
+Objective: Safely optimize the speed of the enrichment scraper and fix search failures caused by quoted exact-match searches on complex CDC clinic names.
+
+Task 1: Safe Concurrency for Photo Guessing (providers/scrape.service.ts)
+
+In guessPhotoUrls, change the batching loop from for (let i = 0; i < candidates.length; i += 3) to for (let i = 0; i < candidates.length; i += 10). This allows 10 simultaneous checks instead of 3.
+
+In scrapeProviderWebsite, locate the loop for (let i = 0; i < membersNeedingPhotos.length; i += 3). Change this to i += 15. This speeds up the checks without looking like a DDoS attack to Cloudflare.
+
+Task 2: Parallelize the Year Founded Search (providers/scrape.service.ts)
+
+Do not wait for the main prompt to finish before searching for the year.
+
+Right before const result = await model.generateContent(prompt);, declare:
+const yearFoundedPromise = searchYearFounded(jsonLdData.name || new URL(normalizedUrl).hostname, normalizedUrl);
+
+Below the main JSON parsing, locate the block if (yearFounded === null && parsed.name) { ... } and completely replace it with:
+if (yearFounded === null) { yearFounded = await yearFoundedPromise; }
+
+Task 3: Smarter Clinic Search Prompt (providers/clinic-enrichment.service.ts)
+
+The current prompt uses hardcoded quotes (Search for "${clinicName}") which forces exact-match Google searches and fails on messy CDC names.
+
+Replace the const prompt = ... variable definition in findClinicWebsite with this exact string:
+const prompt = \Find the official website for the fertility clinic/provider: ${clinicName} ${locationPart ? `located in ${locationPart}` : ""}. \n\nInstructions:\n1. Clean the name: Remove legal suffixes (LLC, Inc, Corp, Corporation, PC, LTD), "dba", or secondary hospital names. If the name has a comma (e.g., "ACFS Fertility, Arizona Associates..."), search using just the primary brand name.\n2. Use the Google Search tool to find them. If they are part of a larger hospital system (e.g., AHN, Aurora Health, Brooke Army), return the specific sub-page for their fertility/reproductive endocrinology department.\n3. Return ONLY the bare URL string (starting with https:// or www.). No other text. NEVER return Yelp, Healthgrades, FertilityIQ, WebMD, or Facebook. If you cannot find it, return "null".`;`
+
+Please execute these 3 tasks using Extended Thinking mode. Do NOT modify the 400,000 character limits in the scraper.

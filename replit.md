@@ -1,0 +1,67 @@
+## Overview
+
+GoStork is a multi-tenant fertility marketplace designed to connect Intended Parents with fertility service Providers (IVF Clinics, Egg Donor Agencies, Surrogacy Agencies, Egg/Sperm Banks, Legal Services). The platform aims to streamline the discovery, comparison, scheduling, and engagement processes within the fertility industry. Key capabilities include comprehensive provider profiles, enhanced user experience, improved operational efficiency, and integration of AI for advanced analytics, cost sheet processing, and sophisticated booking functionalities. The business vision is to become the leading digital marketplace for fertility services, offering significant market potential by simplifying a complex and emotionally charged journey for Intended Parents.
+
+## User Preferences
+
+Always use Claude Opus 4.6 for all coding, planning, and debugging tasks in this project. Apply maximum effort to security and multi-tenant logic.
+
+**No dialogs/modals/popups:** Always use full pages or inline expandable sections instead of dialogs, modals, or popups. The app is designed with future native mobile apps in mind, where modals don't translate well. Dialogs are only acceptable for simple destructive-action confirmations (e.g., "Are you sure you want to delete?").
+
+**No duplicate code:** Always reuse existing components, utilities, and logic. Before writing new code, check if similar functionality already exists elsewhere in the codebase. Extract shared logic into reusable components or utility files rather than copying across pages or features.
+
+**Always use brand settings — never hardcode visual styles:** All colors, button shapes, typography (font families, weights, sizes), and border radii must come from the brand CSS variables (e.g., `--primary`, `--brand-success`, `--brand-warning`, `--foreground`, `--muted`, `--radius`, `font-heading`, `font-body`, `font-ui`). Never hardcode hex colors, Tailwind color utilities (e.g., `bg-amber-500`), font families, or border-radius values. Always reference the brand system so the entire app stays consistent and can be restyled from the Brand Settings page.
+
+**Preserve tab/view state on navigation:** All tab state in pages must be stored in URL search params (via `useSearchParams` with `{ replace: true }`), Redux, or sub-routes — never in local `useState`. This ensures the browser back button always returns users to the exact tab they were on. Every back button must navigate to the correct page AND tab. Use `navigate(-1)` when the source page varies, or explicit URLs with `?tab=` params when the destination is fixed.
+
+**All notifications must use SendGrid and Twilio templates:** Every email notification must use a SendGrid dynamic template (`templateId` + `templateData` via `dispatchNotification`). Every SMS notification must use a Twilio Content Template (`contentSid` + `contentVars` via `dispatchSmsTemplate`). Never hardcode HTML email bodies or send raw plain-text SMS. If the required templates don't exist yet, create them first via the SendGrid and Twilio APIs before writing the notification code.
+
+## System Architecture
+
+**UI/UX Decisions:**
+-   Prioritizes full pages for entity creation/editing.
+-   Reserves dialogs exclusively for simple destructive-action confirmations.
+-   Enforces single page scrolls without inner scrollbars.
+-   Utilizes a consistent brand system for all visual styles (colors, typography, spacing) via CSS variables.
+-   Mobile-responsive design featuring horizontal top navigation for desktop and a fixed bottom tab bar for mobile.
+-   Marketplace uses `SwipeDeckCard` for unified display, supporting multi-column grids for desktop and single-card swipe decks for mobile with drag gestures.
+-   Multi-step onboarding flow with single-question-per-page, full-screen layout, progress bar, and smooth transitions.
+-   AI Matchmaker selection features animated transitions and personalized greetings.
+
+**Technical Implementations & Design Choices:**
+-   **Backend Framework:** NestJS with Prisma ORM and PostgreSQL for data management.
+-   **Authentication:** Dual-mode (Passport.js for web, JWT for mobile) with Redis for session management and multi-role RBAC.
+-   **Calendar & Scheduling:** Calendly-like system (`ScheduleConfig`, `AvailabilitySlot`) supporting Google, Microsoft, and Apple Calendar integrations, timezone-aware slot generation, and configurable blocks.
+-   **Notification System:** SendGrid for email and Twilio for SMS, exclusively using dynamic templates.
+-   **AI-Powered Data Management:** Google Gemini for scraping and syncing donor/provider profiles, handling nightly updates, stale data detection, and bulk PDF uploads (using `pdfjs-dist`, `pdf-parse`, `sharp`, and multimodal Gemini for visual OCR fallback). Also for dynamic cost sheet parsing (PDF/Excel) with admin approval workflows.
+-   **Marketplace Gating:** Visibility of providers and donors is gated based on service approval status.
+-   **Telehealth:** HIPAA-compliant video calls via Daily.co with consent-gated recording to Google Cloud Storage and Google Speech-to-Text transcription.
+-   **In-App Notifications:** Database-backed, real-time system using Server-Sent Events (SSE) for cost sheet and booking events.
+-   **Frontend Framework:** React with Vite, React Router v6, TanStack Query, shadcn/ui components, and Redux Toolkit.
+-   **State Management:** Redux for global state, and URL search params/sub-routes for tab/view state persistence.
+-   **AI Matchmaker System:** Configurable AI concierge personas (`Matchmaker` DB model) with `personalityPrompt` and `initialGreeting`. AI router injects full user context into prompts and implements a Biological Master Logic decision tree. Features interactive UI via structured tags (`[[QUICK_REPLY]]`, `[[CURATION]]`, `[[MATCH_CARD]]`) and `[[SAVE]]` for profile updates. Includes `[[HOT_LEAD]]` for admin notifications and prep doc delivery, and `[[HUMAN_NEEDED]]` for human escalation.
+-   **Human Escalation & Prep Doc Delivery:** `[[HOT_LEAD]]` triggers automated match call prep doc delivery — branded SendGrid email with PDF content + in-chat `PrepDocCard` smart card with 4 sections and download link. `[[HUMAN_NEEDED]]` tag sets `humanRequested` on session, sends `HUMAN_ESCALATION` in-app notifications to GOSTORK_ADMIN users. Parent chat shows "Talk to GoStork Team" button; human messages display with "GoStork Expert" badge. Session message polling (`GET /api/ai-concierge/session/:id/messages`) enables real-time human replies in parent chat.
+-   **Admin Concierge Command Center:** `/admin/concierge-monitor` page with session list, escalation badges, profile sidebar, and live chat takeover. APIs: `GET /api/admin/concierge-sessions`, `GET /api/admin/concierge-sessions/:id`, `POST /api/admin/concierge-sessions/:id/message`. Human messages saved with `senderType: "human"` and `senderName`. Schema: `AiChatSession` has `humanRequested`, `humanJoinedAt`, `humanAgentId`; `AiChatMessage` has `senderType` (ai/human/system) and `senderName`.
+-   **Profile Data Integration:** Comprehensive user profile management editable via My Account page, with robust validation and transactional updates.
+-   **CDC Data Pipeline:** Admin dashboard for managing CDC Socrata dataset syncing, staging, enrichment, and scraping via SART API and Google Gemini.
+-   **Provider Self-Service Knowledge Base & RAG Engine:** `pgvector`-powered with `KnowledgeChunk` and `ExpertGuidanceRule` models. Supports document uploads (PDF/CSV/TXT/DOCX) and website content sync. Uses OpenAI embeddings for similarity search, integrating relevant knowledge chunks and expert guidance rules into the AI router's system prompt. Includes tenant isolation and SSRF protection.
+-   **Silent Passthrough & Whisper Protocol:** When AI concierge can't answer a provider-specific question, `[[WHISPER:PROVIDER_ID]]` tag creates an anonymous `SilentQuery` record. Providers see unanswered questions in Knowledge tab, can respond which auto-ingests into KB and notifies parent. On next chat, answered whispers are injected into AI context. Model: `SilentQuery`. API: `GET /api/knowledge/whispers`, `POST /api/knowledge/whispers/:id/answer`.
+-   **Provider Consultation Booking:** `[[CONSULTATION_BOOKING:PROVIDER_ID]]` tag in AI router fetches provider's booking config, builds a `consultationCard` (id, name, logo, bookingUrl, iframeEnabled, email), sends `CONSULTATION_REQUESTED` admin notifications, associates provider with session (`providerId` on `AiChatSession`), and strips tag from message. Provider model has `consultationBookingUrl` (String?) and `consultationIframeEnabled` (Boolean). Provider profile settings include "Scheduling & Consultations" section in company-tab.tsx. Frontend `ConsultationBookingCard` renders in chat; `BookingOverlay` supports iframe booking (if provider enables it), external link, or Request Callback fallback form. Callback endpoint `POST /api/consultation/request-callback` sends HTML-escaped email via SendGrid. URL validated as proper URL in schema. Journey stage updates to "Consultation Requested".
+-   **3-Way Co-Pilot Chat (Parent, Provider, Eva):** Expanded chat architecture enabling providers to join parent conversations. `AiChatSession` has `providerId` (String?) and `providerJoinedAt` (DateTime?). When consultation is requested, provider is linked to session. Provider "Live Conversations" page at `/provider/conversations` shows sessions associated with their provider. Provider can join (creates system announcement from Eva), send messages with `senderType: "provider"` and "Agency Expert" badge, and update consultation status (Ready for Match → journeyStage "Match Eligibility" / Not a Fit → journeyStage "Consultation - Not a Fit"). Parent chat polls for provider and system messages; shows distinct badges (green "Agency Expert" for provider, purple "Eva" for system). Admin Concierge Monitor sees all 3-way chats with Provider Active/Assigned badges and provider message styling. APIs: `GET/POST /api/provider/concierge-sessions/*` (list, detail, join, message, consultation-status). Auth uses `isProviderUser()` helper checking provider roles array OR GOSTORK_ADMIN with providerId.
+
+## External Dependencies
+
+-   **PostgreSQL (Supabase):** Primary database.
+-   **Redis:** Session store.
+-   **Google Gemini 2.0 Flash / 2.5 Flash:** AI for scraping, background removal, and data extraction.
+-   **SendGrid:** Email notifications.
+-   **Twilio:** SMS notifications.
+-   **Google Calendar API:** Calendar synchronization.
+-   **Microsoft Graph API:** Outlook/Office 365 Calendar synchronization.
+-   **CalDAV (via `tsdav` library):** Apple iCloud Calendar synchronization.
+-   **Daily.co:** Video conferencing.
+-   **Google Cloud Storage:** Recording storage and cost sheet file storage.
+-   **Google Speech-to-Text API:** Transcription.
+-   **OpenAI:** Embeddings for RAG engine (text-embedding-3-small).
+-   **Statically served uploads:** For user-uploaded images.
+-   **Image Proxy:** For external images.

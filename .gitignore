@@ -1,0 +1,13 @@
+node_modules
+dist
+.DS_Store
+server/public
+vite.config.ts.*
+*.tar.gz
+.env
+public/
+*.png
+*.jpg
+*.jpeg
+/generated/prisma
+dump.rdb

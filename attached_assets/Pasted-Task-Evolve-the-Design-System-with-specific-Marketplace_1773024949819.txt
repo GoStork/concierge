@@ -1,0 +1,53 @@
+Task: Evolve the Design System with specific "Marketplace Action Colors" for a high-saturation, premium UI.
+
+Context: We are moving away from hardcoded utility colors and generic brand colors for our swipe actions. We are creating dedicated slots in the Brand Settings so that the "Pass", "Save", "Undo", "Chat", and "Compare" buttons can be tuned for maximum saturation and visibility without breaking the core brand scheme.
+
+Action Plan:
+
+Update Brand Schema & Defaults:
+
+In client/src/hooks/use-brand-settings.ts, add the following keys to the BrandSettings interface and BRAND_DEFAULTS object:
+
+swipePassColor (Default: #FF4B4B)
+
+swipeSaveColor (Default: #2DE182)
+
+swipeUndoColor (Default: #FFB300)
+
+swipeChatColor (Default: #9B51E0)
+
+swipeCompareColor (Default: #2D9CDB)
+
+Update applyBrandToDocument to set these as CSS variables: --swipe-pass, --swipe-save, --swipe-undo, --swipe-chat, and --swipe-compare.
+
+Enhance Admin Brand Page:
+
+Open client/src/pages/admin-brand-settings-page.tsx.
+
+Add a new section under "Color System" titled "Marketplace Action Colors".
+
+Implement five ColorInput components using the new keys.
+
+Add a brief description: "These vibrant colors are used exclusively for the high-energy swipe actions in the marketplace to ensure clear visual feedback."
+
+Update Swipe Card Typography & Action Row:
+
+Open client/src/components/marketplace/swipe-deck-card.tsx.
+
+Action Row Buttons: Remove all hardcoded color classes (e.g., text-red-500, text-green-500) from the Button children.
+
+Use the new CSS variables for the icon colors:
+
+Undo: style={{ color: 'var(--swipe-undo)' }}
+
+Pass: style={{ color: 'var(--swipe-pass)' }}
+
+Chat: style={{ color: 'var(--swipe-chat)' }}
+
+Save: style={{ color: 'var(--swipe-save)' }}
+
+Compare: style={{ color: 'var(--swipe-compare)' }}
+
+Typography Fix: Locate the title and statusLabel sections. Ensure the title uses the brand's font-heading variable and the statusLabel uses the font-body variable to maintain brand consistency.
+
+Execute this architectural update to lock in a professional, configurable, and high-energy discovery engine.

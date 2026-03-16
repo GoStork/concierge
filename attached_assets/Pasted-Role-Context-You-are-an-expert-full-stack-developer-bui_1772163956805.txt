@@ -1,0 +1,80 @@
+Role & Context:
+You are an expert full-stack developer building a universal calendar integration and scheduling system for our platform, GoStork. This feature is for GoStork team members and team members of a provider. It must function exactly like Calendly, allowing two-way calendar sync, availability management, public booking pages, as well as the ability to actively send invites.
+
+Core Objectives:
+
+Universal Calendar Sync: Implement a unified calendar architecture (assume we will use a service like Nylas, Cronofy, or Cal.com API) that supports OAuth and real-time bi-directional sync for any major calendar provider (Google Calendar, Apple iCloud, Microsoft Exchange/Outlook/365, Yahoo, etc.).
+
+Scheduling Rules: Provide a dynamic configuration panel to set the time zone, availability, meeting durations, and buffer times.
+
+Visual Interface: Build a visual calendar dashboard where the user can see their external calendar events (masked for privacy) alongside their GoStork appointments, manually block out time, and toggle between a visual grid and a list view.
+
+Static Link Generation: Automatically generate a single, persistent video conferencing link (e.g., Google Meet, Teams, Zoom) when a user configures their calendar. This link will be used for all their booked appointments, rather than generating a new link per booking.
+
+Active Outbound Scheduling: Enable GoStork team members and provider team members to proactively schedule meetings and send calendar invites directly to other people (e.g., intended parents).
+
+Tech Stack Requirements:
+
+Calendar UI Component: Use react-big-calendar or FullCalendar for the visual dashboard.
+
+Backend/Database: Supabase for database schemas and edge functions, or Next.js API routes.
+
+Integration Strategy: Mock the unified API connection (e.g., a generic connectUniversalCalendar() function). The code must be structured so we can easily plug in the actual unified calendar API keys later.
+
+Detailed Feature Requirements:
+
+1. Universal Integration Hub (The "Connect" Page)
+
+A clean UI with a primary "Connect Your Calendar" CTA.
+
+This button should trigger a mock modal/flow representing the unified provider's authentication screen, allowing the user to select their specific provider (Google, Apple, Microsoft, etc.).
+
+Display clear status indicators (Connected / Disconnected) with an option to revoke access at any time.
+
+2. Calendar Configuration Settings (The "Rules" Page)
+
+Time Zone Selector: Auto-detect the user's timezone but allow manual override.
+
+Dynamic Availability Matrix: A list allowing users to set working hours per day. Crucially, allow multiple time blocks per day (e.g., Mon 9 AM - 12 PM, 1 PM - 5 PM).
+
+Meeting Parameters: * Default meeting duration dropdown (15, 30, 45, 60 mins).
+
+Minimum notice required before a booking (e.g., 24 hours).
+
+Buffer time between meetings (e.g., 15 mins).
+
+Meeting Details: Subject line template and an auto-generated description template. Upon configuration, the system must automatically generate and display the user's persistent video meeting link, which will be attached to all future bookings.
+
+3. Visual Calendar Dashboard (The "View" Page)
+
+View Modes: A robust calendar view with a toggle to switch between a visual grid (Day, Week, Month) and a clean, linear List View of upcoming meetings.
+
+External Events: Fetch and display events from the connected universal calendar. In the grid view, these must show up as solid blocks simply labeled "Busy" to protect the user's private data.
+
+GoStork Appointments: Display bookings made through GoStork in a distinct brand color. Clicking these (in either grid or list view) opens a modal with the intended parent's details, meeting subject, and the video link.
+
+Manual Time Blocking: Allow the user to click and drag (or select dates/times) directly on the GoStork calendar interface to manually block off specific time slots, full days, or entire weeks. These blocks must prevent any public bookings during those periods.
+
+4. Public Booking Interface (Inbound)
+
+A clean, user-facing scheduling page where intended parents can book a time with the team member.
+
+Display a date picker. When a date is clicked, show available time slots dynamically calculated by cross-referencing the team member's "Availability Matrix" rules against both their "Busy" blocks from the synced universal calendar and any "Manual Time Blocks" created in GoStork.
+
+5. Active Outbound Scheduling
+
+The GoStork or provider team member must have a "Create Appointment" button on their dashboard.
+
+Clicking this opens a modal allowing them to manually select a date and time.
+
+For the recipients, they can manually input emails and names, or select from a dropdown/search of existing intended parents/users who have already contacted them. They must have the ability to invite multiple users to a single appointment.
+
+This outbound invite must instantly dispatch a calendar invite to all selected parties, automatically include the team member's persistent video link, and instantly block that time slot on the calendar.
+
+Output Instructions:
+
+Start by generating the TypeScript interfaces/database schema needed to store a user's availability rules, manual time blocks, their persistent meeting link, and their unified calendar access tokens.
+
+Generate the frontend components for the Integration Hub, the Configuration Settings, the Visual Calendar Dashboard, and the Outbound Scheduling Modal.
+
+Ensure the UI is highly polished, modern, structured, and ready for implementation. Use cards, clear typography, and intuitive toggles.

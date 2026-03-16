@@ -1,0 +1,59 @@
+Goal: Merge the IVF Clinic Marketplace feature into this Concierge project by mapping the clinic data into our existing Provider architecture.
+
+1. Database Schema (prisma/schema.prisma):
+
+Add a new model: IvfSuccessRate.
+
+Fields: id (String UUID), providerId (String, FK to Provider), profileType, metricCode, submetric, ageGroup, isNewPatient, successRate (Decimal), cycleCount (Int), percentile (Decimal), top10pct (Boolean), nationalAverage (Decimal).
+
+Add ivfSuccessRates IvfSuccessRate[] to the existing Provider model.
+
+Run npx prisma db push and npx prisma generate.
+
+2. Data Migration / Seed Script (scripts/migrate-ivf-clinics.ts):
+
+Write a script to fetch the IVF clinic and success rate JSON data directly from our public GitHub repository: https://raw.githubusercontent.com/GoStork/success-rates/main/public/data/ (you will need to fetch clinics.json and the corresponding success rate files).
+
+For each clinic:
+
+Create a Provider record (if it doesn't exist by name).
+
+Link it to a ProviderType named "IVF Clinic" (create it if it doesn't exist) via ProviderService.
+
+Create a ProviderLocation using the clinic's address, city, state, and zip.
+
+Bulk insert (createMany) their IvfSuccessRate records linking to the new Provider.id.
+
+3. Backend Updates (NestJS):
+
+Update server/providers/providers.controller.ts (or the relevant service).
+
+Ensure the GET /api/providers/:id endpoint includes ivfSuccessRates: true in its Prisma query so the frontend receives the CDC data.
+
+4. Frontend Profile UI (client/src/pages/ProviderProfilePage.tsx):
+
+Add a new section below "Company Information".
+
+Condition: if (provider.ivfSuccessRates && provider.ivfSuccessRates.length > 0).
+
+Implement the CDC Success Rates UI:
+
+Display the highest success rate prominently (e.g., "84.8% Chance of live birth per IVF cycle").
+
+Add the "Top 10% for your profile" badge (green background) if top10pct is true.
+
+Recreate the comparison bar charts (This clinic vs. National average).
+
+Add the "Detailed statistics" accordion (use shadcn Accordion or collapsible state) showing the table of Metric, Value, Nat. Avg, and Diff.
+
+Use our existing SectionHeader component for consistency.
+
+5. Frontend Card UI (client/src/components/marketplace/ProviderCard.tsx):
+
+If the provider has ivfSuccessRates, render the green "Top 10%" badge in the card header and a simplified success rate bar in the CardContent.
+
+Constraints:
+
+Do not alter the existing Provider fields; only append the new IVF data.
+
+Ensure all new percentage values use Prisma's Decimal type to prevent rounding errors.

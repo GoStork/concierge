@@ -1,0 +1,114 @@
+Objective
+Expand the Typography design system on both the Admin and Provider Branding Pages by adding new typography control fields (type scale ratio, font weights, line heights, letter spacing, button text case, link decoration) and perform a global codebase scan to replace hardcoded typography Tailwind classes with new semantic brand classes.
+
+Tasks
+
+T001: Database Schema & Backend Updates
+Blocked By: []
+Details: Add 10 new fields to SiteSettings and ProviderBrandSettings models in prisma/schema.prisma:
+
+typeScaleRatio Float @default(1.25)
+
+smallTextSize Int @default(14)
+
+baseBodyWeight String @default("400")
+
+headingWeight String @default("700")
+
+uiButtonWeight String @default("500")
+
+bodyLineHeight Float @default(1.6)
+
+headingLineHeight Float @default(1.2)
+
+letterSpacing String @default("normal")
+
+buttonTextCase String @default("normal")
+
+linkDecoration String @default("hover")
+Run npx prisma db push and npx prisma generate
+Update server/src/modules/brand/brand.controller.ts: add new fields to ALLOWED_FIELDS, DEFAULTS, and validateBrandBody validation logic. Ensure this logic applies to both platform-wide and provider-specific brand updates.
+Files: prisma/schema.prisma, server/src/modules/brand/brand.controller.ts
+Acceptance: Fields exist in DB for both Site and Provider models, backend accepts and validates them on PUT.
+
+T002: CSS Variables & Tailwind Config
+Blocked By: []
+Details: Add default CSS variables to :root in client/src/index.css:
+
+--type-scale-ratio: 1.25
+
+--font-size-small: 14px
+
+--font-weight-body: 400
+
+--font-weight-heading: 700
+
+--font-weight-ui: 500
+
+--line-height-body: 1.6
+
+--line-height-heading: 1.2
+
+--letter-spacing-heading: normal
+
+--button-text-case: none
+
+--link-decoration: none / --link-decoration-hover: underline
+Update tailwind.config.ts to add semantic extensions:
+
+fontWeight: heading -> var(--font-weight-heading), body -> var(--font-weight-body), ui -> var(--font-weight-ui)
+
+lineHeight: heading -> var(--line-height-heading), body -> var(--line-height-body)
+
+letterSpacing: heading -> var(--letter-spacing-heading)
+Files: client/src/index.css, tailwind.config.ts
+Acceptance: New Tailwind classes font-heading, font-body, font-ui, leading-heading, leading-body, tracking-heading are usable.
+
+T003: Frontend Hook & State Updates
+Blocked By: [T001, T002]
+Details: Update BrandSettings interface in client/src/hooks/use-brand-settings.ts with all 10 new fields.
+Update BRAND_DEFAULTS with matching defaults.
+Update applyBrandToDocument() to set all new CSS variables on document.documentElement.style. Ensure useBrandSettings correctly handles both site-wide and provider-specific configurations.
+Files: client/src/hooks/use-brand-settings.ts
+Acceptance: Changing typography settings via applyBrandPreview() immediately updates CSS variables for either context.
+
+T004: Branding Page Typography UI (Admin & Provider)
+Blocked By: [T003]
+Details: Expand the Typography section in client/src/pages/admin-brand-settings-page.tsx AND the corresponding Provider Branding settings component/page with the following controls:
+
+Type Scale Ratio: Select dropdown (1.125 Minor Second, 1.2 Minor Third, 1.25 Major Third, 1.333 Perfect Fourth, 1.5 Perfect Fifth)
+
+Small Text Size: number input (10-16px)
+
+Font Weights: 3 Select dropdowns for Body (300-700), Heading (400-900), UI/Button (400-700)
+
+Line Heights: 2 number inputs for Body (1.0-2.5) and Heading (0.9-2.0)
+
+Letter Spacing: Select (tight, normal, wide)
+
+Button Text Case: Select (Normal, Uppercase, Capitalize)
+
+Link Decoration: Select (Always underline, Underline on hover only)
+Update the Typography Preview in these components to reflect font weight, line height, letter spacing, and text case changes.
+All inputs must be wired through updateField() for live preview.
+Files: client/src/pages/admin-brand-settings-page.tsx and the corresponding Provider branding file.
+Acceptance: All controls render, update live preview, and save/load correctly on both Admin and Provider branding interfaces.
+
+T005: Global Codebase Scan - Headings & Body Typography
+Blocked By: [T002]
+Details: Scan all .tsx files in client/src/ (EXCLUDING admin-brand-settings-page.tsx and the Provider branding settings page to prevent breaking the preview UI).
+On heading elements (<h1>-<h6>, elements with font-display class, CardTitle, DialogTitle, SheetTitle, AlertDialogTitle):
+
+Replace font-bold / font-semibold -> font-heading
+
+Replace leading-tight / leading-snug -> leading-heading
+On paragraph/body text elements:
+
+Replace leading-relaxed / leading-loose -> leading-body
+On button-like elements and UI controls:
+
+Replace font-medium -> font-ui (only in button.tsx base cva and similar UI control patterns)
+Update shadcn ui/ components carefully: card.tsx (CardTitle), dialog.tsx (DialogTitle), sheet.tsx (SheetTitle), alert-dialog.tsx (AlertDialogTitle), button.tsx (base font-medium), badge.tsx, toast.tsx.
+Do NOT touch: third-party SVG logos, the branding pages themselves, font-medium on non-button elements like labels.
+Files: ~50 files across client/src/components/ and client/src/pages/
+Acceptance: Zero hardcoded font-bold/font-semibold on headings, leading-tight/leading-snug on headings, or font-medium on button base classes. Changing heading weight in branding pages visually updates all corresponding headings globally.

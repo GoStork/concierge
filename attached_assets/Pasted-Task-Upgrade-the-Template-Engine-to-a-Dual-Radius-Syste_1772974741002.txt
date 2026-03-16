@@ -1,0 +1,43 @@
+Task: Upgrade the Template Engine to a Dual-Radius System and refactor Provider card headers to a clean, typography-led design.
+
+Context: We need independent control over action elements (buttons) and structural containers (cards, inputs). We must add a new containerRadius variable to the database, UI, and CSS. Additionally, the Provider profile cards currently use heavy, solid bg-primary headers which violate our new clean, whitespace-driven aesthetic. We need to strip the primary background from these headers and use semantic surface colors instead.
+
+Action Plan:
+
+Database & Backend:
+
+Add a containerRadius (Float, default 0.5) field to SiteSettings and ProviderBrandSettings in prisma/schema.prisma. Run DB push and generate.
+
+Update server/src/modules/brand/brand.controller.ts to allow and validate containerRadius.
+
+State & CSS Injection:
+
+Add containerRadius to the BrandSettings frontend interface and defaults.
+
+In the applyBrandToDocument function, inject a new CSS variable: root.style.setProperty("--container-radius", \${settings.containerRadius}rem`);`
+
+UI Updates (Brand Settings Page):
+
+In client/src/pages/admin-brand-settings-page.tsx, rename the current radius section to "Action Shape (Buttons & Tags)".
+
+Add a second, identical set of controls (Dropdown + Slider) directly below it labeled "Container Shape (Cards & Inputs)" wired to form.containerRadius.
+
+Component Mapping:
+
+Open client/src/components/ui/card.tsx. Update its base class to use the new variable (replace rounded-xl or rounded-lg with rounded-[length:var(--container-radius)]). Ensure overflow-hidden is present.
+
+Open client/src/components/ui/input.tsx and apply the same rounded-[length:var(--container-radius)] logic.
+
+Provider Page Header Refactor (Aesthetic Cleanup):
+
+Open the provider profile page (e.g., client/src/pages/provider-profile-page.tsx or where "Company Information" and "CDC Success Rates" are rendered).
+
+Locate the header blocks for these cards.
+
+Remove the heavy background and text colors (e.g., bg-primary, text-primary-foreground).
+
+Remove any explicit heavy rounding classes (e.g., rounded-t-full, rounded-t-[calc(var(--radius))]).
+
+Apply a clean semantic style: use bg-card or bg-muted for the background, add a subtle bottom border (border-b), and ensure the text uses text-foreground with the font-heading class so it relies on typography rather than color blocks.
+
+Execute this full stack update and output a summary when complete.

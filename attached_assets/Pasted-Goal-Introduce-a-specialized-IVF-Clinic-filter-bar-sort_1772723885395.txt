@@ -1,0 +1,67 @@
+Goal: Introduce a specialized IVF Clinic filter bar, sorting mechanism, and warning banner in the Concierge marketplace. This new filter UI must ONLY appear when the "IVF Clinics" tab is active, replacing the global search bar specifically for that tab.
+
+1. Strict Branding Rule:
+
+Do NOT hardcode any colors (e.g., no bg-green-800 or text-gray-500).
+
+You must strictly use the project's existing dynamic Tailwind CSS variables (e.g., bg-primary, text-primary, bg-card, border-border, bg-muted, text-muted-foreground) so the UI respects the admin's Branding Settings.
+
+2. Refactor server/src/modules/providers/providers.controller.ts:
+
+Update the list method to accept query parameters: @Query() query: any.
+
+Ensure ivfSuccessRates: true is added to the include object for both the isParent block and the default block, so the frontend receives the success rate data for the marketplace cards.
+
+If query.search is provided, filter the returned providers by name (case-insensitive).
+
+If query.location is provided, filter the providers by checking if any of their locations match the city or state.
+
+(Note: To keep the app blazing fast, we will handle the complex success-rate sorting and filtering on the client side).
+
+3. Build the IVF Filter Component (client/src/components/marketplace/IvfFilters.tsx):
+
+Create a new component for the IVF-specific filters. It should be a Card (bg-card) with a grid/flex layout containing:
+
+Location: Input with a map pin icon placeholder ("City or state").
+
+Search: Input with a magnifying glass icon placeholder ("Clinic name...").
+
+Egg Source: Select dropdown (Options: "Own eggs" (own_eggs), "Donor eggs" (donor)).
+
+Your Age: Select dropdown (Options: "Under 35" (under_35), "35-37" (35_37), "38-40" (38_40), "Over 40" (over_40)). Disable this if "Donor eggs" is selected.
+
+IVF History: Select dropdown (Options: "New to IVF" (true), "Had prior cycles" (false)).
+
+Accept these 5 values and their setter functions as props.
+
+4. Update client/src/pages/marketplace-page.tsx (Hero & State):
+
+Add state for the new filters: ivfLocation, ivfSearch, eggSource (default "own_eggs"), ageGroup (default "under_35"), isNewPatient (default "true"), and sortBy (default "highest_success").
+
+Pass search and location to the useProviders or useQuery call for /api/providers.
+
+Conditional Hero rendering: In the dark green hero section, locate the <div className="flex gap-2 p-2 bg-white/10...> containing the global search. Wrap it in {activeTab !== "ivf-clinics" && (...) } so the old search disappears when looking at clinics.
+
+5. Build the Sorting Controls & Warning Banner (In marketplace-page.tsx):
+
+Inside the activeTab === "ivf-clinics" block, render your new <IvfFilters /> component at the top.
+
+Below it, add a flex row containing:
+
+"{filteredCount} clinics found"
+
+A "Sort by" Select (Options: "Highest success rate", "Lowest success rate", "Highest cycles reported", "Alphabetical (A-Z)").
+
+Two toggle buttons for List View vs Map View (use lucide-react icons, variant="outline").
+
+Below the sorting controls, add the "Important Information" Warning Banner (use Alert component with an AlertTriangle icon). Bullet points: "Patient characteristics affect success rates...", "These statistics do not predict individual chances...", "Always consult a physician...", "Data source: CDC ART 2022 National Summary Report".
+
+6. Refactor ProviderGrid for Dynamic Data:
+
+Pass the active eggSource, ageGroup, and isNewPatient states into the ProviderGrid component.
+
+Update the inline success rate logic in ProviderGrid: Instead of blindly grabbing the first "Own Eggs" rate, it must search provider.ivfSuccessRates for the exact row matching the selected profileType, ageGroup, and isNewPatient boolean.
+
+Use that specific row to render the green progress bar percentage and determine if the "Top 10%" badge should appear.
+
+Apply the sortBy logic to the providers array before mapping over them (e.g., sorting by that specific row's successRate).

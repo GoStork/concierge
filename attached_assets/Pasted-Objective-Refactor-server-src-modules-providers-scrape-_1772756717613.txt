@@ -1,0 +1,44 @@
+Objective: Refactor server/src/modules/providers/scrape.service.ts to fix 6 critical data-loss bottlenecks preventing the extraction of team members on modern websites, SEO-heavy directories, and multi-subdomain hospital networks.
+
+Task 1: Remove the 80,000 Character Guillotine
+
+Locate where combinedText is truncated: combinedText = combinedText.slice(0, 80000);
+
+Gemini 2.5 Flash has a massive context window. Increase this limit to 400000 so we do not chop off subpages fetched later in the queue.
+
+Task 2: Fix the Image-First Dependency in extractTeamSectionHtml
+
+Currently, if personImgs.length === 0, the function returns an empty string "". This deletes the entire team section if the site uses CSS background images or div-based grids instead of standard <img> tags.
+
+Fix: If no <img> tags match, DO NOT return "". Instead, return the raw text of the teamSection (with HTML tags stripped) so Gemini at least receives the text names and titles of the doctors.
+
+Task 3: Adjust the isNonDoctorStaff Filter
+
+The current nonDoctorPatterns regex is aggressively deleting vital fertility staff after Gemini successfully extracts them.
+
+Modify the regex to remove terms like embri[oó]log, nurse, rn, front desk, and coordinator. We want to retain Senior Embryologists and Lead RNs in the database.
+
+Task 4: Update the Gemini Prompt String
+
+Add a specific instruction to the Gemini extraction prompt: "If the TEAM MEMBER RAW DATA block is empty or missing photos, explicitly scan the main text content for lists of doctors, embryologists, and nurses. Extract them even if no photo URL is available."
+
+Task 5: Relax the Doctor Page Discovery Regex (Coastal Fertility Fix)
+
+findDoctorSubpageUrls currently misses SEO-heavy directories (e.g., /fertility-doctors-free-consultation/dr-smith).
+
+Locate const doctorPathPatterns = /\/(?:physicians?|doctors?|specialists?|providers?|teams?|staff|members?|people|faculty)\/[a-z][a-z0-9-]+\/?$/i;
+
+Replace it with this more forgiving regex:
+const doctorPathPatterns = /\/[^/]*(?:physicians?|doctors?|specialists?|providers?|teams?|staff|members?|people|faculty|experts?)[^/]*\/[a-z][a-z0-9-]+\/?$/i;
+
+Task 6: Allow Cross-Subdomain Link Discovery (Cleveland Clinic Fix)
+
+Large hospital networks use different subdomains (e.g., my.clevelandclinic.org linking to providers.clevelandclinic.org).
+
+Create a helper function at the top of the file: const getRootDomain = (hostname: string) => hostname.split('.').slice(-2).join('.');
+
+In findSubpageUrls, findLocationSubpageUrls, and findDoctorSubpageUrls, locate the strict hostname check: normalizeHostname(resolved.hostname) === normalizeHostname(base.hostname).
+
+Replace this strict check with: getRootDomain(normalizeHostname(resolved.hostname)) === getRootDomain(normalizeHostname(base.hostname))
+
+Please execute these changes using Extended Thinking mode.

@@ -1,0 +1,64 @@
+Task: Add a "Safe Area Background" color setting to decouple the mobile navigation pill from the bottom screen edge.
+
+Context: We need to make the mobile bottom navigation bar float. Currently, the color of the pill is visually bleeding into the safe area below it. We need to add a new bottomNavSafeAreaColor property to the brand settings. This will allow the admin to set a specific color (or leave it transparent) for the outer wrapper, while keeping the pill itself colored independently.
+
+Action Plan:
+
+1. Update the Brand Settings Schema & Types:
+
+Locate the BrandSettings schema (likely in shared/schema.ts and the type definition in client/src/hooks/use-brand-settings.ts).
+
+Add a new optional string field: bottomNavSafeAreaColor (or map it as a standard text column in the DB schema).
+
+Ensure BRAND_DEFAULTS includes bottomNavSafeAreaColor: null.
+
+2. Update the Admin Brand Settings Page (client/src/pages/admin-brand-settings-page.tsx):
+
+Locate the "Bottom App Navigation" section inside the BrandSettingsForm component.
+
+Add a new OptionalColorInput directly below the "Background Color" input for the navigation bar.
+
+Use this exact code for the new input:
+
+TypeScript
+<div className="space-y-1.5">
+  <Label className="text-sm font-medium">Safe Area Background</Label>
+  <div className="flex gap-2 items-center">
+    <input
+      type="color"
+      value={form.bottomNavSafeAreaColor || "#ffffff"}
+      onChange={(e) => updateField("bottomNavSafeAreaColor", e.target.value)}
+      disabled={formDisabled}
+      className="w-8 h-8 rounded border cursor-pointer"
+      data-testid="input-bottom-nav-safe-area"
+    />
+    <Input
+      value={form.bottomNavSafeAreaColor || ""}
+      placeholder="Default (transparent)"
+      onChange={(e) => updateField("bottomNavSafeAreaColor", e.target.value || null)}
+      disabled={formDisabled}
+      className="flex-1"
+      data-testid="input-bottom-nav-safe-area-hex"
+    />
+    {form.bottomNavSafeAreaColor && (
+      <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => updateField("bottomNavSafeAreaColor", null)} data-testid="btn-clear-bottom-nav-safe-area">
+        <X className="w-3.5 h-3.5" />
+      </Button>
+    )}
+  </div>
+  <p className="text-[10px] text-muted-foreground mt-1">Color for the space behind the floating pill. Clear it to make it transparent.</p>
+</div>
+3. Update the Mobile Layout Shell (client/src/components/layout-shell.tsx):
+
+Locate the mobile bottom navigation wrapper at the bottom of the file: <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden safe-area-bottom px-3 pb-2">
+
+Apply the new safe area color directly to this outer wrapper's style attribute. It should look like this:
+
+TypeScript
+<div 
+  className="fixed bottom-0 left-0 right-0 z-50 md:hidden safe-area-bottom px-3 pb-2"
+  style={{ backgroundColor: brandSettings?.bottomNavSafeAreaColor || 'transparent' }}
+>
+Ensure the inner <nav> element retains its existing backgroundColor: 'var(--bottom-nav-bg, hsl(var(--card)))' so the pill maintains its own distinct color.
+
+Execute this so the administrator has full control over both the floating pill color and the background canvas behind it.

@@ -1,0 +1,70 @@
+Prompt 1: Transition - Registration to Matchmaker Selection
+
+TASK NAME: Implement Post-Registration Welcome Transition
+
+Description:
+Now that the 12-step registration is complete, we need a "Welcome" moment before the user picks their matchmaker.
+
+Step 1: The Transition UI
+
+After the final step of the registration (Referral Source), show a full-screen "Welcome" view.
+
+Text: "Welcome to the family, [First Name]. We’ve saved your preferences. Now, let’s choose a guide to help you start your journey."
+
+Duration: Stay visible for 2 seconds with a gentle fade-in, then automatically navigate the user to the /matchmaker-selection page.
+
+Step 2: Selection Page Context
+
+On the /matchmaker-selection page (the grid with Ariel, Yael, etc.), ensure the user's name is already visible in the header so they feel recognized immediately.
+
+Prompt 2: Transition - Selection to AI Concierge Chat
+
+TASK NAME: Smooth Handoff from Selection to Active Chat
+
+Description:
+When a user clicks on a matchmaker (e.g., Ariel), the transition into the chat should feel like entering a private consultation room.
+
+Step 1: Animated Handoff
+
+When a matchmaker is selected, show a brief transition where the selected matchmaker's avatar expands or centers, then fades into the Chat UI.
+
+The "Zero-State" Logic: The moment the chat opens, it must automatically pull the user's firstName, Service, and Location from the ParentProfile we just built.
+
+Step 2: The First Message
+
+Ensure the Matchmaker’s initialGreeting (the ones we finalized with the variables) is the very first thing the user sees.
+
+Example: "Hi Eran! I'm Ariel. I see you're looking for an Egg Donor in New York..."
+
+Prompt 3: The "Master Brain" - The Concierge Logic & Close
+
+TASK NAME: Implement Full AI Concierge Interview & Match Handoff
+
+Description:
+This is the "Brain" task. We are implementing the Amata-style interview and the final conversion logic inside the chat.
+
+Step 1: The Part 2 Interview Script (Persistence)
+
+The AI must strictly follow this logic tree. Every answer must be saved to the ParentProfile in real-time.
+
+The Biological Baseline: Ask "Do you already have frozen embryos?" -> If Yes: Ask PGT-A status and Biology Source. If No: Ask plan for eggs/sperm.
+
+The Carrier Question: "And who is planning to carry the pregnancy?"
+
+Service-Specific Deep Dives:
+
+If Clinic: Ask for reason (Medical, LGBTQ+, etc.) and priority (Success vs. Cost).
+
+If Donor: Show inline cards for physical traits (Eyes, Hair, Height).
+
+If Surrogate: Ask about budget (US vs. International) and medical preferences.
+
+Step 2: The "Amata" Match Reveal & Conversion
+
+The Search Animation: When all questions are done, the AI says: "Got it. Give me one second while I find the perfect matches for you..." Show a 3-second "Matchmaking in progress" pulse animation inside the chat.
+
+The Reveal: After the pulse, the AI presents a Match Card (Name, Photo, 2-3 bullet points on why they fit).
+
+The Close: The AI must say: "Based on everything we discussed, I think [Provider Name] is your best starting point. Would you like me to reach out to them and check their availability for a call with you?"
+
+The Action: If the user says "Yes," flag this as a "Hot Lead" in the DB and trigger a notification to the GoStork admin.

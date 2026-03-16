@@ -1,0 +1,30 @@
+Task: Refactor SwipeDeckCard tab data rendering to support mixed UI layouts (Tinder-style Icon Lists and Checkmark Bubbles).
+
+Context: We need to move away from rendering all data as generic bubbles. The data overlay needs to dynamically switch its layout style based on the active tab, directly mimicking Tinder's visual rhythm. Tab 0 should strictly be "Matched Preferences" with checkmark bubbles. Tab 1 should be a vertical list with icons. Tab 2 should be standard bubbles, etc.
+
+Action Plan:
+
+Define Layout Types: Inside SwipeDeckCard, update the tab generation logic to return structured sections with a specific layoutType: 'matched_bubbles' | 'icon_list' | 'standard_bubbles'.
+
+Import Lucide Icons: Import Check, MapPin, DollarSign, Wallet, GraduationCap, Briefcase, Snowflake (for Fresh/Frozen donor type), and Heart.
+
+Refactor getDonorTabs Mapping: * Tab 0: Return { layoutType: 'matched_bubbles', title: 'Matched Preferences', items: [matched items] }.
+
+Tab 1: Return { layoutType: 'icon_list', items: [...] }. Map Location -> MapPin ("Lives in [City]"), Donor Type -> Snowflake/Heart, Compensation -> DollarSign ("$X Compensation"), Total Cost -> Wallet.
+
+Tab 2: Return { layoutType: 'standard_bubbles', items: [Height, Weight, Hair, Eyes, Ethnicity, Race] }.
+
+Tab 3: Return { layoutType: 'icon_list', items: [Education -> GraduationCap, Occupation -> Briefcase, Donation Type -> Heart] }.
+
+Tab 4+: Return { layoutType: 'standard_bubbles', title: 'Interests', items: [Hobbies/Interests] }.
+(Note: Handle cases where there are fewer photos than tabs by grouping remaining data onto the last available photo).
+
+Update the Render Block: Inside the JSX where currentTabData is rendered (above the action buttons), build conditional renderers based on layoutType:
+
+if layoutType === 'icon_list': Render a vertical flex-col gap-2. For each item, render a row with the Icon on the left (text-gray-300 or white, w-4 h-4) and the text on the right (text-white text-sm or text-base). NO bubbles here.
+
+if layoutType === 'matched_bubbles': Render a flex wrap container of <Badge> components. Give the badges a distinct styling (e.g., dark translucent) and append a <Check className="w-3 h-3 text-amber-400 ml-1" /> inside the badge to mimic Tinder. Add an optional section title above it with an icon (e.g., ⚨ Matched X Preferences).
+
+if layoutType === 'standard_bubbles': Render the standard flex wrap container of <Badge> components without checkmarks.
+
+Execute this UI refactor and output a summary when the new Tinder-style layouts are compiling.

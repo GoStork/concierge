@@ -1,0 +1,59 @@
+Objective: Build a bulk PDF profile upload and AI parsing feature for Surrogates. It must extract text and embedded images from PDFs, parse the data using our existing Gemini AI normalizer, save the photos to our storage, and show real-time progress in the UI.
+
+Task 1: Install Dependencies
+
+Install necessary libraries for PDF text and image extraction: npm install pdf-parse and any standard lightweight Node library for extracting embedded images from PDFs (e.g., pdf-image-extractor, pdf-img-convert, or pdfjs-dist).
+
+Install types: npm install -D @types/pdf-parse.
+
+Task 2: Backend API Endpoints (profile-sync.controller.ts)
+
+Add a new POST /api/providers/:providerId/sync/pdf endpoint that accepts multipart/form-data with an array of files (files[]).
+
+This endpoint should:
+
+Upload each original PDF file to the cloud using the existing StorageService.
+
+Create a new SyncJob in profile-sync.service.ts with type: "surrogate" and a special isPdfUpload: true flag.
+
+Kick off the background processing function and return the jobId.
+
+Add a POST /api/providers/:providerId/sync/stop endpoint to gracefully abort an active job (updating status to 'failed' or 'stopped' so the loop breaks).
+
+Add a DELETE /api/providers/:providerId/surrogates/pdfs endpoint to bulk-delete surrogates that were created via PDF.
+
+Task 3: Core PDF Processing Engine (profile-sync.service.ts)
+
+Create a new background processing function: runPdfSyncJob(job, files, providerId, storageService, prisma).
+
+For each uploaded PDF file:
+
+Check Stop Flag: Before processing, check if the job status is still "running". If not, break the loop to honor the "Stop" button.
+
+Extract Images: Use the PDF image library to extract embedded images. Filter out tiny images (under 10KB or 100x100px) to avoid grabbing logos/icons. Upload the valid extracted photos to StorageService to get public URLs.
+
+Extract Text: Use pdf-parse to extract the raw text from the PDF.
+
+AI Parsing: Pass the extracted text to Gemini using the exact same SURROGATE_EXTRACTION_PROMPT used for the web scraper.
+
+Database Upsert: Generate an ID if the AI doesn't find one (auto-pdf-${Date.now()}). Store the uploaded photo URLs in photoUrl (first image) and the photos array (all images). Store the URL of the original PDF in the profileUrl field or inside profileData["Original PDF"].
+
+Save: Run it through normalizeProfileFields and upsertSurrogate exactly like the web scraper does. Update the job.processed count.
+
+Task 4: Frontend UI Integration (client/src/components/profile-database-panel.tsx)
+
+Below the existing "Database Sync" card, add a new Card titled "Bulk PDF Upload".
+
+Add a file input that accepts multiple PDFs (<input type="file" multiple accept="application/pdf" />).
+
+Display a list of selected files and an "Upload & Extract" button.
+
+When the upload starts, show the exact same progress bar UI you currently use for the database sync, polling the job status.
+
+Add a red "Stop Processing" button that appears while the job is running (calls the stop endpoint).
+
+Add a subtle "Delete All PDF Profiles" button (calls the delete endpoint) with an alert confirmation to clear out mistakes.
+
+Ensure that when the progress bar completes, the query client invalidates the surrogate list so the newly parsed profiles instantly appear in the table below without a page refresh.
+
+Please execute these 4 tasks using Extended Thinking mode. Read the existing upsertSurrogate function carefully to ensure the PDF data maps into the exact same schema.

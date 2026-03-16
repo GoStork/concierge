@@ -1,0 +1,94 @@
+TASK NAME: Build Multi-Step "Single-Question-Per-Page" Registration Flow
+
+Description:
+I need to build a high-end, mobile-optimized onboarding flow inspired by the Amata app. Each question must have its own dedicated screen to ensure maximum focus and a premium feel. Use smooth transitions (e.g., a subtle fade or horizontal slide) between steps.
+
+General UI Rules:
+
+Typography: Large, bold headlines. Clear, concise sub-headlines where needed.
+
+Navigation: A "Continue" button at the bottom (disabled until a selection is made). A "Back" arrow in the top left.
+
+Components: Use large pill-shaped buttons for selections. Use a native-style scroll wheel for the birthdate.
+
+State: All data must be persisted in a central state/context and saved to the database upon final completion (or incrementally to prevent data loss).
+
+The Step-by-Step Flow:
+
+Step 1: The Goal
+
+Headline: "How can we help you build your family?"
+
+UI: Multi-select pill buttons: [Fertility Clinic], [Egg Donor], [Surrogate], [Sperm Donor].
+
+Step 2: First Name
+
+Headline: "What's your first name?"
+
+UI: Single clean text field. (Note: Subtext: "Your name cannot be changed later.")
+
+Step 3: Last Name
+
+Headline: "And your last name?"
+
+UI: Single clean text field.
+
+Step 4: Birth Date
+
+Headline: "What's your birth date?"
+
+UI: Integrated scroll wheel (Month | Day | Year).
+
+Step 5: Identity
+
+Headline: "How do you identify?"
+
+UI: Pill buttons: [I'm a woman], [I'm a man], [I'm non-binary].
+
+Step 6: Orientation
+
+Headline: "What is your sexual orientation?"
+
+UI: Pill buttons: [Straight], [Gay], [Lesbian], [Bi], [Queer].
+
+Step 7: Relationship Status
+
+Headline: "What is your relationship status?"
+
+UI: Pill buttons: [Single], [Partnered], [Married], [Separated/Divorced/Widowed].
+
+Step 8: Partner Details (Conditional)
+
+Only show if Step 7 is Partnered or Married.
+
+Headline: "Tell us about your partner."
+
+UI: First Name text field and Age input.
+
+Step 10: Location
+
+Headline: "Where are you currently living?"
+
+UI: Auto-complete location search bar (using Google Places or similar).
+
+Step 11: Phone Number
+
+Headline: "What's your phone number?"
+
+UI: Country code selector + phone input field.
+
+Step 12: Verification
+
+Headline: "Enter the code you received."
+
+UI: 6-digit OTP input fields.
+
+Step 13: Source
+
+Headline: "How did you hear about GoStork?"
+
+UI: Pill buttons: [Google], [Social Media], [Friend], [Other].
+
+Final Action:
+
+Upon completing the final step, show a brief loading transition (like the Amata location retrieval) before redirecting the user to the /matchmaker-selection page.

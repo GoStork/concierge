@@ -1,0 +1,32 @@
+Task: Fix Toast Notification Transparency and Readability.
+
+Context: The current success and warning toasts use opacity modifiers (bg-success/10, border-success/30) which makes them transparent and unreadable over other UI elements. We need to update the toastVariants to use solid backgrounds to guarantee readability.
+
+Action Plan:
+
+1. Update toastVariants (client/src/components/ui/toast.tsx):
+
+Locate the toastVariants definition.
+
+Replace the success and warning variant strings in the variants object with the following code to make them solid, highly readable cards with a thick left accent border:
+
+TypeScript
+      variant: {
+        default: "border bg-background text-foreground",
+        destructive:
+          "destructive group border-destructive bg-destructive text-destructive-foreground",
+        success:
+          "success group border-y border-r border-l-4 border-l-success border-y-border border-r-border bg-background text-foreground shadow-lg",
+        warning:
+          "warning group border-y border-r border-l-4 border-l-warning border-y-border border-r-border bg-background text-foreground shadow-lg",
+      },
+2. Update the Close Button Hover States (client/src/components/ui/toast.tsx):
+
+Locate the ToastClose component.
+
+In its className string, remove the group-[.success]:... and group-[.warning]:... text color overrides, because the background is now the standard bg-background and the default close button colors will work perfectly.
+
+Replace the ToastClose className string with this exact string:
+"absolute right-2 top-2 rounded-md p-1 text-foreground/50 opacity-0 transition-opacity hover:text-foreground focus:opacity-100 focus:outline-none focus:ring-2 group-hover:opacity-100 group-[.destructive]:text-destructive-foreground/70 group-[.destructive]:hover:text-destructive-foreground group-[.destructive]:focus:ring-destructive/40 group-[.destructive]:focus:ring-offset-destructive/60"
+
+Execute this to ensure all toast notifications are 100% solid and fully readable.

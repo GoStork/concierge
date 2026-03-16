@@ -1,0 +1,52 @@
+Task: Implement "Passed/Ghost" and "Saved/Solid" states for the Desktop Grid.
+
+Context: The previous attempt to add "isPassed" and "isSaved" states was missed. We need to update the Redux store, the Grid, and the Card so that when a user clicks "X" on desktop, the card becomes disabled and grayscale (Ghost Card), and when they click "Heart", the heart becomes solid.
+
+Action Plan:
+
+1. Update Redux Store (client/src/store/uiSlice.ts):
+
+In the UiState interface, add: passedDonorIds: string[];
+
+In initialState, add: passedDonorIds: [],
+
+In reducers, add these two actions:
+
+TypeScript
+passDonor(state, action: PayloadAction<string>) {
+  if (!state.passedDonorIds.includes(action.payload)) {
+    state.passedDonorIds.push(action.payload);
+  }
+},
+undoPassDonor(state, action: PayloadAction<string>) {
+  state.passedDonorIds = state.passedDonorIds.filter(id => id !== action.payload);
+},
+Export passDonor and undoPassDonor from uiSlice.actions.
+
+2. Update the Card Component (client/src/components/marketplace/swipe-deck-card.tsx):
+
+In SwipeDeckCardProps, add: isSaved?: boolean; and isPassed?: boolean;
+
+Destructure them in the component signature: isSaved = false, isPassed = false,
+
+Locate the main <motion.div> wrapper (the one with bg-card). Add a conditional class to its className string:
+
+${isPassed ? "opacity-50 grayscale pointer-events-none" : ""}
+
+Inside the action-row, locate the <Heart /> icon. Change its fill: fill={isSaved ? "currentColor" : "none"}.
+
+Crucial fix for Undo: Ensure the Undo2 button has pointer-events-auto so it can still be clicked even if the card wrapper has pointer-events-none.
+
+3. Update the Desktop Grid (client/src/pages/marketplace-page.tsx):
+
+In DonorGrid, import passDonor and undoPassDonor from @/store/uiSlice.
+
+Select passedIds: const passedIds = useAppSelector((state) => state.ui.passedDonorIds);
+
+In the desktop return block (the one mapping over filtered and returning <div className="h-[600px]">), update the <SwipeDeckCard /> props to:
+
+TypeScript
+isSaved={favoritedIds.includes(donor.id)}
+isPassed={passedIds.includes(donor.id)}
+onPass={() => dispatch(passDonor(donor.id))}
+onUndo={passedIds.includes(donor.id) ? () => dispatch(undoPassDonor(donor.id)) : undefined}

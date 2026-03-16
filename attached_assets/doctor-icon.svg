@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 110" fill="none">
+  <!-- Head outline -->
+  <path d="M50 8Q62 8 66 18Q70 28 66 36Q62 42 56 44" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M50 8Q38 8 34 18Q30 28 34 36Q38 42 44 44" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Hair -->
+  <path d="M34 18Q36 12 42 9" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M66 18Q64 12 58 9" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+  <!-- Ears -->
+  <path d="M34 26Q30 26 30 30Q30 34 34 34" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M66 26Q70 26 70 30Q70 34 66 34" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+  <!-- Eyes -->
+  <circle cx="42" cy="28" r="1.8" fill="currentColor"/>
+  <circle cx="58" cy="28" r="1.8" fill="currentColor"/>
+  <!-- Nose -->
+  <path d="M50 30Q48 34 50 35Q52 34 50 30" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <!-- Smile -->
+  <path d="M45 38Q50 42 55 38" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+  <!-- Neck -->
+  <path d="M44 44L44 52" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+  <path d="M56 44L56 52" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+  <!-- Collar / V-neck -->
+  <path d="M44 52L32 58Q28 60 26 66L22 80" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M56 52L68 58Q72 60 74 66L78 80" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M44 52L50 68L56 52" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Shoulders -->
+  <path d="M22 80Q18 90 16 100L84 100Q82 90 78 80" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Stethoscope left -->
+  <path d="M30 62Q24 68 24 76Q24 84 30 88Q34 90 36 88" stroke="currentColor" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <circle cx="24" cy="76" r="3" stroke="currentColor" stroke-width="2.5" fill="none"/>
+  <!-- Stethoscope right -->
+  <path d="M70 62Q76 68 76 76Q76 82 72 85" stroke="currentColor" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <circle cx="76" cy="76" r="3" stroke="currentColor" stroke-width="2.5" fill="none"/>
+</svg>

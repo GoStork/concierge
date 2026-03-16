@@ -1,0 +1,53 @@
+Context:
+Please read the prisma/schema.prisma file in this repository to understand our current database architecture, Enums, and relations before writing any code. We will be building upon the existing User and Booking models.
+
+Role:
+Act as a Principal Full-Stack Engineer specializing in NestJS, React (Vite), Prisma ORM, TanStack Query, shadcn/ui, and Tailwind CSS.
+
+Task:
+Build a HIPAA-compliant telehealth feature for GoStork embedding video consultations via Daily.co (Daily Prebuilt).
+
+Architecture & Compliance Rules:
+
+Model: Permanent Rooms belonging to individual Users (coordinators/providers).
+
+HIPAA: MUST use Daily's "Knocking" (Waiting Room) feature (enable_knocking: true and privacy: 'private').
+
+Consent Gate: Intended Parents must explicitly consent to recording/transcription before entering. If declined, the Provider's Daily token must omit "enable_recording" and "enable_transcription".
+
+Please generate the code tailored strictly to our stack:
+
+1. Database Schema (Prisma ORM)
+
+Update the existing User model: Add dailyRoomUrl String?.
+
+Update the existing Booking model: Add consentGiven Boolean @default(false), actualStartedAt DateTime?, and actualEndedAt DateTime?.
+
+Generate the exact Prisma migration syntax. Do NOT create a new Consultation model.
+
+2. Backend Endpoints (NestJS + Swagger + RBAC)
+Create VideoModule, VideoController, and VideoService. Use the native Node 20 fetch API for Daily.co (https://api.daily.co/v1/).
+
+Documentation & Auth: Decorate endpoints with @nestjs/swagger (@ApiTags, @ApiOperation, @ApiBearerAuth). Protect endpoints using our existing Passport.js dual-mode auth guards and RBAC (e.g., GOSTORK_ADMIN, PROVIDER_ADMIN, PARENT).
+
+Provision Room (POST /video/room): Restricted to Admins/Providers. Call Daily POST /rooms (do NOT pass a custom name; let Daily auto-generate it). Save the returned secure URL to the User's dailyRoomUrl via Prisma.
+
+Generate Token (POST /video/token): Accept bookingId. Look up the Booking to check the consentGiven boolean.
+
+If user is the Provider (owner of the room): Generate token with "is_owner": true. Include "enable_recording": "cloud" and "enable_transcription": true only if consentGiven is true.
+
+If user is the Parent: Generate token with "is_owner": false. No recording permissions.
+
+Webhooks (POST /video/webhook): Endpoint to receive Daily webhooks (meeting-started, participant-joined, meeting-ended). Security: You must verify the webhook signature using a DAILY_WEBHOOK_SECRET environment variable. Update the Booking model's actualStartedAt and actualEndedAt timestamps in Prisma.
+
+3. Frontend Video Room & Consent Gate (React + Vite + shadcn/ui)
+Create a dynamic route /room/:providerUserId.
+
+Data Fetching: Use TanStack Query (useQuery, useMutation) to fetch the room URL and token from our NestJS API.
+
+Consent Gate: Use shadcn/ui (Dialog) and Lucide React to create a branded, full-screen modal: "To ensure the highest quality of care, this consultation may be recorded or transcribed. By continuing, you consent to the audio/video processing of this session." Include "I Consent" and "Decline" buttons. Upon clicking, update the Booking's consentGiven status before fetching the video token.
+
+Video Embed: Use @daily-co/daily-js. After consent and token fetch, mount DailyIframe.createFrame() inside <div id="daily-container"></div>. Pass a theme object to the Daily frame config using the GoStork primary brand color: #004D4D (dark teal).
+
+4. Styling & Clean Up
+Use Tailwind CSS to make #daily-container take up h-[calc(100vh-80px)] w-full (accounting for standard headers). Add a useEffect cleanup calling callFrame.destroy() on unmount to release camera/mic hardware locks.

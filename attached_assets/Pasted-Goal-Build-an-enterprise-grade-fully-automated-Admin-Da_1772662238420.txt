@@ -1,0 +1,58 @@
+Goal: Build an enterprise-grade, fully automated Admin Dashboard feature to fetch CDC IVF Success Rate data from the official CDC Socrata API. We will use a "Fetch and Dump" strategy, offloading the heavy math (Percentiles, Top 10%, National Averages) to PostgreSQL. It must dynamically discover the dataset ID for any given year and gracefully handle missing data.
+
+Phase 1: Schema & Staging Table (prisma/schema.prisma)
+
+Add CdcDatasetMap: year (Int @id), datasetId (String).
+
+Add CdcSyncJob: id (String UUID), year (Int), status (String, default "PENDING" - can be PROCESSING, COMPLETED, FAILED), clinicsProcessed (Int, default 0), recordsProcessed (Int, default 0), errorMessage (String?), startedAt (DateTime, default now()), completedAt (DateTime?).
+
+Add RawCdcData: A temporary staging table to dump the raw JSON from the CDC. Fields: id (String UUID), year (Int), facilityName (String), rawData (Json).
+
+Run npx prisma db push and npx prisma generate.
+
+Phase 2: Backend Service - The Fetcher (server/providers/cdc-api.service.ts)
+
+Dynamic ID Discovery: Write getDatasetIdForYear(year).
+
+Check CdcDatasetMap first.
+
+If missing, search the Socrata Catalog (https://api.us.socrata.com/api/catalog/v1?domains=data.cdc.gov&q=ART%20Fertility%20Clinic%20Success%20Rates%20${year}).
+
+CRITICAL ERROR HANDLING: If the catalog API returns 0 results for that year, throw a NotFoundException with the message: "No CDC dataset has been published yet for the year {year}."
+
+If found, extract the ID, save it to CdcDatasetMap, and return it.
+
+The Sync Function: >   1. Update CdcSyncJob to "PROCESSING".
+2. Clear the RawCdcData table for the target year.
+3. Paginate through https://data.cdc.gov/resource/${datasetId}.json using $limit=5000 & $offset.
+4. Bulk insert the raw JSON objects into the RawCdcData table (rawData field). Do not do any math here. Use try/catch to log errors but keep the loop alive.
+
+Phase 3: Backend Service - The SQL Engine (PostgreSQL)
+
+Once the download is complete, the service must execute a raw SQL script via prisma.$executeRawUnsafe().
+
+The SQL script must:
+
+Parse the JSON rawData in PostgreSQL to extract the relevant success rates (Cumulative live birth for Own Eggs by Age Group, and Donor Eggs).
+
+Upsert the Clinics into the Provider and ProviderLocation tables based on the parsed facility name and address.
+
+Delete old IvfSuccessRate records for that year.
+
+The Enrichment Math: Insert the new records into IvfSuccessRate while calculating the percentile and top10pct. Use PostgreSQL's PERCENT_RANK() OVER (PARTITION BY "metricCode", "ageGroup" ORDER BY "successRate") to dynamically calculate how each clinic ranks compared to the others in that specific age group/metric. If the rank is >= 0.90, set top10pct to true.
+
+Clear the RawCdcData table for that year to save space.
+
+Update the CdcSyncJob to "COMPLETED".
+
+Phase 4: API & Admin UI
+
+Controller (server/providers/scrapers.controller.ts): Add GET /api/scrapers/cdc-syncs (list jobs) and POST /api/scrapers/cdc-syncs/trigger (accepts { year: number }, kicks off the sync asynchronously). Secure with GOSTORK_ADMIN.
+
+Frontend (client/src/pages/admin/ScrapersPage.tsx): >   - Add a "CDC API Sync" section with a shadcn Table showing job history.
+
+Add a "New CDC Sync" button that opens a Dialog asking for a "Data Year" (Number input, no hardcoded dropdowns).
+
+CRITICAL ERROR HANDLING: Wrap the form submission in a try/catch. If the API returns an error (like the 404 No Data exception), use the existing shadcn useToast hook to show a destructive red toast with the error message, and do NOT close the modal. If it succeeds, show a green success toast ("Sync started for {year}"), close the modal, and refresh the table.
+
+Execution Constraint: Before writing the SQL in Phase 3, you MUST fetch a sample record from the 2022 CDC Socrata dataset (ID: cchw-gdwa) via standard fetch/curl to inspect the exact column names (e.g., how the CDC labels "live birth rate for under 35"). Ensure your SQL JSON extraction matches these actual CDC field names.

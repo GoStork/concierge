@@ -1,0 +1,39 @@
+We need to fix two backend bugs in server/src/modules/notifications/app-events.service.ts that are causing queued SSE notifications to be dropped.
+
+1. NestJS Fast-Emit Drop: drainPending resolves so fast that RxJS emits the queued notifications before the client's EventSource connection is fully established. We must add a delay to the pending$ observable.
+2. Connection Tracking Bug: connectedUsers is a Set. Because the frontend opens two SSE connections, if one connection briefly drops, disconnect deletes the user from the Set completely, breaking the online/offline routing logic. It needs to be a Map that tracks the connection count.
+
+Please make the following exact updates to server/src/modules/notifications/app-events.service.ts:
+
+Update imports to include delay: import { filter, map, mergeMap, delay } from "rxjs/operators";
+
+Replace private connectedUsers = new Set<string>(); with private connectedCounts = new Map<string, number>();
+
+In the emit() method, change the skip logic to: if ((this.connectedCounts.get(userId) || 0) > 0) continue;
+
+In the subscribe() method, update the tracking and add the delay:
+
+TypeScript
+  subscribe(userId: string): Observable<MessageEvent> {
+    const currentCount = this.connectedCounts.get(userId) || 0;
+    this.connectedCounts.set(userId, currentCount + 1);
+const pending$ = from(this.drainPending(userId)).pipe(
+  delay(1500), // Wait 1.5s for the HTTP connection to fully establish
+  mergeMap((items) => from(items)),
+);
+// ... keep live$ and return merge ...
+}
+
+
+  * In the `disconnect()` method, safely decrement the count:
+TypeScript
+  disconnect(userId: string) {
+    const currentCount = this.connectedCounts.get(userId) || 0;
+    if (currentCount > 1) {
+      this.connectedCounts.set(userId, currentCount - 1);
+    } else {
+      this.connectedCounts.delete(userId);
+    }
+  }
+```"
+Adding that 1.5-second delay ensures the browser's connection is 100% open and listening before the backend flushes the queue, guaranteeing the toast appears.

@@ -1,0 +1,36 @@
+Objective
+You are a Senior React Developer. Your task is to perform a strict, global refactor of the client/src/ directory. You must systematically eradicate ALL hardcoded Tailwind color, background, border, and typography classes, replacing them exclusively with our dynamic semantic brand CSS variables.
+Context & Design System
+Our app uses a dynamic theming engine. Hardcoded colors (like bg-white, text-gray-900, bg-blue-600, border-gray-200) and hardcoded typography (like font-bold, font-sans, leading-tight) completely break the white-label branding feature.
+You must map hardcoded values to these semantic Tailwind classes:
+• Surfaces: bg-background (main app background), bg-card (white/card containers), bg-muted (gray/secondary backgrounds), bg-popover (dropdowns/dialogs).
+• Text: text-foreground (primary text), text-muted-foreground (secondary/gray text), text-primary-foreground (text on primary buttons).
+• Brand Colors: bg-primary (main brand color), bg-accent (secondary/highlight color), text-primary, text-accent.
+• Status Colors: bg-brand-success (or text-brand-success), bg-brand-warning, text-destructive, bg-destructive.
+• Borders & Rings: border-border (all structural borders), ring-ring (focus outlines).
+• Typography (Weights): font-heading (replaces font-bold/font-semibold on headings), font-body (standard text), font-ui (replaces font-medium on buttons/nav).
+• Typography (Spacing): leading-heading (tight line height for headers), leading-body (relaxed line height for paragraphs), tracking-heading (letter spacing for titles).
+Strict Guardrails (DO NOT TOUCH)
+1. Brand Settings Pages: Do NOT touch client/src/pages/admin-brand-settings-page.tsx or any Provider branding settings pages. They must retain their specific structural styles.
+2. Third-Party Logos: Do NOT alter colors on SVGs for Google, Microsoft, Apple, or social media icons.
+3. Calendar Events: Do NOT alter user-configurable dynamic calendar event colors.
+Execution Plan (Work in Batches)
+Do NOT attempt to change everything in one single commit. Execute this in 4 distinct steps. Wait for me to say "Proceed to Step X" before moving on.
+Step 1: Base UI Components (client/src/components/ui/)
+• Scan all files in this directory (buttons, cards, dialogs, inputs, tables, tabs).
+• Strip out bg-white, text-slate-950, border-slate-200, ring-slate-950, etc.
+• Replace them with bg-card, text-foreground, border-border, ring-ring.
+• Apply font-heading to DialogTitle, CardTitle, etc. Apply font-ui to Button text.
+• Output a summary of files changed.
+Step 2: Shared Components & Layouts (client/src/components/)
+• Scan all navigation, sidebars, tables, and reporting components (e.g., members-table.tsx, layout-shell.tsx, admin-report-layout.tsx).
+• Ensure all table headers use bg-muted and text-muted-foreground (or your chosen semantic equivalent).
+• Ensure all links hover states use semantic colors (e.g., hover:text-primary).
+Step 3: Main Pages - Batch A (client/src/pages/)
+• Scan standard user-facing pages: Marketplace, Provider Profiles, Donor Profiles, Dashboard, Appointments.
+• Remove all hardcoded typography weights and line-heights.
+• Ensure all main page backgrounds use bg-background and content containers use bg-card.
+Step 4: Main Pages - Batch B (client/src/pages/)
+• Scan admin/management pages: Leads, Scrapers, CDC Reports, Settings, Video Room.
+• Ensure all status badges (Active, Pending, Error) map to brand-success, brand-warning, or destructive.
+Begin with Step 1. Acknowledge these instructions and provide the code changes for Step 1 now.

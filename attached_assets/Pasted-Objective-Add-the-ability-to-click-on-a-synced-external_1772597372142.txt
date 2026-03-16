@@ -1,0 +1,106 @@
+Objective
+
+Add the ability to click on a synced external calendar event (Google, Microsoft, Apple/Yahoo CalDAV) in the visual calendar and mark it as "Free" so it no longer blocks GoStork scheduling. Extend the existing availability architecture rather than building a new system.
+
+Architectural Analysis
+
+Current Override System
+
+AvailabilityOverride model: { id, userId, date, isAvailable, slots (JSON), label } with a @@unique([userId, date]) constraint.
+Used for day-level overrides: "on this date, I'm unavailable" or "on this date, I'm only available 9-12".
+The availability engine (getAvailability) checks overrides first to determine the day's base time windows, before subtracting external calendar conflicts.
+Why a Separate Model Is Better Than Adding a Column to AvailabilityOverride
+
+The existing AvailabilityOverride is date-scoped with a @@unique([userId, date]) constraint — one override per user per date. Event-level free overrides are fundamentally different: there can be many per date, they're tied to a specific external event (not a time window), and they interact at the conflict-checking stage (not the base-window stage). Adding externalEventId to AvailabilityOverride would violate the unique constraint and conflate two different concepts.
+
+Decision: Create a lightweight EventFreeOverride model purpose-built for this feature. It complements the existing override architecture by operating at a different layer: AvailabilityOverride controls the base time windows, while EventFreeOverride controls which external conflicts are ignored within those windows.
+
+Event Identification Strategy
+
+External events have provider-specific IDs that are stable across fetches:
+
+Google: event.id (stable string like abc123def)
+Microsoft: event.id (stable Graph API ID)
+CalDAV: event.id (UID from iCal data)
+On the frontend, events are prefixed (goog-, msft-, caldav-) to avoid collisions. The override table will store the raw provider event ID (without prefix) plus the provider field for disambiguation.
+
+Availability Engine Integration
+
+Currently, getAvailableSlots builds a googleBusyIntervals array from all providers' freeBusy responses, then checks each slot against it. The fix: enhance the freeBusy data flow to carry event IDs alongside time ranges. Before adding a busy interval, check if its event has a free override → if so, skip it.
+
+Google FreeBusy API limitation: Google's freebusy.query doesn't return individual event IDs — only aggregated busy blocks. To support per-event overrides for Google, we'll switch the conflict-checking to use getEvents (which does return event IDs) instead of getFreeBusy for calendars where the user has active overrides. For Microsoft and CalDAV, the existing getFreeBusy methods already enumerate individual events with IDs, so filtering is straightforward.
+
+Tasks
+
+T001: Create EventFreeOverride Database Model
+
+Blocked By: []
+Details:
+Add new model to prisma/schema.prisma:
+model EventFreeOverride {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  externalEventId String   // raw provider event ID
+  provider        String   // "google" | "microsoft" | "apple" | "yahoo"
+  calendarId      String   // which calendar the event belongs to
+  title           String?  // snapshot of event title for display
+  createdAt       DateTime @default(now())
+  @@unique([userId, externalEventId, provider])
+}
+Add eventFreeOverrides EventFreeOverride[] relation to User model
+Run npx prisma db push
+Files: prisma/schema.prisma
+Acceptance: Table created in DB with unique constraint
+T002: Backend API — CRUD for Event Free Overrides
+
+Blocked By: [T001]
+Details:
+Add three endpoints to calendar.controller.ts:
+GET /api/calendar/event-overrides — list all free overrides for the current user
+POST /api/calendar/event-overrides — create a free override: { externalEventId, provider, calendarId, title? }. Upsert to avoid duplicates.
+DELETE /api/calendar/event-overrides/:id — remove override (event goes back to blocking)
+Files: server/src/modules/calendar/calendar.controller.ts
+Acceptance: Endpoints work, create/list/delete overrides
+T003: Availability Engine — Respect Event Free Overrides
+
+Blocked By: [T002]
+Details:
+Modify busy interval collection in getAvailability method:
+Fetch all EventFreeOverride records for the provider user
+Build a Set<string> of overridden event keys (${provider}::${externalEventId})
+Enhance the busy-interval extraction flow:
+Microsoft & CalDAV: Their getFreeBusy methods already return per-event data (they enumerate events). Modify the response shape to include eventId alongside start/end. In extractBusyIntervals, skip events whose ID is in the override set.
+Google: The freebusy.query API returns aggregated blocks without event IDs. When the user has Google event overrides, use getEvents instead to get individual events with IDs, then filter out overridden ones before building busy intervals.
+The extractBusyIntervals helper will be updated to accept the override set and per-event ID info
+Files: server/src/modules/calendar/calendar.controller.ts, server/src/modules/calendar/google-calendar.service.ts (minor — ensure getEvents response includes calendarId), server/src/modules/calendar/microsoft-calendar.service.ts (minor — add eventId to freeBusy response), server/src/modules/calendar/caldav-calendar.service.ts (minor — add eventId to freeBusy response)
+Acceptance: A slot that overlaps with an overridden external event remains available for booking; non-overridden events continue to block
+T004: Frontend — Pass Provider Info Through External Events
+
+Blocked By: []
+Details:
+Update the event-mapping useMemo in calendar-page.tsx to include provider information and the raw (unprefixed) event ID in each external event's resource object. Currently resource only has { connectionId, color }. Add:
+provider: "google" | "microsoft" | "apple" | "yahoo"
+rawEventId: the original event ID without the goog-/msft-/caldav- prefix
+calendarId: the calendar ID the event belongs to
+calendarLabel: the calendar's display name
+Also pass provider info through from the backend events API responses (connection data already includes provider)
+Files: client/src/pages/calendar-page.tsx
+Acceptance: External event resources contain provider, rawEventId, and calendarId fields
+T005: Frontend — External Event Click Popover with Free/Busy Toggle
+
+Blocked By: [T002, T004]
+Details:
+In calendar-page.tsx, update handleSelectEvent to handle type === "external" events:
+Set state: selectedExternalEvent with the event data
+Build an ExternalEventPopover component (inline in calendar-page.tsx to match existing pattern) that shows:
+Event title, date/time range, source calendar label/icon
+An "Availability" toggle: default = "Busy" (shown as muted/red), toggleable to "Free/Available" (green)
+When toggled to "Free": POST /api/calendar/event-overrides with { externalEventId, provider, calendarId, title }
+When toggled back to "Busy": DELETE /api/calendar/event-overrides/:id
+Loading state during mutation
+Query GET /api/calendar/event-overrides to know which events are currently marked free
+Visually distinguish overridden events in the calendar (e.g., dashed border, reduced opacity, strikethrough on title, or a small "Free" badge)
+Use a Dialog (consistent with existing BookingDetailDialog and BlockEditForm patterns) rather than a floating popover
+Files: client/src/pages/calendar-page.tsx
+Acceptance: Clicking external event opens dialog; toggle saves/removes override; visual distinction on free-marked events; toggle state persists across page reloads

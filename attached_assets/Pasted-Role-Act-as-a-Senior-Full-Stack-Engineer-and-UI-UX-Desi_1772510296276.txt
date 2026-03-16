@@ -1,0 +1,55 @@
+Role: Act as a Senior Full-Stack Engineer and UI/UX Designer.
+
+Objective: Create a "Brand Settings" administrative page for GoStork to manage the platform's global visual identity. This page must handle the storage, application, and real-time preview of the Logo, Color Scheme, and Typography.
+
+Technical Requirements:
+
+Logo & Asset Management:
+
+Uploaders: Drag & Drop zones for Primary Logo (SVG/PNG) and Favicon.
+
+Variants: Include a toggle for "Dark Mode" vs. "Light Mode" logo variations.
+
+Storage Logic: Integrate with Supabase Storage to save files and return public URLs to the database.
+
+Live Preview: A header-mockup component showing how the logo looks on the actual navigation bar.
+
+Color System (Design System):
+
+Inputs: Hex code selectors for Primary (GoStork Brand), Secondary/Accent, and Status colors (Success, Warning, Error).
+
+Accessibility: Automatically calculate the contrast ratio (WCAG) for the Primary color and display a warning if white or black text will be unreadable on top of it.
+
+Interactive Preview: A "Theme Preview" card displaying buttons, alerts, and cards that update in real-time as colors are changed.
+
+Typography:
+
+Dropdowns for "Heading Font" and "Body Font" (integrated with Google Fonts).
+
+Numerical inputs for Base Font Size and Line Height.
+
+Application & Global Logic:
+
+CSS Variables: On change, the page must update CSS Variables (:root) such as --color-primary. All UI components in the product must reference these variables to ensure changes reflect "everywhere" instantly.
+
+Persistence: A "Save" button that updates the site_settings table in the database and a "Reset to Default" button.
+
+Validation: Ensure valid hex formats, file type restrictions, and size limits.
+
+UI Style:
+
+Aesthetic: Clean, high-end "Enterprise SaaS" look.
+
+Layout: Sidebar navigation with a card-based settings area.
+
+Stack: React, Tailwind CSS, Lucide React for icons, and Supabase for the backend.
+
+Why this works for you:
+
+This prompt ensures that when the AI builds the page, it doesn't just make a "dumb" form. It builds a system where:
+
+The logos actually get saved to your cloud storage.
+
+The colors actually change the look of the whole app (via CSS variables).
+
+You don't accidentally pick a brand color that makes your text impossible to read.

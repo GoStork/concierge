@@ -1,0 +1,40 @@
+TASK NAME: Implement Expert Consultant Mode & Hybrid Chat UI
+
+Description:
+The AI Concierge should not just be a form-filler. It must act as a knowledgeable guide that balances structured data collection (using cards) with open-ended expert consultation (using free text).
+
+Step 1: The "Expert Consultant" Personality Update
+
+The Goal: The AI should "tell it like it is" and provide value, not just ask questions.
+
+The Logic: When asking about preferences (Donors, Surrogates, Clinics), the AI must first ask a broad, open-ended question.
+
+The "Guidance" Loop: After the user types a free-text response, the AI should:
+
+Acknowledge and validate the input.
+
+Provide an "Expert Tip" or correction (e.g., "That’s a great priority. One thing to keep in mind is that for surrogacy in the US, legal clearance can vary by state...").
+
+Only then move to a structured card if specific data is still missing.
+
+Step 2: Updated Conversation Flow (Part 2)
+
+Embryos/Biology (Cards): Keep these as interactive cards ([Yes], [No], [Sliders]) because this is technical data we need for the "Master Logic."
+
+Preferences (Open Dialogue):
+
+Egg Donor: Instead of eye/hair cards, ask: "When you think about your ideal donor, what are the traits or backgrounds that are most important to you?" Allow free text.
+
+Surrogacy: Ask: "What are your main concerns or goals when it comes to choosing a surrogate and an agency?" Allow free text.
+
+Clinic: Ask: "Beyond success rates, what kind of relationship are you looking for with your doctor and the clinic staff?" Allow free text.
+
+Step 3: Real-Time Sentiment Analysis & Data Extraction
+
+The AI must analyze the free-text responses and extract key tags (e.g., "Budget-conscious," "Wants high communication," "Specific ethnicity") to save to the ParentProfile.
+
+Step 4: The Branded "Curation" Transition (End of Chat)
+
+Once the consultation feels complete, the AI triggers the 3-second Curation Loader typewriter animation.
+
+The Reveal: Instead of just a card, the AI explains why it chose the match: "Based on your preference for a hands-on doctor and your focus on success rates, I’ve found [Clinic Name]. They are known for..."

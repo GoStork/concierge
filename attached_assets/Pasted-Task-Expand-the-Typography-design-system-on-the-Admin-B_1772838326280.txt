@@ -1,0 +1,54 @@
+Task: Expand the Typography design system on the Admin Branding Page and perform a global codebase scan to apply dynamic typography variables.
+
+Architecture Context:
+- Frontend: React, Tailwind CSS. Local state (`useState`) is used in `admin-brand-settings-page.tsx` for real-time preview via `updateField()` and `applyBrandPreview()`.
+- The hook `useBrandSettings()` (which includes `applyBrandToDocument()`) handles global application by setting CSS variables directly on `document.documentElement.style`.
+- Backend/DB: NestJS API updating a PostgreSQL database via Prisma ORM (`SiteSettings` table).
+- CSS: Variables are defined in `client/src/index.css` under `:root` and mapped in `tailwind.config.ts`.
+
+Step 1: Database & Backend Updates
+- Update the Prisma schema (`schema.prisma`) to add the following fields to the `SiteSettings` model (or equivalent branding model):
+  - `typeScaleRatio` (Float/Decimal)
+  - `smallTextSize` (Int/String)
+  - `baseBodyWeight` (String)
+  - `headingWeight` (String)
+  - `uiButtonWeight` (String)
+  - `bodyLineHeight` (Float/Decimal)
+  - `headingLineHeight` (Float/Decimal)
+  - `letterSpacing` (String)
+  - `buttonTextCase` (String)
+  - `linkDecoration` (String)
+- Run the Prisma migration.
+- Update the corresponding NestJS DTOs (e.g., in `server-2/src/modules/brand/`) to validate and accept these new fields.
+
+Step 2: CSS & Tailwind Configuration
+- Update `client/src/index.css` to include default fallback variables for all new typography settings under `:root` (e.g., `--type-scale-ratio`, `--font-weight-heading`, `--line-height-heading`, etc.).
+- Update `tailwind.config.ts` to map these new CSS variables to Tailwind utility classes. Create semantic extensions, for example:
+  - `fontWeight`: add `heading`, `body`, `ui` mapped to the respective CSS variables.
+  - `lineHeight`: add `heading`, `body` mapped to the respective CSS variables.
+  - `letterSpacing`: add `heading` mapped to the respective CSS variable.
+
+Step 3: Frontend State & Hook Updates
+- Update `client/src/hooks/use-brand-settings.ts`. Modify `applyBrandPreview()` and `applyBrandToDocument()` to read the new typography fields and apply them to `document.documentElement.style` as CSS custom properties.
+- Ensure the types/interfaces for the brand settings state match the newly added database fields.
+
+Step 4: Admin Branding UI Expansion
+- Modify `client/src/pages/admin-brand-settings-page.tsx`. Expand the Typography section (Card) to include UI controls for the new fields:
+  - Type Scale Ratio (Input/Select: e.g., 1.25, 1.33, 1.5)
+  - Small Text Size (px) (Number Input)
+  - Font Weights (Select dropdowns for Base, Heading, and UI/Button with options like 400, 500, 600, 700)
+  - Line Heights (Number Inputs/Sliders for Body and Heading)
+  - Letter Spacing (Tracking) (Select/Input)
+  - Button Text Case (Select: Normal, Uppercase, Capitalize)
+  - Link Decoration (Toggle: Always underline, Underline on hover)
+- Ensure all inputs map to `updateField()` so the real-time preview updates immediately.
+
+Step 5: Global Codebase Scan & Refactor
+- Once the above steps are verified and working, perform a full global scan of the codebase (excluding third-party logos/SVGs).
+- Find hardcoded typography Tailwind classes and replace them with the new semantic brand classes. Examples of replacements:
+  - Replace hardcoded font weights on headings (e.g., `font-bold`, `font-semibold`) with `font-heading`.
+  - Replace hardcoded line heights on headings (e.g., `leading-tight`, `leading-snug`) with `leading-heading`.
+  - Replace hardcoded line heights on paragraphs (e.g., `leading-relaxed`) with `leading-body`.
+  - Replace hardcoded weights on buttons (e.g., `font-medium`) with `font-ui`.
+  - Apply the configured button text case logic to standard button components.
+- Ensure the structural integrity of `client/src/components/ui/` components is maintained while swapping these classes.
