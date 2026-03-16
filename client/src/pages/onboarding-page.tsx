@@ -82,8 +82,8 @@ function PillButton({
       data-testid={testId}
       className={`w-full py-4 px-6 rounded-full text-lg font-medium transition-all duration-200 flex items-center justify-between ${
         selected
-          ? "bg-black text-white shadow-md"
-          : "bg-gray-100 text-gray-800 hover:bg-gray-200"
+          ? "bg-primary text-primary-foreground shadow-md"
+          : "bg-muted text-foreground hover:bg-muted/80"
       }`}
     >
       <span className="flex-1 text-center">{label}</span>
@@ -139,7 +139,7 @@ function ScrollWheel({
   return (
     <div className="relative" style={{ height: visibleCount * itemHeight }}>
       <div
-        className="absolute left-0 right-0 bg-gray-100 rounded-lg pointer-events-none z-0"
+        className="absolute left-0 right-0 bg-muted rounded-lg pointer-events-none z-0"
         style={{ top: Math.floor(visibleCount / 2) * itemHeight, height: itemHeight }}
       />
       <div
@@ -208,7 +208,7 @@ function OtpInput({
           onChange={e => handleChange(i, e.target.value)}
           onKeyDown={e => handleKeyDown(i, e)}
           data-testid={`input-otp-${i}`}
-          className="w-12 h-14 text-center text-2xl font-semibold border-b-2 border-gray-300 focus:border-black outline-none bg-transparent transition-colors"
+          className="w-12 h-14 text-center text-2xl font-semibold border-b-2 border-border focus:border-primary outline-none bg-transparent transition-colors"
         />
       ))}
     </div>
@@ -413,25 +413,25 @@ export default function OnboardingPage() {
 
   if (isLoading) {
     return (
-      <div className="fixed inset-0 bg-white flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+      <div className="fixed inset-0 bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   if (showLoading) {
     return (
-      <div className="fixed inset-0 bg-white flex flex-col items-center justify-center z-50">
+      <div className="fixed inset-0 bg-background flex flex-col items-center justify-center z-50">
         <div className="animate-[fadeIn_0.8s_ease-out_forwards] opacity-0 text-center px-8">
-          <h1 className="text-3xl md:text-4xl font-bold mb-4" style={{ fontFamily: "var(--font-display)" }}>
+          <h1 className="text-3xl md:text-4xl font-bold mb-4 text-foreground" style={{ fontFamily: "var(--font-display)" }}>
             Welcome to the family{data.firstName ? `, ${data.firstName}` : ""}.
           </h1>
-          <p className="text-gray-500 text-lg">
+          <p className="text-muted-foreground text-lg">
             We've saved your preferences. Now, let's choose a guide to help you start your journey.
           </p>
         </div>
         <div className="mt-8 animate-[fadeIn_1.2s_ease-out_forwards] opacity-0">
-          <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
         </div>
         <style>{`
           @keyframes fadeIn {
@@ -444,12 +444,13 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="fixed inset-0 bg-white flex flex-col" data-testid="onboarding-page">
+    <div className="fixed inset-0 bg-background flex flex-col items-center" data-testid="onboarding-page">
+      <div className="w-full max-w-lg flex flex-col flex-1 min-h-0">
       <div className="flex items-center px-4 pt-4 pb-2">
         {step > firstStep && (
           <button
             onClick={goBack}
-            className="p-2 -ml-2 rounded-full hover:bg-gray-100 transition-colors"
+            className="p-2 -ml-2 rounded-full hover:bg-muted transition-colors"
             data-testid="btn-onboarding-back"
           >
             <ChevronLeft className="w-6 h-6" />
@@ -459,9 +460,9 @@ export default function OnboardingPage() {
       </div>
 
       <div className="px-6 mb-6">
-        <div className="w-full h-1 bg-gray-200 rounded-full overflow-hidden">
+        <div className="w-full h-1 bg-muted rounded-full overflow-hidden">
           <div
-            className="h-full bg-black rounded-full transition-all duration-500 ease-out"
+            className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
             style={{ width: `${progress}%` }}
             data-testid="progress-bar"
           />
@@ -558,8 +559,8 @@ export default function OnboardingPage() {
             data-testid="btn-onboarding-continue"
             className={`w-full py-4 rounded-full text-lg font-semibold transition-all duration-200 ${
               canContinue()
-                ? "bg-black text-white hover:bg-gray-800 active:scale-[0.98]"
-                : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                ? "bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98]"
+                : "bg-muted text-muted-foreground cursor-not-allowed"
             }`}
           >
             {submitting ? (
@@ -573,12 +574,12 @@ export default function OnboardingPage() {
             )}
           </button>
           {step === ACCOUNT_STEP && isRegistration && (
-            <p className="text-center text-sm text-gray-500 mt-4">
+            <p className="text-center text-sm text-muted-foreground mt-4">
               Already have an account?{" "}
               <button
                 type="button"
                 onClick={() => navigate("/")}
-                className="text-black font-medium hover:underline"
+                className="text-primary font-medium hover:underline"
                 data-testid="link-back-to-login"
               >
                 Login
@@ -587,6 +588,7 @@ export default function OnboardingPage() {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -620,10 +622,10 @@ function StepAccount({
       >
         Create your account
       </h1>
-      <p className="text-gray-500 mb-8 text-sm">Enter your email and choose a password to get started.</p>
+      <p className="text-muted-foreground mb-8 text-sm">Enter your email and choose a password to get started.</p>
       <div className="space-y-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <label className="block text-sm font-medium text-foreground mb-1">Email</label>
           <input
             type="email"
             value={email}
@@ -631,11 +633,11 @@ function StepAccount({
             placeholder="you@example.com"
             autoFocus
             data-testid="input-register-email"
-            className="w-full text-lg border-0 border-b-2 border-gray-300 focus:border-black outline-none pb-3 bg-transparent placeholder:text-gray-300 transition-colors"
+            className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+          <label className="block text-sm font-medium text-foreground mb-1">Password</label>
           <div className="relative">
             <input
               type={showPassword ? "text" : "password"}
@@ -643,12 +645,12 @@ function StepAccount({
               onChange={e => onPasswordChange(e.target.value)}
               placeholder="At least 6 characters"
               data-testid="input-register-password"
-              className="w-full text-lg border-0 border-b-2 border-gray-300 focus:border-black outline-none pb-3 bg-transparent placeholder:text-gray-300 transition-colors pr-10"
+              className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors pr-10"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+              className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
               data-testid="btn-toggle-password"
             >
               {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -659,7 +661,7 @@ function StepAccount({
           )}
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+          <label className="block text-sm font-medium text-foreground mb-1">Confirm Password</label>
           <div className="relative">
             <input
               type={showConfirm ? "text" : "password"}
@@ -667,12 +669,12 @@ function StepAccount({
               onChange={e => onConfirmPasswordChange(e.target.value)}
               placeholder="Re-enter your password"
               data-testid="input-register-confirm-password"
-              className="w-full text-lg border-0 border-b-2 border-gray-300 focus:border-black outline-none pb-3 bg-transparent placeholder:text-gray-300 transition-colors pr-10"
+              className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors pr-10"
             />
             <button
               type="button"
               onClick={() => setShowConfirm(!showConfirm)}
-              className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+              className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
               data-testid="btn-toggle-confirm-password"
             >
               {showConfirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -732,7 +734,7 @@ function StepFirstName({ value, onChange }: { value: string; onChange: (v: strin
       >
         What's your first name?
       </h1>
-      <p className="text-gray-500 mb-8 text-sm">Your name cannot be changed later</p>
+      <p className="text-muted-foreground mb-8 text-sm">Your name cannot be changed later</p>
       <input
         type="text"
         value={value}
@@ -740,7 +742,7 @@ function StepFirstName({ value, onChange }: { value: string; onChange: (v: strin
         placeholder="First name"
         autoFocus
         data-testid="input-first-name"
-        className="w-full text-lg border-0 border-b-2 border-gray-300 focus:border-black outline-none pb-3 bg-transparent placeholder:text-gray-300 transition-colors"
+        className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
       />
     </div>
   );
@@ -763,7 +765,7 @@ function StepLastName({ value, onChange }: { value: string; onChange: (v: string
         placeholder="Last name"
         autoFocus
         data-testid="input-last-name"
-        className="w-full text-lg border-0 border-b-2 border-gray-300 focus:border-black outline-none pb-3 bg-transparent placeholder:text-gray-300 transition-colors"
+        className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
       />
     </div>
   );
@@ -921,7 +923,7 @@ function StepPartner({
             placeholder="Partner's first name"
             autoFocus
             data-testid="input-partner-name"
-            className="w-full text-lg border-0 border-b-2 border-gray-300 focus:border-black outline-none pb-3 bg-transparent placeholder:text-gray-300 transition-colors"
+            className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
           />
         </div>
         <div>
@@ -931,7 +933,7 @@ function StepPartner({
             onChange={e => onAgeChange(e.target.value)}
             placeholder="Partner's age"
             data-testid="input-partner-age"
-            className="w-full text-lg border-0 border-b-2 border-gray-300 focus:border-black outline-none pb-3 bg-transparent placeholder:text-gray-300 transition-colors"
+            className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
           />
         </div>
       </div>
@@ -967,7 +969,7 @@ function StepLocation({
           placeholder="City"
           autoFocus
           data-testid="input-city"
-          className="w-full text-lg border-0 border-b-2 border-gray-300 focus:border-black outline-none pb-3 bg-transparent placeholder:text-gray-300 transition-colors"
+          className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
         />
         <input
           type="text"
@@ -975,7 +977,7 @@ function StepLocation({
           onChange={e => onStateChange(e.target.value)}
           placeholder="State / Province"
           data-testid="input-state"
-          className="w-full text-lg border-0 border-b-2 border-gray-300 focus:border-black outline-none pb-3 bg-transparent placeholder:text-gray-300 transition-colors"
+          className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
         />
       </div>
     </div>
@@ -1007,7 +1009,7 @@ function StepPhone({
       >
         What's your phone number?
       </h1>
-      <p className="text-gray-500 mb-8 text-sm">
+      <p className="text-muted-foreground mb-8 text-sm">
         We will send you a verification code on this number. We make sure our users are real people
       </p>
 
@@ -1016,24 +1018,24 @@ function StepPhone({
           <button
             type="button"
             onClick={() => setShowCodes(!showCodes)}
-            className="text-lg border-b-2 border-gray-300 pb-3 flex items-center gap-1 hover:border-black transition-colors whitespace-nowrap"
+            className="text-lg border-b-2 border-border pb-3 flex items-center gap-1 hover:border-primary transition-colors whitespace-nowrap"
             data-testid="btn-country-code"
           >
             {selected.label} {selected.code} <ChevronLeft className="w-4 h-4 rotate-[-90deg]" />
           </button>
           {showCodes && (
-            <div className="absolute top-full left-0 mt-1 bg-white border rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto w-48">
+            <div className="absolute top-full left-0 mt-1 bg-background border border-border rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto w-48">
               {COUNTRY_CODES.map(cc => (
                 <button
                   key={cc.code}
                   type="button"
                   onClick={() => { onCountryCodeChange(cc.code); setShowCodes(false); }}
-                  className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm"
+                  className="w-full text-left px-3 py-2 hover:bg-muted flex items-center gap-2 text-sm"
                   data-testid={`country-${cc.label.toLowerCase()}`}
                 >
                   <span>{cc.flag}</span>
                   <span>{cc.label}</span>
-                  <span className="text-gray-400">{cc.code}</span>
+                  <span className="text-muted-foreground">{cc.code}</span>
                 </button>
               ))}
             </div>
@@ -1046,11 +1048,11 @@ function StepPhone({
           placeholder="(555) 123-4567"
           autoFocus
           data-testid="input-phone"
-          className="flex-1 text-lg border-0 border-b-2 border-gray-300 focus:border-black outline-none pb-3 bg-transparent placeholder:text-gray-300 transition-colors"
+          className="flex-1 text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
         />
       </div>
 
-      <div className="flex items-center gap-2 text-gray-500 text-sm justify-center">
+      <div className="flex items-center gap-2 text-muted-foreground text-sm justify-center">
         <Lock className="w-4 h-4" />
         <span>Your number will never be shared with anyone</span>
       </div>
@@ -1080,15 +1082,15 @@ function StepVerification({
       >
         Enter the code you received
       </h1>
-      <p className="text-gray-500 mb-10">Sent to {phone}</p>
+      <p className="text-muted-foreground mb-10">Sent to {phone}</p>
 
       <OtpInput value={otp} onChange={onChange} />
 
-      <p className="text-center text-gray-500 text-sm mt-12">
+      <p className="text-center text-muted-foreground text-sm mt-12">
         You should receive the code within 30s
       </p>
       <p className="text-center text-sm mt-1">
-        <button type="button" className="underline text-gray-700" data-testid="btn-resend-code">
+        <button type="button" className="underline text-foreground" data-testid="btn-resend-code">
           Didn't receive the code?
         </button>
       </p>
