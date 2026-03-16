@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { api } from "@shared/routes";
 import { ChevronLeft, Loader2, Lock, Check, Eye, EyeOff } from "lucide-react";
+import LocationAutocomplete from "@/components/location-autocomplete";
 
 const TOTAL_STEPS_AUTHENTICATED = 12;
 const TOTAL_STEPS_UNAUTHENTICATED = 13;
@@ -56,6 +57,7 @@ interface OnboardingData {
   partnerAge: string;
   city: string;
   state: string;
+  country: string;
   countryCode: string;
   phone: string;
   otp: string[];
@@ -254,6 +256,7 @@ export default function OnboardingPage() {
     partnerAge: "",
     city: "",
     state: "",
+    country: "",
     countryCode: "+1",
     phone: "",
     otp: ["", "", "", "", "", ""],
@@ -307,7 +310,7 @@ export default function OnboardingPage() {
       case 6: return data.orientation !== "";
       case 7: return data.relationship !== "";
       case 8: return data.partnerFirstName.trim().length > 0 && data.partnerAge.trim().length > 0;
-      case 9: return data.city.trim().length > 0 && data.state.trim().length > 0;
+      case 9: return data.city.trim().length > 0;
       case 10: return data.phone.trim().length >= 7;
       case 11: return data.otp.every(d => d !== "");
       case 12: return data.source !== "";
@@ -362,6 +365,7 @@ export default function OnboardingPage() {
         partnerAge: data.partnerAge ? parseInt(data.partnerAge) : null,
         city: data.city.trim(),
         state: data.state.trim(),
+        country: data.country.trim() || null,
         mobileNumber: `${data.countryCode} ${data.phone.trim()}`,
         referralSource: data.source,
         interestedServices: data.goals,
@@ -512,10 +516,8 @@ export default function OnboardingPage() {
           )}
           {step === 9 && (
             <StepLocation
-              city={data.city}
-              state={data.state}
-              onCityChange={v => update({ city: v })}
-              onStateChange={v => update({ state: v })}
+              value={{ address: "", city: data.city, state: data.state, zip: "", country: data.country }}
+              onChange={loc => update({ city: loc.city, state: loc.state, country: loc.country })}
             />
           )}
           {step === 10 && (
@@ -942,15 +944,11 @@ function StepPartner({
 }
 
 function StepLocation({
-  city,
-  state,
-  onCityChange,
-  onStateChange,
+  value,
+  onChange,
 }: {
-  city: string;
-  state: string;
-  onCityChange: (v: string) => void;
-  onStateChange: (v: string) => void;
+  value: { address: string; city: string; state: string; zip: string; country: string };
+  onChange: (loc: { address: string; city: string; state: string; zip: string; country: string }) => void;
 }) {
   return (
     <div>
@@ -961,25 +959,15 @@ function StepLocation({
       >
         Where are you currently living?
       </h1>
-      <div className="space-y-6">
-        <input
-          type="text"
-          value={city}
-          onChange={e => onCityChange(e.target.value)}
-          placeholder="City"
-          autoFocus
-          data-testid="input-city"
-          className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
-        />
-        <input
-          type="text"
-          value={state}
-          onChange={e => onStateChange(e.target.value)}
-          placeholder="State / Province"
-          data-testid="input-state"
-          className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
-        />
-      </div>
+      <LocationAutocomplete
+        value={value}
+        onChange={onChange}
+        placeholder="Start typing your city..."
+        variant="onboarding"
+        showCurrentLocation
+        autoFocus
+        data-testid="input-location"
+      />
     </div>
   );
 }
