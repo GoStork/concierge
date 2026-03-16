@@ -54,7 +54,9 @@ interface OnboardingData {
   orientation: string;
   relationship: string;
   partnerFirstName: string;
-  partnerAge: string;
+  partnerBirthMonth: number;
+  partnerBirthDay: number;
+  partnerBirthYear: number;
   city: string;
   state: string;
   country: string;
@@ -239,7 +241,9 @@ export default function OnboardingPage() {
     orientation: "",
     relationship: "",
     partnerFirstName: "",
-    partnerAge: "",
+    partnerBirthMonth: 0,
+    partnerBirthDay: 0,
+    partnerBirthYear: 4,
     city: "",
     state: "",
     country: "",
@@ -295,7 +299,7 @@ export default function OnboardingPage() {
       case 5: return data.gender !== "";
       case 6: return data.orientation !== "";
       case 7: return data.relationship !== "";
-      case 8: return data.partnerFirstName.trim().length > 0 && data.partnerAge.trim().length > 0;
+      case 8: return data.partnerFirstName.trim().length > 0;
       case 9: return data.city.trim().length > 0;
       case 10: return data.phone.trim().length >= 7;
       case 11: return data.otp.every(d => d !== "");
@@ -348,7 +352,10 @@ export default function OnboardingPage() {
         sexualOrientation: data.orientation,
         relationshipStatus: data.relationship,
         partnerFirstName: data.partnerFirstName.trim() || null,
-        partnerAge: data.partnerAge ? parseInt(data.partnerAge) : null,
+        partnerAge: data.partnerFirstName ? (() => {
+          const bd = new Date(YEARS[data.partnerBirthYear], data.partnerBirthMonth, DAYS[data.partnerBirthDay]);
+          return Math.floor((Date.now() - bd.getTime()) / 31557600000);
+        })() : null,
         city: data.city.trim(),
         state: data.state.trim(),
         country: data.country.trim() || null,
@@ -535,9 +542,13 @@ export default function OnboardingPage() {
           {step === 8 && (
             <StepPartner
               firstName={data.partnerFirstName}
-              age={data.partnerAge}
+              birthMonth={data.partnerBirthMonth}
+              birthDay={data.partnerBirthDay}
+              birthYear={data.partnerBirthYear}
               onFirstNameChange={v => update({ partnerFirstName: v })}
-              onAgeChange={v => update({ partnerAge: v })}
+              onBirthMonthChange={v => update({ partnerBirthMonth: v })}
+              onBirthDayChange={v => update({ partnerBirthDay: v })}
+              onBirthYearChange={v => update({ partnerBirthYear: v })}
             />
           )}
           {step === 9 && (
@@ -930,14 +941,22 @@ function StepRelationship({ value, onChange }: { value: string; onChange: (v: st
 
 function StepPartner({
   firstName,
-  age,
+  birthMonth,
+  birthDay,
+  birthYear,
   onFirstNameChange,
-  onAgeChange,
+  onBirthMonthChange,
+  onBirthDayChange,
+  onBirthYearChange,
 }: {
   firstName: string;
-  age: string;
+  birthMonth: number;
+  birthDay: number;
+  birthYear: number;
   onFirstNameChange: (v: string) => void;
-  onAgeChange: (v: string) => void;
+  onBirthMonthChange: (v: number) => void;
+  onBirthDayChange: (v: number) => void;
+  onBirthYearChange: (v: number) => void;
 }) {
   return (
     <div>
@@ -948,27 +967,38 @@ function StepPartner({
       >
         Tell us about your partner.
       </h1>
-      <div className="space-y-6">
+      <div className="space-y-8">
+        <input
+          type="text"
+          value={firstName}
+          onChange={e => onFirstNameChange(e.target.value)}
+          placeholder="Partner's first name"
+          autoFocus
+          data-testid="input-partner-name"
+          className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
+        />
         <div>
-          <input
-            type="text"
-            value={firstName}
-            onChange={e => onFirstNameChange(e.target.value)}
-            placeholder="Partner's first name"
-            autoFocus
-            data-testid="input-partner-name"
-            className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
-          />
-        </div>
-        <div>
-          <input
-            type="number"
-            value={age}
-            onChange={e => onAgeChange(e.target.value)}
-            placeholder="Partner's age"
-            data-testid="input-partner-age"
-            className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
-          />
+          <p className="text-muted-foreground text-sm mb-4">Partner's date of birth</p>
+          <div className="grid grid-cols-3 gap-4">
+            <ScrollWheel
+              items={MONTHS}
+              selectedIndex={birthMonth}
+              onSelect={onBirthMonthChange}
+              testIdPrefix="scroll-partner-month"
+            />
+            <ScrollWheel
+              items={DAYS}
+              selectedIndex={birthDay}
+              onSelect={onBirthDayChange}
+              testIdPrefix="scroll-partner-day"
+            />
+            <ScrollWheel
+              items={YEARS}
+              selectedIndex={birthYear}
+              onSelect={onBirthYearChange}
+              testIdPrefix="scroll-partner-year"
+            />
+          </div>
         </div>
       </div>
     </div>
