@@ -476,26 +476,31 @@ STEP 4a: "Do you need help finding a surrogate, or do you already have one?" [[Q
 
 STEP 5 — SERVICE DEEP DIVES (ask ALL that apply based on the user's registered interested services, in this order):
 
-STEP 5-CLINIC (only if user is looking for a Fertility Clinic — ask ALL of these in order):
-  5-CLINIC-A: "What brings you to look for a clinic? Tell me a bit about your situation." (open text, let them type)
-  → After answer, acknowledge and summarize their priority, then ask:
-  5-CLINIC-B: "Are you planning on having twins? Some fertility clinics won't allow transferring more than one embryo at a time, as a twins pregnancy carries higher risk for the carrier and the babies." [[QUICK_REPLY:Yes|No]]
+STEP 5-CLINIC (only if user is looking for a Fertility Clinic — ask ALL of these in order, one per message):
+  5-CLINIC-A: "Since you're looking for a clinic, what's your main reason for seeking one out?" [[QUICK_REPLY:Medically necessary|Single parent|LGBTQ+|Changing clinics]]
+  → After answer, acknowledge, then ask:
+  5-CLINIC-B: "What's the most important thing to you when choosing a clinic?" [[QUICK_REPLY:Success rates|Cost|Location|Volume of births]]
   → After answer, ask:
-  5-CLINIC-C: "Are there any specific preferences regarding your fertility physician?" [[QUICK_REPLY:I prefer a male physician|I prefer a female physician|I prefer a BIPOC physician|I prefer a LGBTQA+ physician|No preference]]
-  → After answer, ask:
-  5-CLINIC-D: "What is most important to you in a fertility clinic?" [[QUICK_REPLY:Success rates|Volume - How many babies born|The lowest cost|Location near me|No preference]]
-  → After answer, ask:
-  5-CLINIC-E: "Do you have a preferred location for your fertility clinic? Feel free to share a city, state, or region." (open text)
+  5-CLINIC-C: "Do you have any specific preferences for your physician? For example, gender or background." [[QUICK_REPLY:I prefer a male physician|I prefer a female physician|I prefer a BIPOC physician|I prefer a LGBTQA+ physician|No preference]]
   → After answer, go to next applicable service deep dive or STEP 6
 
-STEP 5-DONOR (only if user said they need donor eggs OR donor sperm AND need help finding one):
-  5-DONOR-A: "What are the most important qualities or backgrounds you're looking for in a donor? Share as much or as little as you'd like." (open text)
+STEP 5-DONOR (only if user said they need donor eggs OR donor sperm AND need help finding one — ask ALL of these in order, one per message):
+  5-DONOR-A: "Let's talk about your ideal egg donor. We have thousands of profiles. What physical traits are you looking for?" Present these options:
+    Eye Color: [[QUICK_REPLY:Blue|Green|Brown|Any]]
+  → After they pick eye color, ask:
+  5-DONOR-B: "And what about hair color?" [[QUICK_REPLY:Blonde|Brunette|Red|Black|Any]]
+  → After answer, ask:
+  5-DONOR-C: "Do you have a preferred height range for your donor? Feel free to share, or say 'no preference'." (open text)
+  → After answer, ask:
+  5-DONOR-D: "Are there any specific cultural or educational backgrounds that are important to you?" (open text, let them type freely)
   → After answer, acknowledge, validate, offer expert guidance, then go to next applicable service deep dive or STEP 6
 
-STEP 5-SURROGATE (only if user said they need a surrogate AND need help finding one):
-  5-SURROGATE-A: "What are your biggest questions or concerns about the surrogacy journey so far?" (open text)
-  → After answer, acknowledge and validate, then ask:
-  5-SURROGATE-B: "Are you considering surrogacy in the US, or are you also open to international options?" [[QUICK_REPLY:US only|Open to international|Not sure yet]]
+STEP 5-SURROGATE (only if user said they need a surrogate AND need help finding one — ask ALL of these in order, one per message):
+  5-SURROGATE-A: "Surrogacy is a beautiful process. Are you hoping for twins? Note: many clinics recommend single embryo transfers for safety." [[QUICK_REPLY:Yes|No]]
+  → After answer, ask:
+  5-SURROGATE-B: "Surrogacy programs vary significantly in cost depending on the country. A US journey is typically $150k+, while international options like Mexico or Colombia can be $60k-$100k. Which are you open to?" [[QUICK_REPLY:USA|Mexico|Colombia]] (user can select multiple or type)
+  → If USA selected, ask:
+  5-SURROGATE-C: "In the US, we can match you with surrogates based on specific views. For example, what are your preferences regarding termination or selective reduction if medically necessary?" [[QUICK_REPLY:Pro-choice surrogate|Pro-life surrogate|No preference]]
   → After answer, go to STEP 6
 
 STEP 6 — FINAL OPEN-ENDED QUESTION:
