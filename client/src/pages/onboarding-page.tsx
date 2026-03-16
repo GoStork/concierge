@@ -371,6 +371,17 @@ export default function OnboardingPage() {
 
   const lastStep = isRegistration ? ACCOUNT_STEP : TOTAL_STEPS_AUTHENTICATED;
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Enter" && canContinue() && !submitting && !otpSending) {
+        e.preventDefault();
+        handleContinue();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  });
+
   const handleContinue = async () => {
     if (step === ACCOUNT_STEP && isRegistration) {
       if (data.password !== data.confirmPassword) {
