@@ -439,7 +439,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
 
   if (!user) return <>{children}</>;
 
-  const fullScreenRoutes = ["/onboarding", "/complete-profile", "/matchmaker-selection"];
+  const fullScreenRoutes = ["/onboarding", "/complete-profile", "/matchmaker-selection", "/concierge"];
   if (fullScreenRoutes.some(r => location.pathname.startsWith(r))) return <>{children}</>;
 
   const MARKETPLACE_TABS: { id: string; label: string; mobileLabel: string; icon: any }[] = [
