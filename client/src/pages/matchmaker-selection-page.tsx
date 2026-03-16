@@ -82,9 +82,9 @@ export default function MatchmakerSelectionPage() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center" data-testid="matchmaker-empty">
         <Sparkles className="w-12 h-12 text-muted-foreground mb-4" />
-        <h2 className="font-display text-xl font-semibold mb-2">AI Matchmakers Coming Soon</h2>
+        <h2 className="font-display text-xl font-semibold mb-2">AI Concierges Coming Soon</h2>
         <p className="text-muted-foreground text-sm max-w-md">
-          Our AI concierge personas are being set up. Please check back shortly.
+          Our AI Concierges are currently being set up. Please check back shortly.
         </p>
       </div>
     );
@@ -100,12 +100,11 @@ export default function MatchmakerSelectionPage() {
             style={{ fontFamily: "var(--font-display)" }}
             data-testid="matchmaker-heading"
           >
-            {userName ? `${userName}, choose your AI Guide` : "Choose Your AI Guide"}
+            {userName ? `${userName}, choose your AI Concierge` : "Choose Your AI Concierge"}
           </h1>
         </div>
         <p className="text-muted-foreground text-sm md:text-base max-w-xl mx-auto">
-          Each matchmaker has a unique personality to support you on your fertility journey.
-          Select the one that resonates with you.
+          Your dedicated concierge will help you navigate providers, compare costs, and organize your path to parenthood. Select the profile that best fits your preferred communication style.
         </p>
       </div>
 
