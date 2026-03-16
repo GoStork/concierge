@@ -804,10 +804,8 @@ export default function ConciergeChatPage() {
                       : msg.senderType === "human"
                       ? "text-foreground border-2"
                       : msg.senderType === "provider"
-                      ? "text-foreground border-2 border-[hsl(var(--brand-success))]/30"
-                      : msg.senderType === "system"
-                      ? "bg-[hsl(var(--accent))]/10 text-[hsl(var(--accent))] border border-[hsl(var(--accent))]/30"
-                      : "bg-muted text-foreground"
+                      ? "text-foreground border-2 border-emerald-300"
+                      : "text-foreground"
                   }`}
                   style={
                     msg.role === "user"
@@ -826,7 +824,10 @@ export default function ConciergeChatPage() {
                           borderRadius: "var(--radius, 0.5rem)",
                           backgroundColor: "#ecfdf508",
                         }
-                      : { borderRadius: "var(--radius, 0.5rem)" }
+                      : {
+                          borderRadius: "var(--radius, 0.5rem)",
+                          backgroundColor: `${brandColor}15`,
+                        }
                   }
                 >
                   {msg.content}
