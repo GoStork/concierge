@@ -163,32 +163,41 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
 
   const [geoError, setGeoError] = useState<string | null>(null);
 
-  const getPosition = (): Promise<GeolocationPosition> =>
+  const getPosition = (): Promise<{ latitude: number; longitude: number }> =>
     new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: false,
-        timeout: 15000,
-        maximumAge: 600000,
-      });
+      if (!navigator.geolocation) {
+        reject(new Error("no-geolocation"));
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        pos => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+        reject,
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 }
+      );
     });
 
-  const handleUseCurrentLocation = async () => {
-    if (!navigator.geolocation) {
-      setGeoError("Location services are not available in this browser.");
-      return;
+  const getIpLocation = async (): Promise<{ latitude: number; longitude: number }> => {
+    const res = await fetch("https://ipapi.co/json/");
+    if (!res.ok) throw new Error("IP lookup failed");
+    const data = await res.json();
+    if (data.latitude && data.longitude) {
+      return { latitude: data.latitude, longitude: data.longitude };
     }
+    throw new Error("No coordinates from IP lookup");
+  };
+
+  const handleUseCurrentLocation = async () => {
     setGeoLoading(true);
     setGeoError(null);
     try {
-      let position: GeolocationPosition;
+      let coords: { latitude: number; longitude: number };
       try {
-        position = await getPosition();
+        coords = await getPosition();
       } catch {
-        position = await getPosition();
+        coords = await getIpLocation();
       }
-      const { latitude, longitude } = position.coords;
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1`,
+        `https://nominatim.openstreetmap.org/reverse?lat=${coords.latitude}&lon=${coords.longitude}&format=json&addressdetails=1`,
         { headers: { "Accept-Language": "en", "User-Agent": "GoStork/1.0" } }
       );
       if (!res.ok) {
@@ -204,16 +213,8 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
       } else {
         setGeoError("Could not determine your city. Please type it instead.");
       }
-    } catch (err: any) {
-      if (err?.code === 1) {
-        setGeoError("Location access was denied. Please allow location access or type your city.");
-      } else if (err?.code === 2) {
-        setGeoError("Could not determine your location. Please type your city instead.");
-      } else if (err?.code === 3) {
-        setGeoError("Location request timed out. Please type your city instead.");
-      } else {
-        setGeoError("Could not get your location. Please type your city instead.");
-      }
+    } catch {
+      setGeoError("Could not get your location. Please type your city instead.");
     } finally {
       setGeoLoading(false);
     }
