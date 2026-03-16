@@ -329,9 +329,9 @@ export default function OnboardingPage() {
           setSubmitting(false);
           const msg = err.message || "";
           if (msg.includes("Email already in use")) {
-            toast({ title: "Email already in use", description: "An account with this email already exists. Please login instead.", variant: "destructive" });
+            setRegistrationError("An account with this email already exists. Please login instead.");
           } else {
-            toast({ title: "Registration failed", description: msg, variant: "destructive" });
+            setRegistrationError(msg || "Registration failed. Please try again.");
           }
           return;
         }
@@ -587,9 +587,9 @@ export default function OnboardingPage() {
               email={data.email}
               password={data.password}
               confirmPassword={data.confirmPassword}
-              onEmailChange={v => update({ email: v })}
-              onPasswordChange={v => update({ password: v })}
-              onConfirmPasswordChange={v => update({ confirmPassword: v })}
+              onEmailChange={v => { update({ email: v }); setRegistrationError(null); }}
+              onPasswordChange={v => { update({ password: v }); setRegistrationError(null); }}
+              onConfirmPasswordChange={v => { update({ confirmPassword: v }); setRegistrationError(null); }}
               error={registrationError}
             />
           )}
@@ -680,6 +680,9 @@ function StepAccount({
             data-testid="input-register-email"
             className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
           />
+          {email.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && (
+            <p className="text-sm text-destructive mt-1" data-testid="text-email-hint">Please enter a valid email address</p>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-foreground mb-1">Password</label>
