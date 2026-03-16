@@ -33,6 +33,7 @@ interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   quickReplies?: string[];
+  multiSelect?: boolean;
   matchCards?: MatchCard[];
   prepDoc?: boolean;
   consultationCard?: ConsultationCardData;
@@ -512,6 +513,7 @@ export default function ConciergeChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [multiSelectChoices, setMultiSelectChoices] = useState<Set<string>>(new Set());
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [showCuration, setShowCuration] = useState(false);
   const [pendingCurationMessage, setPendingCurationMessage] = useState<ChatMessage | null>(null);
@@ -653,6 +655,7 @@ export default function ConciergeChatPage() {
         content: data.message.content,
         id: data.message.id,
         quickReplies: data.quickReplies,
+        multiSelect: data.multiSelect,
         matchCards: data.matchCards,
         prepDoc: data.prepDoc,
         consultationCard: data.consultationCard,
@@ -867,24 +870,64 @@ export default function ConciergeChatPage() {
 
               {msg.quickReplies && msg.quickReplies.length > 0 && i === messages.length - 1 && (
                 <div className="flex flex-wrap gap-2 mt-2 ml-0" data-testid="quick-replies">
-                  {msg.quickReplies.map((qr, qi) => (
+                  {msg.quickReplies.map((qr, qi) => {
+                    const isMulti = msg.multiSelect;
+                    const isSelected = isMulti && multiSelectChoices.has(qr);
+                    return (
+                      <Button
+                        key={qi}
+                        variant="outline"
+                        size="sm"
+                        className="text-sm transition-all hover:shadow-sm"
+                        style={{
+                          borderRadius: "999px",
+                          borderColor: isSelected ? brandColor : `${brandColor}40`,
+                          backgroundColor: isSelected ? `${brandColor}15` : "transparent",
+                          color: brandColor,
+                        }}
+                        onClick={() => {
+                          if (isMulti) {
+                            setMultiSelectChoices((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(qr)) {
+                                next.delete(qr);
+                              } else {
+                                next.add(qr);
+                              }
+                              return next;
+                            });
+                          } else {
+                            handleQuickReply(qr);
+                          }
+                        }}
+                        disabled={sending}
+                        data-testid={`quick-reply-${qi}`}
+                      >
+                        {isSelected && <span className="mr-1">✓</span>}
+                        {qr}
+                      </Button>
+                    );
+                  })}
+                  {msg.multiSelect && multiSelectChoices.size > 0 && (
                     <Button
-                      key={qi}
-                      variant="outline"
                       size="sm"
-                      className="text-sm transition-all hover:shadow-sm"
+                      className="text-sm font-medium"
                       style={{
                         borderRadius: "999px",
-                        borderColor: `${brandColor}40`,
-                        color: brandColor,
+                        backgroundColor: brandColor,
+                        color: "white",
                       }}
-                      onClick={() => handleQuickReply(qr)}
+                      onClick={() => {
+                        const selected = Array.from(multiSelectChoices).join(", ");
+                        setMultiSelectChoices(new Set());
+                        handleQuickReply(selected);
+                      }}
                       disabled={sending}
-                      data-testid={`quick-reply-${qi}`}
+                      data-testid="multi-select-done"
                     >
-                      {qr}
+                      Done
                     </Button>
-                  ))}
+                  )}
                 </div>
               )}
             </div>

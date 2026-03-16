@@ -440,6 +440,14 @@ Examples:
 These buttons will appear below your message for easy selection. The user can also type freely instead.
 Only use quick replies for clear-cut technical questions. For emotional/preference questions, let them type freely.
 
+MULTI-SELECT UI (for questions where the user can pick MORE THAN ONE option):
+Format: Include [[MULTI_SELECT:option1|option2|option3]] at the end of your message.
+This shows toggleable buttons — the user can select multiple options, then tap "Done" to submit all selections at once.
+Use MULTI_SELECT instead of QUICK_REPLY when the user should be able to pick several options (e.g., eye colors, hair colors, ethnicities, countries, clinic preferences).
+Examples:
+  - "What eye color preferences do you have?" [[MULTI_SELECT:Blue|Green|Brown|Hazel|Any]]
+  - "Which countries are you open to?" [[MULTI_SELECT:USA|Mexico|Colombia]]
+
 CRITICAL RULE: You MUST follow the question flow below in EXACT order. Ask ONE question per message. Do NOT skip any step. Do NOT combine multiple questions into one message. Do NOT re-order steps. After the user answers each question, acknowledge briefly and move to the NEXT step. Track which step you are on internally.
 
 STEP 1: "Do you already have frozen embryos?" [[QUICK_REPLY:Yes, I do|No, not yet|Working to create them]]
@@ -492,20 +500,19 @@ STEP 5-CLINIC (only if user is looking for a Fertility Clinic — ask ALL of the
   → After answer, go to next applicable service deep dive or STEP 6
 
 STEP 5-DONOR (only if user said they need donor eggs OR donor sperm AND need help finding one — ask ALL of these in order, one per message):
-  5-DONOR-A: "Let's talk about your ideal egg donor. We have thousands of profiles. What physical traits are you looking for?" Present these options:
-    Eye Color: [[QUICK_REPLY:Blue|Green|Brown|Any]]
-  → After they pick eye color, ask:
-  5-DONOR-B: "And what about hair color?" [[QUICK_REPLY:Blonde|Brunette|Red|Black|Any]]
+  5-DONOR-A: "Let's talk about your ideal egg donor. We have thousands of profiles. What eye color preferences do you have? You can pick more than one." [[MULTI_SELECT:Blue|Green|Brown|Hazel|Any]]
+  → After they pick, ask:
+  5-DONOR-B: "And what about hair color? Again, feel free to pick as many as you'd like." [[MULTI_SELECT:Blonde|Brunette|Red|Black|Any]]
   → After answer, ask:
   5-DONOR-C: "Do you have a preferred height range for your donor? Feel free to share, or say 'no preference'." (open text)
   → After answer, ask:
-  5-DONOR-D: "Are there any specific cultural or educational backgrounds that are important to you?" (open text, let them type freely)
+  5-DONOR-D: "Are there any specific ethnic, cultural, or educational backgrounds that are important to you? You can select multiple or type your own." [[MULTI_SELECT:Caucasian|Asian|African American|Hispanic/Latino|Middle Eastern|Mixed|No preference]]
   → After answer, acknowledge, validate, offer expert guidance, then go to next applicable service deep dive or STEP 6
 
 STEP 5-SURROGATE (only if user said they need a surrogate AND need help finding one — ask ALL of these in order, one per message):
   5-SURROGATE-A: "Surrogacy is a beautiful process. Are you hoping for twins? Note: many clinics recommend single embryo transfers for safety." [[QUICK_REPLY:Yes|No]]
   → After answer, ask:
-  5-SURROGATE-B: "Surrogacy programs vary significantly in cost depending on the country. A US journey is typically $150k+, while international options like Mexico or Colombia can be $60k-$100k. Which are you open to?" [[QUICK_REPLY:USA|Mexico|Colombia]] (user can select multiple or type)
+  5-SURROGATE-B: "Surrogacy programs vary significantly in cost depending on the country. A US journey is typically $150k+, while international options like Mexico or Colombia can be $60k-$100k. Which are you open to? You can pick more than one." [[MULTI_SELECT:USA|Mexico|Colombia]]
   → If USA selected, ask:
   5-SURROGATE-C: "In the US, we can match you with surrogates based on specific views. For example, what are your preferences regarding termination or selective reduction if medically necessary?" [[QUICK_REPLY:Pro-choice surrogate|Pro-life surrogate|No preference]]
   → After answer, go to STEP 6
@@ -866,6 +873,13 @@ Use your tools to fetch real data from the GoStork database when looking up prov
     }
 
     let quickReplies: string[] = [];
+    let multiSelect = false;
+    const msMatch = finalContent.match(/\[\[MULTI_SELECT:(.*?)\]\]/);
+    if (msMatch) {
+      quickReplies = msMatch[1].split("|").map((s: string) => s.trim());
+      multiSelect = true;
+      finalContent = finalContent.replace(/\[\[MULTI_SELECT:.*?\]\]/g, "").trim();
+    }
     const qrMatch = finalContent.match(/\[\[QUICK_REPLY:(.*?)\]\]/);
     if (qrMatch) {
       quickReplies = qrMatch[1].split("|").map((s: string) => s.trim());
@@ -990,6 +1004,7 @@ Use your tools to fetch real data from the GoStork database when looking up prov
       sessionId: currentSessionId,
       message: savedAiMessage,
       quickReplies: quickReplies.length > 0 ? quickReplies : undefined,
+      multiSelect: multiSelect || undefined,
       showCuration: showCuration || undefined,
       matchCards: matchCards.length > 0 ? matchCards : undefined,
       prepDoc: sendPrepDoc || undefined,
