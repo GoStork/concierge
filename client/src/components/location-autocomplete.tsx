@@ -104,6 +104,7 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
 
   const handleInputChange = (val: string) => {
     setQuery(val);
+    setGeoError(null);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => search(val), 400);
   };
@@ -160,9 +161,15 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
     }
   };
 
+  const [geoError, setGeoError] = useState<string | null>(null);
+
   const handleUseCurrentLocation = async () => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      setGeoError("Location services are not available in this browser.");
+      return;
+    }
     setGeoLoading(true);
+    setGeoError(null);
     try {
       const position = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -174,15 +181,31 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
       const { latitude, longitude } = position.coords;
       const res = await fetch(
         `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1`,
-        { headers: { "Accept-Language": "en" } }
+        { headers: { "Accept-Language": "en", "User-Agent": "GoStork/1.0" } }
       );
+      if (!res.ok) {
+        setGeoError("Could not determine your location. Please type your city instead.");
+        return;
+      }
       const data = await res.json();
       if (data.address) {
         const parsed = parseNominatimAddress(data.address);
         onChange(parsed);
         setQuery(buildDisplayQuery(parsed, isOnboarding));
+        setGeoError(null);
+      } else {
+        setGeoError("Could not determine your city. Please type it instead.");
       }
-    } catch {
+    } catch (err: any) {
+      if (err?.code === 1) {
+        setGeoError("Location access was denied. Please allow location access or type your city.");
+      } else if (err?.code === 2) {
+        setGeoError("Could not determine your location. Please type your city instead.");
+      } else if (err?.code === 3) {
+        setGeoError("Location request timed out. Please type your city instead.");
+      } else {
+        setGeoError("Could not get your location. Please type your city instead.");
+      }
     } finally {
       setGeoLoading(false);
     }
@@ -227,20 +250,25 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
       </div>
 
       {showCurrentLocation && (
-        <button
-          type="button"
-          onClick={handleUseCurrentLocation}
-          disabled={geoLoading}
-          className="mt-4 flex items-center gap-2 text-sm text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
-          data-testid="btn-use-current-location"
-        >
-          {geoLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Navigation className="w-4 h-4" />
+        <>
+          <button
+            type="button"
+            onClick={handleUseCurrentLocation}
+            disabled={geoLoading}
+            className="mt-4 flex items-center gap-2 text-sm text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
+            data-testid="btn-use-current-location"
+          >
+            {geoLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Navigation className="w-4 h-4" />
+            )}
+            {geoLoading ? "Finding your location..." : "Use my current location"}
+          </button>
+          {geoError && (
+            <p className="mt-2 text-destructive text-sm" data-testid="text-geo-error">{geoError}</p>
           )}
-          {geoLoading ? "Finding your location..." : "Use my current location"}
-        </button>
+        </>
       )}
 
       {isOpen && results.length > 0 && (
