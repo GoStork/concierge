@@ -834,6 +834,38 @@ Use your tools to fetch real data from the GoStork database when looking up prov
     }
     finalContent = finalContent.replace(/\[\[MATCH_CARD:.*?\]\]/g, "").trim();
 
+    for (const card of matchCards) {
+      if (card.providerId) {
+        try {
+          const provider = await prisma.provider.findUnique({
+            where: { id: card.providerId },
+            select: { logoUrl: true, name: true },
+          });
+          if (provider?.logoUrl) {
+            card.photo = provider.logoUrl;
+          }
+        } catch (e) {
+          // Provider lookup failed, try searching by name
+        }
+      }
+      if (!card.photo || card.photo === "/path/to/photo") {
+        try {
+          const providerByName = await prisma.provider.findFirst({
+            where: { name: { contains: card.name, mode: "insensitive" } },
+            select: { logoUrl: true, id: true },
+          });
+          if (providerByName?.logoUrl) {
+            card.photo = providerByName.logoUrl;
+            if (!card.providerId) card.providerId = providerByName.id;
+          } else {
+            card.photo = null;
+          }
+        } catch (e) {
+          card.photo = null;
+        }
+      }
+    }
+
     let consultationCard: any = null;
     const consultationMatch = finalContent.match(/\[\[CONSULTATION_BOOKING:(.*?)\]\]/);
     if (consultationMatch) {
