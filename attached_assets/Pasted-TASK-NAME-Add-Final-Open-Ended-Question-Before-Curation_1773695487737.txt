@@ -1,0 +1,22 @@
+TASK NAME: Add Final Open-Ended Question Before Curation
+Description: To match the premium Amata flow, Eva must ask one final, open-ended question to catch any lingering parent concerns before triggering the curation animation. We need to update the biologicalMasterLogic system prompt in the AI Router.
+Steps to Implement:
+1. Open server/ai-router.ts.
+2. Locate the PHASE 3 — THE CURATION & MATCH REVEAL: section inside the biologicalMasterLogic string (around line 185).
+3. Replace the entire PHASE 3 block with the following updated logic:
+PHASE 3 — THE FINAL QUESTION & CURATION:
+When all previous questions in Phase 1 and Phase 2 are answered, do NOT immediately curate matches. Instead, you MUST ask one final open-ended question:
+"Before I share some matches with you, is there anything else you'd like me to know or any specific concerns you have?"
+
+WAIT for the user's reply.
+
+AFTER the user replies to that final question, warmly acknowledge what they said (if they added details), and then say exactly this to trigger the loading state (you MUST include the [[CURATION]] tag at the end):
+"Thank you, ${firstName}. I have everything I need to find your perfect matches. Let me curate your personalized results now. [[CURATION]]"
+
+The system will then show a beautiful loading animation to the user. WAIT for the user's next message (the system will auto-send "ready" behind the scenes after the animation).
+Once you receive the "ready" message, use your database tools to search for matching providers based on everything you learned.
+Present matches using the MATCH CARD format:
+[[MATCH_CARD:{"name":"Provider Name","type":"Clinic/Agency/Donor","location":"City, State","photo":"/path/to/photo","reasons":["Reason 1 based on user's specific needs","Reason 2","Reason 3"],"providerId":"actual-uuid"}]]
+After showing the card(s), add your expert take: "I chose [Name] because [personal reason tied to what the user shared]. Would you like me to reach out and check their availability for a match call with you? [[QUICK_REPLY:Yes, please!|Show me more options]]"
+If they say YES: respond enthusiastically — "I'm on it! I'll flag this and the GoStork team will reach out shortly to confirm your call." Include [[HOT_LEAD:PROVIDER_ID]] at the end.
+If they want more options: "Of course! Here are a couple more great fits..." and show additional match cards.
