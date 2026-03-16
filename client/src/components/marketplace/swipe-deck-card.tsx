@@ -192,7 +192,7 @@ export function SwipeDeckCard({
             <div className="flex items-center gap-1.5 mb-2">
               {isPremium && (
                 <Badge
-                  className="bg-amber-500/90 text-white font-ui px-2.5 py-1 gap-1"
+                  className="bg-[hsl(var(--brand-warning))]/90 text-white font-ui px-2.5 py-1 gap-1"
                   style={{ fontSize: 'var(--badge-text-size, 13px)' }}
                   data-testid={`badge-premium-${id}`}
                 >

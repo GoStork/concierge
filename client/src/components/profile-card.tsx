@@ -111,7 +111,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
         )}
         {(profile.isPremium || adminControls?.isPremium) && (
           <div className={`absolute ${isHidden ? "top-9" : "top-2"} left-2 z-10`} data-testid={`badge-premium-${profile.id}`}>
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-heading bg-amber-500 text-white shadow">
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-heading bg-[hsl(var(--brand-warning))] text-white shadow">
               <Crown className="w-3 h-3" />
               PREMIUM
             </span>
@@ -184,7 +184,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
             <button
               className={`py-2 px-3 rounded-lg text-xs font-ui border transition-colors ${
                 adminControls.isPremium
-                  ? "border-amber-400/50 text-amber-600 bg-amber-50 hover:bg-amber-100"
+                  ? "border-[hsl(var(--brand-warning))]/50 text-[hsl(var(--brand-warning))] bg-[hsl(var(--brand-warning))]/10 hover:bg-[hsl(var(--brand-warning))]/15"
                   : "border-primary/30 text-primary hover:bg-primary/10"
               }`}
               onClick={(e) => {

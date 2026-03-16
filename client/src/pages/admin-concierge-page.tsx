@@ -295,9 +295,9 @@ export default function AdminConciergePage() {
       {matchmakers.length > 0 && (
         <div className="flex items-center gap-4 text-sm text-muted-foreground" data-testid="matchmaker-stats">
           <span>{matchmakers.length} persona{matchmakers.length !== 1 ? "s" : ""} total</span>
-          <span className="text-green-600 dark:text-green-400">{activeCount} active</span>
+          <span className="text-[hsl(var(--brand-success))]">{activeCount} active</span>
           {matchmakers.length - activeCount > 0 && (
-            <span className="text-amber-600 dark:text-amber-400">{matchmakers.length - activeCount} inactive</span>
+            <span className="text-[hsl(var(--brand-warning))]">{matchmakers.length - activeCount} inactive</span>
           )}
         </div>
       )}
@@ -340,7 +340,7 @@ export default function AdminConciergePage() {
                       {m.title}
                     </span>
                     {!m.isActive && (
-                      <span className="text-xs text-amber-600 dark:text-amber-400 px-1.5 py-0.5 bg-amber-50 dark:bg-amber-900/20 rounded" data-testid={`badge-inactive-${m.id}`}>
+                      <span className="text-xs text-[hsl(var(--brand-warning))] px-1.5 py-0.5 bg-[hsl(var(--brand-warning))]/10 rounded" data-testid={`badge-inactive-${m.id}`}>
                         Inactive
                       </span>
                     )}

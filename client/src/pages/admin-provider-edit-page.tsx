@@ -533,7 +533,7 @@ export default function AdminProviderEditPage() {
   const showEggDonors = svcNames.some((n: string) => n.includes("egg donor") || n.includes("egg bank"));
   const showSurrogates = svcNames.some((n: string) => n.includes("surrogacy"));
   const showSpermDonors = svcNames.some((n: string) => n.includes("sperm"));
-  const tabTriggerClass = "flex-1 h-full text-sm font-ui rounded-md data-[state=active]:bg-white dark:data-[state=active]:bg-foreground/90 data-[state=active]:shadow data-[state=active]:text-primary data-[state=inactive]:text-muted-foreground dark:data-[state=inactive]:text-muted-foreground";
+  const tabTriggerClass = "flex-1 h-full text-sm font-ui rounded-md data-[state=active]:bg-background dark:data-[state=active]:bg-foreground/90 data-[state=active]:shadow data-[state=active]:text-primary data-[state=inactive]:text-muted-foreground dark:data-[state=inactive]:text-muted-foreground";
 
 
   return (

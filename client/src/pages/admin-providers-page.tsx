@@ -338,7 +338,7 @@ export default function AdminProvidersPage() {
                   <TableCell className="font-ui">
                     <div className="flex items-center gap-3">
                       {provider.logoUrl ? (
-                        <img src={proxyImageUrl(provider.logoUrl) || provider.logoUrl} alt="" className="w-8 h-8 rounded-lg object-contain bg-white p-0.5 border" referrerPolicy="no-referrer" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                        <img src={proxyImageUrl(provider.logoUrl) || provider.logoUrl} alt="" className="w-8 h-8 rounded-lg object-contain bg-background p-0.5 border" referrerPolicy="no-referrer" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                       ) : (
                         <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
                           <Building2 className="w-4 h-4" />

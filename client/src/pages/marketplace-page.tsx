@@ -152,7 +152,7 @@ function IvfClinicCard({ provider, matchedRate, filterLabel, onSchedule, onNavig
             <img
               src={getPhotoSrc(provider.logoUrl) || ""}
               alt=""
-              className="w-10 h-10 rounded-lg object-contain border border-border/30 bg-white p-0.5 shrink-0"
+              className="w-10 h-10 rounded-lg object-contain border border-border/30 bg-background p-0.5 shrink-0"
             />
           )}
           <div className="flex-1 min-w-0">
@@ -344,7 +344,7 @@ function ProviderGrid({ providers, searchQuery, providerTypeName, onSchedule }: 
                 <img
                   src={getPhotoSrc(provider.logoUrl) || ""}
                   alt=""
-                  className="w-10 h-10 rounded-lg object-contain border border-border/30 bg-white p-0.5"
+                  className="w-10 h-10 rounded-lg object-contain border border-border/30 bg-background p-0.5"
                 />
               )}
               <div className="flex-1 min-w-0">

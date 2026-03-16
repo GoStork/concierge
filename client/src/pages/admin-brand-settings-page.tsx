@@ -1871,7 +1871,7 @@ export function BrandSettingsForm({
                 </div>
                 <div className="flex items-center gap-3 p-3 rounded-xl border border-border/40 bg-secondary/30">
                   <div
-                    className="w-12 h-12 rounded-lg flex items-center justify-center font-bold text-lg text-black shrink-0"
+                    className="w-12 h-12 rounded-lg flex items-center justify-center font-bold text-lg text-foreground shrink-0"
                     style={{ backgroundColor: form.primaryColor }}
                   >
                     Aa

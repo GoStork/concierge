@@ -194,7 +194,7 @@ export default function AdminKnowledgeTab() {
         {bulkSyncResult && (
           <div className="mt-3 p-3 rounded-md bg-muted/50 text-sm space-y-1" data-testid="text-bulk-sync-result">
             <div className="flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-green-500" />
+              <CheckCircle className="w-4 h-4 text-[hsl(var(--brand-success))]" />
               <span>{bulkSyncResult.synced} providers synced successfully</span>
             </div>
             {bulkSyncResult.failed > 0 && (

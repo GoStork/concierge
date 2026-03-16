@@ -127,9 +127,9 @@ export default function ProviderKnowledgeTab() {
       {pendingWhispers.length > 0 && (
         <div>
           <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-            <MessageCircleQuestion className="w-4 h-4 text-orange-500" />
+            <MessageCircleQuestion className="w-4 h-4 text-[hsl(var(--brand-warning))]" />
             Unanswered AI Questions
-            <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-orange-100 text-orange-700">
+            <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))]">
               {pendingWhispers.length}
             </span>
           </h3>
@@ -138,7 +138,7 @@ export default function ProviderKnowledgeTab() {
           </p>
           <div className="space-y-3">
             {pendingWhispers.map((w: any) => (
-              <Card key={w.id} className="p-4 border-orange-200" data-testid={`card-whisper-${w.id}`}>
+              <Card key={w.id} className="p-4 border-[hsl(var(--brand-warning))]/30" data-testid={`card-whisper-${w.id}`}>
                 <p className="text-sm font-medium mb-2">"{w.questionText}"</p>
                 <p className="text-xs text-muted-foreground mb-3">
                   {new Date(w.createdAt).toLocaleDateString()} · Anonymous prospective parent
@@ -185,7 +185,7 @@ export default function ProviderKnowledgeTab() {
       {answeredWhispers.length > 0 && (
         <div>
           <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 text-green-500" />
+            <CheckCircle className="w-4 h-4 text-[hsl(var(--brand-success))]" />
             Answered Questions
           </h3>
           <div className="space-y-2">
@@ -282,7 +282,7 @@ export default function ProviderKnowledgeTab() {
               <Card key={i} className="p-3 flex items-center justify-between" data-testid={`card-document-${i}`}>
                 <div className="flex items-center gap-3">
                   {doc.sourceType === "WEBSITE" ? (
-                    <Globe className="w-4 h-4 text-blue-500 shrink-0" />
+                    <Globe className="w-4 h-4 text-[hsl(var(--accent))] shrink-0" />
                   ) : (
                     <FileText className="w-4 h-4 text-primary shrink-0" />
                   )}

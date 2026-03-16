@@ -107,7 +107,7 @@ export default function ProviderProfilePage() {
           <img
             src={logoSrc}
             alt={provider.name}
-            className="w-20 h-20 rounded-xl object-contain border border-border/30 shrink-0 bg-white p-1"
+            className="w-20 h-20 rounded-xl object-contain border border-border/30 shrink-0 bg-background p-1"
             data-testid="img-provider-logo"
           />
         ) : (

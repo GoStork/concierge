@@ -220,15 +220,15 @@ function formatCurrency(value: number): string {
 function getStatusBadge(status: string) {
   switch (status) {
     case "APPROVED":
-      return <Badge data-testid="badge-status-approved" className="bg-green-100 text-green-800 border-green-200">Approved</Badge>;
+      return <Badge data-testid="badge-status-approved" className="bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] border-[hsl(var(--brand-success))]/30">Approved</Badge>;
     case "DRAFT":
       return <Badge data-testid="badge-status-draft" className="bg-muted text-muted-foreground border-border">Draft</Badge>;
     case "PENDING":
-      return <Badge data-testid="badge-status-pending" className="bg-amber-100 text-amber-800 border-amber-200">Pending Review</Badge>;
+      return <Badge data-testid="badge-status-pending" className="bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/30">Pending Review</Badge>;
     case "REJECTED":
-      return <Badge data-testid="badge-status-rejected" className="bg-red-100 text-red-800 border-red-200">Rejected</Badge>;
+      return <Badge data-testid="badge-status-rejected" className="bg-destructive/10 text-destructive border-destructive/30">Rejected</Badge>;
     case "SENT_TO_PARENT":
-      return <Badge data-testid="badge-status-sent" className="bg-blue-100 text-blue-800 border-blue-200">Sent to Parent</Badge>;
+      return <Badge data-testid="badge-status-sent" className="bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] border-[hsl(var(--accent))]/30">Sent to Parent</Badge>;
     case "ARCHIVED":
       return <Badge data-testid="badge-status-archived" className="bg-muted text-muted-foreground border-border">Archived</Badge>;
     default:
@@ -244,7 +244,7 @@ function DiffValueCell({ label, pendingVal, approvedVal, isCurrency = true }: { 
 
   return (
     <div className="text-right">
-      <span className={`text-sm font-medium tabular-nums ${changed ? "text-amber-700 font-bold" : ""}`}>
+      <span className={`text-sm font-medium tabular-nums ${changed ? "text-[hsl(var(--brand-warning))] font-bold" : ""}`}>
         {pendingVal != null ? fmt(pendingVal) : "—"}
       </span>
       {changed && approvedVal != null && (
@@ -1193,7 +1193,7 @@ function SingleCostsTab({
             <>
               <Button
                 size="sm"
-                className="bg-green-600 hover:bg-green-700 text-white"
+                className="bg-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success))]/90 text-white"
                 onClick={() => approveMutation.mutate(displaySheet.id)}
                 disabled={approveMutation.isPending}
                 data-testid="btn-approve-sheet"
@@ -1231,23 +1231,23 @@ function SingleCostsTab({
       )}
 
       {showDiffView && diffStats && (
-        <Card className="border-amber-200 bg-amber-50/30" data-testid="card-diff-summary">
+        <Card className="border-[hsl(var(--brand-warning))]/30 bg-[hsl(var(--brand-warning))]/5" data-testid="card-diff-summary">
           <CardContent className="py-3">
             <div className="flex items-center gap-2 text-sm">
-              <ArrowUpDown className="w-4 h-4 text-amber-600" />
-              <span className="font-medium text-amber-800">Changes from approved version:</span>
+              <ArrowUpDown className="w-4 h-4 text-[hsl(var(--brand-warning))]" />
+              <span className="font-medium text-[hsl(var(--brand-warning))]">Changes from approved version:</span>
               {diffStats.changed > 0 && (
-                <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-300">
+                <Badge variant="outline" className="bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/30">
                   {diffStats.changed} modified
                 </Badge>
               )}
               {diffStats.added > 0 && (
-                <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300">
+                <Badge variant="outline" className="bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] border-[hsl(var(--brand-success))]/30">
                   {diffStats.added} added
                 </Badge>
               )}
               {diffStats.removed > 0 && (
-                <Badge variant="outline" className="bg-red-100 text-red-700 border-red-300">
+                <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30">
                   {diffStats.removed} removed
                 </Badge>
               )}
@@ -1307,7 +1307,7 @@ function SingleCostsTab({
               <AccordionItem
                 key={category}
                 value={category}
-                className={`border rounded-lg px-4 ${categoryHasChanges ? "border-amber-300 bg-amber-50/20" : ""}`}
+                className={`border rounded-lg px-4 ${categoryHasChanges ? "border-[hsl(var(--brand-warning))]/30 bg-[hsl(var(--brand-warning))]/5" : ""}`}
                 data-testid={`accordion-category-${category.toLowerCase().replace(/\s+/g, "-")}`}
               >
                 <AccordionTrigger className="text-sm font-semibold py-3">
@@ -1317,7 +1317,7 @@ function SingleCostsTab({
                       ({items.length} item{items.length !== 1 ? "s" : ""})
                     </span>
                     {categoryHasChanges && (
-                      <Badge variant="outline" className="text-xs bg-amber-100 text-amber-700 border-amber-200 ml-1">
+                      <Badge variant="outline" className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/30 ml-1">
                         Changed
                       </Badge>
                     )}
@@ -1349,11 +1349,11 @@ function SingleCostsTab({
                           key={item._editIdx}
                           className={`flex flex-col gap-2 p-3 rounded-md border ${
                             item.isCustom
-                              ? "border-l-4 border-l-amber-400 bg-amber-50/30"
+                              ? "border-l-4 border-l-[hsl(var(--brand-warning))]/60 bg-[hsl(var(--brand-warning))]/5"
                               : isNewItem
-                                ? "border-l-4 border-l-green-400 bg-green-50/30"
+                                ? "border-l-4 border-l-[hsl(var(--brand-success))]/60 bg-[hsl(var(--brand-success))]/5"
                                 : itemChanged
-                                  ? "border-l-4 border-l-amber-400 bg-amber-50/20"
+                                  ? "border-l-4 border-l-[hsl(var(--brand-warning))]/60 bg-[hsl(var(--brand-warning))]/3"
                                   : "bg-card"
                           } ${!item.isIncluded ? "opacity-50" : ""}`}
                           data-testid={`cost-item-row-${item._editIdx}`}
@@ -1366,7 +1366,7 @@ function SingleCostsTab({
                                     {item.key}
                                   </span>
                                   {item.isCustom && (
-                                    <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                                    <Badge variant="outline" className="text-xs bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/30">
                                       Custom
                                     </Badge>
                                   )}
@@ -1399,9 +1399,9 @@ function SingleCostsTab({
                               </div>
                               <div className="w-16 text-center">
                                 {isNewItem ? (
-                                  <Badge className="text-xs bg-green-100 text-green-700 border-green-200">New</Badge>
+                                  <Badge className="text-xs bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] border-[hsl(var(--brand-success))]/30">New</Badge>
                                 ) : itemChanged ? (
-                                  <Badge className="text-xs bg-amber-100 text-amber-700 border-amber-200">Changed</Badge>
+                                  <Badge className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/30">Changed</Badge>
                                 ) : (
                                   <span className="text-xs text-muted-foreground">—</span>
                                 )}
@@ -1426,7 +1426,7 @@ function SingleCostsTab({
                                       {item.key}
                                     </span>
                                     {item.isCustom && (
-                                      <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                                      <Badge variant="outline" className="text-xs bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/30">
                                         Custom
                                       </Badge>
                                     )}
@@ -1517,7 +1517,7 @@ function SingleCostsTab({
                                     <Button
                                       variant="ghost"
                                       size="sm"
-                                      className={`h-8 px-2 text-xs ${item.isIncluded ? "text-green-600" : "text-muted-foreground"}`}
+                                      className={`h-8 px-2 text-xs ${item.isIncluded ? "text-[hsl(var(--brand-success))]" : "text-muted-foreground"}`}
                                       onClick={() => { updateEditItem(item._editIdx, "isIncluded", !item.isIncluded); setTimeout(triggerAutoSave, 50); }}
                                       data-testid={`btn-toggle-included-${item._editIdx}`}
                                     >
@@ -1591,23 +1591,23 @@ function SingleCostsTab({
                       return removedItems.map((ri, idx) => (
                         <div
                           key={`removed-${idx}`}
-                          className="flex items-center gap-2 p-3 rounded-md border border-l-4 border-l-red-400 bg-red-50/30 opacity-60"
+                          className="flex items-center gap-2 p-3 rounded-md border border-l-4 border-l-destructive/60 bg-destructive/5 opacity-60"
                           data-testid={`cost-item-removed-${ri.key}`}
                         >
                           <div className="flex-1 min-w-0">
-                            <span className="text-sm font-medium line-through text-red-600">{ri.key}</span>
+                            <span className="text-sm font-medium line-through text-destructive">{ri.key}</span>
                           </div>
                           <div className="w-28 text-right">
                             <span className="text-sm tabular-nums text-muted-foreground italic">—</span>
                           </div>
                           <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0" />
                           <div className="w-28 text-right">
-                            <span className="text-sm tabular-nums text-red-400 line-through">
+                            <span className="text-sm tabular-nums text-destructive/70 line-through">
                               {ri.minValue != null ? formatCurrency(ri.minValue) : "—"}
                             </span>
                           </div>
                           <div className="w-16 text-center">
-                            <Badge className="text-xs bg-red-100 text-red-700 border-red-200">Removed</Badge>
+                            <Badge className="text-xs bg-destructive/10 text-destructive border-destructive/30">Removed</Badge>
                           </div>
                         </div>
                       ));
@@ -1669,7 +1669,7 @@ function SingleCostsTab({
             </span>
           )}
           {autoSaveStatus === "saved" && (
-            <span className="text-xs text-green-600 flex items-center gap-1" data-testid="text-auto-save-status">
+            <span className="text-xs text-[hsl(var(--brand-success))] flex items-center gap-1" data-testid="text-auto-save-status">
               <Check className="w-3 h-3" />
               Draft saved
             </span>

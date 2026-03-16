@@ -166,13 +166,13 @@ export default function AdminConciergeMonitor() {
             </div>
           </div>
           {detail.humanRequested && !detail.humanJoinedAt && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-medium" data-testid="badge-awaiting-human">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] text-xs font-medium" data-testid="badge-awaiting-human">
               <AlertTriangle className="w-3 h-3" />
               Awaiting Human
             </div>
           )}
           {detail.humanJoinedAt && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-50 text-green-700 text-xs font-medium" data-testid="badge-human-joined">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium" data-testid="badge-human-joined">
               <CheckCircle2 className="w-3 h-3" />
               Human Joined
             </div>
@@ -199,7 +199,7 @@ export default function AdminConciergeMonitor() {
                   )}
                   {msg.role === "assistant" && msg.senderType === "provider" && (
                     <div className="flex items-center gap-1.5 mb-1 ml-1">
-                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white bg-emerald-600">
+                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white bg-[hsl(var(--brand-success))]">
                         Provider
                       </div>
                       {msg.senderName && (
@@ -209,7 +209,7 @@ export default function AdminConciergeMonitor() {
                   )}
                   {msg.role === "assistant" && msg.senderType === "system" && (
                     <div className="flex items-center gap-1.5 mb-1 ml-1">
-                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-violet-600 text-white">
+                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--accent))] text-white">
                         Eva
                       </div>
                     </div>
@@ -222,9 +222,9 @@ export default function AdminConciergeMonitor() {
                           : msg.senderType === "human"
                           ? "text-foreground border-2"
                           : msg.senderType === "provider"
-                          ? "text-foreground border-2 border-emerald-300"
+                          ? "text-foreground border-2 border-[hsl(var(--brand-success))]/30"
                           : msg.senderType === "system"
-                          ? "bg-violet-50 text-violet-900 border border-violet-200"
+                          ? "bg-[hsl(var(--accent))]/10 text-[hsl(var(--accent))] border border-[hsl(var(--accent))]/30"
                           : "bg-muted text-foreground"
                       }`}
                       style={
@@ -376,32 +376,32 @@ export default function AdminConciergeMonitor() {
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-sm">{s.userName || "Unknown"}</span>
                       {s.humanRequested && !s.humanJoinedAt && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold uppercase" data-testid={`badge-escalated-${s.id}`}>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] text-[10px] font-bold uppercase" data-testid={`badge-escalated-${s.id}`}>
                           <AlertTriangle className="w-2.5 h-2.5" />
                           Needs Human
                         </span>
                       )}
                       {s.humanJoinedAt && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-[10px] font-bold uppercase">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[10px] font-bold uppercase">
                           <CheckCircle2 className="w-2.5 h-2.5" />
                           Human Active
                         </span>
                       )}
                       {s.providerJoinedAt && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold uppercase" data-testid={`badge-provider-active-${s.id}`}>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[10px] font-bold uppercase" data-testid={`badge-provider-active-${s.id}`}>
                           <CheckCircle2 className="w-2.5 h-2.5" />
                           Provider Active
                         </span>
                       )}
                       {s.providerId && !s.providerJoinedAt && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold uppercase">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] text-[10px] font-bold uppercase">
                           Provider Assigned
                         </span>
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground">{s.userEmail}</p>
                     {s.providerName && (
-                      <p className="text-xs text-emerald-700 mt-0.5">Provider: {s.providerName}</p>
+                      <p className="text-xs text-[hsl(var(--brand-success))] mt-0.5">Provider: {s.providerName}</p>
                     )}
                     {s.lastMessage && (
                       <p className="text-sm text-muted-foreground mt-1 truncate">{s.lastMessage}</p>

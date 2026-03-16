@@ -657,7 +657,7 @@ function StepAccount({
             </button>
           </div>
           {password.length > 0 && password.length < 6 && (
-            <p className="text-sm text-red-500 mt-1" data-testid="text-password-hint">Password must be at least 6 characters</p>
+            <p className="text-sm text-destructive mt-1" data-testid="text-password-hint">Password must be at least 6 characters</p>
           )}
         </div>
         <div>
@@ -681,11 +681,11 @@ function StepAccount({
             </button>
           </div>
           {confirmPassword.length > 0 && confirmPassword !== password && (
-            <p className="text-sm text-red-500 mt-1" data-testid="text-confirm-hint">Passwords do not match</p>
+            <p className="text-sm text-destructive mt-1" data-testid="text-confirm-hint">Passwords do not match</p>
           )}
         </div>
         {error && (
-          <p className="text-sm text-red-500" data-testid="text-register-error">{error}</p>
+          <p className="text-sm text-destructive" data-testid="text-register-error">{error}</p>
         )}
       </div>
     </div>
@@ -1057,7 +1057,7 @@ function StepPhone({
         <span>Your number will never be shared with anyone</span>
       </div>
 
-      <div className="mt-6 p-3 bg-blue-50 rounded-lg text-sm text-blue-800 text-center">
+      <div className="mt-6 p-3 bg-[hsl(var(--accent))]/10 rounded-lg text-sm text-[hsl(var(--accent))] text-center">
         Demo mode: Your verification code is <strong>{mockOtp}</strong>
       </div>
     </div>

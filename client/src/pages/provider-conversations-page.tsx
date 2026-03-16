@@ -217,7 +217,7 @@ export default function ProviderConversationsPage() {
             </div>
           </div>
           {hasJoined ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-50 text-green-700 text-xs font-medium" data-testid="badge-provider-joined">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium" data-testid="badge-provider-joined">
               <CheckCircle2 className="w-3 h-3" />
               Joined
             </div>
@@ -243,7 +243,7 @@ export default function ProviderConversationsPage() {
                 <div key={msg.id}>
                   {msg.role === "assistant" && msg.senderType === "human" && (
                     <div className="flex items-center gap-1.5 mb-1 ml-1">
-                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white bg-slate-600">
+                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white bg-muted-foreground">
                         GoStork Expert
                       </div>
                       {msg.senderName && <span className="text-[11px] text-muted-foreground">{msg.senderName}</span>}
@@ -262,7 +262,7 @@ export default function ProviderConversationsPage() {
                   )}
                   {msg.role === "assistant" && msg.senderType === "system" && (
                     <div className="flex items-center gap-1.5 mb-1 ml-1">
-                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-violet-600 text-white">
+                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--accent))] text-white">
                         Eva
                       </div>
                     </div>
@@ -271,13 +271,13 @@ export default function ProviderConversationsPage() {
                     <div
                       className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
                         msg.role === "user"
-                          ? "bg-blue-100 text-blue-900"
+                          ? "bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))]"
                           : msg.senderType === "provider"
                           ? "text-foreground border-2"
                           : msg.senderType === "human"
-                          ? "bg-slate-100 text-foreground"
+                          ? "bg-muted text-foreground"
                           : msg.senderType === "system"
-                          ? "bg-violet-50 text-violet-900 border border-violet-200"
+                          ? "bg-[hsl(var(--accent))]/10 text-[hsl(var(--accent))] border border-[hsl(var(--accent))]/30"
                           : "bg-muted text-foreground"
                       }`}
                       style={
@@ -445,7 +445,7 @@ export default function ProviderConversationsPage() {
                   </p>
                 )}
                 {generateAgreementMutation.isSuccess && (
-                  <p className="text-xs text-green-600 mt-1.5" data-testid="text-agreement-success">
+                  <p className="text-xs text-[hsl(var(--brand-success))] mt-1.5" data-testid="text-agreement-success">
                     Agreement sent successfully
                   </p>
                 )}
@@ -498,12 +498,12 @@ export default function ProviderConversationsPage() {
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-sm">{s.userName || "Unknown"}</span>
                       {s.providerJoinedAt ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-[10px] font-bold uppercase">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[10px] font-bold uppercase">
                           <CheckCircle2 className="w-2.5 h-2.5" />
                           Joined
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold uppercase">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] text-[10px] font-bold uppercase">
                           <UserPlus className="w-2.5 h-2.5" />
                           New
                         </span>

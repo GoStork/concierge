@@ -772,7 +772,7 @@ export default function ConciergeChatPage() {
               {msg.role === "assistant" && msg.senderType === "provider" && (
                 <div className="flex items-center gap-1.5 mb-1 ml-1">
                   <div
-                    className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white bg-emerald-600"
+                    className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white bg-[hsl(var(--brand-success))]"
                     data-testid={`badge-provider-${i}`}
                   >
                     Agency Expert
@@ -784,7 +784,7 @@ export default function ConciergeChatPage() {
               )}
               {msg.role === "assistant" && msg.senderType === "system" && (
                 <div className="flex items-center gap-1.5 mb-1 ml-1">
-                  <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-violet-600 text-white" data-testid={`badge-system-${i}`}>
+                  <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--accent))] text-white" data-testid={`badge-system-${i}`}>
                     Eva
                   </div>
                 </div>
@@ -800,9 +800,9 @@ export default function ConciergeChatPage() {
                       : msg.senderType === "human"
                       ? "text-foreground border-2"
                       : msg.senderType === "provider"
-                      ? "text-foreground border-2 border-emerald-300"
+                      ? "text-foreground border-2 border-[hsl(var(--brand-success))]/30"
                       : msg.senderType === "system"
-                      ? "bg-violet-50 text-violet-900 border border-violet-200"
+                      ? "bg-[hsl(var(--accent))]/10 text-[hsl(var(--accent))] border border-[hsl(var(--accent))]/30"
                       : "bg-muted text-foreground"
                   }`}
                   style={
