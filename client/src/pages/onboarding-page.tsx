@@ -8,6 +8,7 @@ import { ChevronLeft, Loader2, Lock, Check, Eye, EyeOff } from "lucide-react";
 
 const TOTAL_STEPS_AUTHENTICATED = 12;
 const TOTAL_STEPS_UNAUTHENTICATED = 13;
+const ACCOUNT_STEP = 13;
 
 const GOALS = ["Fertility Clinic", "Egg Donor", "Surrogate", "Sperm Donor"];
 const GENDERS = ["I'm a woman", "I'm a man", "I'm non-binary"];
@@ -219,8 +220,7 @@ export default function OnboardingPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const isRegistration = !user;
-  const TOTAL_STEPS = isRegistration ? TOTAL_STEPS_UNAUTHENTICATED : TOTAL_STEPS_AUTHENTICATED;
-  const firstStep = isRegistration ? 0 : 1;
+  const firstStep = 1;
   const [step, setStep] = useState(firstStep);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [submitting, setSubmitting] = useState(false);
@@ -228,11 +228,10 @@ export default function OnboardingPage() {
   const [registrationError, setRegistrationError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isLoading && user) {
-      if (step === 0) setStep(1);
-      if (!user.mustCompleteProfile) navigate("/dashboard", { replace: true });
+    if (!isLoading && user && !user.mustCompleteProfile) {
+      navigate("/dashboard", { replace: true });
     }
-  }, [isLoading, user, step, navigate]);
+  }, [isLoading, user, navigate]);
   const [mockOtp] = useState(() => {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     return code;
@@ -277,7 +276,7 @@ export default function OnboardingPage() {
     setDirection("forward");
     setStep(prev => {
       let next = prev + 1;
-      const lastStep = isRegistration ? TOTAL_STEPS - 1 : TOTAL_STEPS;
+      const lastStep = isRegistration ? ACCOUNT_STEP : TOTAL_STEPS_AUTHENTICATED;
       if (next > lastStep) return prev;
       next = effectiveStep(next);
       return next;
@@ -300,7 +299,6 @@ export default function OnboardingPage() {
 
   const canContinue = (): boolean => {
     switch (step) {
-      case 0: return isValidEmail(data.email) && data.password.length >= 6 && data.confirmPassword === data.password;
       case 1: return data.goals.length > 0;
       case 2: return data.firstName.trim().length > 0;
       case 3: return data.lastName.trim().length > 0;
@@ -313,6 +311,7 @@ export default function OnboardingPage() {
       case 10: return data.phone.trim().length >= 7;
       case 11: return data.otp.every(d => d !== "");
       case 12: return data.source !== "";
+      case ACCOUNT_STEP: return isValidEmail(data.email) && data.password.length >= 6 && data.confirmPassword === data.password;
       default: return false;
     }
   };
@@ -380,10 +379,10 @@ export default function OnboardingPage() {
     }
   };
 
-  const lastStep = isRegistration ? TOTAL_STEPS - 1 : TOTAL_STEPS;
+  const lastStep = isRegistration ? ACCOUNT_STEP : TOTAL_STEPS_AUTHENTICATED;
 
   const handleContinue = async () => {
-    if (step === 0 && isRegistration) {
+    if (step === ACCOUNT_STEP && isRegistration) {
       if (data.password !== data.confirmPassword) {
         setRegistrationError("Passwords do not match.");
         return;
@@ -393,7 +392,7 @@ export default function OnboardingPage() {
         return;
       }
       setRegistrationError(null);
-      goNext();
+      handleSubmit();
     } else if (step === lastStep) {
       handleSubmit();
     } else if (step === 11) {
@@ -474,17 +473,6 @@ export default function OnboardingPage() {
           key={step}
           className="animate-in fade-in slide-in-from-right-4 duration-300"
         >
-          {step === 0 && isRegistration && (
-            <StepAccount
-              email={data.email}
-              password={data.password}
-              confirmPassword={data.confirmPassword}
-              onEmailChange={v => update({ email: v })}
-              onPasswordChange={v => update({ password: v })}
-              onConfirmPasswordChange={v => update({ confirmPassword: v })}
-              error={registrationError}
-            />
-          )}
           {step === 1 && (
             <StepGoals goals={data.goals} onChange={g => update({ goals: g })} />
           )}
@@ -548,6 +536,17 @@ export default function OnboardingPage() {
           {step === 12 && (
             <StepSource value={data.source} onChange={v => update({ source: v })} />
           )}
+          {step === ACCOUNT_STEP && isRegistration && (
+            <StepAccount
+              email={data.email}
+              password={data.password}
+              confirmPassword={data.confirmPassword}
+              onEmailChange={v => update({ email: v })}
+              onPasswordChange={v => update({ password: v })}
+              onConfirmPasswordChange={v => update({ confirmPassword: v })}
+              error={registrationError}
+            />
+          )}
         </div>
       </div>
 
@@ -567,11 +566,13 @@ export default function OnboardingPage() {
               <Loader2 className="w-5 h-5 animate-spin mx-auto" />
             ) : step === 10 ? (
               "Verify phone number"
+            ) : step === ACCOUNT_STEP ? (
+              "Create Account & Finish"
             ) : (
               "Continue"
             )}
           </button>
-          {step === 0 && isRegistration && (
+          {step === ACCOUNT_STEP && isRegistration && (
             <p className="text-center text-sm text-gray-500 mt-4">
               Already have an account?{" "}
               <button
