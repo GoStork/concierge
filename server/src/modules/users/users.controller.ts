@@ -237,7 +237,7 @@ export class UsersController {
     const validGenders = ["I'm a woman", "I'm a man", "I'm non-binary"];
     const validOrientations = ["Straight", "Gay", "Lesbian", "Bi", "Queer"];
     const validRelationships = ["Single", "Partnered", "Married", "Separated/Divorced/Widowed"];
-    const validSources = ["Google", "Social Media", "Friend", "Other"];
+    const validSources = ["Google", "Social Media", "Friend", "Fertility Clinic", "Egg Donor Agency", "Surrogacy Agency", "Fertility Lawyer", "Progyny", "Carrot", "Other"];
     const validServices = ["Fertility Clinic", "Egg Donor", "Surrogate", "Sperm Donor"];
 
     if (body.gender && !validGenders.includes(body.gender)) throw new BadRequestException("Invalid gender");
@@ -361,7 +361,7 @@ export class UsersController {
       updateData.partnerAge = age;
     }
     if (body.referralSource !== undefined) {
-      const validSources = ["Google", "Social Media", "Friend", "Other"];
+      const validSources = ["Google", "Social Media", "Friend", "Fertility Clinic", "Egg Donor Agency", "Surrogacy Agency", "Fertility Lawyer", "Progyny", "Carrot", "Other"];
       if (body.referralSource && !validSources.includes(body.referralSource)) throw new BadRequestException("Invalid referral source");
       updateData.referralSource = body.referralSource || null;
     }
