@@ -237,9 +237,21 @@ export async function registerRoutes(
       if (existing)
         return res.status(400).json({ message: "Email already in use" });
       const hashedPassword = await hashPassword(input.password);
+      const isAdmin = req.isAuthenticated() && (req.user as any).role === "GOSTORK_ADMIN";
       const user = await storage.createUser({
-        ...input,
+        email: input.email,
         password: hashedPassword,
+        name: input.name,
+        mobileNumber: input.mobileNumber,
+        mustCompleteProfile: true,
+        ...(isAdmin ? {
+          role: input.role,
+          roles: input.roles,
+          providerId: input.providerId,
+          allLocations: input.allLocations,
+          locationIds: input.locationIds,
+          photoUrl: input.photoUrl,
+        } : {}),
       });
       res.status(201).json(user);
     } catch (err) {

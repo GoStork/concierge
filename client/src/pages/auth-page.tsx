@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertCircle, Baby, Loader2, CheckCircle2 } from "lucide-react";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { useCompanyName, useBrandSettings } from "@/hooks/use-brand-settings";
 
 export default function AuthPage() {
@@ -17,7 +17,6 @@ export default function AuthPage() {
   const companyName = useCompanyName();
   const { data: brandSettings } = useBrandSettings();
   const autoLoginAttempted = useRef(false);
-  const [authView, setAuthView] = useState<'login' | 'register'>('login');
   const passwordReset = (location.state as any)?.passwordReset;
   const returnTo = (location.state as any)?.returnTo;
 
@@ -107,11 +106,10 @@ export default function AuthPage() {
         <Card className="w-full max-w-md border-none shadow-2xl shadow-primary/5">
           <CardHeader className="space-y-2 text-center pb-6">
             <CardTitle className="font-display text-3xl font-heading text-primary" data-testid="text-auth-title">
-              {authView === 'login' ? 'Login' : 'Create Account'}
+              Login
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {authView === 'login' ? (
               <div className="space-y-4">
                 {passwordReset && (
                   <div className="flex items-center gap-2 p-3 rounded-lg bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-sm" data-testid="text-password-reset-success">
@@ -177,7 +175,7 @@ export default function AuthPage() {
                   Don't have an account?{" "}
                   <button
                     type="button"
-                    onClick={() => setAuthView('register')}
+                    onClick={() => navigate('/onboarding')}
                     className="text-primary hover:text-primary/80 cursor-pointer transition-colors font-ui"
                     data-testid="link-join-us"
                   >
@@ -185,25 +183,6 @@ export default function AuthPage() {
                   </button>
                 </p>
               </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="text-center py-8 text-muted-foreground bg-secondary/20 rounded-xl border border-dashed border-border" data-testid="text-register-placeholder">
-                  <p className="mb-2">Registration is invite-only for this demo.</p>
-                  <p className="text-sm">Please use the admin credentials provided.</p>
-                </div>
-                <p className="text-center text-sm text-muted-foreground">
-                  Already have an account?{" "}
-                  <button
-                    type="button"
-                    onClick={() => setAuthView('login')}
-                    className="text-primary hover:text-primary/80 cursor-pointer transition-colors font-ui"
-                    data-testid="link-back-to-login"
-                  >
-                    Login
-                  </button>
-                </p>
-              </div>
-            )}
           </CardContent>
         </Card>
       </div>

@@ -3,9 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { ChevronLeft, Loader2, Lock, Check } from "lucide-react";
+import { api } from "@shared/routes";
+import { ChevronLeft, Loader2, Lock, Check, Eye, EyeOff } from "lucide-react";
 
-const TOTAL_STEPS = 12;
+const TOTAL_STEPS_AUTHENTICATED = 12;
+const TOTAL_STEPS_UNAUTHENTICATED = 13;
 
 const GOALS = ["Fertility Clinic", "Egg Donor", "Surrogate", "Sperm Donor"];
 const GENDERS = ["I'm a woman", "I'm a man", "I'm non-binary"];
@@ -37,6 +39,9 @@ const COUNTRY_CODES = [
 ];
 
 interface OnboardingData {
+  email: string;
+  password: string;
+  confirmPassword: string;
   goals: string[];
   firstName: string;
   lastName: string;
@@ -210,19 +215,33 @@ function OtpInput({
 }
 
 export default function OnboardingPage() {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [step, setStep] = useState(1);
+  const isRegistration = !user;
+  const TOTAL_STEPS = isRegistration ? TOTAL_STEPS_UNAUTHENTICATED : TOTAL_STEPS_AUTHENTICATED;
+  const firstStep = isRegistration ? 0 : 1;
+  const [step, setStep] = useState(firstStep);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [submitting, setSubmitting] = useState(false);
   const [showLoading, setShowLoading] = useState(false);
+  const [registrationError, setRegistrationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isLoading && user) {
+      if (step === 0) setStep(1);
+      if (!user.mustCompleteProfile) navigate("/dashboard", { replace: true });
+    }
+  }, [isLoading, user, step, navigate]);
   const [mockOtp] = useState(() => {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     return code;
   });
 
   const [data, setData] = useState<OnboardingData>({
+    email: "",
+    password: "",
+    confirmPassword: "",
     goals: [],
     firstName: "",
     lastName: "",
@@ -242,8 +261,10 @@ export default function OnboardingPage() {
     source: "",
   });
 
-  const update = (partial: Partial<OnboardingData>) =>
+  const update = (partial: Partial<OnboardingData>) => {
+    setRegistrationError(null);
     setData(prev => ({ ...prev, ...partial }));
+  };
 
   const effectiveStep = (s: number): number => {
     if (s === 8 && data.relationship !== "Partnered" && data.relationship !== "Married") {
@@ -256,7 +277,8 @@ export default function OnboardingPage() {
     setDirection("forward");
     setStep(prev => {
       let next = prev + 1;
-      if (next > TOTAL_STEPS) return prev;
+      const lastStep = isRegistration ? TOTAL_STEPS - 1 : TOTAL_STEPS;
+      if (next > lastStep) return prev;
       next = effectiveStep(next);
       return next;
     });
@@ -266,7 +288,7 @@ export default function OnboardingPage() {
     setDirection("back");
     setStep(prev => {
       let next = prev - 1;
-      if (next < 1) return prev;
+      if (next < firstStep) return prev;
       if (next === 8 && data.relationship !== "Partnered" && data.relationship !== "Married") {
         next = 7;
       }
@@ -274,8 +296,11 @@ export default function OnboardingPage() {
     });
   };
 
+  const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
   const canContinue = (): boolean => {
     switch (step) {
+      case 0: return isValidEmail(data.email) && data.password.length >= 6 && data.confirmPassword === data.password;
       case 1: return data.goals.length > 0;
       case 2: return data.firstName.trim().length > 0;
       case 3: return data.lastName.trim().length > 0;
@@ -299,6 +324,34 @@ export default function OnboardingPage() {
     const birthDate = new Date(YEARS[data.birthYear], data.birthMonth, DAYS[data.birthDay]);
 
     try {
+      if (isRegistration) {
+        try {
+          await apiRequest("POST", api.users.create.path, {
+            email: data.email.trim(),
+            password: data.password,
+            name: `${data.firstName.trim()} ${data.lastName.trim()}`,
+            mustCompleteProfile: true,
+          });
+        } catch (err: any) {
+          setShowLoading(false);
+          setSubmitting(false);
+          const msg = err.message || "";
+          if (msg.includes("Email already in use")) {
+            toast({ title: "Email already in use", description: "An account with this email already exists. Please login instead.", variant: "destructive" });
+          } else {
+            toast({ title: "Registration failed", description: msg, variant: "destructive" });
+          }
+          return;
+        }
+
+        const loginRes = await apiRequest("POST", api.auth.login.path, {
+          email: data.email.trim(),
+          password: data.password,
+        });
+        const loggedInUser = await loginRes.json();
+        queryClient.setQueryData([api.auth.me.path], loggedInUser);
+      }
+
       await apiRequest("PUT", "/api/user/onboarding", {
         firstName: data.firstName.trim(),
         lastName: data.lastName.trim(),
@@ -327,8 +380,21 @@ export default function OnboardingPage() {
     }
   };
 
-  const handleContinue = () => {
-    if (step === 12) {
+  const lastStep = isRegistration ? TOTAL_STEPS - 1 : TOTAL_STEPS;
+
+  const handleContinue = async () => {
+    if (step === 0 && isRegistration) {
+      if (data.password !== data.confirmPassword) {
+        setRegistrationError("Passwords do not match.");
+        return;
+      }
+      if (data.password.length < 6) {
+        setRegistrationError("Password must be at least 6 characters.");
+        return;
+      }
+      setRegistrationError(null);
+      goNext();
+    } else if (step === lastStep) {
       handleSubmit();
     } else if (step === 11) {
       const entered = data.otp.join("");
@@ -342,7 +408,17 @@ export default function OnboardingPage() {
     }
   };
 
-  const progress = (step / TOTAL_STEPS) * 100;
+  const stepsCompleted = step - firstStep;
+  const totalVisibleSteps = lastStep - firstStep;
+  const progress = totalVisibleSteps > 0 ? ((stepsCompleted) / totalVisibleSteps) * 100 : 0;
+
+  if (isLoading) {
+    return (
+      <div className="fixed inset-0 bg-white flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+      </div>
+    );
+  }
 
   if (showLoading) {
     return (
@@ -371,7 +447,7 @@ export default function OnboardingPage() {
   return (
     <div className="fixed inset-0 bg-white flex flex-col" data-testid="onboarding-page">
       <div className="flex items-center px-4 pt-4 pb-2">
-        {step > 1 && (
+        {step > firstStep && (
           <button
             onClick={goBack}
             className="p-2 -ml-2 rounded-full hover:bg-gray-100 transition-colors"
@@ -398,6 +474,17 @@ export default function OnboardingPage() {
           key={step}
           className="animate-in fade-in slide-in-from-right-4 duration-300"
         >
+          {step === 0 && isRegistration && (
+            <StepAccount
+              email={data.email}
+              password={data.password}
+              confirmPassword={data.confirmPassword}
+              onEmailChange={v => update({ email: v })}
+              onPasswordChange={v => update({ password: v })}
+              onConfirmPasswordChange={v => update({ confirmPassword: v })}
+              error={registrationError}
+            />
+          )}
           {step === 1 && (
             <StepGoals goals={data.goals} onChange={g => update({ goals: g })} />
           )}
@@ -464,7 +551,7 @@ export default function OnboardingPage() {
         </div>
       </div>
 
-      {step <= 12 && (
+      {step <= lastStep && (
         <div className="px-6 pb-8 pt-2">
           <button
             onClick={handleContinue}
@@ -484,8 +571,120 @@ export default function OnboardingPage() {
               "Continue"
             )}
           </button>
+          {step === 0 && isRegistration && (
+            <p className="text-center text-sm text-gray-500 mt-4">
+              Already have an account?{" "}
+              <button
+                type="button"
+                onClick={() => navigate("/")}
+                className="text-black font-medium hover:underline"
+                data-testid="link-back-to-login"
+              >
+                Login
+              </button>
+            </p>
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+function StepAccount({
+  email,
+  password,
+  confirmPassword,
+  onEmailChange,
+  onPasswordChange,
+  onConfirmPasswordChange,
+  error,
+}: {
+  email: string;
+  password: string;
+  confirmPassword: string;
+  onEmailChange: (v: string) => void;
+  onPasswordChange: (v: string) => void;
+  onConfirmPasswordChange: (v: string) => void;
+  error: string | null;
+}) {
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  return (
+    <div>
+      <h1
+        className="text-3xl font-bold mb-2 leading-tight"
+        style={{ fontFamily: "var(--font-display)" }}
+        data-testid="text-step-title"
+      >
+        Create your account
+      </h1>
+      <p className="text-gray-500 mb-8 text-sm">Enter your email and choose a password to get started.</p>
+      <div className="space-y-6">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <input
+            type="email"
+            value={email}
+            onChange={e => onEmailChange(e.target.value)}
+            placeholder="you@example.com"
+            autoFocus
+            data-testid="input-register-email"
+            className="w-full text-lg border-0 border-b-2 border-gray-300 focus:border-black outline-none pb-3 bg-transparent placeholder:text-gray-300 transition-colors"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+          <div className="relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={e => onPasswordChange(e.target.value)}
+              placeholder="At least 6 characters"
+              data-testid="input-register-password"
+              className="w-full text-lg border-0 border-b-2 border-gray-300 focus:border-black outline-none pb-3 bg-transparent placeholder:text-gray-300 transition-colors pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+              data-testid="btn-toggle-password"
+            >
+              {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+            </button>
+          </div>
+          {password.length > 0 && password.length < 6 && (
+            <p className="text-sm text-red-500 mt-1" data-testid="text-password-hint">Password must be at least 6 characters</p>
+          )}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+          <div className="relative">
+            <input
+              type={showConfirm ? "text" : "password"}
+              value={confirmPassword}
+              onChange={e => onConfirmPasswordChange(e.target.value)}
+              placeholder="Re-enter your password"
+              data-testid="input-register-confirm-password"
+              className="w-full text-lg border-0 border-b-2 border-gray-300 focus:border-black outline-none pb-3 bg-transparent placeholder:text-gray-300 transition-colors pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirm(!showConfirm)}
+              className="absolute right-0 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+              data-testid="btn-toggle-confirm-password"
+            >
+              {showConfirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+            </button>
+          </div>
+          {confirmPassword.length > 0 && confirmPassword !== password && (
+            <p className="text-sm text-red-500 mt-1" data-testid="text-confirm-hint">Passwords do not match</p>
+          )}
+        </div>
+        {error && (
+          <p className="text-sm text-red-500" data-testid="text-register-error">{error}</p>
+        )}
+      </div>
     </div>
   );
 }

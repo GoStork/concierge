@@ -93,7 +93,7 @@ function AppRoutes() {
         <Route path="/check-email" element={<CheckEmailPage />} />
         <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
         <Route path="/complete-profile" element={<CompleteProfilePage />} />
-        <Route path="/onboarding" element={<OnboardingGuard><OnboardingPage /></OnboardingGuard>} />
+        <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/dashboard" element={<ProtectedRoute><DashboardRoute /></ProtectedRoute>} />
         <Route path="/marketplace" element={<ProtectedRoute><MarketplacePage /></ProtectedRoute>} />
         <Route path="/providers/:id" element={<ProtectedRoute><ProviderProfilePage /></ProtectedRoute>} />
