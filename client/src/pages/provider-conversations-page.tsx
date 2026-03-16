@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
-  ArrowLeft, MessageSquare, Send, User, Clock, Loader2,
+  ArrowLeft, MessageSquare, Send, User, Clock, Loader2, FileText,
   MapPin, Mail, CheckCircle2, UserPlus, Shield, ThumbsUp, ThumbsDown,
 } from "lucide-react";
 import { hasProviderRole } from "@shared/roles";
@@ -158,6 +158,25 @@ export default function ProviderConversationsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions", selectedSessionId] });
       queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions"] });
+    },
+  });
+
+  const generateAgreementMutation = useMutation({
+    mutationFn: async ({ sessionId }: { sessionId: string }) => {
+      const res = await fetch("/api/agreements/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ sessionId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Failed to generate agreement" }));
+        throw new Error(err.message);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions", selectedSessionId] });
     },
   });
 
@@ -399,6 +418,37 @@ export default function ProviderConversationsPage() {
                     Completed — Not a Fit
                   </Button>
                 </div>
+              </div>
+            )}
+
+            {hasJoined && (
+              <div className="border-t pt-4 mt-4" data-testid="agreement-section">
+                <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Agreement</h4>
+                <Button
+                  size="sm"
+                  className="w-full gap-1.5 text-xs"
+                  style={{ backgroundColor: brandColor }}
+                  onClick={() => {
+                    if (selectedSessionId) {
+                      generateAgreementMutation.mutate({ sessionId: selectedSessionId });
+                    }
+                  }}
+                  disabled={generateAgreementMutation.isPending}
+                  data-testid="btn-generate-agreement"
+                >
+                  {generateAgreementMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+                  Generate & Send Agreement
+                </Button>
+                {generateAgreementMutation.isError && (
+                  <p className="text-xs text-destructive mt-1.5" data-testid="text-agreement-error">
+                    {(generateAgreementMutation.error as Error)?.message || "Failed to generate agreement"}
+                  </p>
+                )}
+                {generateAgreementMutation.isSuccess && (
+                  <p className="text-xs text-green-600 mt-1.5" data-testid="text-agreement-success">
+                    Agreement sent successfully
+                  </p>
+                )}
               </div>
             )}
           </div>

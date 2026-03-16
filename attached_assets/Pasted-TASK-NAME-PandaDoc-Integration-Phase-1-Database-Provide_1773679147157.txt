@@ -1,0 +1,53 @@
+TASK NAME: PandaDoc Integration Phase 1 - Database & Provider Generation
+
+Description:
+We are building the GoStork-side infrastructure for native document management using the PandaDoc API. This phase focuses strictly on the database schema, the backend generation service, and the Provider UI to send the agreement.
+
+Step 1: The Database Sync Model (prisma/schema.prisma)
+
+Update the schema to include an Agreement model. This is our system of record so we do not rely solely on PandaDoc.
+
+Fields: * id (String, default uuid, primary key)
+
+providerId (String, Relation to Provider)
+
+parentUserId (String, Relation to User)
+
+sessionId (String, Relation to AiChatSession)
+
+pandaDocDocumentId (String, unique, nullable)
+
+status (String - default "DRAFT")
+
+documentType (String - default "Agency Agreement")
+
+createdAt, updatedAt (DateTime)
+
+Update the Provider model to include a pandaDocTemplateId (String, nullable).
+
+Run npx prisma db push and regenerate the client.
+
+Step 2: PandaDoc Backend Service (server/pandadoc-service.ts)
+
+Create a new backend service file: server/pandadoc-service.ts.
+
+Implement a generateAgreement function.
+
+Logic: 1. Accept providerId, parentUserId, and sessionId.
+2. Fetch the Parent's User profile data and the Provider's data using Prisma.
+3. Make a POST request to PandaDoc's API (https://api.pandadoc.com/public/v1/documents) using the Provider's pandaDocTemplateId and the PANDADOC_API_KEY from environment variables. Map the GoStork data (names, emails) to PandaDoc tokens in the payload.
+4. Create the Agreement record in the database, saving the returned PandaDoc ID and setting the status to SENT.
+
+Update server/routes.ts to add a new POST endpoint /api/agreements/generate that calls this service. Ensure it checks for proper provider authorization.
+
+Step 3: Provider Agreement Center (Settings UI)
+
+In the Provider Dashboard settings (e.g., inside company-tab.tsx or similar profile settings), add an input field for the Provider to save their specific pandaDocTemplateId. Make sure this saves to the database.
+
+Step 4: The Generation Trigger (client/src/pages/provider-conversations-page.tsx)
+
+In the Provider's view of the 3-Way Chat, add a new [Generate & Send Agreement] button to the Consultation Status sidebar (near the "Move to Match" button).
+
+Action: Clicking this hits the new /api/agreements/generate endpoint.
+
+Chat Update: Upon success, trigger a system message in the chat session: "Provider has generated the official agreement. It is being prepared for signature."

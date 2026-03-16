@@ -254,6 +254,7 @@ export const insertProviderSchema = z.object({
   yearFounded: z.number().int().nullable().optional(),
   consultationBookingUrl: z.string().url().nullable().optional().or(z.literal("").transform(() => null)),
   consultationIframeEnabled: z.boolean().optional(),
+  pandaDocTemplateId: z.string().nullable().optional(),
 });
 
 export const insertProviderTypeSchema = z.object({

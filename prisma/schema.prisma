@@ -23,7 +23,9 @@ model Provider {
   brandingEnabled              Boolean                 @default(false)
   consultationBookingUrl       String?
   consultationIframeEnabled    Boolean                 @default(false)
+  pandaDocTemplateId           String?
   eggDonors            EggDonor[]
+  agreements           Agreement[]
   eggDonorSyncConfig   EggDonorSyncConfig?
   brandSettings        ProviderBrandSettings?
   costSheets           ProviderCostSheet[]
@@ -184,6 +186,7 @@ model User {
   inAppNotifications    InAppNotification[]
   aiChatSessions        AiChatSession[]
   silentQueries         SilentQuery[]          @relation("SilentQueryParent")
+  agreements            Agreement[]
 }
 
 model UserDonorPreference {
@@ -865,6 +868,7 @@ model AiChatSession {
   
   messages      AiChatMessage[]
   silentQueries SilentQuery[]
+  agreements    Agreement[]
   user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   provider      Provider?       @relation(fields: [providerId], references: [id])
 
@@ -1001,5 +1005,29 @@ model SilentQuery {
 
   @@index([providerId, status])
   @@index([parentUserId, status])
+  @@index([sessionId])
+}
+
+// ==========================================
+// PANDADOC AGREEMENT TRACKING
+// ==========================================
+
+model Agreement {
+  id                  String        @id @default(uuid())
+  providerId          String
+  parentUserId        String
+  sessionId           String
+  pandaDocDocumentId  String?       @unique
+  status              String        @default("DRAFT")
+  documentType        String        @default("Agency Agreement")
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  provider            Provider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  parentUser          User          @relation(fields: [parentUserId], references: [id], onDelete: Cascade)
+  session             AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@index([parentUserId])
   @@index([sessionId])
 }

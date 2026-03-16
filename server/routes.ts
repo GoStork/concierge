@@ -7,6 +7,7 @@ import { setupAuth, requireAuth, requireRole } from "./auth";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { prisma } from "./db";
+import { generateAgreement } from "./pandadoc-service";
 
 function escapeHtml(str: string): string {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
@@ -670,6 +671,46 @@ export async function registerRoutes(
       res.json({ success: true, status });
     } catch (e: any) {
       console.error("Consultation status update error:", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/agreements/generate", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+
+    const { sessionId } = req.body;
+    if (!sessionId || typeof sessionId !== "string") {
+      return res.status(400).json({ message: "sessionId is required" });
+    }
+
+    try {
+      const session = await prisma.aiChatSession.findUnique({
+        where: { id: sessionId },
+        select: { id: true, userId: true, providerId: true },
+      });
+      if (!session) return res.status(404).json({ message: "Session not found" });
+      if (session.providerId !== user.providerId) return res.status(403).json({ message: "Not authorized for this session" });
+
+      const agreement = await generateAgreement({
+        providerId: user.providerId,
+        parentUserId: session.userId,
+        sessionId: session.id,
+      });
+
+      await prisma.aiChatMessage.create({
+        data: {
+          sessionId: session.id,
+          role: "assistant",
+          content: "The provider has generated the official agreement. It is being prepared for your signature. You'll receive it shortly via email.",
+          senderType: "system",
+          senderName: "Eva",
+        },
+      });
+
+      res.json({ success: true, agreementId: agreement.id, status: agreement.status });
+    } catch (e: any) {
+      console.error("Agreement generation error:", e);
       res.status(500).json({ message: e.message });
     }
   });
