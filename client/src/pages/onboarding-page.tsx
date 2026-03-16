@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { api } from "@shared/routes";
-import { ChevronLeft, Loader2, Lock, Check, Eye, EyeOff } from "lucide-react";
+import { ChevronLeft, Loader2, Lock, Check, Eye, EyeOff, AlertCircle } from "lucide-react";
 import LocationAutocomplete from "@/components/location-autocomplete";
 
 const TOTAL_STEPS_AUTHENTICATED = 12;
@@ -242,6 +242,7 @@ export default function OnboardingPage() {
     }
   }, [isLoading, user, navigate]);
   const [otpSending, setOtpSending] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
 
   const [data, setData] = useState<OnboardingData>({
     email: "",
@@ -405,6 +406,7 @@ export default function OnboardingPage() {
       handleSubmit();
     } else if (step === 10) {
       setOtpSending(true);
+      setOtpError(null);
       try {
         const fullPhone = `${data.countryCode}${data.phone.replace(/\D/g, "")}`;
         const res = await apiRequest("POST", "/api/auth/send-otp", { phone: fullPhone });
@@ -412,6 +414,7 @@ export default function OnboardingPage() {
         if (result.devCode) {
           (window as any).__devOtpCode = result.devCode;
         }
+        setOtpError(null);
         goNext();
       } catch (err: any) {
         let msg = "Please check your number and try again.";
@@ -419,19 +422,21 @@ export default function OnboardingPage() {
           const parsed = JSON.parse(err.message.replace(/^\d+:\s*/, ""));
           if (parsed.message) msg = parsed.message;
         } catch { if (err.message) msg = err.message; }
-        toast({ title: "Could not send code", description: msg, variant: "destructive" });
+        setOtpError(msg);
       } finally {
         setOtpSending(false);
       }
     } else if (step === 11) {
       const entered = data.otp.join("");
       setOtpSending(true);
+      setOtpError(null);
       try {
         const fullPhone = `${data.countryCode}${data.phone.replace(/\D/g, "")}`;
         await apiRequest("POST", "/api/auth/verify-otp", { phone: fullPhone, code: entered });
+        setOtpError(null);
         goNext();
       } catch {
-        toast({ title: "Invalid code", description: "The code you entered is incorrect or has expired.", variant: "destructive" });
+        setOtpError("The code you entered is incorrect or has expired. Please try again.");
       } finally {
         setOtpSending(false);
       }
@@ -553,19 +558,22 @@ export default function OnboardingPage() {
             <StepPhone
               countryCode={data.countryCode}
               phone={data.phone}
-              onCountryCodeChange={v => update({ countryCode: v })}
-              onPhoneChange={v => update({ phone: v })}
+              onCountryCodeChange={v => { update({ countryCode: v }); setOtpError(null); }}
+              onPhoneChange={v => { update({ phone: v }); setOtpError(null); }}
+              error={otpError}
             />
           )}
           {step === 11 && (
             <StepVerification
               otp={data.otp}
-              onChange={v => update({ otp: v })}
+              onChange={v => { update({ otp: v }); setOtpError(null); }}
               phone={`${data.countryCode} ${data.phone}`}
               onResend={async () => {
+                setOtpError(null);
                 const fullPhone = `${data.countryCode}${data.phone.replace(/\D/g, "")}`;
                 await apiRequest("POST", "/api/auth/send-otp", { phone: fullPhone });
               }}
+              error={otpError}
             />
           )}
           {step === 12 && (
@@ -1009,11 +1017,13 @@ function StepPhone({
   phone,
   onCountryCodeChange,
   onPhoneChange,
+  error,
 }: {
   countryCode: string;
   phone: string;
   onCountryCodeChange: (v: string) => void;
   onPhoneChange: (v: string) => void;
+  error?: string | null;
 }) {
   const [showCodes, setShowCodes] = useState(false);
   const selected = COUNTRY_CODES.find(c => c.code === countryCode) || COUNTRY_CODES[0];
@@ -1070,6 +1080,13 @@ function StepPhone({
         />
       </div>
 
+      {error && (
+        <p className="text-destructive text-sm mb-4 flex items-center gap-2" data-testid="text-phone-error">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          {error}
+        </p>
+      )}
+
       <div className="flex items-center gap-2 text-muted-foreground text-sm justify-center">
         <Lock className="w-4 h-4" />
         <span>Your number will never be shared with anyone</span>
@@ -1083,11 +1100,13 @@ function StepVerification({
   onChange,
   phone,
   onResend,
+  error,
 }: {
   otp: string[];
   onChange: (v: string[]) => void;
   phone: string;
   onResend: () => Promise<void>;
+  error?: string | null;
 }) {
   const [resending, setResending] = useState(false);
   const [resent, setResent] = useState(false);
@@ -1117,7 +1136,14 @@ function StepVerification({
 
       <OtpInput value={otp} onChange={onChange} />
 
-      <p className="text-center text-muted-foreground text-sm mt-12">
+      {error && (
+        <p className="text-destructive text-sm mt-4 flex items-center gap-2 justify-center" data-testid="text-otp-error">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          {error}
+        </p>
+      )}
+
+      <p className={`text-center text-muted-foreground text-sm ${error ? "mt-4" : "mt-12"}`}>
         You should receive the code within 30s
       </p>
       <p className="text-center text-sm mt-1">
