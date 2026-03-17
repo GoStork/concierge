@@ -361,14 +361,11 @@ export default function ConversationsPage() {
                         )}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="font-semibold text-sm truncate">{session.matchmakerName || "Eva"}</span>
+                            <span className="text-sm font-ui truncate" style={{ fontWeight: 600 }}>{session.matchmakerName || "Eva"}</span>
                             <span className="text-[11px] text-muted-foreground flex-shrink-0">{timeAgo(session.lastMessageAt)}</span>
                           </div>
-                          {session.matchmakerTitle && (
-                            <span className="text-[11px] text-muted-foreground">{session.matchmakerTitle}</span>
-                          )}
                           {session.lastMessage && (
-                            <p className="text-xs text-muted-foreground truncate mt-0.5">{truncateMessage(session.lastMessage)}</p>
+                            <p className="text-sm text-muted-foreground truncate mt-0.5">{truncateMessage(session.lastMessage)}</p>
                           )}
                         </div>
                       </button>
@@ -394,7 +391,7 @@ export default function ConversationsPage() {
                                 <Building2 className="w-4 h-4" />
                               </div>
                             )}
-                            <span className="font-medium text-sm flex-1">{first.providerName}</span>
+                            <span className="font-medium text-sm font-ui flex-1">{first.providerName}</span>
                             <span className="text-[11px] text-muted-foreground mr-1">{sessions.length}</span>
                             <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
                           </CollapsibleTrigger>
@@ -408,11 +405,11 @@ export default function ConversationsPage() {
                               >
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className="font-medium text-sm truncate">{session.matchmakerName || "Conversation"}</span>
+                                    <span className="font-medium text-sm font-ui truncate">{session.matchmakerName || "Conversation"}</span>
                                     <span className="text-[11px] text-muted-foreground flex-shrink-0">{timeAgo(session.lastMessageAt)}</span>
                                   </div>
                                   {session.lastMessage && (
-                                    <p className="text-xs text-muted-foreground truncate mt-0.5">{truncateMessage(session.lastMessage)}</p>
+                                    <p className="text-sm text-muted-foreground truncate mt-0.5">{truncateMessage(session.lastMessage)}</p>
                                   )}
                                 </div>
                               </button>
@@ -509,7 +506,7 @@ export default function ConversationsPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="font-semibold text-sm truncate">{s.userName || "Unknown"}</span>
+                        <span className="font-semibold text-sm font-ui truncate">{s.userName || "Unknown"}</span>
                         {s.providerJoinedAt ? (
                           <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[9px] font-bold uppercase flex-shrink-0">
                             <CheckCircle2 className="w-2.5 h-2.5" />
@@ -523,9 +520,8 @@ export default function ConversationsPage() {
                       </div>
                       <span className="text-[11px] text-muted-foreground flex-shrink-0">{timeAgo(s.lastMessageAt)}</span>
                     </div>
-                    <p className="text-[11px] text-muted-foreground">{s.userEmail}</p>
                     {s.lastMessage && (
-                      <p className="text-xs text-muted-foreground truncate mt-0.5">{truncateMessage(s.lastMessage)}</p>
+                      <p className="text-sm text-muted-foreground truncate mt-0.5">{truncateMessage(s.lastMessage)}</p>
                     )}
                   </div>
                 </button>
@@ -568,8 +564,7 @@ export default function ConversationsPage() {
                     </div>
                   )}
                   <div>
-                    <h3 className="font-semibold text-sm">{detail.user.name || "Unknown"}</h3>
-                    <p className="text-xs text-muted-foreground">{detail.user.email}</p>
+                    <h3 className="font-semibold text-sm font-ui">{detail.user.name || "Unknown"}</h3>
                   </div>
                 </div>
                 {hasJoined ? (
@@ -616,7 +611,7 @@ export default function ConversationsPage() {
                         )}
                         <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                           <div
-                            className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                            className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-base leading-relaxed font-ui ${
                               msg.role === "user"
                                 ? "bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))]"
                                 : msg.senderType === "provider"
@@ -661,7 +656,7 @@ export default function ConversationsPage() {
                             }
                           }}
                           disabled={sendMessageMutation.isPending}
-                          className="flex-1"
+                          className="flex-1 !text-base font-ui"
                           data-testid="input-provider-message"
                         />
                         <Button

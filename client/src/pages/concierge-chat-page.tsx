@@ -808,10 +808,9 @@ export default function ConciergeChatPage() {
             </div>
           )}
           <div className="flex-1">
-            <h2 className="font-display font-semibold text-sm" style={{ fontFamily: "var(--font-display)" }}>
+            <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>
               {selectedMatchmaker?.name || "AI Concierge"}
             </h2>
-            <p className="text-xs text-muted-foreground">{selectedMatchmaker?.title}</p>
           </div>
           <Button
             variant="outline"
@@ -1021,7 +1020,7 @@ export default function ConciergeChatPage() {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={sending}
-              className="flex-1 text-base"
+              className="flex-1 !text-base font-ui"
               data-testid="input-concierge-message"
             />
             <Button
