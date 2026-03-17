@@ -440,202 +440,210 @@ function KnowledgeBaseCard() {
         Upload documents and sync provider websites so the AI concierge can answer questions accurately.
       </p>
 
-      <div className="mb-5">
-        <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
-          <MessageCircleQuestion className="w-4 h-4 text-[hsl(var(--brand-warning))]" />
-          Unanswered AI Questions
-          {pendingWhispers.length > 0 && (
-            <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))]">
-              {pendingWhispers.length}
-            </span>
-          )}
-        </h4>
-        <p className="text-xs text-muted-foreground mb-3">
-          When the AI concierge can't answer a parent's question, it appears here. Your response will be sent to the parent and taught to the AI.
-        </p>
-        {pendingWhispers.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-3">No unanswered questions right now.</p>
-        ) : (
-          <div className="space-y-3">
-            {pendingWhispers.map((w: any) => (
-              <div key={w.id} className="p-3 rounded-lg border border-[hsl(var(--brand-warning))]/30 bg-[hsl(var(--brand-warning))]/5" data-testid={`card-whisper-${w.id}`}>
-                <p className="text-sm font-medium mb-1">"{w.questionText}"</p>
-                <p className="text-xs text-muted-foreground mb-2">
-                  {new Date(w.createdAt).toLocaleDateString()} · Anonymous prospective parent
-                </p>
-                <textarea
-                  value={answerInputs[w.id] || ""}
-                  onChange={(e) => setAnswerInputs((prev) => ({ ...prev, [w.id]: e.target.value }))}
-                  placeholder="Type your answer..."
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[60px] resize-y"
-                  data-testid={`input-whisper-answer-${w.id}`}
-                />
-                <div className="flex justify-end mt-2">
-                  <Button
-                    size="sm"
-                    onClick={() => answerMutation.mutate({ id: w.id, answer: answerInputs[w.id] || "" })}
-                    disabled={!answerInputs[w.id]?.trim() || answerMutation.isPending}
-                    data-testid={`button-send-whisper-${w.id}`}
-                  >
-                    {answerMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Send className="w-3.5 h-3.5 mr-1.5" />}
-                    Send to AI
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="mb-5">
-        <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 text-[hsl(var(--brand-success))]" />
-          Answered Questions
-        </h4>
-        {answeredWhispers.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-3">No answered questions yet. Answers you provide above will appear here.</p>
-        ) : (
-          <div className="space-y-2">
-            {answeredWhispers.slice(0, 5).map((w: any) => (
-              <div key={w.id} className="p-3 rounded-lg border opacity-70" data-testid={`card-answered-${w.id}`}>
-                <p className="text-xs font-medium">Q: {w.questionText}</p>
-                <p className="text-xs text-muted-foreground mt-1">A: {w.answerText}</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Answered {new Date(w.updatedAt).toLocaleDateString()}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div
-        className={`p-6 border-2 border-dashed rounded-lg transition-colors cursor-pointer mb-5 ${
-          dragOver ? "border-primary bg-primary/5" : "border-border/60 hover:border-primary/40"
-        }`}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={handleDrop}
-        onClick={() => document.getElementById("admin-knowledge-file-input")?.click()}
-        data-testid="dropzone-document-upload"
-      >
-        <div className="flex flex-col items-center gap-2 text-center">
-          {uploadMutation.isPending ? (
-            <>
-              <Loader2 className="w-8 h-8 text-primary animate-spin" />
-              <p className="text-sm font-medium">Processing document...</p>
-              <p className="text-xs text-muted-foreground">Extracting text, generating embeddings</p>
-            </>
+      <div className="space-y-4">
+        <div className="rounded-lg border p-4" data-testid="section-unanswered-questions">
+          <h4 className="text-sm font-semibold mb-1 flex items-center gap-2">
+            <MessageCircleQuestion className="w-4 h-4 text-[hsl(var(--brand-warning))]" />
+            Unanswered AI Questions
+            {pendingWhispers.length > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))]">
+                {pendingWhispers.length}
+              </span>
+            )}
+          </h4>
+          <p className="text-xs text-muted-foreground mb-3">
+            When the AI concierge can't answer a parent's question, it appears here. Your response will be sent to the parent and taught to the AI.
+          </p>
+          {pendingWhispers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No unanswered questions right now.</p>
           ) : (
-            <>
-              <Upload className="w-8 h-8 text-muted-foreground" />
-              <p className="text-sm font-medium">Drop a file here or click to upload</p>
-              <p className="text-xs text-muted-foreground">Supported: PDF, CSV, TXT, DOCX (max 20MB)</p>
-            </>
-          )}
-        </div>
-        <input
-          id="admin-knowledge-file-input"
-          type="file"
-          accept=".pdf,.csv,.txt,.docx"
-          className="hidden"
-          onChange={handleFileSelect}
-          data-testid="input-file-upload"
-        />
-      </div>
-
-      <div className="mb-5">
-        <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
-          <FileText className="w-4 h-4" />
-          Uploaded Documents
-        </h4>
-        {documentsQuery.isLoading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Loading...
-          </div>
-        ) : docs.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-3">No documents uploaded yet. Upload files above to teach the AI about your practice.</p>
-        ) : (
-          <div className="space-y-2">
-            {docs.map((doc: any, i: number) => (
-              <div key={i} className="flex items-center justify-between p-3 rounded-lg border" data-testid={`card-document-${i}`}>
-                <div className="flex items-center gap-3 min-w-0">
-                  {doc.sourceType === "WEBSITE" ? (
-                    <Globe className="w-4 h-4 text-[hsl(var(--accent))] shrink-0" />
-                  ) : (
-                    <FileText className="w-4 h-4 text-primary shrink-0" />
-                  )}
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {doc.sourceFileName || doc.sourceUrl || "Website Content"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {doc.chunk_count} chunks · {doc.sourceType}
-                      {doc.createdAt ? ` · ${new Date(doc.createdAt).toLocaleDateString()}` : ""}
-                    </p>
+            <div className="space-y-3">
+              {pendingWhispers.map((w: any) => (
+                <div key={w.id} className="p-3 rounded-lg border border-[hsl(var(--brand-warning))]/30 bg-[hsl(var(--brand-warning))]/5" data-testid={`card-whisper-${w.id}`}>
+                  <p className="text-sm font-medium mb-1">"{w.questionText}"</p>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    {new Date(w.createdAt).toLocaleDateString()} · Anonymous prospective parent
+                  </p>
+                  <textarea
+                    value={answerInputs[w.id] || ""}
+                    onChange={(e) => setAnswerInputs((prev) => ({ ...prev, [w.id]: e.target.value }))}
+                    placeholder="Type your answer..."
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[60px] resize-y"
+                    data-testid={`input-whisper-answer-${w.id}`}
+                  />
+                  <div className="flex justify-end mt-2">
+                    <Button
+                      size="sm"
+                      onClick={() => answerMutation.mutate({ id: w.id, answer: answerInputs[w.id] || "" })}
+                      disabled={!answerInputs[w.id]?.trim() || answerMutation.isPending}
+                      data-testid={`button-send-whisper-${w.id}`}
+                    >
+                      {answerMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Send className="w-3.5 h-3.5 mr-1.5" />}
+                      Send to AI
+                    </Button>
                   </div>
                 </div>
-                {doc.sourceFileName && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-                    onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(doc.sourceFileName); }}
-                    disabled={deleteMutation.isPending}
-                    data-testid={`button-delete-doc-${i}`}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="border-t pt-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium">Bulk Provider Website Sync</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Crawl all provider websites and update the AI knowledge base. Rate-limited to 1 request/second.
-            </p>
-          </div>
-          <Button
-            onClick={handleBulkSync}
-            disabled={bulkSyncRunning}
-            data-testid="button-bulk-sync"
-          >
-            {bulkSyncRunning ? (
-              <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Syncing...</>
-            ) : (
-              <><Globe className="w-4 h-4 mr-2" /> Sync All Providers</>
-            )}
-          </Button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {bulkSyncResult && (
-          <div className="mt-4 p-3 rounded-md bg-muted/50 text-sm space-y-1" data-testid="text-bulk-sync-result">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-[hsl(var(--brand-success))]" />
-              <span>{bulkSyncResult.synced} providers synced successfully</span>
+        <div className="rounded-lg border p-4" data-testid="section-answered-questions">
+          <h4 className="text-sm font-semibold mb-1 flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-[hsl(var(--brand-success))]" />
+            Answered Questions
+          </h4>
+          {answeredWhispers.length === 0 ? (
+            <p className="text-sm text-muted-foreground mt-2">No answered questions yet. Answers you provide above will appear here.</p>
+          ) : (
+            <div className="space-y-2 mt-3">
+              {answeredWhispers.slice(0, 5).map((w: any) => (
+                <div key={w.id} className="p-3 rounded-lg border opacity-70" data-testid={`card-answered-${w.id}`}>
+                  <p className="text-xs font-medium">Q: {w.questionText}</p>
+                  <p className="text-xs text-muted-foreground mt-1">A: {w.answerText}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Answered {new Date(w.updatedAt).toLocaleDateString()}
+                  </p>
+                </div>
+              ))}
             </div>
-            {bulkSyncResult.failed > 0 && (
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-destructive" />
-                <span>{bulkSyncResult.failed} failed</span>
-              </div>
-            )}
-            {bulkSyncResult.errors?.length > 0 && (
-              <div className="mt-2 text-xs text-muted-foreground space-y-0.5">
-                {bulkSyncResult.errors.map((e: string, i: number) => (
-                  <p key={i}>• {e}</p>
-                ))}
-              </div>
-            )}
+          )}
+        </div>
+
+        <div className="rounded-lg border p-4" data-testid="section-document-upload">
+          <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+            <Upload className="w-4 h-4" />
+            Upload Documents
+          </h4>
+          <div
+            className={`p-6 border-2 border-dashed rounded-lg transition-colors cursor-pointer ${
+              dragOver ? "border-primary bg-primary/5" : "border-border/60 hover:border-primary/40"
+            }`}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            onClick={() => document.getElementById("admin-knowledge-file-input")?.click()}
+            data-testid="dropzone-document-upload"
+          >
+            <div className="flex flex-col items-center gap-2 text-center">
+              {uploadMutation.isPending ? (
+                <>
+                  <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                  <p className="text-sm font-medium">Processing document...</p>
+                  <p className="text-xs text-muted-foreground">Extracting text, generating embeddings</p>
+                </>
+              ) : (
+                <>
+                  <Upload className="w-8 h-8 text-muted-foreground" />
+                  <p className="text-sm font-medium">Drop a file here or click to upload</p>
+                  <p className="text-xs text-muted-foreground">Supported: PDF, CSV, TXT, DOCX (max 20MB)</p>
+                </>
+              )}
+            </div>
+            <input
+              id="admin-knowledge-file-input"
+              type="file"
+              accept=".pdf,.csv,.txt,.docx"
+              className="hidden"
+              onChange={handleFileSelect}
+              data-testid="input-file-upload"
+            />
           </div>
-        )}
+        </div>
+
+        <div className="rounded-lg border p-4" data-testid="section-uploaded-documents">
+          <h4 className="text-sm font-semibold mb-1 flex items-center gap-2">
+            <FileText className="w-4 h-4" />
+            Uploaded Documents
+          </h4>
+          {documentsQuery.isLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Loading...
+            </div>
+          ) : docs.length === 0 ? (
+            <p className="text-sm text-muted-foreground mt-2">No documents uploaded yet. Upload files above to teach the AI about your practice.</p>
+          ) : (
+            <div className="space-y-2 mt-3">
+              {docs.map((doc: any, i: number) => (
+                <div key={i} className="flex items-center justify-between p-3 rounded-lg border" data-testid={`card-document-${i}`}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    {doc.sourceType === "WEBSITE" ? (
+                      <Globe className="w-4 h-4 text-[hsl(var(--accent))] shrink-0" />
+                    ) : (
+                      <FileText className="w-4 h-4 text-primary shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {doc.sourceFileName || doc.sourceUrl || "Website Content"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {doc.chunk_count} chunks · {doc.sourceType}
+                        {doc.createdAt ? ` · ${new Date(doc.createdAt).toLocaleDateString()}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                  {doc.sourceFileName && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                      onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(doc.sourceFileName); }}
+                      disabled={deleteMutation.isPending}
+                      data-testid={`button-delete-doc-${i}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-lg border p-4" data-testid="section-bulk-sync">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Bulk Provider Website Sync</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Crawl all provider websites and update the AI knowledge base. Rate-limited to 1 request/second.
+              </p>
+            </div>
+            <Button
+              onClick={handleBulkSync}
+              disabled={bulkSyncRunning}
+              data-testid="button-bulk-sync"
+            >
+              {bulkSyncRunning ? (
+                <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Syncing...</>
+              ) : (
+                <><Globe className="w-4 h-4 mr-2" /> Sync All Providers</>
+              )}
+            </Button>
+          </div>
+
+          {bulkSyncResult && (
+            <div className="mt-4 p-3 rounded-md bg-muted/50 text-sm space-y-1" data-testid="text-bulk-sync-result">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-[hsl(var(--brand-success))]" />
+                <span>{bulkSyncResult.synced} providers synced successfully</span>
+              </div>
+              {bulkSyncResult.failed > 0 && (
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-destructive" />
+                  <span>{bulkSyncResult.failed} failed</span>
+                </div>
+              )}
+              {bulkSyncResult.errors?.length > 0 && (
+                <div className="mt-2 text-xs text-muted-foreground space-y-0.5">
+                  {bulkSyncResult.errors.map((e: string, i: number) => (
+                    <p key={i}>• {e}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </Card>
   );
