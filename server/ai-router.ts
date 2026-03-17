@@ -295,7 +295,7 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
     const messages = await prisma.aiChatMessage.findMany({
       where,
       orderBy: { createdAt: "asc" },
-      select: { id: true, role: true, content: true, senderType: true, senderName: true, createdAt: true },
+      select: { id: true, role: true, content: true, senderType: true, senderName: true, createdAt: true, uiCardType: true, uiCardData: true },
     });
     res.json(messages);
   } catch (e: any) {
@@ -1137,11 +1137,17 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
       finalContent = finalContent.replace(/\[\[CONSULTATION_BOOKING:.*?\]\]/g, "").trim();
     }
 
+    const uiExtras: Record<string, any> = {};
+    if (matchCards.length > 0) uiExtras.matchCards = matchCards;
+    if (consultationCard) uiExtras.consultationCard = consultationCard;
+    if (sendPrepDoc) uiExtras.prepDoc = true;
+
     const savedAiMessage = await prisma.aiChatMessage.create({
       data: {
         sessionId: currentSessionId,
         role: "assistant",
         content: finalContent,
+        ...(Object.keys(uiExtras).length > 0 ? { uiCardType: "rich", uiCardData: uiExtras } : {}),
       },
     });
 

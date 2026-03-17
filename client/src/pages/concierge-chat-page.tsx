@@ -540,13 +540,19 @@ export default function ConciergeChatPage() {
       if (!res.ok) return;
       const msgs = await res.json();
       if (msgs.length > 0) {
-        const parsed: ChatMessage[] = msgs.map((m: any) => ({
-          id: m.id,
-          role: m.role as "user" | "assistant",
-          content: m.content,
-          senderType: m.senderType,
-          senderName: m.senderName,
-        }));
+        const parsed: ChatMessage[] = msgs.map((m: any) => {
+          const extras = m.uiCardData || {};
+          return {
+            id: m.id,
+            role: m.role as "user" | "assistant",
+            content: m.content,
+            senderType: m.senderType,
+            senderName: m.senderName,
+            matchCards: extras.matchCards,
+            prepDoc: extras.prepDoc,
+            consultationCard: extras.consultationCard,
+          };
+        });
         setMessages(parsed);
         setGreetingSet(true);
         lastPollTimeRef.current = msgs[msgs.length - 1].createdAt;
