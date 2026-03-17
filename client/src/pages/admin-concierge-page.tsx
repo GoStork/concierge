@@ -459,18 +459,22 @@ function KnowledgeBaseCard() {
         Upload documents and sync provider websites so the AI concierge can answer questions accurately.
       </p>
 
-      {pendingWhispers.length > 0 && (
-        <div className="mb-5">
-          <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
-            <MessageCircleQuestion className="w-4 h-4 text-[hsl(var(--brand-warning))]" />
-            Unanswered AI Questions
+      <div className="mb-5">
+        <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+          <MessageCircleQuestion className="w-4 h-4 text-[hsl(var(--brand-warning))]" />
+          Unanswered AI Questions
+          {pendingWhispers.length > 0 && (
             <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))]">
               {pendingWhispers.length}
             </span>
-          </h4>
-          <p className="text-xs text-muted-foreground mb-3">
-            A parent asked the AI concierge a question it couldn't answer. Your response will be sent to the parent and taught to the AI.
-          </p>
+          )}
+        </h4>
+        <p className="text-xs text-muted-foreground mb-3">
+          When the AI concierge can't answer a parent's question, it appears here. Your response will be sent to the parent and taught to the AI.
+        </p>
+        {pendingWhispers.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-3">No unanswered questions right now.</p>
+        ) : (
           <div className="space-y-3">
             {pendingWhispers.map((w: any) => (
               <div key={w.id} className="p-3 rounded-lg border border-[hsl(var(--brand-warning))]/30 bg-[hsl(var(--brand-warning))]/5" data-testid={`card-whisper-${w.id}`}>
@@ -499,15 +503,17 @@ function KnowledgeBaseCard() {
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {answeredWhispers.length > 0 && (
-        <div className="mb-5">
-          <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 text-[hsl(var(--brand-success))]" />
-            Answered Questions
-          </h4>
+      <div className="mb-5">
+        <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+          <CheckCircle className="w-4 h-4 text-[hsl(var(--brand-success))]" />
+          Answered Questions
+        </h4>
+        {answeredWhispers.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-3">No answered questions yet. Answers you provide above will appear here.</p>
+        ) : (
           <div className="space-y-2">
             {answeredWhispers.slice(0, 5).map((w: any) => (
               <div key={w.id} className="p-3 rounded-lg border opacity-70" data-testid={`card-answered-${w.id}`}>
