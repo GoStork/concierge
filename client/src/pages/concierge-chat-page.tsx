@@ -529,34 +529,70 @@ export default function ConciergeChatPage() {
   const lastPollTimeRef = useRef<string | null>(null);
 
   const matchmakers: Matchmaker[] = brand?.matchmakers || [];
-  const selectedMatchmaker = matchmakers.find((m) => m.id === matchmakerId);
+  const [resolvedMatchmakerId, setResolvedMatchmakerId] = useState<string | null>(null);
+  const effectiveMatchmakerId = matchmakerId || resolvedMatchmakerId;
+  const selectedMatchmaker = matchmakers.find((m) => m.id === effectiveMatchmakerId);
   const brandColor = brand?.primaryColor || "#004D4D";
 
+  const loadMessagesForSession = async (sid: string) => {
+    try {
+      const res = await fetch(`/api/ai-concierge/session/${sid}/messages`, { credentials: "include" });
+      if (!res.ok) return;
+      const msgs = await res.json();
+      if (msgs.length > 0) {
+        const parsed: ChatMessage[] = msgs.map((m: any) => ({
+          id: m.id,
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          senderType: m.senderType,
+          senderName: m.senderName,
+        }));
+        setMessages(parsed);
+        setGreetingSet(true);
+        lastPollTimeRef.current = msgs[msgs.length - 1].createdAt;
+        if (msgs.some((m: any) => m.senderType === "human")) setHumanEscalated(true);
+        if (msgs.some((m: any) => m.senderType === "provider")) setProviderInChat(true);
+      }
+    } catch {}
+  };
+
   useEffect(() => {
-    if (!existingSessionId || sessionLoaded) return;
+    if (sessionLoaded) return;
+
+    if (existingSessionId) {
+      (async () => {
+        await loadMessagesForSession(existingSessionId);
+        setSessionLoaded(true);
+      })();
+      return;
+    }
+
     (async () => {
       try {
-        const res = await fetch(`/api/ai-concierge/session/${existingSessionId}/messages`, { credentials: "include" });
-        if (!res.ok) return;
-        const msgs = await res.json();
-        if (msgs.length > 0) {
-          const parsed: ChatMessage[] = msgs.map((m: any) => ({
-            id: m.id,
-            role: m.role as "user" | "assistant",
-            content: m.content,
-            senderType: m.senderType,
-            senderName: m.senderName,
-          }));
-          setMessages(parsed);
-          setGreetingSet(true);
-          lastPollTimeRef.current = msgs[msgs.length - 1].createdAt;
-          if (msgs.some((m: any) => m.senderType === "human")) setHumanEscalated(true);
-          if (msgs.some((m: any) => m.senderType === "provider")) setProviderInChat(true);
+        const sessRes = await fetch("/api/my/chat-sessions", { credentials: "include" });
+        if (sessRes.ok) {
+          const sessions = await sessRes.json();
+          const conciergeSession = sessions.find((s: any) => !s.providerJoinedAt || !s.providerName);
+          if (conciergeSession) {
+            setSessionId(conciergeSession.id);
+            if (matchmakerId && conciergeSession.matchmakerId !== matchmakerId) {
+              await fetch("/api/my/chat-session/matchmaker", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ matchmakerId }),
+              });
+              setResolvedMatchmakerId(matchmakerId);
+            } else if (conciergeSession.matchmakerId) {
+              setResolvedMatchmakerId(conciergeSession.matchmakerId);
+            }
+            await loadMessagesForSession(conciergeSession.id);
+          }
         }
       } catch {}
       setSessionLoaded(true);
     })();
-  }, [existingSessionId, sessionLoaded]);
+  }, [existingSessionId, matchmakerId, sessionLoaded]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -626,7 +662,7 @@ export default function ConciergeChatPage() {
     setGreetingSet(true);
   }, [selectedMatchmaker, user, profileReady, greetingSet, parentProfileQuery.data]);
 
-  if (!matchmakerId && !existingSessionId) {
+  if (!effectiveMatchmakerId && !existingSessionId && !sessionId && sessionLoaded) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center" data-testid="concierge-no-matchmaker">
         <Sparkles className="w-12 h-12 text-muted-foreground mb-4" />
@@ -634,8 +670,8 @@ export default function ConciergeChatPage() {
         <p className="text-muted-foreground text-sm mb-4">
           Please choose an AI guide to start your concierge experience.
         </p>
-        <Button onClick={() => navigate("/matchmaker-selection")} data-testid="btn-go-select-matchmaker">
-          Choose a Matchmaker
+        <Button onClick={() => navigate("/account/concierge")} data-testid="btn-go-select-matchmaker">
+          Choose a Concierge
         </Button>
       </div>
     );
@@ -662,7 +698,7 @@ export default function ConciergeChatPage() {
         body: JSON.stringify({
           message: userMessage,
           sessionId,
-          matchmakerId: matchmakerId,
+          matchmakerId: effectiveMatchmakerId,
         }),
       });
 

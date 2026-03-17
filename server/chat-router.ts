@@ -71,6 +71,34 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
   }
 });
 
+chatRouter.patch("/api/my/chat-session/matchmaker", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  const { matchmakerId } = req.body;
+  if (!matchmakerId) return res.status(400).json({ message: "matchmakerId required" });
+  try {
+    const session = await prisma.aiChatSession.findFirst({
+      where: { userId: user.id, providerId: null },
+      orderBy: { updatedAt: "desc" },
+    });
+    if (!session) return res.status(404).json({ message: "No concierge session found" });
+    const updated = await prisma.aiChatSession.update({
+      where: { id: session.id },
+      data: { matchmakerId },
+    });
+    const matchmaker = await prisma.matchmaker.findUnique({ where: { id: matchmakerId } });
+    res.json({
+      sessionId: updated.id,
+      matchmakerId: updated.matchmakerId,
+      matchmakerName: matchmaker?.name || null,
+      matchmakerAvatar: matchmaker?.avatarUrl || null,
+      matchmakerTitle: matchmaker?.title || null,
+    });
+  } catch (e) {
+    console.error("Update matchmaker error:", e);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });

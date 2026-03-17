@@ -248,7 +248,8 @@ export default function ConversationsPage() {
 
   if (isParent) {
     const allSessions = parentSessionsQuery.data || [];
-    const evaConversations = allSessions.filter(s => !s.providerJoinedAt || !s.providerName);
+    const allEvaConversations = allSessions.filter(s => !s.providerJoinedAt || !s.providerName);
+    const evaConversations = allEvaConversations.length > 0 ? [allEvaConversations[0]] : [];
     const providerConversations = allSessions.filter(s => s.providerJoinedAt && s.providerName);
 
     const filteredEva = evaConversations.filter(s =>

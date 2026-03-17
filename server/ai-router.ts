@@ -316,11 +316,31 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       if (!session || session.userId !== userId) {
         return res.status(403).json({ error: "Session does not belong to this user" });
       }
+      if (req.body.matchmakerId && session.matchmakerId !== req.body.matchmakerId) {
+        await prisma.aiChatSession.update({
+          where: { id: currentSessionId },
+          data: { matchmakerId: req.body.matchmakerId },
+        });
+      }
     } else {
-      const newSession = await prisma.aiChatSession.create({
-        data: { userId, title: "Concierge Consultation", matchmakerId: req.body.matchmakerId || null },
+      const existingSession = await prisma.aiChatSession.findFirst({
+        where: { userId, providerId: null },
+        orderBy: { updatedAt: "desc" },
       });
-      currentSessionId = newSession.id;
+      if (existingSession) {
+        currentSessionId = existingSession.id;
+        if (req.body.matchmakerId && existingSession.matchmakerId !== req.body.matchmakerId) {
+          await prisma.aiChatSession.update({
+            where: { id: currentSessionId },
+            data: { matchmakerId: req.body.matchmakerId },
+          });
+        }
+      } else {
+        const newSession = await prisma.aiChatSession.create({
+          data: { userId, title: "Concierge Consultation", matchmakerId: req.body.matchmakerId || null },
+        });
+        currentSessionId = newSession.id;
+      }
     }
 
     // Save the Intended Parent's message

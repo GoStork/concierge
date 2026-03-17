@@ -2,10 +2,11 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, Sparkles, MessageCircle, Check } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 interface ChatSession {
   id: string;
@@ -15,13 +16,18 @@ interface ChatSession {
   matchmakerTitle: string | null;
   lastMessageAt: string;
   updatedAt: string;
+  providerJoinedAt: string | null;
+  providerName: string | null;
 }
 
 export default function ConciergeSettingsTab() {
   const { data: brand, isLoading: brandLoading } = useBrandSettings();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
   const brandColor = brand?.primaryColor || "#004D4D";
 
   const roles: string[] = (user as any)?.roles || [];
@@ -39,15 +45,36 @@ export default function ConciergeSettingsTab() {
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
   const sessions = sessionsQuery.data || [];
-  const currentMatchmakerId = sessions.length > 0 ? sessions[0].matchmakerId : null;
+  const conciergeSession = sessions.find(s => !s.providerJoinedAt || !s.providerName);
+  const currentMatchmakerId = conciergeSession?.matchmakerId || null;
 
   const handleSelect = (matchmaker: Matchmaker) => {
     setSelectedId(matchmaker.id);
   };
 
-  const handleStartChat = () => {
+  const handleSwitch = async () => {
     if (!selectedId) return;
-    navigate(`/concierge?matchmaker=${selectedId}`);
+    setSwitching(true);
+    try {
+      if (conciergeSession) {
+        const res = await fetch("/api/my/chat-session/matchmaker", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ matchmakerId: selectedId }),
+        });
+        if (!res.ok) throw new Error("Failed to switch");
+        await queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
+        toast({ title: "Concierge switched!", description: `Your concierge is now ${matchmakers.find(m => m.id === selectedId)?.name}.` });
+        setSelectedId(null);
+      } else {
+        navigate(`/concierge?matchmaker=${selectedId}`);
+      }
+    } catch {
+      toast({ title: "Error", description: "Could not switch concierge. Please try again.", variant: "destructive" });
+    } finally {
+      setSwitching(false);
+    }
   };
 
   if (brandLoading) {
@@ -91,7 +118,7 @@ export default function ConciergeSettingsTab() {
         </div>
         <p className="text-sm text-muted-foreground mb-6">
           {isParent
-            ? "Choose the concierge personality that best fits your communication style. Your selection will be used for new conversations."
+            ? "Choose the concierge personality that best fits your communication style. Switching will update your existing conversation — the new concierge picks up right where you left off."
             : "View the available AI concierge personalities that assist parents on the platform."
           }
         </p>
@@ -126,7 +153,7 @@ export default function ConciergeSettingsTab() {
                     Current
                   </div>
                 )}
-                {selectedId === m.id && (
+                {selectedId === m.id && selectedId !== currentMatchmakerId && (
                   <div
                     className="absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center text-white"
                     style={{ backgroundColor: brandColor }}
@@ -167,11 +194,19 @@ export default function ConciergeSettingsTab() {
               size="lg"
               className="px-8 gap-2"
               style={{ borderRadius: "var(--radius, 0.5rem)" }}
-              onClick={handleStartChat}
-              data-testid="btn-start-with-selected"
+              onClick={handleSwitch}
+              disabled={switching}
+              data-testid="btn-switch-concierge"
             >
-              <MessageCircle className="w-4 h-4" />
-              Start Chatting with {matchmakers.find(m => m.id === selectedId)?.name}
+              {switching ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <MessageCircle className="w-4 h-4" />
+              )}
+              {conciergeSession
+                ? `Switch to ${matchmakers.find(m => m.id === selectedId)?.name}`
+                : `Start Chatting with ${matchmakers.find(m => m.id === selectedId)?.name}`
+              }
             </Button>
           </div>
         )}
