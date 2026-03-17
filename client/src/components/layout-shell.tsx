@@ -453,9 +453,9 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     { show: false /* hidden for now */, to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', mobileLabel: 'Dashboard' },
     { show: isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS },
     { show: isProvider && !isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS },
-    ...(isParentOnly && brandSettings?.enableAiConcierge && brandSettings?.parentExperienceMode !== 'MARKETPLACE_ONLY'
-      ? [{ show: true, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats' }]
-      : isParentOnly ? MARKETPLACE_TABS.map((tab) => ({
+    { show: isParentOnly, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats' },
+    ...(isParentOnly && !(brandSettings?.enableAiConcierge && brandSettings?.parentExperienceMode !== 'MARKETPLACE_ONLY')
+      ? MARKETPLACE_TABS.map((tab) => ({
           show: true,
           to: '/marketplace',
           icon: tab.icon,
