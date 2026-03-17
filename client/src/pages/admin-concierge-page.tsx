@@ -587,16 +587,6 @@ export default function AdminConciergePage() {
 
   return (
     <div className="space-y-6" data-testid="admin-concierge-page">
-      <div>
-        <div className="flex items-center gap-2.5">
-          <Sparkles className="w-5 h-5 text-primary" />
-          <h2 className="font-display text-lg font-semibold">AI Concierge Command Center</h2>
-        </div>
-        <p className="text-sm text-muted-foreground mt-1">
-          Manage system settings, personas, intelligence rules, and the knowledge base from one place.
-        </p>
-      </div>
-
       <SystemSettingsCard />
 
       <Card className="rounded-xl p-6" data-testid="card-personas">
