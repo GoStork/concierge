@@ -1007,13 +1007,13 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
         try {
           const surrogate = await prisma.surrogate.findUnique({
             where: { id: card.providerId },
-            select: { photoUrl: true, firstName: true, age: true, location: true },
+            select: { photoUrl: true, firstName: true, age: true, location: true, externalId: true },
           });
           if (surrogate?.photoUrl) {
             card.photo = surrogate.photoUrl;
           }
           if (!card.name && surrogate) {
-            card.name = surrogate.firstName || `Surrogate #${card.providerId.slice(-4)}`;
+            card.name = surrogate.firstName || (surrogate.externalId ? `Surrogate #${surrogate.externalId}` : `Surrogate #${card.providerId.slice(-4)}`);
           }
         } catch (e) {
           console.error("Surrogate lookup failed:", e);
@@ -1022,13 +1022,13 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
         try {
           const donor = await prisma.eggDonor.findUnique({
             where: { id: card.providerId },
-            select: { photoUrl: true, firstName: true, age: true, location: true },
+            select: { photoUrl: true, firstName: true, age: true, location: true, externalId: true },
           });
           if (donor?.photoUrl) {
             card.photo = donor.photoUrl;
           }
           if (!card.name && donor) {
-            card.name = donor.firstName || `Donor #${card.providerId.slice(-4)}`;
+            card.name = donor.firstName || (donor.externalId ? `Donor #${donor.externalId}` : `Donor #${card.providerId.slice(-4)}`);
           }
         } catch (e) {
           console.error("EggDonor lookup failed:", e);
@@ -1037,13 +1037,13 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
         try {
           const donor = await prisma.spermDonor.findUnique({
             where: { id: card.providerId },
-            select: { photoUrl: true, firstName: true, age: true, location: true },
+            select: { photoUrl: true, firstName: true, age: true, location: true, externalId: true },
           });
           if (donor?.photoUrl) {
             card.photo = donor.photoUrl;
           }
           if (!card.name && donor) {
-            card.name = donor.firstName || `Donor #${card.providerId.slice(-4)}`;
+            card.name = donor.firstName || (donor.externalId ? `Donor #${donor.externalId}` : `Donor #${card.providerId.slice(-4)}`);
           }
         } catch (e) {
           console.error("SpermDonor lookup failed:", e);

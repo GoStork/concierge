@@ -276,7 +276,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const vectorResults = await vectorSearch(
         "Surrogate", queryText, take * 3,
         `"hiddenFromSearch" IS NOT TRUE`,
-        `id, "firstName", age, location, "baseCompensation", "agreesToTwins", "agreesToAbortion", "agreesToSelectiveReduction", "openToSameSexCouple", "isExperienced", ethnicity, race, "liveBirths", "photoUrl", religion`,
+        `id, "firstName", "externalId", age, location, "baseCompensation", "agreesToTwins", "agreesToAbortion", "agreesToSelectiveReduction", "openToSameSexCouple", "isExperienced", ethnicity, race, "liveBirths", "photoUrl", religion`,
       );
 
       let surrogates: any[];
@@ -305,7 +305,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           orderBy: { createdAt: "desc" },
           take,
           select: {
-            id: true, firstName: true, age: true, location: true,
+            id: true, externalId: true, firstName: true, age: true, location: true,
             baseCompensation: true, agreesToTwins: true, agreesToAbortion: true,
             agreesToSelectiveReduction: true, openToSameSexCouple: true,
             isExperienced: true, ethnicity: true, race: true, liveBirths: true,
@@ -319,7 +319,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             orderBy: { createdAt: "desc" },
             take,
             select: {
-              id: true, firstName: true, age: true, location: true,
+              id: true, externalId: true, firstName: true, age: true, location: true,
               baseCompensation: true, agreesToTwins: true, agreesToAbortion: true,
               agreesToSelectiveReduction: true, openToSameSexCouple: true,
               isExperienced: true, ethnicity: true, race: true, liveBirths: true,
@@ -331,7 +331,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const results = surrogates.map((s: any) => ({
         ...s,
-        displayName: s.firstName || `Surrogate #${s.id.slice(-4)}`,
+        displayName: s.firstName || (s.externalId ? `Surrogate #${s.externalId}` : `Surrogate #${s.id.slice(-4)}`),
         baseCompensation: s.baseCompensation ? Number(s.baseCompensation) : null,
       }));
 
@@ -355,7 +355,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const vectorResults = await vectorSearch(
         "EggDonor", queryText, take * 3,
         `"hiddenFromSearch" IS NOT TRUE`,
-        `id, "firstName", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, "donorCompensation", "eggLotCost", "totalCost", "isExperienced", "photoUrl", "numberOfEggs"`,
+        `id, "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, "donorCompensation", "eggLotCost", "totalCost", "isExperienced", "photoUrl", "numberOfEggs"`,
       );
 
       let donors: any[];
@@ -382,7 +382,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           orderBy: { createdAt: "desc" },
           take,
           select: {
-            id: true, firstName: true, age: true, location: true,
+            id: true, externalId: true, firstName: true, age: true, location: true,
             eyeColor: true, hairColor: true, height: true, weight: true,
             ethnicity: true, race: true, education: true,
             donorCompensation: true, eggLotCost: true, totalCost: true,
@@ -396,7 +396,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             orderBy: { createdAt: "desc" },
             take,
             select: {
-              id: true, firstName: true, age: true, location: true,
+              id: true, externalId: true, firstName: true, age: true, location: true,
               eyeColor: true, hairColor: true, height: true, weight: true,
               ethnicity: true, race: true, education: true,
               donorCompensation: true, eggLotCost: true, totalCost: true,
@@ -408,7 +408,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const results = donors.map((d: any) => ({
         ...d,
-        displayName: d.firstName || `Donor #${d.id.slice(-4)}`,
+        displayName: d.firstName || (d.externalId ? `Donor #${d.externalId}` : `Donor #${d.id.slice(-4)}`),
       }));
 
       return {
@@ -432,7 +432,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const vectorResults = await vectorSearch(
         "SpermDonor", queryText, take * 3,
         `"hiddenFromSearch" IS NOT TRUE`,
-        `id, "firstName", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, compensation, "isExperienced", "photoUrl"`,
+        `id, "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, compensation, "isExperienced", "photoUrl"`,
       );
 
       let donors: any[];
@@ -460,7 +460,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           orderBy: { createdAt: "desc" },
           take,
           select: {
-            id: true, firstName: true, age: true, location: true,
+            id: true, externalId: true, firstName: true, age: true, location: true,
             eyeColor: true, hairColor: true, height: true, weight: true,
             ethnicity: true, race: true, education: true,
             compensation: true, isExperienced: true, photoUrl: true,
@@ -473,7 +473,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             orderBy: { createdAt: "desc" },
             take,
             select: {
-              id: true, firstName: true, age: true, location: true,
+              id: true, externalId: true, firstName: true, age: true, location: true,
               eyeColor: true, hairColor: true, height: true, weight: true,
               ethnicity: true, race: true, education: true,
               compensation: true, isExperienced: true, photoUrl: true,
@@ -484,7 +484,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const results = donors.map((d: any) => ({
         ...d,
-        displayName: d.firstName || `Donor #${d.id.slice(-4)}`,
+        displayName: d.firstName || (d.externalId ? `Donor #${d.externalId}` : `Donor #${d.id.slice(-4)}`),
       }));
 
       if (results.length === 0) {
