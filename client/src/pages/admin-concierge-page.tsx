@@ -36,23 +36,21 @@ import {
 function SystemSettingsCard() {
   const { toast } = useToast();
   const { data: brandSettings } = useBrandSettings();
-  const [enableAiConcierge, setEnableAiConcierge] = useState<boolean | null>(null);
   const [parentExperienceMode, setParentExperienceMode] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const currentEnabled = enableAiConcierge ?? brandSettings?.enableAiConcierge ?? false;
   const currentMode = parentExperienceMode ?? brandSettings?.parentExperienceMode ?? "MARKETPLACE_ONLY";
-  const hasChanges = enableAiConcierge !== null || parentExperienceMode !== null;
+  const hasChanges = parentExperienceMode !== null;
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const body: Record<string, any> = {};
-      if (enableAiConcierge !== null) body.enableAiConcierge = enableAiConcierge;
-      if (parentExperienceMode !== null) body.parentExperienceMode = parentExperienceMode;
+      const body: Record<string, any> = {
+        parentExperienceMode: parentExperienceMode,
+        enableAiConcierge: parentExperienceMode !== "MARKETPLACE_ONLY",
+      };
       await apiRequest("PUT", "/api/brand/settings", body);
       queryClient.invalidateQueries({ queryKey: ["/api/brand/settings"] });
-      setEnableAiConcierge(null);
       setParentExperienceMode(null);
       toast({ title: "System settings saved" });
     } catch {
@@ -70,20 +68,6 @@ function SystemSettingsCard() {
       </div>
 
       <div className="space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <Label className="text-sm font-medium">Enable AI Concierge</Label>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              When enabled, parents are guided by Eva instead of browsing the marketplace directly.
-            </p>
-          </div>
-          <Switch
-            checked={currentEnabled}
-            onCheckedChange={(checked) => setEnableAiConcierge(checked)}
-            data-testid="switch-enable-concierge"
-          />
-        </div>
-
         <div className="space-y-3">
           <div>
             <Label className="text-sm font-medium">Parent Experience Mode</Label>
