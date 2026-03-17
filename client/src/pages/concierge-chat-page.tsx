@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { Button } from "@/components/ui/button";
@@ -511,6 +511,7 @@ export default function ConciergeChatPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { data: brand } = useBrandSettings();
+  const queryClient = useQueryClient();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -667,7 +668,10 @@ export default function ConciergeChatPage() {
 
       if (!res.ok) throw new Error("Chat request failed");
       const data = await res.json();
-      setSessionId(data.sessionId);
+      if (data.sessionId && data.sessionId !== sessionId) {
+        setSessionId(data.sessionId);
+        queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
+      }
 
       if (data.humanNeeded) {
         setHumanEscalated(true);

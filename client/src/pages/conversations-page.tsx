@@ -126,6 +126,8 @@ export default function ConversationsPage() {
     queryKey: ["/api/my/chat-sessions"],
     enabled: isParent && !!user,
     refetchInterval: 10000,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const providerSessionsQuery = useQuery<ProviderSession[]>({
@@ -137,6 +139,8 @@ export default function ConversationsPage() {
     },
     enabled: isProvider && !!user,
     refetchInterval: 10000,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const sessionDetailQuery = useQuery<SessionDetail>({

@@ -16,6 +16,7 @@ import { RedisStore } from "connect-redis";
 import { execSync } from "child_process";
 import path from "path";
 import { aiRouter } from "./ai-router";
+import { chatRouter } from "./chat-router";
 
 declare module "http" {
   interface IncomingMessage {
@@ -105,6 +106,7 @@ async function createSessionStore(): Promise<session.Store> {
   app.use(passport.session());
 
   app.use("/api/ai-concierge", aiRouter);
+  app.use(chatRouter);
 
   app.use((req, res, next) => {
     const start = Date.now();
