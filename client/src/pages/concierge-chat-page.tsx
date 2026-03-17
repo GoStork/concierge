@@ -645,6 +645,8 @@ export default function ConciergeChatPage() {
 
   useEffect(() => {
     if (greetingSet || !selectedMatchmaker || !user || !profileReady) return;
+    if (!sessionLoaded) return;
+    if (sessionId || existingSessionId) return;
     let greeting = selectedMatchmaker.initialGreeting
       || `Hi there! I'm ${selectedMatchmaker.name}, ${selectedMatchmaker.title.toLowerCase()}. ${selectedMatchmaker.description} How can I help you on your fertility journey today?`;
     const u = user as any;
@@ -660,7 +662,7 @@ export default function ConciergeChatPage() {
       .replace(/\[Location\]/gi, location);
     setMessages([{ role: "assistant", content: greeting }]);
     setGreetingSet(true);
-  }, [selectedMatchmaker, user, profileReady, greetingSet, parentProfileQuery.data]);
+  }, [selectedMatchmaker, user, profileReady, greetingSet, parentProfileQuery.data, sessionLoaded, sessionId, existingSessionId]);
 
   if (!effectiveMatchmakerId && !existingSessionId && !sessionId && sessionLoaded) {
     return (
