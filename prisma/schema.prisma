@@ -919,8 +919,19 @@ model IntendedParentProfile {
   donorHairColor      String?
   donorHeight         String?
   donorEducation      String?
+  donorEthnicity      String?
   surrogateBudget     String?
   surrogateMedPrefs   String?
+
+  // Needs flags (set during conversation)
+  needsSurrogate      Boolean       @default(false)
+  needsEggDonor       Boolean       @default(false)
+  needsClinic         Boolean       @default(false)
+
+  // Surrogate preferences
+  surrogateTwins      String?
+  surrogateCountries  String?
+  surrogateTermination String?
 
   // Lead Status
   hotLeadProviderId   String?

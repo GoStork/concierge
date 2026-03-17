@@ -7,6 +7,7 @@ import { prisma } from "./db";
 export const aiRouter = Router();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+
 function escapeHtml(str: string): string {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
@@ -568,33 +569,31 @@ STEP 7 — CURATION:
   Do NOT combine this with a long sentence. Keep it short — the system will show a loading animation. WAIT for the next message (the system auto-sends "ready" after the animation).
 
 STEP 8 — MATCH REVEAL:
-  Once you receive "ready", present matches for the services the user ACTUALLY asked for. Match the RIGHT type of provider:
-  - If user needs a FERTILITY CLINIC: match with fertility clinics from the database.
-  - If user needs a SURROGATE: match with surrogacy AGENCIES (not individual surrogates — we don't have individual surrogates in our database, we have agencies that manage them).
-  - If user needs an EGG DONOR: match with egg donor AGENCIES or egg banks (not individual donors — we don't have individual donors in our database, we have agencies/banks).
+  Once you receive "ready", you MUST call the appropriate MCP database tools to find real matches:
+  - Call search_surrogates if user needs a surrogate (pass filters like agreesToTwins, agreesToAbortion based on their answers)
+  - Call search_egg_donors if user needs an egg donor (pass filters like eyeColor, hairColor, ethnicity based on their answers)
+  - Call search_sperm_donors if user needs a sperm donor
+  - Call search_clinics if user needs a clinic (pass state/city if known from their location)
+  You MUST use ONLY the results returned by these tools. Do NOT invent or fabricate ANY names or IDs.
+  Present matches for the services the user ACTUALLY asked for:
+  - If user needs a SURROGATE: present individual surrogate profiles (we have real surrogates in our database, not agencies).
+  - If user needs an EGG DONOR: present individual egg donor profiles from the database.
+  - If user needs a SPERM DONOR: present individual sperm donor profiles from the database.
+  - If user needs a FERTILITY CLINIC: present clinics from the database.
   
   CRITICAL MATCHING RULES:
-  - ONLY present matches for services the user explicitly requested. If they only asked for a surrogate, show surrogacy agencies — NOT clinics or egg donors.
+  - ONLY present matches for services the user explicitly requested. If they only asked for a surrogate, show surrogate profiles — NOT clinics or egg donors.
   - If they asked for multiple services, present matches for EACH service type separately, clearly labeled.
-  - Use REAL provider names from the database. NEVER fabricate provider names, profiles, or descriptions.
-  - The "providerId" field must be a real UUID from the database so photos can be loaded.
-  - Use your database search tools to find matching providers. If no exact match exists, present the closest options available.
-  - NEVER invent provider names. If you cannot find a matching provider in the database, do NOT make one up.
-
-  AVAILABLE SURROGACY AGENCIES (use these EXACT names and IDs):
-  - "Asian Egg Bank" (ID: "130506a2-3137-4ed9-b5c7-1f16c0703c78") — also an Egg Donor Agency
-  - "Eggceptional Fertility" (ID: "57733646-df27-4747-9cc4-2087e618d6b4") — also an Egg Donor Agency
-  - "Family Creations" (ID: "d0af900d-41bf-43cb-9051-d52c8cda3f24") — also an Egg Donor Agency
-
-  AVAILABLE EGG DONOR AGENCIES (same providers as above — they serve both roles):
-  - "Asian Egg Bank" (ID: "130506a2-3137-4ed9-b5c7-1f16c0703c78")
-  - "Eggceptional Fertility" (ID: "57733646-df27-4747-9cc4-2087e618d6b4")
-  - "Family Creations" (ID: "d0af900d-41bf-43cb-9051-d52c8cda3f24")
-
-  For IVF CLINICS: there are 457 clinics in the database. Use your database search tools to find the best matches based on location and user preferences.
+  - You MUST call the MCP database tools (search_surrogates, search_egg_donors, search_sperm_donors, search_clinics) to get REAL profiles. NEVER fabricate names, profiles, or IDs.
+  - Use the IDs and names returned by the tools. The "providerId" field must be a real UUID from the tool results.
+  - For surrogates: call search_surrogates with filters based on user's answers (twins, termination, etc.), set type to "Surrogate" in the MATCH_CARD
+  - For egg donors: call search_egg_donors with filters (eye color, hair color, ethnicity, etc.), set type to "Egg Donor" in the MATCH_CARD
+  - For sperm donors: call search_sperm_donors with filters, set type to "Sperm Donor" in the MATCH_CARD
+  - For clinics: call search_clinics with location filters, set type to "Clinic" in the MATCH_CARD
 
   Present matches using the MATCH CARD format:
-  [[MATCH_CARD:{"name":"Real Provider Name","type":"Clinic/Agency","location":"City, State","photo":"/path/to/photo","reasons":["Reason 1 based on user's specific needs","Reason 2","Reason 3"],"providerId":"actual-uuid-from-database"}]]
+  [[MATCH_CARD:{"name":"displayName from tool results","type":"Surrogate","location":"location from tool results","photo":"","reasons":["Reason 1 based on user's specific needs","Reason 2","Reason 3"],"providerId":"id-from-tool-results"}]]
+  The photo field can be empty — the system will automatically load the real photo from the database based on the providerId and type.
   
   After showing the card(s), add your expert take: "I chose [Name] because [personal reason tied to what the user shared]. Would you like me to reach out and check their availability for a match call with you? [[QUICK_REPLY:Yes, please!|Show me more options]]"
   If they say YES: respond enthusiastically — "I'm on it! I'll flag this and the GoStork team will reach out shortly to confirm your call." Include [[HOT_LEAD:PROVIDER_ID]] at the end.
@@ -619,9 +618,17 @@ The system will automatically save this to their profile. Use these field names:
 - hasEmbryos (boolean), embryoCount (number), embryosTested (boolean)
 - eggSource, spermSource, carrier (strings)
 - clinicReason, clinicPriority (strings)
-- donorEyeColor, donorHairColor, donorHeight, donorEducation (strings)
+- donorEyeColor, donorHairColor, donorHeight, donorEducation, donorEthnicity (strings — for multi-select, join with comma)
 - surrogateBudget, surrogateMedPrefs (strings)
+- needsSurrogate (boolean — save true when user says they need help finding a surrogate)
+- needsEggDonor (boolean — save true when user says they need help finding an egg donor)
+- needsClinic (boolean — save true when user says they need help finding a clinic)
+- surrogateTwins (string — "Yes" or "No")
+- surrogateCountries (string — comma-separated: "USA,Mexico,Colombia")
+- surrogateTermination (string — "Pro-choice surrogate", "Pro-life surrogate", or "No preference")
 Example: If user says they have 3 frozen embryos, end your response with: [[SAVE:{"hasEmbryos":true,"embryoCount":3}]]
+Example: If user says they need a surrogate, save: [[SAVE:{"needsSurrogate":true}]]
+Example: If user selects USA and Mexico for surrogate countries, save: [[SAVE:{"surrogateCountries":"USA,Mexico"}]]
 CONSULTATION BOOKING:
 When a parent is ready to take the next step with a matched provider and wants to schedule a consultation (not just a match call), use:
 [[CONSULTATION_BOOKING:PROVIDER_ID]]
@@ -693,7 +700,7 @@ ${biologicalMasterLogic}
 ${guidanceRules}
 ${ragContext}
 ${answeredWhispersContext}
-Use your tools to fetch real data from the GoStork database when looking up providers, clinics, donors, or surrogates.`;
+When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS use the MCP database tools (search_surrogates, search_egg_donors, search_sperm_donors, search_clinics). NEVER fabricate any provider data.`;
 
     messages.unshift({
       role: "system",
@@ -780,11 +787,14 @@ Use your tools to fetch real data from the GoStork database when looking up prov
           "clinicReason", "clinicPriority",
           "donorEyeColor", "donorHairColor", "donorHeight", "donorEducation",
           "surrogateBudget", "surrogateMedPrefs",
+          "needsSurrogate", "needsEggDonor", "needsClinic",
+          "surrogateTwins", "surrogateCountries", "surrogateTermination",
+          "donorEthnicity",
         ];
         const updateData: any = {};
         for (const [key, value] of Object.entries(fieldsToSave)) {
           if (allowedFields.includes(key)) {
-            if (key === "hasEmbryos" || key === "embryosTested") {
+            if (key === "hasEmbryos" || key === "embryosTested" || key === "needsSurrogate" || key === "needsEggDonor" || key === "needsClinic") {
               updateData[key] = value === true || value === "true";
             } else if (key === "embryoCount") {
               const num = parseInt(String(value), 10);
@@ -971,33 +981,82 @@ Use your tools to fetch real data from the GoStork database when looking up prov
     finalContent = finalContent.replace(/\[\[MATCH_CARD:.*?\]\]/g, "").trim();
 
     for (const card of matchCards) {
-      if (card.providerId) {
+      const cardType = (card.type || "").toLowerCase();
+      
+      if (cardType === "surrogate" && card.providerId) {
         try {
-          const provider = await prisma.provider.findUnique({
+          const surrogate = await prisma.surrogate.findUnique({
             where: { id: card.providerId },
-            select: { logoUrl: true, name: true },
+            select: { photoUrl: true, firstName: true, age: true, location: true },
           });
-          if (provider?.logoUrl) {
-            card.photo = provider.logoUrl;
+          if (surrogate?.photoUrl) {
+            card.photo = surrogate.photoUrl;
+          }
+          if (!card.name && surrogate) {
+            card.name = surrogate.firstName || `Surrogate #${card.providerId.slice(-4)}`;
           }
         } catch (e) {
-          // Provider lookup failed, try searching by name
+          console.error("Surrogate lookup failed:", e);
         }
-      }
-      if (!card.photo || card.photo === "/path/to/photo") {
+      } else if (cardType === "egg donor" && card.providerId) {
         try {
-          const providerByName = await prisma.provider.findFirst({
-            where: { name: { contains: card.name, mode: "insensitive" } },
-            select: { logoUrl: true, id: true },
+          const donor = await prisma.eggDonor.findUnique({
+            where: { id: card.providerId },
+            select: { photoUrl: true, firstName: true, age: true, location: true },
           });
-          if (providerByName?.logoUrl) {
-            card.photo = providerByName.logoUrl;
-            if (!card.providerId) card.providerId = providerByName.id;
-          } else {
+          if (donor?.photoUrl) {
+            card.photo = donor.photoUrl;
+          }
+          if (!card.name && donor) {
+            card.name = donor.firstName || `Donor #${card.providerId.slice(-4)}`;
+          }
+        } catch (e) {
+          console.error("EggDonor lookup failed:", e);
+        }
+      } else if (cardType === "sperm donor" && card.providerId) {
+        try {
+          const donor = await prisma.spermDonor.findUnique({
+            where: { id: card.providerId },
+            select: { photoUrl: true, firstName: true, age: true, location: true },
+          });
+          if (donor?.photoUrl) {
+            card.photo = donor.photoUrl;
+          }
+          if (!card.name && donor) {
+            card.name = donor.firstName || `Donor #${card.providerId.slice(-4)}`;
+          }
+        } catch (e) {
+          console.error("SpermDonor lookup failed:", e);
+        }
+      } else {
+        if (card.providerId) {
+          try {
+            const provider = await prisma.provider.findUnique({
+              where: { id: card.providerId },
+              select: { logoUrl: true, name: true },
+            });
+            if (provider?.logoUrl) {
+              card.photo = provider.logoUrl;
+            }
+          } catch (e) {
+            // Provider lookup failed
+          }
+        }
+        if (!card.photo || card.photo === "/path/to/photo") {
+          try {
+            const providerByName = await prisma.provider.findFirst({
+              where: { name: { contains: card.name, mode: "insensitive" } },
+              select: { logoUrl: true, id: true },
+            });
+            if (providerByName?.logoUrl) {
+              card.photo = providerByName.logoUrl;
+              if (!card.providerId) card.providerId = providerByName.id;
+            } else {
+              card.photo = null;
+            }
+          } catch (e) {
             card.photo = null;
           }
-        } catch (e) {
-          card.photo = null;
         }
       }
     }
