@@ -507,6 +507,7 @@ function MatchCardComponent({ card, brandColor, onAction }: { card: MatchCard; b
 export default function ConciergeChatPage() {
   const [searchParams] = useSearchParams();
   const matchmakerId = searchParams.get("matchmaker");
+  const existingSessionId = searchParams.get("session");
   const navigate = useNavigate();
   const { user } = useAuth();
   const { data: brand } = useBrandSettings();
@@ -514,11 +515,14 @@ export default function ConciergeChatPage() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [multiSelectChoices, setMultiSelectChoices] = useState<Set<string>>(new Set());
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(existingSessionId);
   const [showCuration, setShowCuration] = useState(false);
   const [pendingCurationMessage, setPendingCurationMessage] = useState<ChatMessage | null>(null);
   const [humanEscalated, setHumanEscalated] = useState(false);
   const [bookingCard, setBookingCard] = useState<ConsultationCardData | null>(null);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
+  const [greetingSet, setGreetingSet] = useState(false);
+  const [providerInChat, setProviderInChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
   const lastPollTimeRef = useRef<string | null>(null);
@@ -526,6 +530,32 @@ export default function ConciergeChatPage() {
   const matchmakers: Matchmaker[] = brand?.matchmakers || [];
   const selectedMatchmaker = matchmakers.find((m) => m.id === matchmakerId);
   const brandColor = brand?.primaryColor || "#004D4D";
+
+  useEffect(() => {
+    if (!existingSessionId || sessionLoaded) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/ai-concierge/session/${existingSessionId}/messages`, { credentials: "include" });
+        if (!res.ok) return;
+        const msgs = await res.json();
+        if (msgs.length > 0) {
+          const parsed: ChatMessage[] = msgs.map((m: any) => ({
+            id: m.id,
+            role: m.role as "user" | "assistant",
+            content: m.content,
+            senderType: m.senderType,
+            senderName: m.senderName,
+          }));
+          setMessages(parsed);
+          setGreetingSet(true);
+          lastPollTimeRef.current = msgs[msgs.length - 1].createdAt;
+          if (msgs.some((m: any) => m.senderType === "human")) setHumanEscalated(true);
+          if (msgs.some((m: any) => m.senderType === "provider")) setProviderInChat(true);
+        }
+      } catch {}
+      setSessionLoaded(true);
+    })();
+  }, [existingSessionId, sessionLoaded]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -541,13 +571,9 @@ export default function ConciergeChatPage() {
     enabled: !!user,
   });
 
-  const [greetingSet, setGreetingSet] = useState(false);
-
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
-
-  const [providerInChat, setProviderInChat] = useState(false);
 
   useEffect(() => {
     if ((!humanEscalated && !providerInChat) || !sessionId) return;
@@ -599,7 +625,7 @@ export default function ConciergeChatPage() {
     setGreetingSet(true);
   }, [selectedMatchmaker, user, profileReady, greetingSet, parentProfileQuery.data]);
 
-  if (!matchmakerId || (!brand && true)) {
+  if (!matchmakerId && !existingSessionId) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center" data-testid="concierge-no-matchmaker">
         <Sparkles className="w-12 h-12 text-muted-foreground mb-4" />
@@ -720,8 +746,8 @@ export default function ConciergeChatPage() {
             variant="ghost"
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => navigate("/matchmaker-selection")}
-            data-testid="btn-back-to-selection"
+            onClick={() => navigate("/chat")}
+            data-testid="btn-back-to-chats"
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>

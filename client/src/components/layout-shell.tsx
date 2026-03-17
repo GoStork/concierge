@@ -454,7 +454,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     { show: isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS },
     { show: isProvider && !isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS },
     ...(isParentOnly && brandSettings?.enableAiConcierge && brandSettings?.parentExperienceMode !== 'MARKETPLACE_ONLY'
-      ? [{ show: true, to: '/matchmaker-selection', icon: MessageCircle, label: 'Eva', mobileLabel: 'Eva' }]
+      ? [{ show: true, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats' }]
       : isParentOnly ? MARKETPLACE_TABS.map((tab) => ({
           show: true,
           to: '/marketplace',
@@ -501,7 +501,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-background">
       <header className="fixed top-0 left-0 right-0 h-16 bg-card border-b border-border/40 z-50 shadow-sm hidden md:block">
         <div className="h-full px-4 md:px-6 grid grid-cols-[auto_1fr_auto] items-center gap-4">
-          <Link to={isParentOnly && brandSettings?.enableAiConcierge && brandSettings?.parentExperienceMode !== 'MARKETPLACE_ONLY' ? '/matchmaker-selection' : '/marketplace'} className="flex items-center gap-2.5 shrink-0" data-testid="link-logo">
+          <Link to={isParentOnly && brandSettings?.enableAiConcierge && brandSettings?.parentExperienceMode !== 'MARKETPLACE_ONLY' ? '/chat' : '/marketplace'} className="flex items-center gap-2.5 shrink-0" data-testid="link-logo">
             {brandSettings?.logoWithNameUrl ? (
               <img
                 src={brandSettings.logoWithNameUrl}

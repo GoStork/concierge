@@ -271,6 +271,48 @@ export async function registerRoutes(
 
   app.use("/api/ai-concierge", aiRouter);
 
+  app.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    try {
+      const sessions = await prisma.aiChatSession.findMany({
+        where: { userId: user.id },
+        orderBy: { updatedAt: "desc" },
+        include: {
+          messages: { orderBy: { createdAt: "desc" }, take: 1 },
+          provider: { select: { id: true, name: true, logoUrl: true } },
+        },
+      });
+      const matchmakerIds = sessions.map(s => s.matchmakerId).filter(Boolean) as string[];
+      const matchmakers = matchmakerIds.length > 0
+        ? await prisma.matchmaker.findMany({ where: { id: { in: matchmakerIds } } })
+        : [];
+      const matchmakerMap = Object.fromEntries(matchmakers.map(m => [m.id, m]));
+      const result = sessions.map(s => ({
+        id: s.id,
+        title: s.title,
+        status: s.status,
+        matchmakerId: s.matchmakerId,
+        matchmakerName: s.matchmakerId ? matchmakerMap[s.matchmakerId]?.name : null,
+        matchmakerAvatar: s.matchmakerId ? matchmakerMap[s.matchmakerId]?.avatarUrl : null,
+        matchmakerTitle: s.matchmakerId ? matchmakerMap[s.matchmakerId]?.title : null,
+        providerId: s.providerId,
+        providerName: s.provider?.name || null,
+        providerLogo: s.provider?.logoUrl || null,
+        providerJoinedAt: s.providerJoinedAt,
+        humanRequested: s.humanRequested,
+        lastMessage: s.messages[0]?.content || null,
+        lastMessageAt: s.messages[0]?.createdAt || s.updatedAt,
+        lastMessageSenderType: s.messages[0]?.senderType || null,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt,
+      }));
+      res.json(result);
+    } catch (e) {
+      console.error("My chat sessions error:", e);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
   app.get("/api/admin/concierge-sessions", requireAuth, async (req, res) => {
     const user = req.user as any;
     if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });

@@ -318,7 +318,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       }
     } else {
       const newSession = await prisma.aiChatSession.create({
-        data: { userId, title: "Concierge Consultation" },
+        data: { userId, title: "Concierge Consultation", matchmakerId: req.body.matchmakerId || null },
       });
       currentSessionId = newSession.id;
     }

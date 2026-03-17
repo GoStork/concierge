@@ -45,6 +45,7 @@ import CheckEmailPage from "@/pages/check-email-page";
 import ResetPasswordPage from "@/pages/reset-password-page";
 import MatchmakerSelectionPage from "@/pages/matchmaker-selection-page";
 import ConciergeChatPage from "@/pages/concierge-chat-page";
+import ChatHistoryPage from "@/pages/chat-history-page";
 import AdminConciergeMonitor from "@/pages/admin-concierge-monitor";
 import ProviderConversationsPage from "@/pages/provider-conversations-page";
 
@@ -94,7 +95,7 @@ function DashboardRoute() {
   }
 
   if (isParentOnly && brandSettings?.enableAiConcierge && brandSettings?.parentExperienceMode !== 'MARKETPLACE_ONLY') {
-    return <Navigate to="/matchmaker-selection" replace />;
+    return <Navigate to="/chat" replace />;
   }
   return <Navigate to="/marketplace" replace />;
 }
@@ -146,6 +147,7 @@ function AppRoutes() {
         <Route path="/appointments" element={<Navigate to="/calendar" replace />} />
         <Route path="/matchmaker-selection" element={<ProtectedRoute><MatchmakerSelectionPage /></ProtectedRoute>} />
         <Route path="/concierge" element={<ProtectedRoute><ConciergeChatPage /></ProtectedRoute>} />
+        <Route path="/chat" element={<ProtectedRoute><ChatHistoryPage /></ProtectedRoute>} />
         <Route path="/admin/concierge-monitor" element={<ProtectedRoute><AdminConciergeMonitor /></ProtectedRoute>} />
         <Route path="/provider/conversations" element={<ProtectedRoute><ProviderConversationsPage /></ProtectedRoute>} />
         <Route path="/admin/branding" element={<Navigate to="/account/branding" replace />} />
