@@ -468,7 +468,6 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     { show: isAdmin, to: '/admin/concierge-monitor', icon: Headphones, label: 'Concierge', mobileLabel: 'Concierge' },
     { show: isProvider, to: '/provider/conversations', icon: MessageSquare, label: 'Conversations', mobileLabel: 'Chats' },
     { show: isAdmin || isProvider, to: '/users', icon: Users, label: 'Parents', mobileLabel: 'Parents' },
-    { show: true, to: '/chat', icon: MessageCircle, label: 'Chat', mobileLabel: 'Chat' },
     { show: !((user as any).parentAccountRole === 'VIEWER'), to: '/calendar', icon: Calendar, label: 'Meetings', mobileLabel: 'Meetings' },
     { show: true, to: '/account', icon: User, label: 'Profile', mobileLabel: 'Profile', mobileOnly: true },
   ];
