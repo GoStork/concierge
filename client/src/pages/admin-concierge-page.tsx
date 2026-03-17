@@ -510,10 +510,10 @@ function KnowledgeBaseCard() {
           )}
         </div>
 
-        <div className="rounded-lg border p-4" data-testid="section-document-upload">
+        <div className="rounded-lg border p-4" data-testid="section-documents">
           <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-            <Upload className="w-4 h-4" />
-            Upload Documents
+            <FileText className="w-4 h-4" />
+            Documents
           </h4>
           <div
             className={`p-6 border-2 border-dashed rounded-lg transition-colors cursor-pointer ${
@@ -549,56 +549,52 @@ function KnowledgeBaseCard() {
               data-testid="input-file-upload"
             />
           </div>
-        </div>
 
-        <div className="rounded-lg border p-4" data-testid="section-uploaded-documents">
-          <h4 className="text-sm font-semibold mb-1 flex items-center gap-2">
-            <FileText className="w-4 h-4" />
-            Uploaded Documents
-          </h4>
-          {documentsQuery.isLoading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Loading...
-            </div>
-          ) : docs.length === 0 ? (
-            <p className="text-sm text-muted-foreground mt-2">No documents uploaded yet. Upload files above to teach the AI about your practice.</p>
-          ) : (
-            <div className="space-y-2 mt-3">
-              {docs.map((doc: any, i: number) => (
-                <div key={i} className="flex items-center justify-between p-3 rounded-lg border" data-testid={`card-document-${i}`}>
-                  <div className="flex items-center gap-3 min-w-0">
-                    {doc.sourceType === "WEBSITE" ? (
-                      <Globe className="w-4 h-4 text-[hsl(var(--accent))] shrink-0" />
-                    ) : (
-                      <FileText className="w-4 h-4 text-primary shrink-0" />
-                    )}
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {doc.sourceFileName || doc.sourceUrl || "Website Content"}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {doc.chunk_count} chunks · {doc.sourceType}
-                        {doc.createdAt ? ` · ${new Date(doc.createdAt).toLocaleDateString()}` : ""}
-                      </p>
+          <div className="mt-4">
+            {documentsQuery.isLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Loading...
+              </div>
+            ) : docs.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No documents uploaded yet. Upload files above to teach the AI about your practice.</p>
+            ) : (
+              <div className="space-y-2">
+                {docs.map((doc: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between p-3 rounded-lg border" data-testid={`card-document-${i}`}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      {doc.sourceType === "WEBSITE" ? (
+                        <Globe className="w-4 h-4 text-[hsl(var(--accent))] shrink-0" />
+                      ) : (
+                        <FileText className="w-4 h-4 text-primary shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {doc.sourceFileName || doc.sourceUrl || "Website Content"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {doc.chunk_count} chunks · {doc.sourceType}
+                          {doc.createdAt ? ` · ${new Date(doc.createdAt).toLocaleDateString()}` : ""}
+                        </p>
+                      </div>
                     </div>
+                    {doc.sourceFileName && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                        onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(doc.sourceFileName); }}
+                        disabled={deleteMutation.isPending}
+                        data-testid={`button-delete-doc-${i}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
                   </div>
-                  {doc.sourceFileName && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-                      onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(doc.sourceFileName); }}
-                      disabled={deleteMutation.isPending}
-                      data-testid={`button-delete-doc-${i}`}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="rounded-lg border p-4" data-testid="section-bulk-sync">
