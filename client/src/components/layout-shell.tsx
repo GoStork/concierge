@@ -463,6 +463,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
           mobileLabel: tab.mobileLabel,
           tabId: tab.id,
         })) : []),
+    { show: !isParentOnly, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats' },
     { show: isAdmin, to: '/admin/providers', icon: Building2, label: 'Providers', mobileLabel: 'Providers' },
     { show: isAdmin, to: '/admin/scrapers', icon: RefreshCw, label: 'Scrapers', mobileLabel: 'Scrapers' },
     { show: isAdmin, to: '/admin/concierge-monitor', icon: Headphones, label: 'Concierge', mobileLabel: 'Concierge' },
