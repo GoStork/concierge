@@ -276,7 +276,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const vectorResults = await vectorSearch(
         "Surrogate", queryText, take * 3,
         `"hiddenFromSearch" IS NOT TRUE`,
-        `id, "firstName", "externalId", age, location, "baseCompensation", "agreesToTwins", "agreesToAbortion", "agreesToSelectiveReduction", "openToSameSexCouple", "isExperienced", ethnicity, race, "liveBirths", "photoUrl", religion`,
+        `id, "providerId", "firstName", "externalId", age, location, "baseCompensation", "agreesToTwins", "agreesToAbortion", "agreesToSelectiveReduction", "openToSameSexCouple", "isExperienced", ethnicity, race, "liveBirths", "photoUrl", religion`,
       );
 
       let surrogates: any[];
@@ -305,7 +305,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           orderBy: { createdAt: "desc" },
           take,
           select: {
-            id: true, externalId: true, firstName: true, age: true, location: true,
+            id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
             baseCompensation: true, agreesToTwins: true, agreesToAbortion: true,
             agreesToSelectiveReduction: true, openToSameSexCouple: true,
             isExperienced: true, ethnicity: true, race: true, liveBirths: true,
@@ -319,7 +319,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             orderBy: { createdAt: "desc" },
             take,
             select: {
-              id: true, externalId: true, firstName: true, age: true, location: true,
+              id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
               baseCompensation: true, agreesToTwins: true, agreesToAbortion: true,
               agreesToSelectiveReduction: true, openToSameSexCouple: true,
               isExperienced: true, ethnicity: true, race: true, liveBirths: true,
@@ -355,7 +355,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const vectorResults = await vectorSearch(
         "EggDonor", queryText, take * 3,
         `"hiddenFromSearch" IS NOT TRUE`,
-        `id, "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, "donorCompensation", "eggLotCost", "totalCost", "isExperienced", "photoUrl", "numberOfEggs"`,
+        `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, "donorCompensation", "eggLotCost", "totalCost", "isExperienced", "photoUrl", "numberOfEggs"`,
       );
 
       let donors: any[];
@@ -382,7 +382,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           orderBy: { createdAt: "desc" },
           take,
           select: {
-            id: true, externalId: true, firstName: true, age: true, location: true,
+            id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
             eyeColor: true, hairColor: true, height: true, weight: true,
             ethnicity: true, race: true, education: true,
             donorCompensation: true, eggLotCost: true, totalCost: true,
@@ -396,7 +396,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             orderBy: { createdAt: "desc" },
             take,
             select: {
-              id: true, externalId: true, firstName: true, age: true, location: true,
+              id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
               eyeColor: true, hairColor: true, height: true, weight: true,
               ethnicity: true, race: true, education: true,
               donorCompensation: true, eggLotCost: true, totalCost: true,
@@ -432,7 +432,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const vectorResults = await vectorSearch(
         "SpermDonor", queryText, take * 3,
         `"hiddenFromSearch" IS NOT TRUE`,
-        `id, "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, compensation, "isExperienced", "photoUrl"`,
+        `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, compensation, "isExperienced", "photoUrl"`,
       );
 
       let donors: any[];
@@ -460,7 +460,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           orderBy: { createdAt: "desc" },
           take,
           select: {
-            id: true, externalId: true, firstName: true, age: true, location: true,
+            id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
             eyeColor: true, hairColor: true, height: true, weight: true,
             ethnicity: true, race: true, education: true,
             compensation: true, isExperienced: true, photoUrl: true,
@@ -473,7 +473,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             orderBy: { createdAt: "desc" },
             take,
             select: {
-              id: true, externalId: true, firstName: true, age: true, location: true,
+              id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
               eyeColor: true, hairColor: true, height: true, weight: true,
               ethnicity: true, race: true, education: true,
               compensation: true, isExperienced: true, photoUrl: true,

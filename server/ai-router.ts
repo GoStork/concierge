@@ -1007,10 +1007,13 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
         try {
           const surrogate = await prisma.surrogate.findUnique({
             where: { id: card.providerId },
-            select: { photoUrl: true, firstName: true, age: true, location: true, externalId: true },
+            select: { photoUrl: true, firstName: true, age: true, location: true, externalId: true, providerId: true },
           });
           if (surrogate?.photoUrl) {
             card.photo = surrogate.photoUrl;
+          }
+          if (surrogate?.providerId) {
+            card.ownerProviderId = surrogate.providerId;
           }
           if (!card.name && surrogate) {
             card.name = surrogate.firstName || (surrogate.externalId ? `Surrogate #${surrogate.externalId}` : `Surrogate #${card.providerId.slice(-4)}`);
@@ -1022,10 +1025,13 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
         try {
           const donor = await prisma.eggDonor.findUnique({
             where: { id: card.providerId },
-            select: { photoUrl: true, firstName: true, age: true, location: true, externalId: true },
+            select: { photoUrl: true, firstName: true, age: true, location: true, externalId: true, providerId: true },
           });
           if (donor?.photoUrl) {
             card.photo = donor.photoUrl;
+          }
+          if (donor?.providerId) {
+            card.ownerProviderId = donor.providerId;
           }
           if (!card.name && donor) {
             card.name = donor.firstName || (donor.externalId ? `Donor #${donor.externalId}` : `Donor #${card.providerId.slice(-4)}`);
@@ -1037,10 +1043,13 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
         try {
           const donor = await prisma.spermDonor.findUnique({
             where: { id: card.providerId },
-            select: { photoUrl: true, firstName: true, age: true, location: true, externalId: true },
+            select: { photoUrl: true, firstName: true, age: true, location: true, externalId: true, providerId: true },
           });
           if (donor?.photoUrl) {
             card.photo = donor.photoUrl;
+          }
+          if (donor?.providerId) {
+            card.ownerProviderId = donor.providerId;
           }
           if (!card.name && donor) {
             card.name = donor.firstName || (donor.externalId ? `Donor #${donor.externalId}` : `Donor #${card.providerId.slice(-4)}`);
