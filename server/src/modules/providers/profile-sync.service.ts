@@ -2,11 +2,136 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createHash } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
+import OpenAI from "openai";
 import { PrismaService } from "../prisma/prisma.service";
 import { recalcAndPersistTotalCostsForProvider } from "../costs/total-cost.utils";
 import type { StorageService } from "../storage/storage.service";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+export function profileDataToText(profileData: any): string {
+  if (!profileData) return "";
+  const skipKeys = new Set(["Photos", "_sections", "photos", "All Photos"]);
+  const parts: string[] = [];
+
+  function flatten(obj: any, prefix = "") {
+    if (!obj || typeof obj !== "object") return;
+    for (const [key, value] of Object.entries(obj)) {
+      if (skipKeys.has(key)) continue;
+      if (Array.isArray(value)) {
+        const stringVals = value.filter((v) => typeof v === "string" && !v.startsWith("/uploads/"));
+        if (stringVals.length > 0) parts.push(`${prefix}${key}: ${stringVals.join(", ")}`);
+      } else if (typeof value === "object" && value !== null) {
+        flatten(value, `${key} > `);
+      } else if (value !== null && value !== undefined && value !== "" && value !== "—" && value !== "--") {
+        parts.push(`${prefix}${key}: ${value}`);
+      }
+    }
+  }
+
+  flatten(profileData);
+  return parts.join("\n").slice(0, 8000);
+}
+
+async function generateProfileEmbedding(text: string): Promise<number[] | null> {
+  if (!text || text.length < 20 || !process.env.OPENAI_API_KEY) return null;
+  try {
+    const response = await openaiClient.embeddings.create({
+      model: "text-embedding-3-small",
+      input: text,
+    });
+    return response.data[0].embedding;
+  } catch (e: any) {
+    console.error("Embedding generation failed:", e.message);
+    return null;
+  }
+}
+
+export async function updateProfileEmbedding(
+  prisma: PrismaService,
+  table: "EggDonor" | "Surrogate" | "SpermDonor" | "Provider",
+  id: string,
+  profileData: any,
+  extraText?: string,
+): Promise<void> {
+  let text = extraText || profileDataToText(profileData);
+
+  if (table === "Provider") {
+    try {
+      const provider = await prisma.provider.findUnique({
+        where: { id },
+        select: {
+          name: true,
+          about: true,
+          locations: { select: { city: true, state: true } },
+          members: { select: { name: true, title: true, bio: true } },
+          ivfSuccessRates: {
+            where: { profileType: "own_eggs", metricCode: "live_births_per_intended_retrieval" },
+            select: { ageGroup: true, successRate: true, cycleCount: true, nationalAverage: true, year: true },
+            orderBy: { year: "desc" },
+            take: 20,
+          },
+          services: { include: { providerType: { select: { name: true } } } },
+        },
+      });
+      if (provider) {
+        const parts: string[] = [];
+        parts.push(`Clinic: ${provider.name}`);
+        if (provider.about) parts.push(`About: ${provider.about}`);
+
+        const serviceTypes = provider.services?.map((s: any) => s.providerType?.name).filter(Boolean);
+        if (serviceTypes?.length) parts.push(`Services: ${serviceTypes.join(", ")}`);
+
+        const locs = provider.locations?.map((l: any) => [l.city, l.state].filter(Boolean).join(", ")).filter(Boolean);
+        if (locs?.length) parts.push(`Locations: ${locs.join("; ")}`);
+
+        if (provider.members?.length) {
+          for (const m of provider.members) {
+            let memberLine = `Team member: ${m.name}`;
+            if (m.title) memberLine += `, ${m.title}`;
+            if (m.bio) memberLine += `. ${m.bio}`;
+            parts.push(memberLine);
+          }
+        }
+
+        if (provider.ivfSuccessRates?.length) {
+          const ratesByAge: Record<string, any> = {};
+          for (const r of provider.ivfSuccessRates) {
+            const key = r.ageGroup || "unknown";
+            if (!ratesByAge[key]) ratesByAge[key] = r;
+          }
+          const rateLines = Object.entries(ratesByAge).map(([age, r]: [string, any]) => {
+            const rate = Number(r.successRate);
+            const natl = Number(r.nationalAverage);
+            const cycles = r.cycleCount;
+            const comparison = rate > natl ? "above national average" : rate < natl ? "below national average" : "at national average";
+            return `Age ${age.replace("_", "-")}: ${(rate * 100).toFixed(1)}% live birth rate (${comparison} of ${(natl * 100).toFixed(1)}%), ${cycles} cycles`;
+          });
+          parts.push(`IVF Success Rates: ${rateLines.join("; ")}`);
+        }
+
+        text = parts.join("\n").slice(0, 8000);
+      }
+    } catch (e: any) {
+      console.error(`Failed to build provider embedding text for ${id}:`, e.message);
+    }
+  }
+
+  if (!text) return;
+  const embedding = await generateProfileEmbedding(text);
+  if (!embedding) return;
+  const vectorStr = `[${embedding.join(",")}]`;
+  try {
+    await prisma.$executeRawUnsafe(
+      `UPDATE "${table}" SET "profileEmbedding" = $1::vector WHERE id = $2`,
+      vectorStr,
+      id,
+    );
+  } catch (e: any) {
+    console.error(`Failed to save embedding for ${table} ${id}:`, e.message);
+  }
+}
 
 export type DonorType = "egg-donor" | "surrogate" | "sperm-donor";
 
@@ -722,7 +847,7 @@ async function upsertEggDonor(
     ? { ...(normalizedProfile as any), ...(existing?.profileData as any || {}) }
     : normalizedProfile;
 
-  await prisma.eggDonor.upsert({
+  const upsertedDonor = await prisma.eggDonor.upsert({
     where: {
       providerId_externalId: { providerId, externalId: extId },
     },
@@ -790,6 +915,7 @@ async function upsertEggDonor(
       cardHash: donor.cardHash || null,
     },
   });
+  updateProfileEmbedding(prisma, "EggDonor", upsertedDonor.id, mergedProfile).catch(() => {});
   return { isNew };
 }
 
@@ -880,7 +1006,7 @@ async function upsertSurrogate(
   const resolvedMiscarriages = surrogate.miscarriages != null ? parseInt(String(surrogate.miscarriages)) || 0 : (phStats?.miscarriages ?? 0);
   const resolvedLastDeliveryYear = surrogate.lastDeliveryYear != null ? (parseInt(String(surrogate.lastDeliveryYear)) || null) : (phStats?.lastDeliveryYear ?? null);
 
-  await prisma.surrogate.upsert({
+  const upsertedSurrogate = await prisma.surrogate.upsert({
     where: {
       providerId_externalId: { providerId, externalId: extId },
     },
@@ -952,6 +1078,7 @@ async function upsertSurrogate(
       cardHash: surrogate.cardHash || null,
     },
   });
+  updateProfileEmbedding(prisma, "Surrogate", upsertedSurrogate.id, mergedProfile).catch(() => {});
   return { isNew };
 }
 
@@ -975,7 +1102,7 @@ async function upsertSpermDonor(
     ? { ...(normalizedProfile as any), ...(existing?.profileData as any || {}) }
     : normalizedProfile;
 
-  await prisma.spermDonor.upsert({
+  const upsertedSpermDonor = await prisma.spermDonor.upsert({
     where: {
       providerId_externalId: { providerId, externalId: extId },
     },
@@ -1029,6 +1156,7 @@ async function upsertSpermDonor(
       cardHash: donor.cardHash || null,
     },
   });
+  updateProfileEmbedding(prisma, "SpermDonor", upsertedSpermDonor.id, mergedProfile).catch(() => {});
   return { isNew };
 }
 

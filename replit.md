@@ -63,6 +63,6 @@ Always use Claude Opus 4.6 for all coding, planning, and debugging tasks in this
 -   **Daily.co:** Video conferencing.
 -   **Google Cloud Storage:** Recording storage and cost sheet file storage.
 -   **Google Speech-to-Text API:** Transcription.
--   **OpenAI:** Embeddings for RAG engine (text-embedding-3-small).
+-   **OpenAI:** Embeddings for RAG engine and profile vector search (text-embedding-3-small, 1536 dimensions). Profile embeddings stored on `EggDonor`, `Surrogate`, `SpermDonor`, and `Provider` tables (`profileEmbedding vector(1536)`). Provider embeddings combine clinic `about` text, team member bios, IVF success rates, service types, and location data. MCP search tools use semantic vector search with fallback to field-based filtering.
 -   **Statically served uploads:** For user-uploaded images.
 -   **Image Proxy:** For external images.

@@ -42,6 +42,7 @@ model Provider {
   knowledgeChunks      KnowledgeChunk[]
   silentQueries        SilentQuery[]
   chatSessions         AiChatSession[]
+  profileEmbedding     Unsupported("vector(1536)")?
 }
 
 model ProviderType {
@@ -605,6 +606,7 @@ model SpermDonor {
   hiddenFromSearch     Boolean   @default(false)
   isPremium            Boolean   @default(false)
   isExperienced        Boolean   @default(false)
+  profileEmbedding     Unsupported("vector(1536)")?
   provider             Provider  @relation(fields: [providerId], references: [id])
 
   @@unique([providerId, externalId])

@@ -7,10 +7,59 @@ import {
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
+import OpenAI from "openai";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+async function generateSearchEmbedding(text: string): Promise<number[] | null> {
+  if (!text || !process.env.OPENAI_API_KEY) return null;
+  try {
+    const response = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: text,
+    });
+    return response.data[0].embedding;
+  } catch (e) {
+    return null;
+  }
+}
+
+const ALLOWED_TABLES = new Set(["EggDonor", "Surrogate", "SpermDonor", "Provider"]);
+
+async function vectorSearch(
+  table: string,
+  queryText: string,
+  limit: number,
+  extraWhere?: string,
+  selectColumns?: string,
+): Promise<any[] | null> {
+  if (!ALLOWED_TABLES.has(table)) return null;
+  const embedding = await generateSearchEmbedding(queryText);
+  if (!embedding) return null;
+  const vectorStr = `[${embedding.join(",")}]`;
+  const cols = selectColumns || "*";
+  const whereClause = extraWhere ? `WHERE "profileEmbedding" IS NOT NULL AND ${extraWhere}` : `WHERE "profileEmbedding" IS NOT NULL`;
+  try {
+    const results: any[] = await prisma.$queryRawUnsafe(
+      `SELECT ${cols}, 1 - ("profileEmbedding" <=> $1::vector) as similarity
+       FROM "${table}"
+       ${whereClause}
+       ORDER BY "profileEmbedding" <=> $1::vector
+       LIMIT $2`,
+      vectorStr,
+      limit,
+    );
+    if (results.length > 0 && Number(results[0].similarity) > 0.1) {
+      return results;
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
 
 const server = new Server(
   {
@@ -216,30 +265,43 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { agreesToTwins, agreesToAbortion, openToSameSexCouple, isExperienced, location, maxCompensation, limit: rawLimit } = args as any;
       const take = Math.min(rawLimit || 3, 5);
 
-      const where: any = { hiddenFromSearch: { not: true } };
-      if (agreesToTwins !== undefined) where.agreesToTwins = agreesToTwins;
-      if (agreesToAbortion !== undefined) where.agreesToAbortion = agreesToAbortion;
-      if (openToSameSexCouple !== undefined) where.openToSameSexCouple = openToSameSexCouple;
-      if (isExperienced !== undefined) where.isExperienced = isExperienced;
-      if (location) where.location = { contains: location, mode: "insensitive" };
-      if (maxCompensation) where.baseCompensation = { lte: maxCompensation };
+      const queryParts: string[] = ["surrogate carrier"];
+      if (agreesToTwins) queryParts.push("open to twins");
+      if (agreesToAbortion !== undefined) queryParts.push(agreesToAbortion ? "pro-choice" : "pro-life");
+      if (openToSameSexCouple) queryParts.push("open to same-sex couples LGBTQ friendly");
+      if (isExperienced) queryParts.push("experienced surrogate previous pregnancies");
+      if (location) queryParts.push(`located in ${location}`);
+      const queryText = queryParts.join(", ");
 
-      let surrogates = await prisma.surrogate.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        take,
-        select: {
-          id: true, firstName: true, age: true, location: true,
-          baseCompensation: true, agreesToTwins: true, agreesToAbortion: true,
-          agreesToSelectiveReduction: true, openToSameSexCouple: true,
-          isExperienced: true, ethnicity: true, race: true, liveBirths: true,
-          photoUrl: true, religion: true,
-        },
-      });
+      const vectorResults = await vectorSearch(
+        "Surrogate", queryText, take * 3,
+        `"hiddenFromSearch" IS NOT TRUE`,
+        `id, "firstName", age, location, "baseCompensation", "agreesToTwins", "agreesToAbortion", "agreesToSelectiveReduction", "openToSameSexCouple", "isExperienced", ethnicity, race, "liveBirths", "photoUrl", religion`,
+      );
 
-      if (surrogates.length === 0) {
+      let surrogates: any[];
+      if (vectorResults && vectorResults.length > 0) {
+        let filtered = vectorResults.filter((s: any) => {
+          if (agreesToTwins !== undefined && s.agreesToTwins !== agreesToTwins) return false;
+          if (agreesToAbortion !== undefined && s.agreesToAbortion !== agreesToAbortion) return false;
+          if (openToSameSexCouple !== undefined && s.openToSameSexCouple !== openToSameSexCouple) return false;
+          if (isExperienced !== undefined && s.isExperienced !== isExperienced) return false;
+          if (maxCompensation && s.baseCompensation && Number(s.baseCompensation) > maxCompensation) return false;
+          if (location && s.location && !s.location.toLowerCase().includes(location.toLowerCase())) return false;
+          return true;
+        });
+        surrogates = filtered.length > 0 ? filtered.slice(0, take) : vectorResults.slice(0, take);
+      } else {
+        const where: any = { hiddenFromSearch: { not: true } };
+        if (agreesToTwins !== undefined) where.agreesToTwins = agreesToTwins;
+        if (agreesToAbortion !== undefined) where.agreesToAbortion = agreesToAbortion;
+        if (openToSameSexCouple !== undefined) where.openToSameSexCouple = openToSameSexCouple;
+        if (isExperienced !== undefined) where.isExperienced = isExperienced;
+        if (location) where.location = { contains: location, mode: "insensitive" };
+        if (maxCompensation) where.baseCompensation = { lte: maxCompensation };
+
         surrogates = await prisma.surrogate.findMany({
-          where: { hiddenFromSearch: { not: true } },
+          where,
           orderBy: { createdAt: "desc" },
           take,
           select: {
@@ -250,6 +312,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             photoUrl: true, religion: true,
           },
         });
+
+        if (surrogates.length === 0) {
+          surrogates = await prisma.surrogate.findMany({
+            where: { hiddenFromSearch: { not: true } },
+            orderBy: { createdAt: "desc" },
+            take,
+            select: {
+              id: true, firstName: true, age: true, location: true,
+              baseCompensation: true, agreesToTwins: true, agreesToAbortion: true,
+              agreesToSelectiveReduction: true, openToSameSexCouple: true,
+              isExperienced: true, ethnicity: true, race: true, liveBirths: true,
+              photoUrl: true, religion: true,
+            },
+          });
+        }
       }
 
       const results = surrogates.map((s: any) => ({
@@ -267,29 +344,41 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { eyeColor, hairColor, ethnicity, maxAge, education, limit: rawLimit } = args as any;
       const take = Math.min(rawLimit || 3, 5);
 
-      const where: any = { hiddenFromSearch: { not: true } };
-      if (eyeColor) where.eyeColor = { contains: eyeColor, mode: "insensitive" };
-      if (hairColor) where.hairColor = { contains: hairColor, mode: "insensitive" };
-      if (ethnicity) where.ethnicity = { contains: ethnicity, mode: "insensitive" };
-      if (maxAge) where.age = { lte: maxAge };
-      if (education) where.education = { contains: education, mode: "insensitive" };
+      const queryParts: string[] = ["egg donor"];
+      if (eyeColor) queryParts.push(`${eyeColor} eyes`);
+      if (hairColor) queryParts.push(`${hairColor} hair`);
+      if (ethnicity) queryParts.push(`${ethnicity} ethnicity`);
+      if (education) queryParts.push(`${education} education`);
+      if (maxAge) queryParts.push(`under ${maxAge} years old`);
+      const queryText = queryParts.join(", ");
 
-      let donors = await prisma.eggDonor.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        take,
-        select: {
-          id: true, firstName: true, age: true, location: true,
-          eyeColor: true, hairColor: true, height: true, weight: true,
-          ethnicity: true, race: true, education: true,
-          donorCompensation: true, eggLotCost: true, totalCost: true,
-          isExperienced: true, photoUrl: true, numberOfEggs: true,
-        },
-      });
+      const vectorResults = await vectorSearch(
+        "EggDonor", queryText, take * 3,
+        `"hiddenFromSearch" IS NOT TRUE`,
+        `id, "firstName", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, "donorCompensation", "eggLotCost", "totalCost", "isExperienced", "photoUrl", "numberOfEggs"`,
+      );
 
-      if (donors.length === 0) {
+      let donors: any[];
+      if (vectorResults && vectorResults.length > 0) {
+        let filtered = vectorResults.filter((d: any) => {
+          if (eyeColor && d.eyeColor && !d.eyeColor.toLowerCase().includes(eyeColor.toLowerCase())) return false;
+          if (hairColor && d.hairColor && !d.hairColor.toLowerCase().includes(hairColor.toLowerCase())) return false;
+          if (ethnicity && d.ethnicity && !d.ethnicity.toLowerCase().includes(ethnicity.toLowerCase())) return false;
+          if (maxAge && d.age && d.age > maxAge) return false;
+          if (education && d.education && !d.education.toLowerCase().includes(education.toLowerCase())) return false;
+          return true;
+        });
+        donors = filtered.length > 0 ? filtered.slice(0, take) : vectorResults.slice(0, take);
+      } else {
+        const where: any = { hiddenFromSearch: { not: true } };
+        if (eyeColor) where.eyeColor = { contains: eyeColor, mode: "insensitive" };
+        if (hairColor) where.hairColor = { contains: hairColor, mode: "insensitive" };
+        if (ethnicity) where.ethnicity = { contains: ethnicity, mode: "insensitive" };
+        if (maxAge) where.age = { lte: maxAge };
+        if (education) where.education = { contains: education, mode: "insensitive" };
+
         donors = await prisma.eggDonor.findMany({
-          where: { hiddenFromSearch: { not: true } },
+          where,
           orderBy: { createdAt: "desc" },
           take,
           select: {
@@ -300,6 +389,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             isExperienced: true, photoUrl: true, numberOfEggs: true,
           },
         });
+
+        if (donors.length === 0) {
+          donors = await prisma.eggDonor.findMany({
+            where: { hiddenFromSearch: { not: true } },
+            orderBy: { createdAt: "desc" },
+            take,
+            select: {
+              id: true, firstName: true, age: true, location: true,
+              eyeColor: true, hairColor: true, height: true, weight: true,
+              ethnicity: true, race: true, education: true,
+              donorCompensation: true, eggLotCost: true, totalCost: true,
+              isExperienced: true, photoUrl: true, numberOfEggs: true,
+            },
+          });
+        }
       }
 
       const results = donors.map((d: any) => ({
@@ -316,29 +420,43 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { eyeColor, hairColor, ethnicity, maxAge, education, height, limit: rawLimit } = args as any;
       const take = Math.min(rawLimit || 3, 5);
 
-      const where: any = { hiddenFromSearch: { not: true } };
-      if (eyeColor) where.eyeColor = { contains: eyeColor, mode: "insensitive" };
-      if (hairColor) where.hairColor = { contains: hairColor, mode: "insensitive" };
-      if (ethnicity) where.ethnicity = { contains: ethnicity, mode: "insensitive" };
-      if (maxAge) where.age = { lte: maxAge };
-      if (education) where.education = { contains: education, mode: "insensitive" };
-      if (height) where.height = { contains: height, mode: "insensitive" };
+      const queryParts: string[] = ["sperm donor"];
+      if (eyeColor) queryParts.push(`${eyeColor} eyes`);
+      if (hairColor) queryParts.push(`${hairColor} hair`);
+      if (ethnicity) queryParts.push(`${ethnicity} ethnicity`);
+      if (education) queryParts.push(`${education} education`);
+      if (height) queryParts.push(`${height} tall`);
+      if (maxAge) queryParts.push(`under ${maxAge} years old`);
+      const queryText = queryParts.join(", ");
 
-      let donors = await prisma.spermDonor.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        take,
-        select: {
-          id: true, firstName: true, age: true, location: true,
-          eyeColor: true, hairColor: true, height: true, weight: true,
-          ethnicity: true, race: true, education: true,
-          compensation: true, isExperienced: true, photoUrl: true,
-        },
-      });
+      const vectorResults = await vectorSearch(
+        "SpermDonor", queryText, take * 3,
+        `"hiddenFromSearch" IS NOT TRUE`,
+        `id, "firstName", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, compensation, "isExperienced", "photoUrl"`,
+      );
 
-      if (donors.length === 0) {
+      let donors: any[];
+      if (vectorResults && vectorResults.length > 0) {
+        let filtered = vectorResults.filter((d: any) => {
+          if (eyeColor && d.eyeColor && !d.eyeColor.toLowerCase().includes(eyeColor.toLowerCase())) return false;
+          if (hairColor && d.hairColor && !d.hairColor.toLowerCase().includes(hairColor.toLowerCase())) return false;
+          if (ethnicity && d.ethnicity && !d.ethnicity.toLowerCase().includes(ethnicity.toLowerCase())) return false;
+          if (maxAge && d.age && d.age > maxAge) return false;
+          if (education && d.education && !d.education.toLowerCase().includes(education.toLowerCase())) return false;
+          return true;
+        });
+        donors = filtered.length > 0 ? filtered.slice(0, take) : vectorResults.slice(0, take);
+      } else {
+        const where: any = { hiddenFromSearch: { not: true } };
+        if (eyeColor) where.eyeColor = { contains: eyeColor, mode: "insensitive" };
+        if (hairColor) where.hairColor = { contains: hairColor, mode: "insensitive" };
+        if (ethnicity) where.ethnicity = { contains: ethnicity, mode: "insensitive" };
+        if (maxAge) where.age = { lte: maxAge };
+        if (education) where.education = { contains: education, mode: "insensitive" };
+        if (height) where.height = { contains: height, mode: "insensitive" };
+
         donors = await prisma.spermDonor.findMany({
-          where: { hiddenFromSearch: { not: true } },
+          where,
           orderBy: { createdAt: "desc" },
           take,
           select: {
@@ -348,6 +466,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             compensation: true, isExperienced: true, photoUrl: true,
           },
         });
+
+        if (donors.length === 0) {
+          donors = await prisma.spermDonor.findMany({
+            where: { hiddenFromSearch: { not: true } },
+            orderBy: { createdAt: "desc" },
+            take,
+            select: {
+              id: true, firstName: true, age: true, location: true,
+              eyeColor: true, hairColor: true, height: true, weight: true,
+              ethnicity: true, race: true, education: true,
+              compensation: true, isExperienced: true, photoUrl: true,
+            },
+          });
+        }
       }
 
       const results = donors.map((d: any) => ({
@@ -370,41 +502,52 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { state, city, name: clinicName, limit: rawLimit } = args as any;
       const take = Math.min(rawLimit || 3, 5);
 
-      const providerWhere: any = {
-        providerServices: {
-          some: { providerType: { name: "IVF Clinic" } },
-        },
-      };
-      if (clinicName) providerWhere.name = { contains: clinicName, mode: "insensitive" };
+      const queryParts: string[] = ["IVF clinic fertility center"];
+      if (city) queryParts.push(`in ${city}`);
+      if (state) queryParts.push(`in ${state}`);
+      if (clinicName) queryParts.push(clinicName);
+      const queryText = queryParts.join(", ");
 
-      const locationWhere: any = {};
-      if (state) locationWhere.state = { contains: state, mode: "insensitive" };
-      if (city) locationWhere.city = { contains: city, mode: "insensitive" };
+      const ivfClinicTypeCheck = `EXISTS (SELECT 1 FROM "ProviderService" ps JOIN "ProviderType" pt ON pt.id = ps."providerTypeId" WHERE ps."providerId" = "Provider".id AND pt.name = 'IVF Clinic')`;
+      const vectorResults = await vectorSearch(
+        "Provider", queryText, take,
+        ivfClinicTypeCheck,
+        `"Provider".id, "Provider".name, "Provider"."logoUrl", "Provider".about`,
+      );
 
-      if (state || city) {
-        providerWhere.locations = { some: locationWhere };
-      }
-
-      let clinics = await prisma.provider.findMany({
-        where: providerWhere,
-        orderBy: { name: "asc" },
-        take,
-        select: {
-          id: true, name: true, logoUrl: true, about: true,
-          locations: {
-            select: { city: true, state: true, address: true },
-            take: 1,
-          },
-        },
-      });
-
-      if (clinics.length === 0 && (state || city || clinicName)) {
-        clinics = await prisma.provider.findMany({
-          where: {
-            providerServices: {
-              some: { providerType: { name: "IVF Clinic" } },
+      let clinics: any[];
+      if (vectorResults && vectorResults.length > 0) {
+        const ids = vectorResults.map((r: any) => r.id);
+        const withLocations = await prisma.provider.findMany({
+          where: { id: { in: ids } },
+          select: {
+            id: true, name: true, logoUrl: true, about: true,
+            locations: {
+              select: { city: true, state: true, address: true },
+              take: 1,
             },
           },
+        });
+        const locMap = new Map(withLocations.map((c: any) => [c.id, c]));
+        clinics = ids.map((id: string) => locMap.get(id)).filter(Boolean);
+      } else {
+        const providerWhere: any = {
+          providerServices: {
+            some: { providerType: { name: "IVF Clinic" } },
+          },
+        };
+        if (clinicName) providerWhere.name = { contains: clinicName, mode: "insensitive" };
+
+        const locationWhere: any = {};
+        if (state) locationWhere.state = { contains: state, mode: "insensitive" };
+        if (city) locationWhere.city = { contains: city, mode: "insensitive" };
+
+        if (state || city) {
+          providerWhere.locations = { some: locationWhere };
+        }
+
+        clinics = await prisma.provider.findMany({
+          where: providerWhere,
           orderBy: { name: "asc" },
           take,
           select: {
@@ -415,6 +558,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
           },
         });
+
+        if (clinics.length === 0 && (state || city || clinicName)) {
+          clinics = await prisma.provider.findMany({
+            where: {
+              providerServices: {
+                some: { providerType: { name: "IVF Clinic" } },
+              },
+            },
+            orderBy: { name: "asc" },
+            take,
+            select: {
+              id: true, name: true, logoUrl: true, about: true,
+              locations: {
+                select: { city: true, state: true, address: true },
+                take: 1,
+              },
+            },
+          });
+        }
       }
 
       const results = clinics.map((c: any) => {

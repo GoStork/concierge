@@ -24,6 +24,7 @@ import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { insertProviderSchema } from "@shared/schema";
 import { hasProviderRole } from "@shared/roles";
 import { enrichDonorsWithPendingCosts, enrichDonorsAcrossProviders } from "../costs/total-cost.utils";
+import { updateProfileEmbedding } from "./profile-sync.service";
 import { z } from "zod";
 
 const marketplaceCache = new Map<string, { data: any; expiry: number }>();
@@ -495,7 +496,9 @@ export class ProvidersController {
     }
     try {
       const input = insertProviderSchema.parse(body);
-      return await this.prisma.provider.create({ data: input });
+      const provider = await this.prisma.provider.create({ data: input });
+      updateProfileEmbedding(this.prisma, "Provider", provider.id, null).catch(() => {});
+      return provider;
     } catch (err) {
       if (err instanceof z.ZodError) {
         throw new BadRequestException({ message: "Validation error", errors: err.errors });
@@ -527,10 +530,14 @@ export class ProvidersController {
     }
     try {
       const input = insertProviderSchema.partial().parse(body);
-      return await this.prisma.provider.update({
+      const provider = await this.prisma.provider.update({
         where: { id },
         data: input,
       });
+      if (input.about !== undefined || input.name !== undefined) {
+        updateProfileEmbedding(this.prisma, "Provider", id, null).catch(() => {});
+      }
+      return provider;
     } catch (err) {
       if (err instanceof z.ZodError) {
         throw new BadRequestException({ message: "Validation error", errors: err.errors });
