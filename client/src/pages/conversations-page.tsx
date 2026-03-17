@@ -101,7 +101,7 @@ function truncateMessage(msg: string, maxLen = 60): string {
   return cleaned.substring(0, maxLen) + "...";
 }
 
-type FilterTab = "all" | "unread";
+type FilterTab = "all" | "unread" | "agreements";
 
 export default function ConversationsPage() {
   const { user } = useAuth();
@@ -281,7 +281,7 @@ export default function ConversationsPage() {
             </div>
             <div className="flex items-center gap-2">
               <div className="flex gap-1.5 flex-shrink-0">
-                {(["all", "unread"] as FilterTab[]).map(tab => (
+                {(["all", "unread", "agreements"] as FilterTab[]).map(tab => (
                   <button
                     key={tab}
                     className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
@@ -293,7 +293,7 @@ export default function ConversationsPage() {
                     onClick={() => setActiveFilter(tab)}
                     data-testid={`filter-${tab}`}
                   >
-                    {tab === "all" ? "All" : "Unread"}
+                    {tab === "all" ? "All" : tab === "unread" ? "Unread" : "Agreements"}
                   </button>
                 ))}
               </div>
@@ -446,7 +446,7 @@ export default function ConversationsPage() {
             <h1 className="font-display text-lg font-bold" data-testid="text-inbox-title">Conversations</h1>
             <div className="flex items-center gap-2">
               <div className="flex gap-1.5 flex-shrink-0">
-                {(["all", "unread"] as FilterTab[]).map(tab => (
+                {(["all", "unread", "agreements"] as FilterTab[]).map(tab => (
                   <button
                     key={tab}
                     className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
@@ -458,7 +458,7 @@ export default function ConversationsPage() {
                     onClick={() => setActiveFilter(tab)}
                     data-testid={`filter-${tab}`}
                   >
-                    {tab === "all" ? "All" : "Unread"}
+                    {tab === "all" ? "All" : tab === "unread" ? "Unread" : "Agreements"}
                   </button>
                 ))}
               </div>
