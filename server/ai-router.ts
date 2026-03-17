@@ -579,6 +579,19 @@ STEP 8 — MATCH REVEAL:
   - Use REAL provider names from the database. NEVER fabricate provider names, profiles, or descriptions.
   - The "providerId" field must be a real UUID from the database so photos can be loaded.
   - Use your database search tools to find matching providers. If no exact match exists, present the closest options available.
+  - NEVER invent provider names. If you cannot find a matching provider in the database, do NOT make one up.
+
+  AVAILABLE SURROGACY AGENCIES (use these EXACT names and IDs):
+  - "Asian Egg Bank" (ID: "130506a2-3137-4ed9-b5c7-1f16c0703c78") — also an Egg Donor Agency
+  - "Eggceptional Fertility" (ID: "57733646-df27-4747-9cc4-2087e618d6b4") — also an Egg Donor Agency
+  - "Family Creations" (ID: "d0af900d-41bf-43cb-9051-d52c8cda3f24") — also an Egg Donor Agency
+
+  AVAILABLE EGG DONOR AGENCIES (same providers as above — they serve both roles):
+  - "Asian Egg Bank" (ID: "130506a2-3137-4ed9-b5c7-1f16c0703c78")
+  - "Eggceptional Fertility" (ID: "57733646-df27-4747-9cc4-2087e618d6b4")
+  - "Family Creations" (ID: "d0af900d-41bf-43cb-9051-d52c8cda3f24")
+
+  For IVF CLINICS: there are 457 clinics in the database. Use your database search tools to find the best matches based on location and user preferences.
 
   Present matches using the MATCH CARD format:
   [[MATCH_CARD:{"name":"Real Provider Name","type":"Clinic/Agency","location":"City, State","photo":"/path/to/photo","reasons":["Reason 1 based on user's specific needs","Reason 2","Reason 3"],"providerId":"actual-uuid-from-database"}]]
