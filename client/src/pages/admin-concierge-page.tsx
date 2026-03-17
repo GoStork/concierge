@@ -62,19 +62,16 @@ function SystemSettingsCard() {
 
   return (
     <Card className="rounded-xl p-6" data-testid="card-system-settings">
-      <div className="flex items-center gap-2.5 mb-4">
+      <div className="flex items-center gap-2.5 mb-1">
         <Settings className="w-5 h-5 text-primary" />
-        <h3 className="font-display text-base font-semibold">System Settings</h3>
+        <h3 className="font-display text-base font-semibold">Parent Experience Mode</h3>
       </div>
+      <p className="text-xs text-muted-foreground mb-4">
+        Controls what parents see after onboarding.
+      </p>
 
       <div className="space-y-5">
         <div className="space-y-3">
-          <div>
-            <Label className="text-sm font-medium">Parent Experience Mode</Label>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Controls what parents see after onboarding.
-            </p>
-          </div>
           <RadioGroup
             value={currentMode}
             onValueChange={(val) => setParentExperienceMode(val)}
