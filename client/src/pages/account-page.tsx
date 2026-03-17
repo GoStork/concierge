@@ -18,6 +18,7 @@ import { CalendarSettings as CalendarSettingsComponent } from "@/components/cale
 import BrandSettingsTab, { BrandSettingsForm } from "@/pages/admin-brand-settings-page";
 import AdminConciergePage from "@/pages/admin-concierge-page";
 import ProviderKnowledgeTab from "@/components/provider-knowledge-tab";
+import ConciergeSettingsTab from "@/components/concierge-settings-tab";
 import { hasProviderRole, isParentAccountAdmin } from "@shared/roles";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -1012,7 +1013,7 @@ export default function AccountPage() {
     if (tab.roles === 'parent') return isParent;
     if (tab.roles === 'branding') return showBranding;
     if (tab.roles === 'knowledge') return isProvider && !isAdmin;
-    if (tab.roles === 'concierge') return isAdmin;
+    if (tab.roles === 'concierge') return isAdmin || isParent || isProvider;
     return true;
   });
 
@@ -1100,9 +1101,9 @@ export default function AccountPage() {
         {isProvider && !isAdmin && (
           <Route path="knowledge" element={<ProviderKnowledgeTab />} />
         )}
-        {isAdmin && (
-          <Route path="concierge" element={<AdminConciergePage />} />
-        )}
+        <Route path="concierge" element={
+          isAdmin ? <AdminConciergePage /> : <ConciergeSettingsTab />
+        } />
         {showEggDonors && providerId && (
           <Route path="egg-donors" element={<ProfileDatabasePanel providerId={providerId} type="egg-donor" />} />
         )}

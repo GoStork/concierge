@@ -9,7 +9,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import {
   ArrowLeft, MessageSquare, Send, User, Loader2, FileText,
   MapPin, Mail, CheckCircle2, UserPlus, Shield, ThumbsUp, ThumbsDown,
-  Search, Plus, Sparkles, Building2, ChevronDown, MessageCircle, Clock,
+  Search, Sparkles, Building2, ChevronDown, MessageCircle, Clock,
 } from "lucide-react";
 import { hasProviderRole } from "@shared/roles";
 
@@ -277,18 +277,6 @@ export default function ConversationsPage() {
           <div className="sticky top-0 z-10 bg-background border-b px-4 pt-4 pb-3 space-y-3">
             <div className="flex items-center justify-between">
               <h1 className="font-display text-xl font-bold" data-testid="text-inbox-title">Chats</h1>
-              {showConcierge && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-9 w-9 p-0 rounded-full"
-                  onClick={() => navigate("/matchmaker-selection")}
-                  data-testid="btn-new-chat"
-                  title="New conversation"
-                >
-                  <Plus className="w-5 h-5" />
-                </Button>
-              )}
             </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -336,12 +324,12 @@ export default function ConversationsPage() {
                 </p>
                 {showConcierge && (
                   <Button
-                    onClick={() => navigate("/matchmaker-selection")}
+                    onClick={() => navigate("/account/concierge")}
                     data-testid="btn-start-first-chat"
                     style={{ backgroundColor: brandColor }}
                     className="text-white"
                   >
-                    Start a Conversation
+                    Choose Your AI Concierge
                   </Button>
                 )}
               </div>
