@@ -77,6 +77,25 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 }
 
 function DashboardRoute() {
+  const { user } = useAuth();
+  const { data: brandSettings, isLoading } = useBrandSettings();
+  const roles = (user as any)?.roles || [];
+  const isParent = roles.includes('PARENT');
+  const isAdmin = roles.includes('GOSTORK_ADMIN');
+  const isProvider = hasProviderRole(roles);
+  const isParentOnly = isParent && !isAdmin && !isProvider;
+
+  if (isParentOnly && isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (isParentOnly && brandSettings?.enableAiConcierge && brandSettings?.parentExperienceMode !== 'MARKETPLACE_ONLY') {
+    return <Navigate to="/matchmaker-selection" replace />;
+  }
   return <Navigate to="/marketplace" replace />;
 }
 

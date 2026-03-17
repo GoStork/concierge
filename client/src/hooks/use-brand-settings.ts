@@ -86,6 +86,8 @@ export interface BrandSettings {
   drawerHandleWidth: number;
   sliderValueSize: number;
   sliderThumbSize: number;
+  enableAiConcierge?: boolean;
+  parentExperienceMode?: string;
   matchmakers?: Matchmaker[];
 }
 

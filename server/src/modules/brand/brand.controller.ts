@@ -89,6 +89,8 @@ const DEFAULTS = {
   drawerHandleWidth: 60,
   sliderValueSize: 22,
   sliderThumbSize: 24,
+  enableAiConcierge: false,
+  parentExperienceMode: "MARKETPLACE_ONLY",
 };
 
 const ADVANCED_COLOR_FIELDS = [
@@ -114,6 +116,7 @@ const ALLOWED_FIELDS = [
   "swipePassColor", "swipeSaveColor", "swipeUndoColor", "swipeChatColor", "swipeCompareColor",
   "cardTitleSize", "cardOverlaySize", "filterLabelSize", "badgeTextSize", "drawerMinHeight",
   "drawerTitleSize", "drawerBodySize", "drawerHandleWidth", "sliderValueSize", "sliderThumbSize",
+  "enableAiConcierge", "parentExperienceMode",
   ...ADVANCED_COLOR_FIELDS,
 ];
 
