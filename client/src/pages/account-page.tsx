@@ -18,7 +18,6 @@ import { CalendarSettings as CalendarSettingsComponent } from "@/components/cale
 import BrandSettingsTab, { BrandSettingsForm } from "@/pages/admin-brand-settings-page";
 import AdminConciergePage from "@/pages/admin-concierge-page";
 import ProviderKnowledgeTab from "@/components/provider-knowledge-tab";
-import AdminKnowledgeTab from "@/components/admin-knowledge-tab";
 import { hasProviderRole, isParentAccountAdmin } from "@shared/roles";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -1012,7 +1011,7 @@ export default function AccountPage() {
     if (tab.roles === 'provider') return isProviderOrAdmin;
     if (tab.roles === 'parent') return isParent;
     if (tab.roles === 'branding') return showBranding;
-    if (tab.roles === 'knowledge') return isProviderOrAdmin;
+    if (tab.roles === 'knowledge') return isProvider && !isAdmin;
     if (tab.roles === 'concierge') return isAdmin;
     return true;
   });
@@ -1098,8 +1097,8 @@ export default function AccountPage() {
             disableLivePreview
           /> : <Navigate to="/account" replace />
         } />
-        {isProviderOrAdmin && (
-          <Route path="knowledge" element={isAdmin ? <AdminKnowledgeTab /> : <ProviderKnowledgeTab />} />
+        {isProvider && !isAdmin && (
+          <Route path="knowledge" element={<ProviderKnowledgeTab />} />
         )}
         {isAdmin && (
           <Route path="concierge" element={<AdminConciergePage />} />
