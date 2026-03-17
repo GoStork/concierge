@@ -101,7 +101,7 @@ function truncateMessage(msg: string, maxLen = 60): string {
   return cleaned.substring(0, maxLen) + "...";
 }
 
-type FilterTab = "all" | "unread" | "agreements";
+type FilterTab = "all" | "unread";
 
 export default function ConversationsPage() {
   const { user } = useAuth();
@@ -279,32 +279,34 @@ export default function ConversationsPage() {
             <div className="flex items-center justify-between">
               <h1 className="font-display text-xl font-bold" data-testid="text-inbox-title">Chats</h1>
             </div>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search conversations..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 h-9"
-                data-testid="input-search-conversations"
-              />
-            </div>
-            <div className="flex gap-2">
-              {(["all", "unread", "agreements"] as FilterTab[]).map(tab => (
-                <button
-                  key={tab}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                    activeFilter === tab
-                      ? "text-white"
-                      : "bg-muted text-muted-foreground hover:bg-muted/80"
-                  }`}
-                  style={activeFilter === tab ? { backgroundColor: brandColor } : undefined}
-                  onClick={() => setActiveFilter(tab)}
-                  data-testid={`filter-${tab}`}
-                >
-                  {tab === "all" ? "All" : tab === "unread" ? "Unread" : "Agreements"}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1.5 flex-shrink-0">
+                {(["all", "unread"] as FilterTab[]).map(tab => (
+                  <button
+                    key={tab}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                      activeFilter === tab
+                        ? "text-white"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    }`}
+                    style={activeFilter === tab ? { backgroundColor: brandColor } : undefined}
+                    onClick={() => setActiveFilter(tab)}
+                    data-testid={`filter-${tab}`}
+                  >
+                    {tab === "all" ? "All" : "Unread"}
+                  </button>
+                ))}
+              </div>
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 h-8 text-sm"
+                  data-testid="input-search-conversations"
+                />
+              </div>
             </div>
           </div>
 
@@ -442,32 +444,34 @@ export default function ConversationsPage() {
         <div className={`${selectedSessionId ? "hidden md:flex" : "flex"} flex-col w-full md:w-80 lg:w-96 border-r bg-background`}>
           <div className="sticky top-0 z-10 bg-background border-b px-4 pt-4 pb-3 space-y-3">
             <h1 className="font-display text-lg font-bold" data-testid="text-inbox-title">Conversations</h1>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search parents..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 h-9"
-                data-testid="input-search-conversations"
-              />
-            </div>
-            <div className="flex gap-2">
-              {(["all", "unread", "agreements"] as FilterTab[]).map(tab => (
-                <button
-                  key={tab}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                    activeFilter === tab
-                      ? "text-white"
-                      : "bg-muted text-muted-foreground hover:bg-muted/80"
-                  }`}
-                  style={activeFilter === tab ? { backgroundColor: brandColor } : undefined}
-                  onClick={() => setActiveFilter(tab)}
-                  data-testid={`filter-${tab}`}
-                >
-                  {tab === "all" ? "All" : tab === "unread" ? "Unread" : "Agreements"}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1.5 flex-shrink-0">
+                {(["all", "unread"] as FilterTab[]).map(tab => (
+                  <button
+                    key={tab}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                      activeFilter === tab
+                        ? "text-white"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    }`}
+                    style={activeFilter === tab ? { backgroundColor: brandColor } : undefined}
+                    onClick={() => setActiveFilter(tab)}
+                    data-testid={`filter-${tab}`}
+                  >
+                    {tab === "all" ? "All" : "Unread"}
+                  </button>
+                ))}
+              </div>
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 h-8 text-sm"
+                  data-testid="input-search-conversations"
+                />
+              </div>
             </div>
           </div>
 
