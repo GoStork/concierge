@@ -525,8 +525,8 @@ function KnowledgeBaseCard() {
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <div
         className={`p-6 border-2 border-dashed rounded-lg transition-colors cursor-pointer mb-5 ${
