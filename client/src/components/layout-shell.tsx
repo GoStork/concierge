@@ -18,7 +18,6 @@ import {
   Calendar,
   RefreshCw,
   MessageCircle,
-  MessageSquare,
   Headphones
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -467,7 +466,6 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     { show: isAdmin, to: '/admin/providers', icon: Building2, label: 'Providers', mobileLabel: 'Providers' },
     { show: isAdmin, to: '/admin/scrapers', icon: RefreshCw, label: 'Scrapers', mobileLabel: 'Scrapers' },
     { show: isAdmin, to: '/admin/concierge-monitor', icon: Headphones, label: 'Concierge', mobileLabel: 'Concierge' },
-    { show: isProvider, to: '/provider/conversations', icon: MessageSquare, label: 'Conversations', mobileLabel: 'Chats' },
     { show: isAdmin || isProvider, to: '/users', icon: Users, label: 'Parents', mobileLabel: 'Parents' },
     { show: !((user as any).parentAccountRole === 'VIEWER'), to: '/calendar', icon: Calendar, label: 'Meetings', mobileLabel: 'Meetings' },
     { show: true, to: '/account', icon: User, label: 'Profile', mobileLabel: 'Profile', mobileOnly: true },

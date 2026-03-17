@@ -45,9 +45,8 @@ import CheckEmailPage from "@/pages/check-email-page";
 import ResetPasswordPage from "@/pages/reset-password-page";
 import MatchmakerSelectionPage from "@/pages/matchmaker-selection-page";
 import ConciergeChatPage from "@/pages/concierge-chat-page";
-import ChatHistoryPage from "@/pages/chat-history-page";
+import ConversationsPage from "@/pages/conversations-page";
 import AdminConciergeMonitor from "@/pages/admin-concierge-monitor";
-import ProviderConversationsPage from "@/pages/provider-conversations-page";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -147,9 +146,9 @@ function AppRoutes() {
         <Route path="/appointments" element={<Navigate to="/calendar" replace />} />
         <Route path="/matchmaker-selection" element={<ProtectedRoute><MatchmakerSelectionPage /></ProtectedRoute>} />
         <Route path="/concierge" element={<ProtectedRoute><ConciergeChatPage /></ProtectedRoute>} />
-        <Route path="/chat" element={<ProtectedRoute><ChatHistoryPage /></ProtectedRoute>} />
+        <Route path="/chat" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
         <Route path="/admin/concierge-monitor" element={<ProtectedRoute><AdminConciergeMonitor /></ProtectedRoute>} />
-        <Route path="/provider/conversations" element={<ProtectedRoute><ProviderConversationsPage /></ProtectedRoute>} />
+        <Route path="/provider/conversations" element={<Navigate to="/chat" replace />} />
         <Route path="/admin/branding" element={<Navigate to="/account/branding" replace />} />
         <Route path="/account/*" element={<ProtectedRoute><AccountPage /></ProtectedRoute>} />
         <Route path="/book/:slug" element={<BookingPage />} />

@@ -1,0 +1,50 @@
+PROMPT 1: Build the Unified Responsive Inbox & Parent View
+
+Description:
+Update client/src/pages/provider-conversations-page.tsx to act as a unified, mobile-first Inbox for both Parents and Providers. This task builds the responsive Master-Detail layout, the Search/Filter bar, the Pinned AI Concierge, and the Collapsible Parent grouping.
+
+Steps to Implement:
+
+Rename & Route:
+
+Rename the file client/src/pages/provider-conversations-page.tsx to client/src/pages/conversations-page.tsx.
+
+Update client/src/App.tsx and layout-shell.tsx to route /chat to this new unified page for both roles.
+
+Mobile-First Master-Detail Layout:
+
+Update the main container to flex h-[calc(100vh-64px)] w-full overflow-hidden.
+
+The List (Master): Give the inbox list a class of ${selectedSessionId ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 lg:w-96 border-r bg-background.
+
+The Chat (Detail): Give the active chat area a class of ${!selectedSessionId ? 'hidden md:flex' : 'flex'} flex-1 flex-col bg-background.
+
+Ensure the ArrowLeft back button in the chat header is only visible on mobile (md:hidden) and clears the selectedSessionId to return to the list.
+
+Search & Filter Bar (Top of List):
+
+Add a sticky header to the list column with an <Input> (magnifying glass icon) for text filtering.
+
+Below the search, add a row of pill buttons: All, Unread, Agreements. Bind these to local state.
+
+The Pinned Concierge (Eva):
+
+Filter the sessions for Eva (where senderType === 'system').
+
+Render a static "Your AI Concierge" section at the top of the list (if enableAiConcierge is true). Give the card a background of ${brandColor}08 (5% opacity of the brand primary color).
+
+Collapsible Grouping (Parent Logic):
+
+Check if the user is a Parent (only has PARENT role).
+
+Group the remaining sessions by providerId.
+
+Render a <Collapsible> component for each Provider. The trigger shows the Provider Name and Logo.
+
+Inside the collapsible content, map the specific threads (e.g., "Surrogate #123", "General Consult").
+
+Read/Unread Status & Styling:
+
+Add isUnread styling: If unread, apply font-bold to the sender name and message preview, and render a small w-2 h-2 rounded-full bg-primary dot next to the time.
+
+Add Read Receipts: On the last message sent by the user, render ✓ Sent, ✓✓ Delivered, or ✓✓ Read (colored primary if read) next to the timestamp.
