@@ -94,10 +94,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "search_surrogates",
         description:
-          "Search the database for available surrogates. Returns real surrogate profiles with their IDs, photos, and attributes. Use the returned IDs in MATCH_CARDs with type 'Surrogate'.",
+          "Search the database for available surrogates using semantic vector search across ALL profile data. Returns real surrogate profiles with their IDs, photos, and attributes. Use the 'query' parameter to search by ANY profile attribute (insurance, health history, pregnancy details, education, personality, etc.). Use the returned IDs in MATCH_CARDs with type 'Surrogate'.",
         inputSchema: {
           type: "object",
           properties: {
+            query: {
+              type: "string",
+              description: "Free-text search query matched against the surrogate's FULL profile via semantic vector search. Use this for ANY attribute: insurance type, health conditions, pregnancy history, delivery types, education, occupation, personality traits, motivation, support system, dietary preferences, etc. Examples: 'has medical insurance', 'vaginal delivery history', 'nurse or healthcare worker', 'vegetarian', 'experienced with twins'",
+            },
             agreesToTwins: {
               type: "boolean",
               description: "Filter for surrogates who agree to carry twins",
@@ -150,10 +154,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "search_egg_donors",
         description:
-          "Search the database for available egg donors. Returns real donor profiles with their IDs, photos, and attributes. Use the returned IDs in MATCH_CARDs with type 'Egg Donor'.",
+          "Search the database for available egg donors using semantic vector search across ALL profile data. Returns real donor profiles with their IDs, photos, and attributes. Use the 'query' parameter to search by ANY profile attribute. Use the returned IDs in MATCH_CARDs with type 'Egg Donor'.",
         inputSchema: {
           type: "object",
           properties: {
+            query: {
+              type: "string",
+              description: "Free-text search query matched against the donor's FULL profile via semantic vector search. Use this for ANY attribute: health history, education details, hobbies, personality, family medical history, etc.",
+            },
             eyeColor: {
               type: "string",
               description: "Filter by eye color (e.g. 'Brown', 'Blue', 'Green')",
@@ -184,10 +192,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "search_sperm_donors",
         description:
-          "Search the database for available sperm donors. Returns real donor profiles with their IDs, photos, and attributes. Use the returned IDs in MATCH_CARDs with type 'Sperm Donor'.",
+          "Search the database for available sperm donors using semantic vector search across ALL profile data. Returns real donor profiles with their IDs, photos, and attributes. Use the 'query' parameter to search by ANY profile attribute. Use the returned IDs in MATCH_CARDs with type 'Sperm Donor'.",
         inputSchema: {
           type: "object",
           properties: {
+            query: {
+              type: "string",
+              description: "Free-text search query matched against the donor's FULL profile via semantic vector search. Use this for ANY attribute: health history, education, hobbies, personality, family medical history, athletic background, etc.",
+            },
             eyeColor: {
               type: "string",
               description: "Filter by eye color (e.g. 'Brown', 'Blue', 'Green')",
@@ -222,10 +234,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "search_clinics",
         description:
-          "Search the database for IVF fertility clinics. Returns real clinic profiles with their IDs, logos, and locations. Use the returned IDs in MATCH_CARDs with type 'Clinic'.",
+          "Search the database for IVF fertility clinics using semantic vector search across ALL profile data including success rates, services, team members, and specializations. Returns real clinic profiles with their IDs, logos, and locations. Use the 'query' parameter to search by ANY attribute. Use the returned IDs in MATCH_CARDs with type 'Clinic'.",
         inputSchema: {
           type: "object",
           properties: {
+            query: {
+              type: "string",
+              description: "Free-text search query matched against the clinic's FULL profile via semantic vector search. Use this for ANY attribute: specializations, success rates, specific services, team expertise, insurance acceptance, treatment types, etc.",
+            },
             state: {
               type: "string",
               description: "Filter by state (e.g. 'CA', 'NY', 'TX', 'AZ')",
@@ -280,10 +296,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_surrogates") {
-      const { agreesToTwins, agreesToAbortion, openToSameSexCouple, isExperienced, location, maxCompensation, limit: rawLimit } = args as any;
+      const { query, agreesToTwins, agreesToAbortion, openToSameSexCouple, isExperienced, location, maxCompensation, limit: rawLimit } = args as any;
       const take = Math.min(rawLimit || 3, 5);
 
       const queryParts: string[] = ["surrogate carrier"];
+      if (query) queryParts.push(query);
       if (agreesToTwins) queryParts.push("open to twins");
       if (agreesToAbortion !== undefined) queryParts.push(agreesToAbortion ? "pro-choice" : "pro-life");
       if (openToSameSexCouple) queryParts.push("open to same-sex couples LGBTQ friendly");
@@ -459,10 +476,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_egg_donors") {
-      const { eyeColor, hairColor, ethnicity, maxAge, education, limit: rawLimit } = args as any;
+      const { query, eyeColor, hairColor, ethnicity, maxAge, education, limit: rawLimit } = args as any;
       const take = Math.min(rawLimit || 3, 5);
 
       const queryParts: string[] = ["egg donor"];
+      if (query) queryParts.push(query);
       if (eyeColor) queryParts.push(`${eyeColor} eyes`);
       if (hairColor) queryParts.push(`${hairColor} hair`);
       if (ethnicity) queryParts.push(`${ethnicity} ethnicity`);
@@ -535,10 +553,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_sperm_donors") {
-      const { eyeColor, hairColor, ethnicity, maxAge, education, height, limit: rawLimit } = args as any;
+      const { query, eyeColor, hairColor, ethnicity, maxAge, education, height, limit: rawLimit } = args as any;
       const take = Math.min(rawLimit || 3, 5);
 
       const queryParts: string[] = ["sperm donor"];
+      if (query) queryParts.push(query);
       if (eyeColor) queryParts.push(`${eyeColor} eyes`);
       if (hairColor) queryParts.push(`${hairColor} hair`);
       if (ethnicity) queryParts.push(`${ethnicity} ethnicity`);
@@ -617,10 +636,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_clinics") {
-      const { state, city, name: clinicName, limit: rawLimit } = args as any;
+      const { query, state, city, name: clinicName, limit: rawLimit } = args as any;
       const take = Math.min(rawLimit || 3, 5);
 
       const queryParts: string[] = ["IVF clinic fertility center"];
+      if (query) queryParts.push(query);
       if (city) queryParts.push(`in ${city}`);
       if (state) queryParts.push(`in ${state}`);
       if (clinicName) queryParts.push(clinicName);
