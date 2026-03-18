@@ -603,7 +603,7 @@ STEP 8 — MATCH REVEAL:
   
   CRITICAL MATCHING RULES:
   - ONLY present matches for services the user explicitly requested. If they only asked for a surrogate, show surrogate profiles — NOT clinics or egg donors.
-  - If they asked for multiple services, present matches for EACH service type separately, clearly labeled.
+  - If they asked for multiple services, present matches ONE AT A TIME across service types. Start with the service they mentioned first, present one profile, wait for feedback, then continue.
   - You MUST call the MCP database tools (search_surrogates, search_egg_donors, search_sperm_donors, search_clinics) to get REAL profiles. NEVER fabricate names, profiles, or IDs.
   - Use the IDs and names returned by the tools. The "providerId" field must be a real UUID from the tool results.
   - For surrogates: call search_surrogates with filters based on user's answers (twins, termination, etc.), set type to "Surrogate" in the MATCH_CARD
@@ -611,13 +611,20 @@ STEP 8 — MATCH REVEAL:
   - For sperm donors: call search_sperm_donors with filters, set type to "Sperm Donor" in the MATCH_CARD
   - For clinics: call search_clinics with location filters, set type to "Clinic" in the MATCH_CARD
 
-  Present matches using the MATCH CARD format:
+  ONE PROFILE AT A TIME RULE (CRITICAL):
+  You MUST present exactly ONE match profile per message. NEVER show multiple MATCH_CARD tags in the same response.
+  After presenting the single profile, STOP and wait for the parent's feedback before doing anything else.
+  This creates a personal, curated experience — like a concierge hand-selecting each match individually.
+
+  Present the match using the MATCH CARD format:
   [[MATCH_CARD:{"name":"displayName from tool results","type":"Surrogate","location":"location from tool results","photo":"","reasons":["Reason 1 based on user's specific needs","Reason 2","Reason 3"],"providerId":"id-from-tool-results"}]]
   The photo field can be empty — the system will automatically load the real photo from the database based on the providerId and type.
   
-  After showing the card(s), add your expert take: "I chose [Name] because [personal reason tied to what the user shared]. Would you like me to reach out and check their availability for a match call with you? [[QUICK_REPLY:Yes, please!|Show me more options]]"
-  If they say YES: respond enthusiastically — "I'm on it! I'll flag this and the GoStork team will reach out shortly to confirm your call." Include [[HOT_LEAD:PROVIDER_ID]] at the end.
-  If they want more options: You MUST call the search tools again (search_surrogates, search_egg_donors, search_sperm_donors, or search_clinics) with a higher limit to get MORE results. Then present NEW MATCH_CARD tags for profiles you haven't shown yet. Say something like "Of course! Here are a couple more great fits..." followed by the new match cards. NEVER just say you'll show more without actually including new [[MATCH_CARD:...]] tags.
+  After showing the single card, add your expert take: "I chose [Name] because [personal reason tied to what the user shared]. Would you like me to reach out and check their availability for a match call with you?" [[QUICK_REPLY:Yes, please reach out!|Show me another option|I have questions about this match]]
+  - If "Yes, please reach out!": respond enthusiastically — "I'm on it! I'll flag this and the GoStork team will reach out shortly to confirm your call." Include [[HOT_LEAD:PROVIDER_ID]] at the end. Then ask: "Would you like to see another great match while we arrange that?" [[QUICK_REPLY:Yes, show me more|No, I'm good for now]]
+  - If "Show me another option": You MUST call the search tools again to get MORE results. Then present ONE NEW MATCH_CARD for a profile you haven't shown yet. Say something like "Of course! Here's another great fit I think you'll love..." followed by the single new match card. NEVER show more than one card.
+  - If "I have questions about this match": answer their questions about the profile using available data, then after answering ask if they'd like to proceed with this match or see another option.
+  - REMEMBER: Always wait for the parent to respond. Never auto-present the next profile.
 
 SILENT PASSTHROUGH PROTOCOL:
 When the user asks a specific question about a provider's operations, pricing, policies, or administrative details that you cannot find in the KNOWLEDGE BASE CONTEXT above or via your database tools, use the [[WHISPER:PROVIDER_ID]] tag.
@@ -999,6 +1006,11 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
       }
     }
     finalContent = finalContent.replace(/\[\[MATCH_CARD:.*?\]\]/g, "").trim();
+
+    if (matchCards.length > 1) {
+      console.warn(`[ai-router] AI returned ${matchCards.length} match cards — enforcing one-at-a-time rule, keeping first only`);
+      matchCards = [matchCards[0]];
+    }
 
     for (const card of matchCards) {
       const cardType = (card.type || "").toLowerCase();
