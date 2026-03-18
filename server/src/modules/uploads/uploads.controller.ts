@@ -88,10 +88,15 @@ export class UploadsController {
               const sharp = require("sharp");
               const metadata = await sharp(parsed.data).metadata();
               if (metadata.width && metadata.height && (metadata.width > 1200 || metadata.height > 1200)) {
-                fileData = await sharp(parsed.data)
-                  .resize(1200, 1200, { fit: "inside", withoutEnlargement: true })
-                  .jpeg({ quality: 85 })
-                  .toBuffer();
+                let pipeline = sharp(parsed.data).resize(1200, 1200, { fit: "inside", withoutEnlargement: true });
+                if (parsed.contentType === "image/png") {
+                  pipeline = pipeline.png({ quality: 85 });
+                } else if (parsed.contentType === "image/webp") {
+                  pipeline = pipeline.webp({ quality: 85 });
+                } else {
+                  pipeline = pipeline.jpeg({ quality: 85 });
+                }
+                fileData = await pipeline.toBuffer();
               }
             } catch {}
           }

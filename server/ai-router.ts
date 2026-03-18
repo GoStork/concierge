@@ -842,6 +842,9 @@ Also save the journey stage: [[SAVE:{"journeyStage":"Consultation Requested"}]]
 
 All [[SAVE:...]], [[QUICK_REPLY:...]], [[CURATION]], [[MATCH_CARD:...]], [[HOT_LEAD:...]], [[WHISPER:...]], [[HUMAN_NEEDED]], and [[CONSULTATION_BOOKING:...]] tags are stripped before the user sees the message.
 
+MANDATORY MATCH_CARD TAG RULE:
+Whenever you present a match profile after calling a search tool, you MUST ALWAYS include the [[MATCH_CARD:...]] tag in your response. The tag renders a visual profile card with the person's photo, name, and action buttons. WITHOUT the tag, the parent sees only plain text with NO card, NO photo, and NO way to interact. This is a CRITICAL system requirement — NEVER skip the MATCH_CARD tag when introducing a match.
+
 IMPORTANT RULES:
 - Ask ONE question per message. Never stack multiple questions.
 - After the user answers, acknowledge with an expert touch before the next question. Add value — don't just parrot back.
@@ -942,6 +945,7 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
     });
 
     let responseMessage = response.choices[0].message;
+    let lastSearchToolResults: { toolName: string; resultText: string }[] = [];
 
     while (
       responseMessage.tool_calls &&
@@ -968,6 +972,11 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
           tool_call_id: toolCall.id,
           content: resultText,
         });
+
+        const searchTools = ["search_surrogates", "search_egg_donors", "search_sperm_donors", "search_clinics"];
+        if (searchTools.includes(toolCall.function.name)) {
+          lastSearchToolResults.push({ toolName: toolCall.function.name, resultText });
+        }
       }
 
       response = await openai.chat.completions.create({
@@ -1242,6 +1251,77 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
       }
     }
     finalContent = finalContent.replace(/\[\[MATCH_CARD:.*?\]\]/g, "").trim();
+
+    if (matchCards.length === 0 && lastSearchToolResults.length > 0) {
+      const matchIntroPattern = /(?:meet|introducing|found|here(?:'s| is)|check (?:out|her|his|their)|i(?:'ve| have) got|special to show|great (?:fit|match)|perfect (?:fit|match)|someone.*really|stands?\s*out)/i;
+      if (matchIntroPattern.test(finalContent)) {
+        console.log(`[MATCH_CARD FALLBACK] AI introduced a match but forgot [[MATCH_CARD:...]] tag — attempting auto-creation from tool results`);
+        const mentionedNameMatch = finalContent.match(/(?:Surrogate|Donor|Clinic)\s*#?(\d+)/i);
+        const mentionedFirstName = finalContent.match(/(?:Meet|introducing)\s+(\w+)/i);
+        
+        for (const searchResult of lastSearchToolResults) {
+          try {
+            const resultBody = searchResult.resultText;
+            const jsonStart = resultBody.indexOf("[");
+            const jsonEnd = resultBody.lastIndexOf("]");
+            let results: any[] = [];
+            if (jsonStart !== -1 && jsonEnd !== -1) {
+              results = JSON.parse(resultBody.substring(jsonStart, jsonEnd + 1));
+            } else {
+              const parsed = JSON.parse(resultBody);
+              results = Array.isArray(parsed) ? parsed : [];
+            }
+            
+            if (results.length > 0) {
+              const toolTypeMap: Record<string, string> = {
+                search_surrogates: "Surrogate",
+                search_egg_donors: "Egg Donor",
+                search_sperm_donors: "Sperm Donor",
+                search_clinics: "Clinic",
+              };
+              const cardType = toolTypeMap[searchResult.toolName] || "Surrogate";
+
+              let matched = results[0];
+              if (mentionedNameMatch) {
+                const mentionedId = mentionedNameMatch[1];
+                const byId = results.find((r: any) => r.externalId === mentionedId || String(r.externalId) === mentionedId);
+                if (byId) matched = byId;
+              } else if (mentionedFirstName) {
+                const name = mentionedFirstName[1].toLowerCase();
+                const byName = results.find((r: any) => (r.firstName || r.displayName || r.name || "").toLowerCase() === name);
+                if (byName) matched = byName;
+              }
+
+              const idField = matched.id || matched.providerId;
+              const nameField = matched.displayName || matched.firstName || matched.name || (matched.externalId ? `${cardType} #${matched.externalId}` : `Match`);
+              const locationField = matched.location || "";
+
+              const reasons: string[] = [];
+              if (matched.agreesToTwins) reasons.push("Open to twins");
+              if (matched.agreesToAbortion || matched.agreesToSelectiveReduction) reasons.push("Pro-choice");
+              if (matched.isExperienced) reasons.push("Previous surrogacy experience");
+              if (matched.openToSameSexCouple) reasons.push("Open to same-sex couples");
+              if (matched.liveBirths) reasons.push(`Mom of ${matched.liveBirths}`);
+
+              if (idField) {
+                matchCards.push({
+                  name: nameField,
+                  type: cardType,
+                  location: locationField,
+                  photo: matched.photoUrl || "",
+                  reasons: reasons.slice(0, 4),
+                  providerId: idField,
+                });
+                console.log(`[MATCH_CARD FALLBACK] Auto-created card for ${nameField} (${idField})`);
+                break;
+              }
+            }
+          } catch (e) {
+            console.error("[MATCH_CARD FALLBACK] Failed to parse tool results:", e);
+          }
+        }
+      }
+    }
 
     if (matchCards.length > 1) {
       console.warn(`[ai-router] AI returned ${matchCards.length} match cards — enforcing one-at-a-time rule, keeping first only`);
