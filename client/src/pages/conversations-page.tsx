@@ -117,7 +117,16 @@ function truncateMessage(msg: string, maxLen = 60): string {
   return cleaned.substring(0, maxLen) + "...";
 }
 
+function getProfileUrlSlug(type: string): string {
+  const t = type.toLowerCase();
+  if (t === "surrogate") return "surrogate";
+  if (t === "egg donor") return "eggdonor";
+  if (t === "sperm donor") return "spermdonor";
+  return "surrogate";
+}
+
 function WhisperProfileCard({ card, brandColor }: { card: any; brandColor: string }) {
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -171,7 +180,18 @@ function WhisperProfileCard({ card, brandColor }: { card: any; brandColor: strin
           readOnly
           onPass={() => {}}
           onSave={() => {}}
-          onViewFullProfile={() => {}}
+          onViewFullProfile={() => {
+            if (card.ownerProviderId) {
+              const slug = getProfileUrlSlug(card.type);
+              navigate(`/${slug}/${card.ownerProviderId}/${card.providerId}`, {
+                state: {
+                  fromChat: true,
+                  matchReasons: card.reasons || [],
+                  chatPath: window.location.pathname + window.location.search,
+                },
+              });
+            }
+          }}
         />
       </div>
     );
