@@ -1063,7 +1063,10 @@ export default function DonorProfilePage() {
 
           if (fieldEntries2.length === 0 && tableEntries.length === 0 && !sectionLetterText) return null;
 
-          const renderTable = (rows: any[], label?: string) => {
+          const TRANSPOSE_SECTION = /pregnancy|deliver|children/i;
+          const TRANSPOSE_LABEL_COL = /^(label|child|delivery|dob|date)/i;
+
+          const renderTable = (rows: any[], label?: string, sectionCtx?: string) => {
             const colSet = new Set<string>();
             rows.forEach((row: Record<string, any>) => Object.keys(row).forEach((k) => colSet.add(k)));
             const COL_RENAME: Record<string, string> = {
@@ -1081,11 +1084,72 @@ export default function DonorProfilePage() {
               if (SHORT_COL_PATTERN.test(col)) return { width: hasLongCol ? "auto" : undefined };
               return {};
             };
+
+            const shouldTranspose = rows.length >= 1 && cols.length >= 4 &&
+              TRANSPOSE_SECTION.test(sectionCtx || label || "");
+
+            if (shouldTranspose) {
+              const labelCol = cols.find(c => TRANSPOSE_LABEL_COL.test(c));
+              const attrCols = cols.filter(c => c !== labelCol);
+              const headerLabels = rows.map((row, i) => {
+                if (labelCol && row[labelCol]) return String(row[labelCol]);
+                return `#${i + 1}`;
+              });
+
+              return (
+                <div key={label || "table"} className="mt-4">
+                  {label && <p className="text-xs font-ui text-foreground mb-2">{label}</p>}
+                  <div className="md:hidden">
+                    <table className="w-full text-sm table-auto">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="text-left py-2 pr-3 text-xs font-ui text-foreground"></th>
+                          {headerLabels.map((h, i) => (
+                            <th key={i} className="text-left py-2 px-2 text-xs font-ui text-foreground whitespace-nowrap">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {attrCols.map((attr) => (
+                          <tr key={attr} className="border-b border-border/50 last:border-0">
+                            <td className="py-2 pr-3 text-xs font-ui text-foreground whitespace-nowrap">{COL_RENAME[attr] || attr}</td>
+                            {rows.map((row, ri) => (
+                              <td key={ri} className="py-2 px-2 text-muted-foreground whitespace-nowrap">{String(row[attr] ?? "—")}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="hidden md:block overflow-x-auto -mx-6 px-6">
+                    <table className="w-full text-sm table-auto">
+                      <thead>
+                        <tr className="border-b border-border">
+                          {cols.map((col) => (
+                            <th key={col} className="text-left py-2 pr-4 text-xs font-ui text-foreground whitespace-nowrap" style={getColStyle(col)}>{COL_RENAME[col] || col}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((row: Record<string, any>, ri: number) => (
+                          <tr key={ri} className="border-b border-border/50 last:border-0">
+                            {cols.map((col) => (
+                              <td key={col} className={`py-2 pr-4 text-muted-foreground ${LONG_COL_PATTERN.test(col) ? "break-words" : "whitespace-nowrap"}`}>{String(row[col] ?? "")}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            }
+
             return (
               <div key={label || "table"} className="mt-4">
                 {label && <p className="text-xs font-ui text-foreground mb-2">{label}</p>}
                 <div className="overflow-x-auto -mx-6 px-6">
-                  <table className={`w-full text-sm ${hasLongCol ? "table-auto" : "table-auto"}`}>
+                  <table className={`w-full text-sm table-auto`}>
                     <thead>
                       <tr className="border-b border-border">
                         {cols.map((col) => (
@@ -1184,7 +1248,7 @@ export default function DonorProfilePage() {
                   );
                 })()}
                 {tableEntries.map(([tableName, rows]) =>
-                  renderTable(rows, tableEntries.length > 1 ? tableName : undefined)
+                  renderTable(rows, tableEntries.length > 1 ? tableName : undefined, sectionName)
                 )}
               </div>
             </Card>
