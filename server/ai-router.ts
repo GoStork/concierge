@@ -12,6 +12,20 @@ function escapeHtml(str: string): string {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
 
+async function findLatestMatchCard(sessionId: string): Promise<any | null> {
+  const richMessages = await prisma.aiChatMessage.findMany({
+    where: { sessionId, uiCardType: "rich" },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+    select: { uiCardData: true },
+  });
+  for (const msg of richMessages) {
+    const mc = (msg.uiCardData as any)?.matchCards?.[0];
+    if (mc?.providerId && mc?.type) return mc;
+  }
+  return null;
+}
+
 // Extract search keywords from parent's question with synonym expansion
 function extractSearchKeywords(question: string): string[] {
   const q = question.toLowerCase().replace(/[?!.,]/g, "");
@@ -1097,13 +1111,8 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
 
     if (looksLikeProfileQuestion && isNotAction && currentSessionId && mcpClient) {
       try {
-        const recentCards = await prisma.aiChatMessage.findMany({
-          where: { sessionId: currentSessionId, uiCardType: "rich" },
-          orderBy: { createdAt: "desc" },
-          take: 1,
-          select: { uiCardData: true },
-        });
-        const mc = (recentCards[0]?.uiCardData as any)?.matchCards?.[0];
+        const mc = await findLatestMatchCard(currentSessionId);
+        console.log(`[PROACTIVE PROFILE DEBUG] matchCard found: ${JSON.stringify({ providerId: mc?.providerId, type: mc?.type, ownerProviderId: mc?.ownerProviderId, name: mc?.name }).slice(0, 200)}`);
         if (mc?.providerId && mc?.type) {
           const etype = (mc.type || "").toLowerCase();
           let profileText = "";
@@ -1238,23 +1247,9 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
     if (!isSkipAction && !isFavoriteAction && looksLikeQuestion && aiShowedNewMatch && currentSessionId && mcpClient) {
       console.log(`[QUESTION INTERCEPT] Parent asked a question but AI showed new match card. Intercepting to answer from profile.`);
       try {
-        const recentCards = await prisma.aiChatMessage.findMany({
-          where: { sessionId: currentSessionId, uiCardType: "rich" },
-          orderBy: { createdAt: "desc" },
-          take: 3,
-          select: { uiCardData: true },
-        });
-        let entityId: string | null = null;
-        let entityType: string | null = null;
-        for (const card of recentCards) {
-          const data = card.uiCardData as any;
-          const mc = data?.matchCards?.[0];
-          if (mc) {
-            entityId = mc.providerId || null;
-            entityType = mc.type || null;
-            break;
-          }
-        }
+        const foundMc = await findLatestMatchCard(currentSessionId);
+        let entityId: string | null = foundMc?.providerId || null;
+        let entityType: string | null = foundMc?.type || null;
 
         if (entityId && entityType) {
           const etype = (entityType || "").toLowerCase();
@@ -1323,25 +1318,10 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
     if (hasAccessFailure && currentSessionId && mcpClient) {
       console.log(`[ACCESS-FAILURE INTERCEPT] AI admitted data access failure. Starting hierarchy: profile → knowledge base → whisper.`);
       try {
-        const recentCards = await prisma.aiChatMessage.findMany({
-          where: { sessionId: currentSessionId, uiCardType: "rich" },
-          orderBy: { createdAt: "desc" },
-          take: 3,
-          select: { uiCardData: true },
-        });
-        let entityId: string | null = null;
-        let entityType: string | null = null;
-        let ownerProviderId: string | null = null;
-        for (const card of recentCards) {
-          const data = card.uiCardData as any;
-          const mc = data?.matchCards?.[0];
-          if (mc) {
-            entityId = mc.providerId || null;
-            entityType = mc.type || null;
-            ownerProviderId = mc.ownerProviderId || null;
-            break;
-          }
-        }
+        const foundMc = await findLatestMatchCard(currentSessionId);
+        let entityId: string | null = foundMc?.providerId || null;
+        let entityType: string | null = foundMc?.type || null;
+        let ownerProviderId: string | null = foundMc?.ownerProviderId || null;
         if (!ownerProviderId) {
           const session = await prisma.aiChatSession.findUnique({
             where: { id: currentSessionId },
@@ -1637,21 +1617,11 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
       let recentEntityType: string | null = null;
       let inferredProviderId: string | null = null;
       try {
-        const recentCards = await prisma.aiChatMessage.findMany({
-          where: { sessionId: currentSessionId, uiCardType: "rich" },
-          orderBy: { createdAt: "desc" },
-          take: 3,
-          select: { uiCardData: true },
-        });
-        for (const card of recentCards) {
-          const data = card.uiCardData as any;
-          const mc = data?.matchCards?.[0];
-          if (mc) {
-            recentEntityId = mc.providerId || null;
-            recentEntityType = mc.type || null;
-            inferredProviderId = mc.ownerProviderId || null;
-            break;
-          }
+        const foundMc = await findLatestMatchCard(currentSessionId);
+        if (foundMc) {
+          recentEntityId = foundMc.providerId || null;
+          recentEntityType = foundMc.type || null;
+          inferredProviderId = foundMc.ownerProviderId || null;
         }
         if (!inferredProviderId) {
           const session = await prisma.aiChatSession.findUnique({
