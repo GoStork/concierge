@@ -1112,7 +1112,7 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
     // PROACTIVE PROFILE INJECTION: When parent asks a question about a presented profile,
     // fetch the full profile BEFORE sending to AI so it has all data on the first try
     const looksLikeProfileQuestion = /\?|what|how|where|when|who|why|does she|does he|is she|is he|tell me|her\s+|his\s+|husband|wife|partner|name|age|weight|bmi|education|location|health|deliver|pregnan|baby|babies|height|diet|religion|charge|cost|compen|letter|hobby|pet|smoke|drink|tattoo|pierc/i.test(userMessage);
-    const isNotAction = !/not interested|show me another|skip|pass on|save as favorite|like .+!|❤️|favorite|yes.*schedule|schedule.*consultation|show me more/i.test(userMessage);
+    const isNotAction = !/not interested|show me another|skip|pass on|save as favorite|like .+!|❤️|favorite|yes.*schedule|schedule.*consultation|show me more|what.?s next|next step|move forward|let.?s (go|proceed|do it|move)|ready to (book|schedule|proceed)|i.?m ready|let.?s book|sign me up/i.test(userMessage);
 
     if (looksLikeProfileQuestion && isNotAction && currentSessionId && mcpClient) {
       try {
@@ -1187,6 +1187,27 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
         }));
       } catch (e) {
         console.error("MCP tools unavailable:", e);
+      }
+    }
+
+    const schedulingIntent = /what.?s next|next step|move forward|let.?s (go|proceed|do it|move)|ready to (book|schedule|proceed)|i.?m ready|let.?s book|sign me up|yes.*schedule|schedule.*consultation|yes.*free consultation|book.*consultation/i.test(userMessage);
+    if (schedulingIntent && currentSessionId) {
+      try {
+        const mc = await findLatestMatchCard(currentSessionId);
+        if (mc?.ownerProviderId) {
+          console.log(`[SCHEDULING-INTENT] Detected scheduling intent for provider ${mc.ownerProviderId}`);
+          messages.push({
+            role: "user",
+            content: `SYSTEM OVERRIDE: The parent is signaling they want to take the next step. They are ready to schedule. Do NOT answer any more profile questions. Instead:
+1. Warmly acknowledge their interest in the current match
+2. Present the consultation booking by including [[CONSULTATION_BOOKING:${mc.ownerProviderId}]] in your response
+3. Also include [[HOT_LEAD:${mc.ownerProviderId}]] and [[SAVE:{"journeyStage":"Consultation Requested"}]]
+4. Say something like: "Wonderful! Let me set up a free consultation call with the agency for you — it's completely free, no strings attached!"
+The parent's message was: "${userMessage}"`,
+          });
+        }
+      } catch (e) {
+        console.error("[SCHEDULING-INTENT] Error finding match card:", e);
       }
     }
 
