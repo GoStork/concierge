@@ -292,8 +292,8 @@ export default function ConversationsPage() {
 
     return (
       <div className="flex h-[calc(100vh-64px)] w-full overflow-hidden" data-testid="conversations-page">
-        <div className={`${selectedParentSession ? "hidden md:flex" : "flex"} flex-col w-full md:w-80 lg:w-96 md:border-r bg-background`}>
-          <div className="sticky top-0 z-10 bg-background border-b px-4 pt-4 pb-3 space-y-3">
+        <div className={`${selectedParentSession ? "hidden md:flex" : "flex"} flex-col w-full md:w-80 lg:w-96 md:border-r bg-background overflow-hidden`}>
+          <div className="shrink-0 bg-background border-b px-4 pt-4 pb-3 space-y-3">
             <div className="flex items-center justify-between">
               <h1 className="font-display text-lg font-bold" data-testid="text-inbox-title">Conversations</h1>
             </div>
@@ -368,7 +368,7 @@ export default function ConversationsPage() {
                     {filteredEva.map(session => (
                       <button
                         key={session.id}
-                        className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left border-b border-border/20"
+                        className={`w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left border-b border-border/20 ${selectedParentSession?.id === session.id ? "bg-muted" : ""}`}
                         onClick={() => handleParentSessionClick(session)}
                         data-testid={`chat-session-${session.id}`}
                       >
