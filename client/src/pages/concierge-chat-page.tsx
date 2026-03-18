@@ -655,7 +655,7 @@ export default function ConciergeChatPage() {
         const sessRes = await fetch("/api/my/chat-sessions", { credentials: "include" });
         if (sessRes.ok) {
           const sessions = await sessRes.json();
-          const conciergeSession = sessions.find((s: any) => !s.providerJoinedAt || !s.providerName);
+          const conciergeSession = sessions[0];
           if (conciergeSession) {
             setSessionId(conciergeSession.id);
             if (matchmakerId && conciergeSession.matchmakerId !== matchmakerId) {
@@ -678,7 +678,7 @@ export default function ConciergeChatPage() {
   }, [existingSessionId, matchmakerId, sessionLoaded]);
 
   useEffect(() => {
-    window.scrollTo(0, 0);
+    window.scrollTo(0, document.body.scrollHeight);
   }, []);
 
   const parentProfileQuery = useQuery<{ interestedServices?: string[] }>({
