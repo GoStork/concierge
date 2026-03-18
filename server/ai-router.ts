@@ -12,6 +12,95 @@ function escapeHtml(str: string): string {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
 
+// Extract search keywords from parent's question with synonym expansion
+function extractSearchKeywords(question: string): string[] {
+  const q = question.toLowerCase().replace(/[?!.,]/g, "");
+  const synonymMap: Record<string, string[]> = {
+    husband: ["husband", "partner", "spouse", "significant other", "married", "relationship"],
+    wife: ["wife", "partner", "spouse", "significant other", "married", "relationship"],
+    partner: ["partner", "spouse", "significant other", "husband", "wife", "married", "relationship"],
+    name: ["name", "first name", "called"],
+    age: ["age", "old", "born", "birthday", "date of birth"],
+    weight: ["weight", "weigh", "lbs", "pounds", "kg"],
+    height: ["height", "tall", "feet", "inches"],
+    religion: ["religion", "religious", "faith", "church", "spiritual"],
+    education: ["education", "school", "college", "university", "degree", "studied"],
+    job: ["job", "occupation", "work", "career", "employed", "employment"],
+    smoke: ["smoke", "smoking", "tobacco", "cigarette"],
+    drink: ["drink", "drinking", "alcohol"],
+    drug: ["drug", "drugs", "recreational", "marijuana", "cannabis"],
+    pet: ["pet", "pets", "dog", "cat", "animal"],
+    tattoo: ["tattoo", "tattoos", "piercing", "piercings"],
+    diabetes: ["diabetes", "diabetic", "blood sugar", "insulin"],
+    pregnant: ["pregnant", "pregnancy", "pregnancies", "birth", "deliver", "delivery", "labor"],
+    complication: ["complication", "complications", "c-section", "cesarean", "preeclampsia", "preterm"],
+    baby: ["baby", "babies", "child", "children", "kids", "born"],
+    compensation: ["compensation", "pay", "cost", "fee", "charge", "price", "money"],
+    location: ["location", "live", "lives", "city", "state", "country", "based"],
+    insurance: ["insurance", "insured", "coverage", "health plan"],
+    twins: ["twins", "twin", "multiples", "triplets"],
+    abortion: ["abortion", "termination", "terminate", "selective reduction"],
+    letter: ["letter", "intended parents", "message", "wrote"],
+    hobby: ["hobby", "hobbies", "interests", "enjoy", "fun", "like to do"],
+    diet: ["diet", "eat", "food", "nutrition", "vegan", "vegetarian"],
+    exercise: ["exercise", "workout", "fitness", "gym", "active"],
+    bmi: ["bmi", "body mass"],
+    ethnicity: ["ethnicity", "ethnic", "race", "racial", "background"],
+    criminal: ["criminal", "arrest", "arrested", "convicted", "crime", "felony"],
+    support: ["support", "supportive", "family support", "help"],
+    motivation: ["motivation", "why", "reason", "surrogacy", "become a surrogate"],
+  };
+
+  const keywords: string[] = [];
+  const words = q.split(/\s+/);
+  for (const word of words) {
+    if (synonymMap[word]) {
+      keywords.push(...synonymMap[word]);
+    }
+  }
+  // Also add raw words from question (minus stopwords)
+  const stopwords = new Set(["what", "whats", "what's", "is", "are", "does", "do", "she", "he", "her", "his", "the", "a", "an", "have", "has", "any", "this", "that", "can", "could", "would", "tell", "me", "about", "of", "to", "in", "and", "or", "how", "many", "much"]);
+  for (const word of words) {
+    if (!stopwords.has(word) && word.length > 2) {
+      keywords.push(word);
+    }
+  }
+  return [...new Set(keywords)];
+}
+
+// Recursively search any JSON structure for keys/values matching keywords
+function searchProfileForKeywords(obj: any, keywords: string[], path: string = ""): {key: string, value: any, path: string}[] {
+  const results: {key: string, value: any, path: string}[] = [];
+  if (!obj || typeof obj !== "object") return results;
+
+  if (Array.isArray(obj)) {
+    for (let i = 0; i < obj.length; i++) {
+      results.push(...searchProfileForKeywords(obj[i], keywords, `${path}[${i}]`));
+    }
+    return results;
+  }
+
+  for (const [key, value] of Object.entries(obj)) {
+    const keyLower = key.toLowerCase();
+    const valueLower = typeof value === "string" ? value.toLowerCase() : "";
+    const keyMatches = keywords.some(kw => keyLower.includes(kw));
+
+    if (keyMatches && value !== null && value !== undefined && value !== "" && value !== "—") {
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        results.push({ key, value: String(value), path: path || "root" });
+      } else if (Array.isArray(value)) {
+        results.push({ key, value: JSON.stringify(value).slice(0, 500), path: path || "root" });
+      }
+    }
+
+    // Recurse into nested objects/arrays
+    if (typeof value === "object" && value !== null) {
+      results.push(...searchProfileForKeywords(value, keywords, path ? `${path}.${key}` : key));
+    }
+  }
+  return results;
+}
+
 async function sendPrepDocEmail(parentEmail: string, parentName: string, baseUrl: string) {
   const sendgridKey = process.env.SENDGRID_API_KEY;
   if (!sendgridKey) {
@@ -1041,9 +1130,27 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
           }
           if (profileText && profileText.length > 50) {
             console.log(`[PROACTIVE PROFILE] Injected full profile (${profileText.length} chars) before AI call for question: "${userMessage.slice(0, 60)}"`);
+
+            // Server-side keyword search: extract relevant Q&A pairs from the profile
+            // based on the parent's question — works regardless of profile structure
+            let relevantFindings = "";
+            try {
+              const profileObj = JSON.parse(profileText.replace(/^[^{]*/, "").replace(/[^}]*$/, ""));
+              const keywords = extractSearchKeywords(userMessage);
+              if (keywords.length > 0) {
+                const matches = searchProfileForKeywords(profileObj, keywords);
+                if (matches.length > 0) {
+                  relevantFindings = `\n\nPRE-SEARCHED RESULTS (server found these matching Q&A pairs for the parent's question "${userMessage}"):\n${matches.map((m: {key: string, value: any, path: string}) => `• [${m.path}] "${m.key}" → "${m.value}"`).join("\n")}`;
+                  console.log(`[PROACTIVE PROFILE] Found ${matches.length} relevant Q&A pairs for question`);
+                }
+              }
+            } catch (parseErr) {
+              console.log(`[PROACTIVE PROFILE] Could not pre-search profile, sending full data`);
+            }
+
             messages.push({
               role: "system",
-              content: `FULL PROFILE DATA for the currently presented match. Search EVERY section carefully before answering.\n\nKEY SECTIONS TO CHECK:\n- "Significant Other" → partner/husband/wife name, occupation, relationship status\n- "Pregnancy History" → "Entries" array with birth weights, delivery types, gestation weeks, complications\n- "My Health History" → medical conditions, medications, allergies\n- "Basic Information" → age, height, weight, BMI, education\n- "Personal Information" → location, religion, pets, transportation\n- "Support System" → family support details\n- "Letter to Intended Parents" → _letterText and _letterTitle (personal letter)\n- "General Interests" → hobbies, personality\n- "Surrogacy" → surrogacy experience, motivation\n- "Preferences" → what they are open to\n- "Insurance" → insurance details\n- "Education and Occupation" → work and education history\n\nRULES:\n1. Search ALL sections including nested "Entries" arrays.\n2. If the answer is found, respond with it confidently.\n3. If the answer is truly NOT anywhere in this data, say "I'll check with her agency" and use [[WHISPER:${mc.ownerProviderId || ""}]].\n4. NEVER guess or make up information.\n\nFULL DATA:\n${profileText}`,
+              content: `FULL PROFILE DATA for the currently presented match.${relevantFindings}\n\nRULES:\n1. If PRE-SEARCHED RESULTS are shown above, use those to answer — they are the most relevant matches from the profile.\n2. If no pre-searched results, scan the FULL DATA below by looking at ALL keys and question labels (not section names — keys can be anywhere).\n3. If the answer is found, respond with it confidently.\n4. If the answer is truly NOT anywhere in this data, say "I'll check with her agency" and use [[WHISPER:${mc.ownerProviderId || ""}]].\n5. NEVER guess or make up information.\n\nFULL DATA:\n${profileText}`,
             });
           }
         }
