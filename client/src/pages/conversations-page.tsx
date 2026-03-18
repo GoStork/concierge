@@ -13,6 +13,17 @@ import {
 } from "lucide-react";
 import { hasProviderRole } from "@shared/roles";
 import ConciergeChatPage from "@/pages/concierge-chat-page";
+import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-deck-card";
+import {
+  mapDatabaseDonorToSwipeProfile,
+  mapDatabaseSurrogateToSwipeProfile,
+  mapDatabaseSpermDonorToSwipeProfile,
+  buildTitle,
+  buildStatusLabel,
+  getPhotoList,
+  getSurrogateTabs,
+  getDonorTabs,
+} from "@/components/marketplace/swipe-mappers";
 
 interface ChatSession {
   id: string;
@@ -108,84 +119,77 @@ function truncateMessage(msg: string, maxLen = 60): string {
 
 function WhisperProfileCard({ card, brandColor }: { card: any; brandColor: string }) {
   const [profile, setProfile] = useState<any>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!card?.ownerProviderId || !card?.providerId) return;
+    if (!card?.ownerProviderId || !card?.providerId) { setLoading(false); return; }
     const t = (card.type || "").toLowerCase();
     const endpoint = t === "surrogate" ? "surrogates" : t === "egg donor" ? "egg-donors" : t === "sperm donor" ? "sperm-donors" : "surrogates";
     fetch(`/api/providers/${card.ownerProviderId}/${endpoint}/${card.providerId}`, { credentials: "include" })
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) setProfile(d); })
-      .catch(() => {});
+      .then(d => { if (d) setProfile(d); setLoading(false); })
+      .catch(() => setLoading(false));
   }, [card?.ownerProviderId, card?.providerId, card?.type]);
 
-  const displayName = profile?.firstName || card?.name || "Profile";
-  const externalId = profile?.externalId || card?.externalId;
-  const location = profile?.location || card?.location;
-  const age = profile?.age;
-  const photos: string[] = profile?.photos?.length ? profile.photos : card?.photo ? [card.photo] : [];
-  const mainPhoto = photos[0];
-  const type = card?.type || "Surrogate";
-
-  return (
-    <div className="mb-2 ml-0 max-w-[85%]">
-      <div
-        className="rounded-xl overflow-hidden border cursor-pointer transition-all hover:shadow-md"
-        style={{ borderColor: `${brandColor}30` }}
-        onClick={() => setExpanded(!expanded)}
-        data-testid={`whisper-profile-card-${card?.providerId}`}
-      >
-        <div className="flex items-center gap-3 p-3 bg-background">
-          {mainPhoto ? (
-            <img
-              src={mainPhoto}
-              alt={displayName}
-              className="w-14 h-14 rounded-lg object-cover flex-shrink-0"
-            />
-          ) : (
-            <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
-              <User className="w-6 h-6 text-muted-foreground" />
-            </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-sm text-foreground truncate">
-                {displayName}{externalId ? ` #${externalId}` : ""}
-              </span>
-              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full text-white flex-shrink-0" style={{ backgroundColor: brandColor }}>
-                {type}
-              </span>
-            </div>
-            {(location || age) && (
-              <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
-                {age && <span>{age} yrs</span>}
-                {age && location && <span>·</span>}
-                {location && <span className="flex items-center gap-0.5"><MapPin className="w-3 h-3" />{location}</span>}
-              </div>
-            )}
-          </div>
-          <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`} />
-        </div>
-        {expanded && profile && (
-          <div className="border-t px-3 py-2 bg-muted/30 space-y-1 text-xs text-foreground">
-            {profile.isExperienced && <div className="text-green-600 font-medium">Experienced {type}</div>}
-            {profile.baseCompensation && <div>Compensation: ${Number(profile.baseCompensation).toLocaleString()}</div>}
-            {profile.ethnicity && <div>Ethnicity: {profile.ethnicity}</div>}
-            {profile.religion && <div>Religion: {profile.religion}</div>}
-            {profile.agreesToTwins !== undefined && <div>Agrees to twins: {profile.agreesToTwins ? "Yes" : "No"}</div>}
-            {photos.length > 1 && (
-              <div className="flex gap-1 mt-1 overflow-x-auto pb-1">
-                {photos.slice(0, 5).map((p: string, pi: number) => (
-                  <img key={pi} src={p} alt="" className="w-10 h-10 rounded object-cover flex-shrink-0" />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+  if (loading) {
+    return (
+      <div className="w-full max-w-sm aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center mb-2">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
-    </div>
-  );
+    );
+  }
+
+  if (profile) {
+    const t = (card.type || "").toLowerCase();
+    const isSurrogate = t === "surrogate";
+    const swipeProfile = isSurrogate
+      ? mapDatabaseSurrogateToSwipeProfile(profile)
+      : t === "sperm donor"
+        ? mapDatabaseSpermDonorToSwipeProfile(profile)
+        : mapDatabaseDonorToSwipeProfile(profile);
+    const photos = getPhotoList(swipeProfile);
+    const title = buildTitle(swipeProfile);
+    const statusLabel = buildStatusLabel(swipeProfile);
+    const baseTabs = isSurrogate ? getSurrogateTabs(swipeProfile, []) : getDonorTabs(swipeProfile, []);
+    const reasons = card.reasons || [];
+    const tabs: TabSection[] = reasons.length > 0
+      ? [{ layoutType: "matched_bubbles" as const, title: `Matched ${reasons.length} Preference${reasons.length !== 1 ? "s" : ""}`, items: reasons.map((r: string) => ({ label: r, value: "" })) }, ...baseTabs]
+      : baseTabs;
+
+    return (
+      <div className="w-full max-w-sm aspect-[3/4] mb-2" data-testid={`whisper-profile-card-${card.providerId}`}>
+        <SwipeDeckCard
+          id={card.providerId}
+          photos={photos}
+          title={title}
+          statusLabel={statusLabel}
+          isExperienced={swipeProfile.isExperienced}
+          isPremium={swipeProfile.isPremium}
+          tabs={tabs}
+          disableSwipe
+          chatMode
+          readOnly
+          onPass={() => {}}
+          onSave={() => {}}
+          onViewFullProfile={() => {}}
+        />
+      </div>
+    );
+  }
+
+  if (card?.photo) {
+    return (
+      <div className="w-full max-w-sm aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted relative mb-2" data-testid={`whisper-profile-card-${card.providerId}`}>
+        <img src={card.photo} alt={card.name} className="w-full h-full object-cover" />
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-24 pb-6 px-4">
+          <h3 className="text-white font-heading text-xl leading-tight">{card.name}</h3>
+          {card.location && <p className="text-white/70 text-sm mt-1">{card.location}</p>}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 type FilterTab = "all" | "unread" | "agreements";

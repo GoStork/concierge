@@ -20,6 +20,7 @@ interface SwipeDeckCardProps {
   tabs: TabSection[];
   disableSwipe?: boolean;
   chatMode?: boolean;
+  readOnly?: boolean;
   isSaved?: boolean;
   isPassed?: boolean;
   counterText?: string;
@@ -44,6 +45,7 @@ export function SwipeDeckCard({
   tabs,
   disableSwipe = false,
   chatMode = false,
+  readOnly = false,
   isSaved = false,
   isPassed = false,
   counterText,
@@ -190,7 +192,7 @@ export function SwipeDeckCard({
             </>
           )}
 
-          <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-24 pb-24 px-4 z-[35] pointer-events-none`}>
+          <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-24 ${readOnly ? "pb-6" : "pb-24"} px-4 z-[35] pointer-events-none`}>
             <div className="flex items-center gap-1.5 mb-2">
               {isPremium && (
                 <Badge
@@ -321,7 +323,7 @@ export function SwipeDeckCard({
             </div>
           </div>
 
-          <div className="absolute bottom-6 left-0 right-0 px-4 z-[35] flex items-center justify-center gap-3" data-testid={`action-row-${id}`}>
+          <div className={`absolute bottom-6 left-0 right-0 px-4 z-[35] flex items-center justify-center gap-3 ${readOnly ? "hidden" : ""}`} data-testid={`action-row-${id}`}>
             {!chatMode && (
               <Button
                 variant="ghost"
