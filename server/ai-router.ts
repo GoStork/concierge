@@ -281,11 +281,16 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
     });
     if (!session) return res.status(403).json({ message: "Forbidden" });
     const isOwner = session.userId === user.id;
+    let isAccountMember = false;
+    if (!isOwner && user.parentAccountId) {
+      const sessionOwner = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
+      isAccountMember = !!sessionOwner && sessionOwner.parentAccountId === user.parentAccountId;
+    }
     const roles: string[] = user.roles || [];
     const isAdmin = roles.includes("GOSTORK_ADMIN");
     const providerRoles = ["PROVIDER_ADMIN", "SURROGACY_COORDINATOR", "EGG_DONOR_COORDINATOR", "SPERM_DONOR_COORDINATOR", "IVF_CLINIC_COORDINATOR", "DOCTOR", "BILLING_MANAGER"];
     const isProvider = roles.some((r: string) => providerRoles.includes(r)) && user.providerId && session.providerId === user.providerId;
-    if (!isOwner && !isAdmin && !isProvider) {
+    if (!isOwner && !isAccountMember && !isAdmin && !isProvider) {
       return res.status(403).json({ message: "Forbidden" });
     }
     const where: any = { sessionId };
@@ -311,9 +316,18 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     const userId = (req.user as any).id;
     let currentSessionId = req.body.sessionId;
 
+    const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true, name: true, firstName: true, lastName: true } });
     if (currentSessionId) {
       const session = await prisma.aiChatSession.findUnique({ where: { id: currentSessionId } });
-      if (!session || session.userId !== userId) {
+      if (!session) {
+        return res.status(403).json({ error: "Session not found" });
+      }
+      let hasAccess = session.userId === userId;
+      if (!hasAccess && currentUser?.parentAccountId) {
+        const sessionOwner = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
+        hasAccess = !!sessionOwner && sessionOwner.parentAccountId === currentUser.parentAccountId;
+      }
+      if (!hasAccess) {
         return res.status(403).json({ error: "Session does not belong to this user" });
       }
       if (req.body.matchmakerId && session.matchmakerId !== req.body.matchmakerId) {
@@ -323,8 +337,11 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         });
       }
     } else {
+      const accountUserIds = currentUser?.parentAccountId
+        ? (await prisma.user.findMany({ where: { parentAccountId: currentUser.parentAccountId }, select: { id: true } })).map(u => u.id)
+        : [userId];
       const existingSession = await prisma.aiChatSession.findFirst({
-        where: { userId, providerId: null },
+        where: { userId: { in: accountUserIds }, providerId: null },
         orderBy: { updatedAt: "desc" },
       });
       if (existingSession) {
@@ -343,12 +360,19 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       }
     }
 
-    // Save the Intended Parent's message
+    const parentNameParts = (currentUser?.firstName && currentUser?.lastName)
+      ? [currentUser.firstName, currentUser.lastName]
+      : (currentUser?.name || "").trim().split(/\s+/);
+    const parentDisplayName = parentNameParts.length >= 2
+      ? `${parentNameParts[0]} ${parentNameParts[parentNameParts.length - 1][0]}.`
+      : parentNameParts[0] || "Parent";
+
     await prisma.aiChatMessage.create({
       data: {
         sessionId: currentSessionId,
         role: "user",
         content: req.body.message,
+        senderName: parentDisplayName,
       },
     });
 

@@ -32,8 +32,11 @@ export const chatRouter = Router();
 chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
   const user = req.user as any;
   try {
+    const accountUserIds = user.parentAccountId
+      ? (await prisma.user.findMany({ where: { parentAccountId: user.parentAccountId }, select: { id: true } })).map(u => u.id)
+      : [user.id];
     const sessions = await prisma.aiChatSession.findMany({
-      where: { userId: user.id },
+      where: { userId: { in: accountUserIds } },
       orderBy: { updatedAt: "desc" },
       include: {
         messages: { orderBy: { createdAt: "desc" }, take: 1 },
@@ -76,8 +79,11 @@ chatRouter.patch("/api/my/chat-session/matchmaker", requireAuth, async (req, res
   const { matchmakerId } = req.body;
   if (!matchmakerId) return res.status(400).json({ message: "matchmakerId required" });
   try {
+    const accountUserIds = user.parentAccountId
+      ? (await prisma.user.findMany({ where: { parentAccountId: user.parentAccountId }, select: { id: true } })).map(u => u.id)
+      : [user.id];
     const session = await prisma.aiChatSession.findFirst({
-      where: { userId: user.id, providerId: null },
+      where: { userId: { in: accountUserIds }, providerId: null },
       orderBy: { updatedAt: "desc" },
     });
     if (!session) return res.status(404).json({ message: "No concierge session found" });
@@ -370,6 +376,22 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
       m.senderType === "system" || m.senderType === "provider"
     );
 
+    let accountMembers: { id: string; name: string | null; firstName: string | null; lastName: string | null }[] = [];
+    if (showIdentity && session.user) {
+      const ownerAccount = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
+      if (ownerAccount?.parentAccountId) {
+        accountMembers = await prisma.user.findMany({
+          where: { parentAccountId: ownerAccount.parentAccountId, roles: { has: "PARENT" } },
+          select: { id: true, name: true, firstName: true, lastName: true },
+        });
+      }
+    }
+
+    const formatInitials = (u: { name: string | null; firstName: string | null; lastName: string | null }) => {
+      const parts = (u.firstName && u.lastName) ? [u.firstName, u.lastName] : (u.name || "").trim().split(/\s+/);
+      return parts.length >= 2 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0] || "Parent";
+    };
+
     const responseSession = {
       ...session,
       user: showIdentity ? session.user : {
@@ -382,6 +404,7 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
         parentAccount: null,
       },
       messages: isJoined ? session.messages : providerMessages,
+      accountMembers: showIdentity ? accountMembers.map(m => ({ id: m.id, displayName: formatInitials(m) })) : [],
     };
     res.json(responseSession);
   } catch (e: any) {
@@ -421,17 +444,23 @@ chatRouter.post("/api/provider/concierge-sessions/:id/join", requireAuth, async 
       },
     });
 
-    await prisma.inAppNotification.create({
-      data: {
-        userId: session.userId,
-        eventType: "PROVIDER_JOINED_CHAT",
-        payload: {
-          sessionId: session.id,
-          providerName,
-          message: `${providerName} has joined your conversation`,
+    const sessionOwner = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
+    const notifyUserIds = sessionOwner?.parentAccountId
+      ? (await prisma.user.findMany({ where: { parentAccountId: sessionOwner.parentAccountId }, select: { id: true } })).map(u => u.id)
+      : [session.userId];
+    for (const notifyId of notifyUserIds) {
+      await prisma.inAppNotification.create({
+        data: {
+          userId: notifyId,
+          eventType: "PROVIDER_JOINED_CHAT",
+          payload: {
+            sessionId: session.id,
+            providerName,
+            message: `${providerName} has joined your conversation`,
+          },
         },
-      },
-    });
+      });
+    }
 
     res.json({ success: true });
   } catch (e: any) {
@@ -485,17 +514,23 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
     }
 
     if (isJoined) {
-      await prisma.inAppNotification.create({
-        data: {
-          userId: session.userId,
-          eventType: "PROVIDER_MESSAGE",
-          payload: {
-            sessionId: session.id,
-            message: `${provider?.name || "Your provider"} sent you a message`,
-            preview: content.trim().slice(0, 100),
+      const sessionOwner = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
+      const notifyUserIds = sessionOwner?.parentAccountId
+        ? (await prisma.user.findMany({ where: { parentAccountId: sessionOwner.parentAccountId }, select: { id: true } })).map(u => u.id)
+        : [session.userId];
+      for (const notifyId of notifyUserIds) {
+        await prisma.inAppNotification.create({
+          data: {
+            userId: notifyId,
+            eventType: "PROVIDER_MESSAGE",
+            payload: {
+              sessionId: session.id,
+              message: `${provider?.name || "Your provider"} sent you a message`,
+              preview: content.trim().slice(0, 100),
+            },
           },
-        },
-      });
+        });
+      }
     }
 
     res.json(message);

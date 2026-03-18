@@ -676,7 +676,7 @@ export default function ConversationsPage() {
                         </div>
                         <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} mt-0.5`}>
                           <span className="text-[10px] text-muted-foreground">
-                            {msg.role === "user" ? (() => { const parts = (detail?.user?.name || "").trim().split(/\s+/); return parts.length >= 2 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0] || "Parent"; })() : msg.senderType === "provider" ? (msg.senderName || "You") : msg.senderType === "human" ? "GoStork" : msg.senderType === "system" ? "System" : "AI"} · {timeAgo(msg.createdAt)}
+                            {msg.role === "user" ? (msg.senderName || (() => { const parts = (detail?.user?.name || "").trim().split(/\s+/); return parts.length >= 2 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0] || "Parent"; })()) : msg.senderType === "provider" ? (msg.senderName || "You") : msg.senderType === "human" ? "GoStork" : msg.senderType === "system" ? "System" : "AI"} · {timeAgo(msg.createdAt)}
                           </span>
                         </div>
                       </div>
