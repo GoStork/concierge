@@ -1123,7 +1123,12 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
       }
     }
 
-    // ACCESS-FAILURE INTERCEPTOR: Catch when AI tells parent it can't access data — force retry with profile fetch or whisper
+    // ACCESS-FAILURE INTERCEPTOR: When AI admits it can't access data, follow the hierarchy:
+    // Step 1: Retry MCP profile fetch (up to 2 attempts)
+    // Step 2: If profile found, re-ask AI to answer from profile data
+    // Step 3: If answer not in profile, check knowledge base
+    // Step 4: If still no answer, whisper to agency (silent query)
+    // NEVER tell the parent about data access issues
     const accessFailurePatterns = [
       /issue\s*accessing/i,
       /unable\s*to\s*(?:retrieve|access|find|locate|get)/i,
@@ -1133,7 +1138,7 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
     ];
     const hasAccessFailure = accessFailurePatterns.some((p) => p.test(finalContent));
     if (hasAccessFailure && currentSessionId && mcpClient) {
-      console.log(`[ACCESS-FAILURE INTERCEPT] AI admitted data access failure. Fetching profile and retrying.`);
+      console.log(`[ACCESS-FAILURE INTERCEPT] AI admitted data access failure. Starting hierarchy: profile → knowledge base → whisper.`);
       try {
         const recentCards = await prisma.aiChatMessage.findMany({
           where: { sessionId: currentSessionId, uiCardType: "rich" },
@@ -1154,8 +1159,17 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
             break;
           }
         }
+        if (!ownerProviderId) {
+          const session = await prisma.aiChatSession.findUnique({
+            where: { id: currentSessionId },
+            select: { providerId: true },
+          });
+          ownerProviderId = session?.providerId || null;
+        }
 
-        let retried = false;
+        let resolved = false;
+
+        // STEP 1: Retry MCP profile fetch (up to 2 attempts)
         if (entityId && entityType) {
           const etype = (entityType || "").toLowerCase();
           let profileToolName: string | null = null;
@@ -1165,25 +1179,35 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
 
           if (profileToolName) {
             let profileText = "";
-            if (profileToolName === "get_surrogate_profile") {
-              const profileResult = await mcpClient.callTool({
-                name: "get_surrogate_profile",
-                arguments: { surrogateId: entityId },
-              });
-              profileText = (profileResult.content as any)?.[0]?.text || "";
-            } else {
-              const searchResult = await mcpClient.callTool({
-                name: profileToolName,
-                arguments: { query: userMessage, limit: 1 },
-              });
-              profileText = (searchResult.content as any)?.[0]?.text || "";
+            for (let attempt = 1; attempt <= 2; attempt++) {
+              try {
+                console.log(`[ACCESS-FAILURE] Step 1: Profile fetch attempt ${attempt} via ${profileToolName}`);
+                if (profileToolName === "get_surrogate_profile") {
+                  const profileResult = await mcpClient.callTool({
+                    name: "get_surrogate_profile",
+                    arguments: { surrogateId: entityId },
+                  });
+                  profileText = (profileResult.content as any)?.[0]?.text || "";
+                } else {
+                  const searchResult = await mcpClient.callTool({
+                    name: profileToolName,
+                    arguments: { query: userMessage, limit: 1 },
+                  });
+                  profileText = (searchResult.content as any)?.[0]?.text || "";
+                }
+                if (profileText && profileText.length > 50) break;
+              } catch (fetchErr) {
+                console.error(`[ACCESS-FAILURE] Profile fetch attempt ${attempt} failed:`, fetchErr);
+                if (attempt < 2) await new Promise(r => setTimeout(r, 1000));
+              }
             }
 
+            // STEP 2: If profile found, re-ask AI to answer from it
             if (profileText && profileText.length > 50) {
-              console.log(`[ACCESS-FAILURE INTERCEPT] Got profile (${profileText.length} chars), retrying AI`);
+              console.log(`[ACCESS-FAILURE] Step 2: Got profile (${profileText.length} chars), re-asking AI`);
               messages.push({
                 role: "user",
-                content: `SYSTEM OVERRIDE: You said you couldn't access the profile — but here it is. Answer the parent's question using this data. NEVER tell the parent there was a data access issue.\n\nFULL PROFILE DATA:\n${profileText}\n\nParent's question: "${userMessage}"\n\nIf the answer IS in the profile, respond with it. If it truly is NOT in the profile data, say: "Great question! Let me check on that for you — I'll have an answer shortly." and use [[WHISPER:${ownerProviderId || ""}]] to ask the agency.`,
+                content: `SYSTEM OVERRIDE: You said you couldn't access the profile — but here it is. Answer the parent's question using this data. NEVER tell the parent there was a data access issue.\n\nFULL PROFILE DATA:\n${profileText}\n\nParent's question: "${userMessage}"\n\nIf the answer IS in the profile, respond with it directly. If it truly is NOT in the profile data, say: "Great question! Let me check on that for you — I'll have an answer shortly." and use [[WHISPER:${ownerProviderId || ""}]] to ask the agency.`,
               });
               const retryResponse = await openai.chat.completions.create({
                 model: "gpt-4o",
@@ -1191,9 +1215,9 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
               });
               const retryContent = retryResponse.choices[0].message?.content;
               if (retryContent && !accessFailurePatterns.some((p) => p.test(retryContent))) {
-                console.log(`[ACCESS-FAILURE INTERCEPT SUCCESS] AI answered properly on retry`);
+                console.log(`[ACCESS-FAILURE] Step 2 SUCCESS: AI answered from profile data`);
                 finalContent = retryContent;
-                retried = true;
+                resolved = true;
               } else {
                 messages.pop();
               }
@@ -1201,14 +1225,53 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
           }
         }
 
-        if (!retried && ownerProviderId) {
-          console.log(`[ACCESS-FAILURE INTERCEPT FALLBACK] Could not get profile — forcing whisper to provider ${ownerProviderId}`);
+        // STEP 3: If profile didn't resolve it, try knowledge base
+        if (!resolved) {
+          try {
+            console.log(`[ACCESS-FAILURE] Step 3: Searching knowledge base for answer`);
+            const kbResult = await mcpClient.callTool({
+              name: "search_knowledge_base",
+              arguments: { query: userMessage, limit: 5 },
+            });
+            const kbText = (kbResult.content as any)?.[0]?.text || "";
+            if (kbText && kbText.length > 50) {
+              console.log(`[ACCESS-FAILURE] Step 3: Got knowledge base data (${kbText.length} chars), re-asking AI`);
+              messages.push({
+                role: "user",
+                content: `SYSTEM OVERRIDE: Here is relevant knowledge base information. Use it to answer the parent's question. NEVER mention data access issues.\n\nKNOWLEDGE BASE DATA:\n${kbText}\n\nParent's question: "${userMessage}"\n\nIf this answers the question, respond warmly. If not, say: "Great question! Let me check on that for you — I'll have an answer shortly." and use [[WHISPER:${ownerProviderId || ""}]] to ask the agency.`,
+              });
+              const retryResponse = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages,
+              });
+              const retryContent = retryResponse.choices[0].message?.content;
+              if (retryContent && !accessFailurePatterns.some((p) => p.test(retryContent))) {
+                console.log(`[ACCESS-FAILURE] Step 3 SUCCESS: AI answered from knowledge base`);
+                finalContent = retryContent;
+                resolved = true;
+              } else {
+                messages.pop();
+              }
+            }
+          } catch (kbErr) {
+            console.error(`[ACCESS-FAILURE] Step 3: Knowledge base search failed:`, kbErr);
+          }
+        }
+
+        // STEP 4: If still not resolved, whisper to agency
+        if (!resolved && ownerProviderId) {
+          console.log(`[ACCESS-FAILURE] Step 4: Answer not found in profile or KB — sending whisper to agency ${ownerProviderId}`);
           finalContent = `Great question! Let me check on that for you — I'll have an answer shortly. [[WHISPER:${ownerProviderId}]]`;
-        } else if (!retried) {
+          resolved = true;
+        }
+
+        // Last resort: strip access failure language if no provider to whisper to
+        if (!resolved) {
+          console.log(`[ACCESS-FAILURE] No provider to whisper to — stripping access failure language`);
           finalContent = finalContent.replace(/(?:it\s*seems\s*)?there\s*was\s*(?:an?\s*)?(?:issue|problem|error)\s*(?:accessing|retrieving|fetching|getting|finding)[^.!?]*[.!?]?\s*/gi, "");
           finalContent = finalContent.replace(/(?:i'?m\s*)?unable\s*to\s*(?:retrieve|access|find|locate|get)[^.!?]*[.!?]?\s*/gi, "");
           if (!finalContent.trim()) {
-            finalContent = "Great question! Let me look into that for you.";
+            finalContent = "Great question! Let me look into that for you — I'll have an answer shortly.";
           }
         }
       } catch (e) {
