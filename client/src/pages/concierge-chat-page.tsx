@@ -238,8 +238,8 @@ function ConsultationBookingCard({
     const bookingUrl = `/book/${card.memberBookingSlug}`;
     return (
       <div
-        className="w-full max-w-sm animate-[slideUp_0.4s_ease-out_forwards] overflow-hidden"
-        style={{ borderRadius: "var(--container-radius, 0.5rem)" }}
+        className="w-full animate-[slideUp_0.4s_ease-out_forwards] overflow-hidden border border-border"
+        style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 480px)" }}
         data-testid="consultation-booking-card"
       >
         <div className="p-1.5" style={{ backgroundColor: brandColor }}>
@@ -251,7 +251,7 @@ function ConsultationBookingCard({
         <iframe
           src={bookingUrl}
           className="w-full border-0 bg-background"
-          style={{ height: "620px" }}
+          style={{ height: "680px", minWidth: "320px" }}
           title={`Book consultation with ${card.memberName || card.providerName}`}
           data-testid="booking-calendar-iframe"
         />
