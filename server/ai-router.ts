@@ -352,6 +352,37 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       },
     });
 
+    const currentSession = await prisma.aiChatSession.findUnique({
+      where: { id: currentSessionId },
+      select: { providerJoinedAt: true, providerId: true, status: true },
+    });
+    if (currentSession?.providerJoinedAt && currentSession.status === "PROVIDER_JOINED") {
+      if (currentSession.providerId) {
+        const providerUsers = await prisma.user.findMany({
+          where: { providerId: currentSession.providerId },
+          select: { id: true },
+        });
+        for (const pu of providerUsers) {
+          await prisma.inAppNotification.create({
+            data: {
+              userId: pu.id,
+              eventType: "PARENT_MESSAGE",
+              payload: {
+                sessionId: currentSessionId,
+                message: "A parent sent a new message in your conversation",
+                preview: req.body.message.slice(0, 100),
+              },
+            },
+          });
+        }
+      }
+      return res.json({
+        message: { id: null, content: "", senderType: "ai", role: "assistant" },
+        sessionId: currentSessionId,
+        skipAiResponse: true,
+      });
+    }
+
     const chatHistory = await prisma.aiChatMessage.findMany({
       where: { sessionId: currentSessionId },
       orderBy: { createdAt: "asc" },

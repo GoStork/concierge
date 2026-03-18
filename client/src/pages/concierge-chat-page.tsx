@@ -808,6 +808,12 @@ export default function ConciergeChatPage() {
         queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
       }
 
+      if (data.skipAiResponse) {
+        setSending(false);
+        sendingRef.current = false;
+        return;
+      }
+
       if (data.humanNeeded) {
         setHumanEscalated(true);
       }
