@@ -874,7 +874,14 @@ BANNED PHRASES (never use these or anything similar):
 - "What would you like to do?"
 - "Let me know if you need anything."
 - "Is there anything more you'd like to know?"
+- "There was an issue accessing her profile"
+- "I'm unable to retrieve/access the data"
+- "It seems there was an issue accessing"
+- Any variation of "I couldn't access/retrieve/find the profile data"
 - Any sentence that puts the burden on the parent to decide what happens next.
+
+NEVER ADMIT DATA ACCESS FAILURE:
+If you cannot find data in the profile to answer a question, do NOT tell the parent "there was an issue accessing the data." Instead, use [[WHISPER:ownerProviderId]] to silently ask the agency. Tell the parent something warm like: "Great question! Let me check on that for you — I'll have an answer shortly." The parent should NEVER know about internal data issues.
 
 INSTEAD, ALWAYS end your message with ONE of these active next steps:
 1. Offer a FREE consultation: "It's completely free — no strings attached. Want me to set that up?" [[QUICK_REPLY:Yes, schedule a free consultation|Show me more options]]
@@ -1116,6 +1123,99 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
       }
     }
 
+    // ACCESS-FAILURE INTERCEPTOR: Catch when AI tells parent it can't access data — force retry with profile fetch or whisper
+    const accessFailurePatterns = [
+      /issue\s*accessing/i,
+      /unable\s*to\s*(?:retrieve|access|find|locate|get)/i,
+      /there\s*was\s*(?:an?\s*)?(?:issue|problem|error)\s*(?:accessing|retrieving|fetching|getting)/i,
+      /couldn'?t\s*(?:retrieve|access|fetch|get)\s*(?:her|his|their|the)\s*(?:full\s*)?(?:profile|data|details|information)/i,
+      /(?:having|had)\s*(?:trouble|difficulty|issues?)\s*(?:accessing|retrieving|fetching|getting)/i,
+    ];
+    const hasAccessFailure = accessFailurePatterns.some((p) => p.test(finalContent));
+    if (hasAccessFailure && currentSessionId && mcpClient) {
+      console.log(`[ACCESS-FAILURE INTERCEPT] AI admitted data access failure. Fetching profile and retrying.`);
+      try {
+        const recentCards = await prisma.aiChatMessage.findMany({
+          where: { sessionId: currentSessionId, uiCardType: "rich" },
+          orderBy: { createdAt: "desc" },
+          take: 3,
+          select: { uiCardData: true },
+        });
+        let entityId: string | null = null;
+        let entityType: string | null = null;
+        let ownerProviderId: string | null = null;
+        for (const card of recentCards) {
+          const data = card.uiCardData as any;
+          const mc = data?.matchCards?.[0];
+          if (mc) {
+            entityId = mc.providerId || null;
+            entityType = mc.type || null;
+            ownerProviderId = mc.ownerProviderId || null;
+            break;
+          }
+        }
+
+        let retried = false;
+        if (entityId && entityType) {
+          const etype = (entityType || "").toLowerCase();
+          let profileToolName: string | null = null;
+          if (etype === "surrogate") profileToolName = "get_surrogate_profile";
+          else if (etype === "egg donor") profileToolName = "search_egg_donors";
+          else if (etype === "sperm donor") profileToolName = "search_sperm_donors";
+
+          if (profileToolName) {
+            let profileText = "";
+            if (profileToolName === "get_surrogate_profile") {
+              const profileResult = await mcpClient.callTool({
+                name: "get_surrogate_profile",
+                arguments: { surrogateId: entityId },
+              });
+              profileText = (profileResult.content as any)?.[0]?.text || "";
+            } else {
+              const searchResult = await mcpClient.callTool({
+                name: profileToolName,
+                arguments: { query: userMessage, limit: 1 },
+              });
+              profileText = (searchResult.content as any)?.[0]?.text || "";
+            }
+
+            if (profileText && profileText.length > 50) {
+              console.log(`[ACCESS-FAILURE INTERCEPT] Got profile (${profileText.length} chars), retrying AI`);
+              messages.push({
+                role: "user",
+                content: `SYSTEM OVERRIDE: You said you couldn't access the profile — but here it is. Answer the parent's question using this data. NEVER tell the parent there was a data access issue.\n\nFULL PROFILE DATA:\n${profileText}\n\nParent's question: "${userMessage}"\n\nIf the answer IS in the profile, respond with it. If it truly is NOT in the profile data, say: "Great question! Let me check on that for you — I'll have an answer shortly." and use [[WHISPER:${ownerProviderId || ""}]] to ask the agency.`,
+              });
+              const retryResponse = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages,
+              });
+              const retryContent = retryResponse.choices[0].message?.content;
+              if (retryContent && !accessFailurePatterns.some((p) => p.test(retryContent))) {
+                console.log(`[ACCESS-FAILURE INTERCEPT SUCCESS] AI answered properly on retry`);
+                finalContent = retryContent;
+                retried = true;
+              } else {
+                messages.pop();
+              }
+            }
+          }
+        }
+
+        if (!retried && ownerProviderId) {
+          console.log(`[ACCESS-FAILURE INTERCEPT FALLBACK] Could not get profile — forcing whisper to provider ${ownerProviderId}`);
+          finalContent = `Great question! Let me check on that for you — I'll have an answer shortly. [[WHISPER:${ownerProviderId}]]`;
+        } else if (!retried) {
+          finalContent = finalContent.replace(/(?:it\s*seems\s*)?there\s*was\s*(?:an?\s*)?(?:issue|problem|error)\s*(?:accessing|retrieving|fetching|getting|finding)[^.!?]*[.!?]?\s*/gi, "");
+          finalContent = finalContent.replace(/(?:i'?m\s*)?unable\s*to\s*(?:retrieve|access|find|locate|get)[^.!?]*[.!?]?\s*/gi, "");
+          if (!finalContent.trim()) {
+            finalContent = "Great question! Let me look into that for you.";
+          }
+        }
+      } catch (e) {
+        console.error("[ACCESS-FAILURE INTERCEPT] Error:", e);
+      }
+    }
+
     // DEAD-END INTERCEPTOR: Catch passive/open-ended closings and force the AI to retry with an active next step
     const deadEndPatterns = [
       /feel free to (?:let me know|reach out|ask)/i,
@@ -1282,7 +1382,7 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
     }
 
     let whisperMatch = finalContent.match(/\[\[WHISPER:(.*?)\]\]/);
-    const whisperPhrasePattern = /(?:whisper|reach(?:ed|ing)?\s*out|sent\s*a\s*message|ask(?:ed|ing)?\s*the\s*(?:agency|coordinator|clinic|provider)|check\s*(?:on|with)|hold\s*on|get\s*(?:that|this|back|the)\s*(?:info|detail|answer)|find\s*(?:that|this)\s*out|look(?:ing)?\s*into\s*(?:that|this|it)|get\s*back\s*to\s*you|couldn'?t\s*(?:retrieve|locate|find)|don'?t\s*have\s*(?:that|this)\s*(?:specific|particular)|I'?ll\s*(?:check|find|update\s*you)|ran\s*into\s*a\s*(?:hiccup|issue|problem)|wasn'?t\s*able\s*to\s*(?:find|locate|retrieve)|unfortunately.*(?:don'?t|can'?t|couldn'?t)|seems\s*I\s*(?:don'?t|can'?t|couldn'?t))/i;
+    const whisperPhrasePattern = /(?:whisper|reach(?:ed|ing)?\s*out|sent\s*a\s*message|ask(?:ed|ing)?\s*the\s*(?:agency|coordinator|clinic|provider)|check\s*(?:on|with)|hold\s*on|get\s*(?:that|this|back|the)\s*(?:info|detail|answer)|find\s*(?:that|this)\s*out|look(?:ing)?\s*into\s*(?:that|this|it)|get\s*back\s*to\s*you|couldn'?t\s*(?:retrieve|locate|find|access)|don'?t\s*have\s*(?:that|this|access|the)\s*(?:specific|particular|info|detail|data)?|I'?ll\s*(?:check|find|update\s*you)|ran\s*into\s*a\s*(?:hiccup|issue|problem)|wasn'?t\s*able\s*to\s*(?:find|locate|retrieve|access)|unfortunately.*(?:don'?t|can'?t|couldn'?t)|seems\s*I\s*(?:don'?t|can'?t|couldn'?t)|issue\s*accessing|unable\s*to\s*(?:retrieve|access|find|locate|get)|there\s*was\s*(?:an?\s*)?(?:issue|problem|error)\s*(?:accessing|retrieving|fetching|getting|finding)|I'?m\s*unable\s*to\s*(?:retrieve|access|find))/i;
     const phraseMatched = !whisperMatch && whisperPhrasePattern.test(finalContent);
     console.log(`[WHISPER DEBUG] whisperMatch=${!!whisperMatch}, phraseMatched=${phraseMatched}, userId=${!!userId}, currentSessionId=${currentSessionId}`);
 
