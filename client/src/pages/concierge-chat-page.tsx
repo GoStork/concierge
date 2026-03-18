@@ -573,6 +573,7 @@ export default function ConciergeChatPage() {
   const [searchParams] = useSearchParams();
   const matchmakerId = searchParams.get("matchmaker");
   const existingSessionId = searchParams.get("session");
+  const isEmbedded = searchParams.get("embedded") === "1";
   const navigate = useNavigate();
   const { user } = useAuth();
   const { data: brand } = useBrandSettings();
@@ -897,9 +898,9 @@ export default function ConciergeChatPage() {
       {showCuration && (
         <CurationOverlay brandColor={brandColor} onComplete={handleCurationComplete} />
       )}
-      <div className="flex flex-col h-dvh max-w-3xl mx-auto overflow-hidden" data-testid="concierge-chat-page">
-        <div
-          className="flex items-center gap-3 px-4 py-3 border-b"
+      <div className={`flex flex-col ${isEmbedded ? "h-full" : "h-dvh"} ${isEmbedded ? "" : "max-w-3xl mx-auto"} overflow-hidden`} data-testid="concierge-chat-page">
+        {!isEmbedded && <div
+          className="flex items-center gap-3 px-4 py-3 border-b shrink-0"
           data-testid="concierge-chat-header"
         >
           <Button
@@ -942,7 +943,7 @@ export default function ConciergeChatPage() {
             <Headphones className="w-3.5 h-3.5" />
             {humanEscalated ? "Team Notified" : "Talk to GoStork Team"}
           </Button>
-        </div>
+        </div>}
 
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" data-testid="concierge-messages">
           {messages.map((msg, i) => (

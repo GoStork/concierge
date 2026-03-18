@@ -238,11 +238,18 @@ export default function ConversationsPage() {
     sendMessageMutation.mutate({ sessionId: selectedSessionId, content: replyText.trim() });
   };
 
+  const [selectedParentSession, setSelectedParentSession] = useState<ChatSession | null>(null);
+
   const handleParentSessionClick = (session: ChatSession) => {
-    const params = new URLSearchParams();
-    if (session.matchmakerId) params.set("matchmaker", session.matchmakerId);
-    params.set("session", session.id);
-    navigate(`/concierge?${params.toString()}`);
+    const isMobile = window.innerWidth < 768;
+    if (isMobile) {
+      const params = new URLSearchParams();
+      if (session.matchmakerId) params.set("matchmaker", session.matchmakerId);
+      params.set("session", session.id);
+      navigate(`/concierge?${params.toString()}`);
+    } else {
+      setSelectedParentSession(session);
+    }
   };
 
   const detail = sessionDetailQuery.data;
@@ -279,12 +286,16 @@ export default function ConversationsPage() {
       setExpandedProviders(prev => ({ ...prev, [id]: !prev[id] }));
     };
 
+    const parentConciergeSrc = selectedParentSession
+      ? `/concierge?matchmaker=${selectedParentSession.matchmakerId || ""}&session=${selectedParentSession.id}&embedded=1`
+      : null;
+
     return (
-      <div className="flex flex-col h-[calc(100vh-64px)] w-full overflow-hidden" data-testid="conversations-page">
-        <div className="flex flex-col w-full max-w-lg mx-auto flex-1 overflow-hidden">
+      <div className="flex h-[calc(100vh-64px)] w-full overflow-hidden" data-testid="conversations-page">
+        <div className={`${selectedParentSession ? "hidden md:flex" : "flex"} flex-col w-full md:w-80 lg:w-96 md:border-r bg-background`}>
           <div className="sticky top-0 z-10 bg-background border-b px-4 pt-4 pb-3 space-y-3">
             <div className="flex items-center justify-between">
-              <h1 className="font-display text-xl font-bold" data-testid="text-inbox-title">Chats</h1>
+              <h1 className="font-display text-lg font-bold" data-testid="text-inbox-title">Conversations</h1>
             </div>
             <div className="flex items-center gap-2">
               <div className="flex gap-1.5 flex-shrink-0">
@@ -432,6 +443,25 @@ export default function ConversationsPage() {
               </div>
             )}
           </div>
+        </div>
+
+        <div className={`${!selectedParentSession ? "hidden md:flex" : "flex"} flex-1 flex-col bg-background min-h-0`}>
+          {!selectedParentSession ? (
+            <div className="flex-1 flex items-center justify-center text-center px-8">
+              <div>
+                <MessageSquare className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+                <h3 className="font-display text-lg font-semibold text-muted-foreground mb-1">Select a conversation</h3>
+                <p className="text-sm text-muted-foreground">Choose a conversation from the list to view messages</p>
+              </div>
+            </div>
+          ) : parentConciergeSrc ? (
+            <iframe
+              key={selectedParentSession.id}
+              src={parentConciergeSrc}
+              className="w-full h-full border-0"
+              data-testid="parent-chat-detail-iframe"
+            />
+          ) : null}
         </div>
       </div>
     );
