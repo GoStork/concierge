@@ -598,7 +598,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       </header>
 
       <div
-        className="fixed bottom-0 left-0 right-0 z-50 md:hidden safe-area-bottom px-3 pb-2"
+        className={`fixed bottom-0 left-0 right-0 z-50 md:hidden safe-area-bottom px-3 pb-2 ${/^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname) ? "hidden" : ""}`}
         style={{ backgroundColor: 'var(--bottom-nav-safe-area-bg, transparent)' }}
       >
       <nav
@@ -746,7 +746,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       </nav>
       </div>
 
-      <main className={`pt-0 md:pt-16 ${location.pathname === '/marketplace' ? 'pb-0' : 'pb-28'} md:pb-0 min-h-screen transition-all duration-300`}>
+      <main className={`pt-0 md:pt-16 ${location.pathname === '/marketplace' || /^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname) ? 'pb-0' : 'pb-28'} md:pb-0 min-h-screen transition-all duration-300`}>
         <div className={`max-w-[1800px] mx-auto pt-4 px-4 ${location.pathname === '/marketplace' ? 'pb-0' : 'pb-4'} md:p-6 lg:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500`}>
           {children}
         </div>
