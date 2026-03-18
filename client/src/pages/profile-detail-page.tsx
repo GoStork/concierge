@@ -17,6 +17,7 @@ import {
   X,
   Play,
   Pencil,
+  Check,
 } from "lucide-react";
 
 function isEmbedVideo(url: string): boolean {
@@ -408,6 +409,11 @@ export default function DonorProfilePage() {
   const { user } = useAuth();
   const type = deriveTypeFromPath(location.pathname, paramType);
 
+  const chatState = location.state as { fromChat?: boolean; matchReasons?: string[]; chatPath?: string } | null;
+  const fromChat = chatState?.fromChat === true;
+  const matchReasons = chatState?.matchReasons || [];
+  const chatPath = chatState?.chatPath || "/concierge";
+
   const endpoint = TYPE_ENDPOINTS[type || ""] || "egg-donors";
 
   const { data: donor, isLoading } = useQuery<any>({
@@ -493,14 +499,18 @@ export default function DonorProfilePage() {
     return (
       <div className="space-y-4 p-6">
         <Button variant="ghost" onClick={() => {
-          const isAdmin = window.location.pathname.startsWith("/admin/");
-          if (!isAdmin) {
-            navigate(-1);
+          if (fromChat) {
+            navigate(chatPath);
           } else {
-            navigate(`/admin/providers/${providerId}?tab=${TYPE_ENDPOINTS[type || "egg-donor"]}`);
+            const isAdmin = window.location.pathname.startsWith("/admin/");
+            if (!isAdmin) {
+              navigate(-1);
+            } else {
+              navigate(`/admin/providers/${providerId}?tab=${TYPE_ENDPOINTS[type || "egg-donor"]}`);
+            }
           }
         }} data-testid="link-back-provider">
-          <ArrowLeft className="w-4 h-4 mr-2" /> {!window.location.pathname.startsWith("/admin/") ? "Back to Marketplace" : `Back to ${provider?.name || "Provider"}`}
+          <ArrowLeft className="w-4 h-4 mr-2" /> {fromChat ? "Back to Chat" : !window.location.pathname.startsWith("/admin/") ? "Back to Marketplace" : `Back to ${provider?.name || "Provider"}`}
         </Button>
         <p className="text-muted-foreground text-center py-8" data-testid="text-not-found">Donor profile not found.</p>
       </div>
@@ -566,14 +576,18 @@ export default function DonorProfilePage() {
     <div className="space-y-6 w-full">
       <div className="flex items-center justify-between">
         <Button variant="ghost" onClick={() => {
-          const isAdmin = window.location.pathname.startsWith("/admin/");
-          if (!isAdmin) {
-            navigate(-1);
+          if (fromChat) {
+            navigate(chatPath);
           } else {
-            navigate(`/admin/providers/${providerId}?tab=${TYPE_ENDPOINTS[type || "egg-donor"]}`);
+            const isAdmin = window.location.pathname.startsWith("/admin/");
+            if (!isAdmin) {
+              navigate(-1);
+            } else {
+              navigate(`/admin/providers/${providerId}?tab=${TYPE_ENDPOINTS[type || "egg-donor"]}`);
+            }
           }
         }} data-testid="link-back-provider">
-          <ArrowLeft className="w-4 h-4 mr-2" /> {!window.location.pathname.startsWith("/admin/") ? "Back to Marketplace" : `Back to ${provider?.name || "Provider"}`}
+          <ArrowLeft className="w-4 h-4 mr-2" /> {fromChat ? "Back to Chat" : !window.location.pathname.startsWith("/admin/") ? "Back to Marketplace" : `Back to ${provider?.name || "Provider"}`}
         </Button>
         {user && !user.roles?.includes("PARENT") && (
           <Button
@@ -619,6 +633,20 @@ export default function DonorProfilePage() {
           </a>
         )}
       </div>
+
+      {fromChat && matchReasons.length > 0 && (
+        <Card className="overflow-hidden border-primary/20 bg-primary/5" data-testid="section-match-reasons">
+          <div className="p-4 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Why This Match</p>
+            {matchReasons.map((reason, i) => (
+              <div key={i} className="flex items-start gap-2 text-sm">
+                <Check className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+                <span>{reason}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card className="overflow-hidden" data-testid="section-summary">
         <SectionHeader title="Summary" />

@@ -1,4 +1,4 @@
-import { User, EyeOff, Eye, Pencil, Crown, Award, Trash2 } from "lucide-react";
+import { User, EyeOff, Eye, Pencil, Crown, Award, Trash2, Check } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { getPhotoSrc, getProfileTypeLabel, getProfileCardSummary, getProfileDetails } from "@/lib/profile-utils";
@@ -20,6 +20,7 @@ interface ProfileCardProps {
   variant: "marketplace" | "admin";
   showNewBadge?: boolean;
   adminControls?: AdminControls;
+  matchReasons?: string[];
 }
 
 function NewBadge({ profileId }: { profileId: string }) {
@@ -66,7 +67,7 @@ function NewBadge({ profileId }: { profileId: string }) {
   );
 }
 
-export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, adminControls }: ProfileCardProps) {
+export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, adminControls, matchReasons }: ProfileCardProps) {
   let photoUrl = getPhotoSrc(profile.photoUrl);
   if (!photoUrl && Array.isArray(profile.photos)) {
     for (const p of profile.photos) {
@@ -149,6 +150,17 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
               </p>
             ))}
           </div>
+          {matchReasons && matchReasons.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-border/50 space-y-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Why This Match</p>
+              {matchReasons.map((reason, i) => (
+                <div key={i} className="flex items-start gap-1.5 text-xs">
+                  <Check className="w-3 h-3 text-primary flex-shrink-0 mt-0.5" />
+                  <span className="text-foreground leading-snug">{reason}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         <div className="p-3 space-y-1 flex-1">

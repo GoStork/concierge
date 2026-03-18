@@ -6,9 +6,12 @@ import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Loader2, Send, ArrowLeft, Sparkles, MapPin, Phone, Star, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, X, ExternalLink } from "lucide-react";
+import { ProfileCard } from "@/components/profile-card";
+import type { ProfileType } from "@/lib/profile-utils";
+import { Loader2, Send, ArrowLeft, Sparkles, MapPin, Phone, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, X, ExternalLink } from "lucide-react";
 
 interface MatchCard {
   name: string;
@@ -437,14 +440,6 @@ function BookingOverlay({
   );
 }
 
-function getProfileEndpoint(type: string): string {
-  const t = type.toLowerCase();
-  if (t === "surrogate") return "surrogates";
-  if (t === "egg donor") return "egg-donors";
-  if (t === "sperm donor") return "sperm-donors";
-  return "surrogates";
-}
-
 function getProfileUrlSlug(type: string): string {
   const t = type.toLowerCase();
   if (t === "surrogate") return "surrogate";
@@ -453,276 +448,96 @@ function getProfileUrlSlug(type: string): string {
   return "surrogate";
 }
 
-function ProfileDrawer({ card, brandColor, onClose }: { card: MatchCard; brandColor: string; onClose: () => void }) {
+function getMatchCardProfileType(type: string): ProfileType {
+  const t = type.toLowerCase();
+  if (t === "surrogate") return "surrogate";
+  if (t === "egg donor") return "egg-donor";
+  if (t === "sperm donor") return "sperm-donor";
+  return "surrogate";
+}
+
+function getProfileEndpoint(type: string): string {
+  const t = type.toLowerCase();
+  if (t === "surrogate") return "surrogates";
+  if (t === "egg donor") return "egg-donors";
+  if (t === "sperm donor") return "sperm-donors";
+  return "surrogates";
+}
+
+function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { card: MatchCard; brandColor: string; onAction: (text: string) => void; onViewProfile: (card: MatchCard) => void }) {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchProfile = async () => {
-      const ownerPid = card.ownerProviderId;
-      if (!ownerPid) {
-        setLoading(false);
-        return;
-      }
+      if (!card.ownerProviderId) { setLoading(false); return; }
       try {
         const endpoint = getProfileEndpoint(card.type);
-        const res = await fetch(`/api/providers/${ownerPid}/${endpoint}/${card.providerId}`, { credentials: "include" });
-        if (res.ok) {
-          setProfile(await res.json());
-        }
+        const res = await fetch(`/api/providers/${card.ownerProviderId}/${endpoint}/${card.providerId}`, { credentials: "include" });
+        if (res.ok) setProfile(await res.json());
       } catch {}
       setLoading(false);
     };
     fetchProfile();
-  }, [card]);
+  }, [card.ownerProviderId, card.providerId, card.type]);
 
-  const fmtVal = (v: any) => (v !== null && v !== undefined && v !== "" ? String(v) : null);
+  if (loading) {
+    return (
+      <Card className="overflow-hidden max-w-[220px] animate-[slideUp_0.4s_ease-out_forwards]">
+        <div className="aspect-[3/4] bg-muted flex items-center justify-center" style={{ borderTopLeftRadius: 'var(--container-radius)', borderTopRightRadius: 'var(--container-radius)' }}>
+          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+        </div>
+        <div className="p-3">
+          <div className="h-4 bg-muted rounded w-3/4 mb-2" />
+          <div className="h-3 bg-muted rounded w-1/2" />
+        </div>
+      </Card>
+    );
+  }
 
-  const getFields = () => {
-    if (!profile) return [];
-    const t = card.type.toLowerCase();
-    const fields: { label: string; value: string | null }[] = [];
-    if (t === "surrogate") {
-      fields.push(
-        { label: "Age", value: fmtVal(profile.age) },
-        { label: "Location", value: fmtVal(profile.location) },
-        { label: "BMI", value: profile.bmi ? Number(profile.bmi).toFixed(1) : null },
-        { label: "Live Births", value: fmtVal(profile.liveBirths) },
-        { label: "C-Sections", value: fmtVal(profile.cSections) },
-        { label: "Ethnicity", value: fmtVal(profile.ethnicity) },
-        { label: "Race", value: fmtVal(profile.race) },
-        { label: "Religion", value: fmtVal(profile.religion) },
-        { label: "Education", value: fmtVal(profile.education) },
-        { label: "Relationship", value: fmtVal(profile.relationshipStatus) },
-        { label: "Open to Twins", value: profile.agreesToTwins != null ? (profile.agreesToTwins ? "Yes" : "No") : null },
-        { label: "Pro-Choice", value: profile.agreesToAbortion != null ? (profile.agreesToAbortion ? "Yes" : "No") : null },
-        { label: "Same-Sex Friendly", value: profile.openToSameSexCouple != null ? (profile.openToSameSexCouple ? "Yes" : "No") : null },
-        { label: "COVID Vaccinated", value: profile.covidVaccinated != null ? (profile.covidVaccinated ? "Yes" : "No") : null },
-        { label: "Base Compensation", value: profile.baseCompensation ? `$${Number(profile.baseCompensation).toLocaleString()}` : null },
-      );
-    } else if (t === "egg donor") {
-      fields.push(
-        { label: "Age", value: fmtVal(profile.age) },
-        { label: "Location", value: fmtVal(profile.location) },
-        { label: "Eye Color", value: fmtVal(profile.eyeColor) },
-        { label: "Hair Color", value: fmtVal(profile.hairColor) },
-        { label: "Height", value: fmtVal(profile.height) },
-        { label: "Weight", value: fmtVal(profile.weight) },
-        { label: "Ethnicity", value: fmtVal(profile.ethnicity) },
-        { label: "Education", value: fmtVal(profile.education) },
-        { label: "Experienced", value: profile.isExperienced != null ? (profile.isExperienced ? "Yes" : "No") : null },
-        { label: "Number of Eggs", value: fmtVal(profile.numberOfEggs) },
-        { label: "Compensation", value: profile.donorCompensation ? `$${Number(profile.donorCompensation).toLocaleString()}` : null },
-      );
-    } else if (t === "sperm donor") {
-      fields.push(
-        { label: "Age", value: fmtVal(profile.age) },
-        { label: "Location", value: fmtVal(profile.location) },
-        { label: "Eye Color", value: fmtVal(profile.eyeColor) },
-        { label: "Hair Color", value: fmtVal(profile.hairColor) },
-        { label: "Height", value: fmtVal(profile.height) },
-        { label: "Weight", value: fmtVal(profile.weight) },
-        { label: "Ethnicity", value: fmtVal(profile.ethnicity) },
-        { label: "Education", value: fmtVal(profile.education) },
-        { label: "Experienced", value: profile.isExperienced != null ? (profile.isExperienced ? "Yes" : "No") : null },
-        { label: "Compensation", value: profile.compensation ? `$${Number(profile.compensation).toLocaleString()}` : null },
-      );
-    }
-    return fields.filter((f) => f.value !== null);
-  };
-
-  const photos: string[] = [];
-  if (profile?.photoUrl) photos.push(profile.photoUrl);
-  if (profile?.photos && Array.isArray(profile.photos)) photos.push(...profile.photos.filter((p: string) => p !== profile.photoUrl));
-  if (card.photo && !photos.includes(card.photo)) photos.unshift(card.photo);
-
-  const profileUrl = card.ownerProviderId ? `/${getProfileUrlSlug(card.type)}/${card.ownerProviderId}/${card.providerId}` : null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background animate-[drawerSlideUp_0.3s_ease-out_forwards]" data-testid="profile-drawer">
-      <div className="flex items-center justify-between px-4 py-3 border-b" style={{ minHeight: 56 }}>
-        <button onClick={onClose} className="flex items-center gap-2 text-sm font-medium" data-testid="btn-close-profile">
-          <ArrowLeft className="w-5 h-5" />
-          Back to Chat
-        </button>
-        {profileUrl && (
-          <a href={profileUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-sm" style={{ color: brandColor }} data-testid="link-full-profile">
-            Full Profile <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-        )}
+  if (profile) {
+    return (
+      <div className="max-w-[220px] animate-[slideUp_0.4s_ease-out_forwards]" data-testid={`match-card-${card.providerId}`}>
+        <ProfileCard
+          profile={profile}
+          type={getMatchCardProfileType(card.type)}
+          variant="marketplace"
+          matchReasons={card.reasons}
+          onNavigate={() => onViewProfile(card)}
+        />
       </div>
+    );
+  }
 
-      <div className="flex-1 overflow-y-auto">
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin" style={{ color: brandColor }} />
-          </div>
-        ) : !profile ? (
-          <div className="px-4 py-8 text-center">
-            <p className="text-muted-foreground mb-4">Profile details are not available right now.</p>
-            <div className="p-4 space-y-3">
-              <h3 className="font-semibold text-lg" style={{ fontFamily: "var(--font-display)" }}>{card.name}</h3>
-              <p className="text-sm text-muted-foreground">{card.type}</p>
-              {card.location && (
-                <div className="flex items-center gap-1.5 text-sm text-muted-foreground justify-center">
-                  <MapPin className="w-4 h-4" />
-                  <span>{card.location}</span>
-                </div>
-              )}
-              {card.reasons.length > 0 && (
-                <div className="space-y-1.5 mt-4 text-left max-w-sm mx-auto">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Why this match</p>
-                  {card.reasons.map((reason, i) => (
-                    <div key={i} className="flex gap-2 text-sm">
-                      <span style={{ color: brandColor }} className="flex-shrink-0 mt-0.5">&#10003;</span>
-                      <span>{reason}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="pb-24">
-            {photos.length > 0 && (
-              <div className="flex gap-2 overflow-x-auto p-4 snap-x">
-                {photos.map((src, i) => (
-                  <div key={i} className="flex-shrink-0 w-64 h-72 rounded-lg overflow-hidden snap-center" style={{ borderRadius: "var(--container-radius, 0.5rem)" }}>
-                    <img src={src} alt={`${card.name} photo ${i + 1}`} className="w-full h-full object-cover" />
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="px-4 pt-2 pb-4 space-y-4">
-              <div>
-                <h2 className="text-xl font-bold" style={{ fontFamily: "var(--font-display)" }}>{card.name}</h2>
-                <p className="text-sm text-muted-foreground">{card.type}</p>
-                {(profile.location || card.location) && (
-                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground mt-1">
-                    <MapPin className="w-4 h-4" />
-                    <span>{profile.location || card.location}</span>
-                  </div>
-                )}
-              </div>
-
-              {card.reasons.length > 0 && (
-                <div className="p-3 rounded-lg space-y-1.5" style={{ backgroundColor: `${brandColor}10`, borderRadius: "var(--container-radius, 0.5rem)" }}>
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Why this match</p>
-                  {card.reasons.map((reason, i) => (
-                    <div key={i} className="flex gap-2 text-sm">
-                      <span style={{ color: brandColor }} className="flex-shrink-0 mt-0.5">&#10003;</span>
-                      <span>{reason}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                {getFields().map((f, i) => (
-                  <div key={i} className="p-3 rounded-lg border" style={{ borderRadius: "var(--container-radius, 0.5rem)" }}>
-                    <p className="text-xs text-muted-foreground">{f.label}</p>
-                    <p className="text-sm font-medium mt-0.5">{f.value}</p>
-                  </div>
-                ))}
-              </div>
-
-              {profile.profileData && typeof profile.profileData === "object" && (
-                <div className="space-y-3">
-                  {Object.entries(profile.profileData).map(([section, content]: [string, any]) => {
-                    if (!content || section === "photos") return null;
-                    if (typeof content === "string") {
-                      return (
-                        <div key={section}>
-                          <h4 className="font-semibold text-sm mb-1" style={{ fontFamily: "var(--font-display)" }}>{section}</h4>
-                          <p className="text-sm text-muted-foreground">{content}</p>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <style>{`
-        @keyframes drawerSlideUp {
-          from { opacity: 0; transform: translateY(100%); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-    </div>
-  );
-}
-
-function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { card: MatchCard; brandColor: string; onAction: (text: string) => void; onViewProfile: (card: MatchCard) => void }) {
   return (
     <Card
-      className="overflow-hidden max-w-sm animate-[slideUp_0.4s_ease-out_forwards] cursor-pointer transition-shadow hover:shadow-md"
-      style={{ borderRadius: "var(--container-radius, 0.5rem)" }}
+      className="overflow-hidden max-w-[220px] animate-[slideUp_0.4s_ease-out_forwards] cursor-pointer transition-shadow hover:shadow-md"
       data-testid={`match-card-${card.providerId}`}
       onClick={() => onViewProfile(card)}
     >
       {card.photo && (
-        <div className="h-32 overflow-hidden">
+        <div className="aspect-[3/4] overflow-hidden" style={{ borderTopLeftRadius: 'var(--container-radius)', borderTopRightRadius: 'var(--container-radius)' }}>
           <img src={card.photo} alt={card.name} className="w-full h-full object-cover" />
         </div>
       )}
-      <div className="p-4 space-y-3">
-        <div className="flex items-start justify-between">
-          <div>
-            <h4 className="font-semibold text-base" style={{ fontFamily: "var(--font-display)" }}>{card.name}</h4>
-            <p className="text-xs text-muted-foreground">{card.type}</p>
-          </div>
-          <Star className="w-5 h-5 flex-shrink-0" style={{ color: brandColor }} />
-        </div>
+      <div className="p-3 space-y-1.5">
+        <h4 className="font-heading text-sm text-primary truncate">{card.name}</h4>
+        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{card.type}</Badge>
         {card.location && (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <MapPin className="w-3.5 h-3.5" />
-            <span>{card.location}</span>
+          <p className="text-xs text-muted-foreground truncate">{card.location}</p>
+        )}
+        {card.reasons.length > 0 && (
+          <div className="mt-1 pt-1 border-t border-border/50 space-y-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Why This Match</p>
+            {card.reasons.map((reason, i) => (
+              <div key={i} className="flex items-start gap-1.5 text-xs">
+                <span style={{ color: brandColor }} className="flex-shrink-0 mt-0.5">&#10003;</span>
+                <span className="leading-snug">{reason}</span>
+              </div>
+            ))}
           </div>
         )}
-        <div className="space-y-1.5">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Why this match</p>
-          {card.reasons.map((reason, i) => (
-            <div key={i} className="flex gap-2 text-sm">
-              <span style={{ color: brandColor }} className="flex-shrink-0 mt-0.5">&#10003;</span>
-              <span>{reason}</span>
-            </div>
-          ))}
-        </div>
-        <div className="flex gap-2 pt-1">
-          <Button
-            size="sm"
-            className="flex-1 text-white"
-            style={{ backgroundColor: brandColor, borderRadius: "var(--radius, 0.5rem)" }}
-            onClick={(e) => { e.stopPropagation(); onAction("Yes, please reach out!"); }}
-            data-testid={`btn-match-connect-${card.providerId}`}
-          >
-            <Phone className="w-3.5 h-3.5 mr-1.5" />
-            Connect Me
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1"
-            style={{ borderRadius: "var(--radius, 0.5rem)" }}
-            onClick={(e) => { e.stopPropagation(); onAction("Show me more options"); }}
-            data-testid={`btn-match-more-${card.providerId}`}
-          >
-            More Options
-          </Button>
-        </div>
       </div>
-      <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(16px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
     </Card>
   );
 }
@@ -747,7 +562,18 @@ export default function ConciergeChatPage() {
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [greetingSet, setGreetingSet] = useState(false);
   const [providerInChat, setProviderInChat] = useState(false);
-  const [profileCard, setProfileCard] = useState<MatchCard | null>(null);
+  const handleViewProfile = useCallback((card: MatchCard) => {
+    if (!card.ownerProviderId) return;
+    const slug = getProfileUrlSlug(card.type);
+    const profileUrl = `/${slug}/${card.ownerProviderId}/${card.providerId}`;
+    navigate(profileUrl, {
+      state: {
+        fromChat: true,
+        matchReasons: card.reasons || [],
+        chatPath: window.location.pathname + window.location.search,
+      },
+    });
+  }, [navigate]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
   const lastPollTimeRef = useRef<string | null>(null);
@@ -1149,7 +975,7 @@ export default function ConciergeChatPage() {
                         card={card}
                         brandColor={brandColor}
                         onAction={handleQuickReply}
-                        onViewProfile={setProfileCard}
+                        onViewProfile={handleViewProfile}
                       />
                     ))}
                   </div>
@@ -1278,13 +1104,6 @@ export default function ConciergeChatPage() {
           userEmail={(user as any)?.email || ""}
           userName={(user as any)?.name || ""}
           onClose={() => setBookingCard(null)}
-        />
-      )}
-      {profileCard && (
-        <ProfileDrawer
-          card={profileCard}
-          brandColor={brandColor}
-          onClose={() => setProfileCard(null)}
         />
       )}
     </>
