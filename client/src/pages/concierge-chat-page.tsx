@@ -691,8 +691,22 @@ export default function ConciergeChatPage() {
     enabled: !!user,
   });
 
+  const initialScrollDone = useRef(false);
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!messages.length) return;
+    if (!initialScrollDone.current) {
+      const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "instant" as ScrollBehavior });
+      scrollToBottom();
+      const t1 = setTimeout(scrollToBottom, 100);
+      const t2 = setTimeout(scrollToBottom, 300);
+      const t3 = setTimeout(() => {
+        scrollToBottom();
+        initialScrollDone.current = true;
+      }, 600);
+      return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages]);
 
   useEffect(() => {
