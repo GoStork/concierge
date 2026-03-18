@@ -400,13 +400,22 @@ export default function ConversationsPage() {
                 onClick={() => handleParentSessionClick(session)}
                 data-testid={`chat-session-${session.id}`}
               >
-                {session.matchmakerAvatar ? (
-                  <img src={session.matchmakerAvatar} alt="" className="w-11 h-11 rounded-full object-cover border flex-shrink-0" />
-                ) : (
-                  <div className="w-11 h-11 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0" style={{ backgroundColor: brandColor }}>
+                <div className="w-11 h-11 rounded-full flex-shrink-0 relative">
+                  {session.matchmakerAvatar && (
+                    <img
+                      src={session.matchmakerAvatar}
+                      alt={session.matchmakerName || ""}
+                      className="w-11 h-11 rounded-full object-cover border absolute inset-0"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                  )}
+                  <div
+                    className="w-11 h-11 rounded-full flex items-center justify-center text-white text-sm font-bold"
+                    style={{ backgroundColor: brandColor }}
+                  >
                     {(session.matchmakerName || "E").charAt(0)}
                   </div>
-                )}
+                </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-ui truncate" style={{ fontWeight: 600 }}>{session.matchmakerName || "Eva"}</span>

@@ -936,20 +936,22 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          {selectedMatchmaker?.avatarUrl ? (
-            <img
-              src={selectedMatchmaker.avatarUrl}
-              alt={selectedMatchmaker.name}
-              className="w-9 h-9 rounded-full object-cover border"
-            />
-          ) : (
+          <div className="w-9 h-9 rounded-full flex-shrink-0 relative">
+            {selectedMatchmaker?.avatarUrl && (
+              <img
+                src={selectedMatchmaker.avatarUrl}
+                alt={selectedMatchmaker.name}
+                className="w-9 h-9 rounded-full object-cover border absolute inset-0"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            )}
             <div
               className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold"
               style={{ backgroundColor: brandColor }}
             >
               {selectedMatchmaker?.name.charAt(0) || "?"}
             </div>
-          )}
+          </div>
           <div className="flex-1">
             <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>
               {selectedMatchmaker?.name || "AI Concierge"}
