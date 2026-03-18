@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
+import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, Sparkles, ArrowRight } from "lucide-react";
@@ -13,10 +14,25 @@ export default function MatchmakerSelectionPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [transitioning, setTransitioning] = useState(false);
   const [transitionMatchmaker, setTransitionMatchmaker] = useState<Matchmaker | null>(null);
+  const [checkedExisting, setCheckedExisting] = useState(false);
+
+  const { data: existingSessions } = useQuery<any[]>({
+    queryKey: ["/api/my/chat-sessions"],
+    enabled: !!user,
+  });
 
   const matchmakers: Matchmaker[] = (brand?.matchmakers || [])
     .filter(m => m.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder);
+
+  useEffect(() => {
+    if (checkedExisting || !existingSessions || !matchmakers.length) return;
+    setCheckedExisting(true);
+    const sessionWithMatchmaker = existingSessions.find(s => s.matchmakerId);
+    if (sessionWithMatchmaker) {
+      navigate(`/concierge?matchmaker=${sessionWithMatchmaker.matchmakerId}`, { replace: true });
+    }
+  }, [existingSessions, matchmakers, checkedExisting, navigate]);
 
   const userName = (user as any)?.firstName || (user as any)?.name?.split(" ")[0] || "";
 
@@ -70,7 +86,7 @@ export default function MatchmakerSelectionPage() {
     );
   }
 
-  if (isLoading) {
+  if (isLoading || (existingSessions && !checkedExisting)) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]" data-testid="matchmaker-loading">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
