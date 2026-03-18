@@ -183,7 +183,7 @@ function ConversationsShell({
         </div>
       </div>
 
-      <div className={`${!hasSelection ? "hidden md:flex" : "flex"} flex-1 flex-col bg-background min-h-0`}>
+      <div className={`${!hasSelection ? "hidden md:flex" : "flex"} flex-1 flex-col bg-background min-h-0 relative overflow-hidden`}>
         {!hasSelection ? (
           <div className="flex-1 flex items-center justify-center text-center px-8">
             <div>
@@ -476,7 +476,7 @@ export default function ConversationsPage() {
       <iframe
         key={selectedParentSession!.id}
         src={parentConciergeSrc}
-        className="w-full h-full border-0"
+        className="absolute inset-0 w-full h-full border-0"
         data-testid="parent-chat-detail-iframe"
       />
     ) : null;
