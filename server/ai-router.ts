@@ -1723,13 +1723,26 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
             },
           });
 
+          let whisperMatchCard: any = null;
+          try {
+            const foundMc = await findLatestMatchCard(currentSessionId);
+            if (foundMc) {
+              whisperMatchCard = { ...foundMc };
+            }
+          } catch (e) {
+            console.error("[WHISPER] Could not find match card for whisper:", e);
+          }
+
           await prisma.aiChatMessage.create({
             data: {
               sessionId: currentSessionId,
               role: "assistant",
               content: `📋 A prospective parent has a question that needs your input:\n\n"${questionText}"\n\nPlease reply below and the AI concierge will pass your answer to the parent.`,
               senderType: "system",
-              uiCardData: { whisperQuestionId: silentQuery.id },
+              uiCardData: {
+                whisperQuestionId: silentQuery.id,
+                ...(whisperMatchCard ? { whisperMatchCard } : {}),
+              },
             },
           });
 

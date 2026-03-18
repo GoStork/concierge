@@ -58,6 +58,7 @@ interface SessionMessage {
   senderType: string;
   senderName: string | null;
   createdAt: string;
+  uiCardData?: any;
 }
 
 interface SessionDetail {
@@ -103,6 +104,88 @@ function truncateMessage(msg: string, maxLen = 60): string {
   const cleaned = msg.replace(/\[\[.*?\]\]/g, "").replace(/\n/g, " ").trim();
   if (cleaned.length <= maxLen) return cleaned;
   return cleaned.substring(0, maxLen) + "...";
+}
+
+function WhisperProfileCard({ card, brandColor }: { card: any; brandColor: string }) {
+  const [profile, setProfile] = useState<any>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!card?.ownerProviderId || !card?.providerId) return;
+    const t = (card.type || "").toLowerCase();
+    const endpoint = t === "surrogate" ? "surrogates" : t === "egg donor" ? "egg-donors" : t === "sperm donor" ? "sperm-donors" : "surrogates";
+    fetch(`/api/providers/${card.ownerProviderId}/${endpoint}/${card.providerId}`, { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setProfile(d); })
+      .catch(() => {});
+  }, [card?.ownerProviderId, card?.providerId, card?.type]);
+
+  const displayName = profile?.firstName || card?.name || "Profile";
+  const externalId = profile?.externalId || card?.externalId;
+  const location = profile?.location || card?.location;
+  const age = profile?.age;
+  const photos: string[] = profile?.photos?.length ? profile.photos : card?.photo ? [card.photo] : [];
+  const mainPhoto = photos[0];
+  const type = card?.type || "Surrogate";
+
+  return (
+    <div className="mb-2 ml-0 max-w-[85%]">
+      <div
+        className="rounded-xl overflow-hidden border cursor-pointer transition-all hover:shadow-md"
+        style={{ borderColor: `${brandColor}30` }}
+        onClick={() => setExpanded(!expanded)}
+        data-testid={`whisper-profile-card-${card?.providerId}`}
+      >
+        <div className="flex items-center gap-3 p-3 bg-background">
+          {mainPhoto ? (
+            <img
+              src={mainPhoto}
+              alt={displayName}
+              className="w-14 h-14 rounded-lg object-cover flex-shrink-0"
+            />
+          ) : (
+            <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+              <User className="w-6 h-6 text-muted-foreground" />
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-sm text-foreground truncate">
+                {displayName}{externalId ? ` #${externalId}` : ""}
+              </span>
+              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full text-white flex-shrink-0" style={{ backgroundColor: brandColor }}>
+                {type}
+              </span>
+            </div>
+            {(location || age) && (
+              <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
+                {age && <span>{age} yrs</span>}
+                {age && location && <span>·</span>}
+                {location && <span className="flex items-center gap-0.5"><MapPin className="w-3 h-3" />{location}</span>}
+              </div>
+            )}
+          </div>
+          <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`} />
+        </div>
+        {expanded && profile && (
+          <div className="border-t px-3 py-2 bg-muted/30 space-y-1 text-xs text-foreground">
+            {profile.isExperienced && <div className="text-green-600 font-medium">Experienced {type}</div>}
+            {profile.baseCompensation && <div>Compensation: ${Number(profile.baseCompensation).toLocaleString()}</div>}
+            {profile.ethnicity && <div>Ethnicity: {profile.ethnicity}</div>}
+            {profile.religion && <div>Religion: {profile.religion}</div>}
+            {profile.agreesToTwins !== undefined && <div>Agrees to twins: {profile.agreesToTwins ? "Yes" : "No"}</div>}
+            {photos.length > 1 && (
+              <div className="flex gap-1 mt-1 overflow-x-auto pb-1">
+                {photos.slice(0, 5).map((p: string, pi: number) => (
+                  <img key={pi} src={p} alt="" className="w-10 h-10 rounded object-cover flex-shrink-0" />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 type FilterTab = "all" | "unread" | "agreements";
@@ -673,6 +756,9 @@ export default function ConversationsPage() {
                     <div className="flex items-center gap-1.5 mb-1 ml-1">
                       <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--accent))] text-white">Eva</div>
                     </div>
+                  )}
+                  {msg.uiCardData?.whisperMatchCard && (
+                    <WhisperProfileCard card={msg.uiCardData.whisperMatchCard} brandColor={brandColor} />
                   )}
                   <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                     <div
