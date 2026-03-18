@@ -52,21 +52,23 @@ export default function MatchmakerSelectionPage() {
     return (
       <div className="fixed inset-0 bg-background flex flex-col items-center justify-center z-50" data-testid="matchmaker-transition">
         <div className="animate-[scaleIn_0.6s_ease-out_forwards] flex flex-col items-center text-center px-8">
-          {transitionMatchmaker.avatarUrl ? (
-            <img
-              src={transitionMatchmaker.avatarUrl}
-              alt={transitionMatchmaker.name}
-              className="w-24 h-24 rounded-full object-cover border-4 mb-6"
-              style={{ borderColor: brand?.primaryColor || "#004D4D" }}
-            />
-          ) : (
+          <div className="w-24 h-24 rounded-full flex-shrink-0 relative mb-6">
+            {transitionMatchmaker.avatarUrl && (
+              <img
+                src={transitionMatchmaker.avatarUrl}
+                alt={transitionMatchmaker.name}
+                className="w-24 h-24 rounded-full object-cover border-4 absolute inset-0 z-10"
+                style={{ borderColor: brand?.primaryColor || "#004D4D" }}
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            )}
             <div
-              className="w-24 h-24 rounded-full flex items-center justify-center text-white text-3xl font-bold mb-6"
+              className="w-24 h-24 rounded-full flex items-center justify-center text-white text-3xl font-bold"
               style={{ backgroundColor: brand?.primaryColor || "#004D4D" }}
             >
               {transitionMatchmaker.name.charAt(0)}
             </div>
-          )}
+          </div>
           <h2
             className="text-2xl font-bold mb-2"
             style={{ fontFamily: "var(--font-display)" }}
@@ -149,21 +151,23 @@ export default function MatchmakerSelectionPage() {
                 </div>
               )}
               <div className="flex items-center gap-3">
-                {m.avatarUrl ? (
-                  <img
-                    src={m.avatarUrl}
-                    alt={m.name}
-                    className="w-14 h-14 rounded-full object-cover border-2"
-                    style={{ borderColor: isSelected ? brand?.primaryColor : "transparent" }}
-                  />
-                ) : (
+                <div className="w-14 h-14 rounded-full flex-shrink-0 relative">
+                  {m.avatarUrl && (
+                    <img
+                      src={m.avatarUrl}
+                      alt={m.name}
+                      className="w-14 h-14 rounded-full object-cover border-2 absolute inset-0 z-10"
+                      style={{ borderColor: isSelected ? brand?.primaryColor : "transparent" }}
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                  )}
                   <div
                     className="w-14 h-14 rounded-full flex items-center justify-center text-white text-lg font-bold"
                     style={{ backgroundColor: brand?.primaryColor || "#004D4D" }}
                   >
                     {m.name.charAt(0)}
                   </div>
-                )}
+                </div>
                 <div>
                   <h3
                     className="font-display font-semibold text-base"

@@ -60,7 +60,7 @@ export class UploadsController {
         chunks.push(chunk);
       });
 
-      req.on("end", () => {
+      req.on("end", async () => {
         try {
           const body = Buffer.concat(chunks);
           const boundary = boundaryMatch![1];
@@ -82,7 +82,21 @@ export class UploadsController {
           const uniqueName = `${crypto.randomBytes(16).toString("hex")}${ext}`;
           const filePath = path.join(UPLOADS_DIR, uniqueName);
 
-          fs.writeFileSync(filePath, parsed.data);
+          let fileData = parsed.data;
+          if (["image/jpeg", "image/png", "image/webp"].includes(parsed.contentType)) {
+            try {
+              const sharp = require("sharp");
+              const metadata = await sharp(parsed.data).metadata();
+              if (metadata.width && metadata.height && (metadata.width > 1200 || metadata.height > 1200)) {
+                fileData = await sharp(parsed.data)
+                  .resize(1200, 1200, { fit: "inside", withoutEnlargement: true })
+                  .jpeg({ quality: 85 })
+                  .toBuffer();
+              }
+            } catch {}
+          }
+
+          fs.writeFileSync(filePath, fileData);
 
           const url = `/uploads/${uniqueName}`;
           res.status(201).json({ url });

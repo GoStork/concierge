@@ -162,21 +162,23 @@ export default function ConciergeSettingsTab() {
                   </div>
                 )}
                 <div className="flex items-center gap-3">
-                  {m.avatarUrl ? (
-                    <img
-                      src={m.avatarUrl}
-                      alt={m.name}
-                      className="w-14 h-14 rounded-full object-cover border-2"
-                      style={{ borderColor: isSelected ? brandColor : "transparent" }}
-                    />
-                  ) : (
+                  <div className="w-14 h-14 rounded-full flex-shrink-0 relative">
+                    {m.avatarUrl && (
+                      <img
+                        src={m.avatarUrl}
+                        alt={m.name}
+                        className="w-14 h-14 rounded-full object-cover border-2 absolute inset-0 z-10"
+                        style={{ borderColor: isSelected ? brandColor : "transparent" }}
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    )}
                     <div
                       className="w-14 h-14 rounded-full flex items-center justify-center text-white text-lg font-bold"
                       style={{ backgroundColor: brandColor }}
                     >
                       {m.name.charAt(0)}
                     </div>
-                  )}
+                  </div>
                   <div>
                     <h3 className="font-display font-semibold text-base">{m.name}</h3>
                     <p className="text-xs text-muted-foreground">{m.title}</p>
