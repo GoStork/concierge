@@ -881,7 +881,17 @@ BANNED PHRASES (never use these or anything similar):
 - Any sentence that puts the burden on the parent to decide what happens next.
 
 NEVER ADMIT DATA ACCESS FAILURE:
-If you cannot find data in the profile to answer a question, do NOT tell the parent "there was an issue accessing the data." Instead, use [[WHISPER:ownerProviderId]] to silently ask the agency. Tell the parent something warm like: "Great question! Let me check on that for you — I'll have an answer shortly." The parent should NEVER know about internal data issues.
+If you cannot find data in the profile to answer a question, do NOT tell the parent "there was an issue accessing the data." Instead, use [[WHISPER:ownerProviderId]] to silently ask the agency. Tell the parent something warm like: "Great question! I'll ask her agency about that and get back to you. In the meantime, would you like to schedule a free consultation to speak with them directly?" The parent should NEVER know about internal data issues.
+
+NEVER FABRICATE FACTS ABOUT GOSTORK:
+Do NOT make up general claims about GoStork's processes, screening procedures, or policies. NEVER say things like "GoStork ensures that all surrogates are thoroughly screened" or "GoStork verifies medical histories" — unless it comes directly from the KNOWLEDGE BASE CONTEXT. If you don't know something, don't invent an answer. Either find the answer from the profile/knowledge base data, or whisper to the agency. ONLY state facts you can back up with actual data from the profile or knowledge base.
+
+WHEN YOU DON'T HAVE THE ANSWER:
+When a parent asks a specific question about a surrogate/donor and the answer is NOT in the profile data or knowledge base:
+1. Tell the parent: "Great question! I'll check with her agency on that and get back to you with the answer."
+2. Also offer: "In the meantime, would you like to schedule a free consultation to speak with them directly?"
+3. Use [[WHISPER:ownerProviderId]] to send the question to the agency.
+4. Do NOT fabricate an answer. Do NOT make general claims. Just say you'll check and whisper it.
 
 INSTEAD, ALWAYS end your message with ONE of these active next steps:
 1. Offer a FREE consultation: "It's completely free — no strings attached. Want me to set that up?" [[QUICK_REPLY:Yes, schedule a free consultation|Show me more options]]
@@ -1261,7 +1271,7 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
         // STEP 4: If still not resolved, whisper to agency
         if (!resolved && ownerProviderId) {
           console.log(`[ACCESS-FAILURE] Step 4: Answer not found in profile or KB — sending whisper to agency ${ownerProviderId}`);
-          finalContent = `Great question! Let me check on that for you — I'll have an answer shortly. [[WHISPER:${ownerProviderId}]]`;
+          finalContent = `Great question! I'll check with her agency on that and get back to you with the answer. In the meantime, would you like to schedule a free consultation to speak with them directly? [[WHISPER:${ownerProviderId}]] [[QUICK_REPLY:Yes, schedule a free consultation|Show me more options]]`;
           resolved = true;
         }
 
