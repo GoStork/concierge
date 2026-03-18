@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { typeToUrlSlug, deriveTypeFromPath, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields } from "@/lib/profile-utils";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { hasProviderRole } from "@shared/roles";
+import { hasProviderRole, hasAnyRole, GOSTORK_ROLES } from "@shared/roles";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -620,7 +620,8 @@ export default function DonorProfilePage() {
           )}
         </div>
         {donor.profileUrl && user && (
-          !hasProviderRole(user.roles || []) || user.providerId === providerId
+          hasAnyRole(user.roles || [], [...GOSTORK_ROLES]) ||
+          (hasProviderRole(user.roles || []) && user.providerId === providerId)
         ) && (
           <a
             href={donor.profileUrl}
