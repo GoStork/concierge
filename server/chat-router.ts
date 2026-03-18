@@ -406,13 +406,14 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
     }
 
     const provider = await prisma.provider.findUnique({ where: { id: user.providerId }, select: { name: true } });
+    const senderFirstName = (user.firstName || user.name?.split(" ")[0] || "").trim();
     const message = await prisma.aiChatMessage.create({
       data: {
         sessionId: session.id,
         role: "assistant",
         content: content.trim(),
         senderType: "provider",
-        senderName: provider?.name || user.name || "Agency Expert",
+        senderName: senderFirstName || provider?.name || "Agency Expert",
       },
     });
 

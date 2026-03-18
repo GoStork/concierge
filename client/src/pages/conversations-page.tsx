@@ -604,8 +604,7 @@ export default function ConversationsPage() {
                         )}
                         {msg.role === "assistant" && msg.senderType === "provider" && (
                           <div className="flex items-center gap-1.5 mb-1 ml-1">
-                            <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: brandColor }}>Agency Expert</div>
-                            {msg.senderName && <span className="text-[11px] text-muted-foreground">{msg.senderName}</span>}
+                            <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: brandColor }}>{msg.senderName || "Agency Expert"}</div>
                           </div>
                         )}
                         {msg.role === "assistant" && msg.senderType === "system" && (
@@ -634,7 +633,7 @@ export default function ConversationsPage() {
                         </div>
                         <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} mt-0.5`}>
                           <span className="text-[10px] text-muted-foreground">
-                            {msg.role === "user" ? "Parent" : msg.senderType === "provider" ? "You" : msg.senderType === "human" ? "GoStork" : msg.senderType === "system" ? "System" : "AI"} · {timeAgo(msg.createdAt)}
+                            {msg.role === "user" ? (detail?.user?.name?.split(" ")[0] || "Parent") : msg.senderType === "provider" ? (msg.senderName || "You") : msg.senderType === "human" ? "GoStork" : msg.senderType === "system" ? "System" : "AI"} · {timeAgo(msg.createdAt)}
                           </span>
                         </div>
                       </div>

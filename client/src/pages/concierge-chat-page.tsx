@@ -725,7 +725,7 @@ export default function ConciergeChatPage() {
               role: "assistant" as const,
               content: m.content,
               senderType: m.senderType as string,
-              senderName: m.senderName || (m.senderType === "human" ? "GoStork Expert" : m.senderType === "provider" ? "Agency Expert" : "Eva"),
+              senderName: m.senderName || (m.senderType === "human" ? "GoStork Expert" : m.senderType === "provider" ? m.senderName : "Eva"),
             })),
           ]);
           lastPollTimeRef.current = externalMsgs[externalMsgs.length - 1].createdAt;
@@ -946,11 +946,8 @@ export default function ConciergeChatPage() {
                     className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white bg-[hsl(var(--brand-success))]"
                     data-testid={`badge-provider-${i}`}
                   >
-                    Agency Expert
+                    {msg.senderName || "Agency Expert"}
                   </div>
-                  {msg.senderName && (
-                    <span className="text-[11px] text-muted-foreground">{msg.senderName}</span>
-                  )}
                 </div>
               )}
               {msg.role === "assistant" && msg.senderType === "system" && (
