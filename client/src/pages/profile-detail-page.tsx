@@ -1070,7 +1070,18 @@ export default function DonorProfilePage() {
             const colSet = new Set<string>();
             rows.forEach((row: Record<string, any>) => Object.keys(row).forEach((k) => colSet.add(k)));
             const COL_RENAME: Record<string, string> = {
-              "Was this a surrogate delivery?": "Surrogacy delivery?",
+              "Was this a surrogate delivery?": "Surrogacy?",
+            };
+            const COL_RENAME_PATTERN: [RegExp, string][] = [
+              [/surrogate\s*deliver/i, "Surrogacy Delivery"],
+              [/delivery.*single.*surrogate/i, "Surrogacy Delivery"],
+            ];
+            const renameCol = (col: string) => {
+              if (COL_RENAME[col]) return COL_RENAME[col];
+              for (const [pat, replacement] of COL_RENAME_PATTERN) {
+                if (pat.test(col)) return replacement;
+              }
+              return col;
             };
             const LONG_COL_PATTERN = /^(notes|comments|description|details|complications|additional)/i;
             const SHORT_COL_PATTERN = /^(label|sex|weight|gestation|dob|surroga)/i;
@@ -1112,7 +1123,7 @@ export default function DonorProfilePage() {
                       <tbody>
                         {attrCols.map((attr) => (
                           <tr key={attr} className="border-b border-border/50 last:border-0">
-                            <td className="py-2 pr-3 text-xs font-ui text-foreground whitespace-nowrap">{COL_RENAME[attr] || attr}</td>
+                            <td className="py-2 pr-3 text-xs font-ui text-foreground whitespace-nowrap">{renameCol(attr)}</td>
                             {rows.map((row, ri) => (
                               <td key={ri} className="py-2 px-2 text-muted-foreground whitespace-nowrap">{String(row[attr] ?? "—")}</td>
                             ))}
@@ -1126,7 +1137,7 @@ export default function DonorProfilePage() {
                       <thead>
                         <tr className="border-b border-border">
                           {cols.map((col) => (
-                            <th key={col} className="text-left py-2 pr-4 text-xs font-ui text-foreground whitespace-nowrap" style={getColStyle(col)}>{COL_RENAME[col] || col}</th>
+                            <th key={col} className="text-left py-2 pr-4 text-xs font-ui text-foreground whitespace-nowrap" style={getColStyle(col)}>{renameCol(col)}</th>
                           ))}
                         </tr>
                       </thead>
@@ -1153,7 +1164,7 @@ export default function DonorProfilePage() {
                     <thead>
                       <tr className="border-b border-border">
                         {cols.map((col) => (
-                          <th key={col} className="text-left py-2 pr-4 text-xs font-ui text-foreground whitespace-nowrap" style={getColStyle(col)}>{COL_RENAME[col] || col}</th>
+                          <th key={col} className="text-left py-2 pr-4 text-xs font-ui text-foreground whitespace-nowrap" style={getColStyle(col)}>{renameCol(col)}</th>
                         ))}
                       </tr>
                     </thead>
