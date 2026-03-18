@@ -759,6 +759,21 @@ export default function ConciergeChatPage() {
       .replace(/\[Location\]/gi, location);
     setMessages([{ role: "assistant", content: greeting }]);
     setGreetingSet(true);
+
+    (async () => {
+      try {
+        const res = await fetch("/api/ai-concierge/init-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ matchmakerId: effectiveMatchmakerId, greeting }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.sessionId) setSessionId(data.sessionId);
+        }
+      } catch {}
+    })();
   }, [selectedMatchmaker, user, profileReady, greetingSet, parentProfileQuery.data, sessionLoaded, sessionId, existingSessionId]);
 
   if (!effectiveMatchmakerId && !existingSessionId && !sessionId && sessionLoaded) {

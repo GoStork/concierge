@@ -308,6 +308,50 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
   }
 });
 
+aiRouter.post("/init-session", async (req: Request, res: Response) => {
+  try {
+    if (!req.isAuthenticated || !req.isAuthenticated() || !req.user) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    const userId = (req.user as any).id;
+    const { matchmakerId, greeting } = req.body;
+    if (!matchmakerId || !greeting) {
+      return res.status(400).json({ error: "matchmakerId and greeting required" });
+    }
+
+    const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
+    const accountUserIds = currentUser?.parentAccountId
+      ? (await prisma.user.findMany({ where: { parentAccountId: currentUser.parentAccountId }, select: { id: true } })).map(u => u.id)
+      : [userId];
+
+    const existing = await prisma.aiChatSession.findFirst({
+      where: { userId: { in: accountUserIds } },
+      select: { id: true },
+    });
+    if (existing) {
+      return res.json({ sessionId: existing.id });
+    }
+
+    const session = await prisma.aiChatSession.create({
+      data: { userId, title: "AI Concierge Chat", matchmakerId },
+    });
+
+    await prisma.aiChatMessage.create({
+      data: {
+        sessionId: session.id,
+        role: "assistant",
+        content: greeting,
+        senderType: "ai",
+      },
+    });
+
+    res.json({ sessionId: session.id });
+  } catch (e: any) {
+    console.error("Init session error:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 aiRouter.post("/chat", async (req: Request, res: Response) => {
   try {
     if (!req.isAuthenticated || !req.isAuthenticated() || !req.user) {
