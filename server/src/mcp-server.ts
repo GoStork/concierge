@@ -329,14 +329,55 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       }
 
-      const results = surrogates.map((s: any) => ({
-        ...s,
-        displayName: s.firstName || (s.externalId ? `Surrogate #${s.externalId}` : `Surrogate #${s.id.slice(-4)}`),
-        baseCompensation: s.baseCompensation ? Number(s.baseCompensation) : null,
-      }));
+      const surrogateIds = surrogates.map((s: any) => s.id);
+      const profileRows = surrogateIds.length > 0
+        ? await prisma.surrogate.findMany({
+            where: { id: { in: surrogateIds } },
+            select: { id: true, profileData: true },
+          })
+        : [];
+      const profileMap = Object.fromEntries(profileRows.map((r: any) => [r.id, r.profileData]));
+
+      const results = surrogates.map((s: any) => {
+        const pd = profileMap[s.id];
+        const sections = pd?._sections || {};
+        const supportSystem = sections["Support System"] || null;
+        const surrogacyDetails = sections["Surrogacy Details"] || sections["Surrogacy"] || null;
+        const pregnancyHistory = sections["Pregnancy History"] || null;
+        const letterToIPs = sections["Letter to Intended Parents"] || null;
+
+        const profileHighlights: Record<string, any> = {};
+        if (supportSystem && typeof supportSystem === "object") {
+          profileHighlights.supportSystem = supportSystem;
+        }
+        if (surrogacyDetails && typeof surrogacyDetails === "object") {
+          const motivation = Object.entries(surrogacyDetails as Record<string, any>)
+            .filter(([k]) => /motivation|why.*surrogate|decision.*become/i.test(k))
+            .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {} as Record<string, any>);
+          if (Object.keys(motivation).length > 0) profileHighlights.motivation = motivation;
+        }
+        if (pregnancyHistory && typeof pregnancyHistory === "object") {
+          profileHighlights.pregnancyHistory = pregnancyHistory;
+        }
+        if (letterToIPs) {
+          const letterText = typeof letterToIPs === "string" ? letterToIPs
+            : typeof letterToIPs === "object" && letterToIPs._letterText ? letterToIPs._letterText
+            : null;
+          if (letterText && typeof letterText === "string") {
+            profileHighlights.letterExcerpt = letterText.slice(0, 300) + (letterText.length > 300 ? "..." : "");
+          }
+        }
+
+        return {
+          ...s,
+          displayName: s.firstName || (s.externalId ? `Surrogate #${s.externalId}` : `Surrogate #${s.id.slice(-4)}`),
+          baseCompensation: s.baseCompensation ? Number(s.baseCompensation) : null,
+          ...(Object.keys(profileHighlights).length > 0 ? { profileHighlights } : {}),
+        };
+      });
 
       return {
-        content: [{ type: "text", text: `Found ${results.length} surrogates:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Surrogate" in your MATCH_CARDs. Use the "displayName" as the name.` }],
+        content: [{ type: "text", text: `Found ${results.length} surrogates:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Surrogate" in your MATCH_CARDs. Use the "displayName" as the name. Use the "profileHighlights" (supportSystem, motivation, pregnancyHistory, letterExcerpt) to write a warm, personalized introduction. ALWAYS mention the support system if available.` }],
       };
     }
 
