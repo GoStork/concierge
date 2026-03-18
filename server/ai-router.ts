@@ -755,12 +755,26 @@ STEP 8 — MATCH REVEAL:
   3. Do NOT treat questions as a skip/decline. Do NOT present a new match. Do NOT move on. Stay on the current profile and answer the question.
   4. After answering, ask if they have more questions or are ready to decide: "Anything else you'd like to know about her, or are you ready to decide?" [[QUICK_REPLY:More questions|I like her!|Show me someone else]]
   Examples of parent questions that should trigger a profile lookup (NOT a skip):
-  - "What are the weights of her babies?" → Look up pregnancy history
-  - "Were her deliveries vaginal or C-section?" → Look up delivery types
-  - "Where does she live?" → Look up location
-  - "What's her BMI?" → Look up health details
-  - "How much is the compensation?" → Look up base compensation
+  - "What are the weights of her babies?" → Look up pregnancy history entries (Weight, Gestation, Delivery fields)
+  - "Were her deliveries vaginal or C-section?" → Look up delivery types in pregnancy history
+  - "Where does she live?" → Look up Current Location
+  - "What's her BMI?" → Look up BMI in health details
+  - "How much is the compensation?" → Look up Base Compensation
   - "Does she have experience?" → Look up previous surrogacy history
+  - "Did she write a letter to intended parents?" → Look up "Letter to Intended Parents" section (contains _letterTitle and _letterText fields). This is a personal letter the surrogate writes — share it warmly.
+  - "What's her education?" → Look up Education and Occupation section
+  - "Does she have pets?" → Look up Personal Information section
+  - "What's her blood type?" → Look up health/additional info section
+  
+  IMPORTANT: The profile data from get_surrogate_profile is a large JSON. Key sections to look for:
+  - "Pregnancy History" → entries with DOB, Sex, Weight, Delivery, Gestation
+  - "Letter to Intended Parents" → _letterText and _letterTitle (the surrogate's personal letter)
+  - "Basic Information" → BMI, Race, Height, Education, Career
+  - "Personal Information" → Pets, Location, Transportation
+  - "My Health History" → allergies, medications, conditions
+  - "General Interests" → hobbies, favorites, personality
+  - "Education and Occupation" → employment, education level
+  If you cannot find a field, look deeper — it may be nested or have a slightly different key name. NEVER say you "ran into a hiccup" or "couldn't find" data when you have the full profile.
 
   SKIP/FAVORITE INTERACTION FLOW:
   The parent interacts with match cards via two buttons on the card itself:
@@ -1191,7 +1205,7 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
     }
 
     let whisperMatch = finalContent.match(/\[\[WHISPER:(.*?)\]\]/);
-    const whisperPhrasePattern = /(?:whisper|reach(?:ed|ing)?\s*out|sent\s*a\s*message|ask(?:ed|ing)?\s*the\s*(?:agency|coordinator|clinic|provider)|check\s*(?:on|with)|hold\s*on|get\s*(?:that|this|back|the)\s*(?:info|detail|answer)|find\s*(?:that|this)\s*out|look(?:ing)?\s*into\s*(?:that|this|it)|get\s*back\s*to\s*you|couldn'?t\s*retrieve|don'?t\s*have\s*(?:that|this)\s*(?:specific|particular)|I'?ll\s*(?:check|find|update\s*you))/i;
+    const whisperPhrasePattern = /(?:whisper|reach(?:ed|ing)?\s*out|sent\s*a\s*message|ask(?:ed|ing)?\s*the\s*(?:agency|coordinator|clinic|provider)|check\s*(?:on|with)|hold\s*on|get\s*(?:that|this|back|the)\s*(?:info|detail|answer)|find\s*(?:that|this)\s*out|look(?:ing)?\s*into\s*(?:that|this|it)|get\s*back\s*to\s*you|couldn'?t\s*(?:retrieve|locate|find)|don'?t\s*have\s*(?:that|this)\s*(?:specific|particular)|I'?ll\s*(?:check|find|update\s*you)|ran\s*into\s*a\s*(?:hiccup|issue|problem)|wasn'?t\s*able\s*to\s*(?:find|locate|retrieve)|unfortunately.*(?:don'?t|can'?t|couldn'?t)|seems\s*I\s*(?:don'?t|can'?t|couldn'?t))/i;
     const phraseMatched = !whisperMatch && whisperPhrasePattern.test(finalContent);
     console.log(`[WHISPER DEBUG] whisperMatch=${!!whisperMatch}, phraseMatched=${phraseMatched}, userId=${!!userId}, currentSessionId=${currentSessionId}`);
 
@@ -1256,7 +1270,7 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
               console.log(`[WHISPER INTERCEPT] Got profile data (${profileText.length} chars), re-asking AI to answer from profile`);
               messages.push({
                 role: "user",
-                content: `SYSTEM OVERRIDE: I found the full profile data for this person. The answer IS in the profile below. Please answer the parent's question directly using this data. Do NOT whisper or reach out to the agency — the data is right here.\n\nFULL PROFILE DATA:\n${profileText}\n\nNow answer the parent's original question: "${userMessage}"`,
+                content: `SYSTEM OVERRIDE: I found the full profile data for this person. The answer IS in the profile below. Please answer the parent's question directly using this data. Do NOT whisper or reach out to the agency — the data is right here.\n\nIMPORTANT: The profile is a large JSON with nested sections. Key sections:\n- "Letter to Intended Parents" → contains _letterText and _letterTitle\n- "Pregnancy History" → entries with Weight, Delivery, Gestation\n- "Basic Information" → BMI, Height, Education\n- "Personal Information" → Location, Pets\n- "My Health History" → medications, conditions\n- "General Interests" → hobbies, personality\n\nFULL PROFILE DATA:\n${profileText}\n\nNow answer the parent's original question: "${userMessage}"`,
               });
 
               const retryResponse = await openai.chat.completions.create({
