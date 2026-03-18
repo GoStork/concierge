@@ -748,7 +748,6 @@ export class UsersController {
       where: {
         providerId,
         status: "PROVIDER_JOINED",
-        sessionType: { not: "PROVIDER_CONCIERGE" },
       },
       select: {
         userId: true,

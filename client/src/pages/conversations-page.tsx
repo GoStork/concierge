@@ -248,8 +248,10 @@ export default function ConversationsPage() {
   const detail = sessionDetailQuery.data;
   const profile = detail?.user?.parentAccount?.intendedParentProfile;
   const selectedSession = (providerSessionsQuery.data || []).find(s => s.id === selectedSessionId);
-  const isProviderConcierge = selectedSession?.sessionType === "PROVIDER_CONCIERGE" || (detail as any)?.sessionType === "PROVIDER_CONCIERGE";
-  const hasJoined = isProviderConcierge || !!detail?.providerJoinedAt;
+  const hasJoined = !!detail?.providerJoinedAt;
+  const isConsultationBooked = selectedSession?.status === "CONSULTATION_BOOKED" || detail?.status === "CONSULTATION_BOOKED";
+  const isWhisperPhase = !hasJoined && !isConsultationBooked && (selectedSession?.pendingQuestions || 0) > 0;
+  const canReply = hasJoined || isWhisperPhase || isConsultationBooked;
 
   if (isParent) {
     const allSessions = parentSessionsQuery.data || [];
@@ -497,47 +499,51 @@ export default function ConversationsPage() {
               </div>
             ) : (
               filteredSessions.map(s => {
-                const isConcierge = s.sessionType === "PROVIDER_CONCIERGE";
+                const sIsJoined = s.status === "PROVIDER_JOINED";
+                const sIsBooked = s.status === "CONSULTATION_BOOKED";
+                const hasPending = s.pendingQuestions > 0;
                 return (
                 <button
                   key={s.id}
                   className={`w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left border-b border-border/20 ${
                     selectedSessionId === s.id ? "bg-muted/70" : ""
-                  } ${isConcierge ? "bg-primary/5" : ""}`}
+                  } ${sIsBooked ? "bg-primary/5" : ""}`}
                   onClick={() => setSelectedSessionId(s.id)}
                   data-testid={`provider-session-${s.id}`}
                 >
-                  {isConcierge ? (
-                    <div className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${brandColor}20` }}>
-                      <Sparkles className="w-5 h-5" style={{ color: brandColor }} />
-                    </div>
-                  ) : s.userAvatar ? (
+                  {s.userAvatar ? (
                     <img src={s.userAvatar} alt="" className="w-11 h-11 rounded-full object-cover flex-shrink-0" />
                   ) : (
                     <div className="w-11 h-11 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-                      <User className="w-5 h-5 text-muted-foreground" />
+                      {sIsJoined || sIsBooked ? (
+                        <User className="w-5 h-5 text-muted-foreground" />
+                      ) : (
+                        <Sparkles className="w-5 h-5" style={{ color: brandColor }} />
+                      )}
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="font-semibold text-sm font-ui truncate">{isConcierge ? "AI Concierge" : (s.userName || "Unknown")}</span>
-                        {isConcierge && s.pendingQuestions > 0 ? (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] text-[9px] font-bold uppercase flex-shrink-0">
-                            {s.pendingQuestions} pending
-                          </span>
-                        ) : isConcierge ? (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase flex-shrink-0" style={{ backgroundColor: `${brandColor}15`, color: brandColor }}>
-                            Pinned
-                          </span>
-                        ) : s.providerJoinedAt ? (
+                        <span className="font-semibold text-sm font-ui truncate">{s.userName || "Prospective Parent"}</span>
+                        {sIsJoined ? (
                           <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[9px] font-bold uppercase flex-shrink-0">
                             <CheckCircle2 className="w-2.5 h-2.5" />
                             Joined
                           </span>
-                        ) : (
+                        ) : sIsBooked ? (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase flex-shrink-0" style={{ backgroundColor: `${brandColor}15`, color: brandColor }}>
+                            <UserPlus className="w-2.5 h-2.5" />
+                            Ready to Join
+                          </span>
+                        ) : hasPending ? (
                           <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] text-[9px] font-bold uppercase flex-shrink-0">
-                            New
+                            {s.pendingQuestions} pending
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground text-[9px] font-bold uppercase flex-shrink-0">
+                            <MessageCircle className="w-2.5 h-2.5" />
+                            Q&A
                           </span>
                         )}
                       </div>
@@ -580,46 +586,51 @@ export default function ConversationsPage() {
                   <ArrowLeft className="w-4 h-4" />
                 </Button>
                 <div className="flex items-center gap-2 flex-1">
-                  {isProviderConcierge ? (
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: `${brandColor}20` }}>
-                      <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
-                    </div>
-                  ) : detail.user.photoUrl ? (
+                  {detail.user.photoUrl ? (
                     <img src={detail.user.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                      <User className="w-4 h-4 text-muted-foreground" />
+                      {hasJoined || isConsultationBooked ? (
+                        <User className="w-4 h-4 text-muted-foreground" />
+                      ) : (
+                        <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
+                      )}
                     </div>
                   )}
                   <div>
-                    <h3 className="font-semibold text-sm font-ui">{isProviderConcierge ? "AI Concierge" : (detail.user.name || "Unknown")}</h3>
-                    {isProviderConcierge && (
-                      <p className="text-[11px] text-muted-foreground">Questions from prospective parents</p>
+                    <h3 className="font-semibold text-sm font-ui">{detail.user.name || "Prospective Parent"}</h3>
+                    {!hasJoined && !isConsultationBooked && (
+                      <p className="text-[11px] text-muted-foreground">Anonymous Q&A via AI Concierge</p>
                     )}
                   </div>
                 </div>
-                {isProviderConcierge ? (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: `${brandColor}10`, color: brandColor }} data-testid="badge-concierge-pinned">
-                    <Sparkles className="w-3 h-3" />
-                    Pinned
-                  </div>
-                ) : hasJoined ? (
+                {hasJoined ? (
                   <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium" data-testid="badge-provider-joined">
                     <CheckCircle2 className="w-3 h-3" />
                     Joined
                   </div>
-                ) : (
+                ) : isConsultationBooked ? (
                   <Button
                     size="sm"
                     className="h-8 text-xs text-white gap-1"
                     style={{ backgroundColor: brandColor }}
                     onClick={() => joinMutation.mutate(selectedSessionId)}
                     disabled={joinMutation.isPending}
-                    data-testid="btn-join-conversation"
+                    data-testid="btn-join-group-chat"
                   >
                     {joinMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
-                    Join
+                    Join Group Chat
                   </Button>
+                ) : isWhisperPhase ? (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] text-xs font-medium" data-testid="badge-pending-questions">
+                    <MessageCircle className="w-3 h-3" />
+                    {selectedSession?.pendingQuestions} pending
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted text-muted-foreground text-xs font-medium" data-testid="badge-qa">
+                    <MessageCircle className="w-3 h-3" />
+                    Q&A
+                  </div>
                 )}
               </div>
 
@@ -673,15 +684,15 @@ export default function ConversationsPage() {
                     <div ref={chatEndRef} />
                   </div>
 
-                  {hasJoined ? (
+                  {canReply ? (
                     <div className="border-t px-4 py-3 bg-background" data-testid="provider-reply-area">
                       <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
                         <Shield className="w-3 h-3" />
-                        <span>{isProviderConcierge ? "Your answer will be relayed to the parent by the AI concierge" : <>Sending as <strong className="text-foreground">Agency Expert</strong></>}</span>
+                        <span>{hasJoined ? <>Sending as <strong className="text-foreground">Agency Expert</strong></> : "Your answer will be relayed to the parent by the AI concierge"}</span>
                       </div>
                       <div className="flex gap-2">
                         <Input
-                          placeholder={isProviderConcierge ? "Type your answer..." : "Type a message to the parent..."}
+                          placeholder={hasJoined ? "Type a message to the parent..." : "Type your answer..."}
                           value={replyText}
                           onChange={(e) => setReplyText(e.target.value)}
                           onKeyDown={(e) => {
@@ -706,38 +717,48 @@ export default function ConversationsPage() {
                         </Button>
                       </div>
                     </div>
-                  ) : (
+                  ) : isConsultationBooked ? (
                     <div className="border-t px-4 py-4 bg-muted/30 text-center" data-testid="provider-join-prompt">
-                      <p className="text-sm text-muted-foreground mb-2">Join this conversation to start chatting</p>
+                      <p className="text-sm text-muted-foreground mb-2">This parent has booked a consultation. Join the group chat to communicate directly.</p>
                       <Button
                         size="sm"
                         className="text-white gap-1"
                         style={{ backgroundColor: brandColor }}
                         onClick={() => joinMutation.mutate(selectedSessionId)}
                         disabled={joinMutation.isPending}
-                        data-testid="btn-join-conversation-bottom"
+                        data-testid="btn-join-group-chat-bottom"
                       >
                         {joinMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
-                        Join Conversation
+                        Join Group Chat
                       </Button>
+                    </div>
+                  ) : (
+                    <div className="border-t px-4 py-4 bg-muted/30 text-center" data-testid="provider-waiting-prompt">
+                      <p className="text-sm text-muted-foreground">No pending questions. When the AI concierge receives questions from this parent, they'll appear here.</p>
                     </div>
                   )}
                 </div>
 
                 <div className="w-72 border-l overflow-y-auto p-4 bg-muted/30 hidden lg:block" data-testid="provider-sidebar">
-                  {isProviderConcierge ? (
+                  {!hasJoined && !isConsultationBooked ? (
                     <div className="space-y-4">
                       <div className="flex items-center gap-2">
                         <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
-                        <h4 className="font-semibold text-sm" style={{ fontFamily: "var(--font-display)" }}>AI Concierge</h4>
+                        <h4 className="font-semibold text-sm" style={{ fontFamily: "var(--font-display)" }}>AI Concierge Q&A</h4>
                       </div>
                       <p className="text-sm text-muted-foreground leading-relaxed">
-                        Questions from prospective parents will appear here. Your answers are relayed by the AI concierge — the parent's identity stays private until they schedule a consultation.
+                        Questions from this prospective parent are forwarded here by the AI concierge. Your answers are relayed back — the parent's identity stays private until they schedule a consultation.
                       </p>
                       {selectedSession && selectedSession.pendingQuestions > 0 && (
                         <div className="rounded-lg p-3 bg-[hsl(var(--brand-warning))]/10 border border-[hsl(var(--brand-warning))]/20">
                           <p className="text-sm font-medium text-[hsl(var(--brand-warning))]">{selectedSession.pendingQuestions} question{selectedSession.pendingQuestions > 1 ? "s" : ""} pending</p>
                           <p className="text-xs text-muted-foreground mt-1">Reply below to answer the most recent question</p>
+                        </div>
+                      )}
+                      {isConsultationBooked && (
+                        <div className="rounded-lg p-3 bg-primary/5 border border-primary/20">
+                          <p className="text-sm font-medium" style={{ color: brandColor }}>Consultation Booked</p>
+                          <p className="text-xs text-muted-foreground mt-1">Click "Join Group Chat" to start communicating directly with this parent</p>
                         </div>
                       )}
                     </div>

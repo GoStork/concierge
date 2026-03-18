@@ -1005,7 +1005,18 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
       try {
         if (whisperProviderId && userId && currentSessionId) {
           const questionText = userMessage || finalContent.replace(/\[\[WHISPER:.*?\]\]/g, "").trim().slice(0, 500);
-          await prisma.silentQuery.create({
+          const provider = await prisma.provider.findUnique({
+            where: { id: whisperProviderId },
+            select: { name: true },
+          });
+          const providerName = provider?.name || "Your Clinic";
+
+          await prisma.aiChatSession.update({
+            where: { id: currentSessionId },
+            data: { providerId: whisperProviderId, providerName },
+          });
+
+          const silentQuery = await prisma.silentQuery.create({
             data: {
               parentUserId: userId,
               providerId: whisperProviderId,
@@ -1015,11 +1026,15 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
             },
           });
 
-          const provider = await prisma.provider.findUnique({
-            where: { id: whisperProviderId },
-            select: { name: true },
+          await prisma.aiChatMessage.create({
+            data: {
+              sessionId: currentSessionId,
+              role: "assistant",
+              content: `📋 A prospective parent has a question that needs your input:\n\n"${questionText}"\n\nPlease reply below and the AI concierge will pass your answer to the parent.`,
+              senderType: "system",
+              uiCardData: { whisperQuestionId: silentQuery.id },
+            },
           });
-          const providerName = provider?.name || "Your Clinic";
 
           const providerUsers = await prisma.user.findMany({
             where: { providerId: whisperProviderId },
@@ -1027,35 +1042,6 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
           });
 
           if (providerUsers.length > 0) {
-            let providerConciergeSession = await prisma.aiChatSession.findFirst({
-              where: {
-                providerId: whisperProviderId,
-                sessionType: "PROVIDER_CONCIERGE",
-                status: { in: ["ACTIVE", "HUMAN_JOINED"] },
-              },
-            });
-            if (!providerConciergeSession) {
-              providerConciergeSession = await prisma.aiChatSession.create({
-                data: {
-                  userId: providerUsers[0].id,
-                  title: "AI Concierge",
-                  providerId: whisperProviderId,
-                  sessionType: "PROVIDER_CONCIERGE",
-                  providerName,
-                  status: "ACTIVE",
-                },
-              });
-            }
-
-            await prisma.aiChatMessage.create({
-              data: {
-                sessionId: providerConciergeSession.id,
-                role: "assistant",
-                content: `📋 A prospective parent has a question that needs your input:\n\n"${questionText}"\n\nPlease reply here and the AI concierge will pass your answer to the parent.`,
-                senderType: "system",
-              },
-            });
-
             for (const pu of providerUsers) {
               await prisma.inAppNotification.create({
                 data: {
@@ -1064,7 +1050,7 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
                   payload: {
                     message: "The AI concierge has a new question from a prospective parent that needs your input.",
                     questionPreview: questionText.slice(0, 100),
-                    sessionId: providerConciergeSession.id,
+                    sessionId: currentSessionId,
                   },
                 },
               });
@@ -1245,9 +1231,8 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
               where: { id: currentSessionId },
               data: {
                 providerId: consultProviderId,
-                providerJoinedAt: new Date(),
                 providerName: consultProvider.name,
-                status: "PROVIDER_JOINED",
+                status: "CONSULTATION_BOOKED",
               },
             });
 
@@ -1255,7 +1240,7 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
               data: {
                 sessionId: currentSessionId,
                 role: "assistant",
-                content: `Great news! ${consultProvider.name} will be joining your conversation after the consultation is scheduled. They'll be able to answer your questions directly here.`,
+                content: `Great news! ${userRecord?.name || firstName} has scheduled a consultation. You can now join their group chat to communicate directly.`,
                 senderType: "system",
               },
             });
@@ -1268,11 +1253,11 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
               await prisma.inAppNotification.create({
                 data: {
                   userId: pu.id,
-                  eventType: "PROVIDER_JOINED_CHAT",
+                  eventType: "CONSULTATION_BOOKED_CHAT",
                   payload: {
                     sessionId: currentSessionId,
                     parentName: userRecord?.name || firstName,
-                    message: `${firstName} has scheduled a consultation — you can now chat directly with them`,
+                    message: `${firstName} has scheduled a consultation — click "Join Group Chat" to start chatting directly`,
                   },
                 },
               });

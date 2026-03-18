@@ -283,10 +283,8 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
     const sessions = await prisma.aiChatSession.findMany({
       where: {
         providerId: user.providerId,
-        OR: [
-          { sessionType: "PROVIDER_CONCIERGE" },
-          { status: "PROVIDER_JOINED" },
-        ],
+        status: { in: ["ACTIVE", "HUMAN_JOINED", "CONSULTATION_BOOKED", "PROVIDER_JOINED"] },
+        sessionType: { not: "PROVIDER_CONCIERGE" },
       },
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
@@ -296,28 +294,42 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       orderBy: { updatedAt: "desc" },
       take: 50,
     });
-    const pendingWhisperCount = await prisma.silentQuery.count({
+
+    const pendingCounts = await prisma.silentQuery.groupBy({
+      by: ["sessionId"],
       where: { providerId: user.providerId, status: "PENDING" },
+      _count: true,
     });
-    const result = sessions.map(s => ({
-      id: s.id,
-      userId: s.userId,
-      userName: s.user.name,
-      userEmail: s.user.email,
-      userAvatar: (s.user as any).photoUrl,
-      status: s.status,
-      sessionType: (s as any).sessionType || "PARENT",
-      providerJoinedAt: s.providerJoinedAt,
-      providerName: (s as any).providerName,
-      messageCount: s._count.messages,
-      lastMessage: s.messages[0]?.content?.slice(0, 120) || null,
-      lastMessageAt: s.messages[0]?.createdAt || s.updatedAt,
-      createdAt: s.createdAt,
-      pendingQuestions: (s as any).sessionType === "PROVIDER_CONCIERGE" ? pendingWhisperCount : 0,
-    }));
+    const pendingBySession: Record<string, number> = {};
+    for (const pc of pendingCounts) {
+      pendingBySession[pc.sessionId] = pc._count;
+    }
+
+    const result = sessions.map(s => {
+      const isJoined = s.status === "PROVIDER_JOINED";
+      const isConsultationBooked = s.status === "CONSULTATION_BOOKED";
+      return {
+        id: s.id,
+        userId: s.userId,
+        userName: isJoined || isConsultationBooked ? s.user.name : "Prospective Parent",
+        userEmail: isJoined || isConsultationBooked ? s.user.email : null,
+        userAvatar: isJoined || isConsultationBooked ? (s.user as any).photoUrl : null,
+        status: s.status,
+        sessionType: (s as any).sessionType || "PARENT",
+        providerJoinedAt: s.providerJoinedAt,
+        providerName: (s as any).providerName,
+        messageCount: s._count.messages,
+        lastMessage: s.messages[0]?.content?.slice(0, 120) || null,
+        lastMessageAt: s.messages[0]?.createdAt || s.updatedAt,
+        createdAt: s.createdAt,
+        pendingQuestions: pendingBySession[s.id] || 0,
+      };
+    });
     result.sort((a, b) => {
-      if (a.sessionType === "PROVIDER_CONCIERGE" && b.sessionType !== "PROVIDER_CONCIERGE") return -1;
-      if (b.sessionType === "PROVIDER_CONCIERGE" && a.sessionType !== "PROVIDER_CONCIERGE") return 1;
+      if (a.status === "CONSULTATION_BOOKED" && b.status !== "CONSULTATION_BOOKED") return -1;
+      if (b.status === "CONSULTATION_BOOKED" && a.status !== "CONSULTATION_BOOKED") return 1;
+      if (a.pendingQuestions > 0 && b.pendingQuestions === 0) return -1;
+      if (b.pendingQuestions > 0 && a.pendingQuestions === 0) return 1;
       return 0;
     });
     res.json(result);
@@ -349,7 +361,29 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
     });
     if (!session) return res.status(404).json({ message: "Session not found" });
     if (session.providerId !== user.providerId) return res.status(403).json({ message: "Forbidden" });
-    res.json(session);
+
+    const isJoined = session.status === "PROVIDER_JOINED";
+    const isConsultationBooked = session.status === "CONSULTATION_BOOKED";
+    const showIdentity = isJoined || isConsultationBooked;
+
+    const providerMessages = session.messages.filter(m =>
+      m.senderType === "system" || m.senderType === "provider"
+    );
+
+    const responseSession = {
+      ...session,
+      user: showIdentity ? session.user : {
+        id: session.user.id,
+        name: "Prospective Parent",
+        email: null,
+        photoUrl: null,
+        city: null,
+        state: null,
+        parentAccount: null,
+      },
+      messages: isJoined ? session.messages : providerMessages,
+    };
+    res.json(responseSession);
   } catch (e: any) {
     console.error("Provider concierge session detail error:", e);
     res.status(500).json({ message: e.message });
@@ -367,6 +401,9 @@ chatRouter.post("/api/provider/concierge-sessions/:id/join", requireAuth, async 
     if (!session) return res.status(404).json({ message: "Session not found" });
     if (session.providerId !== user.providerId) return res.status(403).json({ message: "Forbidden" });
     if (session.providerJoinedAt) return res.json({ message: "Already joined", alreadyJoined: true });
+    if (session.status !== "CONSULTATION_BOOKED") {
+      return res.status(400).json({ message: "Cannot join — parent has not booked a consultation yet" });
+    }
 
     await prisma.aiChatSession.update({
       where: { id: session.id },
@@ -415,10 +452,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
     if (!session) return res.status(404).json({ message: "Session not found" });
     if (session.providerId !== user.providerId) return res.status(403).json({ message: "Forbidden" });
 
-    const sessionType = (session as any).sessionType || "PARENT";
-    if (sessionType !== "PROVIDER_CONCIERGE" && session.status !== "PROVIDER_JOINED") {
-      return res.status(403).json({ message: "Cannot message in this session — consultation not booked yet" });
-    }
+    const isJoined = session.status === "PROVIDER_JOINED";
 
     const provider = await prisma.provider.findUnique({ where: { id: user.providerId }, select: { name: true } });
     const nameParts = (user.firstName && user.lastName)
@@ -427,6 +461,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
     const senderDisplayName = nameParts.length >= 2
       ? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}.`
       : nameParts[0] || provider?.name || "Agency Expert";
+
     const message = await prisma.aiChatMessage.create({
       data: {
         sessionId: session.id,
@@ -437,23 +472,19 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
       },
     });
 
-    const isProviderConcierge = (session as any).sessionType === "PROVIDER_CONCIERGE";
-
-    if (isProviderConcierge) {
-      const pendingWhispers = await prisma.silentQuery.findMany({
-        where: { providerId: user.providerId, status: "PENDING" },
-        orderBy: { createdAt: "asc" },
-        take: 1,
+    const pendingWhispers = await prisma.silentQuery.findMany({
+      where: { sessionId: session.id, providerId: user.providerId, status: "PENDING" },
+      orderBy: { createdAt: "asc" },
+      take: 1,
+    });
+    if (pendingWhispers.length > 0) {
+      await prisma.silentQuery.updateMany({
+        where: { id: { in: pendingWhispers.map(w => w.id) } },
+        data: { status: "ANSWERED", answerText: content.trim() },
       });
-      if (pendingWhispers.length > 0) {
-        await prisma.silentQuery.updateMany({
-          where: { id: { in: pendingWhispers.map(w => w.id) } },
-          data: { status: "ANSWERED", answerText: content.trim() },
-        });
-      }
     }
 
-    if (!isProviderConcierge) {
+    if (isJoined) {
       await prisma.inAppNotification.create({
         data: {
           userId: session.userId,
