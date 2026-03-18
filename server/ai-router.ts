@@ -932,7 +932,41 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
       finalContent = finalContent.replace(/\[\[HUMAN_NEEDED\]\]/g, "").trim();
     }
 
-    const whisperMatch = finalContent.match(/\[\[WHISPER:(.*?)\]\]/);
+    let whisperMatch = finalContent.match(/\[\[WHISPER:(.*?)\]\]/);
+    if (!whisperMatch && userId && currentSessionId) {
+      const whisperPhrasePattern = /(?:whisper|reach(?:ed|ing)?\s*out|sent\s*a\s*message|ask(?:ed|ing)?\s*the\s*(?:agency|coordinator|clinic|provider))/i;
+      if (whisperPhrasePattern.test(finalContent)) {
+        try {
+          const recentCards = await prisma.aiChatMessage.findMany({
+            where: { sessionId: currentSessionId, uiCardType: "rich" },
+            orderBy: { createdAt: "desc" },
+            take: 3,
+            select: { uiCardData: true },
+          });
+          let inferredProviderId: string | null = null;
+          for (const card of recentCards) {
+            const data = card.uiCardData as any;
+            if (data?.matchCards?.[0]?.ownerProviderId) {
+              inferredProviderId = data.matchCards[0].ownerProviderId;
+              break;
+            }
+          }
+          if (!inferredProviderId) {
+            const session = await prisma.aiChatSession.findUnique({
+              where: { id: currentSessionId },
+              select: { providerId: true },
+            });
+            inferredProviderId = session?.providerId || null;
+          }
+          if (inferredProviderId) {
+            console.log(`[WHISPER FALLBACK] AI mentioned reaching out but no [[WHISPER:...]] tag — auto-creating for provider ${inferredProviderId}`);
+            whisperMatch = [`[[WHISPER:${inferredProviderId}]]`, inferredProviderId] as any;
+          }
+        } catch (e) {
+          console.error("Whisper fallback inference error:", e);
+        }
+      }
+    }
     if (whisperMatch) {
       const whisperProviderId = whisperMatch[1].trim();
       try {

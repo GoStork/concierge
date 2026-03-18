@@ -66,7 +66,7 @@ interface SessionDetail {
     id: string;
     name: string;
     email: string;
-    avatarUrl: string | null;
+    photoUrl: string | null;
     city: string | null;
     state: string | null;
     parentAccount?: {
@@ -560,8 +560,8 @@ export default function ConversationsPage() {
                   <ArrowLeft className="w-4 h-4" />
                 </Button>
                 <div className="flex items-center gap-2 flex-1">
-                  {detail.user.avatarUrl ? (
-                    <img src={detail.user.avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
+                  {detail.user.photoUrl ? (
+                    <img src={detail.user.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
                       <User className="w-4 h-4 text-muted-foreground" />

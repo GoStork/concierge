@@ -106,7 +106,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
     const sessions = await prisma.aiChatSession.findMany({
       where: { status: { in: ["ACTIVE", "HUMAN_JOINED", "PROVIDER_JOINED"] } },
       include: {
-        user: { select: { id: true, name: true, email: true, avatarUrl: true } },
+        user: { select: { id: true, name: true, email: true, photoUrl: true } },
         provider: { select: { id: true, name: true, logoUrl: true } },
         messages: { orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { messages: true } },
@@ -119,7 +119,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       userId: s.userId,
       userName: s.user.name,
       userEmail: s.user.email,
-      userAvatar: s.user.avatarUrl,
+      userAvatar: (s.user as any).photoUrl,
       status: s.status,
       humanRequested: s.humanRequested,
       humanJoinedAt: s.humanJoinedAt,
@@ -148,7 +148,7 @@ chatRouter.get("/api/admin/concierge-sessions/:id", requireAuth, async (req, res
       include: {
         user: {
           select: {
-            id: true, name: true, email: true, avatarUrl: true, city: true, state: true,
+            id: true, name: true, email: true, photoUrl: true, city: true, state: true,
             parentAccount: {
               select: {
                 intendedParentProfile: { select: { journeyStage: true, eggSource: true, spermSource: true, carrier: true, hasEmbryos: true, embryoCount: true } },
@@ -283,7 +283,7 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
     const sessions = await prisma.aiChatSession.findMany({
       where: { providerId: user.providerId, status: { in: ["ACTIVE", "HUMAN_JOINED", "PROVIDER_JOINED"] } },
       include: {
-        user: { select: { id: true, name: true, email: true, avatarUrl: true } },
+        user: { select: { id: true, name: true, email: true, photoUrl: true } },
         messages: { orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { messages: true } },
       },
@@ -295,7 +295,7 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       userId: s.userId,
       userName: s.user.name,
       userEmail: s.user.email,
-      userAvatar: s.user.avatarUrl,
+      userAvatar: (s.user as any).photoUrl,
       status: s.status,
       providerJoinedAt: s.providerJoinedAt,
       messageCount: s._count.messages,
@@ -319,7 +319,7 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
       include: {
         user: {
           select: {
-            id: true, name: true, email: true, avatarUrl: true, city: true, state: true,
+            id: true, name: true, email: true, photoUrl: true, city: true, state: true,
             parentAccount: {
               select: {
                 intendedParentProfile: { select: { journeyStage: true, eggSource: true, spermSource: true, carrier: true, hasEmbryos: true, embryoCount: true } },
