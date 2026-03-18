@@ -900,22 +900,24 @@ export default function DonorProfilePage() {
                         ))}
                       </div>
                     )}
-                    <table className="w-full text-sm table-fixed">
-                      <thead>
-                        <tr className="border-b border-border">
-                          {rowKeys.map((col) => (
-                            <th key={col} className="text-left py-2 pr-3 text-xs font-ui text-foreground">{col}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr className="border-b border-border/50 last:border-0">
-                          {rowKeys.map((col) => (
-                            <td key={col} className="py-2 pr-3 text-muted-foreground break-words">{String(row[col] ?? "")}</td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
+                    <div className="overflow-x-auto -mx-6 px-6">
+                      <table className="w-full text-sm table-auto">
+                        <thead>
+                          <tr className="border-b border-border">
+                            {rowKeys.map((col) => (
+                              <th key={col} className="text-left py-2 pr-4 text-xs font-ui text-foreground whitespace-nowrap">{col}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr className="border-b border-border/50 last:border-0">
+                            {rowKeys.map((col) => (
+                              <td key={col} className="py-2 pr-4 text-muted-foreground whitespace-nowrap">{String(row[col] ?? "")}</td>
+                            ))}
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </Card>
               );
@@ -1081,12 +1083,12 @@ export default function DonorProfilePage() {
             return (
               <div key={label || "table"} className="mt-4">
                 {label && <p className="text-xs font-ui text-foreground mb-2">{label}</p>}
-                <div>
-                  <table className={`w-full text-sm ${hasLongCol ? "table-auto" : "table-fixed"}`}>
+                <div className="overflow-x-auto -mx-6 px-6">
+                  <table className={`w-full text-sm ${hasLongCol ? "table-auto" : "table-auto"}`}>
                     <thead>
                       <tr className="border-b border-border">
                         {cols.map((col) => (
-                          <th key={col} className="text-left py-2 pr-3 text-xs font-ui text-foreground whitespace-nowrap" style={getColStyle(col)}>{COL_RENAME[col] || col}</th>
+                          <th key={col} className="text-left py-2 pr-4 text-xs font-ui text-foreground whitespace-nowrap" style={getColStyle(col)}>{COL_RENAME[col] || col}</th>
                         ))}
                       </tr>
                     </thead>
@@ -1094,7 +1096,7 @@ export default function DonorProfilePage() {
                       {rows.map((row: Record<string, any>, ri: number) => (
                         <tr key={ri} className="border-b border-border/50 last:border-0">
                           {cols.map((col) => (
-                            <td key={col} className={`py-2 pr-3 text-muted-foreground break-words ${!LONG_COL_PATTERN.test(col) ? "whitespace-nowrap" : ""}`}>{String(row[col] ?? "")}</td>
+                            <td key={col} className={`py-2 pr-4 text-muted-foreground ${LONG_COL_PATTERN.test(col) ? "break-words" : "whitespace-nowrap"}`}>{String(row[col] ?? "")}</td>
                           ))}
                         </tr>
                       ))}
