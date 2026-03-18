@@ -12,6 +12,7 @@ import {
   Search, Sparkles, Building2, ChevronDown, MessageCircle, Clock,
 } from "lucide-react";
 import { hasProviderRole } from "@shared/roles";
+import ConciergeChatPage from "@/pages/concierge-chat-page";
 
 interface ChatSession {
   id: string;
@@ -378,9 +379,7 @@ export default function ConversationsPage() {
       setExpandedProviders(prev => ({ ...prev, [id]: !prev[id] }));
     };
 
-    const parentConciergeSrc = selectedParentSession
-      ? `/concierge?matchmaker=${selectedParentSession.matchmakerId || ""}&session=${selectedParentSession.id}&embedded=1`
-      : null;
+    const hasParentSession = !!selectedParentSession;
 
     const hasSessions = allSessions.length > 0;
     const sidebarContent = hasSessions ? (
@@ -472,12 +471,12 @@ export default function ConversationsPage() {
       </div>
     ) : null;
 
-    const parentDetailContent = parentConciergeSrc ? (
-      <iframe
+    const parentDetailContent = hasParentSession ? (
+      <ConciergeChatPage
         key={selectedParentSession!.id}
-        src={parentConciergeSrc}
-        className="absolute inset-0 w-full h-full border-0"
-        data-testid="parent-chat-detail-iframe"
+        isInline
+        inlineSessionId={selectedParentSession!.id}
+        inlineMatchmakerId={selectedParentSession!.matchmakerId || undefined}
       />
     ) : null;
 

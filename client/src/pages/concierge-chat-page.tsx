@@ -569,11 +569,17 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
   );
 }
 
-export default function ConciergeChatPage() {
+interface ConciergeChatProps {
+  inlineSessionId?: string;
+  inlineMatchmakerId?: string;
+  isInline?: boolean;
+}
+
+export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId, isInline }: ConciergeChatProps = {}) {
   const [searchParams] = useSearchParams();
-  const matchmakerId = searchParams.get("matchmaker");
-  const existingSessionId = searchParams.get("session");
-  const isEmbedded = searchParams.get("embedded") === "1";
+  const matchmakerId = isInline ? (inlineMatchmakerId || null) : searchParams.get("matchmaker");
+  const existingSessionId = isInline ? (inlineSessionId || null) : searchParams.get("session");
+  const isEmbedded = isInline || searchParams.get("embedded") === "1";
   const navigate = useNavigate();
   const { user } = useAuth();
   const { data: brand } = useBrandSettings();
@@ -898,7 +904,7 @@ export default function ConciergeChatPage() {
       {showCuration && (
         <CurationOverlay brandColor={brandColor} onComplete={handleCurationComplete} />
       )}
-      <div className={`flex flex-col h-dvh ${isEmbedded ? "" : "max-w-3xl mx-auto"} overflow-hidden`} data-testid="concierge-chat-page">
+      <div className={`flex flex-col ${isInline ? "h-full" : "h-dvh"} ${isEmbedded ? "" : "max-w-3xl mx-auto"} overflow-hidden`} data-testid="concierge-chat-page">
         {!isEmbedded && <div
           className="flex items-center gap-3 px-4 py-3 border-b shrink-0"
           data-testid="concierge-chat-header"
