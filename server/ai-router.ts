@@ -1085,44 +1085,97 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
     }
 
     let whisperMatch = finalContent.match(/\[\[WHISPER:(.*?)\]\]/);
-    console.log(`[WHISPER DEBUG] whisperMatch=${!!whisperMatch}, userId=${!!userId}, currentSessionId=${currentSessionId}, finalContent="${finalContent.slice(0, 200)}"`);
-    if (!whisperMatch && userId && currentSessionId) {
-      const whisperPhrasePattern = /(?:whisper|reach(?:ed|ing)?\s*out|sent\s*a\s*message|ask(?:ed|ing)?\s*the\s*(?:agency|coordinator|clinic|provider)|check\s*(?:on|with)|hold\s*on|get\s*(?:that|this|back|the)\s*(?:info|detail|answer)|find\s*(?:that|this)\s*out|look(?:ing)?\s*into\s*(?:that|this|it)|get\s*back\s*to\s*you)/i;
-      const phraseMatched = whisperPhrasePattern.test(finalContent);
-      console.log(`[WHISPER DEBUG] phraseMatched=${phraseMatched}`);
-      if (phraseMatched) {
-        try {
-          const recentCards = await prisma.aiChatMessage.findMany({
-            where: { sessionId: currentSessionId, uiCardType: "rich" },
-            orderBy: { createdAt: "desc" },
-            take: 3,
-            select: { uiCardData: true },
-          });
-          let inferredProviderId: string | null = null;
-          for (const card of recentCards) {
-            const data = card.uiCardData as any;
-            if (data?.matchCards?.[0]?.ownerProviderId) {
-              inferredProviderId = data.matchCards[0].ownerProviderId;
-              break;
-            }
+    const whisperPhrasePattern = /(?:whisper|reach(?:ed|ing)?\s*out|sent\s*a\s*message|ask(?:ed|ing)?\s*the\s*(?:agency|coordinator|clinic|provider)|check\s*(?:on|with)|hold\s*on|get\s*(?:that|this|back|the)\s*(?:info|detail|answer)|find\s*(?:that|this)\s*out|look(?:ing)?\s*into\s*(?:that|this|it)|get\s*back\s*to\s*you|couldn'?t\s*retrieve|don'?t\s*have\s*(?:that|this)\s*(?:specific|particular)|I'?ll\s*(?:check|find|update\s*you))/i;
+    const phraseMatched = !whisperMatch && whisperPhrasePattern.test(finalContent);
+    console.log(`[WHISPER DEBUG] whisperMatch=${!!whisperMatch}, phraseMatched=${phraseMatched}, userId=${!!userId}, currentSessionId=${currentSessionId}`);
+
+    if ((whisperMatch || phraseMatched) && userId && currentSessionId && mcpClient) {
+      let recentEntityId: string | null = null;
+      let recentEntityType: string | null = null;
+      let inferredProviderId: string | null = null;
+      try {
+        const recentCards = await prisma.aiChatMessage.findMany({
+          where: { sessionId: currentSessionId, uiCardType: "rich" },
+          orderBy: { createdAt: "desc" },
+          take: 3,
+          select: { uiCardData: true },
+        });
+        for (const card of recentCards) {
+          const data = card.uiCardData as any;
+          const mc = data?.matchCards?.[0];
+          if (mc) {
+            recentEntityId = mc.providerId || null;
+            recentEntityType = mc.type || null;
+            inferredProviderId = mc.ownerProviderId || null;
+            break;
           }
-          if (!inferredProviderId) {
-            const session = await prisma.aiChatSession.findUnique({
-              where: { id: currentSessionId },
-              select: { providerId: true },
-            });
-            inferredProviderId = session?.providerId || null;
-          }
-          console.log(`[WHISPER DEBUG] inferredProviderId=${inferredProviderId}, recentCards count=${recentCards.length}`);
-          if (inferredProviderId) {
-            console.log(`[WHISPER FALLBACK] AI mentioned reaching out but no [[WHISPER:...]] tag — auto-creating for provider ${inferredProviderId}`);
-            whisperMatch = [`[[WHISPER:${inferredProviderId}]]`, inferredProviderId] as any;
-          } else {
-            console.log(`[WHISPER DEBUG] Could not infer provider — no match cards found and no providerId on session`);
-          }
-        } catch (e) {
-          console.error("Whisper fallback inference error:", e);
         }
+        if (!inferredProviderId) {
+          const session = await prisma.aiChatSession.findUnique({
+            where: { id: currentSessionId },
+            select: { providerId: true },
+          });
+          inferredProviderId = session?.providerId || null;
+        }
+      } catch (e) {
+        console.error("Whisper context inference error:", e);
+      }
+
+      if (recentEntityId && recentEntityType) {
+        const etype = (recentEntityType || "").toLowerCase();
+        let profileToolName: string | null = null;
+        if (etype === "surrogate") profileToolName = "get_surrogate_profile";
+        else if (etype === "egg donor") profileToolName = "search_egg_donors";
+        else if (etype === "sperm donor") profileToolName = "search_sperm_donors";
+
+        if (profileToolName) {
+          try {
+            console.log(`[WHISPER INTERCEPT] AI wanted to whisper/defer — fetching ${profileToolName} for entity ${recentEntityId} to check if answer is in profile`);
+            let profileText = "";
+            if (profileToolName === "get_surrogate_profile") {
+              const profileResult = await mcpClient.callTool({
+                name: "get_surrogate_profile",
+                arguments: { surrogateId: recentEntityId },
+              });
+              profileText = (profileResult.content as any)?.[0]?.text || "";
+            } else {
+              const searchResult = await mcpClient.callTool({
+                name: profileToolName,
+                arguments: { query: userMessage, limit: 1 },
+              });
+              profileText = (searchResult.content as any)?.[0]?.text || "";
+            }
+
+            if (profileText && profileText.length > 50) {
+              console.log(`[WHISPER INTERCEPT] Got profile data (${profileText.length} chars), re-asking AI to answer from profile`);
+              messages.push({
+                role: "user",
+                content: `SYSTEM OVERRIDE: I found the full profile data for this person. The answer IS in the profile below. Please answer the parent's question directly using this data. Do NOT whisper or reach out to the agency — the data is right here.\n\nFULL PROFILE DATA:\n${profileText}\n\nNow answer the parent's original question: "${userMessage}"`,
+              });
+
+              const retryResponse = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages,
+              });
+              const retryContent = retryResponse.choices[0].message?.content;
+              if (retryContent && !retryContent.includes("[[WHISPER:") && !whisperPhrasePattern.test(retryContent)) {
+                console.log(`[WHISPER INTERCEPT SUCCESS] AI answered from profile data — whisper avoided`);
+                finalContent = retryContent;
+                whisperMatch = null;
+              } else {
+                console.log(`[WHISPER INTERCEPT] AI still wants to whisper even with profile data — allowing whisper`);
+                messages.pop();
+              }
+            }
+          } catch (e) {
+            console.error("[WHISPER INTERCEPT] Profile fetch failed:", e);
+          }
+        }
+      }
+
+      if (!whisperMatch && phraseMatched && inferredProviderId) {
+        console.log(`[WHISPER FALLBACK] AI mentioned reaching out but no [[WHISPER:...]] tag — auto-creating for provider ${inferredProviderId}`);
+        whisperMatch = [`[[WHISPER:${inferredProviderId}]]`, inferredProviderId] as any;
       }
     }
     if (whisperMatch) {
