@@ -261,6 +261,67 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
         },
       },
+      {
+        name: "resolve_match_card",
+        description:
+          "Internal tool: Look up photo URL, display name, and owner provider ID for a match card by entity ID and type.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            entityId: { type: "string", description: "The surrogate/donor/provider UUID" },
+            entityType: { type: "string", description: "One of: Surrogate, Egg Donor, Sperm Donor, Clinic" },
+            entityName: { type: "string", description: "Display name for fallback name-based provider lookup" },
+          },
+          required: ["entityId", "entityType"],
+        },
+      },
+      {
+        name: "resolve_provider",
+        description:
+          "Internal tool: Look up provider details by ID or by name (partial match). Returns id, name, logoUrl, email, consultationBookingUrl, and consultationIframeEnabled.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            providerId: { type: "string", description: "The provider UUID" },
+            providerName: { type: "string", description: "Partial name match (used if providerId not provided)" },
+          },
+        },
+      },
+      {
+        name: "search_knowledge_base",
+        description:
+          "Internal tool: Semantic vector search over the knowledge base (KnowledgeChunk). Returns relevant content chunks for RAG context.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "The search query text" },
+            providerId: { type: "string", description: "Optional provider ID to include tier-1 (provider-specific) chunks" },
+            maxResults: { type: "number", description: "Max results to return (default 5)" },
+          },
+          required: ["query"],
+        },
+      },
+      {
+        name: "get_provider_users",
+        description:
+          "Internal tool: Get user IDs and emails for all users belonging to a provider.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            providerId: { type: "string", description: "The provider UUID" },
+          },
+          required: ["providerId"],
+        },
+      },
+      {
+        name: "get_expert_guidance_rules",
+        description:
+          "Internal tool: Get all active expert guidance rules for system prompt enrichment.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+        },
+      },
     ],
   };
 });
@@ -731,6 +792,167 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       return {
         content: [{ type: "text", text: `Found ${results.length} IVF clinics:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Clinic" in your MATCH_CARDs.` }],
+      };
+    }
+
+    if (name === "resolve_match_card") {
+      const { entityId, entityType, entityName } = args as any;
+      const type = (entityType || "").toLowerCase();
+      let result: any = null;
+
+      if (type === "surrogate") {
+        const s = await prisma.surrogate.findUnique({
+          where: { id: entityId },
+          select: { photoUrl: true, firstName: true, externalId: true, providerId: true, age: true, location: true },
+        });
+        if (s) {
+          result = {
+            photo: s.photoUrl || null,
+            name: s.firstName || (s.externalId ? `Surrogate #${s.externalId}` : `Surrogate #${entityId.slice(-4)}`),
+            ownerProviderId: s.providerId,
+          };
+        }
+      } else if (type === "egg donor") {
+        const d = await prisma.eggDonor.findUnique({
+          where: { id: entityId },
+          select: { photoUrl: true, firstName: true, externalId: true, providerId: true, age: true, location: true },
+        });
+        if (d) {
+          result = {
+            photo: d.photoUrl || null,
+            name: d.firstName || (d.externalId ? `Donor #${d.externalId}` : `Donor #${entityId.slice(-4)}`),
+            ownerProviderId: d.providerId,
+          };
+        }
+      } else if (type === "sperm donor") {
+        const d = await prisma.spermDonor.findUnique({
+          where: { id: entityId },
+          select: { photoUrl: true, firstName: true, externalId: true, providerId: true, age: true, location: true },
+        });
+        if (d) {
+          result = {
+            photo: d.photoUrl || null,
+            name: d.firstName || (d.externalId ? `Donor #${d.externalId}` : `Donor #${entityId.slice(-4)}`),
+            ownerProviderId: d.providerId,
+          };
+        }
+      } else {
+        const p = await prisma.provider.findUnique({
+          where: { id: entityId },
+          select: { logoUrl: true, name: true, id: true },
+        });
+        if (p) {
+          result = { photo: p.logoUrl || null, name: p.name, ownerProviderId: p.id };
+        }
+        if (!result && entityName) {
+          const pByName = await prisma.provider.findFirst({
+            where: { name: { contains: entityName, mode: "insensitive" } },
+            select: { logoUrl: true, name: true, id: true },
+          });
+          if (pByName) {
+            result = { photo: pByName.logoUrl || null, name: pByName.name, ownerProviderId: pByName.id };
+          }
+        }
+      }
+
+      return {
+        content: [{ type: "text", text: result ? JSON.stringify(result) : '{"error":"not found"}' }],
+      };
+    }
+
+    if (name === "resolve_provider") {
+      const { providerId, providerName } = args as any;
+      let provider: any = null;
+
+      if (providerId) {
+        provider = await prisma.provider.findUnique({
+          where: { id: providerId },
+          select: { id: true, name: true, logoUrl: true, email: true, consultationBookingUrl: true, consultationIframeEnabled: true },
+        });
+      } else if (providerName) {
+        provider = await prisma.provider.findFirst({
+          where: { name: { contains: providerName, mode: "insensitive" } },
+          select: { id: true, name: true, logoUrl: true, email: true, consultationBookingUrl: true, consultationIframeEnabled: true },
+        });
+      }
+
+      return {
+        content: [{ type: "text", text: provider ? JSON.stringify(provider) : '{"error":"not found"}' }],
+      };
+    }
+
+    if (name === "search_knowledge_base") {
+      const { query: kbQuery, providerId: kbProviderId, maxResults: kbMaxResults } = args as any;
+      const maxRes = kbMaxResults || 5;
+
+      try {
+        const embeddingResponse = await openai.embeddings.create({
+          model: "text-embedding-3-small",
+          input: kbQuery,
+        });
+        const embedding = embeddingResponse.data[0].embedding;
+        const vectorStr = `[${embedding.join(",")}]`;
+
+        let results: any[];
+        if (kbProviderId) {
+          results = await pool.query(
+            `SELECT content, "sourceTier", "sourceType",
+                    1 - (embedding <=> $1::vector) as score
+             FROM "KnowledgeChunk"
+             WHERE ("providerId" = $2 AND "sourceTier" = 1)
+                OR "sourceTier" IN (2, 3)
+             ORDER BY embedding <=> $1::vector
+             LIMIT $3`,
+            [vectorStr, kbProviderId, maxRes],
+          ).then(r => r.rows);
+        } else {
+          results = await pool.query(
+            `SELECT content, "sourceTier", "sourceType",
+                    1 - (embedding <=> $1::vector) as score
+             FROM "KnowledgeChunk"
+             WHERE "sourceTier" IN (2, 3)
+             ORDER BY embedding <=> $1::vector
+             LIMIT $2`,
+            [vectorStr, maxRes],
+          ).then(r => r.rows);
+        }
+
+        const parsed = results.map((r: any) => ({
+          content: r.content,
+          sourceTier: r.sourceTier,
+          sourceType: r.sourceType,
+          score: parseFloat(r.score),
+        }));
+
+        return {
+          content: [{ type: "text", text: JSON.stringify(parsed) }],
+        };
+      } catch (e: any) {
+        console.error("search_knowledge_base error:", e.message);
+        return {
+          content: [{ type: "text", text: "[]" }],
+        };
+      }
+    }
+
+    if (name === "get_provider_users") {
+      const { providerId: puProviderId } = args as any;
+      const users = await prisma.user.findMany({
+        where: { providerId: puProviderId },
+        select: { id: true, email: true },
+      });
+      return {
+        content: [{ type: "text", text: JSON.stringify(users) }],
+      };
+    }
+
+    if (name === "get_expert_guidance_rules") {
+      const rules = await prisma.expertGuidanceRule.findMany({
+        where: { isActive: true },
+        orderBy: { sortOrder: "asc" },
+      });
+      return {
+        content: [{ type: "text", text: JSON.stringify(rules) }],
       };
     }
 

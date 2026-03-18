@@ -171,55 +171,18 @@ ${logoUrl ? `<img src="${logoUrl}" alt="${companyName}" style="max-height:40px;m
   }
 }
 
-async function generateEmbedding(text: string): Promise<number[]> {
-  const response = await openai.embeddings.create({
-    model: "text-embedding-3-small",
-    input: text,
-  });
-  return response.data[0].embedding;
-}
-
 async function searchKnowledgeBase(
   query: string,
   providerId?: string,
   maxResults: number = 5,
 ): Promise<{ content: string; sourceTier: number; sourceType: string; score: number }[]> {
   try {
-    const embedding = await generateEmbedding(query);
-    const vectorStr = `[${embedding.join(",")}]`;
-
-    let results: any[];
-    if (providerId) {
-      results = await prisma.$queryRawUnsafe(
-        `SELECT content, "sourceTier", "sourceType",
-                1 - (embedding <=> $1::vector) as score
-         FROM "KnowledgeChunk"
-         WHERE ("providerId" = $2 AND "sourceTier" = 1)
-            OR "sourceTier" IN (2, 3)
-         ORDER BY embedding <=> $1::vector
-         LIMIT $3`,
-        vectorStr,
-        providerId,
-        maxResults,
-      );
-    } else {
-      results = await prisma.$queryRawUnsafe(
-        `SELECT content, "sourceTier", "sourceType",
-                1 - (embedding <=> $1::vector) as score
-         FROM "KnowledgeChunk"
-         WHERE "sourceTier" IN (2, 3)
-         ORDER BY embedding <=> $1::vector
-         LIMIT $2`,
-        vectorStr,
-        maxResults,
-      );
-    }
-    return results.map((r: any) => ({
-      content: r.content,
-      sourceTier: r.sourceTier,
-      sourceType: r.sourceType,
-      score: parseFloat(r.score),
-    }));
+    const result = await mcpClient.callTool({
+      name: "search_knowledge_base",
+      arguments: { query, ...(providerId ? { providerId } : {}), maxResults },
+    });
+    const text = (result.content as any)?.[0]?.text || "[]";
+    return JSON.parse(text);
   } catch (e) {
     console.error("Knowledge search failed:", e);
     return [];
@@ -228,13 +191,15 @@ async function searchKnowledgeBase(
 
 async function getExpertGuidanceRules(): Promise<string> {
   try {
-    const rules = await prisma.expertGuidanceRule.findMany({
-      where: { isActive: true },
-      orderBy: { sortOrder: "asc" },
+    const result = await mcpClient!.callTool({
+      name: "get_expert_guidance_rules",
+      arguments: {},
     });
+    const text = (result.content as any)?.[0]?.text || "[]";
+    const rules = JSON.parse(text);
     if (rules.length === 0) return "";
     const ruleLines = rules.map(
-      (r) => `- IF the user mentions "${r.condition}" → ${r.guidance}`,
+      (r: any) => `- IF the user mentions "${r.condition}" → ${r.guidance}`,
     );
     return `\nEXPERT GUIDANCE RULES (follow these when relevant):\n${ruleLines.join("\n")}\n`;
   } catch (e) {
@@ -871,13 +836,22 @@ IMPORTANT RULES:
           sessionId: currentSessionId,
           status: "ANSWERED",
         },
-        include: { provider: { select: { name: true } } },
+        select: { questionText: true, answerText: true, providerId: true },
         orderBy: { updatedAt: "desc" },
         take: 5,
       });
       if (answeredWhispers.length > 0) {
+        const uniqueProviderIds = [...new Set(answeredWhispers.map((w: any) => w.providerId))];
+        const providerNameMap = new Map<string, string>();
+        for (const pid of uniqueProviderIds) {
+          try {
+            const pRes = await mcpClient!.callTool({ name: "resolve_provider", arguments: { providerId: pid } });
+            const pData = JSON.parse((pRes.content as any)?.[0]?.text || "{}");
+            providerNameMap.set(pid, pData.name || "the agency");
+          } catch { providerNameMap.set(pid, "the agency"); }
+        }
         const whisperParts = answeredWhispers.map(
-          (w: any) => `- Question about ${w.provider.name}: "${w.questionText}" → Answer: "${w.answerText}"`,
+          (w: any) => `- Question about ${providerNameMap.get(w.providerId) || "the agency"}: "${w.questionText}" → Answer: "${w.answerText}"`,
         );
         answeredWhispersContext = `\nPROVIDER WHISPER ANSWERS (recently answered by providers — present these naturally when relevant):\n${whisperParts.join("\n")}\nWhen presenting a whisper answer, lead with: "I have an update! I heard back from the agency and they confirmed: [Answer]."\nAfter sharing the answer, ask if the parent has any more questions: "Does that answer your question? Do you have anything else you'd like to know, or are you ready to schedule a free consultation call?"\nIf the parent wants to schedule a consultation, use [[CONSULTATION_BOOKING:PROVIDER_ID]] to present the booking card.\n`;
       }
@@ -1156,11 +1130,12 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
       try {
         if (whisperProviderId && userId && currentSessionId) {
           const questionText = userMessage || finalContent.replace(/\[\[WHISPER:.*?\]\]/g, "").trim().slice(0, 500);
-          const provider = await prisma.provider.findUnique({
-            where: { id: whisperProviderId },
-            select: { name: true },
+          const providerResult = await mcpClient!.callTool({
+            name: "resolve_provider",
+            arguments: { providerId: whisperProviderId },
           });
-          const providerName = provider?.name || "Your Clinic";
+          const providerData = JSON.parse((providerResult.content as any)?.[0]?.text || "{}");
+          const providerName = providerData?.name || "Your Clinic";
 
           await prisma.aiChatSession.update({
             where: { id: currentSessionId },
@@ -1187,10 +1162,11 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
             },
           });
 
-          const providerUsers = await prisma.user.findMany({
-            where: { providerId: whisperProviderId },
-            select: { id: true, email: true },
+          const puWhisperResult = await mcpClient!.callTool({
+            name: "get_provider_users",
+            arguments: { providerId: whisperProviderId },
           });
+          const providerUsers = JSON.parse((puWhisperResult.content as any)?.[0]?.text || "[]");
 
           if (providerUsers.length > 0) {
             for (const pu of providerUsers) {
@@ -1333,92 +1309,21 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
     }
 
     for (const card of matchCards) {
-      const cardType = (card.type || "").toLowerCase();
-      
-      if (cardType === "surrogate" && card.providerId) {
-        try {
-          const surrogate = await prisma.surrogate.findUnique({
-            where: { id: card.providerId },
-            select: { photoUrl: true, firstName: true, age: true, location: true, externalId: true, providerId: true },
-          });
-          if (surrogate?.photoUrl) {
-            card.photo = surrogate.photoUrl;
-          }
-          if (surrogate?.providerId) {
-            card.ownerProviderId = surrogate.providerId;
-          }
-          if (!card.name && surrogate) {
-            card.name = surrogate.firstName || (surrogate.externalId ? `Surrogate #${surrogate.externalId}` : `Surrogate #${card.providerId.slice(-4)}`);
-          }
-        } catch (e) {
-          console.error("Surrogate lookup failed:", e);
+      try {
+        const resolveResult = await mcpClient!.callTool({
+          name: "resolve_match_card",
+          arguments: { entityId: card.providerId, entityType: card.type || "Clinic", ...(card.name ? { entityName: card.name } : {}) },
+        });
+        const resolved = JSON.parse((resolveResult.content as any)?.[0]?.text || "{}");
+        if (!resolved.error) {
+          if (resolved.photo) card.photo = resolved.photo;
+          if (resolved.name && !card.name) card.name = resolved.name;
+          if (resolved.ownerProviderId) card.ownerProviderId = resolved.ownerProviderId;
         }
-      } else if (cardType === "egg donor" && card.providerId) {
-        try {
-          const donor = await prisma.eggDonor.findUnique({
-            where: { id: card.providerId },
-            select: { photoUrl: true, firstName: true, age: true, location: true, externalId: true, providerId: true },
-          });
-          if (donor?.photoUrl) {
-            card.photo = donor.photoUrl;
-          }
-          if (donor?.providerId) {
-            card.ownerProviderId = donor.providerId;
-          }
-          if (!card.name && donor) {
-            card.name = donor.firstName || (donor.externalId ? `Donor #${donor.externalId}` : `Donor #${card.providerId.slice(-4)}`);
-          }
-        } catch (e) {
-          console.error("EggDonor lookup failed:", e);
-        }
-      } else if (cardType === "sperm donor" && card.providerId) {
-        try {
-          const donor = await prisma.spermDonor.findUnique({
-            where: { id: card.providerId },
-            select: { photoUrl: true, firstName: true, age: true, location: true, externalId: true, providerId: true },
-          });
-          if (donor?.photoUrl) {
-            card.photo = donor.photoUrl;
-          }
-          if (donor?.providerId) {
-            card.ownerProviderId = donor.providerId;
-          }
-          if (!card.name && donor) {
-            card.name = donor.firstName || (donor.externalId ? `Donor #${donor.externalId}` : `Donor #${card.providerId.slice(-4)}`);
-          }
-        } catch (e) {
-          console.error("SpermDonor lookup failed:", e);
-        }
-      } else {
-        if (card.providerId) {
-          try {
-            const provider = await prisma.provider.findUnique({
-              where: { id: card.providerId },
-              select: { logoUrl: true, name: true },
-            });
-            if (provider?.logoUrl) {
-              card.photo = provider.logoUrl;
-            }
-          } catch (e) {
-            // Provider lookup failed
-          }
-        }
-        if (!card.photo || card.photo === "/path/to/photo") {
-          try {
-            const providerByName = await prisma.provider.findFirst({
-              where: { name: { contains: card.name, mode: "insensitive" } },
-              select: { logoUrl: true, id: true },
-            });
-            if (providerByName?.logoUrl) {
-              card.photo = providerByName.logoUrl;
-              if (!card.providerId) card.providerId = providerByName.id;
-            } else {
-              card.photo = null;
-            }
-          } catch (e) {
-            card.photo = null;
-          }
-        }
+        if (!card.photo || card.photo === "/path/to/photo") card.photo = null;
+      } catch (e) {
+        console.error("Match card resolution via MCP failed:", e);
+        card.photo = null;
       }
     }
 
@@ -1427,18 +1332,12 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
     if (consultationMatch) {
       const consultProviderId = consultationMatch[1].trim();
       try {
-        const consultProvider = await prisma.provider.findUnique({
-          where: { id: consultProviderId },
-          select: {
-            id: true,
-            name: true,
-            logoUrl: true,
-            consultationBookingUrl: true,
-            consultationIframeEnabled: true,
-            email: true,
-          },
+        const cpResult = await mcpClient!.callTool({
+          name: "resolve_provider",
+          arguments: { providerId: consultProviderId },
         });
-        if (consultProvider) {
+        const consultProvider = JSON.parse((cpResult.content as any)?.[0]?.text || "{}");
+        if (consultProvider && !consultProvider.error) {
           consultationCard = {
             providerId: consultProvider.id,
             providerName: consultProvider.name,
@@ -1467,10 +1366,11 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
               },
             });
 
-            const providerUsers = await prisma.user.findMany({
-              where: { providerId: consultProviderId },
-              select: { id: true },
+            const puResult = await mcpClient!.callTool({
+              name: "get_provider_users",
+              arguments: { providerId: consultProviderId },
             });
+            const providerUsers = JSON.parse((puResult.content as any)?.[0]?.text || "[]");
             for (const pu of providerUsers) {
               await prisma.inAppNotification.create({
                 data: {
