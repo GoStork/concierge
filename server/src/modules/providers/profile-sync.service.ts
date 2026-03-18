@@ -2530,7 +2530,61 @@ async function normalizeProfileFields(profileData: Record<string, any>): Promise
     }
   }
 
+  reclassifySupportSystemFields(normalized);
+
   return normalized;
+}
+
+const SUPPORT_SYSTEM_PATTERNS = [
+  /how\s+do\s+you\s+expect.*(?:people|family|friends|children|employer|partner|spouse|husband|wife).*react/i,
+  /how\s+will.*(?:family|friends|children|employer|partner|spouse|husband|wife).*(?:react|feel|respond|support)/i,
+  /(?:family|friends|children|employer|partner|spouse|husband|wife).*(?:reaction|react|response|support|feel about).*surrog/i,
+  /support.*(?:during|throughout).*(?:pregnancy|surrogacy|journey)/i,
+  /who\s+will\s+(?:help|support|care|assist|take\s+care)/i,
+  /(?:childcare|bedrest|caretaker).*(?:plan|support|assistance|help)/i,
+  /(?:^|\s)support\s+(?:system|network|team)\b/i,
+  /(?:emotional|mental|psychological)\s+support/i,
+];
+
+function isSupportSystemField(key: string): boolean {
+  const lk = key.toLowerCase();
+  if (SUPPORT_SYSTEM_PATTERNS.some(p => p.test(lk))) return true;
+  if (/react.*surrogate|surrogate.*react/i.test(lk)) return true;
+  if (/following\s+people\s+will\s+react/i.test(lk)) return true;
+  return false;
+}
+
+function reclassifySupportSystemFields(profileData: Record<string, any>): void {
+  const sections = profileData._sections;
+  if (!sections || typeof sections !== "object") return;
+
+  const supportSection: Record<string, any> = sections["Support System"] && typeof sections["Support System"] === "object"
+    ? { ...sections["Support System"] }
+    : {};
+  let moved = false;
+
+  for (const [sectionName, sectionData] of Object.entries(sections)) {
+    if (sectionName === "Support System") continue;
+    if (!sectionData || typeof sectionData !== "object" || Array.isArray(sectionData)) continue;
+
+    const keysToMove: string[] = [];
+    for (const key of Object.keys(sectionData)) {
+      if (key.startsWith("_")) continue;
+      if (isSupportSystemField(key)) {
+        keysToMove.push(key);
+      }
+    }
+
+    for (const key of keysToMove) {
+      supportSection[key] = sectionData[key];
+      delete sectionData[key];
+      moved = true;
+    }
+  }
+
+  if (moved && Object.keys(supportSection).length > 0) {
+    sections["Support System"] = supportSection;
+  }
 }
 
 function extractVideoUrl(html: string): string | null {
@@ -4507,7 +4561,7 @@ Extract ALL information from this surrogate profile. Return a JSON object with t
           "Health & Medical": { "key": "value pairs for medical history, health conditions, medications, surgeries, mental health, etc." },
           "Pregnancy History": { "key": "value pairs for pregnancies, deliveries, c-sections, complications, miscarriages, live births, last delivery year, etc." },
           "Surrogacy Details": { "key": "value pairs for surrogacy preferences, compensation, agreements, prior surrogacy experience, etc." },
-          "Support System": { "key": "value pairs for all questions about who will support the surrogate during the journey — e.g. partner support, family support, childcare assistance, bedrest support, support person, emotional support, counseling, support system during pregnancy, etc. Look for keywords like 'support', 'supportive', 'childcare', 'bedrest', 'who will help', 'caretaker'. Only applicable to surrogates." },
+          "Support System": { "key": "value pairs for all questions about who will support the surrogate during the journey — e.g. partner support, family support, childcare assistance, bedrest support, support person, emotional support, counseling, support system during pregnancy, etc. ALSO include any questions about how family, friends, children, employer, or others will REACT to the surrogacy (e.g. 'How do you expect the following people will react to you being a surrogate?' for Family, Friends, Children, Employer, etc.) — these are support system questions. Look for keywords like 'support', 'supportive', 'childcare', 'bedrest', 'who will help', 'caretaker', 'react', 'reaction', 'how will they feel'. Only applicable to surrogates." },
           "Family & Background": { "key": "value pairs for marital status, children, partner info, family medical history, etc." },
           "Lifestyle": { "key": "value pairs for diet, exercise, smoking, alcohol, drugs, hobbies, etc." },
           "Legal & Insurance": { "key": "value pairs for insurance, legal history, criminal background, etc." },
