@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
@@ -94,15 +95,31 @@ function CurationOverlay({ brandColor, onComplete }: { brandColor: string; onCom
     }
   }, [lineIndex, charIndex, onComplete]);
 
-  return (
-    <div className="fixed inset-0 bg-background/95 backdrop-blur-sm flex flex-col items-center justify-center z-50" data-testid="curation-overlay">
+  return createPortal(
+    <div
+      className="flex flex-col items-center justify-center"
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 9999,
+        backgroundColor: "hsl(var(--background) / 0.95)",
+        WebkitBackdropFilter: "blur(4px)",
+        backdropFilter: "blur(4px)",
+      }}
+      data-testid="curation-overlay"
+    >
       <div className="flex flex-col items-center text-center px-8 max-w-md">
         <div className="relative mb-8">
           <div
-            className="w-16 h-16 rounded-full animate-spin"
+            className="w-16 h-16 rounded-full"
             style={{
               border: `3px solid ${brandColor}20`,
               borderTopColor: brandColor,
+              animation: "spin 1s linear infinite",
+              WebkitAnimation: "spin 1s linear infinite",
             }}
           />
           <Sparkles
@@ -117,7 +134,7 @@ function CurationOverlay({ brandColor, onComplete }: { brandColor: string; onCom
             data-testid="curation-text"
           >
             {displayText}
-            <span className="animate-pulse">|</span>
+            <span style={{ animation: "pulse 2s cubic-bezier(0.4,0,0.6,1) infinite", WebkitAnimation: "pulse 2s cubic-bezier(0.4,0,0.6,1) infinite" }}>|</span>
           </p>
         </div>
         <div className="flex gap-2 mt-6">
@@ -133,7 +150,8 @@ function CurationOverlay({ brandColor, onComplete }: { brandColor: string; onCom
           ))}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

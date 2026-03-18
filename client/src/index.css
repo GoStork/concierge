@@ -4,6 +4,19 @@
 @tailwind components;
 @tailwind utilities;
 
+@-webkit-keyframes spin {
+  to { -webkit-transform: rotate(360deg); transform: rotate(360deg); }
+}
+@keyframes spin {
+  to { -webkit-transform: rotate(360deg); transform: rotate(360deg); }
+}
+@-webkit-keyframes pulse {
+  50% { opacity: 0.5; }
+}
+@keyframes pulse {
+  50% { opacity: 0.5; }
+}
+
 @layer utilities {
   .scrollbar-hide {
     -ms-overflow-style: none;
