@@ -75,8 +75,19 @@
 }
 
 @layer base {
+  ::selection {
+    background: rgba(0, 120, 215, 0.3);
+    color: inherit;
+  }
+  
+  .chat-bubble-dark ::selection,
+  .chat-bubble-dark::selection {
+    background: rgba(255, 255, 255, 0.3);
+    color: inherit;
+  }
+
   body {
-    @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
+    @apply bg-background text-foreground antialiased;
     font-family: var(--font-body);
   }
   
