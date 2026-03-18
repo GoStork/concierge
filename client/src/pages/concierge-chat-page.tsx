@@ -39,6 +39,9 @@ interface ConsultationCardData {
   bookingUrl?: string;
   iframeEnabled?: boolean;
   providerEmail?: string;
+  memberBookingSlug?: string;
+  memberName?: string;
+  memberPhoto?: string;
 }
 
 interface ChatMessage {
@@ -231,6 +234,31 @@ function ConsultationBookingCard({
   brandColor: string;
   onSchedule: (card: ConsultationCardData) => void;
 }) {
+  if (card.memberBookingSlug) {
+    const bookingUrl = `/book/${card.memberBookingSlug}`;
+    return (
+      <div
+        className="w-full max-w-sm animate-[slideUp_0.4s_ease-out_forwards] overflow-hidden"
+        style={{ borderRadius: "var(--container-radius, 0.5rem)" }}
+        data-testid="consultation-booking-card"
+      >
+        <div className="p-1.5" style={{ backgroundColor: brandColor }}>
+          <div className="flex items-center gap-2 px-3 py-1.5">
+            <CalendarCheck className="w-4 h-4 text-white" />
+            <span className="text-white text-xs font-semibold uppercase tracking-wider">Schedule a Free Consultation</span>
+          </div>
+        </div>
+        <iframe
+          src={bookingUrl}
+          className="w-full border-0 bg-background"
+          style={{ height: "620px" }}
+          title={`Book consultation with ${card.memberName || card.providerName}`}
+          data-testid="booking-calendar-iframe"
+        />
+      </div>
+    );
+  }
+
   return (
     <Card
       className="overflow-hidden max-w-sm animate-[slideUp_0.4s_ease-out_forwards]"

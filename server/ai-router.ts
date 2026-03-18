@@ -1198,11 +1198,12 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
           console.log(`[SCHEDULING-INTENT] Detected scheduling intent for provider ${mc.ownerProviderId}`);
           messages.push({
             role: "user",
-            content: `SYSTEM OVERRIDE: The parent is signaling they want to take the next step. They are ready to schedule. Do NOT answer any more profile questions. Instead:
+            content: `SYSTEM OVERRIDE: The parent is signaling they want to take the next step. They are ready to schedule a consultation with the agency. Do NOT answer any more profile questions. Do NOT provide a match call prep guide — that comes later when the actual surrogate match call is arranged. Instead:
 1. Warmly acknowledge their interest in the current match
-2. Present the consultation booking by including [[CONSULTATION_BOOKING:${mc.ownerProviderId}]] in your response
-3. Also include [[HOT_LEAD:${mc.ownerProviderId}]] and [[SAVE:{"journeyStage":"Consultation Requested"}]]
-4. Say something like: "Wonderful! Let me set up a free consultation call with the agency for you — it's completely free, no strings attached!"
+2. Say something brief like: "Wonderful! Let me pull up the calendar so you can pick a time for a free consultation call with the agency — completely free, no strings attached!"
+3. Include [[CONSULTATION_BOOKING:${mc.ownerProviderId}]] in your response to show the booking calendar
+4. Also include [[HOT_LEAD:${mc.ownerProviderId}]] and [[SAVE:{"journeyStage":"Consultation Requested"}]]
+Keep your message SHORT — the calendar widget will appear right below it.
 The parent's message was: "${userMessage}"`,
           });
         }
@@ -1563,7 +1564,6 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
     const hotLeadMatch = finalContent.match(/\[\[HOT_LEAD:(.*?)\]\]/);
     if (hotLeadMatch) {
       const providerId = hotLeadMatch[1].trim();
-      sendPrepDoc = true;
       try {
         const parentAccountId = userRecord?.parentAccountId;
         if (parentAccountId && providerId) {
@@ -1943,13 +1943,41 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
         });
         const consultProvider = JSON.parse((cpResult.content as any)?.[0]?.text || "{}");
         if (consultProvider && !consultProvider.error) {
+          let memberBookingSlug: string | null = null;
+          let memberName: string | null = null;
+          let memberPhoto: string | null = null;
+          try {
+            const memberWithBooking = await prisma.user.findFirst({
+              where: {
+                providerId: consultProviderId,
+                scheduleConfig: { bookingPageSlug: { not: null } },
+              },
+              select: {
+                name: true,
+                photoUrl: true,
+                scheduleConfig: { select: { bookingPageSlug: true } },
+              },
+            });
+            if (memberWithBooking?.scheduleConfig?.bookingPageSlug) {
+              memberBookingSlug = memberWithBooking.scheduleConfig.bookingPageSlug;
+              memberName = memberWithBooking.name;
+              memberPhoto = memberWithBooking.photoUrl;
+              console.log(`[CONSULTATION] Found provider member booking slug: ${memberBookingSlug} for ${memberName}`);
+            }
+          } catch (e) {
+            console.error("[CONSULTATION] Error finding member booking slug:", e);
+          }
+
           consultationCard = {
             providerId: consultProvider.id,
             providerName: consultProvider.name,
             providerLogo: consultProvider.logoUrl,
-            bookingUrl: consultProvider.consultationBookingUrl,
-            iframeEnabled: consultProvider.consultationIframeEnabled,
+            bookingUrl: memberBookingSlug ? `/book/${memberBookingSlug}` : consultProvider.consultationBookingUrl,
+            iframeEnabled: true,
             providerEmail: consultProvider.email,
+            memberBookingSlug,
+            memberName,
+            memberPhoto,
           };
 
           if (currentSessionId) {
