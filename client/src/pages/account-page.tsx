@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Link, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { User, Building2, Users, Calendar, Camera, Loader2, Eye, EyeOff, Phone, Mail, Shield, CalendarPlus, AlertTriangle, Check, Pencil, Plus, Trash2, Palette, Egg, Baby, FlaskConical, DollarSign, LogOut, Sparkles, Brain } from "lucide-react";
+import { User, Building2, Users, Calendar, Camera, Loader2, Eye, EyeOff, Phone, Mail, Shield, CalendarPlus, AlertTriangle, Check, Pencil, Plus, Trash2, Palette, Egg, Baby, FlaskConical, DollarSign, LogOut, Sparkles, Brain, RefreshCw } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -19,6 +19,7 @@ import BrandSettingsTab, { BrandSettingsForm } from "@/pages/admin-brand-setting
 import AdminConciergePage from "@/pages/admin-concierge-page";
 import ProviderKnowledgeTab from "@/components/provider-knowledge-tab";
 import ConciergeSettingsTab from "@/components/concierge-settings-tab";
+import ScrapersSummaryPage from "@/pages/scrapers-summary-page";
 import { hasProviderRole, isParentAccountAdmin } from "@shared/roles";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -33,6 +34,7 @@ const allTabs = [
   { to: '/account/branding', label: 'Branding', icon: Palette, roles: 'branding' as const },
   { to: '/account/knowledge', label: 'Knowledge', icon: Brain, roles: 'knowledge' as const },
   { to: '/account/concierge', label: 'AI Concierge', icon: Sparkles, roles: 'concierge' as const },
+  { to: '/account/scrapers', label: 'Scrapers', icon: RefreshCw, roles: 'admin' as const },
 ];
 
 function AccountTab() {
@@ -1014,6 +1016,7 @@ export default function AccountPage() {
     if (tab.roles === 'branding') return showBranding;
     if (tab.roles === 'knowledge') return isProvider && !isAdmin;
     if (tab.roles === 'concierge') return isAdmin || isParent || isProvider;
+    if (tab.roles === 'admin') return isAdmin;
     return true;
   });
 
@@ -1104,6 +1107,9 @@ export default function AccountPage() {
         <Route path="concierge" element={
           isAdmin ? <AdminConciergePage /> : <ConciergeSettingsTab />
         } />
+        {isAdmin && (
+          <Route path="scrapers/*" element={<ScrapersSummaryPage />} />
+        )}
         {showEggDonors && providerId && (
           <Route path="egg-donors" element={<ProfileDatabasePanel providerId={providerId} type="egg-donor" />} />
         )}
