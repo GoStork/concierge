@@ -898,7 +898,7 @@ export default function ConciergeChatPage() {
       {showCuration && (
         <CurationOverlay brandColor={brandColor} onComplete={handleCurationComplete} />
       )}
-      <div className={`flex flex-col ${isEmbedded ? "h-full" : "h-dvh"} ${isEmbedded ? "" : "max-w-3xl mx-auto"} overflow-hidden`} data-testid="concierge-chat-page">
+      <div className={`flex flex-col h-dvh ${isEmbedded ? "" : "max-w-3xl mx-auto"} overflow-hidden`} data-testid="concierge-chat-page">
         {!isEmbedded && <div
           className="flex items-center gap-3 px-4 py-3 border-b shrink-0"
           data-testid="concierge-chat-header"
