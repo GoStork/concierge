@@ -6,12 +6,20 @@ import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { ProfileCard } from "@/components/profile-card";
-import type { ProfileType } from "@/lib/profile-utils";
-import { Loader2, Send, ArrowLeft, Sparkles, MapPin, Phone, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, X, ExternalLink } from "lucide-react";
+import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-deck-card";
+import {
+  mapDatabaseDonorToSwipeProfile,
+  mapDatabaseSurrogateToSwipeProfile,
+  mapDatabaseSpermDonorToSwipeProfile,
+  getDonorTabs,
+  getSurrogateTabs,
+  buildTitle,
+  buildStatusLabel,
+  getPhotoList,
+} from "@/components/marketplace/swipe-mappers";
+import { Loader2, Send, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, X, ExternalLink } from "lucide-react";
 
 interface MatchCard {
   name: string;
@@ -448,20 +456,38 @@ function getProfileUrlSlug(type: string): string {
   return "surrogate";
 }
 
-function getMatchCardProfileType(type: string): ProfileType {
-  const t = type.toLowerCase();
-  if (t === "surrogate") return "surrogate";
-  if (t === "egg donor") return "egg-donor";
-  if (t === "sperm donor") return "sperm-donor";
-  return "surrogate";
-}
-
 function getProfileEndpoint(type: string): string {
   const t = type.toLowerCase();
   if (t === "surrogate") return "surrogates";
   if (t === "egg donor") return "egg-donors";
   if (t === "sperm donor") return "sperm-donors";
   return "surrogates";
+}
+
+function buildMatchTabs(profile: any, cardType: string, reasons: string[]): TabSection[] {
+  const t = cardType.toLowerCase();
+  const isSurrogate = t === "surrogate";
+
+  const swipeProfile = isSurrogate
+    ? mapDatabaseSurrogateToSwipeProfile(profile)
+    : t === "sperm donor"
+      ? mapDatabaseSpermDonorToSwipeProfile(profile)
+      : mapDatabaseDonorToSwipeProfile(profile);
+
+  const baseTabs = isSurrogate
+    ? getSurrogateTabs(swipeProfile, [])
+    : getDonorTabs(swipeProfile, []);
+
+  if (reasons.length > 0) {
+    const matchTab: TabSection = {
+      layoutType: "matched_bubbles",
+      title: `Matched ${reasons.length} Preference${reasons.length !== 1 ? "s" : ""}`,
+      items: reasons.map(r => ({ label: r, value: "" })),
+    };
+    return [matchTab, ...baseTabs];
+  }
+
+  return baseTabs;
 }
 
 function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { card: MatchCard; brandColor: string; onAction: (text: string) => void; onViewProfile: (card: MatchCard) => void }) {
@@ -483,62 +509,63 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
 
   if (loading) {
     return (
-      <Card className="overflow-hidden max-w-[220px] animate-[slideUp_0.4s_ease-out_forwards]">
-        <div className="aspect-[3/4] bg-muted flex items-center justify-center" style={{ borderTopLeftRadius: 'var(--container-radius)', borderTopRightRadius: 'var(--container-radius)' }}>
-          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-        </div>
-        <div className="p-3">
-          <div className="h-4 bg-muted rounded w-3/4 mb-2" />
-          <div className="h-3 bg-muted rounded w-1/2" />
-        </div>
-      </Card>
+      <div className="w-full max-w-sm aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
     );
   }
 
   if (profile) {
+    const t = card.type.toLowerCase();
+    const swipeProfile = t === "surrogate"
+      ? mapDatabaseSurrogateToSwipeProfile(profile)
+      : t === "sperm donor"
+        ? mapDatabaseSpermDonorToSwipeProfile(profile)
+        : mapDatabaseDonorToSwipeProfile(profile);
+    const photos = getPhotoList(swipeProfile);
+    const title = buildTitle(swipeProfile);
+    const statusLabel = buildStatusLabel(swipeProfile);
+    const tabs = buildMatchTabs(profile, card.type, card.reasons);
+
     return (
-      <div className="max-w-[220px] animate-[slideUp_0.4s_ease-out_forwards]" data-testid={`match-card-${card.providerId}`}>
-        <ProfileCard
-          profile={profile}
-          type={getMatchCardProfileType(card.type)}
-          variant="marketplace"
-          matchReasons={card.reasons}
-          onNavigate={() => onViewProfile(card)}
+      <div
+        className="w-full max-w-sm aspect-[3/4] animate-[slideUp_0.4s_ease-out_forwards]"
+        data-testid={`match-card-${card.providerId}`}
+      >
+        <SwipeDeckCard
+          id={card.providerId}
+          photos={photos}
+          title={title}
+          statusLabel={statusLabel}
+          isExperienced={swipeProfile.isExperienced}
+          isPremium={swipeProfile.isPremium}
+          tabs={tabs}
+          disableSwipe
+          onPass={() => {}}
+          onSave={() => onAction("Yes, please reach out!")}
+          onUndo={() => onAction("Show me more options")}
+          onViewFullProfile={() => onViewProfile(card)}
         />
       </div>
     );
   }
 
   return (
-    <Card
-      className="overflow-hidden max-w-[220px] animate-[slideUp_0.4s_ease-out_forwards] cursor-pointer transition-shadow hover:shadow-md"
+    <div
+      className="w-full max-w-sm aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted cursor-pointer relative"
       data-testid={`match-card-${card.providerId}`}
       onClick={() => onViewProfile(card)}
     >
       {card.photo && (
-        <div className="aspect-[3/4] overflow-hidden" style={{ borderTopLeftRadius: 'var(--container-radius)', borderTopRightRadius: 'var(--container-radius)' }}>
-          <img src={card.photo} alt={card.name} className="w-full h-full object-cover" />
-        </div>
+        <img src={card.photo} alt={card.name} className="w-full h-full object-cover" />
       )}
-      <div className="p-3 space-y-1.5">
-        <h4 className="font-heading text-sm text-primary truncate">{card.name}</h4>
-        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{card.type}</Badge>
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-24 pb-6 px-4">
+        <h3 className="text-white font-heading text-xl leading-tight">{card.name}</h3>
         {card.location && (
-          <p className="text-xs text-muted-foreground truncate">{card.location}</p>
-        )}
-        {card.reasons.length > 0 && (
-          <div className="mt-1 pt-1 border-t border-border/50 space-y-1">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Why This Match</p>
-            {card.reasons.map((reason, i) => (
-              <div key={i} className="flex items-start gap-1.5 text-xs">
-                <span style={{ color: brandColor }} className="flex-shrink-0 mt-0.5">&#10003;</span>
-                <span className="leading-snug">{reason}</span>
-              </div>
-            ))}
-          </div>
+          <p className="text-white/70 text-sm mt-1">{card.location}</p>
         )}
       </div>
-    </Card>
+    </div>
   );
 }
 
