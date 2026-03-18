@@ -130,6 +130,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: "get_surrogate_profile",
+        description:
+          "Look up a specific surrogate's FULL profile by their ID or external ID (e.g. '19331'). Returns complete pregnancy history (birth weights, delivery types, gestational ages), health details, support system, motivation, letter to intended parents, preferences, and all other profile sections. Use this tool when a parent asks follow-up questions about a specific surrogate's details — DO NOT whisper if this tool can answer the question.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            surrogateId: {
+              type: "string",
+              description: "The surrogate's UUID (id field) from a previous search result or MATCH_CARD",
+            },
+            externalId: {
+              type: "string",
+              description: "The surrogate's external ID number (e.g. '19331' from 'Surrogate #19331'). Use this if you don't have the UUID.",
+            },
+          },
+        },
+      },
+      {
         name: "search_egg_donors",
         description:
           "Search the database for available egg donors. Returns real donor profiles with their IDs, photos, and attributes. Use the returned IDs in MATCH_CARDs with type 'Egg Donor'.",
@@ -378,6 +396,65 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       return {
         content: [{ type: "text", text: `Found ${results.length} surrogates:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Surrogate" in your MATCH_CARDs. Use the "displayName" as the name. Use the "profileHighlights" (supportSystem, motivation, pregnancyHistory, letterExcerpt) to write a warm, personalized introduction. ALWAYS mention the support system if available.` }],
+      };
+    }
+
+    if (name === "get_surrogate_profile") {
+      const { surrogateId, externalId } = args as any;
+      if (!surrogateId && !externalId) {
+        return { content: [{ type: "text", text: "Error: Provide either surrogateId (UUID) or externalId (number like '19331')." }] };
+      }
+
+      const where: any = {};
+      if (surrogateId) where.id = surrogateId;
+      else if (externalId) where.externalId = externalId;
+
+      const surrogate = await prisma.surrogate.findFirst({
+        where,
+        select: {
+          id: true, providerId: true, externalId: true, firstName: true, age: true,
+          location: true, baseCompensation: true, agreesToTwins: true, agreesToAbortion: true,
+          agreesToSelectiveReduction: true, openToSameSexCouple: true,
+          isExperienced: true, ethnicity: true, race: true, liveBirths: true,
+          photoUrl: true, religion: true, profileData: true,
+        },
+      });
+
+      if (!surrogate) {
+        return { content: [{ type: "text", text: `No surrogate found with ${surrogateId ? 'ID ' + surrogateId : 'external ID ' + externalId}.` }] };
+      }
+
+      const pd = (surrogate as any).profileData;
+      const sections = pd?._sections || {};
+
+      const profileSections: Record<string, any> = {};
+      const skipSections = new Set(["Photos"]);
+      for (const [sectionName, sectionData] of Object.entries(sections)) {
+        if (skipSections.has(sectionName) || !sectionData) continue;
+        profileSections[sectionName] = sectionData;
+      }
+
+      const topLevelData: Record<string, any> = {};
+      if (pd && typeof pd === "object") {
+        for (const [key, value] of Object.entries(pd)) {
+          if (key === "_sections" || key === "Photos" || key === "SKIP") continue;
+          if (value !== undefined && value !== null && value !== "") {
+            topLevelData[key] = value;
+          }
+        }
+      }
+
+      const { profileData, ...surrogateBasic } = surrogate as any;
+      const result = {
+        ...surrogateBasic,
+        displayName: surrogateBasic.firstName || (surrogateBasic.externalId ? `Surrogate #${surrogateBasic.externalId}` : `Surrogate`),
+        baseCompensation: surrogateBasic.baseCompensation ? Number(surrogateBasic.baseCompensation) : null,
+        profileSections,
+        additionalDetails: topLevelData,
+      };
+
+      return {
+        content: [{ type: "text", text: `Full profile for ${result.displayName}:\n${JSON.stringify(result, null, 2)}\n\nThis profile contains COMPLETE data including pregnancy history (birth weights, delivery types, gestational ages), health info, support system, and more. Use this data to answer the parent's questions DIRECTLY — do NOT whisper unless the specific answer is truly not in this profile.` }],
       };
     }
 
