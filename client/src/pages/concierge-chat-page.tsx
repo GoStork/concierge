@@ -942,7 +942,7 @@ export default function ConciergeChatPage() {
               {msg.role === "assistant" && msg.senderType === "system" && (
                 <div className="flex items-center gap-1.5 mb-1 ml-1">
                   <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--accent))] text-white" data-testid={`badge-system-${i}`}>
-                    Eva
+                    {selectedMatchmaker?.name || "Eva"}
                   </div>
                 </div>
               )}
