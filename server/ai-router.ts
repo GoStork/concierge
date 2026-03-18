@@ -995,6 +995,84 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
     let finalContent =
       responseMessage.content || "I'm sorry, I couldn't process that.";
 
+    // QUESTION INTERCEPTOR: Detect when parent asked a question about a presented profile
+    // but the AI ignored it and showed a new match card instead.
+    const isSkipAction = /not interested|show me another|skip|pass on/i.test(userMessage);
+    const isFavoriteAction = /save as favorite|like .+!|❤️|favorite/i.test(userMessage);
+    const looksLikeQuestion = /\?|what|how|where|when|who|why|does she|does he|is she|is he|tell me|her\s+(weight|bmi|age|education|location|compensation|health|deliver|pregnan|baby|babies|height|diet)/i.test(userMessage);
+    const aiShowedNewMatch = /\[\[MATCH_CARD:/i.test(finalContent);
+
+    if (!isSkipAction && !isFavoriteAction && looksLikeQuestion && aiShowedNewMatch && currentSessionId && mcpClient) {
+      console.log(`[QUESTION INTERCEPT] Parent asked a question but AI showed new match card. Intercepting to answer from profile.`);
+      try {
+        const recentCards = await prisma.aiChatMessage.findMany({
+          where: { sessionId: currentSessionId, uiCardType: "rich" },
+          orderBy: { createdAt: "desc" },
+          take: 3,
+          select: { uiCardData: true },
+        });
+        let entityId: string | null = null;
+        let entityType: string | null = null;
+        for (const card of recentCards) {
+          const data = card.uiCardData as any;
+          const mc = data?.matchCards?.[0];
+          if (mc) {
+            entityId = mc.providerId || null;
+            entityType = mc.type || null;
+            break;
+          }
+        }
+
+        if (entityId && entityType) {
+          const etype = (entityType || "").toLowerCase();
+          let profileToolName: string | null = null;
+          if (etype === "surrogate") profileToolName = "get_surrogate_profile";
+          else if (etype === "egg donor") profileToolName = "search_egg_donors";
+          else if (etype === "sperm donor") profileToolName = "search_sperm_donors";
+
+          if (profileToolName) {
+            let profileText = "";
+            if (profileToolName === "get_surrogate_profile") {
+              const profileResult = await mcpClient.callTool({
+                name: "get_surrogate_profile",
+                arguments: { surrogateId: entityId },
+              });
+              profileText = (profileResult.content as any)?.[0]?.text || "";
+            } else {
+              const searchResult = await mcpClient.callTool({
+                name: profileToolName,
+                arguments: { query: userMessage, limit: 1 },
+              });
+              profileText = (searchResult.content as any)?.[0]?.text || "";
+            }
+
+            if (profileText && profileText.length > 50) {
+              console.log(`[QUESTION INTERCEPT] Got profile data (${profileText.length} chars), re-asking AI to answer question instead of showing new match`);
+              messages.push({
+                role: "user",
+                content: `SYSTEM OVERRIDE: The parent asked a QUESTION about the currently presented match profile. They did NOT ask to skip or see a new match. You MUST answer their question using the profile data below. Do NOT present a new match card. Do NOT call search tools. Just answer the question.\n\nFULL PROFILE DATA:\n${profileText}\n\nParent's question: "${userMessage}"\n\nAnswer the question directly from the profile data. After answering, ask if they have more questions: "Anything else you'd like to know about her?" [[QUICK_REPLY:More questions|I like her!|Show me someone else]]`,
+              });
+
+              const retryResponse = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages,
+              });
+              const retryContent = retryResponse.choices[0].message?.content;
+              if (retryContent && !/\[\[MATCH_CARD:/i.test(retryContent)) {
+                console.log(`[QUESTION INTERCEPT SUCCESS] AI answered from profile data instead of showing new match`);
+                finalContent = retryContent;
+              } else {
+                console.log(`[QUESTION INTERCEPT] Retry still showed match card — using original response`);
+                messages.pop();
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error("[QUESTION INTERCEPT] Error:", e);
+      }
+    }
+
     const saveMatch = finalContent.match(/\[\[SAVE:(.*?)\]\]/);
     if (saveMatch) {
       try {
