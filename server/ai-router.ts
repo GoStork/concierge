@@ -678,7 +678,8 @@ STEP 8 — MATCH REVEAL:
   - FAVORITE (❤️ button): The parent sends a message like "I like [Name]! Save as favorite. ❤️"
     → Step 1: Acknowledge warmly and confirm the favorite: "Great choice! I've saved [Name] as a favorite for you."
     → Step 2: Ask if they have any questions about this profile: "Do you have any questions about this match before we take the next step?" [[QUICK_REPLY:Yes, I have questions|No, let's move forward]]
-    → Step 3 (If questions): Answer using the profile data, knowledge base, and database tools. If you don't have the answer, use the [[WHISPER:PROVIDER_ID]] tag to ask the agency. Say: "That's a great question! I don't have that specific detail yet, but I've just sent a message to the agency. I'll get back to you as soon as they reply!"
+    → Step 3 (If questions): Answer using the profile data, knowledge base, and database tools. If you don't have the answer, you MUST use the [[WHISPER:PROVIDER_ID]] tag to ask the agency. Your response MUST include the literal tag [[WHISPER:provider-uuid-here]] with the real provider UUID. Say: "That's a great question! I don't have that specific detail yet, but I've just sent a message to the agency. I'll get back to you as soon as they reply!" followed by [[WHISPER:provider-uuid-here]].
+      CRITICAL: You MUST include the [[WHISPER:...]] tag in your response text. Do NOT just say you'll check — the tag is what triggers the system to actually send the question. Without the tag, NOTHING happens. The PROVIDER_ID is the ownerProviderId from the MATCH_CARD you presented (NOT the surrogate/donor's own ID).
       IMPORTANT: After using [[WHISPER:...]], WAIT for the provider's answer. Do NOT move forward to scheduling until the parent says they're done with questions. Keep answering questions as long as the parent has them.
     → Step 4 (After ALL questions answered AND parent says they're done or "No, let's move forward"): Provide a brief summary about the agency that represents this profile. Include key info like the agency name, their specialization, years of experience, and any notable details from the knowledge base.
     → Step 5: Suggest scheduling a FREE consultation call: "The next step would be to schedule a free consultation call with the agency so you can speak with them directly. Would you like me to set that up?" [[QUICK_REPLY:Yes, schedule a consultation|Not yet, show me more options]]
@@ -688,9 +689,10 @@ STEP 8 — MATCH REVEAL:
   - REMEMBER: Always wait for the parent to respond at each step. Never skip ahead or auto-present the next profile. The parent can ask as many questions as they want before scheduling.
 
 SILENT PASSTHROUGH PROTOCOL:
-When the user asks a specific question about a provider's operations, pricing, policies, or administrative details that you cannot find in the KNOWLEDGE BASE CONTEXT above or via your database tools, use the [[WHISPER:PROVIDER_ID]] tag.
-Format: Include [[WHISPER:provider-uuid-here]] at the end of your response along with the question.
-Your message should say: "That's a great question! I don't have that specific detail yet, but I've just sent a message to the agency. I'll get back to you as soon as they reply!"
+When the user asks a specific question about a provider's operations, pricing, policies, or administrative details that you cannot find in the KNOWLEDGE BASE CONTEXT above or via your database tools, you MUST include the [[WHISPER:PROVIDER_ID]] tag in your response.
+Format: Include [[WHISPER:provider-uuid-here]] at the END of your response text. The PROVIDER_ID is the ownerProviderId from the most recent MATCH_CARD. This tag is REQUIRED — without it, the question is NEVER sent to the provider.
+Your message should say: "That's a great question! I don't have that specific detail yet, but I've just sent a message to the agency. I'll get back to you as soon as they reply!" [[WHISPER:provider-uuid-here]]
+NEVER say you'll "check" or "look into it" without including the [[WHISPER:...]] tag — that would be lying to the parent since nothing actually happens without the tag.
 The system will silently send the question to the provider's AI Concierge inbox (the parent's identity is NOT revealed to the provider). When the provider answers, you'll receive it as a PROVIDER WHISPER ANSWER in your context — present it naturally.
 CRITICAL: Using [[WHISPER:...]] does NOT create a direct conversation with the provider. The parent stays in their AI chat. Only when the parent schedules a consultation (via [[CONSULTATION_BOOKING:...]]) does a direct 3-way chat get created.
 Only use [[WHISPER:...]] when you're discussing a SPECIFIC provider and the question requires provider-specific knowledge you don't have. Do NOT whisper for general fertility questions you can answer yourself.
@@ -984,7 +986,7 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
 
     let whisperMatch = finalContent.match(/\[\[WHISPER:(.*?)\]\]/);
     if (!whisperMatch && userId && currentSessionId) {
-      const whisperPhrasePattern = /(?:whisper|reach(?:ed|ing)?\s*out|sent\s*a\s*message|ask(?:ed|ing)?\s*the\s*(?:agency|coordinator|clinic|provider))/i;
+      const whisperPhrasePattern = /(?:whisper|reach(?:ed|ing)?\s*out|sent\s*a\s*message|ask(?:ed|ing)?\s*the\s*(?:agency|coordinator|clinic|provider)|check\s*(?:on|with)|hold\s*on|get\s*(?:that|this|back|the)\s*(?:info|detail|answer)|find\s*(?:that|this)\s*out|look(?:ing)?\s*into\s*(?:that|this|it)|get\s*back\s*to\s*you)/i;
       if (whisperPhrasePattern.test(finalContent)) {
         try {
           const recentCards = await prisma.aiChatMessage.findMany({
