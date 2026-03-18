@@ -336,7 +336,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       data: { userId, title: "AI Concierge Chat", matchmakerId },
     });
 
-    await prisma.aiChatMessage.create({
+    const greetingMsg = await prisma.aiChatMessage.create({
       data: {
         sessionId: session.id,
         role: "assistant",
@@ -345,7 +345,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       },
     });
 
-    res.json({ sessionId: session.id });
+    res.json({ sessionId: session.id, greetingMessageId: greetingMsg.id });
   } catch (e: any) {
     console.error("Init session error:", e);
     res.status(500).json({ error: e.message });
@@ -411,7 +411,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       ? `${parentNameParts[0]} ${parentNameParts[parentNameParts.length - 1][0]}.`
       : parentNameParts[0] || "Parent";
 
-    await prisma.aiChatMessage.create({
+    const savedUserMsg = await prisma.aiChatMessage.create({
       data: {
         sessionId: currentSessionId,
         role: "user",
@@ -447,6 +447,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       return res.json({
         message: { id: null, content: "", senderType: "ai", role: "assistant" },
         sessionId: currentSessionId,
+        userMessageId: savedUserMsg.id,
         skipAiResponse: true,
       });
     }
@@ -1396,6 +1397,7 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
 
     res.json({
       sessionId: currentSessionId,
+      userMessageId: savedUserMsg.id,
       message: savedAiMessage,
       quickReplies: quickReplies.length > 0 ? quickReplies : undefined,
       multiSelect: multiSelect || undefined,

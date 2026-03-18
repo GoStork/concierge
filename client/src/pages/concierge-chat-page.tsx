@@ -611,6 +611,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
   const lastPollTimeRef = useRef<string | null>(null);
+  const knownMessageIds = useRef<Set<string>>(new Set());
 
   const matchmakers: Matchmaker[] = brand?.matchmakers || [];
   const [resolvedMatchmakerId, setResolvedMatchmakerId] = useState<string | null>(null);
@@ -640,6 +641,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         setMessages(parsed);
         setGreetingSet(true);
         lastPollTimeRef.current = msgs[msgs.length - 1].createdAt;
+        msgs.forEach((m: any) => { if (m.id) knownMessageIds.current.add(m.id); });
         if (msgs.some((m: any) => m.senderType === "human")) setHumanEscalated(true);
         if (msgs.some((m: any) => m.senderType === "provider")) setProviderInChat(true);
       }
@@ -717,33 +719,43 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   }, [messages]);
 
   useEffect(() => {
-    if ((!humanEscalated && !providerInChat) || !sessionId) return;
+    if (!sessionId) return;
     const interval = setInterval(async () => {
+      if (sendingRef.current) return;
       try {
         const afterParam = lastPollTimeRef.current ? `?after=${encodeURIComponent(lastPollTimeRef.current)}` : "";
         const res = await fetch(`/api/ai-concierge/session/${sessionId}/messages${afterParam}`, { credentials: "include" });
         if (!res.ok) return;
         const newMsgs = await res.json();
-        const externalMsgs = newMsgs.filter((m: any) => m.senderType === "human" || m.senderType === "provider" || m.senderType === "system");
-        if (externalMsgs.length > 0) {
+        const unseenMsgs = newMsgs.filter((m: any) => m.id && !knownMessageIds.current.has(m.id));
+        if (unseenMsgs.length > 0) {
+          unseenMsgs.forEach((m: any) => knownMessageIds.current.add(m.id));
           setMessages((prev) => [
             ...prev,
-            ...externalMsgs.map((m: any) => ({
-              role: "assistant" as const,
-              content: m.content,
-              senderType: m.senderType as string,
-              senderName: m.senderName || (m.senderType === "human" ? "GoStork Expert" : m.senderType === "provider" ? m.senderName : "Eva"),
-            })),
+            ...unseenMsgs.map((m: any) => {
+              const extras = m.uiCardData || {};
+              return {
+                id: m.id,
+                role: m.role as "user" | "assistant",
+                content: m.content,
+                senderType: m.senderType as string | undefined,
+                senderName: m.senderName || (m.senderType === "human" ? "GoStork Expert" : m.senderType === "provider" ? m.senderName : undefined),
+                matchCards: extras.matchCards,
+                prepDoc: extras.prepDoc,
+                consultationCard: extras.consultationCard,
+              };
+            }),
           ]);
-          lastPollTimeRef.current = externalMsgs[externalMsgs.length - 1].createdAt;
-          if (externalMsgs.some((m: any) => m.senderType === "provider" || m.senderType === "system")) {
+          lastPollTimeRef.current = unseenMsgs[unseenMsgs.length - 1].createdAt;
+          if (unseenMsgs.some((m: any) => m.senderType === "human")) setHumanEscalated(true);
+          if (unseenMsgs.some((m: any) => m.senderType === "provider" || m.senderType === "system")) {
             setProviderInChat(true);
           }
         }
       } catch {}
     }, 3000);
     return () => clearInterval(interval);
-  }, [humanEscalated, providerInChat, sessionId]);
+  }, [sessionId]);
 
   const profileReady = !parentProfileQuery.isLoading;
 
@@ -778,6 +790,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         if (res.ok) {
           const data = await res.json();
           if (data.sessionId) setSessionId(data.sessionId);
+          if (data.greetingMessageId) knownMessageIds.current.add(data.greetingMessageId);
         }
       } catch {}
     })();
@@ -842,6 +855,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       if (data.consultationCard) {
         setProviderInChat(true);
       }
+
+      if (data.userMessageId) knownMessageIds.current.add(data.userMessageId);
+      if (data.message.id) knownMessageIds.current.add(data.message.id);
 
       const newMessage: ChatMessage = {
         role: "assistant",
