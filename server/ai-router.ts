@@ -954,7 +954,7 @@ CONSULTATION BOOKING:
 When a parent is ready to take the next step with a matched provider and wants to schedule a consultation (not just a match call), use:
 [[CONSULTATION_BOOKING:PROVIDER_ID]]
 This will present a booking card with the provider's details and a "Schedule Consultation" button.
-After triggering a consultation booking, acknowledge it warmly: "Great! I've logged that you've requested a consultation with [Provider]. I'll keep an eye on this for you. Would you like me to suggest some questions specifically for this first meeting?"
+After triggering a consultation booking, keep your text VERY short because the system will automatically embed the provider's calendar widget right below your message. Say something brief like: "Here's the calendar — pick a time that works for you!" Do NOT say you "logged" anything or that you'll "keep an eye on it." The calendar appears automatically.
 Also save the journey stage: [[SAVE:{"journeyStage":"Consultation Requested"}]]
 
 All [[SAVE:...]], [[QUICK_REPLY:...]], [[CURATION]], [[MATCH_CARD:...]], [[HOT_LEAD:...]], [[WHISPER:...]], [[HUMAN_NEEDED]], and [[CONSULTATION_BOOKING:...]] tags are stripped before the user sees the message.
@@ -1112,7 +1112,7 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
     // PROACTIVE PROFILE INJECTION: When parent asks a question about a presented profile,
     // fetch the full profile BEFORE sending to AI so it has all data on the first try
     const looksLikeProfileQuestion = /\?|what|how|where|when|who|why|does she|does he|is she|is he|tell me|her\s+|his\s+|husband|wife|partner|name|age|weight|bmi|education|location|health|deliver|pregnan|baby|babies|height|diet|religion|charge|cost|compen|letter|hobby|pet|smoke|drink|tattoo|pierc/i.test(userMessage);
-    const isNotAction = !/not interested|show me another|skip|pass on|save as favorite|like .+!|❤️|favorite|yes.*schedule|schedule.*consultation|show me more|what.?s next|next step|move forward|let.?s (go|proceed|do it|move)|ready to (book|schedule|proceed)|i.?m ready|let.?s book|sign me up/i.test(userMessage);
+    const isNotAction = !/not interested|show me another|skip|pass on|save as favorite|like .+!|❤️|favorite|yes.*schedule|schedule.*consultation|show me more|what.?s next|what happens next|what now|next step|move forward|let.?s (go|proceed|do it|move)|ready to (book|schedule|proceed)|i.?m ready|let.?s book|sign me up|^yes[.!,\s]*$|^sure[.!,\s]*$|^ok[.!,\s]*$|^absolutely[.!,\s]*$|^definitely[.!,\s]*$|^please[.!,\s]*$|^do it[.!,\s]*$|^set it up[.!,\s]*$/i.test(userMessage.trim());
 
     if (looksLikeProfileQuestion && isNotAction && currentSessionId && mcpClient) {
       try {
@@ -1190,8 +1190,19 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
       }
     }
 
-    const schedulingIntent = /what.?s next|next step|move forward|let.?s (go|proceed|do it|move)|ready to (book|schedule|proceed)|i.?m ready|let.?s book|sign me up|yes.*schedule|schedule.*consultation|yes.*free consultation|book.*consultation/i.test(userMessage);
-    if (schedulingIntent && currentSessionId) {
+    const schedulingIntent = /what.?s next|what happens next|what now|next step|move forward|let.?s (go|proceed|do it|move)|ready to (book|schedule|proceed)|i.?m ready|let.?s book|sign me up|yes.*schedule|schedule.*consultation|yes.*free consultation|book.*consultation/i.test(userMessage);
+    const shortAffirmative = /^(yes|sure|ok|absolutely|definitely|please|do it|set it up|sounds good|let.?s do it|i.?d love that|that.?d be great|go ahead|go for it)[.!,\s]*$/i.test(userMessage.trim());
+    let affirmativeIsScheduling = false;
+    if (shortAffirmative && currentSessionId) {
+      const lastAssistantMsg = [...messages].reverse().find(m => m.role === "assistant");
+      if (lastAssistantMsg && typeof lastAssistantMsg.content === "string" &&
+          /schedule|consultation|set.?that.?up|book.*call|free.*call|arrange.*that|next step/i.test(lastAssistantMsg.content)) {
+        affirmativeIsScheduling = true;
+        console.log(`[SCHEDULING-INTENT] Short affirmative "${userMessage}" after scheduling suggestion`);
+      }
+    }
+    const shouldTriggerScheduling = schedulingIntent || affirmativeIsScheduling;
+    if (shouldTriggerScheduling && currentSessionId) {
       try {
         const mc = await findLatestMatchCard(currentSessionId);
         if (mc?.ownerProviderId) {
