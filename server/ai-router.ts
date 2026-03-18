@@ -985,9 +985,12 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
     }
 
     let whisperMatch = finalContent.match(/\[\[WHISPER:(.*?)\]\]/);
+    console.log(`[WHISPER DEBUG] whisperMatch=${!!whisperMatch}, userId=${!!userId}, currentSessionId=${currentSessionId}, finalContent="${finalContent.slice(0, 200)}"`);
     if (!whisperMatch && userId && currentSessionId) {
       const whisperPhrasePattern = /(?:whisper|reach(?:ed|ing)?\s*out|sent\s*a\s*message|ask(?:ed|ing)?\s*the\s*(?:agency|coordinator|clinic|provider)|check\s*(?:on|with)|hold\s*on|get\s*(?:that|this|back|the)\s*(?:info|detail|answer)|find\s*(?:that|this)\s*out|look(?:ing)?\s*into\s*(?:that|this|it)|get\s*back\s*to\s*you)/i;
-      if (whisperPhrasePattern.test(finalContent)) {
+      const phraseMatched = whisperPhrasePattern.test(finalContent);
+      console.log(`[WHISPER DEBUG] phraseMatched=${phraseMatched}`);
+      if (phraseMatched) {
         try {
           const recentCards = await prisma.aiChatMessage.findMany({
             where: { sessionId: currentSessionId, uiCardType: "rich" },
@@ -1010,9 +1013,12 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
             });
             inferredProviderId = session?.providerId || null;
           }
+          console.log(`[WHISPER DEBUG] inferredProviderId=${inferredProviderId}, recentCards count=${recentCards.length}`);
           if (inferredProviderId) {
             console.log(`[WHISPER FALLBACK] AI mentioned reaching out but no [[WHISPER:...]] tag — auto-creating for provider ${inferredProviderId}`);
             whisperMatch = [`[[WHISPER:${inferredProviderId}]]`, inferredProviderId] as any;
+          } else {
+            console.log(`[WHISPER DEBUG] Could not infer provider — no match cards found and no providerId on session`);
           }
         } catch (e) {
           console.error("Whisper fallback inference error:", e);
