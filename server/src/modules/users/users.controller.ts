@@ -747,7 +747,8 @@ export class UsersController {
     const chatSessions = await this.prisma.aiChatSession.findMany({
       where: {
         providerId,
-        status: { in: ["ACTIVE", "HUMAN_JOINED", "PROVIDER_JOINED"] },
+        status: "PROVIDER_JOINED",
+        sessionType: { not: "PROVIDER_CONCIERGE" },
       },
       select: {
         userId: true,

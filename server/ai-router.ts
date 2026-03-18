@@ -660,20 +660,22 @@ STEP 8 — MATCH REVEAL:
   
   - FAVORITE (❤️ button): The parent sends a message like "I like [Name]! Save as favorite. ❤️"
     → Step 1: Acknowledge warmly and confirm the favorite: "Great choice! I've saved [Name] as a favorite for you."
-    → Step 2: Ask if they have any questions about this profile: "Do you have any questions about her before we take the next step?" [[QUICK_REPLY:Yes, I have questions|No, let's move forward]]
-    → Step 3 (If questions): Answer using the profile data, knowledge base, and database tools. If you don't have the answer, use the [[WHISPER:PROVIDER_ID]] tag to ask the agency: "That's a great question! I don't have that specific detail yet, but I've just sent a message to the agency. I'll get back to you as soon as they reply!"
-    → Step 4 (After questions answered OR "No, let's move forward"): Provide a brief summary about the agency that represents this profile. Include key info like the agency name, their specialization, years of experience, and any notable details from the knowledge base or their profile. Example: "This profile is represented by [Agency Name], a well-established surrogacy agency based in [Location]. They specialize in [X] and have been helping families for [Y] years."
-    → Step 5: Suggest scheduling a meeting: "I'd love to help set up a meeting between you and the agency to discuss next steps. Would you like me to arrange that?" [[QUICK_REPLY:Yes, schedule a meeting|Not yet, show me more options]]
-    → Step 6 (If "Yes, schedule a meeting"): Include [[HOT_LEAD:PROVIDER_ID]] to flag the lead, then say: "I'm on it! I've flagged this match and the GoStork team will help coordinate a call between you and the agency. You'll hear from us shortly!" Also save: [[SAVE:{"journeyStage":"Meeting Requested"}]]
+    → Step 2: Ask if they have any questions about this profile: "Do you have any questions about this match before we take the next step?" [[QUICK_REPLY:Yes, I have questions|No, let's move forward]]
+    → Step 3 (If questions): Answer using the profile data, knowledge base, and database tools. If you don't have the answer, use the [[WHISPER:PROVIDER_ID]] tag to ask the agency. Say: "That's a great question! I don't have that specific detail yet, but I've just sent a message to the agency. I'll get back to you as soon as they reply!"
+      IMPORTANT: After using [[WHISPER:...]], WAIT for the provider's answer. Do NOT move forward to scheduling until the parent says they're done with questions. Keep answering questions as long as the parent has them.
+    → Step 4 (After ALL questions answered AND parent says they're done or "No, let's move forward"): Provide a brief summary about the agency that represents this profile. Include key info like the agency name, their specialization, years of experience, and any notable details from the knowledge base.
+    → Step 5: Suggest scheduling a FREE consultation call: "The next step would be to schedule a free consultation call with the agency so you can speak with them directly. Would you like me to set that up?" [[QUICK_REPLY:Yes, schedule a consultation|Not yet, show me more options]]
+    → Step 6 (If "Yes, schedule a consultation"): Include [[CONSULTATION_BOOKING:PROVIDER_ID]] to present the booking card. Also include [[HOT_LEAD:PROVIDER_ID]] and save: [[SAVE:{"journeyStage":"Consultation Requested"}]]
     → Step 6 (If "Not yet, show me more options"): Call the search tools again and present ONE NEW MATCH_CARD.
   
-  - REMEMBER: Always wait for the parent to respond at each step. Never skip ahead or auto-present the next profile.
+  - REMEMBER: Always wait for the parent to respond at each step. Never skip ahead or auto-present the next profile. The parent can ask as many questions as they want before scheduling.
 
 SILENT PASSTHROUGH PROTOCOL:
 When the user asks a specific question about a provider's operations, pricing, policies, or administrative details that you cannot find in the KNOWLEDGE BASE CONTEXT above or via your database tools, use the [[WHISPER:PROVIDER_ID]] tag.
 Format: Include [[WHISPER:provider-uuid-here]] at the end of your response along with the question.
-Your message should say: "I don't have that specific detail yet, but I've just whispered a message to the clinic's coordinator. I'll have that answer for you as soon as they reply!"
-The system will silently send the question to the provider without revealing the parent's identity. When the provider answers, you'll receive it in a future message context.
+Your message should say: "That's a great question! I don't have that specific detail yet, but I've just sent a message to the agency. I'll get back to you as soon as they reply!"
+The system will silently send the question to the provider's AI Concierge inbox (the parent's identity is NOT revealed to the provider). When the provider answers, you'll receive it as a PROVIDER WHISPER ANSWER in your context — present it naturally.
+CRITICAL: Using [[WHISPER:...]] does NOT create a direct conversation with the provider. The parent stays in their AI chat. Only when the parent schedules a consultation (via [[CONSULTATION_BOOKING:...]]) does a direct 3-way chat get created.
 Only use [[WHISPER:...]] when you're discussing a SPECIFIC provider and the question requires provider-specific knowledge you don't have. Do NOT whisper for general fertility questions you can answer yourself.
 
 HUMAN ESCALATION PROTOCOL:
@@ -739,7 +741,7 @@ IMPORTANT RULES:
         const whisperParts = answeredWhispers.map(
           (w: any) => `- Question about ${w.provider.name}: "${w.questionText}" → Answer: "${w.answerText}"`,
         );
-        answeredWhispersContext = `\nPROVIDER WHISPER ANSWERS (recently answered by providers — present these naturally when relevant):\n${whisperParts.join("\n")}\nWhen presenting a whisper answer, lead with: "I have an update! I spoke with the clinic and they confirmed: [Answer]. Does that help, or are you ready to schedule a match call?"\nIf the parent wants to schedule a match call, use the [[HOT_LEAD:PROVIDER_ID]] tag.\n`;
+        answeredWhispersContext = `\nPROVIDER WHISPER ANSWERS (recently answered by providers — present these naturally when relevant):\n${whisperParts.join("\n")}\nWhen presenting a whisper answer, lead with: "I have an update! I heard back from the agency and they confirmed: [Answer]."\nAfter sharing the answer, ask if the parent has any more questions: "Does that answer your question? Do you have anything else you'd like to know, or are you ready to schedule a free consultation call?"\nIf the parent wants to schedule a consultation, use [[CONSULTATION_BOOKING:PROVIDER_ID]] to present the booking card.\n`;
       }
     } catch (e) {
       console.error("Failed to load whisper answers:", e);
@@ -1013,20 +1015,6 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
             },
           });
 
-          await prisma.aiChatSession.update({
-            where: { id: currentSessionId },
-            data: { providerId: whisperProviderId },
-          });
-
-          await prisma.aiChatMessage.create({
-            data: {
-              sessionId: currentSessionId,
-              role: "assistant",
-              content: `📋 A prospective parent has a question that needs your input:\n\n"${questionText}"\n\nPlease reply in this conversation and the parent will be updated.`,
-              senderType: "system",
-            },
-          });
-
           const provider = await prisma.provider.findUnique({
             where: { id: whisperProviderId },
             select: { name: true },
@@ -1037,27 +1025,60 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
             where: { providerId: whisperProviderId },
             select: { id: true, email: true },
           });
-          for (const pu of providerUsers) {
-            await prisma.inAppNotification.create({
-              data: {
-                userId: pu.id,
-                eventType: "WHISPER_QUESTION",
-                payload: {
-                  message: "The AI concierge has a new question from a prospective parent that needs your input.",
-                  questionPreview: questionText.slice(0, 100),
-                },
+
+          if (providerUsers.length > 0) {
+            let providerConciergeSession = await prisma.aiChatSession.findFirst({
+              where: {
+                providerId: whisperProviderId,
+                sessionType: "PROVIDER_CONCIERGE",
+                status: { in: ["ACTIVE", "HUMAN_JOINED"] },
               },
             });
-          }
+            if (!providerConciergeSession) {
+              providerConciergeSession = await prisma.aiChatSession.create({
+                data: {
+                  userId: providerUsers[0].id,
+                  title: "AI Concierge",
+                  providerId: whisperProviderId,
+                  sessionType: "PROVIDER_CONCIERGE",
+                  providerName,
+                  status: "ACTIVE",
+                },
+              });
+            }
 
-          const baseUrl = process.env.APP_URL?.replace(/\/+$/, "")
-            || (process.env.REPLIT_DEPLOYMENT_URL ? `https://${process.env.REPLIT_DEPLOYMENT_URL}` : "")
-            || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "https://app.gostork.com");
-          const emailRecipients = providerUsers.filter(pu => pu.email).map(pu => pu.email!);
-          for (const recipientEmail of emailRecipients) {
-            sendWhisperEmail(recipientEmail, providerName, questionText, baseUrl).catch(e =>
-              console.error(`Whisper email failed for ${recipientEmail}:`, e.message)
-            );
+            await prisma.aiChatMessage.create({
+              data: {
+                sessionId: providerConciergeSession.id,
+                role: "assistant",
+                content: `📋 A prospective parent has a question that needs your input:\n\n"${questionText}"\n\nPlease reply here and the AI concierge will pass your answer to the parent.`,
+                senderType: "system",
+              },
+            });
+
+            for (const pu of providerUsers) {
+              await prisma.inAppNotification.create({
+                data: {
+                  userId: pu.id,
+                  eventType: "WHISPER_QUESTION",
+                  payload: {
+                    message: "The AI concierge has a new question from a prospective parent that needs your input.",
+                    questionPreview: questionText.slice(0, 100),
+                    sessionId: providerConciergeSession.id,
+                  },
+                },
+              });
+            }
+
+            const baseUrl = process.env.APP_URL?.replace(/\/+$/, "")
+              || (process.env.REPLIT_DEPLOYMENT_URL ? `https://${process.env.REPLIT_DEPLOYMENT_URL}` : "")
+              || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "https://app.gostork.com");
+            const emailRecipients = providerUsers.filter(pu => pu.email).map(pu => pu.email!);
+            for (const recipientEmail of emailRecipients) {
+              sendWhisperEmail(recipientEmail, providerName, questionText, baseUrl).catch(e =>
+                console.error(`Whisper email failed for ${recipientEmail}:`, e.message)
+              );
+            }
           }
         }
       } catch (e) {
@@ -1222,8 +1243,40 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
           if (currentSessionId) {
             await prisma.aiChatSession.update({
               where: { id: currentSessionId },
-              data: { providerId: consultProviderId },
+              data: {
+                providerId: consultProviderId,
+                providerJoinedAt: new Date(),
+                providerName: consultProvider.name,
+                status: "PROVIDER_JOINED",
+              },
             });
+
+            await prisma.aiChatMessage.create({
+              data: {
+                sessionId: currentSessionId,
+                role: "assistant",
+                content: `Great news! ${consultProvider.name} will be joining your conversation after the consultation is scheduled. They'll be able to answer your questions directly here.`,
+                senderType: "system",
+              },
+            });
+
+            const providerUsers = await prisma.user.findMany({
+              where: { providerId: consultProviderId },
+              select: { id: true },
+            });
+            for (const pu of providerUsers) {
+              await prisma.inAppNotification.create({
+                data: {
+                  userId: pu.id,
+                  eventType: "PROVIDER_JOINED_CHAT",
+                  payload: {
+                    sessionId: currentSessionId,
+                    parentName: userRecord?.name || firstName,
+                    message: `${firstName} has scheduled a consultation — you can now chat directly with them`,
+                  },
+                },
+              });
+            }
           }
 
           const admins = await prisma.user.findMany({ where: { roles: { has: "GOSTORK_ADMIN" } }, select: { id: true } });

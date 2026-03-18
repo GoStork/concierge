@@ -40,11 +40,14 @@ interface ProviderSession {
   userEmail: string;
   userAvatar: string | null;
   status: string;
+  sessionType: string;
   providerJoinedAt: string | null;
+  providerName: string | null;
   messageCount: number;
   lastMessage: string | null;
   lastMessageAt: string;
   createdAt: string;
+  pendingQuestions: number;
 }
 
 interface SessionMessage {
@@ -244,7 +247,9 @@ export default function ConversationsPage() {
 
   const detail = sessionDetailQuery.data;
   const profile = detail?.user?.parentAccount?.intendedParentProfile;
-  const hasJoined = !!detail?.providerJoinedAt;
+  const selectedSession = (providerSessionsQuery.data || []).find(s => s.id === selectedSessionId);
+  const isProviderConcierge = selectedSession?.sessionType === "PROVIDER_CONCIERGE" || (detail as any)?.sessionType === "PROVIDER_CONCIERGE";
+  const hasJoined = isProviderConcierge || !!detail?.providerJoinedAt;
 
   if (isParent) {
     const allSessions = parentSessionsQuery.data || [];
@@ -491,16 +496,22 @@ export default function ConversationsPage() {
                 )}
               </div>
             ) : (
-              filteredSessions.map(s => (
+              filteredSessions.map(s => {
+                const isConcierge = s.sessionType === "PROVIDER_CONCIERGE";
+                return (
                 <button
                   key={s.id}
                   className={`w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left border-b border-border/20 ${
                     selectedSessionId === s.id ? "bg-muted/70" : ""
-                  }`}
+                  } ${isConcierge ? "bg-primary/5" : ""}`}
                   onClick={() => setSelectedSessionId(s.id)}
                   data-testid={`provider-session-${s.id}`}
                 >
-                  {s.userAvatar ? (
+                  {isConcierge ? (
+                    <div className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${brandColor}20` }}>
+                      <Sparkles className="w-5 h-5" style={{ color: brandColor }} />
+                    </div>
+                  ) : s.userAvatar ? (
                     <img src={s.userAvatar} alt="" className="w-11 h-11 rounded-full object-cover flex-shrink-0" />
                   ) : (
                     <div className="w-11 h-11 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
@@ -510,8 +521,16 @@ export default function ConversationsPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="font-semibold text-sm font-ui truncate">{s.userName || "Unknown"}</span>
-                        {s.providerJoinedAt ? (
+                        <span className="font-semibold text-sm font-ui truncate">{isConcierge ? "AI Concierge" : (s.userName || "Unknown")}</span>
+                        {isConcierge && s.pendingQuestions > 0 ? (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] text-[9px] font-bold uppercase flex-shrink-0">
+                            {s.pendingQuestions} pending
+                          </span>
+                        ) : isConcierge ? (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase flex-shrink-0" style={{ backgroundColor: `${brandColor}15`, color: brandColor }}>
+                            Pinned
+                          </span>
+                        ) : s.providerJoinedAt ? (
                           <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[9px] font-bold uppercase flex-shrink-0">
                             <CheckCircle2 className="w-2.5 h-2.5" />
                             Joined
@@ -529,7 +548,8 @@ export default function ConversationsPage() {
                     )}
                   </div>
                 </button>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -560,7 +580,11 @@ export default function ConversationsPage() {
                   <ArrowLeft className="w-4 h-4" />
                 </Button>
                 <div className="flex items-center gap-2 flex-1">
-                  {detail.user.photoUrl ? (
+                  {isProviderConcierge ? (
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: `${brandColor}20` }}>
+                      <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
+                    </div>
+                  ) : detail.user.photoUrl ? (
                     <img src={detail.user.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
@@ -568,10 +592,18 @@ export default function ConversationsPage() {
                     </div>
                   )}
                   <div>
-                    <h3 className="font-semibold text-sm font-ui">{detail.user.name || "Unknown"}</h3>
+                    <h3 className="font-semibold text-sm font-ui">{isProviderConcierge ? "AI Concierge" : (detail.user.name || "Unknown")}</h3>
+                    {isProviderConcierge && (
+                      <p className="text-[11px] text-muted-foreground">Questions from prospective parents</p>
+                    )}
                   </div>
                 </div>
-                {hasJoined ? (
+                {isProviderConcierge ? (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: `${brandColor}10`, color: brandColor }} data-testid="badge-concierge-pinned">
+                    <Sparkles className="w-3 h-3" />
+                    Pinned
+                  </div>
+                ) : hasJoined ? (
                   <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium" data-testid="badge-provider-joined">
                     <CheckCircle2 className="w-3 h-3" />
                     Joined
@@ -645,11 +677,11 @@ export default function ConversationsPage() {
                     <div className="border-t px-4 py-3 bg-background" data-testid="provider-reply-area">
                       <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
                         <Shield className="w-3 h-3" />
-                        <span>Sending as <strong className="text-foreground">Agency Expert</strong></span>
+                        <span>{isProviderConcierge ? "Your answer will be relayed to the parent by the AI concierge" : <>Sending as <strong className="text-foreground">Agency Expert</strong></>}</span>
                       </div>
                       <div className="flex gap-2">
                         <Input
-                          placeholder="Type a message to the parent..."
+                          placeholder={isProviderConcierge ? "Type your answer..." : "Type a message to the parent..."}
                           value={replyText}
                           onChange={(e) => setReplyText(e.target.value)}
                           onKeyDown={(e) => {
@@ -693,91 +725,109 @@ export default function ConversationsPage() {
                 </div>
 
                 <div className="w-72 border-l overflow-y-auto p-4 bg-muted/30 hidden lg:block" data-testid="provider-sidebar">
-                  <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Parent Profile</h4>
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <User className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm">{detail.user.name || "—"}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Mail className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm truncate">{detail.user.email}</span>
-                    </div>
-                    {(detail.user.city || detail.user.state) && (
+                  {isProviderConcierge ? (
+                    <div className="space-y-4">
                       <div className="flex items-center gap-2">
-                        <MapPin className="w-4 h-4 text-muted-foreground" />
-                        <span className="text-sm">{[detail.user.city, detail.user.state].filter(Boolean).join(", ")}</span>
+                        <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
+                        <h4 className="font-semibold text-sm" style={{ fontFamily: "var(--font-display)" }}>AI Concierge</h4>
                       </div>
-                    )}
-                    {profile && (
-                      <div className="border-t pt-3 mt-3">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Journey Details</p>
-                        <div className="space-y-1.5">
-                          {profile.journeyStage && <div className="text-sm"><span className="text-muted-foreground">Stage:</span> {profile.journeyStage}</div>}
-                          {profile.eggSource && <div className="text-sm"><span className="text-muted-foreground">Egg Source:</span> {profile.eggSource}</div>}
-                          {profile.spermSource && <div className="text-sm"><span className="text-muted-foreground">Sperm Source:</span> {profile.spermSource}</div>}
-                          {profile.carrier && <div className="text-sm"><span className="text-muted-foreground">Carrier:</span> {profile.carrier}</div>}
-                          {profile.hasEmbryos !== null && <div className="text-sm"><span className="text-muted-foreground">Embryos:</span> {profile.hasEmbryos ? `Yes (${profile.embryoCount || "??"})` : "No"}</div>}
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        Questions from prospective parents will appear here. Your answers are relayed by the AI concierge — the parent's identity stays private until they schedule a consultation.
+                      </p>
+                      {selectedSession && selectedSession.pendingQuestions > 0 && (
+                        <div className="rounded-lg p-3 bg-[hsl(var(--brand-warning))]/10 border border-[hsl(var(--brand-warning))]/20">
+                          <p className="text-sm font-medium text-[hsl(var(--brand-warning))]">{selectedSession.pendingQuestions} question{selectedSession.pendingQuestions > 1 ? "s" : ""} pending</p>
+                          <p className="text-xs text-muted-foreground mt-1">Reply below to answer the most recent question</p>
                         </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {hasJoined && (
-                    <div className="border-t pt-4 mt-4" data-testid="consultation-status-section">
-                      <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Consultation Status</h4>
-                      <div className="space-y-2">
-                        <Button
-                          size="sm"
-                          className="w-full text-white gap-1.5 text-xs"
-                          style={{ backgroundColor: "var(--brand-success, #22c55e)" }}
-                          onClick={() => consultationStatusMutation.mutate({ sessionId: selectedSessionId, status: "READY_FOR_MATCH" })}
-                          disabled={consultationStatusMutation.isPending}
-                          data-testid="btn-ready-for-match"
-                        >
-                          {consultationStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
-                          Completed — Ready for Match
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="w-full gap-1.5 text-xs border-destructive text-destructive hover:bg-destructive hover:text-white"
-                          onClick={() => consultationStatusMutation.mutate({ sessionId: selectedSessionId, status: "NOT_A_FIT" })}
-                          disabled={consultationStatusMutation.isPending}
-                          data-testid="btn-not-a-fit"
-                        >
-                          {consultationStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsDown className="w-3 h-3" />}
-                          Completed — Not a Fit
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-
-                  {hasJoined && (
-                    <div className="border-t pt-4 mt-4" data-testid="agreement-section">
-                      <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Agreement</h4>
-                      <Button
-                        size="sm"
-                        className="w-full gap-1.5 text-xs"
-                        style={{ backgroundColor: brandColor }}
-                        onClick={() => { if (selectedSessionId) generateAgreementMutation.mutate({ sessionId: selectedSessionId }); }}
-                        disabled={generateAgreementMutation.isPending}
-                        data-testid="btn-generate-agreement"
-                      >
-                        {generateAgreementMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
-                        Generate & Send Agreement
-                      </Button>
-                      {generateAgreementMutation.isError && (
-                        <p className="text-xs text-destructive mt-1.5" data-testid="text-agreement-error">
-                          {(generateAgreementMutation.error as Error)?.message || "Failed to generate agreement"}
-                        </p>
-                      )}
-                      {generateAgreementMutation.isSuccess && (
-                        <p className="text-xs text-[hsl(var(--brand-success))] mt-1.5" data-testid="text-agreement-success">
-                          Agreement sent successfully
-                        </p>
                       )}
                     </div>
+                  ) : (
+                    <>
+                      <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Parent Profile</h4>
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <User className="w-4 h-4 text-muted-foreground" />
+                          <span className="text-sm">{detail.user.name || "—"}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Mail className="w-4 h-4 text-muted-foreground" />
+                          <span className="text-sm truncate">{detail.user.email}</span>
+                        </div>
+                        {(detail.user.city || detail.user.state) && (
+                          <div className="flex items-center gap-2">
+                            <MapPin className="w-4 h-4 text-muted-foreground" />
+                            <span className="text-sm">{[detail.user.city, detail.user.state].filter(Boolean).join(", ")}</span>
+                          </div>
+                        )}
+                        {profile && (
+                          <div className="border-t pt-3 mt-3">
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Journey Details</p>
+                            <div className="space-y-1.5">
+                              {profile.journeyStage && <div className="text-sm"><span className="text-muted-foreground">Stage:</span> {profile.journeyStage}</div>}
+                              {profile.eggSource && <div className="text-sm"><span className="text-muted-foreground">Egg Source:</span> {profile.eggSource}</div>}
+                              {profile.spermSource && <div className="text-sm"><span className="text-muted-foreground">Sperm Source:</span> {profile.spermSource}</div>}
+                              {profile.carrier && <div className="text-sm"><span className="text-muted-foreground">Carrier:</span> {profile.carrier}</div>}
+                              {profile.hasEmbryos !== null && <div className="text-sm"><span className="text-muted-foreground">Embryos:</span> {profile.hasEmbryos ? `Yes (${profile.embryoCount || "??"})` : "No"}</div>}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      {hasJoined && (
+                        <div className="border-t pt-4 mt-4" data-testid="consultation-status-section">
+                          <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Consultation Status</h4>
+                          <div className="space-y-2">
+                            <Button
+                              size="sm"
+                              className="w-full text-white gap-1.5 text-xs"
+                              style={{ backgroundColor: "var(--brand-success, #22c55e)" }}
+                              onClick={() => consultationStatusMutation.mutate({ sessionId: selectedSessionId, status: "READY_FOR_MATCH" })}
+                              disabled={consultationStatusMutation.isPending}
+                              data-testid="btn-ready-for-match"
+                            >
+                              {consultationStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
+                              Completed — Ready for Match
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full gap-1.5 text-xs border-destructive text-destructive hover:bg-destructive hover:text-white"
+                              onClick={() => consultationStatusMutation.mutate({ sessionId: selectedSessionId, status: "NOT_A_FIT" })}
+                              disabled={consultationStatusMutation.isPending}
+                              data-testid="btn-not-a-fit"
+                            >
+                              {consultationStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsDown className="w-3 h-3" />}
+                              Completed — Not a Fit
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                      {hasJoined && (
+                        <div className="border-t pt-4 mt-4" data-testid="agreement-section">
+                          <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Agreement</h4>
+                          <Button
+                            size="sm"
+                            className="w-full gap-1.5 text-xs"
+                            style={{ backgroundColor: brandColor }}
+                            onClick={() => { if (selectedSessionId) generateAgreementMutation.mutate({ sessionId: selectedSessionId }); }}
+                            disabled={generateAgreementMutation.isPending}
+                            data-testid="btn-generate-agreement"
+                          >
+                            {generateAgreementMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+                            Generate & Send Agreement
+                          </Button>
+                          {generateAgreementMutation.isError && (
+                            <p className="text-xs text-destructive mt-1.5" data-testid="text-agreement-error">
+                              {(generateAgreementMutation.error as Error)?.message || "Failed to generate agreement"}
+                            </p>
+                          )}
+                          {generateAgreementMutation.isSuccess && (
+                            <p className="text-xs text-[hsl(var(--brand-success))] mt-1.5" data-testid="text-agreement-success">
+                              Agreement sent successfully
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

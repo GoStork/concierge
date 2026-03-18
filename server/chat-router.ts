@@ -281,7 +281,13 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
   try {
     const sessions = await prisma.aiChatSession.findMany({
-      where: { providerId: user.providerId, status: { in: ["ACTIVE", "HUMAN_JOINED", "PROVIDER_JOINED"] } },
+      where: {
+        providerId: user.providerId,
+        OR: [
+          { sessionType: "PROVIDER_CONCIERGE" },
+          { status: "PROVIDER_JOINED" },
+        ],
+      },
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
         messages: { orderBy: { createdAt: "desc" }, take: 1 },
@@ -290,6 +296,9 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       orderBy: { updatedAt: "desc" },
       take: 50,
     });
+    const pendingWhisperCount = await prisma.silentQuery.count({
+      where: { providerId: user.providerId, status: "PENDING" },
+    });
     const result = sessions.map(s => ({
       id: s.id,
       userId: s.userId,
@@ -297,12 +306,20 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       userEmail: s.user.email,
       userAvatar: (s.user as any).photoUrl,
       status: s.status,
+      sessionType: (s as any).sessionType || "PARENT",
       providerJoinedAt: s.providerJoinedAt,
+      providerName: (s as any).providerName,
       messageCount: s._count.messages,
       lastMessage: s.messages[0]?.content?.slice(0, 120) || null,
       lastMessageAt: s.messages[0]?.createdAt || s.updatedAt,
       createdAt: s.createdAt,
+      pendingQuestions: (s as any).sessionType === "PROVIDER_CONCIERGE" ? pendingWhisperCount : 0,
     }));
+    result.sort((a, b) => {
+      if (a.sessionType === "PROVIDER_CONCIERGE" && b.sessionType !== "PROVIDER_CONCIERGE") return -1;
+      if (b.sessionType === "PROVIDER_CONCIERGE" && a.sessionType !== "PROVIDER_CONCIERGE") return 1;
+      return 0;
+    });
     res.json(result);
   } catch (e: any) {
     console.error("Provider concierge sessions error:", e);
@@ -398,11 +415,9 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
     if (!session) return res.status(404).json({ message: "Session not found" });
     if (session.providerId !== user.providerId) return res.status(403).json({ message: "Forbidden" });
 
-    if (!session.providerJoinedAt) {
-      await prisma.aiChatSession.update({
-        where: { id: session.id },
-        data: { providerJoinedAt: new Date(), status: "PROVIDER_JOINED" },
-      });
+    const sessionType = (session as any).sessionType || "PARENT";
+    if (sessionType !== "PROVIDER_CONCIERGE" && session.status !== "PROVIDER_JOINED") {
+      return res.status(403).json({ message: "Cannot message in this session — consultation not booked yet" });
     }
 
     const provider = await prisma.provider.findUnique({ where: { id: user.providerId }, select: { name: true } });
@@ -422,29 +437,35 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
       },
     });
 
-    const pendingWhispers = await prisma.silentQuery.findMany({
-      where: { sessionId: session.id, providerId: user.providerId, status: "PENDING" },
-      orderBy: { createdAt: "desc" },
-      take: 5,
-    });
-    if (pendingWhispers.length > 0) {
-      await prisma.silentQuery.updateMany({
-        where: { id: { in: pendingWhispers.map(w => w.id) } },
-        data: { status: "ANSWERED", answerText: content.trim() },
+    const isProviderConcierge = (session as any).sessionType === "PROVIDER_CONCIERGE";
+
+    if (isProviderConcierge) {
+      const pendingWhispers = await prisma.silentQuery.findMany({
+        where: { providerId: user.providerId, status: "PENDING" },
+        orderBy: { createdAt: "asc" },
+        take: 1,
       });
+      if (pendingWhispers.length > 0) {
+        await prisma.silentQuery.updateMany({
+          where: { id: { in: pendingWhispers.map(w => w.id) } },
+          data: { status: "ANSWERED", answerText: content.trim() },
+        });
+      }
     }
 
-    await prisma.inAppNotification.create({
-      data: {
-        userId: session.userId,
-        eventType: "PROVIDER_MESSAGE",
-        payload: {
-          sessionId: session.id,
-          message: `${provider?.name || "Your provider"} sent you a message`,
-          preview: content.trim().slice(0, 100),
+    if (!isProviderConcierge) {
+      await prisma.inAppNotification.create({
+        data: {
+          userId: session.userId,
+          eventType: "PROVIDER_MESSAGE",
+          payload: {
+            sessionId: session.id,
+            message: `${provider?.name || "Your provider"} sent you a message`,
+            preview: content.trim().slice(0, 100),
+          },
         },
-      },
-    });
+      });
+    }
 
     res.json(message);
   } catch (e: any) {

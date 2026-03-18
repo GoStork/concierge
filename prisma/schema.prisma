@@ -860,11 +860,13 @@ model AiChatSession {
   userId           String
   title            String?
   status           String          @default("ACTIVE")
+  sessionType      String          @default("PARENT")
   humanRequested   Boolean         @default(false)
   humanJoinedAt    DateTime?
   humanAgentId     String?
   providerId       String?
   providerJoinedAt DateTime?
+  providerName     String?
   matchmakerId     String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
@@ -878,6 +880,7 @@ model AiChatSession {
   @@index([userId])
   @@index([humanRequested])
   @@index([providerId])
+  @@index([sessionType])
 }
 
 model AiChatMessage {
