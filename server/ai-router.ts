@@ -370,7 +370,12 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       orderBy: { createdAt: "asc" },
       select: { id: true, role: true, content: true, senderType: true, senderName: true, createdAt: true, uiCardType: true, uiCardData: true },
     });
-    res.json(messages);
+    const filteredMessages = isProvider ? messages : messages.filter((m: any) => {
+      const data = m.uiCardData as any;
+      if (data?.whisperQuestionId) return false;
+      return true;
+    });
+    res.json(filteredMessages);
   } catch (e: any) {
     res.status(500).json({ message: e.message });
   }
