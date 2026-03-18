@@ -1073,8 +1073,8 @@ export default function DonorProfilePage() {
               "Was this a surrogate delivery?": "Surrogacy?",
             };
             const COL_RENAME_PATTERN: [RegExp, string][] = [
-              [/surrogate\s*deliver/i, "Surrogacy Delivery"],
-              [/delivery.*single.*surrogate/i, "Surrogacy Delivery"],
+              [/surrogate\s*deliver/i, "Surrogacy?"],
+              [/delivery.*single.*surrogate/i, "Surrogacy?"],
             ];
             const renameCol = (col: string) => {
               if (COL_RENAME[col]) return COL_RENAME[col];
@@ -1110,22 +1110,22 @@ export default function DonorProfilePage() {
               return (
                 <div key={label || "table"} className="mt-4">
                   {label && <p className="text-xs font-ui text-foreground mb-2">{label}</p>}
-                  <div className="md:hidden">
-                    <table className="w-full text-sm table-auto">
+                  <div className="md:hidden overflow-x-auto -mx-6 px-6">
+                    <table className="w-full text-sm table-auto" style={{ minWidth: 0 }}>
                       <thead>
                         <tr className="border-b border-border">
-                          <th className="text-left py-2 pr-3 text-xs font-ui text-foreground"></th>
+                          <th className="text-left py-2 pr-2 text-xs font-ui text-foreground" style={{ width: '25%', minWidth: 70 }}></th>
                           {headerLabels.map((h, i) => (
-                            <th key={i} className="text-left py-2 px-2 text-xs font-ui text-foreground whitespace-nowrap">{h}</th>
+                            <th key={i} className="text-left py-2 px-1 text-xs font-ui text-foreground" style={{ minWidth: 50 }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
                         {attrCols.map((attr) => (
                           <tr key={attr} className="border-b border-border/50 last:border-0">
-                            <td className="py-2 pr-3 text-xs font-ui text-foreground whitespace-nowrap">{renameCol(attr)}</td>
+                            <td className="py-2 pr-2 text-xs font-ui text-foreground">{renameCol(attr)}</td>
                             {rows.map((row, ri) => (
-                              <td key={ri} className="py-2 px-2 text-muted-foreground whitespace-nowrap">{String(row[attr] ?? "—")}</td>
+                              <td key={ri} className="py-2 px-1 text-muted-foreground text-xs">{String(row[attr] ?? "—")}</td>
                             ))}
                           </tr>
                         ))}
