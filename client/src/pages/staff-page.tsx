@@ -326,7 +326,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
     <div className="space-y-8">
       <div>
         <h1 className="font-display text-3xl font-heading text-primary" data-testid="text-page-title">Parents</h1>
-        <p className="text-muted-foreground">Parents who have contacted you via meetings.</p>
+        <p className="text-muted-foreground">Parents who have connected with you via the AI concierge or meetings.</p>
       </div>
 
       <div className="flex items-center gap-3">
@@ -349,6 +349,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
               <TableHead>Name</TableHead>
               <TableHead className="hidden sm:table-cell">Email</TableHead>
               <TableHead className="hidden md:table-cell">Mobile</TableHead>
+              <TableHead className="hidden lg:table-cell">Source</TableHead>
               <TableHead className="hidden lg:table-cell">Last Meeting</TableHead>
               <TableHead className="hidden lg:table-cell text-right">Meetings</TableHead>
             </TableRow>
@@ -381,6 +382,15 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
                   ) : <span className="text-muted-foreground text-sm">-</span>}
                 </TableCell>
                 <TableCell className="hidden lg:table-cell">
+                  <span className={`text-xs font-ui px-2 py-0.5 rounded-full ${
+                    parent.source === "chat" ? "bg-primary/10 text-primary" :
+                    parent.source === "both" ? "bg-emerald-100 text-emerald-700" :
+                    "bg-muted text-muted-foreground"
+                  }`} data-testid={`text-parent-source-${parent.id}`}>
+                    {parent.source === "chat" ? "Concierge" : parent.source === "both" ? "Chat + Meeting" : "Meeting"}
+                  </span>
+                </TableCell>
+                <TableCell className="hidden lg:table-cell">
                   {parent.lastMeetingAt ? (
                     <span className="text-sm text-muted-foreground">{new Date(parent.lastMeetingAt).toLocaleDateString()}</span>
                   ) : <span className="text-muted-foreground text-sm">-</span>}
@@ -391,8 +401,8 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
               </TableRow>
             )) : (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                  {searchQuery ? "No parents match your search." : "No parent contacts yet. Parents will appear here after they book meetings with you."}
+                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                  {searchQuery ? "No parents match your search." : "No parent contacts yet. Parents will appear here when the AI concierge connects them with you."}
                 </TableCell>
               </TableRow>
             )}

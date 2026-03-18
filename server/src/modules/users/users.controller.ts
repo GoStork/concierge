@@ -737,9 +737,47 @@ export class UsersController {
           ...b.parentUser,
           lastMeetingAt: b.scheduledAt,
           meetingCount: 1,
+          source: "meeting",
         });
       } else {
         parentMap.get(b.parentUserId).meetingCount += 1;
+      }
+    }
+
+    const chatSessions = await this.prisma.aiChatSession.findMany({
+      where: {
+        providerId,
+        status: { in: ["ACTIVE", "HUMAN_JOINED", "PROVIDER_JOINED"] },
+      },
+      select: {
+        userId: true,
+        createdAt: true,
+        providerJoinedAt: true,
+        user: {
+          select: {
+            id: true, name: true, email: true, mobileNumber: true, photoUrl: true, createdAt: true,
+          },
+        },
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+
+    for (const cs of chatSessions) {
+      if (!cs.userId || !cs.user) continue;
+      if (!parentMap.has(cs.userId)) {
+        parentMap.set(cs.userId, {
+          ...cs.user,
+          lastMeetingAt: null,
+          meetingCount: 0,
+          source: "chat",
+          chatStartedAt: cs.providerJoinedAt || cs.createdAt,
+        });
+      } else {
+        const existing = parentMap.get(cs.userId);
+        if (!existing.chatStartedAt) {
+          existing.chatStartedAt = cs.providerJoinedAt || cs.createdAt;
+          existing.source = existing.source === "meeting" ? "both" : "chat";
+        }
       }
     }
 
