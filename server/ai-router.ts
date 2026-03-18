@@ -755,7 +755,7 @@ STEP 8 — MATCH REVEAL:
     → Step 2: Ask why to improve future matches. Say something like: "Would you mind sharing what didn't feel right? It'll help me find better matches for you." Then offer quick replies:
       [[QUICK_REPLY:Location too far|Age preference|Experience level|Personality/vibe|Compensation range|Just not the right fit|Other]]
     → Step 3 (After parent responds with reason): Save the feedback using [[SAVE:...]] to update their preferences so future searches reflect it. Use ONLY the supported SAVE field names listed in the REAL-TIME DATA PERSISTENCE section above. Examples:
-      - "Location too far" → Ask which state/region they prefer, then save: [[SAVE:{"surrogateCountries":"[country or countries]"}]]
+      - "Location too far" → Ask which state or region they prefer. If they name a US state/region, note it and use it as a search filter. If they name a country preference, save: [[SAVE:{"surrogateCountries":"[country or countries]"}]]. Always pass the preferred state/region to your search tool filters when searching for the next match.
       - "Age preference" → Ask their preferred age range, then save: [[SAVE:{"surrogateAgeRange":"[range, e.g. 25-32]"}]]
       - "Experience level" → Save: [[SAVE:{"surrogateExperience":"experienced only"}]]
       - "Compensation range" → Ask their budget range, then save: [[SAVE:{"surrogateBudget":"under [amount]"}]]
