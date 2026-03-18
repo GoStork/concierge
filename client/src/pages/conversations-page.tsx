@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
@@ -105,6 +105,98 @@ function truncateMessage(msg: string, maxLen = 60): string {
 }
 
 type FilterTab = "all" | "unread" | "agreements";
+
+function ConversationsShell({
+  hasSelection,
+  onBack,
+  isLoading,
+  sidebarItems,
+  emptyMessage,
+  emptyAction,
+  detailContent,
+  brandColor,
+}: {
+  hasSelection: boolean;
+  onBack: () => void;
+  isLoading: boolean;
+  sidebarItems: ReactNode;
+  emptyMessage: string;
+  emptyAction?: ReactNode;
+  detailContent: ReactNode;
+  brandColor: string;
+}) {
+  const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  return (
+    <div className="flex h-[calc(100vh-64px)] w-full overflow-hidden" data-testid="conversations-page">
+      <div className={`${hasSelection ? "hidden md:flex" : "flex"} flex-col w-full md:w-80 lg:w-96 border-r bg-background overflow-hidden`}>
+        <div className="shrink-0 bg-background border-b px-4 pt-4 pb-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <h1 className="font-display text-lg font-bold" data-testid="text-inbox-title">Conversations</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1.5 flex-shrink-0">
+              {(["all", "unread", "agreements"] as FilterTab[]).map(tab => (
+                <button
+                  key={tab}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    activeFilter === tab
+                      ? "text-white"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                  }`}
+                  style={activeFilter === tab ? { backgroundColor: brandColor } : undefined}
+                  onClick={() => setActiveFilter(tab)}
+                  data-testid={`filter-${tab}`}
+                >
+                  {tab === "all" ? "All" : tab === "unread" ? "Unread" : "Agreements"}
+                </button>
+              ))}
+            </div>
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-8 text-sm"
+                data-testid="input-search-conversations"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : sidebarItems ? (
+            sidebarItems
+          ) : (
+            <div className="flex flex-col items-center justify-center py-16 text-center px-6" data-testid="inbox-empty">
+              <MessageSquare className="w-10 h-10 text-muted-foreground mb-3" />
+              <p className="text-sm text-muted-foreground">{emptyMessage}</p>
+              {emptyAction}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className={`${!hasSelection ? "hidden md:flex" : "flex"} flex-1 flex-col bg-background min-h-0`}>
+        {!hasSelection ? (
+          <div className="flex-1 flex items-center justify-center text-center px-8">
+            <div>
+              <MessageSquare className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+              <h3 className="font-display text-lg font-semibold text-muted-foreground mb-1">Select a conversation</h3>
+              <p className="text-sm text-muted-foreground">Choose a conversation from the list to view messages</p>
+            </div>
+          </div>
+        ) : detailContent}
+      </div>
+    </div>
+  );
+}
 
 export default function ConversationsPage() {
   const { user } = useAuth();
@@ -290,98 +382,79 @@ export default function ConversationsPage() {
       ? `/concierge?matchmaker=${selectedParentSession.matchmakerId || ""}&session=${selectedParentSession.id}&embedded=1`
       : null;
 
-    return (
-      <div className="flex h-[calc(100vh-64px)] w-full overflow-hidden" data-testid="conversations-page">
-        <div className={`${selectedParentSession ? "hidden md:flex" : "flex"} flex-col w-full md:w-80 lg:w-96 md:border-r bg-background overflow-hidden`}>
-          <div className="shrink-0 bg-background border-b px-4 pt-4 pb-3 space-y-3">
-            <div className="flex items-center justify-between">
-              <h1 className="font-display text-lg font-bold" data-testid="text-inbox-title">Conversations</h1>
+    const hasSessions = allSessions.length > 0;
+    const sidebarContent = hasSessions ? (
+      <div className="pb-24">
+        {showConcierge && filteredEva.length > 0 && (
+          <div data-testid="section-concierge">
+            <div
+              className="mx-4 mt-3 mb-2 px-3 py-2 rounded-lg flex items-center gap-2"
+              style={{ backgroundColor: `${brandColor}08` }}
+            >
+              <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
+              <span className="text-xs font-semibold" style={{ color: brandColor }}>Your AI Concierge</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="flex gap-1.5 flex-shrink-0">
-                {(["all", "unread", "agreements"] as FilterTab[]).map(tab => (
-                  <button
-                    key={tab}
-                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                      activeFilter === tab
-                        ? "text-white"
-                        : "bg-muted text-muted-foreground hover:bg-muted/80"
-                    }`}
-                    style={activeFilter === tab ? { backgroundColor: brandColor } : undefined}
-                    onClick={() => setActiveFilter(tab)}
-                    data-testid={`filter-${tab}`}
-                  >
-                    {tab === "all" ? "All" : tab === "unread" ? "Unread" : "Agreements"}
-                  </button>
-                ))}
-              </div>
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 h-8 text-sm"
-                  data-testid="input-search-conversations"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto">
-            {parentSessionsQuery.isLoading ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="w-6 h-6 animate-spin text-primary" />
-              </div>
-            ) : allSessions.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center px-6" data-testid="inbox-empty">
-                <MessageCircle className="w-12 h-12 text-muted-foreground mb-4" />
-                <h2 className="font-display text-lg font-semibold mb-2">No conversations yet</h2>
-                <p className="text-muted-foreground text-sm mb-6">
-                  {showConcierge
-                    ? "Start a conversation with your AI concierge to get personalized fertility guidance."
-                    : "Your provider conversations will appear here."
-                  }
-                </p>
-                {showConcierge && (
-                  <Button
-                    onClick={() => navigate("/account/concierge")}
-                    data-testid="btn-start-first-chat"
-                    style={{ backgroundColor: brandColor }}
-                    className="text-white"
-                  >
-                    Choose Your AI Concierge
-                  </Button>
+            {filteredEva.map(session => (
+              <button
+                key={session.id}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left border-b border-border/20 ${selectedParentSession?.id === session.id ? "bg-muted/70" : ""}`}
+                onClick={() => handleParentSessionClick(session)}
+                data-testid={`chat-session-${session.id}`}
+              >
+                {session.matchmakerAvatar ? (
+                  <img src={session.matchmakerAvatar} alt="" className="w-11 h-11 rounded-full object-cover border flex-shrink-0" />
+                ) : (
+                  <div className="w-11 h-11 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0" style={{ backgroundColor: brandColor }}>
+                    {(session.matchmakerName || "E").charAt(0)}
+                  </div>
                 )}
-              </div>
-            ) : (
-              <div className="pb-24">
-                {showConcierge && filteredEva.length > 0 && (
-                  <div data-testid="section-concierge">
-                    <div
-                      className="mx-4 mt-3 mb-2 px-3 py-2 rounded-lg flex items-center gap-2"
-                      style={{ backgroundColor: `${brandColor}08` }}
-                    >
-                      <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
-                      <span className="text-xs font-semibold" style={{ color: brandColor }}>Your AI Concierge</span>
-                    </div>
-                    {filteredEva.map(session => (
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-ui truncate" style={{ fontWeight: 600 }}>{session.matchmakerName || "Eva"}</span>
+                    <span className="text-[11px] text-muted-foreground flex-shrink-0">{timeAgo(session.lastMessageAt)}</span>
+                  </div>
+                  {session.lastMessage && (
+                    <p className="text-sm text-muted-foreground truncate mt-0.5">{truncateMessage(session.lastMessage)}</p>
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {Object.keys(providerGroups).length > 0 && (
+          <div className="mt-2" data-testid="section-provider-chats">
+            <div className="px-4 py-2">
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Provider Conversations</span>
+            </div>
+            {Object.entries(providerGroups).map(([providerId, sessions]) => {
+              const first = sessions[0];
+              const isExpanded = expandedProviders[providerId] !== false;
+              return (
+                <Collapsible key={providerId} open={isExpanded} onOpenChange={() => toggleProvider(providerId)}>
+                  <CollapsibleTrigger className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted/30 transition-colors text-left" data-testid={`provider-group-${providerId}`}>
+                    {first.providerLogo ? (
+                      <img src={first.providerLogo} alt="" className="w-8 h-8 rounded-full object-cover border flex-shrink-0" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center bg-muted text-muted-foreground flex-shrink-0">
+                        <Building2 className="w-4 h-4" />
+                      </div>
+                    )}
+                    <span className="font-medium text-sm font-ui flex-1">{first.providerName}</span>
+                    <span className="text-[11px] text-muted-foreground mr-1">{sessions.length}</span>
+                    <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    {sessions.map(session => (
                       <button
                         key={session.id}
-                        className={`w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left border-b border-border/20 ${selectedParentSession?.id === session.id ? "bg-muted" : ""}`}
+                        className="w-full flex items-center gap-3 pl-14 pr-4 py-3 hover:bg-muted/50 transition-colors text-left border-b border-border/10"
                         onClick={() => handleParentSessionClick(session)}
-                        data-testid={`chat-session-${session.id}`}
+                        data-testid={`chat-session-provider-${session.id}`}
                       >
-                        {session.matchmakerAvatar ? (
-                          <img src={session.matchmakerAvatar} alt="" className="w-11 h-11 rounded-full object-cover border flex-shrink-0" />
-                        ) : (
-                          <div className="w-11 h-11 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0" style={{ backgroundColor: brandColor }}>
-                            {(session.matchmakerName || "E").charAt(0)}
-                          </div>
-                        )}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="text-sm font-ui truncate" style={{ fontWeight: 600 }}>{session.matchmakerName || "Eva"}</span>
+                            <span className="font-medium text-sm font-ui truncate">{session.matchmakerName || "Conversation"}</span>
                             <span className="text-[11px] text-muted-foreground flex-shrink-0">{timeAgo(session.lastMessageAt)}</span>
                           </div>
                           {session.lastMessage && (
@@ -390,80 +463,47 @@ export default function ConversationsPage() {
                         </div>
                       </button>
                     ))}
-                  </div>
-                )}
-
-                {Object.keys(providerGroups).length > 0 && (
-                  <div className="mt-2" data-testid="section-provider-chats">
-                    <div className="px-4 py-2">
-                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Provider Conversations</span>
-                    </div>
-                    {Object.entries(providerGroups).map(([providerId, sessions]) => {
-                      const first = sessions[0];
-                      const isExpanded = expandedProviders[providerId] !== false;
-                      return (
-                        <Collapsible key={providerId} open={isExpanded} onOpenChange={() => toggleProvider(providerId)}>
-                          <CollapsibleTrigger className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted/30 transition-colors text-left" data-testid={`provider-group-${providerId}`}>
-                            {first.providerLogo ? (
-                              <img src={first.providerLogo} alt="" className="w-8 h-8 rounded-full object-cover border flex-shrink-0" />
-                            ) : (
-                              <div className="w-8 h-8 rounded-full flex items-center justify-center bg-muted text-muted-foreground flex-shrink-0">
-                                <Building2 className="w-4 h-4" />
-                              </div>
-                            )}
-                            <span className="font-medium text-sm font-ui flex-1">{first.providerName}</span>
-                            <span className="text-[11px] text-muted-foreground mr-1">{sessions.length}</span>
-                            <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-                          </CollapsibleTrigger>
-                          <CollapsibleContent>
-                            {sessions.map(session => (
-                              <button
-                                key={session.id}
-                                className="w-full flex items-center gap-3 pl-14 pr-4 py-3 hover:bg-muted/50 transition-colors text-left border-b border-border/10"
-                                onClick={() => handleParentSessionClick(session)}
-                                data-testid={`chat-session-provider-${session.id}`}
-                              >
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="font-medium text-sm font-ui truncate">{session.matchmakerName || "Conversation"}</span>
-                                    <span className="text-[11px] text-muted-foreground flex-shrink-0">{timeAgo(session.lastMessageAt)}</span>
-                                  </div>
-                                  {session.lastMessage && (
-                                    <p className="text-sm text-muted-foreground truncate mt-0.5">{truncateMessage(session.lastMessage)}</p>
-                                  )}
-                                </div>
-                              </button>
-                            ))}
-                          </CollapsibleContent>
-                        </Collapsible>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
+                  </CollapsibleContent>
+                </Collapsible>
+              );
+            })}
           </div>
-        </div>
-
-        <div className={`${!selectedParentSession ? "hidden md:flex" : "flex"} flex-1 flex-col bg-background min-h-0`}>
-          {!selectedParentSession ? (
-            <div className="flex-1 flex items-center justify-center text-center px-8">
-              <div>
-                <MessageSquare className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
-                <h3 className="font-display text-lg font-semibold text-muted-foreground mb-1">Select a conversation</h3>
-                <p className="text-sm text-muted-foreground">Choose a conversation from the list to view messages</p>
-              </div>
-            </div>
-          ) : parentConciergeSrc ? (
-            <iframe
-              key={selectedParentSession.id}
-              src={parentConciergeSrc}
-              className="w-full h-full border-0"
-              data-testid="parent-chat-detail-iframe"
-            />
-          ) : null}
-        </div>
+        )}
       </div>
+    ) : null;
+
+    const parentDetailContent = parentConciergeSrc ? (
+      <iframe
+        key={selectedParentSession!.id}
+        src={parentConciergeSrc}
+        className="w-full h-full border-0"
+        data-testid="parent-chat-detail-iframe"
+      />
+    ) : null;
+
+    return (
+      <ConversationsShell
+        hasSelection={!!selectedParentSession}
+        onBack={() => setSelectedParentSession(null)}
+        isLoading={parentSessionsQuery.isLoading}
+        sidebarItems={sidebarContent}
+        emptyMessage={showConcierge
+          ? "Start a conversation with your AI concierge to get personalized fertility guidance."
+          : "Your provider conversations will appear here."
+        }
+        emptyAction={showConcierge ? (
+          <Button
+            onClick={() => navigate("/account/concierge")}
+            data-testid="btn-start-first-chat"
+            style={{ backgroundColor: brandColor }}
+            className="text-white mt-4"
+          >
+            Choose Your AI Concierge
+          </Button>
+        ) : undefined}
+        detailContent={parentDetailContent}
+        brandColor={brandColor}
+      />
     );
   }
 
@@ -476,416 +516,369 @@ export default function ConversationsPage() {
       (s.lastMessage || "").toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    return (
-      <div className="flex h-[calc(100vh-64px)] w-full overflow-hidden" data-testid="conversations-page">
-        <div className={`${selectedSessionId ? "hidden md:flex" : "flex"} flex-col w-full md:w-80 lg:w-96 border-r bg-background`}>
-          <div className="sticky top-0 z-10 bg-background border-b px-4 pt-4 pb-3 space-y-3">
-            <h1 className="font-display text-lg font-bold" data-testid="text-inbox-title">Conversations</h1>
-            <div className="flex items-center gap-2">
-              <div className="flex gap-1.5 flex-shrink-0">
-                {(["all", "unread", "agreements"] as FilterTab[]).map(tab => (
-                  <button
-                    key={tab}
-                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                      activeFilter === tab
-                        ? "text-white"
-                        : "bg-muted text-muted-foreground hover:bg-muted/80"
-                    }`}
-                    style={activeFilter === tab ? { backgroundColor: brandColor } : undefined}
-                    onClick={() => setActiveFilter(tab)}
-                    data-testid={`filter-${tab}`}
-                  >
-                    {tab === "all" ? "All" : tab === "unread" ? "Unread" : "Agreements"}
-                  </button>
-                ))}
+    const hasSessions = filteredSessions.length > 0;
+    const sidebarContent = hasSessions ? (
+      <>
+        {filteredSessions.map(s => {
+          const sIsJoined = s.status === "PROVIDER_JOINED";
+          const sIsBooked = s.status === "CONSULTATION_BOOKED";
+          const hasPending = s.pendingQuestions > 0;
+          return (
+            <button
+              key={s.id}
+              className={`w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left border-b border-border/20 ${
+                selectedSessionId === s.id ? "bg-muted/70" : ""
+              } ${sIsBooked ? "bg-primary/5" : ""}`}
+              onClick={() => setSelectedSessionId(s.id)}
+              data-testid={`provider-session-${s.id}`}
+            >
+              {s.userAvatar ? (
+                <img src={s.userAvatar} alt="" className="w-11 h-11 rounded-full object-cover flex-shrink-0" />
+              ) : (
+                <div className="w-11 h-11 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                  {sIsJoined || sIsBooked ? (
+                    <User className="w-5 h-5 text-muted-foreground" />
+                  ) : (
+                    <Sparkles className="w-5 h-5" style={{ color: brandColor }} />
+                  )}
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="font-semibold text-sm font-ui truncate">{s.userName || "Prospective Parent"}</span>
+                    {sIsJoined ? (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[9px] font-bold uppercase flex-shrink-0">
+                        <CheckCircle2 className="w-2.5 h-2.5" />
+                        Joined
+                      </span>
+                    ) : sIsBooked ? (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase flex-shrink-0" style={{ backgroundColor: `${brandColor}15`, color: brandColor }}>
+                        <UserPlus className="w-2.5 h-2.5" />
+                        Ready to Join
+                      </span>
+                    ) : hasPending ? (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] text-[9px] font-bold uppercase flex-shrink-0">
+                        {s.pendingQuestions} pending
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground text-[9px] font-bold uppercase flex-shrink-0">
+                        <MessageCircle className="w-2.5 h-2.5" />
+                        Q&A
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[11px] text-muted-foreground flex-shrink-0">{timeAgo(s.lastMessageAt)}</span>
+                </div>
+                {s.lastMessage && (
+                  <p className="text-sm text-muted-foreground truncate mt-0.5">{truncateMessage(s.lastMessage)}</p>
+                )}
               </div>
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 h-8 text-sm"
-                  data-testid="input-search-conversations"
-                />
+            </button>
+          );
+        })}
+      </>
+    ) : null;
+
+    const providerDetailContent = sessionDetailQuery.isLoading ? (
+      <div className="flex-1 flex items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    ) : detail ? (
+      <div className="flex flex-col flex-1 min-h-0">
+        <div className="flex items-center gap-3 px-4 py-3 border-b bg-background shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0 md:hidden"
+            onClick={() => setSelectedSessionId(null)}
+            data-testid="btn-back-to-sessions"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </Button>
+          <div className="flex items-center gap-2 flex-1">
+            {detail.user.photoUrl ? (
+              <img src={detail.user.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                {hasJoined || isConsultationBooked ? (
+                  <User className="w-4 h-4 text-muted-foreground" />
+                ) : (
+                  <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
+                )}
               </div>
+            )}
+            <div>
+              <h3 className="font-semibold text-sm font-ui">{detail.user.name || "Prospective Parent"}</h3>
+              {!hasJoined && !isConsultationBooked && (
+                <p className="text-[11px] text-muted-foreground">Anonymous Q&A via AI Concierge</p>
+              )}
             </div>
           </div>
+          {hasJoined ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium" data-testid="badge-provider-joined">
+              <CheckCircle2 className="w-3 h-3" />
+              Joined
+            </div>
+          ) : isConsultationBooked ? (
+            <Button
+              size="sm"
+              className="h-8 text-xs text-white gap-1"
+              style={{ backgroundColor: brandColor }}
+              onClick={() => joinMutation.mutate(selectedSessionId!)}
+              disabled={joinMutation.isPending}
+              data-testid="btn-join-group-chat"
+            >
+              {joinMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
+              Join Group Chat
+            </Button>
+          ) : isWhisperPhase ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] text-xs font-medium" data-testid="badge-pending-questions">
+              <MessageCircle className="w-3 h-3" />
+              {selectedSession?.pendingQuestions} pending
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted text-muted-foreground text-xs font-medium" data-testid="badge-qa">
+              <MessageCircle className="w-3 h-3" />
+              Q&A
+            </div>
+          )}
+        </div>
 
-          <div className="flex-1 overflow-y-auto">
-            {providerSessionsQuery.isLoading ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" data-testid="provider-chat-messages">
+              {detail.messages.map((msg, i) => (
+                <div key={msg.id}>
+                  {msg.role === "assistant" && msg.senderType === "human" && (
+                    <div className="flex items-center gap-1.5 mb-1 ml-1">
+                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white bg-muted-foreground">GoStork Expert</div>
+                      {msg.senderName && <span className="text-[11px] text-muted-foreground">{msg.senderName}</span>}
+                    </div>
+                  )}
+                  {msg.role === "assistant" && msg.senderType === "provider" && (
+                    <div className="flex items-center gap-1.5 mb-1 ml-1">
+                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: brandColor }}>{msg.senderName || "Agency Expert"}</div>
+                    </div>
+                  )}
+                  {msg.role === "assistant" && msg.senderType === "system" && (
+                    <div className="flex items-center gap-1.5 mb-1 ml-1">
+                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--accent))] text-white">Eva</div>
+                    </div>
+                  )}
+                  <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div
+                      className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-base leading-relaxed font-ui ${
+                        msg.role === "user"
+                          ? "bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))]"
+                          : msg.senderType === "provider"
+                          ? "text-foreground border-2"
+                          : msg.senderType === "human"
+                          ? "bg-muted text-foreground"
+                          : msg.senderType === "system"
+                          ? "bg-[hsl(var(--accent))]/10 text-[hsl(var(--accent))] border border-[hsl(var(--accent))]/30"
+                          : "bg-muted text-foreground"
+                      }`}
+                      style={msg.senderType === "provider" ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : undefined}
+                      data-testid={`provider-msg-${i}`}
+                    >
+                      {msg.content}
+                    </div>
+                  </div>
+                  <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} mt-0.5`}>
+                    <span className="text-[10px] text-muted-foreground">
+                      {msg.role === "user" ? (msg.senderName || (() => { const parts = (detail?.user?.name || "").trim().split(/\s+/); return parts.length >= 2 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0] || "Parent"; })()) : msg.senderType === "provider" ? (msg.senderName || "You") : msg.senderType === "human" ? "GoStork" : msg.senderType === "system" ? "System" : "AI"} · {timeAgo(msg.createdAt)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              <div ref={chatEndRef} />
+            </div>
+
+            {canReply ? (
+              <div className="border-t px-4 py-3 bg-background shrink-0" data-testid="provider-reply-area">
+                <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
+                  <Shield className="w-3 h-3" />
+                  <span>{hasJoined ? <>Sending as <strong className="text-foreground">Agency Expert</strong></> : "Your answer will be relayed to the parent by the AI concierge"}</span>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder={hasJoined ? "Type a message to the parent..." : "Type your answer..."}
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendReply();
+                      }
+                    }}
+                    disabled={sendMessageMutation.isPending}
+                    className="flex-1 !text-base font-ui"
+                    data-testid="input-provider-message"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleSendReply}
+                    disabled={!replyText.trim() || sendMessageMutation.isPending}
+                    className="h-10 px-4 text-white"
+                    style={{ backgroundColor: brandColor }}
+                    data-testid="btn-send-provider-message"
+                  >
+                    {sendMessageMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  </Button>
+                </div>
               </div>
-            ) : filteredSessions.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center px-6" data-testid="inbox-empty">
-                <MessageSquare className="w-10 h-10 text-muted-foreground mb-3" />
-                <p className="text-sm text-muted-foreground">
-                  {searchQuery ? "No conversations match your search" : "No conversations yet"}
+            ) : isConsultationBooked ? (
+              <div className="border-t px-4 py-4 bg-muted/30 text-center shrink-0" data-testid="provider-join-prompt">
+                <p className="text-sm text-muted-foreground mb-2">This parent has booked a consultation. Join the group chat to communicate directly.</p>
+                <Button
+                  size="sm"
+                  className="text-white gap-1"
+                  style={{ backgroundColor: brandColor }}
+                  onClick={() => joinMutation.mutate(selectedSessionId!)}
+                  disabled={joinMutation.isPending}
+                  data-testid="btn-join-group-chat-bottom"
+                >
+                  {joinMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
+                  Join Group Chat
+                </Button>
+              </div>
+            ) : (
+              <div className="border-t px-4 py-4 bg-muted/30 text-center shrink-0" data-testid="provider-waiting-prompt">
+                <p className="text-sm text-muted-foreground">No pending questions. When the AI concierge receives questions from this parent, they'll appear here.</p>
+              </div>
+            )}
+          </div>
+
+          <div className="w-72 border-l overflow-y-auto p-4 bg-muted/30 hidden lg:block" data-testid="provider-sidebar">
+            {!hasJoined && !isConsultationBooked ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
+                  <h4 className="font-semibold text-sm" style={{ fontFamily: "var(--font-display)" }}>AI Concierge Q&A</h4>
+                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Questions from this prospective parent are forwarded here by the AI concierge. Your answers are relayed back — the parent's identity stays private until they schedule a consultation.
                 </p>
-                {!searchQuery && (
-                  <p className="text-xs text-muted-foreground mt-1">When parents request a consultation, their conversations will appear here</p>
+                {selectedSession && selectedSession.pendingQuestions > 0 && (
+                  <div className="rounded-lg p-3 bg-[hsl(var(--brand-warning))]/10 border border-[hsl(var(--brand-warning))]/20">
+                    <p className="text-sm font-medium text-[hsl(var(--brand-warning))]">{selectedSession.pendingQuestions} question{selectedSession.pendingQuestions > 1 ? "s" : ""} pending</p>
+                    <p className="text-xs text-muted-foreground mt-1">Reply below to answer the most recent question</p>
+                  </div>
+                )}
+                {isConsultationBooked && (
+                  <div className="rounded-lg p-3 bg-primary/5 border border-primary/20">
+                    <p className="text-sm font-medium" style={{ color: brandColor }}>Consultation Booked</p>
+                    <p className="text-xs text-muted-foreground mt-1">Click "Join Group Chat" to start communicating directly with this parent</p>
+                  </div>
                 )}
               </div>
             ) : (
-              filteredSessions.map(s => {
-                const sIsJoined = s.status === "PROVIDER_JOINED";
-                const sIsBooked = s.status === "CONSULTATION_BOOKED";
-                const hasPending = s.pendingQuestions > 0;
-                return (
-                <button
-                  key={s.id}
-                  className={`w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left border-b border-border/20 ${
-                    selectedSessionId === s.id ? "bg-muted/70" : ""
-                  } ${sIsBooked ? "bg-primary/5" : ""}`}
-                  onClick={() => setSelectedSessionId(s.id)}
-                  data-testid={`provider-session-${s.id}`}
-                >
-                  {s.userAvatar ? (
-                    <img src={s.userAvatar} alt="" className="w-11 h-11 rounded-full object-cover flex-shrink-0" />
-                  ) : (
-                    <div className="w-11 h-11 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-                      {sIsJoined || sIsBooked ? (
-                        <User className="w-5 h-5 text-muted-foreground" />
-                      ) : (
-                        <Sparkles className="w-5 h-5" style={{ color: brandColor }} />
-                      )}
+              <>
+                <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Parent Profile</h4>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm">{detail.user.name || "—"}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm truncate">{detail.user.email}</span>
+                  </div>
+                  {(detail.user.city || detail.user.state) && (
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm">{[detail.user.city, detail.user.state].filter(Boolean).join(", ")}</span>
                     </div>
                   )}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="font-semibold text-sm font-ui truncate">{s.userName || "Prospective Parent"}</span>
-                        {sIsJoined ? (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[9px] font-bold uppercase flex-shrink-0">
-                            <CheckCircle2 className="w-2.5 h-2.5" />
-                            Joined
-                          </span>
-                        ) : sIsBooked ? (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase flex-shrink-0" style={{ backgroundColor: `${brandColor}15`, color: brandColor }}>
-                            <UserPlus className="w-2.5 h-2.5" />
-                            Ready to Join
-                          </span>
-                        ) : hasPending ? (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] text-[9px] font-bold uppercase flex-shrink-0">
-                            {s.pendingQuestions} pending
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground text-[9px] font-bold uppercase flex-shrink-0">
-                            <MessageCircle className="w-2.5 h-2.5" />
-                            Q&A
-                          </span>
-                        )}
+                  {profile && (
+                    <div className="border-t pt-3 mt-3">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Journey Details</p>
+                      <div className="space-y-1.5">
+                        {profile.journeyStage && <div className="text-sm"><span className="text-muted-foreground">Stage:</span> {profile.journeyStage}</div>}
+                        {profile.eggSource && <div className="text-sm"><span className="text-muted-foreground">Egg Source:</span> {profile.eggSource}</div>}
+                        {profile.spermSource && <div className="text-sm"><span className="text-muted-foreground">Sperm Source:</span> {profile.spermSource}</div>}
+                        {profile.carrier && <div className="text-sm"><span className="text-muted-foreground">Carrier:</span> {profile.carrier}</div>}
+                        {profile.hasEmbryos !== null && <div className="text-sm"><span className="text-muted-foreground">Embryos:</span> {profile.hasEmbryos ? `Yes (${profile.embryoCount || "??"})` : "No"}</div>}
                       </div>
-                      <span className="text-[11px] text-muted-foreground flex-shrink-0">{timeAgo(s.lastMessageAt)}</span>
                     </div>
-                    {s.lastMessage && (
-                      <p className="text-sm text-muted-foreground truncate mt-0.5">{truncateMessage(s.lastMessage)}</p>
+                  )}
+                </div>
+                {hasJoined && (
+                  <div className="border-t pt-4 mt-4" data-testid="consultation-status-section">
+                    <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Consultation Status</h4>
+                    <div className="space-y-2">
+                      <Button
+                        size="sm"
+                        className="w-full text-white gap-1.5 text-xs"
+                        style={{ backgroundColor: "var(--brand-success, #22c55e)" }}
+                        onClick={() => consultationStatusMutation.mutate({ sessionId: selectedSessionId!, status: "READY_FOR_MATCH" })}
+                        disabled={consultationStatusMutation.isPending}
+                        data-testid="btn-ready-for-match"
+                      >
+                        {consultationStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
+                        Completed — Ready for Match
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full gap-1.5 text-xs border-destructive text-destructive hover:bg-destructive hover:text-white"
+                        onClick={() => consultationStatusMutation.mutate({ sessionId: selectedSessionId!, status: "NOT_A_FIT" })}
+                        disabled={consultationStatusMutation.isPending}
+                        data-testid="btn-not-a-fit"
+                      >
+                        {consultationStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsDown className="w-3 h-3" />}
+                        Completed — Not a Fit
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {hasJoined && (
+                  <div className="border-t pt-4 mt-4" data-testid="agreement-section">
+                    <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Agreement</h4>
+                    <Button
+                      size="sm"
+                      className="w-full gap-1.5 text-xs"
+                      style={{ backgroundColor: brandColor }}
+                      onClick={() => { if (selectedSessionId) generateAgreementMutation.mutate({ sessionId: selectedSessionId }); }}
+                      disabled={generateAgreementMutation.isPending}
+                      data-testid="btn-generate-agreement"
+                    >
+                      {generateAgreementMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+                      Generate & Send Agreement
+                    </Button>
+                    {generateAgreementMutation.isError && (
+                      <p className="text-xs text-destructive mt-1.5" data-testid="text-agreement-error">
+                        {(generateAgreementMutation.error as Error)?.message || "Failed to generate agreement"}
+                      </p>
+                    )}
+                    {generateAgreementMutation.isSuccess && (
+                      <p className="text-xs text-[hsl(var(--brand-success))] mt-1.5" data-testid="text-agreement-success">
+                        Agreement sent successfully
+                      </p>
                     )}
                   </div>
-                </button>
-                );
-              })
+                )}
+              </>
             )}
           </div>
         </div>
-
-        <div className={`${!selectedSessionId ? "hidden md:flex" : "flex"} flex-1 flex-col bg-background`}>
-          {!selectedSessionId ? (
-            <div className="flex-1 flex items-center justify-center text-center px-8">
-              <div>
-                <MessageSquare className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
-                <h3 className="font-display text-lg font-semibold text-muted-foreground mb-1">Select a conversation</h3>
-                <p className="text-sm text-muted-foreground">Choose a conversation from the list to view messages</p>
-              </div>
-            </div>
-          ) : sessionDetailQuery.isLoading ? (
-            <div className="flex-1 flex items-center justify-center">
-              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : detail ? (
-            <div className="flex flex-col flex-1 min-h-0">
-              <div className="flex items-center gap-3 px-4 py-3 border-b bg-background shrink-0">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 w-8 p-0 md:hidden"
-                  onClick={() => setSelectedSessionId(null)}
-                  data-testid="btn-back-to-sessions"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                </Button>
-                <div className="flex items-center gap-2 flex-1">
-                  {detail.user.photoUrl ? (
-                    <img src={detail.user.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                      {hasJoined || isConsultationBooked ? (
-                        <User className="w-4 h-4 text-muted-foreground" />
-                      ) : (
-                        <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
-                      )}
-                    </div>
-                  )}
-                  <div>
-                    <h3 className="font-semibold text-sm font-ui">{detail.user.name || "Prospective Parent"}</h3>
-                    {!hasJoined && !isConsultationBooked && (
-                      <p className="text-[11px] text-muted-foreground">Anonymous Q&A via AI Concierge</p>
-                    )}
-                  </div>
-                </div>
-                {hasJoined ? (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium" data-testid="badge-provider-joined">
-                    <CheckCircle2 className="w-3 h-3" />
-                    Joined
-                  </div>
-                ) : isConsultationBooked ? (
-                  <Button
-                    size="sm"
-                    className="h-8 text-xs text-white gap-1"
-                    style={{ backgroundColor: brandColor }}
-                    onClick={() => joinMutation.mutate(selectedSessionId)}
-                    disabled={joinMutation.isPending}
-                    data-testid="btn-join-group-chat"
-                  >
-                    {joinMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
-                    Join Group Chat
-                  </Button>
-                ) : isWhisperPhase ? (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] text-xs font-medium" data-testid="badge-pending-questions">
-                    <MessageCircle className="w-3 h-3" />
-                    {selectedSession?.pendingQuestions} pending
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted text-muted-foreground text-xs font-medium" data-testid="badge-qa">
-                    <MessageCircle className="w-3 h-3" />
-                    Q&A
-                  </div>
-                )}
-              </div>
-
-              <div className="flex flex-1 min-h-0 overflow-hidden">
-                <div className="flex-1 flex flex-col min-h-0">
-                  <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" data-testid="provider-chat-messages">
-                    {detail.messages.map((msg, i) => (
-                      <div key={msg.id}>
-                        {msg.role === "assistant" && msg.senderType === "human" && (
-                          <div className="flex items-center gap-1.5 mb-1 ml-1">
-                            <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white bg-muted-foreground">GoStork Expert</div>
-                            {msg.senderName && <span className="text-[11px] text-muted-foreground">{msg.senderName}</span>}
-                          </div>
-                        )}
-                        {msg.role === "assistant" && msg.senderType === "provider" && (
-                          <div className="flex items-center gap-1.5 mb-1 ml-1">
-                            <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: brandColor }}>{msg.senderName || "Agency Expert"}</div>
-                          </div>
-                        )}
-                        {msg.role === "assistant" && msg.senderType === "system" && (
-                          <div className="flex items-center gap-1.5 mb-1 ml-1">
-                            <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--accent))] text-white">Eva</div>
-                          </div>
-                        )}
-                        <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                          <div
-                            className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-base leading-relaxed font-ui ${
-                              msg.role === "user"
-                                ? "bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))]"
-                                : msg.senderType === "provider"
-                                ? "text-foreground border-2"
-                                : msg.senderType === "human"
-                                ? "bg-muted text-foreground"
-                                : msg.senderType === "system"
-                                ? "bg-[hsl(var(--accent))]/10 text-[hsl(var(--accent))] border border-[hsl(var(--accent))]/30"
-                                : "bg-muted text-foreground"
-                            }`}
-                            style={msg.senderType === "provider" ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : undefined}
-                            data-testid={`provider-msg-${i}`}
-                          >
-                            {msg.content}
-                          </div>
-                        </div>
-                        <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} mt-0.5`}>
-                          <span className="text-[10px] text-muted-foreground">
-                            {msg.role === "user" ? (msg.senderName || (() => { const parts = (detail?.user?.name || "").trim().split(/\s+/); return parts.length >= 2 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0] || "Parent"; })()) : msg.senderType === "provider" ? (msg.senderName || "You") : msg.senderType === "human" ? "GoStork" : msg.senderType === "system" ? "System" : "AI"} · {timeAgo(msg.createdAt)}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                    <div ref={chatEndRef} />
-                  </div>
-
-                  {canReply ? (
-                    <div className="border-t px-4 py-3 bg-background" data-testid="provider-reply-area">
-                      <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
-                        <Shield className="w-3 h-3" />
-                        <span>{hasJoined ? <>Sending as <strong className="text-foreground">Agency Expert</strong></> : "Your answer will be relayed to the parent by the AI concierge"}</span>
-                      </div>
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder={hasJoined ? "Type a message to the parent..." : "Type your answer..."}
-                          value={replyText}
-                          onChange={(e) => setReplyText(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
-                              e.preventDefault();
-                              handleSendReply();
-                            }
-                          }}
-                          disabled={sendMessageMutation.isPending}
-                          className="flex-1 !text-base font-ui"
-                          data-testid="input-provider-message"
-                        />
-                        <Button
-                          size="sm"
-                          onClick={handleSendReply}
-                          disabled={!replyText.trim() || sendMessageMutation.isPending}
-                          className="h-10 px-4 text-white"
-                          style={{ backgroundColor: brandColor }}
-                          data-testid="btn-send-provider-message"
-                        >
-                          {sendMessageMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                        </Button>
-                      </div>
-                    </div>
-                  ) : isConsultationBooked ? (
-                    <div className="border-t px-4 py-4 bg-muted/30 text-center" data-testid="provider-join-prompt">
-                      <p className="text-sm text-muted-foreground mb-2">This parent has booked a consultation. Join the group chat to communicate directly.</p>
-                      <Button
-                        size="sm"
-                        className="text-white gap-1"
-                        style={{ backgroundColor: brandColor }}
-                        onClick={() => joinMutation.mutate(selectedSessionId)}
-                        disabled={joinMutation.isPending}
-                        data-testid="btn-join-group-chat-bottom"
-                      >
-                        {joinMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
-                        Join Group Chat
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="border-t px-4 py-4 bg-muted/30 text-center" data-testid="provider-waiting-prompt">
-                      <p className="text-sm text-muted-foreground">No pending questions. When the AI concierge receives questions from this parent, they'll appear here.</p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="w-72 border-l overflow-y-auto p-4 bg-muted/30 hidden lg:block" data-testid="provider-sidebar">
-                  {!hasJoined && !isConsultationBooked ? (
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
-                        <h4 className="font-semibold text-sm" style={{ fontFamily: "var(--font-display)" }}>AI Concierge Q&A</h4>
-                      </div>
-                      <p className="text-sm text-muted-foreground leading-relaxed">
-                        Questions from this prospective parent are forwarded here by the AI concierge. Your answers are relayed back — the parent's identity stays private until they schedule a consultation.
-                      </p>
-                      {selectedSession && selectedSession.pendingQuestions > 0 && (
-                        <div className="rounded-lg p-3 bg-[hsl(var(--brand-warning))]/10 border border-[hsl(var(--brand-warning))]/20">
-                          <p className="text-sm font-medium text-[hsl(var(--brand-warning))]">{selectedSession.pendingQuestions} question{selectedSession.pendingQuestions > 1 ? "s" : ""} pending</p>
-                          <p className="text-xs text-muted-foreground mt-1">Reply below to answer the most recent question</p>
-                        </div>
-                      )}
-                      {isConsultationBooked && (
-                        <div className="rounded-lg p-3 bg-primary/5 border border-primary/20">
-                          <p className="text-sm font-medium" style={{ color: brandColor }}>Consultation Booked</p>
-                          <p className="text-xs text-muted-foreground mt-1">Click "Join Group Chat" to start communicating directly with this parent</p>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Parent Profile</h4>
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <User className="w-4 h-4 text-muted-foreground" />
-                          <span className="text-sm">{detail.user.name || "—"}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Mail className="w-4 h-4 text-muted-foreground" />
-                          <span className="text-sm truncate">{detail.user.email}</span>
-                        </div>
-                        {(detail.user.city || detail.user.state) && (
-                          <div className="flex items-center gap-2">
-                            <MapPin className="w-4 h-4 text-muted-foreground" />
-                            <span className="text-sm">{[detail.user.city, detail.user.state].filter(Boolean).join(", ")}</span>
-                          </div>
-                        )}
-                        {profile && (
-                          <div className="border-t pt-3 mt-3">
-                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Journey Details</p>
-                            <div className="space-y-1.5">
-                              {profile.journeyStage && <div className="text-sm"><span className="text-muted-foreground">Stage:</span> {profile.journeyStage}</div>}
-                              {profile.eggSource && <div className="text-sm"><span className="text-muted-foreground">Egg Source:</span> {profile.eggSource}</div>}
-                              {profile.spermSource && <div className="text-sm"><span className="text-muted-foreground">Sperm Source:</span> {profile.spermSource}</div>}
-                              {profile.carrier && <div className="text-sm"><span className="text-muted-foreground">Carrier:</span> {profile.carrier}</div>}
-                              {profile.hasEmbryos !== null && <div className="text-sm"><span className="text-muted-foreground">Embryos:</span> {profile.hasEmbryos ? `Yes (${profile.embryoCount || "??"})` : "No"}</div>}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      {hasJoined && (
-                        <div className="border-t pt-4 mt-4" data-testid="consultation-status-section">
-                          <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Consultation Status</h4>
-                          <div className="space-y-2">
-                            <Button
-                              size="sm"
-                              className="w-full text-white gap-1.5 text-xs"
-                              style={{ backgroundColor: "var(--brand-success, #22c55e)" }}
-                              onClick={() => consultationStatusMutation.mutate({ sessionId: selectedSessionId, status: "READY_FOR_MATCH" })}
-                              disabled={consultationStatusMutation.isPending}
-                              data-testid="btn-ready-for-match"
-                            >
-                              {consultationStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
-                              Completed — Ready for Match
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="w-full gap-1.5 text-xs border-destructive text-destructive hover:bg-destructive hover:text-white"
-                              onClick={() => consultationStatusMutation.mutate({ sessionId: selectedSessionId, status: "NOT_A_FIT" })}
-                              disabled={consultationStatusMutation.isPending}
-                              data-testid="btn-not-a-fit"
-                            >
-                              {consultationStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsDown className="w-3 h-3" />}
-                              Completed — Not a Fit
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                      {hasJoined && (
-                        <div className="border-t pt-4 mt-4" data-testid="agreement-section">
-                          <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Agreement</h4>
-                          <Button
-                            size="sm"
-                            className="w-full gap-1.5 text-xs"
-                            style={{ backgroundColor: brandColor }}
-                            onClick={() => { if (selectedSessionId) generateAgreementMutation.mutate({ sessionId: selectedSessionId }); }}
-                            disabled={generateAgreementMutation.isPending}
-                            data-testid="btn-generate-agreement"
-                          >
-                            {generateAgreementMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
-                            Generate & Send Agreement
-                          </Button>
-                          {generateAgreementMutation.isError && (
-                            <p className="text-xs text-destructive mt-1.5" data-testid="text-agreement-error">
-                              {(generateAgreementMutation.error as Error)?.message || "Failed to generate agreement"}
-                            </p>
-                          )}
-                          {generateAgreementMutation.isSuccess && (
-                            <p className="text-xs text-[hsl(var(--brand-success))] mt-1.5" data-testid="text-agreement-success">
-                              Agreement sent successfully
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </div>
       </div>
+    ) : null;
+
+    return (
+      <ConversationsShell
+        hasSelection={!!selectedSessionId}
+        onBack={() => setSelectedSessionId(null)}
+        isLoading={providerSessionsQuery.isLoading}
+        sidebarItems={sidebarContent}
+        emptyMessage={searchQuery ? "No conversations match your search" : "No conversations yet"}
+        emptyAction={!searchQuery ? (
+          <p className="text-xs text-muted-foreground mt-1">When parents request a consultation, their conversations will appear here</p>
+        ) : undefined}
+        detailContent={providerDetailContent}
+        brandColor={brandColor}
+      />
     );
   }
 
