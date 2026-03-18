@@ -541,9 +541,9 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
           isPremium={swipeProfile.isPremium}
           tabs={tabs}
           disableSwipe
-          onPass={() => {}}
-          onSave={() => onAction("Yes, please reach out!")}
-          onUndo={() => onAction("Show me more options")}
+          chatMode
+          onPass={() => onAction(`I'm not interested in ${card.name || title}. Show me another option.`)}
+          onSave={() => onAction(`I like ${card.name || title}! Save as favorite. ❤️`)}
           onViewFullProfile={() => onViewProfile(card)}
         />
       </div>
