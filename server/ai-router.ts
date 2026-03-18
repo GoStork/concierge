@@ -1429,6 +1429,8 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
     if (matchCards.length > 0) uiExtras.matchCards = matchCards;
     if (consultationCard) uiExtras.consultationCard = consultationCard;
     if (sendPrepDoc) uiExtras.prepDoc = true;
+    if (quickReplies.length > 0) uiExtras.quickReplies = quickReplies;
+    if (multiSelect) uiExtras.multiSelect = true;
 
     const savedAiMessage = await prisma.aiChatMessage.create({
       data: {

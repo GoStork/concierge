@@ -743,6 +743,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 matchCards: extras.matchCards,
                 prepDoc: extras.prepDoc,
                 consultationCard: extras.consultationCard,
+                quickReplies: extras.quickReplies,
+                multiSelect: extras.multiSelect,
               };
             }),
           ]);
