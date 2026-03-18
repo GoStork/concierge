@@ -1001,6 +1001,57 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
       });
     }
 
+    // PROACTIVE PROFILE INJECTION: When parent asks a question about a presented profile,
+    // fetch the full profile BEFORE sending to AI so it has all data on the first try
+    const looksLikeProfileQuestion = /\?|what|how|where|when|who|why|does she|does he|is she|is he|tell me|her\s+|his\s+|husband|wife|partner|name|age|weight|bmi|education|location|health|deliver|pregnan|baby|babies|height|diet|religion|charge|cost|compen|letter|hobby|pet|smoke|drink|tattoo|pierc/i.test(userMessage);
+    const isNotAction = !/not interested|show me another|skip|pass on|save as favorite|like .+!|❤️|favorite|yes.*schedule|schedule.*consultation|show me more/i.test(userMessage);
+
+    if (looksLikeProfileQuestion && isNotAction && currentSessionId && mcpClient) {
+      try {
+        const recentCards = await prisma.aiChatMessage.findMany({
+          where: { sessionId: currentSessionId, uiCardType: "rich" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { uiCardData: true },
+        });
+        const mc = (recentCards[0]?.uiCardData as any)?.matchCards?.[0];
+        if (mc?.providerId && mc?.type) {
+          const etype = (mc.type || "").toLowerCase();
+          let profileText = "";
+          if (etype === "surrogate") {
+            try {
+              const profileResult = await mcpClient.callTool({
+                name: "get_surrogate_profile",
+                arguments: { surrogateId: mc.providerId },
+              });
+              profileText = (profileResult.content as any)?.[0]?.text || "";
+            } catch (e) {
+              console.error("[PROACTIVE PROFILE] Fetch failed, will retry:", e);
+              await new Promise(r => setTimeout(r, 500));
+              try {
+                const retryResult = await mcpClient.callTool({
+                  name: "get_surrogate_profile",
+                  arguments: { surrogateId: mc.providerId },
+                });
+                profileText = (retryResult.content as any)?.[0]?.text || "";
+              } catch (e2) {
+                console.error("[PROACTIVE PROFILE] Retry also failed:", e2);
+              }
+            }
+          }
+          if (profileText && profileText.length > 50) {
+            console.log(`[PROACTIVE PROFILE] Injected full profile (${profileText.length} chars) before AI call for question: "${userMessage.slice(0, 60)}"`);
+            messages.push({
+              role: "system",
+              content: `FULL PROFILE DATA for the currently presented match (use this to answer the parent's question — do NOT guess or make up information not found here. If the answer is NOT in this data, use [[WHISPER:${mc.ownerProviderId || ""}]] to ask the agency):\n\n${profileText}`,
+            });
+          }
+        }
+      } catch (e) {
+        console.error("[PROACTIVE PROFILE] Error:", e);
+      }
+    }
+
     let openAiTools: OpenAI.Chat.ChatCompletionTool[] = [];
     if (mcpClient) {
       try {
