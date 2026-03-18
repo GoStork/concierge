@@ -98,6 +98,11 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   const sseRef = useRef<EventSource | null>(null);
   const costsSseRef = useRef<EventSource | null>(null);
 
+  const isEmbedded = new URLSearchParams(location.search).get("embedded") === "1";
+  if (isEmbedded) {
+    return <>{children}</>;
+  }
+
   const handleVideoJoinedEvent = useCallback((data: any) => {
     if (data.type !== "video_participant_joined") return;
     const joinerName = data.joinerName || "Someone";
