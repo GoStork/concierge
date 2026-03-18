@@ -948,6 +948,20 @@ When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS u
             },
           });
 
+          await prisma.aiChatSession.update({
+            where: { id: currentSessionId },
+            data: { providerId: whisperProviderId },
+          });
+
+          await prisma.aiChatMessage.create({
+            data: {
+              sessionId: currentSessionId,
+              role: "assistant",
+              content: `📋 A prospective parent has a question that needs your input:\n\n"${questionText}"\n\nPlease reply in this conversation and the parent will be updated.`,
+              senderType: "system",
+            },
+          });
+
           const provider = await prisma.provider.findUnique({
             where: { id: whisperProviderId },
             select: { name: true },

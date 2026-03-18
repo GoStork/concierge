@@ -416,6 +416,18 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
       },
     });
 
+    const pendingWhispers = await prisma.silentQuery.findMany({
+      where: { sessionId: session.id, providerId: user.providerId, status: "PENDING" },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    });
+    if (pendingWhispers.length > 0) {
+      await prisma.silentQuery.updateMany({
+        where: { id: { in: pendingWhispers.map(w => w.id) } },
+        data: { status: "ANSWERED", answerText: content.trim() },
+      });
+    }
+
     await prisma.inAppNotification.create({
       data: {
         userId: session.userId,
