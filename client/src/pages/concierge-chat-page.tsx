@@ -267,11 +267,12 @@ function InlineBookingCalendar({
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
-  const [step, setStep] = useState<"date" | "form">("date");
+  const [step, setStep] = useState<"date" | "form" | "pending">("date");
   const [name, setName] = useState(user ? (user as any).name || "" : "");
   const [email, setEmail] = useState(user ? (user as any).email || "" : "");
   const [phone, setPhone] = useState(user ? (user as any).mobileNumber || "" : "");
   const [notes, setNotes] = useState("");
+  const [booking, setBooking] = useState<any>(null);
 
   const dateStr = selectedDate ? format(selectedDate, "yyyy-MM-dd") : null;
   const monthStr = format(currentMonth, "yyyy-MM");
@@ -327,7 +328,8 @@ function InlineBookingCalendar({
     },
     onSuccess: (data) => {
       if (data?.publicToken) {
-        navigate(`/booking/${data.publicToken}`, { replace: true });
+        setBooking(data);
+        setStep("pending");
       }
     },
   });
@@ -336,6 +338,112 @@ function InlineBookingCalendar({
     return (
       <div className="flex items-center justify-center py-8">
         <Loader2 className="w-5 h-5 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (step === "pending" && booking) {
+    const start = new Date(booking.scheduledAt);
+    const providerUser = booking.providerUser;
+    const providerPhotoSrc = providerUser?.photoUrl
+      ? providerUser.photoUrl.startsWith("/uploads") ? providerUser.photoUrl : `/api/uploads/proxy?url=${encodeURIComponent(providerUser.photoUrl)}`
+      : null;
+    const providerName = providerUser?.name || memberName;
+    const providerOrgName = providerUser?.provider?.name || "";
+    const participants: { name: string; email: string }[] = [];
+    if (booking.attendeeName || booking.attendeeEmails?.[0]) {
+      participants.push({ name: booking.attendeeName || booking.attendeeEmails[0], email: booking.attendeeEmails?.[0] || "" });
+    }
+    if (booking.parentUser && booking.parentUser.email !== booking.attendeeEmails?.[0]) {
+      participants.push({ name: booking.parentUser.name || booking.parentUser.email, email: booking.parentUser.email });
+    }
+    const pam = booking.parentAccountMembers || [];
+    const seenEmails = new Set(participants.map(p => p.email.toLowerCase()));
+    for (const m of pam) {
+      if (seenEmails.has(m.email.toLowerCase())) continue;
+      seenEmails.add(m.email.toLowerCase());
+      participants.push({ name: m.name || m.email, email: m.email });
+    }
+
+    return (
+      <div className="space-y-4 py-3" data-testid="inline-booking-pending">
+        <div className="text-center space-y-1">
+          <div className="w-12 h-12 mx-auto rounded-full bg-[hsl(var(--brand-warning,40_96%_53%)/0.12)] flex items-center justify-center">
+            <Clock className="w-6 h-6 text-[hsl(var(--brand-warning,40_96%_53%))]" />
+          </div>
+          <p className="font-bold text-sm">Awaiting Confirmation</p>
+          <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning,40_96%_53%)/0.12)] text-[hsl(var(--brand-warning,40_96%_53%))]">
+            Pending
+          </span>
+        </div>
+
+        <div className="bg-muted/40 rounded-xl p-3 space-y-2.5 border border-border">
+          <div className="flex items-center gap-3">
+            {providerPhotoSrc ? (
+              <img src={providerPhotoSrc} alt={providerName} className="w-10 h-10 rounded-full object-cover" />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
+                {providerName.charAt(0)}
+              </div>
+            )}
+            <div>
+              <p className="text-sm font-semibold">{providerName}</p>
+              {providerOrgName && <p className="text-xs text-muted-foreground">{providerOrgName}</p>}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <CalendarCheck className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span>{format(start, "EEEE, MMMM d, yyyy")}</span>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span>{format(start, "h:mm a")} ({booking.duration || pageInfo?.meetingDuration || 30} min)</span>
+          </div>
+        </div>
+
+        {participants.length > 0 && (
+          <div className="bg-muted/40 rounded-xl p-3 border border-border">
+            <div className="flex items-center gap-2 mb-2">
+              <Globe className="w-3.5 h-3.5 text-primary" />
+              <span className="text-xs font-semibold">Participants</span>
+            </div>
+            <div className="space-y-1.5">
+              {participants.map((p, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm pl-1">
+                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                    <Check className="w-3 h-3 text-primary" />
+                  </div>
+                  <span className="font-medium text-xs">{p.name}</span>
+                  {p.email && p.name !== p.email && <span className="text-xs text-muted-foreground">({p.email})</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="bg-[hsl(var(--brand-warning,40_96%_53%)/0.08)] border border-[hsl(var(--brand-warning,40_96%_53%)/0.3)] rounded-xl p-3">
+          <p className="text-xs font-medium text-[hsl(var(--brand-warning,40_96%_53%))]">Awaiting provider confirmation</p>
+          <p className="text-[11px] text-[hsl(var(--brand-warning,40_96%_53%))] mt-0.5">We'll send you an email once {providerName} confirms your booking.</p>
+        </div>
+
+        {booking.publicToken && (
+          <div className="flex gap-2">
+            <a
+              href={`/booking/${booking.publicToken}`}
+              className="flex-1 text-center text-xs font-medium py-2 rounded-lg border border-border hover:bg-muted transition-colors"
+              data-testid="link-reschedule-inline"
+            >
+              Reschedule
+            </a>
+            <a
+              href={`/booking/${booking.publicToken}`}
+              className="flex-1 text-center text-xs font-medium py-2 rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/5 transition-colors"
+              data-testid="link-cancel-inline"
+            >
+              Cancel
+            </a>
+          </div>
+        )}
       </div>
     );
   }
