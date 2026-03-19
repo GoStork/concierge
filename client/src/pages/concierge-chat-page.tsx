@@ -1131,6 +1131,27 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     }
   }, [sessionId]);
 
+  const handleConciergeVideo = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const res = await fetch("/api/video/room", { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      const { url: roomUrl } = await res.json();
+      await fetch(`/api/chat-session/${sessionId}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          content: "I've started a video call — join when you're ready!",
+          uiCardType: "video_invite",
+          uiCardData: { roomUrl },
+        }),
+      });
+      window.open(roomUrl, "_blank");
+    } catch {
+      alert("Failed to start video call. Please try again.");
+    }
+  }, [sessionId]);
 
   const handleParentFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1543,6 +1564,19 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 >
                   <CalendarDays className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Meeting</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 gap-1.5 font-ui text-xs"
+                  style={{ color: brandColor }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                  onClick={handleConciergeVideo}
+                  data-testid="btn-video"
+                >
+                  <Video className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Video</span>
                 </Button>
               </>
             )}

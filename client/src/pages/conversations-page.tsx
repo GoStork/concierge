@@ -644,6 +644,27 @@ export default function ConversationsPage() {
     }
   };
 
+  const handleParentVideo = async () => {
+    if (!selectedParentSession) return;
+    try {
+      const res = await fetch("/api/video/room", { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      const { url: roomUrl } = await res.json();
+      await fetch(`/api/chat-session/${selectedParentSession.id}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          content: "I've started a video call — join when you're ready!",
+          uiCardType: "video_invite",
+          uiCardData: { roomUrl },
+        }),
+      });
+      window.open(roomUrl, "_blank");
+    } catch {
+      alert("Failed to start video call. Please try again.");
+    }
+  };
 
   if (isParent) {
     const allSessions = parentSessionsQuery.data || [];
@@ -835,6 +856,19 @@ export default function ConversationsPage() {
             >
               <CalendarDays className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Meeting</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 gap-1.5 font-ui text-xs"
+              style={{ color: brandColor }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+              onClick={handleParentVideo}
+              data-testid="btn-parent-video"
+            >
+              <Video className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Video</span>
             </Button>
           </div>
         </div>

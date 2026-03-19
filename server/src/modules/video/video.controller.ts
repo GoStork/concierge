@@ -66,8 +66,8 @@ export class VideoController {
     const isAdmin = user.roles?.includes("GOSTORK_ADMIN");
     const isProvider = hasProviderRole(user.roles || []);
 
-    if (!isAdmin && !isProvider) {
-      throw new ForbiddenException("Only admins and providers can create rooms");
+    if (!user) {
+      throw new ForbiddenException("Authentication required");
     }
 
     const room = await this.videoService.createRoom();
