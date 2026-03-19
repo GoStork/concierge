@@ -406,12 +406,23 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
 
     if (existing) {
       if (donorId) {
+        const donorLabel = donorType === "surrogate" ? "Surrogate" : donorType === "sperm-donor" ? "Sperm Donor" : "Egg Donor";
+        const matchCardData = {
+          matchCards: [{
+            name: donorLabel,
+            type: donorLabel,
+            providerId: donorId,
+            ownerProviderId: req.body.ownerProviderId || undefined,
+            reasons: [],
+          }],
+        };
         const greetingMsg = await prisma.aiChatMessage.create({
           data: {
             sessionId: existing.id,
             role: "assistant",
             content: greeting,
             senderType: "ai",
+            uiCardData: matchCardData,
           },
         });
         await prisma.aiChatSession.update({
