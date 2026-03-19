@@ -1492,12 +1492,29 @@ function ConciergeSpecialCard({ msg, brandColor }: { msg: ChatMessage; brandColo
   }
 
   if (msg.uiCardType === "video_invite") {
+    const handleVideoClick = async (e: React.MouseEvent) => {
+      e.preventDefault();
+      try {
+        const res = await fetch("/api/video/chat-room-token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ roomUrl: data.roomUrl }),
+        });
+        if (!res.ok) throw new Error("Failed to get token");
+        const { token, roomUrl } = await res.json();
+        window.open(`${roomUrl}?t=${token}`, "_blank");
+      } catch {
+        window.open(data.roomUrl, "_blank");
+      }
+    };
     return (
       <a
         href={data.roomUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 bg-background hover:bg-muted transition-colors"
+        onClick={handleVideoClick}
+        className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 bg-background hover:bg-muted transition-colors cursor-pointer"
         style={{ borderColor: brandColor }}
         data-testid="concierge-video-invite"
       >
@@ -1648,7 +1665,18 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           uiCardData: { roomUrl },
         }),
       });
-      window.open(roomUrl, "_blank");
+      const tokenRes = await fetch("/api/video/chat-room-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ roomUrl }),
+      });
+      if (tokenRes.ok) {
+        const { token } = await tokenRes.json();
+        window.open(`${roomUrl}?t=${token}`, "_blank");
+      } else {
+        window.open(roomUrl, "_blank");
+      }
     } catch {
       alert("Failed to start video call. Please try again.");
     }

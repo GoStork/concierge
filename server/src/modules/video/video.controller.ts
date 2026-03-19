@@ -57,6 +57,35 @@ export class VideoController {
     }
   }
 
+  @Post("chat-room-token")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Generate a Daily.co token for an ad-hoc chat video call" })
+  async chatRoomToken(@Req() req: any, @Body() body: { roomUrl: string }) {
+    const user = req.user;
+    const { roomUrl } = body;
+    if (!roomUrl) throw new BadRequestException("roomUrl is required");
+
+    const roomName = roomUrl.split("/").pop();
+    if (!roomName) throw new BadRequestException("Invalid room URL");
+
+    const isProvider = hasProviderRole(user.roles || []);
+    const isAdmin = user.roles?.includes("GOSTORK_ADMIN");
+    const isOwner = isProvider || isAdmin;
+
+    await this.videoService.ensurePrejoinDisabled(roomName);
+
+    const token = await this.videoService.generateToken({
+      roomName,
+      userId: user.id,
+      userName: user.name || user.email,
+      isOwner,
+      consentGiven: false,
+    });
+
+    return { token, roomUrl };
+  }
+
   @Post("room")
   @UseGuards(SessionOrJwtGuard)
   @ApiBearerAuth()
