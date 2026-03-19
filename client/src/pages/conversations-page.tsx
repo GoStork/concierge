@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ReactNode } from "react";
+import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
@@ -318,6 +318,15 @@ export default function ConversationsPage() {
   const isParent = roles.includes("PARENT") && !roles.some((r: string) => ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE", "GOSTORK_DEVELOPER"].includes(r)) && !hasProviderRole(roles);
   const isProvider = hasProviderRole(roles) || (roles.includes("GOSTORK_ADMIN") && !!(user as any)?.providerId);
   const showConcierge = brand?.enableAiConcierge !== false;
+
+  const myDisplayName = useMemo(() => {
+    const u = user as any;
+    if (!u?.name) return "";
+    const parts = u.name.trim().split(/\s+/);
+    return parts.length >= 2
+      ? `${parts[0]} ${parts[parts.length - 1][0]}.`
+      : parts[0] || "";
+  }, [user]);
 
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -770,7 +779,9 @@ export default function ConversationsPage() {
               {detail.messages.map((msg, i) => (
                 <div key={msg.id}>
                   {(() => {
-                    const ownMsg = isProvider ? msg.senderType === "provider" : msg.role === "user";
+                    const ownMsg = isProvider
+                      ? msg.senderType === "provider"
+                      : msg.role === "user" && (!msg.senderName || msg.senderName === myDisplayName);
                     if (ownMsg) return null;
                     if (msg.senderType === "human") return (
                       <div className="flex items-center gap-1.5 mb-1 ml-1">
@@ -788,7 +799,7 @@ export default function ConversationsPage() {
                         <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--accent))] text-white">Eva</div>
                       </div>
                     );
-                    if (msg.role === "user" && isProvider) return (
+                    if (msg.role === "user") return (
                       <div className="flex items-center gap-1.5 mb-1 ml-1">
                         <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-500 text-white">{msg.senderName || detail?.user?.name || "Parent"}</div>
                       </div>
@@ -801,7 +812,7 @@ export default function ConversationsPage() {
                   {(() => {
                     const isOwnMessage = isProvider
                       ? msg.senderType === "provider"
-                      : msg.role === "user";
+                      : msg.role === "user" && (!msg.senderName || msg.senderName === myDisplayName);
                     return (
                       <>
                         <div className={`flex ${isOwnMessage ? "justify-end" : "justify-start"}`}>
@@ -809,10 +820,10 @@ export default function ConversationsPage() {
                             className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-base leading-relaxed font-ui ${
                               isOwnMessage
                                 ? "bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))]"
-                                : msg.senderType === "provider"
-                                ? "text-foreground border-2"
                                 : msg.role === "user"
                                 ? "text-foreground border-2 border-blue-200 bg-blue-50/50"
+                                : msg.senderType === "provider"
+                                ? "text-foreground border-2"
                                 : msg.senderType === "human"
                                 ? "bg-muted text-foreground"
                                 : msg.senderType === "system"
@@ -827,7 +838,7 @@ export default function ConversationsPage() {
                         </div>
                         <div className={`flex ${isOwnMessage ? "justify-end" : "justify-start"} mt-0.5`}>
                           <span className="text-[10px] text-muted-foreground">
-                            {msg.role === "user" ? (msg.senderName || (() => { const parts = (detail?.user?.name || "").trim().split(/\s+/); return parts.length >= 2 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0] || "Parent"; })()) : msg.senderType === "provider" ? (msg.senderName || "You") : msg.senderType === "human" ? "GoStork" : msg.senderType === "system" ? "System" : "AI"} · {timeAgo(msg.createdAt)}
+                            {isOwnMessage && msg.role === "user" ? "You" : msg.role === "user" ? (msg.senderName || "Parent") : msg.senderType === "provider" ? (msg.senderName || "Agency Expert") : msg.senderType === "human" ? "GoStork" : msg.senderType === "system" ? "System" : "AI"} · {timeAgo(msg.createdAt)}
                           </span>
                         </div>
                       </>

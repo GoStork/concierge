@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -1011,6 +1011,15 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [greetingSet, setGreetingSet] = useState(false);
   const [providerInChat, setProviderInChat] = useState(false);
+
+  const myDisplayName = useMemo(() => {
+    const u = user as any;
+    if (!u?.name) return "";
+    const parts = u.name.trim().split(/\s+/);
+    return parts.length >= 2
+      ? `${parts[0]} ${parts[parts.length - 1][0]}.`
+      : parts[0] || "";
+  }, [user]);
   const handleViewProfile = useCallback((card: MatchCard) => {
     if (!card.ownerProviderId) return;
     const slug = getProfileUrlSlug(card.type);
@@ -1389,77 +1398,98 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" data-testid="concierge-messages">
           {messages.map((msg, i) => (
             <div key={i}>
-              {msg.role === "assistant" && msg.senderType === "human" && (
-                <div className="flex items-center gap-1.5 mb-1 ml-1">
-                  <div
-                    className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white"
-                    style={{ backgroundColor: brandColor }}
-                    data-testid={`badge-expert-${i}`}
-                  >
-                    GoStork Expert
-                  </div>
-                  {msg.senderName && (
-                    <span className="text-[11px] text-muted-foreground">{msg.senderName}</span>
-                  )}
-                </div>
-              )}
-              {msg.role === "assistant" && msg.senderType === "provider" && (
-                <div className="flex items-center gap-1.5 mb-1 ml-1">
-                  <div
-                    className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white bg-[hsl(var(--brand-success))]"
-                    data-testid={`badge-provider-${i}`}
-                  >
-                    {msg.senderName || "Agency Expert"}
-                  </div>
-                </div>
-              )}
-              {msg.role === "assistant" && msg.senderType === "system" && (
-                <div className="flex items-center gap-1.5 mb-1 ml-1">
-                  <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--accent))] text-white" data-testid={`badge-system-${i}`}>
-                    {selectedMatchmaker?.name || "Eva"}
-                  </div>
-                </div>
-              )}
-              <div
-                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                data-testid={`chat-message-${msg.role}-${i}`}
-              >
-                <div
-                  className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-base leading-relaxed font-ui ${
-                    msg.role === "user"
-                      ? "text-white chat-bubble-dark"
-                      : msg.senderType === "human"
-                      ? "text-foreground border-2"
-                      : msg.senderType === "provider"
-                      ? "text-foreground border-2 border-emerald-300"
-                      : "text-foreground"
-                  }`}
-                  style={
-                    msg.role === "user"
-                      ? {
-                          backgroundColor: brandColor,
-                          borderRadius: "var(--radius, 0.5rem)",
+              {(() => {
+                const isOwnMessage = msg.role === "user" && (!msg.senderName || msg.senderName === myDisplayName);
+                const isOtherParent = msg.role === "user" && msg.senderName && msg.senderName !== myDisplayName;
+                return (
+                  <>
+                    {msg.role === "assistant" && msg.senderType === "human" && (
+                      <div className="flex items-center gap-1.5 mb-1 ml-1">
+                        <div
+                          className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white"
+                          style={{ backgroundColor: brandColor }}
+                          data-testid={`badge-expert-${i}`}
+                        >
+                          GoStork Expert
+                        </div>
+                        {msg.senderName && (
+                          <span className="text-[11px] text-muted-foreground">{msg.senderName}</span>
+                        )}
+                      </div>
+                    )}
+                    {msg.role === "assistant" && msg.senderType === "provider" && (
+                      <div className="flex items-center gap-1.5 mb-1 ml-1">
+                        <div
+                          className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white bg-[hsl(var(--brand-success))]"
+                          data-testid={`badge-provider-${i}`}
+                        >
+                          {msg.senderName || "Agency Expert"}
+                        </div>
+                      </div>
+                    )}
+                    {msg.role === "assistant" && msg.senderType === "system" && (
+                      <div className="flex items-center gap-1.5 mb-1 ml-1">
+                        <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--accent))] text-white" data-testid={`badge-system-${i}`}>
+                          {selectedMatchmaker?.name || "Eva"}
+                        </div>
+                      </div>
+                    )}
+                    {isOtherParent && (
+                      <div className="flex items-center gap-1.5 mb-1 ml-1">
+                        <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-500 text-white" data-testid={`badge-parent-${i}`}>
+                          {msg.senderName}
+                        </div>
+                      </div>
+                    )}
+                    <div
+                      className={`flex ${isOwnMessage ? "justify-end" : isOtherParent ? "justify-start" : msg.role === "user" ? "justify-end" : "justify-start"}`}
+                      data-testid={`chat-message-${msg.role}-${i}`}
+                    >
+                      <div
+                        className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-base leading-relaxed font-ui ${
+                          isOwnMessage
+                            ? "text-white chat-bubble-dark"
+                            : isOtherParent
+                            ? "text-foreground border-2 border-blue-200 bg-blue-50/50"
+                            : msg.role === "user"
+                            ? "text-white chat-bubble-dark"
+                            : msg.senderType === "human"
+                            ? "text-foreground border-2"
+                            : msg.senderType === "provider"
+                            ? "text-foreground border-2 border-emerald-300"
+                            : "text-foreground"
+                        }`}
+                        style={
+                          isOtherParent
+                            ? { borderRadius: "var(--radius, 0.5rem)" }
+                            : msg.role === "user"
+                            ? {
+                                backgroundColor: brandColor,
+                                borderRadius: "var(--radius, 0.5rem)",
+                              }
+                            : msg.senderType === "human"
+                            ? {
+                                borderRadius: "var(--radius, 0.5rem)",
+                                borderColor: brandColor,
+                                backgroundColor: `${brandColor}08`,
+                              }
+                            : msg.senderType === "provider"
+                            ? {
+                                borderRadius: "var(--radius, 0.5rem)",
+                                backgroundColor: "#ecfdf508",
+                              }
+                            : {
+                                borderRadius: "var(--radius, 0.5rem)",
+                                backgroundColor: `${brandColor}15`,
+                              }
                         }
-                      : msg.senderType === "human"
-                      ? {
-                          borderRadius: "var(--radius, 0.5rem)",
-                          borderColor: brandColor,
-                          backgroundColor: `${brandColor}08`,
-                        }
-                      : msg.senderType === "provider"
-                      ? {
-                          borderRadius: "var(--radius, 0.5rem)",
-                          backgroundColor: "#ecfdf508",
-                        }
-                      : {
-                          borderRadius: "var(--radius, 0.5rem)",
-                          backgroundColor: `${brandColor}15`,
-                        }
-                  }
-                >
-                  {msg.content}
-                </div>
-              </div>
+                      >
+                        {msg.content}
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
 
               {msg.prepDoc && (
                 <div className="flex justify-start mt-3 ml-0">
