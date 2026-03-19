@@ -142,11 +142,6 @@ export class VideoController {
 
     const room = await this.videoService.createRoom();
 
-    await this.prisma.user.update({
-      where: { id: providerUserId! },
-      data: { dailyRoomUrl: room.url },
-    });
-
     const subject = `Ad-hoc Video Call${session.provider?.name ? ` — ${session.provider.name}` : ""}`;
 
     const booking = await this.prisma.booking.create({
@@ -291,9 +286,9 @@ export class VideoController {
 
     if (!booking) throw new NotFoundException("Booking not found");
 
-    const roomUrl = booking.providerUser?.dailyRoomUrl;
+    const roomUrl = booking.meetingUrl || booking.providerUser?.dailyRoomUrl;
     if (!roomUrl) {
-      throw new BadRequestException("Provider has no video room configured");
+      throw new BadRequestException("No video room configured for this booking");
     }
 
     const roomName = roomUrl.split("/").pop();
@@ -408,8 +403,8 @@ export class VideoController {
       throw new ForbiddenException("ACCOUNT_EXISTS");
     }
 
-    const roomUrl = booking.providerUser?.dailyRoomUrl;
-    if (!roomUrl) throw new BadRequestException("Provider has no video room configured");
+    const roomUrl = booking.meetingUrl || booking.providerUser?.dailyRoomUrl;
+    if (!roomUrl) throw new BadRequestException("No video room configured for this booking");
     const roomName = roomUrl.split("/").pop();
     if (!roomName) throw new BadRequestException("Invalid room URL");
 
@@ -493,11 +488,10 @@ export class VideoController {
     if (!booking.consentGiven) {
       return { found: false, message: "Recording consent was not given for this call." };
     }
-    if (!booking.providerUser?.dailyRoomUrl) {
+    const roomUrl = booking.meetingUrl || booking.providerUser?.dailyRoomUrl;
+    if (!roomUrl) {
       return { found: false, message: "No video room associated with this booking." };
     }
-
-    const roomUrl = booking.providerUser.dailyRoomUrl;
     const roomName = roomUrl.split("/").pop();
     if (!roomName) {
       return { found: false, message: "Could not determine room name." };
