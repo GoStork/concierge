@@ -1629,7 +1629,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       data-testid={`chat-message-${msg.role}-${i}`}
                     >
                       <div
-                        className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-base leading-relaxed font-ui ${
+                        className={`max-w-[80%] px-4 py-2.5 text-base leading-relaxed font-ui ${
                           isOwnMessage
                             ? "text-white chat-bubble-dark"
                             : isOtherParent
@@ -1638,8 +1638,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                             ? "text-white chat-bubble-dark"
                             : "text-foreground"
                         }`}
-                        style={
-                          isOwnMessage
+                        style={{
+                          borderRadius: `${brand?.borderRadius ?? 1}rem`,
+                          ...(isOwnMessage
                             ? { backgroundColor: brandColor }
                             : isOtherParent
                             ? {
@@ -1661,8 +1662,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                             : {
                                 backgroundColor: `${brandColor}14`,
                                 border: `1px solid ${brandColor}33`,
-                              }
-                        }
+                              }),
+                        }}
                       >
                         {msg.content}
                       </div>

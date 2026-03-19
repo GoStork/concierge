@@ -1137,13 +1137,14 @@ export default function ConversationsPage() {
                       <>
                         <div className={`flex ${isOwnMessage ? "justify-end" : "justify-start"}`}>
                           <div
-                            className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-base leading-relaxed font-ui ${
+                            className={`max-w-[75%] px-4 py-2.5 text-base leading-relaxed font-ui ${
                               isOwnMessage
                                 ? "text-white"
                                 : "text-foreground"
                             }`}
-                            style={
-                              isOwnMessage
+                            style={{
+                              borderRadius: `${brand?.borderRadius ?? 1}rem`,
+                              ...(isOwnMessage
                                 ? { backgroundColor: brandColor }
                                 : msg.role === "user"
                                 ? { backgroundColor: chatPalette.partnerBg, border: `1px solid ${chatPalette.partnerBorder}` }
@@ -1153,8 +1154,8 @@ export default function ConversationsPage() {
                                 ? { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }
                                 : msg.senderType === "system"
                                 ? { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }
-                                : { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }
-                            }
+                                : { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }),
+                            }}
                             data-testid={`provider-msg-${i}`}
                           >
                             {msg.content}
