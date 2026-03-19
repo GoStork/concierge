@@ -969,10 +969,12 @@ export default function ConversationsPage() {
 
             {canReply ? (
               <div className="border-t px-4 py-3 bg-background shrink-0" data-testid="provider-reply-area">
-                <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
-                  <Shield className="w-3 h-3" />
-                  <span>{hasJoined ? <>Sending as <strong className="text-foreground">Agency Expert</strong></> : "Your answer will be relayed to the parent by the AI concierge"}</span>
-                </div>
+                {!hasJoined && (
+                  <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
+                    <Shield className="w-3 h-3" />
+                    <span>Your answer will be relayed to the parent by the AI concierge</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
                   <Button
                     variant="ghost"
