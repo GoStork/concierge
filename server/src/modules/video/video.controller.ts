@@ -112,7 +112,16 @@ export class VideoController {
     let attendeeEmails: string[] = [];
 
     if (callerActsAsProvider) {
-      providerUserId = user.id;
+      if (isAdmin && user.providerId !== session.providerId) {
+        const actualProviderUser = await this.prisma.user.findFirst({
+          where: { providerId: session.providerId || undefined },
+          orderBy: { createdAt: "asc" },
+          select: { id: true },
+        });
+        providerUserId = actualProviderUser?.id || user.id;
+      } else {
+        providerUserId = user.id;
+      }
       parentUserId = session.userId;
       const parentUser = await this.prisma.user.findUnique({
         where: { id: session.userId },
