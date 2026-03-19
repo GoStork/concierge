@@ -1930,6 +1930,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
       }
 
+      if (data.userMessageId) knownMessageIds.current.add(data.userMessageId);
+
       if (data.skipAiResponse) {
         setSending(false);
         sendingRef.current = false;
@@ -1943,7 +1945,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         setProviderInChat(true);
       }
 
-      if (data.userMessageId) knownMessageIds.current.add(data.userMessageId);
       if (data.message.id) knownMessageIds.current.add(data.message.id);
 
       const newMessage: ChatMessage = {
