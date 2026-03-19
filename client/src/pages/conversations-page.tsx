@@ -1186,18 +1186,9 @@ export default function ConversationsPage() {
                           >
                             <span>{msg.content}</span>
                             {msg.createdAt && (
-                              <span
-                                className="inline-block align-bottom ml-2 whitespace-nowrap select-none"
-                                style={{
-                                  fontSize: "10px",
-                                  lineHeight: "18px",
-                                  opacity: 0.7,
-                                  float: "right",
-                                  marginTop: "4px",
-                                }}
-                              >
+                              <div className="text-right mt-1 select-none" style={{ fontSize: "10px", lineHeight: "14px", opacity: 0.55 }}>
                                 {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
-                              </span>
+                              </div>
                             )}
                           </div>
                         </div>
