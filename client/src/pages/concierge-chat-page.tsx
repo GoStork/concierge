@@ -2172,7 +2172,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             )}
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            {sessionTitle && (
+            {providerInChat && (
               <>
                 <Button
                   variant="ghost"
