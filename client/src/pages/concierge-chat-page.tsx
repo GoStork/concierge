@@ -2003,16 +2003,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   data-testid="parent-meeting-booking-card"
                 >
                   <div className="p-1.5" style={{ backgroundColor: brandColor }}>
-                    <div className="flex items-center justify-between px-3 py-1.5">
-                      <div className="flex items-center gap-2">
-                        <CalendarCheck className="w-4 h-4 text-white" />
-                        <span className="text-white text-xs font-semibold uppercase tracking-wider">Schedule a Meeting</span>
-                      </div>
-                      {onClose && (
-                        <button onClick={onClose} className="text-white/70 hover:text-white" data-testid="btn-close-meeting-card">
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
+                    <div className="flex items-center gap-2 px-3 py-1.5">
+                      <CalendarCheck className="w-4 h-4 text-white" />
+                      <span className="text-white text-xs font-semibold uppercase tracking-wider">Schedule a Meeting</span>
                     </div>
                   </div>
                   <div className="px-4 pb-4">
