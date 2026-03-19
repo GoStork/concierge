@@ -11,7 +11,11 @@ import {
   MapPin, Mail, CheckCircle2, UserPlus, Shield, ThumbsUp, ThumbsDown,
   Search, Sparkles, Building2, ChevronDown, MessageCircle, Clock,
   CalendarDays, Video, Paperclip, Download, ExternalLink, Image as ImageIcon,
+  Crown, Users, CalendarClock, Check,
 } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { format } from "date-fns";
 import { hasProviderRole } from "@shared/roles";
 import { useAppDispatch } from "@/store";
 import { setHideBottomNav } from "@/store/uiSlice";
@@ -141,6 +145,194 @@ function getProfileUrlSlug(type: string): string {
   if (t === "egg donor") return "eggdonor";
   if (t === "sperm donor") return "spermdonor";
   return "surrogate";
+}
+
+function InlineSuggestTimeForm({ bookingId, onCancel, onSuccess }: { bookingId: string; onCancel: () => void; onSuccess: () => void }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [suggestDate, setSuggestDate] = useState("");
+  const [suggestTime, setSuggestTime] = useState("10:00");
+  const [message, setMessage] = useState("");
+
+  const suggestMutation = useMutation({
+    mutationFn: async () => {
+      if (!suggestDate || !suggestTime) throw new Error("Please select a date and time");
+      await apiRequest("POST", `/api/calendar/bookings/${bookingId}/suggest-time`, {
+        scheduledAt: new Date(`${suggestDate}T${suggestTime}:00`).toISOString(),
+        message: message || undefined,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+      toast({ title: "New time suggested", description: "The parent has been notified.", variant: "success" as any });
+      onSuccess();
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <div className="space-y-2 pt-1">
+      <div className="grid grid-cols-2 gap-2">
+        <Input type="date" value={suggestDate} onChange={(e) => setSuggestDate(e.target.value)} data-testid="input-suggest-date-inline" className="h-8 text-xs" />
+        <Input type="time" value={suggestTime} onChange={(e) => setSuggestTime(e.target.value)} data-testid="input-suggest-time-inline" className="h-8 text-xs" />
+      </div>
+      <textarea
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        placeholder="Add a message (optional)"
+        className="w-full text-xs rounded-md border border-input bg-background px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+        rows={2}
+        data-testid="input-suggest-message-inline"
+      />
+      <div className="flex gap-2">
+        <Button size="sm" className="flex-1 h-7 text-xs gap-1" onClick={() => suggestMutation.mutate()} disabled={suggestMutation.isPending || !suggestDate} data-testid="button-send-suggestion-inline">
+          {suggestMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+          Send
+        </Button>
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onCancel}>Cancel</Button>
+      </div>
+    </div>
+  );
+}
+
+function InlineBookingNotification({ booking, brandColor, onUpdate }: { booking: any; brandColor: string; onUpdate: () => void }) {
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [showSuggestForm, setShowSuggestForm] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const isProvider = booking?.providerUserId === user?.id;
+  const isPending = booking?.status === "PENDING";
+  const isConfirmed = booking?.status === "CONFIRMED";
+
+  const confirmMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", `/api/calendar/bookings/${booking.id}/confirm`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+      toast({ title: "Meeting confirmed", description: "The parent has been notified.", variant: "success" as any });
+      onUpdate();
+    },
+  });
+
+  const declineMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", `/api/calendar/bookings/${booking.id}/decline`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+      toast({ title: "Meeting declined", description: "The parent has been notified.", variant: "success" as any });
+      onUpdate();
+    },
+  });
+
+  if (!booking || dismissed) return null;
+  const start = new Date(booking.scheduledAt);
+  const providerName = booking.providerUser?.name || "Provider";
+  const orgName = booking.providerUser?.provider?.name || "";
+
+  const members = booking.parentAccountMembers || [];
+  const attendees = members.length > 0
+    ? members
+    : booking.parentUser
+    ? [booking.parentUser]
+    : [];
+
+  return (
+    <div className="mx-auto max-w-[85%] my-3" data-testid={`inline-booking-card-${booking.id}`}>
+      <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-2 border-b" style={{ backgroundColor: `${brandColor}08` }}>
+          <span className="text-sm font-semibold">{orgName ? `${orgName} Consultation Call` : "Consultation Call"}</span>
+          <button onClick={() => setDismissed(true)} className="text-muted-foreground hover:text-foreground" data-testid="btn-dismiss-booking-card">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <div className="flex items-center gap-2 text-sm">
+            <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span>{format(start, "EEEE, MMMM d, yyyy")} at {format(start, "h:mm a")}</span>
+            <span className="text-muted-foreground">({booking.duration} min)</span>
+          </div>
+
+          <div className="flex items-center gap-2 text-sm">
+            <Crown className="w-4 h-4" style={{ color: brandColor }} />
+            <span>{providerName}</span>
+            <span className="text-xs text-muted-foreground">(Host)</span>
+          </div>
+
+          {attendees.map((a: any) => (
+            <div key={a.id || a.email} className="flex items-center gap-2 text-sm">
+              <Users className="w-4 h-4 text-muted-foreground" />
+              <span>{a.name || a.email}</span>
+              {a.email && a.name && <span className="text-xs text-muted-foreground">({a.email})</span>}
+            </div>
+          ))}
+
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+              isConfirmed
+                ? "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))]"
+                : isPending
+                ? "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]"
+                : "bg-muted text-foreground"
+            }`}>
+              {isPending ? "Awaiting Confirmation" : booking.status}
+            </span>
+          </div>
+
+          {isPending && isProvider && (
+            <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-lg p-3">
+              <p className="text-sm text-[hsl(var(--brand-warning))] font-medium">This meeting request needs your confirmation</p>
+              <p className="text-xs text-[hsl(var(--brand-warning))] mt-1">Requested by {booking.attendeeName || booking.parentUser?.name || "a parent"}.</p>
+            </div>
+          )}
+
+          {isPending && !isProvider && (
+            <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-lg p-3">
+              <p className="text-sm text-[hsl(var(--brand-warning))] font-medium">Awaiting provider confirmation</p>
+              <p className="text-xs text-[hsl(var(--brand-warning))] mt-1">We'll send you an email once {providerName} confirms your booking.</p>
+            </div>
+          )}
+
+          {showSuggestForm && isPending && isProvider && (
+            <div className="border border-border/50 rounded-lg p-3 space-y-2">
+              <p className="text-sm font-medium">Suggest a new time</p>
+              <InlineSuggestTimeForm
+                bookingId={booking.id}
+                onCancel={() => setShowSuggestForm(false)}
+                onSuccess={() => { setShowSuggestForm(false); onUpdate(); }}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-t bg-muted/20">
+          {isPending && isProvider && !showSuggestForm && (
+            <>
+              <Button size="sm" onClick={() => confirmMutation.mutate()} disabled={confirmMutation.isPending || declineMutation.isPending} className="gap-1 text-xs" data-testid="button-confirm-booking-inline">
+                {confirmMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                Confirm
+              </Button>
+              <Button size="sm" variant="outline" className="text-destructive gap-1 text-xs" onClick={() => declineMutation.mutate()} disabled={confirmMutation.isPending || declineMutation.isPending} data-testid="button-decline-booking-inline">
+                {declineMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                Decline
+              </Button>
+              <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => setShowSuggestForm(true)} data-testid="button-suggest-new-time-inline">
+                <CalendarClock className="w-3.5 h-3.5" /> New Time
+              </Button>
+            </>
+          )}
+          <Button size="sm" variant="outline" className="text-xs ml-auto" onClick={() => setDismissed(true)}>
+            Close
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function WhisperProfileCard({ card, brandColor }: { card: any; brandColor: string }) {
@@ -466,6 +658,17 @@ export default function ConversationsPage() {
     },
     enabled: isProvider && !!selectedSessionId,
     refetchInterval: 5000,
+  });
+
+  const sessionBookingsQuery = useQuery<any[]>({
+    queryKey: ["/api/chat-session/bookings", selectedSessionId],
+    queryFn: async () => {
+      const res = await fetch(`/api/chat-session/${selectedSessionId}/bookings`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: isProvider && !!selectedSessionId,
+    refetchInterval: 15000,
   });
 
   const joinMutation = useMutation({
@@ -1182,6 +1385,14 @@ export default function ConversationsPage() {
                     );
                   })()}
                 </div>
+              ))}
+              {(sessionBookingsQuery.data || []).map((booking: any) => (
+                <InlineBookingNotification
+                  key={booking.id}
+                  booking={booking}
+                  brandColor={brandColor}
+                  onUpdate={() => sessionBookingsQuery.refetch()}
+                />
               ))}
               <div ref={chatEndRef} />
             </div>

@@ -824,3 +824,68 @@ chatRouter.post("/api/agreements/generate", requireAuth, async (req, res) => {
     res.status(500).json({ message: e.message });
   }
 });
+
+chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Request, res: Response) => {
+  const user = req.user as any;
+  if (!user) return res.status(401).json({ message: "Not authenticated" });
+
+  try {
+    const session = await prisma.aiChatSession.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, userId: true, providerId: true },
+    });
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const isSessionProvider = isProviderUser(user) && session.providerId === user.providerId;
+    const isSessionParent = session.userId === user.id;
+    if (!isSessionProvider && !isSessionParent && !isAdminUser(user)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const providerUsers = await prisma.user.findMany({
+      where: { providerId: session.providerId!, roles: { hasSome: PROVIDER_ROLES } },
+      select: { id: true },
+    });
+    const providerUserIds = providerUsers.map(u => u.id);
+
+    const bookings = await prisma.booking.findMany({
+      where: {
+        parentUserId: session.userId,
+        providerUserId: { in: providerUserIds },
+        status: { in: ["PENDING", "CONFIRMED"] },
+      },
+      include: {
+        providerUser: {
+          select: {
+            id: true, name: true, email: true, photoUrl: true,
+            provider: { select: { id: true, name: true } },
+          },
+        },
+        parentUser: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    });
+
+    for (const b of bookings) {
+      const parentAccount = await prisma.user.findUnique({
+        where: { id: session.userId },
+        select: { parentAccountId: true },
+      });
+      if (parentAccount?.parentAccountId) {
+        const members = await prisma.user.findMany({
+          where: { parentAccountId: parentAccount.parentAccountId, roles: { has: "PARENT" } },
+          select: { id: true, name: true, email: true },
+        });
+        (b as any).parentAccountMembers = members;
+      }
+    }
+
+    res.json(bookings);
+  } catch (e: any) {
+    console.error("Chat session bookings error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
