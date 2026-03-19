@@ -330,7 +330,7 @@ export function SwipeDeckCard({
                 size="icon"
                 onClick={(e) => { e.stopPropagation(); onUndo?.(); }}
                 disabled={!onUndo}
-                className="h-12 w-12 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] [@media(hover:hover)]:hover:scale-110 [@media(hover:hover)]:hover:brightness-110 active:scale-95 active:translate-y-0.5 active:shadow-[0_4px_8px_rgba(0,0,0,0.5),inset_0_4px_8px_rgba(0,0,0,0.6)] transition-all duration-200 flex sm:hidden items-center justify-center pointer-events-auto disabled:opacity-100 disabled:pointer-events-auto"
+                className="h-12 w-12 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] [@media(hover:hover)]:hover:scale-110 [@media(hover:hover)]:hover:brightness-110 active:scale-95 active:translate-y-0.5 active:shadow-[0_4px_8px_rgba(0,0,0,0.5),inset_0_4px_8px_rgba(0,0,0,0.6)] transition-all duration-200 flex items-center justify-center pointer-events-auto disabled:opacity-100 disabled:pointer-events-auto"
                 data-testid={`button-undo-${id}`}
               >
                 <Undo2 className="!w-7 !h-7 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-undo)" }} strokeWidth={3} />
