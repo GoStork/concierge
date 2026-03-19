@@ -112,23 +112,29 @@ export class VideoController {
     let attendeeEmails: string[] = [];
 
     if (callerActsAsProvider) {
-      const providerUsers = await this.prisma.user.findMany({
-        where: { providerId: session.providerId || undefined },
-        select: { id: true },
-      });
-      providerUserId = providerUsers.find(pu => pu.id === user.id)?.id || providerUsers[0]?.id || user.id;
+      providerUserId = user.id;
       parentUserId = session.userId;
       const parentUser = await this.prisma.user.findUnique({
         where: { id: session.userId },
-        select: { name: true, email: true },
+        select: { name: true, email: true, parentAccountId: true },
       });
       attendeeName = parentUser?.name || null;
-      attendeeEmails = parentUser?.email ? [parentUser.email] : [];
+      attendeeEmails = [];
+      if (parentUser?.parentAccountId) {
+        const members = await this.prisma.user.findMany({
+          where: { parentAccountId: parentUser.parentAccountId, isDisabled: false },
+          select: { email: true },
+        });
+        attendeeEmails = members.map(m => m.email).filter(Boolean);
+      } else if (parentUser?.email) {
+        attendeeEmails = [parentUser.email];
+      }
     } else {
       parentUserId = user.id;
       if (session.providerId) {
         const providerUser = await this.prisma.user.findFirst({
           where: { providerId: session.providerId },
+          orderBy: { createdAt: "asc" },
           select: { id: true, name: true, email: true },
         });
         if (providerUser) {
@@ -138,8 +144,20 @@ export class VideoController {
       if (!providerUserId) {
         throw new BadRequestException("No provider found for this session");
       }
-      attendeeName = user.name || null;
-      attendeeEmails = user.email ? [user.email] : [];
+      attendeeEmails = [];
+      const parentAccount = user.parentAccountId
+        ? await this.prisma.user.findMany({
+            where: { parentAccountId: user.parentAccountId, isDisabled: false },
+            select: { email: true, name: true },
+          })
+        : null;
+      if (parentAccount && parentAccount.length > 0) {
+        attendeeName = parentAccount.map(m => m.name).filter(Boolean).join(", ") || user.name || null;
+        attendeeEmails = parentAccount.map(m => m.email).filter(Boolean);
+      } else {
+        attendeeName = user.name || null;
+        attendeeEmails = user.email ? [user.email] : [];
+      }
     }
 
     const room = await this.videoService.createRoom();
@@ -271,7 +289,14 @@ export class VideoController {
     const roomName = roomUrl.split("/").pop();
     if (!roomName) throw new BadRequestException("Invalid room URL");
 
-    const isProvider = user.id === booking.providerUserId;
+    let isProvider = user.id === booking.providerUserId;
+    if (!isProvider && user.providerId && booking.providerUser) {
+      const providerUser = await this.prisma.user.findUnique({
+        where: { id: booking.providerUserId },
+        select: { providerId: true },
+      });
+      isProvider = !!(providerUser?.providerId && providerUser.providerId === user.providerId);
+    }
     const isParent = await this.isParentAccountMember(user.id, booking.parentUserId);
     const isAdmin = user.roles?.includes("GOSTORK_ADMIN");
 
