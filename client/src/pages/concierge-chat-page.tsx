@@ -2109,12 +2109,59 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         </div>}
 
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" data-testid="concierge-messages">
-          {messages.map((msg, i) => (
+          {(() => {
+            const shouldInlineBooking = !externalBookingSlug && !conciergeBookingSlug && sessionBookings && sessionBookings.length > 0;
+            const activeBooking = shouldInlineBooking
+              ? (sessionBookings!.find((b: any) => b.status === "CONFIRMED")
+                || sessionBookings!.find((b: any) => b.status === "PENDING")
+                || sessionBookings!.find((b: any) => b.status === "CANCELLED")
+                || sessionBookings![0])
+              : null;
+            type TimelineItem = { type: "message"; msg: ChatMessage; ts: string } | { type: "booking"; booking: any; ts: string };
+            const msgItems: TimelineItem[] = messages.map((m) => ({ type: "message" as const, msg: m, ts: m.createdAt || "" }));
+            const bookingItems: TimelineItem[] = activeBooking
+              ? [{ type: "booking" as const, booking: activeBooking, ts: activeBooking.createdAt || activeBooking.scheduledAt || "" }]
+              : [];
+            const timeline = [...msgItems, ...bookingItems].sort(
+              (a, b) => new Date(a.ts || 0).getTime() - new Date(b.ts || 0).getTime()
+            );
+            return timeline.map((item, idx) => {
+              if (item.type === "booking") {
+                return (
+                  <div key={`booking-${item.booking.id}`} className="px-1 pb-2" data-testid="parent-standalone-booking-card">
+                    <div
+                      className="w-full overflow-hidden border border-border bg-card"
+                      style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 420px)" }}
+                    >
+                      <div className="p-1.5" style={{ backgroundColor: brandColor }}>
+                        <div className="flex items-center gap-2 px-3 py-1.5">
+                          <CalendarCheck className="w-4 h-4 text-white" />
+                          <span className="text-white text-xs font-semibold uppercase tracking-wider">
+                            {item.booking.status === "CANCELLED" ? "Meeting Cancelled" : "Meeting Scheduled"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="px-4 pb-4">
+                        <InlineBookingCalendar
+                          slug={sessionCalendarSlug?.slug || "__none__"}
+                          memberName={sessionCalendarSlug?.memberName || item.booking.providerUser?.name || "Provider"}
+                          brandColor={brandColor}
+                          existingBooking={item.booking}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              const msg = item.msg;
+              const i = messages.indexOf(msg);
+              return (
             <div key={i}>
               {msg.createdAt && (() => {
                 const msgDate = new Date(msg.createdAt).toDateString();
-                const prevDate = i > 0 && messages[i - 1].createdAt ? new Date(messages[i - 1].createdAt!).toDateString() : null;
-                if (i === 0 || msgDate !== prevDate) {
+                const prevMsgItem = timeline.slice(0, idx).reverse().find((x) => x.type === "message");
+                const prevDate = prevMsgItem ? new Date(prevMsgItem.ts).toDateString() : null;
+                if (!prevDate || msgDate !== prevDate) {
                   return (
                     <div className="flex items-center justify-center my-3">
                       <span className="px-3 py-1 text-[11px] font-medium text-muted-foreground bg-muted/60 rounded-full shadow-sm">
@@ -2320,7 +2367,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 </div>
               )}
             </div>
-          ))}
+              );
+            })
+          })()}
           {sending && (
             <div className="flex items-center gap-2 justify-start py-1" data-testid="chat-typing-indicator">
               <div className="flex items-center gap-1">
@@ -2331,40 +2380,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               <span className="text-xs text-muted-foreground">{selectedMatchmaker?.name || "AI Concierge"} is typing</span>
             </div>
           )}
-          {(() => {
-            if (!sessionBookings || sessionBookings.length === 0) return null;
-            if (externalBookingSlug || conciergeBookingSlug) return null;
-            const activeBooking = sessionBookings.find((b: any) => b.status === "CONFIRMED")
-              || sessionBookings.find((b: any) => b.status === "PENDING")
-              || sessionBookings.find((b: any) => b.status === "CANCELLED")
-              || sessionBookings[0];
-            if (!activeBooking) return null;
-            return (
-              <div className="px-1 pb-2" data-testid="parent-standalone-booking-card">
-                <div
-                  className="w-full overflow-hidden border border-border bg-card"
-                  style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 420px)" }}
-                >
-                  <div className="p-1.5" style={{ backgroundColor: brandColor }}>
-                    <div className="flex items-center gap-2 px-3 py-1.5">
-                      <CalendarCheck className="w-4 h-4 text-white" />
-                      <span className="text-white text-xs font-semibold uppercase tracking-wider">
-                        {activeBooking.status === "CANCELLED" ? "Meeting Cancelled" : "Meeting Scheduled"}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="px-4 pb-4">
-                    <InlineBookingCalendar
-                      slug={sessionCalendarSlug?.slug || "__none__"}
-                      memberName={sessionCalendarSlug?.memberName || activeBooking.providerUser?.name || "Provider"}
-                      brandColor={brandColor}
-                      existingBooking={activeBooking}
-                    />
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
           {(externalBookingSlug || conciergeBookingSlug) && (() => {
             const bk = externalBookingSlug || conciergeBookingSlug!;
             const onClose = externalBookingSlug ? onCloseExternalBooking : () => setConciergeBookingSlug(null);
