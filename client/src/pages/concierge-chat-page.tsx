@@ -440,7 +440,11 @@ export function InlineBookingCalendar({
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
-  const [step, setStep] = useState<"date" | "form" | "pending" | "reschedule" | "cancel_confirm" | "cancelled">(existingBookingProp ? "pending" : "date");
+  const [step, setStep] = useState<"date" | "form" | "pending" | "reschedule" | "cancel_confirm" | "cancelled">(
+    existingBookingProp
+      ? existingBookingProp.status === "CANCELLED" ? "cancelled" : "pending"
+      : "date"
+  );
   const [name, setName] = useState(user ? (user as any).name || "" : "");
   const [email, setEmail] = useState(user ? (user as any).email || "" : "");
   const [phone, setPhone] = useState(user ? (user as any).mobileNumber || "" : "");
@@ -454,16 +458,22 @@ export function InlineBookingCalendar({
   const [cancelling, setCancelling] = useState(false);
   const [rescheduleSlot, setRescheduleSlot] = useState<string | null>(null);
   const [rescheduling, setRescheduling] = useState(false);
+  const prevBookingRef = useRef<{ id?: string; status?: string } | null>(
+    existingBookingProp ? { id: existingBookingProp.id, status: existingBookingProp.status } : null
+  );
 
   useEffect(() => {
     if (existingBookingProp) {
-      if (!booking || booking.id !== existingBookingProp.id || booking.status !== existingBookingProp.status) {
+      const prev = prevBookingRef.current;
+      const changed = !prev || prev.id !== existingBookingProp.id || prev.status !== existingBookingProp.status;
+      if (changed) {
         setBooking(existingBookingProp);
         if (existingBookingProp.status === "CANCELLED") {
           setStep("cancelled");
         } else {
           setStep("pending");
         }
+        prevBookingRef.current = { id: existingBookingProp.id, status: existingBookingProp.status };
       }
     }
   }, [existingBookingProp]);
@@ -1079,7 +1089,7 @@ function ConsultationBookingCard({
           <div className="flex items-center gap-2 px-3 py-1.5">
             <CalendarCheck className="w-4 h-4 text-white" />
             <span className="text-white text-xs font-semibold uppercase tracking-wider">
-              {existingBooking ? "Meeting Scheduled" : "Schedule a Free Consultation"}
+              {existingBooking && existingBooking.status !== "CANCELLED" ? "Meeting Scheduled" : "Schedule a Free Consultation"}
             </span>
           </div>
         </div>
