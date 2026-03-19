@@ -613,12 +613,77 @@ export default function ConversationsPage() {
     ) : null;
 
     const parentDetailContent = hasParentSession ? (
-      <ConciergeChatPage
-        key={selectedParentSession!.id}
-        isInline
-        inlineSessionId={selectedParentSession!.id}
-        inlineMatchmakerId={selectedParentSession!.matchmakerId || undefined}
-      />
+      <div className="flex flex-col h-full">
+        <div className="flex items-center gap-3 px-4 py-3 border-b bg-background shrink-0" data-testid="parent-chat-header">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0 md:hidden"
+            onClick={() => setSelectedParentSession(null)}
+            data-testid="btn-back-parent-chat"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </Button>
+          <div className="w-9 h-9 rounded-full flex-shrink-0 relative">
+            {selectedParentSession!.matchmakerAvatar ? (
+              <img
+                src={selectedParentSession!.matchmakerAvatar}
+                alt={selectedParentSession!.matchmakerName || ""}
+                className="w-9 h-9 rounded-full object-cover"
+              />
+            ) : (
+              <div
+                className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold"
+                style={{ backgroundColor: brandColor }}
+              >
+                {(selectedParentSession!.matchmakerName || "?").charAt(0)}
+              </div>
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>
+              {selectedParentSession!.matchmakerName || "AI Concierge"}
+            </h2>
+            {selectedParentSession!.title && (
+              <p className="text-[11px] font-ui text-muted-foreground truncate" data-testid="parent-chat-subject-label">
+                Subject: {selectedParentSession!.title}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 gap-1.5 font-ui text-xs"
+              style={{ color: brandColor }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+              data-testid="btn-parent-meeting"
+            >
+              <CalendarDays className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Meeting</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 gap-1.5 font-ui text-xs"
+              style={{ color: brandColor }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+              data-testid="btn-parent-video"
+            >
+              <Video className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Video</span>
+            </Button>
+          </div>
+        </div>
+        <ConciergeChatPage
+          key={selectedParentSession!.id}
+          isInline
+          inlineSessionId={selectedParentSession!.id}
+          inlineMatchmakerId={selectedParentSession!.matchmakerId || undefined}
+        />
+      </div>
     ) : null;
 
     return (
