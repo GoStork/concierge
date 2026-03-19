@@ -10,7 +10,7 @@ import {
   ArrowLeft, MessageSquare, Send, User, Loader2, FileText,
   MapPin, Mail, CheckCircle2, UserPlus, Shield, ThumbsUp, ThumbsDown,
   Search, Sparkles, Building2, ChevronDown, MessageCircle, Clock,
-  CalendarDays, Video, Paperclip,
+  CalendarDays, Video, Paperclip, Download, ExternalLink, Image as ImageIcon,
 } from "lucide-react";
 import { hasProviderRole } from "@shared/roles";
 import { useAppDispatch } from "@/store";
@@ -73,6 +73,7 @@ interface SessionMessage {
   senderType: string;
   senderName: string | null;
   createdAt: string;
+  uiCardType?: string;
   uiCardData?: any;
 }
 
@@ -210,6 +211,83 @@ function WhisperProfileCard({ card, brandColor }: { card: any; brandColor: strin
           <h3 className="text-white font-heading text-xl leading-tight">{card.name}</h3>
           {card.location && <p className="text-white/70 text-sm mt-1">{card.location}</p>}
         </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function SpecialMessageCard({ msg, brandColor }: { msg: SessionMessage; brandColor: string }) {
+  const data = msg.uiCardData as any;
+  if (!data) return null;
+
+  if (msg.uiCardType === "attachment") {
+    const isImage = data.mimeType?.startsWith("image/");
+    return (
+      <div className="mt-1" data-testid="attachment-card">
+        {isImage ? (
+          <a href={data.url} target="_blank" rel="noopener noreferrer">
+            <img src={data.url} alt={data.originalName} className="max-w-[240px] rounded-lg border" />
+          </a>
+        ) : (
+          <a
+            href={data.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-background hover:bg-muted transition-colors"
+          >
+            <FileText className="w-5 h-5 shrink-0" style={{ color: brandColor }} />
+            <span className="text-sm font-medium truncate">{data.originalName || "File"}</span>
+            <Download className="w-4 h-4 shrink-0 text-muted-foreground" />
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  if (msg.uiCardType === "video_invite") {
+    return (
+      <div className="mt-1" data-testid="video-invite-card">
+        <a
+          href={data.roomUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 bg-background hover:bg-muted transition-colors"
+          style={{ borderColor: brandColor }}
+        >
+          <div className="w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0" style={{ backgroundColor: brandColor }}>
+            <Video className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Join Video Call</p>
+            <p className="text-xs text-muted-foreground">Click to join the video consultation</p>
+          </div>
+          <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
+        </a>
+      </div>
+    );
+  }
+
+  if (msg.uiCardType === "calendar_share") {
+    return (
+      <div className="mt-1" data-testid="calendar-share-card">
+        <a
+          href={data.bookingUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 bg-background hover:bg-muted transition-colors"
+          style={{ borderColor: brandColor }}
+        >
+          <div className="w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0" style={{ backgroundColor: brandColor }}>
+            <CalendarDays className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Book a Meeting</p>
+            <p className="text-xs text-muted-foreground">{data.memberName ? `Schedule with ${data.memberName}` : "Pick a time that works for you"}</p>
+          </div>
+          <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
+        </a>
       </div>
     );
   }
@@ -395,12 +473,12 @@ export default function ConversationsPage() {
   });
 
   const sendMessageMutation = useMutation({
-    mutationFn: async ({ sessionId, content }: { sessionId: string; content: string }) => {
+    mutationFn: async ({ sessionId, content, uiCardType, uiCardData }: { sessionId: string; content: string; uiCardType?: string; uiCardData?: any }) => {
       const res = await fetch(`/api/provider/concierge-sessions/${sessionId}/message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, uiCardType, uiCardData }),
       });
       if (!res.ok) throw new Error("Failed to send");
       return res.json();
@@ -448,6 +526,71 @@ export default function ConversationsPage() {
     },
   });
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const uploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/chat-upload", { method: "POST", credentials: "include", body: formData });
+      if (!res.ok) throw new Error("Upload failed");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (!selectedSessionId) return;
+      sendMessageMutation.mutate({
+        sessionId: selectedSessionId,
+        content: data.originalName ? `Shared a file: ${data.originalName}` : "Shared a file",
+        uiCardType: "attachment",
+        uiCardData: data,
+      });
+    },
+  });
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) uploadMutation.mutate(file);
+    e.target.value = "";
+  };
+
+  const handleProviderMeeting = async () => {
+    if (!selectedSessionId) return;
+    try {
+      const res = await fetch("/api/provider/calendar-slug", { credentials: "include" });
+      const { slug } = await res.json();
+      if (!slug) {
+        alert("You haven't set up your booking calendar yet. Go to Settings → Calendar to configure it.");
+        return;
+      }
+      const bookingUrl = `${window.location.origin}/book/${slug}`;
+      sendMessageMutation.mutate({
+        sessionId: selectedSessionId,
+        content: "I've shared my calendar — pick a time that works for you!",
+        uiCardType: "calendar_share",
+        uiCardData: { bookingUrl, slug, memberName: (user as any)?.name },
+      });
+    } catch {
+      alert("Failed to load calendar. Please try again.");
+    }
+  };
+
+  const handleProviderVideo = async () => {
+    if (!selectedSessionId) return;
+    try {
+      const res = await fetch("/api/video/room", { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error("Failed to create room");
+      const { url: roomUrl } = await res.json();
+      sendMessageMutation.mutate({
+        sessionId: selectedSessionId,
+        content: "I've started a video call — join when you're ready!",
+        uiCardType: "video_invite",
+        uiCardData: { roomUrl },
+      });
+    } catch {
+      alert("Failed to create video room. Please try again.");
+    }
+  };
+
   useEffect(() => {
     if (chatEndRef.current) {
       const container = chatEndRef.current.closest('[data-testid="provider-chat-messages"]');
@@ -483,6 +626,24 @@ export default function ConversationsPage() {
   const isConsultationBooked = selectedSession?.status === "CONSULTATION_BOOKED" || detail?.status === "CONSULTATION_BOOKED";
   const isWhisperPhase = !hasJoined && !isConsultationBooked && (selectedSession?.pendingQuestions || 0) > 0;
   const canReply = hasJoined || isWhisperPhase || isConsultationBooked;
+
+  const [parentBookingOverlay, setParentBookingOverlay] = useState<{ slug: string; memberName: string } | null>(null);
+
+  const handleParentMeeting = async () => {
+    if (!selectedParentSession) return;
+    try {
+      const res = await fetch(`/api/chat-session/${selectedParentSession.id}/provider-calendar-slug`, { credentials: "include" });
+      const data = await res.json();
+      if (data.slug) {
+        setParentBookingOverlay({ slug: data.slug, memberName: data.memberName || selectedParentSession.providerName || "Provider" });
+      } else {
+        alert("This provider hasn't set up online scheduling yet. You can message them to arrange a meeting.");
+      }
+    } catch {
+      alert("Failed to load calendar. Please try again.");
+    }
+  };
+
 
   if (isParent) {
     const allSessions = parentSessionsQuery.data || [];
@@ -669,22 +830,11 @@ export default function ConversationsPage() {
               style={{ color: brandColor }}
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+              onClick={handleParentMeeting}
               data-testid="btn-parent-meeting"
             >
               <CalendarDays className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Meeting</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2 gap-1.5 font-ui text-xs"
-              style={{ color: brandColor }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-              data-testid="btn-parent-video"
-            >
-              <Video className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Video</span>
             </Button>
           </div>
         </div>
@@ -694,6 +844,26 @@ export default function ConversationsPage() {
           inlineSessionId={selectedParentSession!.id}
           inlineMatchmakerId={selectedParentSession!.matchmakerId || undefined}
         />
+        {parentBookingOverlay && (
+          <div className="fixed inset-0 z-50 flex flex-col bg-background" data-testid="parent-booking-overlay">
+            <div className="flex items-center justify-between px-4 py-3 border-b" style={{ backgroundColor: `${brandColor}08` }}>
+              <div className="flex items-center gap-2">
+                <CalendarDays className="w-5 h-5" style={{ color: brandColor }} />
+                <span className="font-semibold text-sm">Book with {parentBookingOverlay.memberName}</span>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setParentBookingOverlay(null)} data-testid="btn-close-parent-booking">
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+            </div>
+            <div className="flex-1 overflow-auto">
+              <iframe
+                src={`${window.location.origin}/book/${parentBookingOverlay.slug}`}
+                className="w-full h-full border-0"
+                title="Book a meeting"
+              />
+            </div>
+          </div>
+        )}
       </div>
     ) : null;
 
@@ -843,6 +1013,7 @@ export default function ConversationsPage() {
               style={{ color: brandColor }}
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+              onClick={handleProviderMeeting}
               data-testid="btn-provider-meeting"
             >
               <CalendarDays className="w-3.5 h-3.5" />
@@ -855,6 +1026,7 @@ export default function ConversationsPage() {
               style={{ color: brandColor }}
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+              onClick={handleProviderVideo}
               data-testid="btn-provider-video"
             >
               <Video className="w-3.5 h-3.5" />
@@ -954,6 +1126,7 @@ export default function ConversationsPage() {
                             {msg.content}
                           </div>
                         </div>
+                        {msg.uiCardType && <SpecialMessageCard msg={msg} brandColor={brandColor} />}
                         <div className={`flex ${isOwnMessage ? "justify-end" : "justify-start"} mt-0.5`}>
                           <span className="text-[10px] text-muted-foreground">
                             {timeAgo(msg.createdAt)}
@@ -976,6 +1149,15 @@ export default function ConversationsPage() {
                   </div>
                 )}
                 <div className="flex items-center gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    accept="image/*,application/pdf,.doc,.docx,.txt"
+                    capture={undefined}
+                    onChange={handleFileSelect}
+                    data-testid="input-provider-file"
+                  />
                   <Button
                     variant="ghost"
                     size="sm"
@@ -983,9 +1165,11 @@ export default function ConversationsPage() {
                     style={{ color: brandColor }}
                     onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
                     onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadMutation.isPending}
                     data-testid="btn-provider-attach"
                   >
-                    <Paperclip className="w-4 h-4" />
+                    {uploadMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
                   </Button>
                   <Input
                     placeholder={hasJoined ? "Type a message to the parent..." : "Type your answer..."}

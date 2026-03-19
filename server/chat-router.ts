@@ -472,7 +472,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/join", requireAuth, async 
 chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
-  const { content } = req.body;
+  const { content, uiCardType, uiCardData } = req.body;
   if (!content || typeof content !== "string" || !content.trim()) {
     return res.status(400).json({ message: "Content is required" });
   }
@@ -491,15 +491,17 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
       ? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}.`
       : nameParts[0] || provider?.name || "Agency Expert";
 
-    const message = await prisma.aiChatMessage.create({
-      data: {
-        sessionId: session.id,
-        role: "assistant",
-        content: content.trim(),
-        senderType: "provider",
-        senderName: senderDisplayName,
-      },
-    });
+    const messageData: any = {
+      sessionId: session.id,
+      role: "assistant",
+      content: content.trim(),
+      senderType: "provider",
+      senderName: senderDisplayName,
+    };
+    if (uiCardType) messageData.uiCardType = uiCardType;
+    if (uiCardData) messageData.uiCardData = uiCardData;
+
+    const message = await prisma.aiChatMessage.create({ data: messageData });
 
     const pendingWhispers = await prisma.silentQuery.findMany({
       where: { sessionId: session.id, providerId: user.providerId, status: "PENDING" },
@@ -618,6 +620,169 @@ chatRouter.post("/api/provider/concierge-sessions/:id/consultation-status", requ
     console.error("Consultation status update error:", e);
     res.status(500).json({ message: e.message });
   }
+});
+
+chatRouter.get("/api/provider/calendar-slug", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const config = await prisma.scheduleConfig.findUnique({
+      where: { userId: user.id },
+      select: { bookingPageSlug: true },
+    });
+    res.json({ slug: config?.bookingPageSlug || null });
+  } catch (e: any) {
+    res.status(500).json({ message: e.message });
+  }
+});
+
+chatRouter.get("/api/chat-session/:id/provider-calendar-slug", requireAuth, async (req, res) => {
+  try {
+    const user = req.user as any;
+    const session = await prisma.aiChatSession.findUnique({
+      where: { id: req.params.id },
+      select: { providerId: true, userId: true },
+    });
+    if (!session) return res.status(404).json({ message: "Session not found" });
+    if (session.userId !== user.id) {
+      const sameAccount = await prisma.user.findFirst({
+        where: { id: session.userId, parentAccountId: user.parentAccountId || undefined },
+      });
+      if (!sameAccount && user.role !== "admin" && user.role !== "provider") {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+    }
+    if (!session.providerId) return res.json({ slug: null, memberName: null });
+
+    const providerUsers = await prisma.user.findMany({
+      where: { providerId: session.providerId },
+      select: { id: true, name: true },
+    });
+
+    for (const pu of providerUsers) {
+      const config = await prisma.scheduleConfig.findUnique({
+        where: { userId: pu.id },
+        select: { bookingPageSlug: true },
+      });
+      if (config?.bookingPageSlug) {
+        return res.json({ slug: config.bookingPageSlug, memberName: pu.name });
+      }
+    }
+
+    const provider = await prisma.provider.findUnique({
+      where: { id: session.providerId },
+      select: { name: true },
+    });
+    res.json({ slug: null, providerName: provider?.name || null });
+  } catch (e: any) {
+    res.status(500).json({ message: e.message });
+  }
+});
+
+chatRouter.post("/api/chat-session/:id/message", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  const { content, uiCardType, uiCardData } = req.body;
+  if (!content || typeof content !== "string" || !content.trim()) {
+    return res.status(400).json({ message: "Content is required" });
+  }
+  try {
+    const session = await prisma.aiChatSession.findUnique({ where: { id: req.params.id } });
+    if (!session) return res.status(404).json({ message: "Session not found" });
+    if (session.userId !== user.id) {
+      const sameAccount = await prisma.user.findFirst({
+        where: { id: session.userId, parentAccountId: user.parentAccountId || undefined },
+      });
+      if (!sameAccount) return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const nameParts = (user.firstName && user.lastName)
+      ? [user.firstName, user.lastName]
+      : (user.name || "").trim().split(/\s+/);
+    const senderDisplayName = nameParts.length >= 2
+      ? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}.`
+      : nameParts[0] || "Parent";
+
+    const messageData: any = {
+      sessionId: session.id,
+      role: "user",
+      content: content.trim(),
+      senderType: "parent",
+      senderName: senderDisplayName,
+    };
+    if (uiCardType) messageData.uiCardType = uiCardType;
+    if (uiCardData) messageData.uiCardData = uiCardData;
+
+    const message = await prisma.aiChatMessage.create({ data: messageData });
+    res.json(message);
+  } catch (e: any) {
+    console.error("Parent chat message error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+chatRouter.post("/api/chat-upload", requireAuth, async (req, res) => {
+  const fs = await import("fs");
+  const path = await import("path");
+  const crypto = await import("crypto");
+  const UPLOADS_DIR = path.resolve(process.cwd(), "public/uploads");
+  const MAX_FILE_SIZE = 16 * 1024 * 1024;
+  const ALLOWED_MIME_PREFIXES = ["image/", "application/pdf", "application/msword", "application/vnd.openxmlformats", "text/"];
+
+  if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+  const contentType = req.headers["content-type"] || "";
+  if (!contentType.includes("multipart/form-data")) {
+    return res.status(400).json({ message: "Content-Type must be multipart/form-data" });
+  }
+
+  const boundaryMatch = contentType.match(/boundary=(.+)/);
+  if (!boundaryMatch) return res.status(400).json({ message: "Missing boundary" });
+
+  const chunks: Buffer[] = [];
+  let totalSize = 0;
+
+  req.on("data", (chunk: Buffer) => {
+    totalSize += chunk.length;
+    if (totalSize <= MAX_FILE_SIZE) chunks.push(chunk);
+  });
+
+  req.on("end", () => {
+    if (totalSize > MAX_FILE_SIZE) return res.status(413).json({ message: "File too large (max 16MB)" });
+
+    const body = Buffer.concat(chunks);
+    const boundary = boundaryMatch![1];
+    const parts = body.toString("binary").split(`--${boundary}`);
+
+    for (const part of parts) {
+      if (part.includes("Content-Disposition") && part.includes("filename=")) {
+        const filenameMatch = part.match(/filename="([^"]+)"/);
+        const contentTypeMatch = part.match(/Content-Type:\s*(.+)/i);
+        const filename = filenameMatch?.[1] || "file";
+        const mimeType = contentTypeMatch?.[1]?.trim() || "application/octet-stream";
+
+        const allowed = ALLOWED_MIME_PREFIXES.some(p => mimeType.startsWith(p));
+        if (!allowed) return res.status(400).json({ message: `File type ${mimeType} not allowed` });
+
+        const headerEnd = part.indexOf("\r\n\r\n");
+        if (headerEnd === -1) continue;
+        const fileData = Buffer.from(part.slice(headerEnd + 4, part.lastIndexOf("\r\n")), "binary");
+
+        const ext = path.extname(filename) || ".bin";
+        const hash = crypto.createHash("md5").update(fileData).digest("hex");
+        const storedName = `${hash}${ext}`;
+        fs.writeFileSync(path.join(UPLOADS_DIR, storedName), fileData);
+
+        return res.json({
+          url: `/uploads/${storedName}`,
+          originalName: filename,
+          mimeType,
+          size: fileData.length,
+        });
+      }
+    }
+
+    res.status(400).json({ message: "No file found in upload" });
+  });
 });
 
 chatRouter.post("/api/agreements/generate", requireAuth, async (req, res) => {

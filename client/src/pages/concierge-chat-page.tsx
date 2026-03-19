@@ -58,6 +58,8 @@ interface ChatMessage {
   consultationCard?: ConsultationCardData;
   senderType?: string;
   senderName?: string;
+  uiCardType?: string;
+  uiCardData?: any;
 }
 
 const CURATION_LINES = [
@@ -985,6 +987,81 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
   );
 }
 
+function ConciergeSpecialCard({ msg, brandColor }: { msg: ChatMessage; brandColor: string }) {
+  const data = msg.uiCardData as any;
+  if (!data) return null;
+
+  if (msg.uiCardType === "attachment") {
+    const isImage = data.mimeType?.startsWith("image/");
+    return (
+      <div data-testid="concierge-attachment-card">
+        {isImage ? (
+          <a href={data.url} target="_blank" rel="noopener noreferrer">
+            <img src={data.url} alt={data.originalName} className="max-w-[240px] rounded-lg border" />
+          </a>
+        ) : (
+          <a
+            href={data.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-background hover:bg-muted transition-colors"
+          >
+            <FileText className="w-5 h-5 shrink-0" style={{ color: brandColor }} />
+            <span className="text-sm font-medium truncate">{data.originalName || "File"}</span>
+            <Download className="w-4 h-4 shrink-0 text-muted-foreground" />
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  if (msg.uiCardType === "video_invite") {
+    return (
+      <a
+        href={data.roomUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 bg-background hover:bg-muted transition-colors"
+        style={{ borderColor: brandColor }}
+        data-testid="concierge-video-invite"
+      >
+        <div className="w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0" style={{ backgroundColor: brandColor }}>
+          <Video className="w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold">Join Video Call</p>
+          <p className="text-xs text-muted-foreground">Click to join the video consultation</p>
+        </div>
+        <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
+      </a>
+    );
+  }
+
+  if (msg.uiCardType === "calendar_share") {
+    return (
+      <a
+        href={data.bookingUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 bg-background hover:bg-muted transition-colors"
+        style={{ borderColor: brandColor }}
+        data-testid="concierge-calendar-share"
+      >
+        <div className="w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0" style={{ backgroundColor: brandColor }}>
+          <CalendarDays className="w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold">Book a Meeting</p>
+          <p className="text-xs text-muted-foreground">{data.memberName ? `Schedule with ${data.memberName}` : "Pick a time that works"}</p>
+        </div>
+        <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
+      </a>
+    );
+  }
+
+  return null;
+}
+
 interface ConciergeChatProps {
   inlineSessionId?: string;
   inlineMatchmakerId?: string;
@@ -1014,6 +1091,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [providerInChat, setProviderInChat] = useState(false);
   const [providerChatName, setProviderChatName] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState<string | null>(null);
+  const [conciergeBookingSlug, setConciergeBookingSlug] = useState<{ slug: string; memberName: string } | null>(null);
+  const parentFileInputRef = useRef<HTMLInputElement>(null);
+  const [parentUploading, setParentUploading] = useState(false);
 
   const myDisplayName = useMemo(() => {
     const u = user as any;
@@ -1035,6 +1115,51 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       },
     });
   }, [navigate]);
+
+  const handleConciergeMeeting = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const res = await fetch(`/api/chat-session/${sessionId}/provider-calendar-slug`, { credentials: "include" });
+      const data = await res.json();
+      if (data.slug) {
+        setConciergeBookingSlug({ slug: data.slug, memberName: data.memberName || "Provider" });
+      } else {
+        alert("This provider hasn't set up online scheduling yet. You can message them to arrange a meeting.");
+      }
+    } catch {
+      alert("Failed to load calendar. Please try again.");
+    }
+  }, [sessionId]);
+
+
+  const handleParentFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !sessionId) return;
+    e.target.value = "";
+    setParentUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const uploadRes = await fetch("/api/chat-upload", { method: "POST", credentials: "include", body: formData });
+      if (!uploadRes.ok) throw new Error("Upload failed");
+      const uploadData = await uploadRes.json();
+      await fetch(`/api/chat-session/${sessionId}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          content: uploadData.originalName ? `Shared a file: ${uploadData.originalName}` : "Shared a file",
+          uiCardType: "attachment",
+          uiCardData: uploadData,
+        }),
+      });
+    } catch {
+      alert("Failed to upload file. Please try again.");
+    } finally {
+      setParentUploading(false);
+    }
+  }, [sessionId]);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
   const lastPollTimeRef = useRef<string | null>(null);
@@ -1066,6 +1191,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             matchCards: extras.matchCards,
             prepDoc: extras.prepDoc,
             consultationCard: extras.consultationCard,
+            uiCardType: m.uiCardType,
+            uiCardData: m.uiCardData,
           };
         });
         setMessages(parsed);
@@ -1181,6 +1308,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 consultationCard: extras.consultationCard,
                 quickReplies: extras.quickReplies,
                 multiSelect: extras.multiSelect,
+                uiCardType: m.uiCardType,
+                uiCardData: m.uiCardData,
               };
             }),
           ]);
@@ -1410,22 +1539,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   style={{ color: brandColor }}
                   onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
                   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                  onClick={handleConciergeMeeting}
                   data-testid="btn-meeting"
                 >
                   <CalendarDays className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Meeting</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2 gap-1.5 font-ui text-xs"
-                  style={{ color: brandColor }}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-                  data-testid="btn-video"
-                >
-                  <Video className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Video</span>
                 </Button>
               </>
             )}
@@ -1552,6 +1670,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 </div>
               )}
 
+              {msg.uiCardType && msg.uiCardData && (
+                <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} mt-2`}>
+                  <div className="max-w-[75%]">
+                    <ConciergeSpecialCard msg={msg} brandColor={brandColor} />
+                  </div>
+                </div>
+              )}
+
               {msg.quickReplies && msg.quickReplies.length > 0 && i === messages.length - 1 && (
                 <div className="flex flex-wrap gap-2 mt-2 ml-0" data-testid="quick-replies">
                   {msg.quickReplies.map((qr, qi) => {
@@ -1631,6 +1757,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
         <div className="border-t px-4 py-3" data-testid="concierge-input-area">
           <div className="flex items-center gap-2">
+            <input
+              ref={parentFileInputRef}
+              type="file"
+              className="hidden"
+              accept="image/*,application/pdf,.doc,.docx,.txt"
+              onChange={handleParentFileSelect}
+              data-testid="input-parent-file"
+            />
             <Button
               variant="ghost"
               size="sm"
@@ -1638,9 +1772,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               style={{ color: brandColor }}
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+              onClick={() => parentFileInputRef.current?.click()}
+              disabled={parentUploading}
               data-testid="btn-attach"
             >
-              <Paperclip className="w-4 h-4" />
+              {parentUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
             </Button>
             <Input
               placeholder={`Message ${providerInChat && providerChatName ? providerChatName : (selectedMatchmaker?.name || "AI Concierge")}...`}
@@ -1676,6 +1812,26 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           userName={(user as any)?.name || ""}
           onClose={() => setBookingCard(null)}
         />
+      )}
+      {conciergeBookingSlug && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-background" data-testid="concierge-booking-overlay">
+          <div className="flex items-center justify-between px-4 py-3 border-b" style={{ backgroundColor: `${brandColor}08` }}>
+            <div className="flex items-center gap-2">
+              <CalendarDays className="w-5 h-5" style={{ color: brandColor }} />
+              <span className="font-semibold text-sm">Book with {conciergeBookingSlug.memberName}</span>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setConciergeBookingSlug(null)} data-testid="btn-close-concierge-booking">
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+          <div className="flex-1 overflow-auto">
+            <iframe
+              src={`${window.location.origin}/book/${conciergeBookingSlug.slug}`}
+              className="w-full h-full border-0"
+              title="Book a meeting"
+            />
+          </div>
+        </div>
       )}
     </>
   );
