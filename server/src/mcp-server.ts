@@ -152,6 +152,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: "get_egg_donor_profile",
+        description:
+          "Look up a specific egg donor's FULL profile by their ID or external ID (e.g. 'S19907' or '19722'). Returns complete health history, family medical history, education, physical traits, personality, hobbies, and all other profile sections. Use this tool when a parent asks follow-up questions about a specific egg donor's details — DO NOT whisper if this tool can answer the question.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            donorId: {
+              type: "string",
+              description: "The egg donor's UUID (id field) from a previous search result or MATCH_CARD",
+            },
+            externalId: {
+              type: "string",
+              description: "The egg donor's external ID (e.g. 'S19907' or '19722' from 'Donor #S19907'). Use this if you don't have the UUID.",
+            },
+          },
+        },
+      },
+      {
         name: "search_egg_donors",
         description:
           "Search the database for available egg donors using semantic vector search across ALL profile data. Returns real donor profiles with their IDs, photos, and attributes. Use the 'query' parameter to search by ANY profile attribute. Use the returned IDs in MATCH_CARDs with type 'Egg Donor'.",
@@ -533,6 +551,66 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       return {
         content: [{ type: "text", text: `Full profile for ${result.displayName}:\n${JSON.stringify(result, null, 2)}\n\nThis profile contains COMPLETE data including pregnancy history (birth weights, delivery types, gestational ages), health info, support system, and more. Use this data to answer the parent's questions DIRECTLY — do NOT whisper unless the specific answer is truly not in this profile.` }],
+      };
+    }
+
+    if (name === "get_egg_donor_profile") {
+      const { donorId, externalId } = args as any;
+      if (!donorId && !externalId) {
+        return { content: [{ type: "text", text: "Error: Provide either donorId (UUID) or externalId (e.g. 'S19907' or '19722')." }] };
+      }
+
+      const where: any = {};
+      if (donorId) where.id = donorId;
+      else if (externalId) where.externalId = externalId;
+
+      const donor = await prisma.eggDonor.findFirst({
+        where,
+        select: {
+          id: true, providerId: true, externalId: true, firstName: true, age: true,
+          location: true, donorType: true, eyeColor: true, hairColor: true,
+          height: true, weight: true, ethnicity: true, race: true, religion: true,
+          education: true, occupation: true, relationshipStatus: true, bloodType: true,
+          donorCompensation: true, eggLotCost: true, totalCost: true, numberOfEggs: true,
+          isExperienced: true, photoUrl: true, donationTypes: true,
+          profileData: true,
+        },
+      });
+
+      if (!donor) {
+        return { content: [{ type: "text", text: `No egg donor found with ${donorId ? 'ID ' + donorId : 'external ID ' + externalId}.` }] };
+      }
+
+      const pd = (donor as any).profileData;
+      const sections = pd?._sections || {};
+
+      const profileSections: Record<string, any> = {};
+      const skipSections = new Set(["Photos"]);
+      for (const [sectionName, sectionData] of Object.entries(sections)) {
+        if (skipSections.has(sectionName) || !sectionData) continue;
+        profileSections[sectionName] = sectionData;
+      }
+
+      const topLevelData: Record<string, any> = {};
+      if (pd && typeof pd === "object") {
+        for (const [key, value] of Object.entries(pd)) {
+          if (key === "_sections" || key === "Photos" || key === "SKIP") continue;
+          if (value !== undefined && value !== null && value !== "") {
+            topLevelData[key] = value;
+          }
+        }
+      }
+
+      const { profileData, ...donorBasic } = donor as any;
+      const result = {
+        ...donorBasic,
+        displayName: donorBasic.firstName || (donorBasic.externalId ? `Donor #${donorBasic.externalId}` : `Donor`),
+        profileSections,
+        additionalDetails: topLevelData,
+      };
+
+      return {
+        content: [{ type: "text", text: `Full profile for ${result.displayName}:\n${JSON.stringify(result, null, 2)}\n\nThis profile contains COMPLETE data including physical traits, health history, family medical history, education, personality, hobbies, and more. Use this data to answer the parent's questions DIRECTLY — do NOT whisper unless the specific answer is truly not in this profile.` }],
       };
     }
 

@@ -63,6 +63,13 @@ function extractSearchKeywords(question: string): string[] {
     criminal: ["criminal", "arrest", "arrested", "convicted", "crime", "felony"],
     support: ["support", "supportive", "family support", "help"],
     motivation: ["motivation", "why", "reason", "surrogacy", "become a surrogate"],
+    eye: ["eye", "eyes", "eye color"],
+    hair: ["hair", "hair color"],
+    blood: ["blood", "blood type", "bloodtype"],
+    eggs: ["eggs", "egg", "donation", "donated", "cycles", "retrieval"],
+    medical: ["medical", "medical history", "health history", "family history", "genetic"],
+    family: ["family", "family history", "siblings", "parents", "mother", "father"],
+    occupation: ["occupation", "job", "work", "career", "employed"],
   };
 
   const keywords: string[] = [];
@@ -1140,7 +1147,7 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
 
     // PROACTIVE PROFILE INJECTION: When parent asks a question about a presented profile,
     // fetch the full profile BEFORE sending to AI so it has all data on the first try
-    const looksLikeProfileQuestion = /\?|what|how|where|when|who|why|does she|does he|is she|is he|tell me|her\s+|his\s+|husband|wife|partner|name|age|weight|bmi|education|location|health|deliver|pregnan|baby|babies|height|diet|religion|charge|cost|compen|letter|hobby|pet|smoke|drink|tattoo|pierc/i.test(userMessage);
+    const looksLikeProfileQuestion = /\?|what|how|where|when|who|why|does she|does he|is she|is he|tell me|her\s+|his\s+|husband|wife|partner|name|age|weight|bmi|education|location|health|deliver|pregnan|baby|babies|height|diet|religion|charge|cost|compen|letter|hobby|pet|smoke|drink|tattoo|pierc|eye|hair|blood|ethnic|race|occupation|donat|experience|eggs|medical|family/i.test(userMessage);
     const isNotAction = !/not interested|show me another|skip|pass on|save as favorite|like .+!|❤️|favorite|yes.*schedule|schedule.*consultation|show me more|what.?s next|what happens next|what now|next step|move forward|let.?s (go|proceed|do it|move)|ready to (book|schedule|proceed)|i.?m ready|let.?s book|sign me up|^yes[.!,\s]*$|^sure[.!,\s]*$|^ok[.!,\s]*$|^absolutely[.!,\s]*$|^definitely[.!,\s]*$|^please[.!,\s]*$|^do it[.!,\s]*$|^set it up[.!,\s]*$/i.test(userMessage.trim());
 
     if (looksLikeProfileQuestion && isNotAction && currentSessionId && mcpClient) {
@@ -1150,11 +1157,20 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
         if (mc?.providerId && mc?.type) {
           const etype = (mc.type || "").toLowerCase();
           let profileText = "";
+          let profileToolName: string | null = null;
+          let profileToolArgs: any = {};
           if (etype === "surrogate") {
+            profileToolName = "get_surrogate_profile";
+            profileToolArgs = { surrogateId: mc.providerId };
+          } else if (etype === "egg donor") {
+            profileToolName = "get_egg_donor_profile";
+            profileToolArgs = { donorId: mc.providerId };
+          }
+          if (profileToolName) {
             try {
               const profileResult = await mcpClient.callTool({
-                name: "get_surrogate_profile",
-                arguments: { surrogateId: mc.providerId },
+                name: profileToolName,
+                arguments: profileToolArgs,
               });
               profileText = (profileResult.content as any)?.[0]?.text || "";
             } catch (e) {
@@ -1162,8 +1178,8 @@ When the parent asks a follow-up question about a specific surrogate (pregnancy 
               await new Promise(r => setTimeout(r, 500));
               try {
                 const retryResult = await mcpClient.callTool({
-                  name: "get_surrogate_profile",
-                  arguments: { surrogateId: mc.providerId },
+                  name: profileToolName,
+                  arguments: profileToolArgs,
                 });
                 profileText = (retryResult.content as any)?.[0]?.text || "";
               } catch (e2) {
@@ -1308,7 +1324,7 @@ The parent's message was: "${userMessage}"`,
     // but the AI ignored it and showed a new match card instead.
     const isSkipAction = /not interested|show me another|skip|pass on/i.test(userMessage);
     const isFavoriteAction = /save as favorite|like .+!|❤️|favorite/i.test(userMessage);
-    const looksLikeQuestion = /\?|what|how|where|when|who|why|does she|does he|is she|is he|tell me|her\s+(weight|bmi|age|education|location|compensation|health|deliver|pregnan|baby|babies|height|diet)/i.test(userMessage);
+    const looksLikeQuestion = /\?|what|how|where|when|who|why|does she|does he|is she|is he|tell me|her\s+(weight|bmi|age|education|location|compensation|health|deliver|pregnan|baby|babies|height|diet|eye|hair|blood|ethnic|race|occupation|religio|hobby|hobbies|donat|experience|cost|eggs)/i.test(userMessage);
     const aiShowedNewMatch = /\[\[MATCH_CARD:/i.test(finalContent);
 
     if (!isSkipAction && !isFavoriteAction && looksLikeQuestion && aiShowedNewMatch && currentSessionId && mcpClient) {
@@ -1321,31 +1337,32 @@ The parent's message was: "${userMessage}"`,
         if (entityId && entityType) {
           const etype = (entityType || "").toLowerCase();
           let profileToolName: string | null = null;
-          if (etype === "surrogate") profileToolName = "get_surrogate_profile";
-          else if (etype === "egg donor") profileToolName = "search_egg_donors";
-          else if (etype === "sperm donor") profileToolName = "search_sperm_donors";
+          let profileToolArgs: any = {};
+          if (etype === "surrogate") {
+            profileToolName = "get_surrogate_profile";
+            profileToolArgs = { surrogateId: entityId };
+          } else if (etype === "egg donor") {
+            profileToolName = "get_egg_donor_profile";
+            profileToolArgs = { donorId: entityId };
+          } else if (etype === "sperm donor") {
+            profileToolName = "search_sperm_donors";
+            profileToolArgs = { query: userMessage, limit: 1 };
+          }
 
           if (profileToolName) {
             let profileText = "";
-            if (profileToolName === "get_surrogate_profile") {
-              const profileResult = await mcpClient.callTool({
-                name: "get_surrogate_profile",
-                arguments: { surrogateId: entityId },
-              });
-              profileText = (profileResult.content as any)?.[0]?.text || "";
-            } else {
-              const searchResult = await mcpClient.callTool({
-                name: profileToolName,
-                arguments: { query: userMessage, limit: 1 },
-              });
-              profileText = (searchResult.content as any)?.[0]?.text || "";
-            }
+            const profileResult = await mcpClient.callTool({
+              name: profileToolName,
+              arguments: profileToolArgs,
+            });
+            profileText = (profileResult.content as any)?.[0]?.text || "";
 
             if (profileText && profileText.length > 50) {
               console.log(`[QUESTION INTERCEPT] Got profile data (${profileText.length} chars), re-asking AI to answer question instead of showing new match`);
+              const pronounLabel = etype === "sperm donor" ? "him" : "her";
               messages.push({
                 role: "user",
-                content: `SYSTEM OVERRIDE: The parent asked a QUESTION about the currently presented match profile. They did NOT ask to skip or see a new match. You MUST answer their question using the profile data below. Do NOT present a new match card. Do NOT call search tools. Just answer the question.\n\nFULL PROFILE DATA:\n${profileText}\n\nParent's question: "${userMessage}"\n\nAnswer the question directly from the profile data. After answering, ask if they have more questions: "Anything else you'd like to know about her?" [[QUICK_REPLY:More questions|I like her!|Show me someone else]]`,
+                content: `SYSTEM OVERRIDE: The parent asked a QUESTION about the currently presented match profile. They did NOT ask to skip or see a new match. You MUST answer their question using the profile data below. Do NOT present a new match card. Do NOT call search tools. Just answer the question.\n\nFULL PROFILE DATA:\n${profileText}\n\nParent's question: "${userMessage}"\n\nAnswer the question directly from the profile data. After answering, ask if they have more questions: "Anything else you'd like to know about ${pronounLabel}?" [[QUICK_REPLY:More questions|I like ${pronounLabel}!|Show me someone else]]`,
               });
 
               const retryResponse = await openai.chat.completions.create({
@@ -1403,28 +1420,28 @@ The parent's message was: "${userMessage}"`,
         if (entityId && entityType) {
           const etype = (entityType || "").toLowerCase();
           let profileToolName: string | null = null;
-          if (etype === "surrogate") profileToolName = "get_surrogate_profile";
-          else if (etype === "egg donor") profileToolName = "search_egg_donors";
-          else if (etype === "sperm donor") profileToolName = "search_sperm_donors";
+          let profileToolArgs: any = {};
+          if (etype === "surrogate") {
+            profileToolName = "get_surrogate_profile";
+            profileToolArgs = { surrogateId: entityId };
+          } else if (etype === "egg donor") {
+            profileToolName = "get_egg_donor_profile";
+            profileToolArgs = { donorId: entityId };
+          } else if (etype === "sperm donor") {
+            profileToolName = "search_sperm_donors";
+            profileToolArgs = { query: userMessage, limit: 1 };
+          }
 
           if (profileToolName) {
             let profileText = "";
             for (let attempt = 1; attempt <= 2; attempt++) {
               try {
                 console.log(`[ACCESS-FAILURE] Step 1: Profile fetch attempt ${attempt} via ${profileToolName}`);
-                if (profileToolName === "get_surrogate_profile") {
-                  const profileResult = await mcpClient.callTool({
-                    name: "get_surrogate_profile",
-                    arguments: { surrogateId: entityId },
-                  });
-                  profileText = (profileResult.content as any)?.[0]?.text || "";
-                } else {
-                  const searchResult = await mcpClient.callTool({
-                    name: profileToolName,
-                    arguments: { query: userMessage, limit: 1 },
-                  });
-                  profileText = (searchResult.content as any)?.[0]?.text || "";
-                }
+                const profileResult = await mcpClient.callTool({
+                  name: profileToolName,
+                  arguments: profileToolArgs,
+                });
+                profileText = (profileResult.content as any)?.[0]?.text || "";
                 if (profileText && profileText.length > 50) break;
               } catch (fetchErr) {
                 console.error(`[ACCESS-FAILURE] Profile fetch attempt ${attempt} failed:`, fetchErr);
