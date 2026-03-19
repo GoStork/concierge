@@ -1408,14 +1408,25 @@ export default function ConversationsPage() {
                   })()}
                 </div>
               ))}
-              {(sessionBookingsQuery.data || []).map((booking: any) => (
-                <InlineBookingNotification
-                  key={booking.id}
-                  booking={booking}
-                  brandColor={brandColor}
-                  onUpdate={() => sessionBookingsQuery.refetch()}
-                />
-              ))}
+              {(() => {
+                const allBookings = sessionBookingsQuery.data || [];
+                const hasActive = allBookings.some((b: any) => b.status === "PENDING" || b.status === "CONFIRMED");
+                const visible = hasActive
+                  ? allBookings.filter((b: any) => b.status !== "CANCELLED" && b.status !== "DECLINED" && b.status !== "RESCHEDULED")
+                  : allBookings.slice(-1);
+                const sorted = [...visible].sort((a: any, b: any) => {
+                  const order: Record<string, number> = { CANCELLED: 0, DECLINED: 0, RESCHEDULED: 0, PENDING: 1, CONFIRMED: 2 };
+                  return (order[a.status] || 0) - (order[b.status] || 0);
+                });
+                return sorted.map((booking: any) => (
+                  <InlineBookingNotification
+                    key={booking.id}
+                    booking={booking}
+                    brandColor={brandColor}
+                    onUpdate={() => sessionBookingsQuery.refetch()}
+                  />
+                ));
+              })()}
               <div ref={chatEndRef} />
             </div>
 
