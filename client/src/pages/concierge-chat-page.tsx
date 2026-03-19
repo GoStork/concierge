@@ -2320,6 +2320,65 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               <span className="text-xs text-muted-foreground">{selectedMatchmaker?.name || "AI Concierge"} is typing</span>
             </div>
           )}
+          {(() => {
+            if (!sessionBookings || sessionBookings.length === 0) return null;
+            const hasConsultationCardMsg = messages.some((m) => m.consultationCard);
+            if (hasConsultationCardMsg) return null;
+            const activeBooking = sessionBookings.find((b: any) => b.status === "CONFIRMED")
+              || sessionBookings.find((b: any) => b.status === "PENDING")
+              || sessionBookings.find((b: any) => b.status === "CANCELLED")
+              || sessionBookings[0];
+            if (!activeBooking) return null;
+            const bk = activeBooking as any;
+            const statusColor = bk.status === "CONFIRMED" ? "#10B981" : bk.status === "PENDING" ? "#F59E0B" : bk.status === "CANCELLED" ? "#EF4444" : brandColor;
+            const statusLabel = bk.status === "CONFIRMED" ? "Confirmed" : bk.status === "PENDING" ? "Pending Approval" : bk.status === "CANCELLED" ? "Cancelled" : bk.status;
+            return (
+              <div className="px-1 pb-2" data-testid="parent-standalone-booking-card">
+                <div
+                  className="w-full overflow-hidden border border-border bg-card"
+                  style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 420px)" }}
+                >
+                  <div className="p-1.5" style={{ backgroundColor: brandColor }}>
+                    <div className="flex items-center gap-2 px-3 py-1.5">
+                      <CalendarCheck className="w-4 h-4 text-white" />
+                      <span className="text-white text-xs font-semibold uppercase tracking-wider">Meeting {statusLabel}</span>
+                    </div>
+                  </div>
+                  <div className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: statusColor }} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold">{bk.subject || "Consultation"}</p>
+                        {bk.scheduledAt && (
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(bk.scheduledAt).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                            {" at "}
+                            {new Date(bk.scheduledAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                          </p>
+                        )}
+                        {bk.providerUser?.name && (
+                          <p className="text-xs text-muted-foreground">with {bk.providerUser.name}</p>
+                        )}
+                      </div>
+                    </div>
+                    {bk.status === "CONFIRMED" && bk.id && (
+                      <a
+                        href={`/room/${bk.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3 flex items-center justify-center gap-2 w-full py-2 rounded-lg text-sm font-medium text-white transition-colors"
+                        style={{ backgroundColor: brandColor }}
+                        data-testid="btn-join-video-room"
+                      >
+                        <Video className="w-4 h-4" />
+                        Join Video Room
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           {(externalBookingSlug || conciergeBookingSlug) && (() => {
             const bk = externalBookingSlug || conciergeBookingSlug!;
             const onClose = externalBookingSlug ? onCloseExternalBooking : () => setConciergeBookingSlug(null);
