@@ -1179,6 +1179,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       const data = await res.json();
       const msgs = Array.isArray(data) ? data : (data.messages || []);
       setSessionTitle(data.sessionTitle || null);
+      if (data.providerName) setProviderChatName(data.providerName);
       if (msgs.length > 0) {
         const parsed: ChatMessage[] = msgs.map((m: any) => {
           const extras = m.uiCardData || {};
@@ -1203,7 +1204,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         const providerMsg = msgs.find((m: any) => m.senderType === "provider");
         if (providerMsg) {
           setProviderInChat(true);
-          if (providerMsg.senderName) setProviderChatName(providerMsg.senderName);
         }
       }
     } catch {}
@@ -1290,6 +1290,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         const rawData = await res.json();
         const newMsgs = Array.isArray(rawData) ? rawData : (rawData.messages || []);
         if (rawData.sessionTitle !== undefined) setSessionTitle(rawData.sessionTitle);
+        if (rawData.providerName) setProviderChatName(rawData.providerName);
         const unseenMsgs = newMsgs.filter((m: any) => m.id && !knownMessageIds.current.has(m.id));
         if (unseenMsgs.length > 0) {
           unseenMsgs.forEach((m: any) => knownMessageIds.current.add(m.id));
@@ -1315,10 +1316,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           ]);
           lastPollTimeRef.current = unseenMsgs[unseenMsgs.length - 1].createdAt;
           if (unseenMsgs.some((m: any) => m.senderType === "human")) setHumanEscalated(true);
-          const newProviderMsg = unseenMsgs.find((m: any) => m.senderType === "provider");
-          if (newProviderMsg || unseenMsgs.some((m: any) => m.senderType === "system")) {
+          if (unseenMsgs.some((m: any) => m.senderType === "provider" || m.senderType === "system")) {
             setProviderInChat(true);
-            if (newProviderMsg?.senderName) setProviderChatName(newProviderMsg.senderName);
           }
         }
       } catch {}
