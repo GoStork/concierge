@@ -789,32 +789,27 @@ export default function ConversationsPage() {
               {detail.messages.map((msg, i) => (
                 <div key={msg.id}>
                   {(() => {
-                    const ownMsg = isProvider
+                    const isOwnMsg = isProvider
                       ? msg.senderType === "provider"
                       : msg.role === "user" && (!msg.senderName || msg.senderName === myDisplayName);
-                    if (ownMsg) return null;
-                    if (msg.senderType === "human") return (
-                      <div className="flex items-center gap-1.5 mb-1 ml-1">
-                        <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white bg-muted-foreground">GoStork Expert</div>
-                        {msg.senderName && <span className="text-[11px] text-muted-foreground">{msg.senderName}</span>}
+                    const nameLabel = isOwnMsg
+                      ? (isProvider ? (msg.senderName || "You") : (myDisplayName || "You"))
+                      : msg.senderType === "human"
+                      ? (msg.senderName || "GoStork Expert")
+                      : msg.senderType === "provider"
+                      ? (msg.senderName || "Agency Expert")
+                      : msg.senderType === "system"
+                      ? "System"
+                      : msg.role === "user"
+                      ? (msg.senderName || detail?.user?.name || "Parent")
+                      : "AI";
+                    return (
+                      <div className={`flex ${isOwnMsg ? "justify-end" : "justify-start"} mb-0.5`}>
+                        <span className="text-[11px] font-medium text-muted-foreground" data-testid={`name-label-provider-${i}`}>
+                          {nameLabel}
+                        </span>
                       </div>
                     );
-                    if (msg.senderType === "provider") return (
-                      <div className="flex items-center gap-1.5 mb-1 ml-1">
-                        <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: brandColor }}>{msg.senderName || "Agency Expert"}</div>
-                      </div>
-                    );
-                    if (msg.senderType === "system") return (
-                      <div className="flex items-center gap-1.5 mb-1 ml-1">
-                        <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--accent))] text-white">Eva</div>
-                      </div>
-                    );
-                    if (msg.role === "user") return (
-                      <div className="flex items-center gap-1.5 mb-1 ml-1">
-                        <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-500 text-white">{msg.senderName || detail?.user?.name || "Parent"}</div>
-                      </div>
-                    );
-                    return null;
                   })()}
                   {msg.uiCardData?.whisperMatchCard && (
                     <WhisperProfileCard card={msg.uiCardData.whisperMatchCard} brandColor={brandColor} />
@@ -854,7 +849,7 @@ export default function ConversationsPage() {
                         </div>
                         <div className={`flex ${isOwnMessage ? "justify-end" : "justify-start"} mt-0.5`}>
                           <span className="text-[10px] text-muted-foreground">
-                            {isOwnMessage && msg.role === "user" ? "You" : msg.role === "user" ? (msg.senderName || "Parent") : msg.senderType === "provider" ? (msg.senderName || "Agency Expert") : msg.senderType === "human" ? "GoStork" : msg.senderType === "system" ? "System" : "AI"} · {timeAgo(msg.createdAt)}
+                            {timeAgo(msg.createdAt)}
                           </span>
                         </div>
                       </>

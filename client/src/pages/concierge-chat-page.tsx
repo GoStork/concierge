@@ -1403,48 +1403,29 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               {(() => {
                 const isOwnMessage = msg.role === "user" && (!msg.senderName || msg.senderName === myDisplayName);
                 const isOtherParent = msg.role === "user" && msg.senderName && msg.senderName !== myDisplayName;
+                const nameLabel = isOwnMessage
+                  ? (myDisplayName || "You")
+                  : isOtherParent
+                  ? (msg.senderName || "Partner")
+                  : msg.role === "user"
+                  ? (msg.senderName || myDisplayName || "You")
+                  : msg.senderType === "human"
+                  ? (msg.senderName || "GoStork Expert")
+                  : msg.senderType === "provider"
+                  ? (msg.senderName || "Agency Expert")
+                  : msg.senderType === "system"
+                  ? (selectedMatchmaker?.name || "Eva")
+                  : (selectedMatchmaker?.name || "AI");
+                const alignRight = isOwnMessage || (!isOtherParent && msg.role === "user");
                 return (
                   <>
-                    {msg.role === "assistant" && msg.senderType === "human" && (
-                      <div className="flex items-center gap-1.5 mb-1 ml-1">
-                        <div
-                          className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white"
-                          style={{ backgroundColor: brandColor }}
-                          data-testid={`badge-expert-${i}`}
-                        >
-                          GoStork Expert
-                        </div>
-                        {msg.senderName && (
-                          <span className="text-[11px] text-muted-foreground">{msg.senderName}</span>
-                        )}
-                      </div>
-                    )}
-                    {msg.role === "assistant" && msg.senderType === "provider" && (
-                      <div className="flex items-center gap-1.5 mb-1 ml-1">
-                        <div
-                          className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white bg-[hsl(var(--brand-success))]"
-                          data-testid={`badge-provider-${i}`}
-                        >
-                          {msg.senderName || "Agency Expert"}
-                        </div>
-                      </div>
-                    )}
-                    {msg.role === "assistant" && msg.senderType === "system" && (
-                      <div className="flex items-center gap-1.5 mb-1 ml-1">
-                        <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--accent))] text-white" data-testid={`badge-system-${i}`}>
-                          {selectedMatchmaker?.name || "Eva"}
-                        </div>
-                      </div>
-                    )}
-                    {isOtherParent && (
-                      <div className="flex items-center gap-1.5 mb-1 ml-1">
-                        <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-500 text-white" data-testid={`badge-parent-${i}`}>
-                          {msg.senderName}
-                        </div>
-                      </div>
-                    )}
+                    <div className={`flex ${alignRight ? "justify-end" : "justify-start"} mb-0.5`}>
+                      <span className="text-[11px] font-medium text-muted-foreground" data-testid={`name-label-${i}`}>
+                        {nameLabel}
+                      </span>
+                    </div>
                     <div
-                      className={`flex ${isOwnMessage ? "justify-end" : isOtherParent ? "justify-start" : msg.role === "user" ? "justify-end" : "justify-start"}`}
+                      className={`flex ${alignRight ? "justify-end" : "justify-start"}`}
                       data-testid={`chat-message-${msg.role}-${i}`}
                     >
                       <div
