@@ -269,6 +269,161 @@ function formatTime12(time24: string): string {
   return `${hour12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
+function RescheduleCalendarPicker({
+  slug,
+  booking,
+  brandColor,
+  onRescheduled,
+  onCancel,
+}: {
+  slug: string;
+  booking: any;
+  brandColor: string;
+  onRescheduled: (newBooking: any) => void;
+  onCancel: () => void;
+}) {
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const bookerTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const today = startOfDay(new Date());
+  const calendarDays = generateCalendarDays(currentMonth);
+  const monthStr = format(currentMonth, "yyyy-MM");
+  const dateStr = selectedDate ? format(selectedDate, "yyyy-MM-dd") : null;
+
+  const { data: availabilityDays } = useQuery<{ availableDays: number[] }>({
+    queryKey: ["/api/calendar/availability-days", slug, monthStr, bookerTimezone, "reschedule"],
+    queryFn: async () => {
+      const res = await fetch(`/api/calendar/availability-days/${slug}?month=${monthStr}&timezone=${bookerTimezone}`, { credentials: "include" });
+      if (!res.ok) return { availableDays: [] };
+      return res.json();
+    },
+    enabled: !!slug,
+  });
+  const availableDaySet = new Set(availabilityDays?.availableDays || []);
+
+  const { data: availability, isLoading: slotsLoading } = useQuery({
+    queryKey: ["/api/calendar/availability", slug, dateStr, bookerTimezone, "reschedule"],
+    queryFn: async () => {
+      if (!dateStr) return null;
+      const res = await fetch(`/api/calendar/availability/${slug}?date=${dateStr}&timezone=${bookerTimezone}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load availability");
+      return res.json();
+    },
+    enabled: !!dateStr,
+  });
+
+  async function handleReschedule() {
+    if (!selectedDate || !selectedSlot || !booking.publicToken) return;
+    setSubmitting(true);
+    try {
+      const scheduledAt = `${format(selectedDate, "yyyy-MM-dd")}T${selectedSlot}:00`;
+      const res = await fetch(`/api/calendar/booking/${booking.publicToken}/reschedule-public`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ scheduledAt, bookerTimezone }),
+      });
+      if (res.ok) {
+        const newBooking = await res.json();
+        onRescheduled(newBooking);
+      }
+    } catch {} finally { setSubmitting(false); }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-7 text-center text-[10px] text-muted-foreground font-medium">
+        {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d => <div key={d} className="py-1">{d}</div>)}
+      </div>
+      <div className="grid grid-cols-7 gap-0.5">
+        {calendarDays.map((day, i) => {
+          if (!day) return <div key={`e${i}`} />;
+          const d = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
+          const isPast = d < today;
+          const isAvailable = availableDaySet.has(day) && !isPast;
+          const isSelected = selectedDate && isSameDay(d, selectedDate);
+          const isToday = isSameDay(d, today);
+          return (
+            <button
+              key={day}
+              onClick={() => { if (isAvailable) { setSelectedDate(d); setSelectedSlot(null); } }}
+              disabled={!isAvailable}
+              className={`aspect-square flex items-center justify-center text-xs rounded-full transition-colors cursor-pointer
+                ${isSelected ? "text-white font-bold" : ""}
+                ${isAvailable && !isSelected ? "hover:bg-muted font-medium" : ""}
+                ${!isAvailable ? "text-muted-foreground/30 cursor-not-allowed" : ""}
+                ${isToday && !isSelected ? "ring-1 ring-primary" : ""}`}
+              style={isSelected ? { backgroundColor: brandColor } : undefined}
+              data-testid={`reschedule-day-${day}`}
+            >
+              {day}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex justify-between items-center">
+        <button onClick={() => setCurrentMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))} className="p-1 hover:bg-muted rounded cursor-pointer" data-testid="reschedule-prev-month">
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <span className="text-xs font-medium">{format(currentMonth, "MMMM yyyy")}</span>
+        <button onClick={() => setCurrentMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))} className="p-1 hover:bg-muted rounded cursor-pointer" data-testid="reschedule-next-month">
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+      {selectedDate && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium">{format(selectedDate, "EEE, MMM d")} — Select a time:</p>
+          {slotsLoading ? (
+            <div className="flex justify-center py-2"><Loader2 className="w-4 h-4 animate-spin" /></div>
+          ) : availability?.slots?.length > 0 ? (
+            <div className="grid grid-cols-3 gap-1.5">
+              {availability.slots.map((s: any) => {
+                const t = s.time || s;
+                const isSel = selectedSlot === t;
+                return (
+                  <button
+                    key={t}
+                    onClick={() => setSelectedSlot(t)}
+                    className={`text-xs py-1.5 rounded-md border transition-colors cursor-pointer ${isSel ? "text-white border-transparent font-semibold" : "border-border hover:bg-muted"}`}
+                    style={isSel ? { backgroundColor: brandColor } : undefined}
+                    data-testid={`reschedule-slot-${t}`}
+                  >
+                    {formatTime12(t)}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground text-center py-2">No available slots</p>
+          )}
+        </div>
+      )}
+      {selectedSlot && (
+        <div className="flex gap-2">
+          <button
+            onClick={onCancel}
+            className="flex-1 text-center text-xs font-medium py-2.5 rounded-lg border border-border hover:bg-muted transition-colors cursor-pointer"
+            data-testid="btn-reschedule-cancel"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleReschedule}
+            disabled={submitting}
+            className="flex-1 text-center text-xs font-medium py-2.5 rounded-lg text-white transition-colors cursor-pointer disabled:opacity-50"
+            style={{ backgroundColor: brandColor }}
+            data-testid="btn-reschedule-confirm"
+          >
+            {submitting ? "Rescheduling..." : "Confirm New Time"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function InlineBookingCalendar({
   slug,
   memberName,
@@ -285,7 +440,7 @@ export function InlineBookingCalendar({
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
-  const [step, setStep] = useState<"date" | "form" | "pending">(existingBookingProp ? "pending" : "date");
+  const [step, setStep] = useState<"date" | "form" | "pending" | "reschedule" | "cancel_confirm" | "cancelled">(existingBookingProp ? "pending" : "date");
   const [name, setName] = useState(user ? (user as any).name || "" : "");
   const [email, setEmail] = useState(user ? (user as any).email || "" : "");
   const [phone, setPhone] = useState(user ? (user as any).mobileNumber || "" : "");
@@ -296,12 +451,19 @@ export function InlineBookingCalendar({
   const [newAttendeeName, setNewAttendeeName] = useState("");
   const [newAttendeePhone, setNewAttendeePhone] = useState("");
   const [booking, setBooking] = useState<any>(existingBookingProp || null);
+  const [cancelling, setCancelling] = useState(false);
+  const [rescheduleSlot, setRescheduleSlot] = useState<string | null>(null);
+  const [rescheduling, setRescheduling] = useState(false);
 
   useEffect(() => {
     if (existingBookingProp) {
       if (!booking || booking.id !== existingBookingProp.id || booking.status !== existingBookingProp.status) {
         setBooking(existingBookingProp);
-        setStep("pending");
+        if (existingBookingProp.status === "CANCELLED") {
+          setStep("cancelled");
+        } else {
+          setStep("pending");
+        }
       }
     }
   }, [existingBookingProp]);
@@ -508,22 +670,113 @@ export function InlineBookingCalendar({
 
         {booking.publicToken && (
           <div className="flex gap-2">
-            <a
-              href={`/booking/${booking.publicToken}`}
-              className="flex-1 text-center text-xs font-medium py-2 rounded-lg border border-border hover:bg-muted transition-colors"
-              data-testid="link-reschedule-inline"
+            <button
+              onClick={() => { setSelectedDate(null); setSelectedSlot(null); setCurrentMonth(new Date()); setStep("reschedule"); }}
+              className="flex-1 text-center text-xs font-medium py-2 rounded-lg border border-border hover:bg-muted transition-colors cursor-pointer"
+              data-testid="btn-reschedule-inline"
             >
               Reschedule
-            </a>
-            <a
-              href={`/booking/${booking.publicToken}`}
-              className="flex-1 text-center text-xs font-medium py-2 rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/5 transition-colors"
-              data-testid="link-cancel-inline"
+            </button>
+            <button
+              onClick={() => setStep("cancel_confirm")}
+              className="flex-1 text-center text-xs font-medium py-2 rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/5 transition-colors cursor-pointer"
+              data-testid="btn-cancel-inline"
             >
               Cancel
-            </a>
+            </button>
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (step === "cancel_confirm" && booking) {
+    const providerName = booking.providerUser?.name || memberName;
+    return (
+      <div className="space-y-4 py-3" data-testid="inline-booking-cancel-confirm">
+        <div className="text-center space-y-1">
+          <div className="w-12 h-12 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
+            <X className="w-6 h-6 text-destructive" />
+          </div>
+          <p className="font-bold text-sm">Cancel this meeting?</p>
+          <p className="text-xs text-muted-foreground">Your consultation with {providerName} will be cancelled and all participants will be notified.</p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setStep("pending")}
+            className="flex-1 text-center text-xs font-medium py-2.5 rounded-lg border border-border hover:bg-muted transition-colors cursor-pointer"
+            data-testid="btn-cancel-keep"
+          >
+            Keep Meeting
+          </button>
+          <button
+            onClick={async () => {
+              setCancelling(true);
+              try {
+                const res = await fetch(`/api/calendar/booking/${booking.publicToken}/cancel-public`, { method: "POST", credentials: "include" });
+                if (res.ok) {
+                  setBooking({ ...booking, status: "CANCELLED" });
+                  setStep("cancelled");
+                }
+              } catch {} finally { setCancelling(false); }
+            }}
+            disabled={cancelling}
+            className="flex-1 text-center text-xs font-medium py-2.5 rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors cursor-pointer disabled:opacity-50"
+            data-testid="btn-cancel-confirm"
+          >
+            {cancelling ? "Cancelling..." : "Yes, Cancel"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === "cancelled") {
+    return (
+      <div className="space-y-3 py-3" data-testid="inline-booking-cancelled">
+        <div className="text-center space-y-1">
+          <div className="w-12 h-12 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
+            <X className="w-6 h-6 text-destructive" />
+          </div>
+          <p className="font-bold text-sm">Meeting Cancelled</p>
+          <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">
+            Cancelled
+          </span>
+        </div>
+        <p className="text-xs text-center text-muted-foreground">This meeting has been cancelled and all participants have been notified.</p>
+        <button
+          onClick={() => { setSelectedDate(null); setSelectedSlot(null); setCurrentMonth(new Date()); setBooking(null); setStep("date"); }}
+          className="w-full text-center text-xs font-medium py-2.5 rounded-lg border border-border hover:bg-muted transition-colors cursor-pointer"
+          data-testid="btn-book-new-after-cancel"
+        >
+          Schedule a New Meeting
+        </button>
+      </div>
+    );
+  }
+
+  if (step === "reschedule") {
+    return (
+      <div className="space-y-3 py-2" data-testid="inline-booking-reschedule">
+        <button
+          onClick={() => setStep("pending")}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          data-testid="btn-back-from-reschedule"
+        >
+          <ChevronLeft className="w-3 h-3" />
+          Back to booking
+        </button>
+        <p className="text-xs font-semibold text-center">Pick a new date & time</p>
+        <RescheduleCalendarPicker
+          slug={slug}
+          booking={booking}
+          brandColor={brandColor}
+          onRescheduled={(newBooking) => {
+            setBooking(newBooking);
+            setStep("pending");
+          }}
+          onCancel={() => setStep("pending")}
+        />
       </div>
     );
   }
