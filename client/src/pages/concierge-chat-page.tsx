@@ -339,26 +339,28 @@ function RescheduleCalendarPicker({
       </div>
       <div className="grid grid-cols-7 gap-0.5">
         {calendarDays.map((day, i) => {
-          if (!day) return <div key={`e${i}`} />;
-          const d = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
+          const d = day.date;
+          const dayNum = d.getDate();
           const isPast = d < today;
-          const isAvailable = availableDaySet.has(day) && !isPast;
+          const inMonth = day.isCurrentMonth;
+          const isAvailable = inMonth && availableDaySet.has(dayNum) && !isPast;
           const isSelected = selectedDate && isSameDay(d, selectedDate);
-          const isToday = isSameDay(d, today);
+          const isTodayDate = isSameDay(d, today);
           return (
             <button
-              key={day}
+              key={i}
               onClick={() => { if (isAvailable) { setSelectedDate(d); setSelectedSlot(null); } }}
               disabled={!isAvailable}
               className={`aspect-square flex items-center justify-center text-xs rounded-full transition-colors cursor-pointer
+                ${!inMonth ? "text-muted-foreground/20" : ""}
                 ${isSelected ? "text-white font-bold" : ""}
                 ${isAvailable && !isSelected ? "hover:bg-muted font-medium" : ""}
-                ${!isAvailable ? "text-muted-foreground/30 cursor-not-allowed" : ""}
-                ${isToday && !isSelected ? "ring-1 ring-primary" : ""}`}
+                ${inMonth && !isAvailable ? "text-muted-foreground/30 cursor-not-allowed" : ""}
+                ${isTodayDate && !isSelected ? "ring-1 ring-primary" : ""}`}
               style={isSelected ? { backgroundColor: brandColor } : undefined}
-              data-testid={`reschedule-day-${day}`}
+              data-testid={`reschedule-day-${dayNum}`}
             >
-              {day}
+              {dayNum}
             </button>
           );
         })}
