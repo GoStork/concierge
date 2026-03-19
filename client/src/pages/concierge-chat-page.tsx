@@ -4,6 +4,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
+import { deriveChatPalette } from "@/lib/chat-palette";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -1042,6 +1043,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const effectiveMatchmakerId = matchmakerId || resolvedMatchmakerId;
   const selectedMatchmaker = matchmakers.find((m) => m.id === effectiveMatchmakerId);
   const brandColor = brand?.primaryColor || "#004D4D";
+  const chatPalette = useMemo(() => deriveChatPalette(brandColor), [brandColor]);
 
   const loadMessagesForSession = async (sid: string) => {
     try {
@@ -1450,37 +1452,34 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                           isOwnMessage
                             ? "text-white chat-bubble-dark"
                             : isOtherParent
-                            ? "text-foreground border-2 border-blue-200 bg-blue-50/50"
+                            ? "text-foreground"
                             : msg.role === "user"
                             ? "text-white chat-bubble-dark"
-                            : msg.senderType === "human"
-                            ? "text-foreground border-2"
-                            : msg.senderType === "provider"
-                            ? "text-foreground border-2 border-emerald-300"
                             : "text-foreground"
                         }`}
                         style={
-                          isOtherParent
-                            ? { borderRadius: "var(--radius, 0.5rem)" }
-                            : msg.role === "user"
+                          isOwnMessage
+                            ? { backgroundColor: brandColor }
+                            : isOtherParent
                             ? {
-                                backgroundColor: brandColor,
-                                borderRadius: "var(--radius, 0.5rem)",
+                                backgroundColor: chatPalette.partnerBg,
+                                border: `1px solid ${chatPalette.partnerBorder}`,
                               }
+                            : msg.role === "user"
+                            ? { backgroundColor: brandColor }
                             : msg.senderType === "human"
                             ? {
-                                borderRadius: "var(--radius, 0.5rem)",
-                                borderColor: brandColor,
-                                backgroundColor: `${brandColor}08`,
+                                backgroundColor: `${brandColor}14`,
+                                border: `1px solid ${brandColor}33`,
                               }
                             : msg.senderType === "provider"
                             ? {
-                                borderRadius: "var(--radius, 0.5rem)",
-                                backgroundColor: "#ecfdf508",
+                                backgroundColor: chatPalette.expertBg,
+                                border: `1px solid ${chatPalette.expertBorder}`,
                               }
                             : {
-                                borderRadius: "var(--radius, 0.5rem)",
-                                backgroundColor: `${brandColor}15`,
+                                backgroundColor: `${brandColor}14`,
+                                border: `1px solid ${brandColor}33`,
                               }
                         }
                       >

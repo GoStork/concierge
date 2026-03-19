@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, useRef, ReactNode, CSSProperties } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, ReactNode, CSSProperties } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { BrandSettings, BRAND_DEFAULTS, applyBrandPreview, applyBrandToDocument } from "@/hooks/use-brand-settings";
+import { deriveChatPalette, hslString } from "@/lib/chat-palette";
 import { Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -1886,6 +1887,50 @@ export function BrandSettingsForm({
                 </div>
               </div>
             </div>
+          </Card>
+
+          <Card className="rounded-2xl p-6 space-y-6">
+            <div className="flex items-center gap-2">
+              <MessageCircle className="w-5 h-5 text-primary" />
+              <h2 className="font-display text-lg font-semibold" data-testid="heading-chat-palette">Chat Participant Palette</h2>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              These tints are automatically derived from your primary brand color and used in 3-way chat conversations.
+            </p>
+            {(() => {
+              const palette = deriveChatPalette(form.primaryColor);
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="flex items-center gap-3 p-3 rounded-xl border border-border/40 bg-secondary/30" data-testid="palette-ai">
+                    <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: `${form.primaryColor}14`, border: `1px solid ${form.primaryColor}33` }}>
+                      AI
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold">AI Concierge</div>
+                      <span className="text-[10px] text-muted-foreground">Primary · 8% tint</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-xl border border-border/40 bg-secondary/30" data-testid="palette-partner">
+                    <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: palette.partnerBg, border: `1px solid ${palette.partnerBorder}` }}>
+                      P
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold">Partners</div>
+                      <span className="text-[10px] text-muted-foreground">Hue +30° · 8% tint</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-xl border border-border/40 bg-secondary/30" data-testid="palette-expert">
+                    <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: palette.expertBg, border: `1px solid ${palette.expertBorder}` }}>
+                      E
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold">Experts</div>
+                      <span className="text-[10px] text-muted-foreground">Hue -30° · 8% tint</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </Card>
 
           <Card className="rounded-2xl p-6 space-y-6">

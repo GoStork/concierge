@@ -14,6 +14,7 @@ import {
 import { hasProviderRole } from "@shared/roles";
 import { useAppDispatch } from "@/store";
 import { setHideBottomNav } from "@/store/uiSlice";
+import { deriveChatPalette } from "@/lib/chat-palette";
 import ConciergeChatPage from "@/pages/concierge-chat-page";
 import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-deck-card";
 import {
@@ -315,6 +316,7 @@ export default function ConversationsPage() {
   const queryClient = useQueryClient();
   const dispatch = useAppDispatch();
   const brandColor = brand?.primaryColor || "#004D4D";
+  const chatPalette = useMemo(() => deriveChatPalette(brandColor), [brandColor]);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const roles: string[] = (user as any)?.roles || [];
@@ -827,18 +829,24 @@ export default function ConversationsPage() {
                           <div
                             className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-base leading-relaxed font-ui ${
                               isOwnMessage
-                                ? "bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))]"
+                                ? "text-foreground"
                                 : msg.role === "user"
-                                ? "text-foreground border-2 border-blue-200 bg-blue-50/50"
-                                : msg.senderType === "provider"
-                                ? "text-foreground border-2"
-                                : msg.senderType === "human"
-                                ? "bg-muted text-foreground"
-                                : msg.senderType === "system"
-                                ? "bg-[hsl(var(--accent))]/10 text-[hsl(var(--accent))] border border-[hsl(var(--accent))]/30"
-                                : "bg-muted text-foreground"
+                                ? "text-foreground"
+                                : "text-foreground"
                             }`}
-                            style={!isOwnMessage && msg.senderType === "provider" ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : undefined}
+                            style={
+                              isOwnMessage
+                                ? { backgroundColor: chatPalette.expertBg, border: `1px solid ${chatPalette.expertBorder}` }
+                                : msg.role === "user"
+                                ? { backgroundColor: chatPalette.partnerBg, border: `1px solid ${chatPalette.partnerBorder}` }
+                                : msg.senderType === "provider"
+                                ? { backgroundColor: chatPalette.expertBg, border: `1px solid ${chatPalette.expertBorder}` }
+                                : msg.senderType === "human"
+                                ? { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }
+                                : msg.senderType === "system"
+                                ? { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }
+                                : { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }
+                            }
                             data-testid={`provider-msg-${i}`}
                           >
                             {msg.content}
