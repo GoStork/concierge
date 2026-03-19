@@ -1842,7 +1842,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         const sessRes = await fetch("/api/my/chat-sessions", { credentials: "include" });
         if (sessRes.ok) {
           const sessions = await sessRes.json();
-          const conciergeSession = sessions[0];
+          const conciergeSession = sessions.find((s: any) => !s.providerId);
           if (conciergeSession) {
             setSessionId(conciergeSession.id);
             if (matchmakerId && conciergeSession.matchmakerId !== matchmakerId) {

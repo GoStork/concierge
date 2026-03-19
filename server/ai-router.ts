@@ -399,7 +399,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       : [userId];
 
     const existing = await prisma.aiChatSession.findFirst({
-      where: { userId: { in: accountUserIds } },
+      where: { userId: { in: accountUserIds }, providerId: null },
       orderBy: { updatedAt: "desc" },
       select: { id: true },
     });
