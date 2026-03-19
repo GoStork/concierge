@@ -23,6 +23,16 @@ async function findLatestMatchCard(sessionId: string): Promise<any | null> {
     const mc = (msg.uiCardData as any)?.matchCards?.[0];
     if (mc?.providerId && mc?.type) return mc;
   }
+  const anyMatchCardMessages = await prisma.aiChatMessage.findMany({
+    where: { sessionId, NOT: { uiCardData: { equals: null } } },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+    select: { uiCardData: true },
+  });
+  for (const msg of anyMatchCardMessages) {
+    const mc = (msg.uiCardData as any)?.matchCards?.[0];
+    if (mc?.providerId && mc?.type) return mc;
+  }
   return null;
 }
 
@@ -1121,24 +1131,88 @@ IMPORTANT RULES:
       console.error("RAG context fetch failed:", e);
     }
 
+    let isDonorInquiryMode = false;
+    let inquiryMatchCard: any = null;
+    try {
+      let latestMatchCardIdx = -1;
+      let latestMc: any = null;
+      for (let i = chatHistory.length - 1; i >= 0; i--) {
+        const mc = (chatHistory[i].uiCardData as any)?.matchCards?.[0];
+        if (mc?.providerId && mc?.type) {
+          latestMatchCardIdx = i;
+          latestMc = mc;
+          break;
+        }
+      }
+      if (latestMc && latestMatchCardIdx >= 0) {
+        const messagesAfterCard = chatHistory.slice(latestMatchCardIdx + 1);
+        const userMsgsAfterCard = messagesAfterCard.filter((m: any) => m.role === "user");
+        const assistantMsgsAfterCard = messagesAfterCard.filter((m: any) => m.role === "assistant");
+        const hasIntakeFlow = assistantMsgsAfterCard.some((m: any) =>
+          m.content && /frozen embryos|egg source|sperm source|who is.*carry|gestational surrogate|\[\[CURATION\]\]/i.test(m.content)
+        );
+        if (userMsgsAfterCard.length <= 10 && !hasIntakeFlow) {
+          isDonorInquiryMode = true;
+          inquiryMatchCard = latestMc;
+          console.log(`[DONOR INQUIRY MODE] Detected donor inquiry session. Match card: ${JSON.stringify({ providerId: inquiryMatchCard?.providerId, type: inquiryMatchCard?.type, ownerProviderId: inquiryMatchCard?.ownerProviderId }).slice(0, 200)}`);
+        }
+      }
+    } catch (e) {
+      console.error("[DONOR INQUIRY MODE] Detection error:", e);
+    }
+
+    const donorInquiryPrompt = isDonorInquiryMode ? `
+DONOR/SURROGATE INQUIRY MODE — CRITICAL CONTEXT:
+The parent came from the marketplace and is inquiring about a SPECIFIC ${inquiryMatchCard?.type || "profile"} that was already presented to them with a match card.
+This is NOT a general intake conversation. Do NOT run the intake questionnaire (Steps 1-8). Do NOT ask about frozen embryos, egg source, sperm source, or carrier.
+
+YOUR SOLE FOCUS: Answer the parent's questions about this specific ${inquiryMatchCard?.type || "profile"}.
+
+RULES:
+1. The parent is asking about a ${inquiryMatchCard?.type || "profile"} — use the correct terminology (e.g., "egg donor" not "surrogate").
+2. When they ask a question, look up the profile using the appropriate MCP tool:
+   - For surrogates: call get_surrogate_profile with surrogateId
+   - For egg donors: call get_egg_donor_profile with donorId
+   - For sperm donors: call search_sperm_donors
+   - For clinics: call search_clinics
+3. Answer directly from the profile data. Be warm, confident, and specific.
+4. If the answer is NOT in the profile data, use [[WHISPER:${inquiryMatchCard?.ownerProviderId || ""}]] to ask the agency.
+5. After answering, ask if they have more questions or want to take the next step:
+   "Anything else you'd like to know about her, or would you like to schedule a free consultation?" [[QUICK_REPLY:More questions|Schedule consultation|Show me more options]]
+6. If they want to schedule, use [[CONSULTATION_BOOKING:${inquiryMatchCard?.ownerProviderId || ""}]]
+7. If they want to see more options, THEN you can start the intake flow to understand their preferences.
+8. NEVER say "surrogate" when the profile is an "Egg Donor" and vice versa. Always use the correct type.
+
+INTERACTIVE UI COMPONENTS (still available):
+- [[QUICK_REPLY:option1|option2|option3]] for single-choice buttons
+- [[WHISPER:PROVIDER_ID]] to ask the agency a question
+- [[CONSULTATION_BOOKING:PROVIDER_ID]] to show the booking card
+- [[SAVE:{"fieldName":"value"}]] to save preferences
+
+${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIONS ABOUT A PRESENTED MATCH" + biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] : ""}
+` : "";
+
+    const effectiveLogic = isDonorInquiryMode ? donorInquiryPrompt : biologicalMasterLogic;
+
     const systemPrompt = `${personalityBlock}
 
 USER CONTEXT (already collected — do NOT ask again):
 ${userContextBlock}
 
-${biologicalMasterLogic}
+${effectiveLogic}
 ${guidanceRules}
 ${ragContext}
 ${answeredWhispersContext}
 When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS use the MCP database tools (search_surrogates, search_egg_donors, search_sperm_donors, search_clinics). NEVER fabricate any provider data.
-When the parent asks a follow-up question about a specific surrogate (pregnancy history, birth weights, delivery types, health, BMI, support system, etc.), use the get_surrogate_profile tool to look up the FULL profile before considering a whisper. This tool returns ALL profile details.`;
+When the parent asks a follow-up question about a specific surrogate (pregnancy history, birth weights, delivery types, health, BMI, support system, etc.), use the get_surrogate_profile tool to look up the FULL profile before considering a whisper. This tool returns ALL profile details.
+When the parent asks a follow-up question about a specific egg donor (eye color, hair color, ethnicity, education, medical history, etc.), use the get_egg_donor_profile tool to look up the FULL profile before considering a whisper.`;
 
     messages.unshift({
       role: "system",
       content: systemPrompt,
     });
 
-    if (initialGreeting) {
+    if (initialGreeting && !isDonorInquiryMode) {
       messages.splice(1, 0, {
         role: "assistant",
         content: initialGreeting,
