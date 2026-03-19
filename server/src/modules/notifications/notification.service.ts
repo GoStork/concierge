@@ -99,6 +99,7 @@ function buildBrandedEmail(
     alertBox?: { text: string; type: "warning" | "success" | "info" | "error" };
   },
 ): string {
+  const btnRadius = brand.buttonRadius || "8px";
   const btnColor = (v?: string) => {
     if (v === "destructive") return brand.errorColor;
     if (v === "secondary") return "transparent";
@@ -119,18 +120,18 @@ function buildBrandedEmail(
 
   const detailsHtml = opts.detailRows?.length
     ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;background:#f9fafb;border-radius:8px;overflow:hidden;">
-${opts.detailRows.map(r => `<tr><td style="padding:10px 16px;color:#6b7280;font-size:14px;border-bottom:1px solid #f0f0f0;white-space:nowrap;width:120px;">${r.label}</td><td style="padding:10px 16px;font-size:14px;border-bottom:1px solid #f0f0f0;font-weight:500;">${r.value}</td></tr>`).join("\n")}
+${opts.detailRows.map(r => `<tr><td style="padding:10px 16px;color:#6b7280;font-size:14px;font-family:${brand.bodyFontStack};border-bottom:1px solid #f0f0f0;white-space:nowrap;width:120px;">${r.label}</td><td style="padding:10px 16px;font-size:14px;font-family:${brand.bodyFontStack};border-bottom:1px solid #f0f0f0;font-weight:500;">${r.value}</td></tr>`).join("\n")}
 </table>` : "";
 
   const alertHtml = opts.alertBox
-    ? `<div style="background:${alertBg[opts.alertBox.type]};border-left:4px solid ${alertBorderColor[opts.alertBox.type]};padding:14px 16px;border-radius:4px;margin:16px 0;font-size:14px;color:${alertTextColor[opts.alertBox.type]};">${opts.alertBox.text}</div>` : "";
+    ? `<div style="background:${alertBg[opts.alertBox.type]};border-left:4px solid ${alertBorderColor[opts.alertBox.type]};padding:14px 16px;border-radius:4px;margin:16px 0;font-size:14px;font-family:${brand.bodyFontStack};color:${alertTextColor[opts.alertBox.type]};">${opts.alertBox.text}</div>` : "";
 
   const buttonsHtml = opts.buttons?.length
     ? `<table cellpadding="0" cellspacing="0" style="margin:24px auto;" align="center"><tr>${opts.buttons.map(b =>
-        `<td style="padding:0 6px;"><table cellpadding="0" cellspacing="0"><tr><td style="background:${btnColor(b.variant)};border-radius:${brand.buttonRadius};border:${btnBorder(b.variant)};"><a href="${b.url}" style="display:inline-block;padding:12px 24px;color:${btnTextColor(b.variant)};text-decoration:none;font-weight:600;font-size:14px;font-family:${brand.bodyFontStack};">${b.label}</a></td></tr></table></td>`
+        `<td style="padding:0 6px;"><table cellpadding="0" cellspacing="0"><tr><td style="background:${btnColor(b.variant)};border-radius:${btnRadius};border:${btnBorder(b.variant)};"><a href="${b.url}" style="display:inline-block;padding:12px 24px;color:${btnTextColor(b.variant)};text-decoration:none;font-weight:600;font-size:14px;font-family:${brand.bodyFontStack};">${b.label}</a></td></tr></table></td>`
       ).join("")}</tr></table>` : "";
 
-  const footerHtml = opts.footer ? `<p style="color:#9ca3af;font-size:12px;line-height:1.5;margin:24px 0 0;padding-top:16px;border-top:1px solid #f0f0f0;">${opts.footer}</p>` : "";
+  const footerHtml = opts.footer ? `<p style="color:#9ca3af;font-size:12px;line-height:1.5;margin:24px 0 0;padding-top:16px;border-top:1px solid #f0f0f0;font-family:${brand.bodyFontStack};">${opts.footer}</p>` : "";
 
   return `<!DOCTYPE html>
 <html>
@@ -145,8 +146,8 @@ ${brand.logoUrl ? `<img src="${brand.logoUrl}" alt="${esc(brand.companyName)}" s
 </td></tr>
 <tr><td style="padding:40px 30px;">
 <h2 style="font-family:${brand.headingFontStack};color:${brand.brandColor};font-size:22px;margin:0 0 16px;">${opts.title}</h2>
-<p style="color:#333;font-size:15px;line-height:1.6;margin:0 0 12px;">${opts.greeting}</p>
-<div style="color:#333;font-size:15px;line-height:1.6;margin:0 0 16px;">${opts.body}</div>
+<p style="color:#333;font-size:15px;line-height:1.6;font-family:${brand.bodyFontStack};margin:0 0 12px;">${opts.greeting}</p>
+<div style="color:#333;font-size:15px;line-height:1.6;font-family:${brand.bodyFontStack};margin:0 0 16px;">${opts.body}</div>
 ${detailsHtml}
 ${alertHtml}
 ${buttonsHtml}
@@ -218,11 +219,17 @@ export class NotificationService implements OnModuleInit {
         defaults.warningColor = s.warningColor || defaults.warningColor;
         defaults.errorColor = s.errorColor || defaults.errorColor;
         defaults.companyName = s.companyName || defaults.companyName;
-        defaults.logoUrl = s.logoWithNameUrl || s.logoUrl || "";
+        const rawLogo = s.logoWithNameUrl || s.logoUrl || "";
+        defaults.logoUrl = rawLogo && rawLogo.startsWith("/") ? `${getBaseUrl()}${rawLogo}` : rawLogo;
         defaults.headingFont = s.headingFont || defaults.headingFont;
         defaults.bodyFont = s.bodyFont || defaults.bodyFont;
         const borderRadiusRem = typeof s.borderRadius === "number" ? s.borderRadius : 0.5;
-        defaults.buttonRadius = `${Math.round(borderRadiusRem * 16)}px`;
+        if (borderRadiusRem <= 0) defaults.buttonRadius = "0px";
+        else if (borderRadiusRem <= 0.125) defaults.buttonRadius = "2px";
+        else if (borderRadiusRem <= 0.25) defaults.buttonRadius = "4px";
+        else if (borderRadiusRem <= 0.5) defaults.buttonRadius = "8px";
+        else if (borderRadiusRem <= 0.75) defaults.buttonRadius = "12px";
+        else defaults.buttonRadius = "9999px";
         const hf = defaults.headingFont;
         defaults.headingFontStack = `'${hf}',Georgia,serif`;
         const bf = defaults.bodyFont;
