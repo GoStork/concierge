@@ -269,7 +269,7 @@ function formatTime12(time24: string): string {
   return `${hour12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
-function InlineBookingCalendar({
+export function InlineBookingCalendar({
   slug,
   memberName,
   brandColor,
@@ -1525,7 +1525,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       {showCuration && (
         <CurationOverlay brandColor={brandColor} onComplete={handleCurationComplete} />
       )}
-      <div className={`flex flex-col ${isInline ? "h-full" : "h-dvh"} ${isEmbedded ? "" : "max-w-3xl mx-auto"} overflow-hidden`} data-testid="concierge-chat-page">
+      <div className={`flex flex-col ${isInline ? "h-full" : "h-dvh"} ${isEmbedded ? "" : "max-w-3xl mx-auto"} overflow-hidden relative`} data-testid="concierge-chat-page">
         {!isEmbedded && <div
           className="flex items-center gap-3 px-4 py-3 border-b shrink-0"
           data-testid="concierge-chat-header"
@@ -1875,6 +1875,26 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             </Button>
           </div>
         </div>
+        {conciergeBookingSlug && (
+          <div className="absolute inset-0 z-40 flex flex-col bg-background overflow-auto" data-testid="concierge-booking-overlay">
+            <div className="flex items-center justify-between px-4 py-3 border-b shrink-0" style={{ backgroundColor: `${brandColor}08` }}>
+              <div className="flex items-center gap-2">
+                <CalendarDays className="w-5 h-5" style={{ color: brandColor }} />
+                <span className="font-semibold text-sm">Book with {conciergeBookingSlug.memberName}</span>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setConciergeBookingSlug(null)} data-testid="btn-close-concierge-booking">
+                <X className="w-5 h-5" />
+              </Button>
+            </div>
+            <div className="flex-1 overflow-auto px-4 py-4">
+              <InlineBookingCalendar
+                slug={conciergeBookingSlug.slug}
+                memberName={conciergeBookingSlug.memberName}
+                brandColor={brandColor}
+              />
+            </div>
+          </div>
+        )}
       </div>
       {bookingCard && (
         <BookingOverlay
@@ -1884,26 +1904,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           userName={(user as any)?.name || ""}
           onClose={() => setBookingCard(null)}
         />
-      )}
-      {conciergeBookingSlug && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-background" data-testid="concierge-booking-overlay">
-          <div className="flex items-center justify-between px-4 py-3 border-b" style={{ backgroundColor: `${brandColor}08` }}>
-            <div className="flex items-center gap-2">
-              <CalendarDays className="w-5 h-5" style={{ color: brandColor }} />
-              <span className="font-semibold text-sm">Book with {conciergeBookingSlug.memberName}</span>
-            </div>
-            <Button variant="ghost" size="sm" onClick={() => setConciergeBookingSlug(null)} data-testid="btn-close-concierge-booking">
-              <X className="w-5 h-5" />
-            </Button>
-          </div>
-          <div className="flex-1 overflow-auto">
-            <iframe
-              src={`${window.location.origin}/book/${conciergeBookingSlug.slug}`}
-              className="w-full h-full border-0"
-              title="Book a meeting"
-            />
-          </div>
-        </div>
       )}
     </>
   );

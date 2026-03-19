@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
-  ArrowLeft, MessageSquare, Send, User, Loader2, FileText,
+  ArrowLeft, MessageSquare, Send, User, Loader2, FileText, X,
   MapPin, Mail, CheckCircle2, UserPlus, Shield, ThumbsUp, ThumbsDown,
   Search, Sparkles, Building2, ChevronDown, MessageCircle, Clock,
   CalendarDays, Video, Paperclip, Download, ExternalLink, Image as ImageIcon,
@@ -16,7 +16,7 @@ import { hasProviderRole } from "@shared/roles";
 import { useAppDispatch } from "@/store";
 import { setHideBottomNav } from "@/store/uiSlice";
 import { deriveChatPalette } from "@/lib/chat-palette";
-import ConciergeChatPage from "@/pages/concierge-chat-page";
+import ConciergeChatPage, { InlineBookingCalendar } from "@/pages/concierge-chat-page";
 import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-deck-card";
 import {
   mapDatabaseDonorToSwipeProfile,
@@ -818,7 +818,7 @@ export default function ConversationsPage() {
       : selectedParentSession?.matchmakerAvatar;
 
     const parentDetailContent = hasParentSession ? (
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full relative">
         <div className="flex items-center gap-3 px-4 py-3 border-b bg-background shrink-0" data-testid="parent-chat-header">
           <Button
             variant="ghost"
@@ -891,21 +891,21 @@ export default function ConversationsPage() {
           inlineMatchmakerId={selectedParentSession!.matchmakerId || undefined}
         />
         {parentBookingOverlay && (
-          <div className="fixed inset-0 z-50 flex flex-col bg-background" data-testid="parent-booking-overlay">
-            <div className="flex items-center justify-between px-4 py-3 border-b" style={{ backgroundColor: `${brandColor}08` }}>
+          <div className="absolute inset-0 z-40 flex flex-col bg-background overflow-auto" data-testid="parent-booking-overlay">
+            <div className="flex items-center justify-between px-4 py-3 border-b shrink-0" style={{ backgroundColor: `${brandColor}08` }}>
               <div className="flex items-center gap-2">
                 <CalendarDays className="w-5 h-5" style={{ color: brandColor }} />
                 <span className="font-semibold text-sm">Book with {parentBookingOverlay.memberName}</span>
               </div>
               <Button variant="ghost" size="sm" onClick={() => setParentBookingOverlay(null)} data-testid="btn-close-parent-booking">
-                <ArrowLeft className="w-5 h-5" />
+                <X className="w-5 h-5" />
               </Button>
             </div>
-            <div className="flex-1 overflow-auto">
-              <iframe
-                src={`${window.location.origin}/book/${parentBookingOverlay.slug}`}
-                className="w-full h-full border-0"
-                title="Book a meeting"
+            <div className="flex-1 overflow-auto px-4 py-4">
+              <InlineBookingCalendar
+                slug={parentBookingOverlay.slug}
+                memberName={parentBookingOverlay.memberName}
+                brandColor={brandColor}
               />
             </div>
           </div>
