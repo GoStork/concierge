@@ -388,34 +388,43 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Not authenticated" });
     }
     const userId = (req.user as any).id;
-    const { matchmakerId, greeting, forceNew, donorId, donorType } = req.body;
+    const { matchmakerId, greeting, donorId, donorType } = req.body;
     if (!matchmakerId || !greeting) {
       return res.status(400).json({ error: "matchmakerId and greeting required" });
     }
 
-    if (!forceNew) {
-      const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
-      const accountUserIds = currentUser?.parentAccountId
-        ? (await prisma.user.findMany({ where: { parentAccountId: currentUser.parentAccountId }, select: { id: true } })).map(u => u.id)
-        : [userId];
+    const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
+    const accountUserIds = currentUser?.parentAccountId
+      ? (await prisma.user.findMany({ where: { parentAccountId: currentUser.parentAccountId }, select: { id: true } })).map(u => u.id)
+      : [userId];
 
-      const existing = await prisma.aiChatSession.findFirst({
-        where: { userId: { in: accountUserIds } },
-        select: { id: true },
-      });
-      if (existing) {
-        return res.json({ sessionId: existing.id });
+    const existing = await prisma.aiChatSession.findFirst({
+      where: { userId: { in: accountUserIds } },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true },
+    });
+
+    if (existing) {
+      if (donorId) {
+        const greetingMsg = await prisma.aiChatMessage.create({
+          data: {
+            sessionId: existing.id,
+            role: "assistant",
+            content: greeting,
+            senderType: "ai",
+          },
+        });
+        await prisma.aiChatSession.update({
+          where: { id: existing.id },
+          data: { updatedAt: new Date() },
+        });
+        return res.json({ sessionId: existing.id, greetingMessageId: greetingMsg.id, reused: true });
       }
-    }
-
-    let sessionTitle = "AI Concierge Chat";
-    if (donorId && donorType) {
-      const typeLabel = donorType === "surrogate" ? "Surrogate" : donorType === "sperm-donor" ? "Sperm Donor" : "Egg Donor";
-      sessionTitle = `${typeLabel} Inquiry`;
+      return res.json({ sessionId: existing.id });
     }
 
     const session = await prisma.aiChatSession.create({
-      data: { userId, title: sessionTitle, matchmakerId },
+      data: { userId, title: "AI Concierge Chat", matchmakerId },
     });
 
     const greetingMsg = await prisma.aiChatMessage.create({

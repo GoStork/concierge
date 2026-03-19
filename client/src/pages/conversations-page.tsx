@@ -1024,9 +1024,10 @@ export default function ConversationsPage() {
       s.status === "CONSULTATION_BOOKED" ||
       (s.providerId && s.providerName);
     const allEvaConversations = allSessions.filter(s => !isProviderThread(s));
-    const evaConversations = showConcierge
-      ? allEvaConversations
-      : allEvaConversations.filter(s => s.title && s.title !== "AI Concierge Chat");
+    const sortedEva = [...allEvaConversations].sort((a, b) =>
+      new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()
+    );
+    const evaConversations = sortedEva.length > 0 ? [sortedEva[0]] : [];
     const providerConversations = allSessions.filter(s => isProviderThread(s));
 
     const filteredEva = evaConversations.filter(s =>

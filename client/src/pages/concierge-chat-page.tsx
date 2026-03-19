@@ -1829,11 +1829,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   useEffect(() => {
     if (sessionLoaded) return;
 
-    if (donorIdParam) {
-      setSessionLoaded(true);
-      return;
-    }
-
     if (existingSessionId) {
       (async () => {
         await loadMessagesForSession(existingSessionId);
@@ -1861,7 +1856,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             } else if (conciergeSession.matchmakerId) {
               setResolvedMatchmakerId(conciergeSession.matchmakerId);
             }
-            await loadMessagesForSession(conciergeSession.id);
+            if (!donorIdParam) {
+              await loadMessagesForSession(conciergeSession.id);
+            }
           }
         }
       } catch {}
@@ -1960,7 +1957,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     if (greetingSet || !selectedMatchmaker || !user) return;
     if (!donorIdParam && !profileReady) return;
     if (!sessionLoaded) return;
-    if (sessionId || existingSessionId) return;
+    if (!donorIdParam && (sessionId || existingSessionId)) return;
     let greeting = selectedMatchmaker.initialGreeting
       || `Hi there! I'm ${selectedMatchmaker.name}, ${selectedMatchmaker.title.toLowerCase()}. ${selectedMatchmaker.description} How can I help you on your fertility journey today?`;
     const u = user as any;
@@ -1997,7 +1994,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         if (donorIdParam) {
           initBody.donorId = donorIdParam;
           initBody.donorType = donorTypeParam;
-          initBody.forceNew = true;
         }
         const res = await fetch("/api/ai-concierge/init-session", {
           method: "POST",
