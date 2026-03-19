@@ -2079,18 +2079,20 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 </Button>
               </>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-xs gap-1.5 h-8"
-              style={{ borderColor: `${brandColor}30`, color: brandColor, borderRadius: "999px" }}
-              onClick={handleTalkToTeam}
-              disabled={sending || humanEscalated}
-              data-testid="btn-talk-to-team"
-            >
-              <Headphones className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{humanEscalated ? "Team Notified" : "Talk to GoStork Team"}</span>
-            </Button>
+            {!providerInChat && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs gap-1.5 h-8"
+                style={{ borderColor: `${brandColor}30`, color: brandColor, borderRadius: "999px" }}
+                onClick={handleTalkToTeam}
+                disabled={sending || humanEscalated}
+                data-testid="btn-talk-to-team"
+              >
+                <Headphones className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{humanEscalated ? "Team Notified" : "Talk to GoStork Team"}</span>
+              </Button>
+            )}
           </div>
         </div>}
 
