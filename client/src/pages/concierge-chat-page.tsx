@@ -273,17 +273,19 @@ export function InlineBookingCalendar({
   slug,
   memberName,
   brandColor,
+  existingBooking: existingBookingProp,
 }: {
   slug: string;
   memberName: string;
   brandColor: string;
+  existingBooking?: any;
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
-  const [step, setStep] = useState<"date" | "form" | "pending">("date");
+  const [step, setStep] = useState<"date" | "form" | "pending">(existingBookingProp ? "pending" : "date");
   const [name, setName] = useState(user ? (user as any).name || "" : "");
   const [email, setEmail] = useState(user ? (user as any).email || "" : "");
   const [phone, setPhone] = useState(user ? (user as any).mobileNumber || "" : "");
@@ -293,7 +295,16 @@ export function InlineBookingCalendar({
   const [newAttendeeEmail, setNewAttendeeEmail] = useState("");
   const [newAttendeeName, setNewAttendeeName] = useState("");
   const [newAttendeePhone, setNewAttendeePhone] = useState("");
-  const [booking, setBooking] = useState<any>(null);
+  const [booking, setBooking] = useState<any>(existingBookingProp || null);
+
+  useEffect(() => {
+    if (existingBookingProp) {
+      if (!booking || booking.id !== existingBookingProp.id || booking.status !== existingBookingProp.status) {
+        setBooking(existingBookingProp);
+        setStep("pending");
+      }
+    }
+  }, [existingBookingProp]);
 
   function addAttendee() {
     const trimmed = newAttendeeEmail.trim().toLowerCase();
@@ -397,6 +408,7 @@ export function InlineBookingCalendar({
       : null;
     const providerName = providerUser?.name || memberName;
     const providerOrgName = providerUser?.provider?.name || "";
+    const isConfirmed = booking.status === "CONFIRMED";
     const participants: { name: string; email: string }[] = [];
     if (booking.attendeeName || booking.attendeeEmails?.[0]) {
       participants.push({ name: booking.attendeeName || booking.attendeeEmails[0], email: booking.attendeeEmails?.[0] || "" });
@@ -413,15 +425,29 @@ export function InlineBookingCalendar({
     }
 
     return (
-      <div className="space-y-4 py-3" data-testid="inline-booking-pending">
+      <div className="space-y-4 py-3" data-testid={isConfirmed ? "inline-booking-confirmed" : "inline-booking-pending"}>
         <div className="text-center space-y-1">
-          <div className="w-12 h-12 mx-auto rounded-full bg-[hsl(var(--brand-warning,40_96%_53%)/0.12)] flex items-center justify-center">
-            <Clock className="w-6 h-6 text-[hsl(var(--brand-warning,40_96%_53%))]" />
-          </div>
-          <p className="font-bold text-sm">Awaiting Confirmation</p>
-          <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning,40_96%_53%)/0.12)] text-[hsl(var(--brand-warning,40_96%_53%))]">
-            Pending
-          </span>
+          {isConfirmed ? (
+            <>
+              <div className="w-12 h-12 mx-auto rounded-full bg-[hsl(var(--brand-success,142_71%_45%)/0.12)] flex items-center justify-center">
+                <Check className="w-6 h-6 text-[hsl(var(--brand-success,142_71%_45%))]" />
+              </div>
+              <p className="font-bold text-sm">Confirmed</p>
+              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--brand-success,142_71%_45%)/0.12)] text-[hsl(var(--brand-success,142_71%_45%))]">
+                Confirmed
+              </span>
+            </>
+          ) : (
+            <>
+              <div className="w-12 h-12 mx-auto rounded-full bg-[hsl(var(--brand-warning,40_96%_53%)/0.12)] flex items-center justify-center">
+                <Clock className="w-6 h-6 text-[hsl(var(--brand-warning,40_96%_53%))]" />
+              </div>
+              <p className="font-bold text-sm">Awaiting Confirmation</p>
+              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning,40_96%_53%)/0.12)] text-[hsl(var(--brand-warning,40_96%_53%))]">
+                Pending
+              </span>
+            </>
+          )}
         </div>
 
         <div className="bg-muted/40 rounded-xl p-3 space-y-2.5 border border-border">
@@ -468,10 +494,17 @@ export function InlineBookingCalendar({
           </div>
         )}
 
-        <div className="bg-[hsl(var(--brand-warning,40_96%_53%)/0.08)] border border-[hsl(var(--brand-warning,40_96%_53%)/0.3)] rounded-xl p-3">
-          <p className="text-xs font-medium text-[hsl(var(--brand-warning,40_96%_53%))]">Awaiting provider confirmation</p>
-          <p className="text-[11px] text-[hsl(var(--brand-warning,40_96%_53%))] mt-0.5">We'll send you an email once {providerName} confirms your booking.</p>
-        </div>
+        {isConfirmed ? (
+          <div className="bg-[hsl(var(--brand-success,142_71%_45%)/0.08)] border border-[hsl(var(--brand-success,142_71%_45%)/0.3)] rounded-xl p-3">
+            <p className="text-xs font-medium text-[hsl(var(--brand-success,142_71%_45%))]">Meeting confirmed</p>
+            <p className="text-[11px] text-[hsl(var(--brand-success,142_71%_45%))] mt-0.5">Your consultation with {providerName} is confirmed. You'll receive a reminder before the meeting.</p>
+          </div>
+        ) : (
+          <div className="bg-[hsl(var(--brand-warning,40_96%_53%)/0.08)] border border-[hsl(var(--brand-warning,40_96%_53%)/0.3)] rounded-xl p-3">
+            <p className="text-xs font-medium text-[hsl(var(--brand-warning,40_96%_53%))]">Awaiting provider confirmation</p>
+            <p className="text-[11px] text-[hsl(var(--brand-warning,40_96%_53%))] mt-0.5">We'll send you an email once {providerName} confirms your booking.</p>
+          </div>
+        )}
 
         {booking.publicToken && (
           <div className="flex gap-2">
@@ -774,10 +807,12 @@ function ConsultationBookingCard({
   card,
   brandColor,
   onSchedule,
+  existingBooking,
 }: {
   card: ConsultationCardData;
   brandColor: string;
   onSchedule: (card: ConsultationCardData) => void;
+  existingBooking?: any;
 }) {
   if (card.memberBookingSlug) {
     return (
@@ -789,7 +824,9 @@ function ConsultationBookingCard({
         <div className="p-1.5" style={{ backgroundColor: brandColor }}>
           <div className="flex items-center gap-2 px-3 py-1.5">
             <CalendarCheck className="w-4 h-4 text-white" />
-            <span className="text-white text-xs font-semibold uppercase tracking-wider">Schedule a Free Consultation</span>
+            <span className="text-white text-xs font-semibold uppercase tracking-wider">
+              {existingBooking ? "Meeting Scheduled" : "Schedule a Free Consultation"}
+            </span>
           </div>
         </div>
         <div className="px-4 pb-4">
@@ -797,6 +834,7 @@ function ConsultationBookingCard({
             slug={card.memberBookingSlug}
             memberName={card.memberName || card.providerName}
             brandColor={brandColor}
+            existingBooking={existingBooking}
           />
         </div>
       </div>
@@ -1268,6 +1306,17 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [conciergeBookingSlug, setConciergeBookingSlug] = useState<{ slug: string; memberName: string } | null>(null);
   const parentFileInputRef = useRef<HTMLInputElement>(null);
   const [parentUploading, setParentUploading] = useState(false);
+
+  const { data: sessionBookings } = useQuery<any[]>({
+    queryKey: ["/api/chat-session", sessionId, "bookings"],
+    queryFn: async () => {
+      const res = await fetch(`/api/chat-session/${sessionId}/bookings`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!sessionId,
+    refetchInterval: 30000,
+  });
 
   const myDisplayName = useMemo(() => {
     const u = user as any;
@@ -1906,6 +1955,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                     card={msg.consultationCard}
                     brandColor={brandColor}
                     onSchedule={(c) => setBookingCard(c)}
+                    existingBooking={sessionBookings?.find(
+                      (b: any) => b.providerUser?.provider?.id === msg.consultationCard?.providerId
+                    )}
                   />
                 </div>
               )}

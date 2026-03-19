@@ -837,7 +837,17 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
     if (!session) return res.status(404).json({ message: "Session not found" });
 
     const isSessionProvider = isProviderUser(user) && session.providerId === user.providerId;
-    const isSessionParent = session.userId === user.id;
+    const sessionOwnerAccount = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { parentAccountId: true },
+    });
+    const parentAccountUserIds = sessionOwnerAccount?.parentAccountId
+      ? (await prisma.user.findMany({
+          where: { parentAccountId: sessionOwnerAccount.parentAccountId },
+          select: { id: true },
+        })).map(u => u.id)
+      : [session.userId];
+    const isSessionParent = parentAccountUserIds.includes(user.id);
     if (!isSessionProvider && !isSessionParent && !isAdminUser(user)) {
       return res.status(403).json({ message: "Forbidden" });
     }
@@ -850,7 +860,7 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
 
     const bookings = await prisma.booking.findMany({
       where: {
-        parentUserId: session.userId,
+        parentUserId: { in: parentAccountUserIds },
         providerUserId: { in: providerUserIds },
         status: { in: ["PENDING", "CONFIRMED"] },
       },
