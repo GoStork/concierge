@@ -1079,9 +1079,11 @@ interface ConciergeChatProps {
   inlineSessionId?: string;
   inlineMatchmakerId?: string;
   isInline?: boolean;
+  externalBookingSlug?: { slug: string; memberName: string } | null;
+  onCloseExternalBooking?: () => void;
 }
 
-export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId, isInline }: ConciergeChatProps = {}) {
+export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId, isInline, externalBookingSlug, onCloseExternalBooking }: ConciergeChatProps = {}) {
   const [searchParams] = useSearchParams();
   const matchmakerId = isInline ? (inlineMatchmakerId || null) : searchParams.get("matchmaker");
   const existingSessionId = isInline ? (inlineSessionId || null) : searchParams.get("session");
@@ -1136,6 +1138,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       const data = await res.json();
       if (data.slug) {
         setConciergeBookingSlug({ slug: data.slug, memberName: data.memberName || "Provider" });
+        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
       } else {
         alert("This provider hasn't set up online scheduling yet. You can message them to arrange a meeting.");
       }
@@ -1313,6 +1316,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages]);
+
+  useEffect(() => {
+    if (externalBookingSlug) {
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    }
+  }, [externalBookingSlug]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -1525,7 +1534,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       {showCuration && (
         <CurationOverlay brandColor={brandColor} onComplete={handleCurationComplete} />
       )}
-      <div className={`flex flex-col ${isInline ? "h-full" : "h-dvh"} ${isEmbedded ? "" : "max-w-3xl mx-auto"} overflow-hidden relative`} data-testid="concierge-chat-page">
+      <div className={`flex flex-col ${isInline ? "h-full" : "h-dvh"} ${isEmbedded ? "" : "max-w-3xl mx-auto"} overflow-hidden`} data-testid="concierge-chat-page">
         {!isEmbedded && <div
           className="flex items-center gap-3 px-4 py-3 border-b shrink-0"
           data-testid="concierge-chat-header"
@@ -1824,6 +1833,40 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               <span className="text-xs text-muted-foreground">{selectedMatchmaker?.name || "AI Concierge"} is typing</span>
             </div>
           )}
+          {(externalBookingSlug || conciergeBookingSlug) && (() => {
+            const bk = externalBookingSlug || conciergeBookingSlug!;
+            const onClose = externalBookingSlug ? onCloseExternalBooking : () => setConciergeBookingSlug(null);
+            return (
+              <div className="px-1 pb-2">
+                <div
+                  className="w-full overflow-hidden border border-border bg-card"
+                  style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 420px)" }}
+                  data-testid="parent-meeting-booking-card"
+                >
+                  <div className="p-1.5" style={{ backgroundColor: brandColor }}>
+                    <div className="flex items-center justify-between px-3 py-1.5">
+                      <div className="flex items-center gap-2">
+                        <CalendarCheck className="w-4 h-4 text-white" />
+                        <span className="text-white text-xs font-semibold uppercase tracking-wider">Schedule a Meeting</span>
+                      </div>
+                      {onClose && (
+                        <button onClick={onClose} className="text-white/70 hover:text-white" data-testid="btn-close-meeting-card">
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="px-4 pb-4">
+                    <InlineBookingCalendar
+                      slug={bk.slug}
+                      memberName={bk.memberName}
+                      brandColor={brandColor}
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           <div ref={messagesEndRef} />
         </div>
 
@@ -1875,26 +1918,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             </Button>
           </div>
         </div>
-        {conciergeBookingSlug && (
-          <div className="absolute inset-0 z-40 flex flex-col bg-background overflow-auto" data-testid="concierge-booking-overlay">
-            <div className="flex items-center justify-between px-4 py-3 border-b shrink-0" style={{ backgroundColor: `${brandColor}08` }}>
-              <div className="flex items-center gap-2">
-                <CalendarDays className="w-5 h-5" style={{ color: brandColor }} />
-                <span className="font-semibold text-sm">Book with {conciergeBookingSlug.memberName}</span>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => setConciergeBookingSlug(null)} data-testid="btn-close-concierge-booking">
-                <X className="w-5 h-5" />
-              </Button>
-            </div>
-            <div className="flex-1 overflow-auto px-4 py-4">
-              <InlineBookingCalendar
-                slug={conciergeBookingSlug.slug}
-                memberName={conciergeBookingSlug.memberName}
-                brandColor={brandColor}
-              />
-            </div>
-          </div>
-        )}
+        
       </div>
       {bookingCard && (
         <BookingOverlay
