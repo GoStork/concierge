@@ -1945,6 +1945,7 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
     }
 
     let consultationCard: any = null;
+    let consultationTargetSessionId: string | null = null;
     const consultationMatch = finalContent.match(/\[\[CONSULTATION_BOOKING:(.*?)\]\]/);
     if (consultationMatch) {
       const consultProviderId = consultationMatch[1].trim();
@@ -1993,18 +1994,67 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
           };
 
           if (currentSessionId) {
-            await prisma.aiChatSession.update({
+            let profileLabel: string | null = null;
+            try {
+              const richMessages = await prisma.aiChatMessage.findMany({
+                where: { sessionId: currentSessionId, uiCardType: "rich" },
+                orderBy: { createdAt: "desc" },
+                take: 20,
+                select: { uiCardData: true },
+              });
+              for (const msg of richMessages) {
+                const cards = (msg.uiCardData as any)?.matchCards || [];
+                const matched = cards.find((c: any) => c.ownerProviderId === consultProviderId || c.providerId === consultProviderId);
+                if (matched?.name) {
+                  profileLabel = matched.name;
+                  break;
+                }
+              }
+              if (!profileLabel) {
+                const mc = await findLatestMatchCard(currentSessionId);
+                if (mc?.name) profileLabel = mc.name;
+              }
+            } catch (e) {
+              console.error("[CONSULTATION] Error finding match card for profile label:", e);
+            }
+
+            const currentSession = await prisma.aiChatSession.findUnique({
               where: { id: currentSessionId },
-              data: {
-                providerId: consultProviderId,
-                providerName: consultProvider.name,
-                status: "CONSULTATION_BOOKED",
-              },
+              select: { providerId: true, matchmakerId: true },
             });
+
+            let targetSessionId = currentSessionId;
+
+            if (currentSession?.providerId && currentSession.providerId !== consultProviderId) {
+              const newSession = await prisma.aiChatSession.create({
+                data: {
+                  userId,
+                  providerId: consultProviderId,
+                  providerName: consultProvider.name,
+                  status: "CONSULTATION_BOOKED",
+                  matchmakerId: currentSession.matchmakerId,
+                  title: profileLabel || null,
+                },
+              });
+              targetSessionId = newSession.id;
+              consultationTargetSessionId = newSession.id;
+              console.log(`[CONSULTATION] Created new session ${targetSessionId} for provider ${consultProviderId} (previous session ${currentSessionId} already has provider ${currentSession.providerId})`);
+            } else {
+              await prisma.aiChatSession.update({
+                where: { id: currentSessionId },
+                data: {
+                  providerId: consultProviderId,
+                  providerName: consultProvider.name,
+                  status: "CONSULTATION_BOOKED",
+                  ...(profileLabel ? { title: profileLabel } : {}),
+                },
+              });
+              consultationTargetSessionId = currentSessionId;
+            }
 
             await prisma.aiChatMessage.create({
               data: {
-                sessionId: currentSessionId,
+                sessionId: targetSessionId,
                 role: "assistant",
                 content: `Great news! ${userRecord?.name || firstName} has scheduled a consultation. You can now join their group chat to communicate directly.`,
                 senderType: "system",
@@ -2022,7 +2072,7 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
                   userId: pu.id,
                   eventType: "CONSULTATION_BOOKED_CHAT",
                   payload: {
-                    sessionId: currentSessionId,
+                    sessionId: targetSessionId,
                     parentName: userRecord?.name || firstName,
                     message: `${firstName} has scheduled a consultation — click "Join Group Chat" to start chatting directly`,
                   },
@@ -2061,9 +2111,11 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
     if (quickReplies.length > 0) uiExtras.quickReplies = quickReplies;
     if (multiSelect) uiExtras.multiSelect = true;
 
+    const replySessionId = consultationTargetSessionId || currentSessionId;
+
     const savedAiMessage = await prisma.aiChatMessage.create({
       data: {
-        sessionId: currentSessionId,
+        sessionId: replySessionId,
         role: "assistant",
         content: finalContent,
         ...(Object.keys(uiExtras).length > 0 ? { uiCardType: "rich", uiCardData: uiExtras } : {}),
@@ -2071,7 +2123,7 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
     });
 
     res.json({
-      sessionId: currentSessionId,
+      sessionId: replySessionId,
       userMessageId: savedUserMsg.id,
       message: savedAiMessage,
       quickReplies: quickReplies.length > 0 ? quickReplies : undefined,

@@ -462,9 +462,13 @@ export default function ConversationsPage() {
 
   if (isParent) {
     const allSessions = parentSessionsQuery.data || [];
-    const allEvaConversations = allSessions.filter(s => !s.providerJoinedAt || !s.providerName);
+    const isProviderThread = (s: ChatSession) =>
+      (s.providerJoinedAt && s.providerName) ||
+      s.status === "CONSULTATION_BOOKED" ||
+      (s.providerId && s.providerName);
+    const allEvaConversations = allSessions.filter(s => !isProviderThread(s));
     const evaConversations = allEvaConversations.length > 0 ? [allEvaConversations[0]] : [];
-    const providerConversations = allSessions.filter(s => s.providerJoinedAt && s.providerName);
+    const providerConversations = allSessions.filter(s => isProviderThread(s));
 
     const filteredEva = evaConversations.filter(s =>
       !searchQuery || (s.matchmakerName || "Eva").toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -569,7 +573,7 @@ export default function ConversationsPage() {
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="font-medium text-sm font-ui truncate">{session.matchmakerName || "Conversation"}</span>
+                            <span className="font-medium text-sm font-ui truncate">{session.title || session.matchmakerName || "Conversation"}</span>
                             <span className="text-[11px] text-muted-foreground flex-shrink-0">{timeAgo(session.lastMessageAt)}</span>
                           </div>
                           {session.lastMessage && (

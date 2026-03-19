@@ -1,6 +1,6 @@
 ## Overview
 
-GoStork is a multi-tenant fertility marketplace designed to connect Intended Parents with fertility service Providers (IVF Clinics, Egg Donor Agencies, Surrogacy Agencies, Egg/Sperm Banks, Legal Services). The platform aims to streamline the discovery, comparison, scheduling, and engagement processes within the fertility industry. Key capabilities include comprehensive provider profiles, enhanced user experience, improved operational efficiency, and integration of AI for advanced analytics, cost sheet processing, and sophisticated booking functionalities. The business vision is to become the leading digital marketplace for fertility services, offering significant market potential by simplifying a complex and emotionally charged journey for Intended Parents.
+GoStork is a multi-tenant fertility marketplace connecting Intended Parents with fertility service Providers (IVF Clinics, Egg Donor Agencies, Surrogacy Agencies, Egg/Sperm Banks, Legal Services). It aims to streamline discovery, comparison, scheduling, and engagement within the fertility industry. Key capabilities include comprehensive provider profiles, enhanced user experience, improved operational efficiency, and AI integration for advanced analytics, cost sheet processing, and sophisticated booking. The vision is to be the leading digital marketplace, simplifying the fertility journey and offering significant market potential.
 
 ## User Preferences
 
@@ -19,46 +19,45 @@ Always use Claude Opus 4.6 for all coding, planning, and debugging tasks in this
 ## System Architecture
 
 **UI/UX Decisions:**
--   Prioritizes full pages for entity creation/editing.
--   Reserves dialogs exclusively for simple destructive-action confirmations.
--   Enforces single page scrolls without inner scrollbars.
--   Utilizes a consistent brand system for all visual styles (colors, typography, spacing) via CSS variables.
--   Mobile-responsive design featuring horizontal top navigation for desktop and a fixed bottom tab bar for mobile.
--   Marketplace uses `SwipeDeckCard` for unified display, supporting multi-column grids for desktop and single-card swipe decks for mobile with drag gestures.
--   Multi-step onboarding flow with single-question-per-page, full-screen layout, progress bar, and smooth transitions.
--   AI Matchmaker selection features animated transitions and personalized greetings.
+- Prioritizes full pages; dialogs for destructive actions only.
+- Enforces single-page scrolls.
+- Utilizes a consistent brand system via CSS variables.
+- Mobile-responsive design with horizontal top navigation for desktop and a fixed bottom tab bar for mobile.
+- Marketplace uses `SwipeDeckCard` for unified display, supporting multi-column grids (desktop) and swipe decks (mobile).
+- Multi-step onboarding with single-question-per-page, progress bar, and smooth transitions.
+- AI Matchmaker selection features animated transitions.
 
 **Technical Implementations & Design Choices:**
--   **Backend Framework:** NestJS with Prisma ORM and PostgreSQL for data management.
--   **Authentication:** Dual-mode (Passport.js for web, JWT for mobile) with Redis for session management and multi-role RBAC.
--   **Calendar & Scheduling:** Calendly-like system (`ScheduleConfig`, `AvailabilitySlot`) supporting Google, Microsoft, and Apple Calendar integrations, timezone-aware slot generation, and configurable blocks.
--   **Notification System:** SendGrid for email and Twilio for SMS, exclusively using dynamic templates.
--   **AI-Powered Data Management:** Google Gemini for scraping and syncing donor/provider profiles, handling nightly updates, stale data detection, and bulk PDF uploads (using `pdfjs-dist`, `pdf-parse`, `sharp`, and multimodal Gemini for visual OCR fallback). Also for dynamic cost sheet parsing (PDF/Excel) with admin approval workflows.
--   **Marketplace Gating:** Visibility of providers and donors is gated based on service approval status.
--   **Telehealth:** HIPAA-compliant video calls via Daily.co with consent-gated recording to Google Cloud Storage and Google Speech-to-Text transcription.
--   **In-App Notifications:** Database-backed, real-time system using Server-Sent Events (SSE) for cost sheet and booking events.
--   **Frontend Framework:** React with Vite, React Router v6, TanStack Query, shadcn/ui components, and Redux Toolkit.
--   **State Management:** Redux for global state, and URL search params/sub-routes for tab/view state persistence.
--   **Parent Experience Routing:** `DashboardRoute` in `App.tsx` waits for brand settings to load, then redirects parent-only users to `/chat` (chat history) when `enableAiConcierge=true` and `parentExperienceMode!='MARKETPLACE_ONLY'`; otherwise redirects to `/marketplace`. Layout shell navigation and logo link also adapt based on these settings. Settings stored in both `SiteSettings` (global) and `ProviderBrandSettings` (per-provider override).
--   **Unified Conversations Page:** `/chat` route renders `conversations-page.tsx` — a single page serving both parents and providers. **Parent view:** search bar, filter tabs (All/Unread/Agreements), pinned AI concierge section with matchmaker avatars, collapsible provider conversation groups. Clicking a session resumes via `/concierge?matchmaker={id}&session={id}`. **Provider view:** master-detail layout with sidebar listing parent sessions (name, email, joined/new badge, last message), and a detail pane with full chat transcript, join/send functionality, parent profile sidebar (journey details), consultation status buttons, and agreement generation. Old `/provider/conversations` redirects to `/chat`. APIs: `GET /api/my/chat-sessions` (parent), `GET /api/provider/concierge-sessions` (provider), `GET/POST /api/provider/concierge-sessions/:id/*`.
--   **AI Matchmaker System:** Configurable AI concierge personas (`Matchmaker` DB model) with `personalityPrompt` and `initialGreeting`. AI router injects full user context into prompts and implements a Biological Master Logic decision tree. Features interactive UI via structured tags (`[[QUICK_REPLY]]`, `[[CURATION]]`, `[[MATCH_CARD]]`) and `[[SAVE]]` for profile updates. Includes `[[HOT_LEAD]]` for admin notifications and prep doc delivery, and `[[HUMAN_NEEDED]]` for human escalation.
--   **Human Escalation & Prep Doc Delivery:** `[[HOT_LEAD]]` triggers automated match call prep doc delivery — branded SendGrid email with PDF content + in-chat `PrepDocCard` smart card with 4 sections and download link. `[[HUMAN_NEEDED]]` tag sets `humanRequested` on session, sends `HUMAN_ESCALATION` in-app notifications to GOSTORK_ADMIN users. Parent chat shows "Talk to GoStork Team" button; human messages display with "GoStork Expert" badge. Session message polling (`GET /api/ai-concierge/session/:id/messages`) enables real-time human replies in parent chat.
--   **Admin Concierge Command Center:** Two admin pages: (1) `/admin/concierge-monitor` for live session monitoring with session list, escalation badges, profile sidebar, and live chat takeover; (2) `/account/concierge` as a unified settings page with 4 vertically-stacked card sections — System Settings (enable/disable concierge toggle + parent experience mode radio saving to `/api/brand/settings`), Personas (matchmaker CRUD), Intelligence & Rules (expert guidance rules from former Knowledge tab), and Knowledge Base (bulk website sync). The Knowledge tab is hidden from admin users and only shown to providers. APIs: `GET /api/admin/concierge-sessions`, `GET /api/admin/concierge-sessions/:id`, `POST /api/admin/concierge-sessions/:id/message`. Human messages saved with `senderType: "human"` and `senderName`. Schema: `AiChatSession` has `humanRequested`, `humanJoinedAt`, `humanAgentId`; `AiChatMessage` has `senderType` (ai/human/system) and `senderName`.
--   **Profile Data Integration:** Comprehensive user profile management editable via My Account page, with robust validation and transactional updates.
--   **CDC Data Pipeline:** Admin dashboard for managing CDC Socrata dataset syncing, staging, enrichment, and scraping via SART API and Google Gemini.
--   **MCP Architecture Rule (ENFORCED):** ALL AI data access for provider, surrogate, donor, clinic, and knowledge base data in `ai-router.ts` MUST go through MCP server tools (via `mcpClient.callTool()`). No direct `prisma.*` calls for these entity types. Operational writes (chat sessions, messages, notifications, user lookups for auth/session ownership) are allowed. MCP tools: `search_surrogates`, `search_egg_donors`, `search_sperm_donors`, `search_clinics`, `get_surrogate_profile`, `get_ip_profile`, `resolve_match_card`, `resolve_provider`, `search_knowledge_base`, `get_provider_users`, `get_expert_guidance_rules`.
--   **Provider Self-Service Knowledge Base & RAG Engine:** `pgvector`-powered with `KnowledgeChunk` and `ExpertGuidanceRule` models. Supports document uploads (PDF/CSV/TXT/DOCX) and website content sync. Uses OpenAI embeddings for similarity search, integrating relevant knowledge chunks and expert guidance rules into the AI router's system prompt. Includes tenant isolation and SSRF protection.
--   **Silent Passthrough & Whisper Protocol:** When AI concierge can't answer a provider-specific question, `[[WHISPER:PROVIDER_ID]]` tag creates an anonymous `SilentQuery` record and sets `providerId` + `providerName` on the parent's session (linking it to the provider without revealing parent identity). A system message with the question is posted to the parent's session (visible to provider). Provider sees the session in their inbox as "Prospective Parent" with pending question count. Provider answers in this session; the `SilentQuery` for that session is marked ANSWERED. On the parent's next chat message, answered whispers are injected into AI context, and the AI relays the answer naturally. **Parent identity is NOT revealed** to the provider during the whisper phase — shown as "Prospective Parent", email/photo/profile hidden. Each parent creates a separate entry in the provider's inbox (per-parent, not a single pinned session). Model: `SilentQuery`. APIs: provider replies via `POST /api/provider/concierge-sessions/:id/message`.
--   **Provider Consultation Booking (2-Step Join):** `[[CONSULTATION_BOOKING:PROVIDER_ID]]` tag triggers consultation flow with a 2-step process: (1) sets `status: "CONSULTATION_BOOKED"` on parent's session (does NOT set `providerJoinedAt`), (2) sends system message with parent name, (3) notifies provider users via `CONSULTATION_BOOKED_CHAT` with message to click "Join Group Chat". Provider sees "Ready to Join" badge and "Join Group Chat" button. Provider clicks "Join Group Chat" → `providerJoinedAt` set, `status: PROVIDER_JOINED`, parent identity revealed, parent notified. Parent appears in provider's Parents table ONLY after provider has joined. Provider model has `consultationBookingUrl` (String?) and `consultationIframeEnabled` (Boolean). Frontend `ConsultationBookingCard` renders in chat.
--   **3-Way Co-Pilot Chat (Parent, Provider, Eva):** Session lifecycle: **ACTIVE** (whisper Q&A, anonymous) → **CONSULTATION_BOOKED** (parent booked, "Join Group Chat" available) → **PROVIDER_JOINED** (provider joined, direct chat). `AiChatSession` has `providerId`, `providerJoinedAt`, `providerName`, `sessionType`. Provider inbox at `/chat` shows individual per-parent entries with state-based badges: "pending" (whisper questions waiting), "Q&A" (answered, awaiting more), "Ready to Join" (consultation booked), "Joined" (active 3-way chat). Only PROVIDER_JOINED sessions show full parent profile, chat history, consultation status buttons, and agreement generation. APIs: `GET/POST /api/provider/concierge-sessions/*`.
--   **Shared Parent Account Sessions:** All users on the same `parentAccountId` share the same AI chat sessions. Parent 2 (added as account member) sees the same chats as Parent 1 and can reply in them. Session queries use `userId: { in: accountUserIds }` where `accountUserIds` includes all users on the same parent account. Parent messages store `senderName` (first name + last initial, e.g., "Eran A.") so each parent's messages are identifiable. Provider 3-way chat shows individual parent names per message. Notifications (provider joined, provider message) are sent to ALL account members, not just the session owner. Provider session detail returns `accountMembers` array with `{ id, displayName }` for each parent on the account.
--   **PandaDoc Integration Phase 1:** Native document management using PandaDoc API. `Agreement` model tracks document lifecycle (DRAFT→CREATED→SENT→ERROR). Provider model has `pandaDocTemplateId` (String?). Backend service (`server/pandadoc-service.ts`) creates PandaDoc documents from provider templates, polls for document readiness, then sends to parent for signature. Includes idempotency guard (one active agreement per session). Provider settings ("Document & Agreements" section at `/account/company`) lets providers configure their PandaDoc template ID. "Generate & Send Agreement" button in provider conversations sidebar triggers document creation and posts system announcement in chat. API: `POST /api/agreements/generate`. Requires `PANDADOC_API_KEY` secret.
+- **Backend:** NestJS, Prisma ORM, PostgreSQL.
+- **Authentication:** Dual-mode (Passport.js/JWT), Redis for sessions, multi-role RBAC.
+- **Calendar & Scheduling:** Calendly-like system with Google, Microsoft, and Apple Calendar integrations, timezone-aware slots.
+- **Notification System:** SendGrid for email, Twilio for SMS, exclusively using dynamic templates.
+- **AI-Powered Data Management:** Google Gemini for scraping, syncing, and bulk PDF uploads with multimodal OCR fallback. Dynamic cost sheet parsing with admin approval.
+- **Marketplace Gating:** Provider/donor visibility controlled by service approval.
+- **Telehealth:** HIPAA-compliant video calls via Daily.co with consent-gated recording to Google Cloud Storage and Google Speech-to-Text transcription.
+- **In-App Notifications:** Database-backed, real-time system using Server-Sent Events (SSE).
+- **Frontend:** React, Vite, React Router v6, TanStack Query, shadcn/ui, Redux Toolkit.
+- **State Management:** Redux for global state, URL search params/sub-routes for tab/view state persistence.
+- **Parent Experience Routing:** Dynamic routing based on `enableAiConcierge` and `parentExperienceMode` settings, redirecting to `/chat` or `/marketplace`.
+- **Unified Conversations Page (`/chat`):** Serves both parents and providers. Parent view includes search, filters, pinned AI concierge, and collapsible provider groups. Provider view is a master-detail layout with session sidebar and chat transcript.
+- **AI Matchmaker System:** Configurable personas, AI router with full user context, Biological Master Logic decision tree. Interactive UI with structured tags (e.g., `[[QUICK_REPLY]]`, `[[CURATION]]`, `[[MATCH_CARD]]`, `[[SAVE]]`, `[[HOT_LEAD]]`, `[[HUMAN_NEEDED]]`).
+- **Human Escalation & Prep Doc Delivery:** `[[HOT_LEAD]]` triggers automated prep doc delivery (SendGrid email + in-chat `PrepDocCard`). `[[HUMAN_NEEDED]]` triggers human escalation with in-app notifications and a "Talk to GoStork Team" button for parents. Human messages are identified.
+- **Admin Concierge Command Center:** `/admin/concierge-monitor` for live session monitoring and takeover; `/account/concierge` for system settings, persona CRUD, intelligence rules, and knowledge base management.
+- **Profile Data Integration:** Comprehensive user profile management with robust validation.
+- **CDC Data Pipeline:** Admin dashboard for CDC Socrata dataset syncing and scraping.
+- **MCP Architecture Rule:** All AI data access for provider, surrogate, donor, clinic, and knowledge base data MUST use MCP server tools (`mcpClient.callTool()`). Direct `prisma.*` calls are restricted to operational writes.
+- **Provider Self-Service Knowledge Base & RAG Engine:** `pgvector`-powered, with `KnowledgeChunk` and `ExpertGuidanceRule` models. Supports document uploads and website sync, uses OpenAI embeddings for similarity search, with tenant isolation and SSRF protection.
+- **Silent Passthrough & Whisper Protocol:** AI uses `[[WHISPER:PROVIDER_ID]]` for provider-specific questions, creating anonymous `SilentQuery` records. Provider sees "Prospective Parent" with questions; parent identity is revealed only after the provider answers and the AI relays the response naturally.
+- **Provider Consultation Booking (2-Step Join):** `[[CONSULTATION_BOOKING:PROVIDER_ID]]` initiates a 2-step process: sets `status: "CONSULTATION_BOOKED"` on session, notifies provider. Provider clicks "Join Group Chat" to set `providerJoinedAt`, reveal parent identity, and activate 3-way chat.
+- **3-Way Co-Pilot Chat (Parent, Provider, Eva):** Session lifecycle: **ACTIVE** (anonymous whisper Q&A) → **CONSULTATION_BOOKED** (booking confirmed, provider can join) → **PROVIDER_JOINED** (active 3-way chat with parent identity revealed). Provider inbox shows per-parent entries with state-based badges.
+- **Shared Parent Account Sessions:** All users on the same `parentAccountId` share AI chat sessions. Messages are identifiable by `senderName`. Notifications are sent to all account members.
+- **PandaDoc Integration Phase 1:** Native document management for agreements. `Agreement` model tracks lifecycle. Providers configure `pandaDocTemplateId`. Backend service creates documents, polls readiness, and sends for signature. Includes idempotency guard.
 
 ## External Dependencies
 
 -   **PostgreSQL (Supabase):** Primary database.
 -   **Redis:** Session store.
--   **Google Gemini 2.0 Flash / 2.5 Flash:** AI for scraping, background removal, and data extraction.
+-   **Google Gemini 2.0 Flash / 2.5 Flash:** AI for scraping, data extraction, and OCR.
 -   **SendGrid:** Email notifications.
 -   **Twilio:** SMS notifications.
 -   **Google Calendar API:** Calendar synchronization.
@@ -67,6 +66,6 @@ Always use Claude Opus 4.6 for all coding, planning, and debugging tasks in this
 -   **Daily.co:** Video conferencing.
 -   **Google Cloud Storage:** Recording storage and cost sheet file storage.
 -   **Google Speech-to-Text API:** Transcription.
--   **OpenAI:** Embeddings for RAG engine and profile vector search (text-embedding-3-small, 1536 dimensions). Profile embeddings stored on `EggDonor`, `Surrogate`, `SpermDonor`, and `Provider` tables (`profileEmbedding vector(1536)`). Provider embeddings combine clinic `about` text, team member bios, IVF success rates, service types, and location data. MCP search tools use semantic vector search with fallback to field-based filtering.
+-   **OpenAI:** Embeddings for RAG engine and profile vector search (`text-embedding-3-small`).
 -   **Statically served uploads:** For user-uploaded images.
 -   **Image Proxy:** For external images.
