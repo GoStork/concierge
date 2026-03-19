@@ -408,8 +408,14 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       }
     }
 
+    let sessionTitle = "AI Concierge Chat";
+    if (donorId && donorType) {
+      const typeLabel = donorType === "surrogate" ? "Surrogate" : donorType === "sperm-donor" ? "Sperm Donor" : "Egg Donor";
+      sessionTitle = `${typeLabel} Inquiry`;
+    }
+
     const session = await prisma.aiChatSession.create({
-      data: { userId, title: "AI Concierge Chat", matchmakerId },
+      data: { userId, title: sessionTitle, matchmakerId },
     });
 
     const greetingMsg = await prisma.aiChatMessage.create({

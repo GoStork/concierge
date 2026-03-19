@@ -1023,8 +1023,7 @@ export default function ConversationsPage() {
       (s.providerJoinedAt && s.providerName) ||
       s.status === "CONSULTATION_BOOKED" ||
       (s.providerId && s.providerName);
-    const allEvaConversations = allSessions.filter(s => !isProviderThread(s));
-    const evaConversations = allEvaConversations.length > 0 ? [allEvaConversations[0]] : [];
+    const evaConversations = allSessions.filter(s => !isProviderThread(s));
     const providerConversations = allSessions.filter(s => isProviderThread(s));
 
     const filteredEva = evaConversations.filter(s =>
@@ -1089,6 +1088,9 @@ export default function ConversationsPage() {
                     <span className="text-sm font-ui truncate" style={{ fontWeight: 600 }}>{session.matchmakerName || "Eva"}</span>
                     <span className="text-[11px] text-muted-foreground flex-shrink-0">{timeAgo(session.lastMessageAt)}</span>
                   </div>
+                  {session.title && session.title !== "AI Concierge Chat" && (
+                    <p className="text-xs font-medium truncate mt-0.5" style={{ color: brandColor }}>{session.title}</p>
+                  )}
                   {session.lastMessage && (
                     <p className="text-sm text-muted-foreground truncate mt-0.5">{truncateMessage(session.lastMessage)}</p>
                   )}
