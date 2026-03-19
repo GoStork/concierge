@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,9 @@ import {
   buildStatusLabel,
   getPhotoList,
 } from "@/components/marketplace/swipe-mappers";
-import { Loader2, Send, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, X, ExternalLink } from "lucide-react";
+import { Loader2, Send, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check } from "lucide-react";
+import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
+import { apiRequest } from "@/lib/queryClient";
 
 interface MatchCard {
   name: string;
@@ -225,6 +227,293 @@ function PrepDocCard({ brandColor }: { brandColor: string }) {
   );
 }
 
+function generateCalendarDays(month: Date) {
+  const start = startOfMonth(month);
+  const end = endOfMonth(month);
+  const days = eachDayOfInterval({ start, end });
+  const startDayOfWeek = getDay(start);
+  const paddingBefore = Array.from({ length: startDayOfWeek }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(d.getDate() - (startDayOfWeek - i));
+    return { date: d, isCurrentMonth: false };
+  });
+  const endDayOfWeek = getDay(end);
+  const paddingAfter = Array.from({ length: 6 - endDayOfWeek }, (_, i) => {
+    const d = new Date(end);
+    d.setDate(d.getDate() + (i + 1));
+    return { date: d, isCurrentMonth: false };
+  });
+  return [...paddingBefore, ...days.map((d) => ({ date: d, isCurrentMonth: true })), ...paddingAfter];
+}
+
+function formatTime12(time24: string): string {
+  const [h, m] = time24.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${hour12}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+function InlineBookingCalendar({
+  slug,
+  memberName,
+  brandColor,
+}: {
+  slug: string;
+  memberName: string;
+  brandColor: string;
+}) {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [step, setStep] = useState<"date" | "form" | "confirmed">("date");
+  const [name, setName] = useState(user ? (user as any).name || "" : "");
+  const [email, setEmail] = useState(user ? (user as any).email || "" : "");
+  const [phone, setPhone] = useState(user ? (user as any).mobileNumber || "" : "");
+  const [notes, setNotes] = useState("");
+  const [booking, setBooking] = useState<any>(null);
+
+  const dateStr = selectedDate ? format(selectedDate, "yyyy-MM-dd") : null;
+  const monthStr = format(currentMonth, "yyyy-MM");
+  const today = startOfDay(new Date());
+  const calendarDays = generateCalendarDays(currentMonth);
+  const bookerTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  const { data: availabilityDays } = useQuery<{ availableDays: number[] }>({
+    queryKey: ["/api/calendar/availability-days", slug, monthStr, bookerTimezone],
+    queryFn: async () => {
+      const res = await fetch(`/api/calendar/availability-days/${slug}?month=${monthStr}&timezone=${bookerTimezone}`, { credentials: "include" });
+      if (!res.ok) return { availableDays: [] };
+      return res.json();
+    },
+    enabled: !!slug,
+  });
+
+  const availableDaySet = new Set(availabilityDays?.availableDays || []);
+
+  const { data: pageInfo, isLoading: pageLoading } = useQuery({
+    queryKey: ["/api/calendar/page", slug],
+    queryFn: async () => {
+      const res = await fetch(`/api/calendar/page/${slug}`);
+      if (!res.ok) throw new Error("Booking page not found");
+      return res.json();
+    },
+  });
+
+  const { data: availability, isLoading: slotsLoading } = useQuery({
+    queryKey: ["/api/calendar/availability", slug, dateStr, bookerTimezone],
+    queryFn: async () => {
+      if (!dateStr) return null;
+      const res = await fetch(`/api/calendar/availability/${slug}?date=${dateStr}&timezone=${bookerTimezone}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load availability");
+      return res.json();
+    },
+    enabled: !!dateStr,
+  });
+
+  const bookMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedDate || !selectedSlot) throw new Error("Select a time");
+      const scheduledAt = `${format(selectedDate, "yyyy-MM-dd")}T${selectedSlot}:00`;
+      const res = await apiRequest("POST", `/api/calendar/book/${slug}`, {
+        scheduledAt,
+        name,
+        email,
+        phone: phone || null,
+        notes: notes || null,
+        timezone: bookerTimezone,
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data?.publicToken) {
+        setBooking(data);
+        setStep("confirmed");
+      }
+    },
+  });
+
+  if (pageLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-5 h-5 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (step === "confirmed" && booking) {
+    const start = new Date(booking.scheduledAt);
+    return (
+      <div className="text-center py-4 space-y-3">
+        <div className="w-12 h-12 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
+          <Check className="w-6 h-6 text-primary" />
+        </div>
+        <p className="font-semibold text-sm" data-testid="text-booking-confirmed-inline">Booking Confirmed!</p>
+        <div className="text-sm text-muted-foreground space-y-1">
+          <p>{format(start, "EEEE, MMMM d, yyyy")}</p>
+          <p>{format(start, "h:mm a")} ({booking.duration || pageInfo?.meetingDuration || 30} min)</p>
+        </div>
+        {booking.publicToken && (
+          <a
+            href={`/booking/${booking.publicToken}`}
+            className="text-sm text-primary hover:underline font-medium inline-block mt-2"
+            data-testid="link-manage-booking-inline"
+          >
+            Manage or reschedule
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  if (step === "form" && selectedDate && selectedSlot) {
+    return (
+      <div className="space-y-3 py-2">
+        <button
+          onClick={() => setStep("date")}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          data-testid="button-back-to-dates-inline"
+        >
+          <ChevronLeft className="w-3 h-3" />
+          Back
+        </button>
+        <div className="bg-muted/50 rounded-lg p-3 flex items-center gap-2 text-sm">
+          <CalendarCheck className="w-4 h-4 text-primary shrink-0" />
+          <span className="font-medium">{format(selectedDate, "EEE, MMM d")}</span>
+          <span className="text-muted-foreground">at {formatTime12(selectedSlot)}</span>
+        </div>
+        <form onSubmit={(e) => { e.preventDefault(); bookMutation.mutate(); }} className="space-y-3">
+          <div className="space-y-1">
+            <Label className="text-xs font-medium">Name *</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} required className="h-9 text-sm" data-testid="input-book-name-inline" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs font-medium">Email *</Label>
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-9 text-sm" data-testid="input-book-email-inline" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs font-medium">Phone</Label>
+            <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="h-9 text-sm" data-testid="input-book-phone-inline" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs font-medium">Notes</Label>
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="text-sm resize-none" placeholder="Anything you'd like to share..." data-testid="input-book-notes-inline" />
+          </div>
+          {bookMutation.isError && (
+            <p className="text-xs text-destructive">{(bookMutation.error as Error).message}</p>
+          )}
+          <Button
+            type="submit"
+            className="w-full h-10 text-sm font-semibold text-white"
+            style={{ backgroundColor: brandColor }}
+            disabled={bookMutation.isPending}
+            data-testid="button-confirm-booking-inline"
+          >
+            {bookMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm Booking"}
+          </Button>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 py-1" data-testid="inline-booking-calendar">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Clock className="w-3.5 h-3.5" />
+        <span>{pageInfo?.meetingDuration || 30} min</span>
+        <span className="mx-1">·</span>
+        <Video className="w-3.5 h-3.5" />
+        <span>Video call</span>
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
+            data-testid="button-prev-month-inline"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </Button>
+          <span className="text-sm font-semibold">{format(currentMonth, "MMMM yyyy")}</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
+            data-testid="button-next-month-inline"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-7 gap-0.5 text-center">
+          {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
+            <div key={d} className="text-[10px] font-medium text-muted-foreground/60 py-1 uppercase">{d}</div>
+          ))}
+          {calendarDays.map((day, i) => {
+            const isPast = isBefore(day.date, today) && !isToday(day.date);
+            const isSelected = selectedDate && isSameDay(day.date, selectedDate);
+            const isCurrentMonthDay = day.isCurrentMonth && isSameMonth(day.date, currentMonth);
+            const noAvailability = isCurrentMonthDay && !isPast && !availableDaySet.has(day.date.getDate());
+            const isDisabled = isPast || !day.isCurrentMonth || noAvailability;
+            const isTodayDate = isToday(day.date);
+            return (
+              <button
+                key={i}
+                onClick={() => { if (!isDisabled) { setSelectedDate(day.date); setSelectedSlot(null); } }}
+                disabled={isDisabled}
+                className={`relative w-8 h-8 rounded-full text-xs transition-all mx-auto flex items-center justify-center ${
+                  !day.isCurrentMonth ? "text-muted-foreground/20" :
+                  isPast || noAvailability ? "text-muted-foreground/30 cursor-not-allowed" :
+                  isSelected ? "bg-primary text-primary-foreground font-semibold shadow-md" :
+                  isTodayDate ? "text-primary font-semibold hover:bg-primary/10 cursor-pointer" :
+                  "hover:bg-muted cursor-pointer text-foreground/80"
+                }`}
+                data-testid={`day-inline-${format(day.date, "yyyy-MM-dd")}`}
+              >
+                {day.date.getDate()}
+                {isTodayDate && !isSelected && (
+                  <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {selectedDate && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-foreground/80">{format(selectedDate, "EEEE, MMMM d")}</p>
+          {slotsLoading ? (
+            <div className="flex justify-center py-4">
+              <Loader2 className="w-4 h-4 animate-spin text-primary" />
+            </div>
+          ) : availability?.slots?.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-3">No available times on this date.</p>
+          ) : (
+            <div className="grid grid-cols-3 gap-1.5">
+              {availability?.slots?.map((slot: any) => (
+                <button
+                  key={slot.time}
+                  onClick={() => { setSelectedSlot(slot.time); setStep("form"); }}
+                  className="px-2 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer bg-muted/50 border border-border hover:bg-primary/10 hover:border-primary/40 text-foreground/80"
+                  data-testid={`slot-inline-${slot.time}`}
+                >
+                  {formatTime12(slot.time)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ConsultationBookingCard({
   card,
   brandColor,
@@ -235,11 +524,10 @@ function ConsultationBookingCard({
   onSchedule: (card: ConsultationCardData) => void;
 }) {
   if (card.memberBookingSlug) {
-    const bookingUrl = `/book/${card.memberBookingSlug}`;
     return (
       <div
-        className="w-full animate-[slideUp_0.4s_ease-out_forwards] overflow-hidden border border-border"
-        style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 480px)" }}
+        className="w-full animate-[slideUp_0.4s_ease-out_forwards] overflow-hidden border border-border bg-card"
+        style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 420px)" }}
         data-testid="consultation-booking-card"
       >
         <div className="p-1.5" style={{ backgroundColor: brandColor }}>
@@ -248,13 +536,13 @@ function ConsultationBookingCard({
             <span className="text-white text-xs font-semibold uppercase tracking-wider">Schedule a Free Consultation</span>
           </div>
         </div>
-        <iframe
-          src={bookingUrl}
-          className="w-full border-0 bg-background"
-          style={{ height: "680px", minWidth: "320px" }}
-          title={`Book consultation with ${card.memberName || card.providerName}`}
-          data-testid="booking-calendar-iframe"
-        />
+        <div className="px-4 pb-4">
+          <InlineBookingCalendar
+            slug={card.memberBookingSlug}
+            memberName={card.memberName || card.providerName}
+            brandColor={brandColor}
+          />
+        </div>
       </div>
     );
   }
