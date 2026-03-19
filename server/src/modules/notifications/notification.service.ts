@@ -127,6 +127,9 @@ export class NotificationService implements OnModuleInit {
       logoUrl: "",
       headingFont: "Playfair Display",
       bodyFont: "DM Sans",
+      buttonRadius: "8px",
+      headingFontStack: "'Playfair Display',Georgia,serif",
+      bodyFontStack: "'DM Sans',Arial,sans-serif",
     };
     try {
       const settings = await this.prisma.siteSettings.findFirst();
@@ -142,6 +145,12 @@ export class NotificationService implements OnModuleInit {
         defaults.logoUrl = s.logoWithNameUrl || s.logoUrl || "";
         defaults.headingFont = s.headingFont || defaults.headingFont;
         defaults.bodyFont = s.bodyFont || defaults.bodyFont;
+        const borderRadiusRem = typeof s.borderRadius === "number" ? s.borderRadius : 0.5;
+        defaults.buttonRadius = `${Math.round(borderRadiusRem * 16)}px`;
+        const hf = defaults.headingFont;
+        defaults.headingFontStack = `'${hf}',Georgia,serif`;
+        const bf = defaults.bodyFont;
+        defaults.bodyFontStack = `'${bf}',Arial,sans-serif`;
       }
     } catch {
     }
@@ -1629,18 +1638,19 @@ export class NotificationService implements OnModuleInit {
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background-color:#f5f5f0;font-family:'DM Sans',Arial,sans-serif;">
+<body style="margin:0;padding:0;background-color:#f5f5f0;font-family:${brandData.bodyFontStack};">
 <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f0;padding:40px 20px;">
 <tr><td align="center">
 <table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;">
 <tr><td style="background-color:${brandData.brandColor};padding:30px;text-align:center;">
-<h1 style="color:#ffffff;font-family:'Playfair Display',Georgia,serif;font-size:24px;margin:0;">${companyName}</h1>
+${brandData.logoUrl ? `<img src="${brandData.logoUrl}" alt="${companyName}" style="max-height:40px;margin-bottom:8px;" />` : ""}
+<h1 style="color:#ffffff;font-family:${brandData.headingFontStack};font-size:24px;margin:0;">${companyName}</h1>
 </td></tr>
 <tr><td style="padding:40px 30px;">
-<h2 style="font-family:'Playfair Display',Georgia,serif;color:${brandData.brandColor};font-size:22px;margin:0 0 16px;">Reset Your Password</h2>
+<h2 style="font-family:${brandData.headingFontStack};color:${brandData.brandColor};font-size:22px;margin:0 0 16px;">Reset Your Password</h2>
 <p style="color:#333;font-size:15px;line-height:1.6;margin:0 0 12px;">Hi ${firstName},</p>
 <p style="color:#333;font-size:15px;line-height:1.6;margin:0 0 24px;">We received a request to reset your password. Click the button below to create a new password. This link will expire in 1 hour.</p>
-<table cellpadding="0" cellspacing="0" style="margin:0 auto 24px;"><tr><td style="background-color:${brandData.brandColor};border-radius:8px;padding:14px 32px;">
+<table cellpadding="0" cellspacing="0" style="margin:0 auto 24px;"><tr><td style="background-color:${brandData.brandColor};border-radius:${brandData.buttonRadius};padding:14px 32px;">
 <a href="${resetLink}" style="color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;display:inline-block;">Reset Password</a>
 </td></tr></table>
 <p style="color:#666;font-size:13px;line-height:1.5;margin:0 0 8px;">If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
@@ -1741,15 +1751,16 @@ export class NotificationService implements OnModuleInit {
     const submitterEmail = this.escapeHtml(params.submitterEmail);
     const reviewUrl = `${getBaseUrl()}/admin/providers/${params.providerId}?tab=costs`;
     const subject = `Cost Sheet Submitted — ${params.providerName} (v${params.version})`;
-    const btnStyle = `display:inline-block;background:${brandData.brandColor};color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px;`;
+    const btnStyle = `display:inline-block;background:${brandData.brandColor};color:#fff;padding:12px 24px;border-radius:${brandData.buttonRadius};text-decoration:none;font-weight:600;font-size:14px;`;
     const html = `
 <!DOCTYPE html>
-<html><body style="font-family:Arial,sans-serif;color:#333;max-width:600px;margin:0 auto;padding:20px;">
+<html><body style="font-family:${brandData.bodyFontStack};color:#333;max-width:600px;margin:0 auto;padding:20px;">
 <div style="background:${brandData.brandColor};padding:20px;border-radius:8px 8px 0 0;">
-  <h2 style="color:#fff;margin:0;">${this.escapeHtml(brandData.companyName)}</h2>
+  ${brandData.logoUrl ? `<img src="${brandData.logoUrl}" alt="${this.escapeHtml(brandData.companyName)}" style="max-height:32px;margin-bottom:6px;" />` : ""}
+  <h2 style="color:#fff;margin:0;font-family:${brandData.headingFontStack};">${this.escapeHtml(brandData.companyName)}</h2>
 </div>
 <div style="border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 8px 8px;">
-  <h3 style="margin-top:0;">New Cost Sheet Submitted</h3>
+  <h3 style="margin-top:0;font-family:${brandData.headingFontStack};">New Cost Sheet Submitted</h3>
   <p><strong>${providerName}</strong> has submitted a cost sheet for review.</p>
   <table style="width:100%;border-collapse:collapse;margin:16px 0;">
     <tr><td style="padding:8px 0;border-bottom:1px solid #eee;color:#666;">Submitted by</td><td style="padding:8px 0;border-bottom:1px solid #eee;">${submitterName} (${submitterEmail})</td></tr>
@@ -1782,15 +1793,16 @@ export class NotificationService implements OnModuleInit {
     const providerName = this.escapeHtml(params.providerName);
     const viewUrl = `${getBaseUrl()}/account/costs`;
     const subject = `Cost Sheet Approved — Now Live`;
-    const btnStyle = `display:inline-block;background:${brandData.brandColor};color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px;`;
+    const btnStyle = `display:inline-block;background:${brandData.brandColor};color:#fff;padding:12px 24px;border-radius:${brandData.buttonRadius};text-decoration:none;font-weight:600;font-size:14px;`;
     const html = `
 <!DOCTYPE html>
-<html><body style="font-family:Arial,sans-serif;color:#333;max-width:600px;margin:0 auto;padding:20px;">
+<html><body style="font-family:${brandData.bodyFontStack};color:#333;max-width:600px;margin:0 auto;padding:20px;">
 <div style="background:${brandData.brandColor};padding:20px;border-radius:8px 8px 0 0;">
-  <h2 style="color:#fff;margin:0;">${this.escapeHtml(brandData.companyName)}</h2>
+  ${brandData.logoUrl ? `<img src="${brandData.logoUrl}" alt="${this.escapeHtml(brandData.companyName)}" style="max-height:32px;margin-bottom:6px;" />` : ""}
+  <h2 style="color:#fff;margin:0;font-family:${brandData.headingFontStack};">${this.escapeHtml(brandData.companyName)}</h2>
 </div>
 <div style="border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 8px 8px;">
-  <h3 style="margin-top:0;">Cost Sheet Approved</h3>
+  <h3 style="margin-top:0;font-family:${brandData.headingFontStack};">Cost Sheet Approved</h3>
   <p>Great news! Your cost sheet (v${params.version}) for <strong>${providerName}</strong> has been approved by the admin team.</p>
   <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-left:4px solid #22C55E;padding:16px;border-radius:4px;margin:16px 0;">
     <strong style="color:#166534;">Your updated costs are now live on your GoStork profile.</strong>
@@ -1828,15 +1840,16 @@ export class NotificationService implements OnModuleInit {
     const feedback = this.escapeHtml(params.feedback);
     const viewUrl = `${getBaseUrl()}/account/costs`;
     const subject = `Cost Sheet Rejected — Action Required`;
-    const btnStyle = `display:inline-block;background:${brandData.brandColor};color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px;`;
+    const btnStyle = `display:inline-block;background:${brandData.brandColor};color:#fff;padding:12px 24px;border-radius:${brandData.buttonRadius};text-decoration:none;font-weight:600;font-size:14px;`;
     const html = `
 <!DOCTYPE html>
-<html><body style="font-family:Arial,sans-serif;color:#333;max-width:600px;margin:0 auto;padding:20px;">
+<html><body style="font-family:${brandData.bodyFontStack};color:#333;max-width:600px;margin:0 auto;padding:20px;">
 <div style="background:${brandData.brandColor};padding:20px;border-radius:8px 8px 0 0;">
-  <h2 style="color:#fff;margin:0;">${this.escapeHtml(brandData.companyName)}</h2>
+  ${brandData.logoUrl ? `<img src="${brandData.logoUrl}" alt="${this.escapeHtml(brandData.companyName)}" style="max-height:32px;margin-bottom:6px;" />` : ""}
+  <h2 style="color:#fff;margin:0;font-family:${brandData.headingFontStack};">${this.escapeHtml(brandData.companyName)}</h2>
 </div>
 <div style="border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 8px 8px;">
-  <h3 style="margin-top:0;">Cost Sheet Rejected</h3>
+  <h3 style="margin-top:0;font-family:${brandData.headingFontStack};">Cost Sheet Rejected</h3>
   <p>Your cost sheet (v${params.version}) for <strong>${providerName}</strong> has been rejected by the admin team.</p>
   <div style="background:#FEF2F2;border:1px solid #FECACA;border-left:4px solid #EF4444;padding:16px;border-radius:4px;margin:16px 0;">
     <strong style="color:#991B1B;">Admin Feedback:</strong>
