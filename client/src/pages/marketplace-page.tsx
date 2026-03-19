@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Search, Loader2, Calendar, User, MapPin, Award, Star, Clock, Info, X, Baby, FlaskRound } from "lucide-react";
+import { Search, Loader2, Calendar, User, MapPin, Award, Heart, Clock, Info, X, Baby, FlaskRound } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { matchesFilter, matchesSameSexCoupleRequirement, matchesInternationalRequirement, omniSearch, sortDonors } from "@/lib/marketplace-filters";
 import { useAppSelector, useAppDispatch } from "@/store";
@@ -706,7 +706,7 @@ function MobileFilterOverlay({ providerType, activeFilters, hasResults = true }:
                 className="shrink-0 w-7 h-7 flex items-center justify-center"
                 data-testid="chip-favorites"
               >
-                <Star className={`w-5 h-5 transition-colors ${showFavoritesOnly ? iconColor : iconColorMuted}`} fill={showFavoritesOnly ? "currentColor" : "none"} />
+                <Heart className={`w-5 h-5 transition-colors ${showFavoritesOnly ? iconColor : iconColorMuted}`} fill={showFavoritesOnly ? "currentColor" : "none"} />
               </button>
               <button
                 onClick={() => dispatch(setShowSkippedOnly(!showSkippedOnly))}

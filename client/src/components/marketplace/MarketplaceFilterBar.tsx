@@ -7,7 +7,7 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
-import { Search, ArrowUpDown, X, Star, ChevronDown, Plus, MapPin, Award } from "lucide-react";
+import { Search, ArrowUpDown, X, Heart, ChevronDown, Plus, MapPin, Award } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAppSelector, useAppDispatch } from "@/store";
 import { setMarketplaceSearchQuery, setMarketplaceSortBy, setFilter, clearFilters, setShowFavoritesOnly, setShowSkippedOnly, setShowExperiencedOnly } from "@/store/uiSlice";
@@ -1391,7 +1391,7 @@ export function MarketplaceFilterBar({
             data-testid="button-favorites"
             title="Favorites only"
           >
-            <Star className="w-3.5 h-3.5" fill={showFavoritesOnly ? "currentColor" : "none"} />
+            <Heart className="w-3.5 h-3.5" fill={showFavoritesOnly ? "currentColor" : "none"} />
           </Button>
 
           <Button
@@ -1585,7 +1585,7 @@ export function MarketplaceFilterBar({
             data-testid="button-favorites"
             title="Favorites only"
           >
-            <Star className="w-3.5 h-3.5" fill={showFavoritesOnly ? "currentColor" : "none"} />
+            <Heart className="w-3.5 h-3.5" fill={showFavoritesOnly ? "currentColor" : "none"} />
           </Button>
 
           <Button
