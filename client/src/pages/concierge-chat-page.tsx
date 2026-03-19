@@ -2342,6 +2342,39 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               </div>
             );
           })()}
+          {!externalBookingSlug && !conciergeBookingSlug && (() => {
+            const activeBooking = sessionBookings
+              ?.filter((b: any) => b.status === "PENDING" || b.status === "CONFIRMED")
+              .sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())[0];
+            if (!activeBooking) return null;
+            const consultMsg = messages.find((m: any) => m.consultationCard?.providerId === activeBooking.providerUser?.provider?.id && m.consultationCard?.memberBookingSlug);
+            const slug = consultMsg?.consultationCard?.memberBookingSlug;
+            if (!slug) return null;
+            return (
+              <div className="px-1 pb-2">
+                <div
+                  className="w-full overflow-hidden border border-border bg-card"
+                  style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 420px)" }}
+                  data-testid="bottom-booking-status-card"
+                >
+                  <div className="p-1.5" style={{ backgroundColor: brandColor }}>
+                    <div className="flex items-center gap-2 px-3 py-1.5">
+                      <CalendarCheck className="w-4 h-4 text-white" />
+                      <span className="text-white text-xs font-semibold uppercase tracking-wider">Meeting Scheduled</span>
+                    </div>
+                  </div>
+                  <div className="px-4 pb-4">
+                    <InlineBookingCalendar
+                      slug={slug}
+                      memberName={consultMsg?.consultationCard?.memberName || consultMsg?.consultationCard?.providerName || "Provider"}
+                      brandColor={brandColor}
+                      existingBooking={activeBooking}
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           <div ref={messagesEndRef} />
         </div>
 
