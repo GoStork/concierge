@@ -1974,12 +1974,20 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       .replace(/\[Service\]/gi, service)
       .replace(/\[Location\]/gi, location);
 
+    let greetingMatchCards: MatchCard[] | undefined;
     if (donorIdParam) {
       const donorLabel = donorTypeParam === "surrogate" ? "Surrogate" : donorTypeParam === "sperm-donor" ? "Sperm Donor" : "Egg Donor";
       greeting = `Hi ${firstName}! I see you're interested in learning more about a ${donorLabel} profile. I'd love to help you with any questions you have. Do you have a specific question about this ${donorLabel.toLowerCase()}?`;
+      greetingMatchCards = [{
+        name: donorLabel,
+        type: donorLabel,
+        providerId: donorIdParam,
+        ownerProviderId: donorProviderIdParam || undefined,
+        reasons: [],
+      }];
     }
 
-    setMessages([{ role: "assistant", content: greeting, createdAt: new Date().toISOString() }]);
+    setMessages([{ role: "assistant", content: greeting, createdAt: new Date().toISOString(), matchCards: greetingMatchCards }]);
     setGreetingSet(true);
 
     (async () => {
@@ -2302,6 +2310,21 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 const alignRight = isOwnMessage || (!isOtherParent && msg.role === "user");
                 return (
                   <>
+                    {!alignRight && msg.matchCards && msg.matchCards.length > 0 && (
+                      <div className="flex justify-start mb-2 ml-0">
+                        <div className="space-y-3">
+                          {msg.matchCards.map((card, ci) => (
+                            <MatchCardComponent
+                              key={ci}
+                              card={card}
+                              brandColor={brandColor}
+                              onAction={handleQuickReply}
+                              onViewProfile={handleViewProfile}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {!alignRight && (
                       <div className="flex justify-start mb-0.5">
                         <span className="text-[11px] font-medium text-muted-foreground" data-testid={`name-label-${i}`}>
@@ -2368,22 +2391,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               {msg.prepDoc && (
                 <div className="flex justify-start mt-3 ml-0">
                   <PrepDocCard brandColor={brandColor} />
-                </div>
-              )}
-
-              {msg.matchCards && msg.matchCards.length > 0 && (
-                <div className="flex justify-start mt-3 ml-0">
-                  <div className="space-y-3">
-                    {msg.matchCards.map((card, ci) => (
-                      <MatchCardComponent
-                        key={ci}
-                        card={card}
-                        brandColor={brandColor}
-                        onAction={handleQuickReply}
-                        onViewProfile={handleViewProfile}
-                      />
-                    ))}
-                  </div>
                 </div>
               )}
 
