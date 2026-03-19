@@ -862,7 +862,7 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
       where: {
         parentUserId: { in: parentAccountUserIds },
         providerUserId: { in: providerUserIds },
-        status: { in: ["PENDING", "CONFIRMED"] },
+        status: { in: ["PENDING", "CONFIRMED", "CANCELLED", "RESCHEDULED"] },
       },
       include: {
         providerUser: {

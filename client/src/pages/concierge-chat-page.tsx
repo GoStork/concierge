@@ -2208,9 +2208,16 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                     card={msg.consultationCard}
                     brandColor={brandColor}
                     onSchedule={(c) => setBookingCard(c)}
-                    existingBooking={sessionBookings?.find(
-                      (b: any) => b.providerUser?.provider?.id === msg.consultationCard?.providerId
-                    )}
+                    existingBooking={(() => {
+                      if (!sessionBookings) return undefined;
+                      const providerBookings = sessionBookings.filter(
+                        (b: any) => b.providerUser?.provider?.id === msg.consultationCard?.providerId
+                      );
+                      return providerBookings.find((b: any) => b.status === "CONFIRMED")
+                        || providerBookings.find((b: any) => b.status === "PENDING")
+                        || providerBookings.find((b: any) => b.status === "CANCELLED")
+                        || providerBookings[0];
+                    })()}
                   />
                 </div>
               )}
