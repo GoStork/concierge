@@ -1584,6 +1584,17 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     refetchInterval: 10000,
   });
 
+  const { data: sessionCalendarSlug } = useQuery<{ slug: string | null; memberName: string | null }>({
+    queryKey: ["/api/chat-session", sessionId, "provider-calendar-slug"],
+    queryFn: async () => {
+      const res = await fetch(`/api/chat-session/${sessionId}/provider-calendar-slug`, { credentials: "include" });
+      if (!res.ok) return { slug: null, memberName: null };
+      return res.json();
+    },
+    enabled: !!sessionId,
+    staleTime: 60000,
+  });
+
   const myDisplayName = useMemo(() => {
     const u = user as any;
     if (!u?.name) return "";
@@ -2328,9 +2339,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               || sessionBookings.find((b: any) => b.status === "CANCELLED")
               || sessionBookings[0];
             if (!activeBooking) return null;
-            const bk = activeBooking as any;
-            const statusColor = bk.status === "CONFIRMED" ? "#10B981" : bk.status === "PENDING" ? "#F59E0B" : bk.status === "CANCELLED" ? "#EF4444" : brandColor;
-            const statusLabel = bk.status === "CONFIRMED" ? "Confirmed" : bk.status === "PENDING" ? "Pending Approval" : bk.status === "CANCELLED" ? "Cancelled" : bk.status;
             return (
               <div className="px-1 pb-2" data-testid="parent-standalone-booking-card">
                 <div
@@ -2340,39 +2348,18 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   <div className="p-1.5" style={{ backgroundColor: brandColor }}>
                     <div className="flex items-center gap-2 px-3 py-1.5">
                       <CalendarCheck className="w-4 h-4 text-white" />
-                      <span className="text-white text-xs font-semibold uppercase tracking-wider">Meeting {statusLabel}</span>
+                      <span className="text-white text-xs font-semibold uppercase tracking-wider">
+                        {activeBooking.status === "CANCELLED" ? "Meeting Cancelled" : "Meeting Scheduled"}
+                      </span>
                     </div>
                   </div>
-                  <div className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: statusColor }} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold">{bk.subject || "Consultation"}</p>
-                        {bk.scheduledAt && (
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(bk.scheduledAt).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
-                            {" at "}
-                            {new Date(bk.scheduledAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
-                          </p>
-                        )}
-                        {bk.providerUser?.name && (
-                          <p className="text-xs text-muted-foreground">with {bk.providerUser.name}</p>
-                        )}
-                      </div>
-                    </div>
-                    {bk.status === "CONFIRMED" && bk.id && (
-                      <a
-                        href={`/room/${bk.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-3 flex items-center justify-center gap-2 w-full py-2 rounded-lg text-sm font-medium text-white transition-colors"
-                        style={{ backgroundColor: brandColor }}
-                        data-testid="btn-join-video-room"
-                      >
-                        <Video className="w-4 h-4" />
-                        Join Video Room
-                      </a>
-                    )}
+                  <div className="px-4 pb-4">
+                    <InlineBookingCalendar
+                      slug={sessionCalendarSlug?.slug || "__none__"}
+                      memberName={sessionCalendarSlug?.memberName || activeBooking.providerUser?.name || "Provider"}
+                      brandColor={brandColor}
+                      existingBooking={activeBooking}
+                    />
                   </div>
                 </div>
               </div>
