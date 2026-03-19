@@ -769,49 +769,70 @@ export default function ConversationsPage() {
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" data-testid="provider-chat-messages">
               {detail.messages.map((msg, i) => (
                 <div key={msg.id}>
-                  {msg.role === "assistant" && msg.senderType === "human" && (
-                    <div className="flex items-center gap-1.5 mb-1 ml-1">
-                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white bg-muted-foreground">GoStork Expert</div>
-                      {msg.senderName && <span className="text-[11px] text-muted-foreground">{msg.senderName}</span>}
-                    </div>
-                  )}
-                  {msg.role === "assistant" && msg.senderType === "provider" && (
-                    <div className="flex items-center gap-1.5 mb-1 ml-1">
-                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: brandColor }}>{msg.senderName || "Agency Expert"}</div>
-                    </div>
-                  )}
-                  {msg.role === "assistant" && msg.senderType === "system" && (
-                    <div className="flex items-center gap-1.5 mb-1 ml-1">
-                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--accent))] text-white">Eva</div>
-                    </div>
-                  )}
+                  {(() => {
+                    const ownMsg = isProvider ? msg.senderType === "provider" : msg.role === "user";
+                    if (ownMsg) return null;
+                    if (msg.senderType === "human") return (
+                      <div className="flex items-center gap-1.5 mb-1 ml-1">
+                        <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white bg-muted-foreground">GoStork Expert</div>
+                        {msg.senderName && <span className="text-[11px] text-muted-foreground">{msg.senderName}</span>}
+                      </div>
+                    );
+                    if (msg.senderType === "provider") return (
+                      <div className="flex items-center gap-1.5 mb-1 ml-1">
+                        <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: brandColor }}>{msg.senderName || "Agency Expert"}</div>
+                      </div>
+                    );
+                    if (msg.senderType === "system") return (
+                      <div className="flex items-center gap-1.5 mb-1 ml-1">
+                        <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--accent))] text-white">Eva</div>
+                      </div>
+                    );
+                    if (msg.role === "user" && isProvider) return (
+                      <div className="flex items-center gap-1.5 mb-1 ml-1">
+                        <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-500 text-white">{msg.senderName || detail?.user?.name || "Parent"}</div>
+                      </div>
+                    );
+                    return null;
+                  })()}
                   {msg.uiCardData?.whisperMatchCard && (
                     <WhisperProfileCard card={msg.uiCardData.whisperMatchCard} brandColor={brandColor} />
                   )}
-                  <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div
-                      className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-base leading-relaxed font-ui ${
-                        msg.role === "user"
-                          ? "bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))]"
-                          : msg.senderType === "provider"
-                          ? "text-foreground border-2"
-                          : msg.senderType === "human"
-                          ? "bg-muted text-foreground"
-                          : msg.senderType === "system"
-                          ? "bg-[hsl(var(--accent))]/10 text-[hsl(var(--accent))] border border-[hsl(var(--accent))]/30"
-                          : "bg-muted text-foreground"
-                      }`}
-                      style={msg.senderType === "provider" ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : undefined}
-                      data-testid={`provider-msg-${i}`}
-                    >
-                      {msg.content}
-                    </div>
-                  </div>
-                  <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} mt-0.5`}>
-                    <span className="text-[10px] text-muted-foreground">
-                      {msg.role === "user" ? (msg.senderName || (() => { const parts = (detail?.user?.name || "").trim().split(/\s+/); return parts.length >= 2 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0] || "Parent"; })()) : msg.senderType === "provider" ? (msg.senderName || "You") : msg.senderType === "human" ? "GoStork" : msg.senderType === "system" ? "System" : "AI"} · {timeAgo(msg.createdAt)}
-                    </span>
-                  </div>
+                  {(() => {
+                    const isOwnMessage = isProvider
+                      ? msg.senderType === "provider"
+                      : msg.role === "user";
+                    return (
+                      <>
+                        <div className={`flex ${isOwnMessage ? "justify-end" : "justify-start"}`}>
+                          <div
+                            className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-base leading-relaxed font-ui ${
+                              isOwnMessage
+                                ? "bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))]"
+                                : msg.senderType === "provider"
+                                ? "text-foreground border-2"
+                                : msg.role === "user"
+                                ? "text-foreground border-2 border-blue-200 bg-blue-50/50"
+                                : msg.senderType === "human"
+                                ? "bg-muted text-foreground"
+                                : msg.senderType === "system"
+                                ? "bg-[hsl(var(--accent))]/10 text-[hsl(var(--accent))] border border-[hsl(var(--accent))]/30"
+                                : "bg-muted text-foreground"
+                            }`}
+                            style={!isOwnMessage && msg.senderType === "provider" ? { borderColor: brandColor, backgroundColor: `${brandColor}08` } : undefined}
+                            data-testid={`provider-msg-${i}`}
+                          >
+                            {msg.content}
+                          </div>
+                        </div>
+                        <div className={`flex ${isOwnMessage ? "justify-end" : "justify-start"} mt-0.5`}>
+                          <span className="text-[10px] text-muted-foreground">
+                            {msg.role === "user" ? (msg.senderName || (() => { const parts = (detail?.user?.name || "").trim().split(/\s+/); return parts.length >= 2 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0] || "Parent"; })()) : msg.senderType === "provider" ? (msg.senderName || "You") : msg.senderType === "human" ? "GoStork" : msg.senderType === "system" ? "System" : "AI"} · {timeAgo(msg.createdAt)}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               ))}
               <div ref={chatEndRef} />
