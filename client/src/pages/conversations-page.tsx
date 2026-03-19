@@ -1113,10 +1113,10 @@ export default function ConversationsPage() {
                       : msg.senderType === "provider"
                       ? (msg.senderName || "Agency Expert")
                       : msg.senderType === "system"
-                      ? "System"
+                      ? "GoStork AI Concierge"
                       : msg.role === "user"
                       ? (msg.senderName || detail?.user?.name || "Parent")
-                      : "AI";
+                      : "GoStork AI Concierge";
                     if (isOwnMsg) return null;
                     return (
                       <div className="flex justify-start mb-0.5">
