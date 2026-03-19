@@ -324,7 +324,7 @@ export function SwipeDeckCard({
           </div>
 
           <div className={`absolute bottom-6 left-0 right-0 px-4 z-[35] flex items-center justify-center gap-3 ${readOnly ? "hidden" : ""}`} data-testid={`action-row-${id}`}>
-            {!chatMode && (
+            {!chatMode && !disableSwipe && (
               <Button
                 variant="ghost"
                 size="icon"
