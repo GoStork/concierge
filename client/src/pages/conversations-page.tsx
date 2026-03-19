@@ -1339,12 +1339,45 @@ export default function ConversationsPage() {
         <div className="flex flex-1 min-h-0 overflow-hidden">
           <div className="flex-1 flex flex-col min-h-0">
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" data-testid="provider-chat-messages">
-              {detail.messages.map((msg, i) => (
+              {(() => {
+                const allBookings = sessionBookingsQuery.data || [];
+                const hasActive = allBookings.some((b: any) => b.status === "PENDING" || b.status === "CONFIRMED");
+                const visibleBookings = hasActive
+                  ? allBookings.filter((b: any) => b.status !== "CANCELLED" && b.status !== "DECLINED" && b.status !== "RESCHEDULED")
+                  : allBookings.slice(0, 1);
+                const bookingItems: Array<{ type: "booking"; booking: any; createdAt: string }> = visibleBookings.map((b: any) => ({
+                  type: "booking" as const,
+                  booking: b,
+                  createdAt: b.createdAt || b.scheduledAt,
+                }));
+                const msgItems: Array<{ type: "message"; msg: any; createdAt: string }> = detail.messages.map((m: any) => ({
+                  type: "message" as const,
+                  msg: m,
+                  createdAt: m.createdAt,
+                }));
+                const merged = [...msgItems, ...bookingItems].sort(
+                  (a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+                );
+                return merged.map((item, i) => {
+                  if (item.type === "booking") {
+                    return (
+                      <InlineBookingNotification
+                        key={`booking-${item.booking.id}`}
+                        booking={item.booking}
+                        brandColor={brandColor}
+                        onUpdate={() => sessionBookingsQuery.refetch()}
+                      />
+                    );
+                  }
+                  const msg = item.msg;
+                  const msgIdx = detail.messages.indexOf(msg);
+                  return (
                 <div key={msg.id}>
                   {msg.createdAt && (() => {
                     const msgDate = new Date(msg.createdAt).toDateString();
-                    const prevDate = i > 0 && detail.messages[i - 1].createdAt ? new Date(detail.messages[i - 1].createdAt).toDateString() : null;
-                    if (i === 0 || msgDate !== prevDate) {
+                    const prevMsgItem = merged.slice(0, i).reverse().find((x) => x.type === "message");
+                    const prevDate = prevMsgItem ? new Date(prevMsgItem.createdAt).toDateString() : null;
+                    if (!prevDate || msgDate !== prevDate) {
                       return (
                         <div className="flex items-center justify-center my-3">
                           <span className="px-3 py-1 text-[11px] font-medium text-muted-foreground bg-muted/60 rounded-full shadow-sm">
@@ -1427,25 +1460,8 @@ export default function ConversationsPage() {
                     );
                   })()}
                 </div>
-              ))}
-              {(() => {
-                const allBookings = sessionBookingsQuery.data || [];
-                const hasActive = allBookings.some((b: any) => b.status === "PENDING" || b.status === "CONFIRMED");
-                const visible = hasActive
-                  ? allBookings.filter((b: any) => b.status !== "CANCELLED" && b.status !== "DECLINED" && b.status !== "RESCHEDULED")
-                  : allBookings.slice(0, 1);
-                const sorted = [...visible].sort((a: any, b: any) => {
-                  const order: Record<string, number> = { CANCELLED: 0, DECLINED: 0, RESCHEDULED: 0, PENDING: 1, CONFIRMED: 2 };
-                  return (order[a.status] || 0) - (order[b.status] || 0);
+                  );
                 });
-                return sorted.map((booking: any) => (
-                  <InlineBookingNotification
-                    key={booking.id}
-                    booking={booking}
-                    brandColor={brandColor}
-                    onUpdate={() => sessionBookingsQuery.refetch()}
-                  />
-                ));
               })()}
               <div ref={chatEndRef} />
             </div>
