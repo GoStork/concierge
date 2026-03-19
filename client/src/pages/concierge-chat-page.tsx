@@ -21,7 +21,7 @@ import {
   buildStatusLabel,
   getPhotoList,
 } from "@/components/marketplace/swipe-mappers";
-import { Loader2, Send, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip } from "lucide-react";
+import { Loader2, Send, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus } from "lucide-react";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -288,7 +288,26 @@ export function InlineBookingCalendar({
   const [email, setEmail] = useState(user ? (user as any).email || "" : "");
   const [phone, setPhone] = useState(user ? (user as any).mobileNumber || "" : "");
   const [notes, setNotes] = useState("");
+  const [additionalAttendees, setAdditionalAttendees] = useState<{ email: string; name: string; phone: string }[]>([]);
+  const [showAttendeeFields, setShowAttendeeFields] = useState(false);
+  const [newAttendeeEmail, setNewAttendeeEmail] = useState("");
+  const [newAttendeeName, setNewAttendeeName] = useState("");
+  const [newAttendeePhone, setNewAttendeePhone] = useState("");
   const [booking, setBooking] = useState<any>(null);
+
+  function addAttendee() {
+    const trimmed = newAttendeeEmail.trim().toLowerCase();
+    if (!trimmed || !/\S+@\S+\.\S+/.test(trimmed)) return;
+    if (additionalAttendees.some(a => a.email === trimmed)) return;
+    setAdditionalAttendees([...additionalAttendees, { email: trimmed, name: newAttendeeName.trim(), phone: newAttendeePhone.trim() }]);
+    setNewAttendeeEmail("");
+    setNewAttendeeName("");
+    setNewAttendeePhone("");
+  }
+
+  function removeAttendee(emailToRemove: string) {
+    setAdditionalAttendees(additionalAttendees.filter(a => a.email !== emailToRemove));
+  }
 
   const dateStr = selectedDate ? format(selectedDate, "yyyy-MM-dd") : null;
   const monthStr = format(currentMonth, "yyyy-MM");
@@ -332,14 +351,26 @@ export function InlineBookingCalendar({
     mutationFn: async () => {
       if (!selectedDate || !selectedSlot) throw new Error("Select a time");
       const scheduledAt = `${format(selectedDate, "yyyy-MM-dd")}T${selectedSlot}:00`;
-      const res = await apiRequest("POST", `/api/calendar/book/${slug}`, {
+      const finalAttendees = [...additionalAttendees];
+      if (newAttendeeEmail.trim() && /\S+@\S+\.\S+/.test(newAttendeeEmail.trim())) {
+        const trimmed = newAttendeeEmail.trim().toLowerCase();
+        if (!finalAttendees.some(a => a.email === trimmed)) {
+          finalAttendees.push({ email: trimmed, name: newAttendeeName.trim(), phone: newAttendeePhone.trim() });
+        }
+      }
+      const body: any = {
         scheduledAt,
         name,
         email,
         phone: phone || null,
         notes: notes || null,
         timezone: bookerTimezone,
-      });
+      };
+      if (finalAttendees.length > 0) {
+        body.additionalAttendees = finalAttendees.map(a => a.email);
+        body.attendeeDetails = Object.fromEntries(finalAttendees.map(a => [a.email, { name: a.name, phone: a.phone }]));
+      }
+      const res = await apiRequest("POST", `/api/calendar/book/${slug}`, body);
       return res.json();
     },
     onSuccess: (data) => {
@@ -493,6 +524,134 @@ export function InlineBookingCalendar({
             <Label className="text-xs font-medium">Phone</Label>
             <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="h-9 text-sm" data-testid="input-book-phone-inline" />
           </div>
+
+          <div className="space-y-2">
+            {additionalAttendees.length > 0 && !showAttendeeFields && (
+              <div className="space-y-1.5">
+                {additionalAttendees.map((ae) => (
+                  <div
+                    key={ae.email}
+                    className="flex items-center gap-2 bg-primary/5 border border-primary/10 rounded-lg px-2.5 py-2"
+                    data-testid={`attendee-chip-inline-${ae.email}`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">{ae.name || ae.email}</p>
+                      {ae.name && <p className="text-[11px] text-muted-foreground truncate">{ae.email}</p>}
+                      {ae.phone && <p className="text-[11px] text-muted-foreground">{ae.phone}</p>}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeAttendee(ae.email)}
+                      className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                      data-testid={`button-remove-attendee-inline-${ae.email}`}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!showAttendeeFields ? (
+              <button
+                type="button"
+                onClick={() => setShowAttendeeFields(true)}
+                className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors font-medium"
+                data-testid="button-show-attendee-fields-inline"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                Add Additional Attendees
+              </button>
+            ) : (
+              <div className="space-y-2 bg-muted/30 border border-border rounded-lg p-3">
+                <Label className="flex items-center gap-1.5 text-xs font-medium">
+                  <UserPlus className="w-3.5 h-3.5" />
+                  Additional Attendees
+                </Label>
+                <p className="text-[10px] text-muted-foreground leading-tight">
+                  Invite others to this meeting. They'll receive all notifications.
+                </p>
+                {additionalAttendees.length > 0 && (
+                  <div className="space-y-1.5">
+                    {additionalAttendees.map((ae) => (
+                      <div
+                        key={ae.email}
+                        className="flex items-center gap-2 bg-primary/5 border border-primary/10 rounded-lg px-2.5 py-2"
+                        data-testid={`attendee-chip-inline-${ae.email}`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">{ae.name || ae.email}</p>
+                          {ae.name && <p className="text-[11px] text-muted-foreground truncate">{ae.email}</p>}
+                          {ae.phone && <p className="text-[11px] text-muted-foreground">{ae.phone}</p>}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeAttendee(ae.email)}
+                          className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                          data-testid={`button-remove-attendee-inline-${ae.email}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="space-y-1.5">
+                  <Input
+                    type="email"
+                    value={newAttendeeEmail}
+                    onChange={(e) => setNewAttendeeEmail(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); addAttendee(); }
+                    }}
+                    placeholder="Email address *"
+                    className="h-8 text-xs"
+                    data-testid="input-additional-attendee-inline"
+                  />
+                  <div className="flex gap-1.5">
+                    <Input
+                      type="text"
+                      value={newAttendeeName}
+                      onChange={(e) => setNewAttendeeName(e.target.value)}
+                      placeholder="Full Name (optional)"
+                      className="h-8 text-xs flex-1"
+                      data-testid="input-additional-attendee-name-inline"
+                    />
+                    <Input
+                      type="tel"
+                      value={newAttendeePhone}
+                      onChange={(e) => setNewAttendeePhone(e.target.value)}
+                      placeholder="Mobile (optional)"
+                      className="h-8 text-xs flex-1"
+                      data-testid="input-additional-attendee-phone-inline"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addAttendee}
+                    className="h-8 w-full gap-1.5 text-xs"
+                    disabled={!newAttendeeEmail.trim()}
+                    data-testid="button-add-attendee-inline"
+                  >
+                    <Plus className="w-3 h-3" />
+                    Add Attendee
+                  </Button>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowAttendeeFields(false)}
+                  className="h-6 w-full text-[11px] text-muted-foreground"
+                  data-testid="button-close-attendee-fields-inline"
+                >
+                  Done
+                </Button>
+              </div>
+            )}
+          </div>
+
           <div className="space-y-1">
             <Label className="text-xs font-medium">Notes</Label>
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="text-sm resize-none" placeholder="Anything you'd like to share..." data-testid="input-book-notes-inline" />
