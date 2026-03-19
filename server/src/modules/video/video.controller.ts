@@ -131,13 +131,13 @@ export class VideoController {
         });
         if (providerUser) {
           providerUserId = providerUser.id;
-          attendeeName = providerUser.name || null;
-          attendeeEmails = providerUser.email ? [providerUser.email] : [];
         }
       }
       if (!providerUserId) {
         throw new BadRequestException("No provider found for this session");
       }
+      attendeeName = user.name || null;
+      attendeeEmails = user.email ? [user.email] : [];
     }
 
     const room = await this.videoService.createRoom();

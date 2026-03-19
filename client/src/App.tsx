@@ -156,6 +156,7 @@ function AppRoutes() {
         <Route path="/booking/:token/decline" element={<BookingActionPage action="decline" />} />
         <Route path="/booking/:token/suggest-time" element={<BookingActionPage action="suggest-time" />} />
         <Route path="/booking/:token/manage" element={<BookingManagePage />} />
+        <Route path="/video/:bookingId" element={<VideoRoomPage />} />
         <Route path="/room/:bookingId" element={<VideoRoomPage />} />
         <Route path="/recordings/:bookingId" element={<ProtectedRoute><RecordingPage /></ProtectedRoute>} />
         <Route path="/booking/:bookingId" element={<BookingConfirmationPage />} />
