@@ -345,7 +345,7 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
     const after = req.query.after as string | undefined;
     const session = await prisma.aiChatSession.findUnique({
       where: { id: sessionId },
-      select: { userId: true, providerId: true },
+      select: { userId: true, providerId: true, title: true },
     });
     if (!session) return res.status(403).json({ message: "Forbidden" });
     const isOwner = session.userId === user.id;
@@ -376,7 +376,7 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       if (m.senderType === "system") return false;
       return true;
     });
-    res.json(filteredMessages);
+    res.json({ messages: filteredMessages, sessionTitle: session.title || null });
   } catch (e: any) {
     res.status(500).json({ message: e.message });
   }

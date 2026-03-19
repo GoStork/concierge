@@ -21,7 +21,7 @@ import {
   buildStatusLabel,
   getPhotoList,
 } from "@/components/marketplace/swipe-mappers";
-import { Loader2, Send, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check } from "lucide-react";
+import { Loader2, Send, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip } from "lucide-react";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -1012,6 +1012,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [greetingSet, setGreetingSet] = useState(false);
   const [providerInChat, setProviderInChat] = useState(false);
+  const [sessionTitle, setSessionTitle] = useState<string | null>(null);
 
   const myDisplayName = useMemo(() => {
     const u = user as any;
@@ -1049,7 +1050,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     try {
       const res = await fetch(`/api/ai-concierge/session/${sid}/messages`, { credentials: "include" });
       if (!res.ok) return;
-      const msgs = await res.json();
+      const data = await res.json();
+      const msgs = Array.isArray(data) ? data : (data.messages || []);
+      setSessionTitle(data.sessionTitle || null);
       if (msgs.length > 0) {
         const parsed: ChatMessage[] = msgs.map((m: any) => {
           const extras = m.uiCardData || {};
@@ -1152,7 +1155,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         const afterParam = lastPollTimeRef.current ? `?after=${encodeURIComponent(lastPollTimeRef.current)}` : "";
         const res = await fetch(`/api/ai-concierge/session/${sessionId}/messages${afterParam}`, { credentials: "include" });
         if (!res.ok) return;
-        const newMsgs = await res.json();
+        const rawData = await res.json();
+        const newMsgs = Array.isArray(rawData) ? rawData : (rawData.messages || []);
+        if (rawData.sessionTitle !== undefined) setSessionTitle(rawData.sessionTitle);
         const unseenMsgs = newMsgs.filter((m: any) => m.id && !knownMessageIds.current.has(m.id));
         if (unseenMsgs.length > 0) {
           unseenMsgs.forEach((m: any) => knownMessageIds.current.add(m.id));
@@ -1378,23 +1383,58 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               {selectedMatchmaker?.name.charAt(0) || "?"}
             </div>
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>
               {selectedMatchmaker?.name || "AI Concierge"}
             </h2>
+            {sessionTitle && (
+              <p className="text-[11px] font-ui text-muted-foreground truncate" data-testid="chat-subject-label">
+                Subject: {sessionTitle}
+              </p>
+            )}
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs gap-1.5 h-8"
-            style={{ borderColor: `${brandColor}30`, color: brandColor, borderRadius: "999px" }}
-            onClick={handleTalkToTeam}
-            disabled={sending || humanEscalated}
-            data-testid="btn-talk-to-team"
-          >
-            <Headphones className="w-3.5 h-3.5" />
-            {humanEscalated ? "Team Notified" : "Talk to GoStork Team"}
-          </Button>
+          <div className="flex items-center gap-1 shrink-0">
+            {sessionTitle && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 gap-1.5 font-ui text-xs"
+                  style={{ color: brandColor }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                  data-testid="btn-meeting"
+                >
+                  <CalendarDays className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Meeting</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 gap-1.5 font-ui text-xs"
+                  style={{ color: brandColor }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                  data-testid="btn-video"
+                >
+                  <Video className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Video</span>
+                </Button>
+              </>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5 h-8"
+              style={{ borderColor: `${brandColor}30`, color: brandColor, borderRadius: "999px" }}
+              onClick={handleTalkToTeam}
+              disabled={sending || humanEscalated}
+              data-testid="btn-talk-to-team"
+            >
+              <Headphones className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{humanEscalated ? "Team Notified" : "Talk to GoStork Team"}</span>
+            </Button>
+          </div>
         </div>}
 
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" data-testid="concierge-messages">
@@ -1583,22 +1623,33 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         </div>
 
         <div className="border-t px-4 py-3" data-testid="concierge-input-area">
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-10 w-10 p-0 shrink-0 rounded-full"
+              style={{ color: brandColor }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+              data-testid="btn-attach"
+            >
+              <Paperclip className="w-4 h-4" />
+            </Button>
             <Input
               placeholder={`Message ${selectedMatchmaker?.name || "AI Concierge"}...`}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={sending}
-              className="flex-1 !text-base font-ui"
+              className="flex-1 !text-base font-ui rounded-full"
               data-testid="input-concierge-message"
             />
             <Button
               size="sm"
               onClick={handleSend}
               disabled={!input.trim() || sending}
-              className="h-10 w-10 p-0"
-              style={{ borderRadius: "var(--radius, 0.5rem)" }}
+              className="h-10 w-10 p-0 rounded-full text-white shrink-0"
+              style={{ backgroundColor: brandColor }}
               data-testid="btn-send-message"
             >
               {sending ? (

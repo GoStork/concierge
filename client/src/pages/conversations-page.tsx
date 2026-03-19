@@ -10,6 +10,7 @@ import {
   ArrowLeft, MessageSquare, Send, User, Loader2, FileText,
   MapPin, Mail, CheckCircle2, UserPlus, Shield, ThumbsUp, ThumbsDown,
   Search, Sparkles, Building2, ChevronDown, MessageCircle, Clock,
+  CalendarDays, Video, Paperclip,
 } from "lucide-react";
 import { hasProviderRole } from "@shared/roles";
 import { useAppDispatch } from "@/store";
@@ -99,6 +100,7 @@ interface SessionDetail {
       } | null;
     } | null;
   };
+  title: string | null;
   messages: SessionMessage[];
 }
 
@@ -746,13 +748,42 @@ export default function ConversationsPage() {
                 )}
               </div>
             )}
-            <div>
+            <div className="min-w-0">
               <h3 className="font-semibold text-sm font-ui">{detail.user.name || "Prospective Parent"}</h3>
-              {!hasJoined && !isConsultationBooked && (
+              {detail.title ? (
+                <p className="text-[11px] font-ui text-muted-foreground truncate" data-testid="provider-subject-label">
+                  Subject: {detail.title}
+                </p>
+              ) : !hasJoined && !isConsultationBooked ? (
                 <p className="text-[11px] text-muted-foreground">Anonymous Q&A via AI Concierge</p>
-              )}
+              ) : null}
             </div>
           </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 gap-1.5 font-ui text-xs"
+              style={{ color: brandColor }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+              data-testid="btn-provider-meeting"
+            >
+              <CalendarDays className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Meeting</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 gap-1.5 font-ui text-xs"
+              style={{ color: brandColor }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+              data-testid="btn-provider-video"
+            >
+              <Video className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Video</span>
+            </Button>
           {hasJoined ? (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium" data-testid="badge-provider-joined">
               <CheckCircle2 className="w-3 h-3" />
@@ -781,6 +812,7 @@ export default function ConversationsPage() {
               Q&A
             </div>
           )}
+          </div>
         </div>
 
         <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -865,7 +897,18 @@ export default function ConversationsPage() {
                   <Shield className="w-3 h-3" />
                   <span>{hasJoined ? <>Sending as <strong className="text-foreground">Agency Expert</strong></> : "Your answer will be relayed to the parent by the AI concierge"}</span>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-10 w-10 p-0 shrink-0 rounded-full"
+                    style={{ color: brandColor }}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                    data-testid="btn-provider-attach"
+                  >
+                    <Paperclip className="w-4 h-4" />
+                  </Button>
                   <Input
                     placeholder={hasJoined ? "Type a message to the parent..." : "Type your answer..."}
                     value={replyText}
@@ -877,14 +920,14 @@ export default function ConversationsPage() {
                       }
                     }}
                     disabled={sendMessageMutation.isPending}
-                    className="flex-1 !text-base font-ui"
+                    className="flex-1 !text-base font-ui rounded-full"
                     data-testid="input-provider-message"
                   />
                   <Button
                     size="sm"
                     onClick={handleSendReply}
                     disabled={!replyText.trim() || sendMessageMutation.isPending}
-                    className="h-10 px-4 text-white"
+                    className="h-10 w-10 p-0 rounded-full text-white shrink-0"
                     style={{ backgroundColor: brandColor }}
                     data-testid="btn-send-provider-message"
                   >
