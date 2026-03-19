@@ -29,6 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { hasProviderRole } from "@shared/roles";
+import { MeetingReminderPopup } from "@/components/meeting-reminder-popup";
 
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, AgencyIcon, SpermIcon } from "@/components/icons/marketplace-icons";
 import { useAppDispatch, useAppSelector } from "@/store";
@@ -444,8 +445,10 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
 
   if (!user) return <>{children}</>;
 
+  const reminderPopup = <MeetingReminderPopup />;
+
   const fullScreenRoutes = ["/onboarding", "/complete-profile", "/matchmaker-selection", "/concierge"];
-  if (fullScreenRoutes.some(r => location.pathname.startsWith(r))) return <>{children}</>;
+  if (fullScreenRoutes.some(r => location.pathname.startsWith(r))) return <>{reminderPopup}{children}</>;
 
   const MARKETPLACE_TABS: { id: string; label: string; mobileLabel: string; icon: any }[] = [
     { id: "egg-donors", label: "Egg Donors", mobileLabel: "Donors", icon: EggDonorIcon },
@@ -757,6 +760,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
           {children}
         </div>
       </main>
+      {reminderPopup}
     </div>
   );
 }

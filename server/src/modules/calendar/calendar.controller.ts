@@ -305,6 +305,60 @@ export class CalendarController {
     return updated;
   }
 
+  @Get("bookings/imminent")
+  @UseGuards(SessionOrJwtGuard)
+  async getImminentBooking(@Req() req: Request) {
+    const user = req.user as any;
+    const isParent = user.roles?.includes("PARENT");
+    const parentMemberIds = isParent ? await this.getParentAccountMemberIds(user.id) : [user.id];
+
+    const now = new Date();
+    const windowStart = new Date(now.getTime() - 15 * 60 * 1000);
+    const windowEnd = new Date(now.getTime() + 5 * 60 * 1000);
+
+    const booking = await this.prisma.booking.findFirst({
+      where: {
+        OR: [{ providerUserId: user.id }, { parentUserId: { in: parentMemberIds } }],
+        status: "CONFIRMED",
+        meetingType: "video",
+        scheduledAt: { gte: windowStart, lte: windowEnd },
+      },
+      include: {
+        providerUser: {
+          select: {
+            id: true, name: true, photoUrl: true,
+            provider: { select: { name: true, logoUrl: true } },
+          },
+        },
+        parentUser: { select: { id: true, name: true } },
+      },
+      orderBy: { scheduledAt: "asc" },
+    });
+
+    if (!booking) return { booking: null };
+
+    const isProvider = booking.providerUserId === user.id;
+
+    return {
+      booking: {
+        id: booking.id,
+        subject: booking.subject,
+        scheduledAt: booking.scheduledAt,
+        duration: booking.duration,
+        meetingUrl: booking.meetingUrl,
+        meetingType: booking.meetingType,
+        providerName: booking.providerUser?.provider?.name || booking.providerUser?.name || "Provider",
+        providerLogo: booking.providerUser?.provider?.logoUrl || booking.providerUser?.photoUrl,
+        providerUserName: booking.providerUser?.name,
+        parentName: booking.parentUser?.name || booking.attendeeName || "Parent",
+        counterpartyName: isProvider
+          ? (booking.parentUser?.name || booking.attendeeName || "Parent")
+          : (booking.providerUser?.name || "Provider"),
+        isProvider,
+      },
+    };
+  }
+
   @Get("bookings/search")
   @UseGuards(SessionOrJwtGuard)
   async searchBookings(

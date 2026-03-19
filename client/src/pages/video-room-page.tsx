@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -29,6 +29,8 @@ import { useCompanyName } from "@/hooks/use-brand-settings";
 
 export default function VideoRoomPage() {
   const { bookingId } = useParams<{ bookingId: string }>();
+  const [searchParams] = useSearchParams();
+  const preConsent = searchParams.get("consent");
   const { user, isLoading: authLoading } = useAuth();
   const companyName = useCompanyName();
   const navigate = useNavigate();
@@ -42,7 +44,8 @@ export default function VideoRoomPage() {
   const isGuest = !authLoading && !user;
   const isReady = !authLoading && (!!user || guestVerified);
 
-  const [consentStep, setConsentStep] = useState<"pending" | "consented" | "declined" | "dismissed">("pending");
+  const initialConsent = preConsent === "yes" ? "consented" as const : preConsent === "no" ? "declined" as const : "pending" as const;
+  const [consentStep, setConsentStep] = useState<"pending" | "consented" | "declined" | "dismissed">(initialConsent);
   const [callState, setCallState] = useState<"idle" | "loading-token" | "iframe-ready" | "joined" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [rememberConsent, setRememberConsent] = useState(false);
