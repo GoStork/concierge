@@ -21,7 +21,7 @@ import {
   buildStatusLabel,
   getPhotoList,
 } from "@/components/marketplace/swipe-mappers";
-import { Loader2, Send, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus } from "lucide-react";
+import { Loader2, Send, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize } from "lucide-react";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -1463,6 +1463,71 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
   );
 }
 
+function ConciergeInlineVideoOverlay({ bookingId, onClose }: { bookingId: string; onClose: () => void }) {
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handleFsChange);
+    return () => document.removeEventListener("fullscreenchange", handleFsChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!overlayRef.current) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      overlayRef.current.requestFullscreen().catch(() => {});
+    }
+  };
+
+  return (
+    <div
+      ref={overlayRef}
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 9999,
+        background: "hsl(var(--background))",
+      }}
+      data-testid="inline-video-overlay"
+    >
+      <div style={{ position: "absolute", top: 8, right: 8, zIndex: 10001, display: "flex", gap: 4 }}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0 rounded-full bg-background/80 hover:bg-background border shadow-sm"
+          onClick={toggleFullscreen}
+          data-testid="button-fullscreen-video"
+        >
+          {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0 rounded-full bg-background/80 hover:bg-background border shadow-sm"
+          onClick={onClose}
+          data-testid="button-close-inline-video"
+        >
+          <X className="w-4 h-4" />
+        </Button>
+      </div>
+      <iframe
+        src={`/video/${bookingId}`}
+        style={{ width: "100%", height: "100%", border: "none" }}
+        allow="camera *; microphone *; autoplay *; display-capture *; fullscreen *"
+        data-testid="inline-video-iframe"
+      />
+    </div>
+  );
+}
+
 function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo }: { msg: ChatMessage; brandColor: string; onOpenInlineVideo?: (bookingId: string) => void }) {
   const data = msg.uiCardData as any;
   if (!data) return null;
@@ -1493,13 +1558,23 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo }: { msg: Cha
 
   if (msg.uiCardType === "video_invite") {
     const videoBookingId = data.bookingId;
-    const legacyRoomUrl = data.roomUrl;
+    if (!videoBookingId) {
+      return (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 bg-muted/50 w-full text-left opacity-60" style={{ borderColor: brandColor }}>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center text-white/70 shrink-0" style={{ backgroundColor: brandColor }}>
+            <Video className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-muted-foreground">Video Call Ended</p>
+            <p className="text-xs text-muted-foreground">This call session has expired</p>
+          </div>
+        </div>
+      );
+    }
     const handleVideoClick = (e: React.MouseEvent) => {
       e.preventDefault();
-      if (videoBookingId && onOpenInlineVideo) {
+      if (onOpenInlineVideo) {
         onOpenInlineVideo(videoBookingId);
-      } else if (legacyRoomUrl) {
-        window.open(legacyRoomUrl, "_blank");
       }
     };
     return (
@@ -1516,7 +1591,7 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo }: { msg: Cha
           <p className="text-sm font-semibold">Join Video Call</p>
           <p className="text-xs text-muted-foreground">Click to join the video consultation</p>
         </div>
-        {videoBookingId ? <Video className="w-4 h-4 text-muted-foreground shrink-0" /> : <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />}
+        <Video className="w-4 h-4 text-muted-foreground shrink-0" />
       </button>
     );
   }
@@ -2485,36 +2560,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         />
       )}
       {inlineVideoBookingId && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 9999,
-            background: "hsl(var(--background))",
-          }}
-          data-testid="inline-video-overlay"
-        >
-          <div style={{ position: "absolute", top: 8, right: 8, zIndex: 10001 }}>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 rounded-full bg-background/80 hover:bg-background border shadow-sm"
-              onClick={() => setInlineVideoBookingId(null)}
-              data-testid="button-close-inline-video"
-            >
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
-          <iframe
-            src={`/video/${inlineVideoBookingId}`}
-            style={{ width: "100%", height: "100%", border: "none" }}
-            allow="camera *; microphone *; autoplay *; display-capture *; fullscreen *"
-            data-testid="inline-video-iframe"
-          />
-        </div>
+        <ConciergeInlineVideoOverlay
+          bookingId={inlineVideoBookingId}
+          onClose={() => setInlineVideoBookingId(null)}
+        />
       )}
     </>
   );

@@ -163,7 +163,13 @@ export class VideoController {
         attendeeEmails,
         invitedByUserId: user.id,
       },
+      include: {
+        providerUser: { select: { id: true, name: true, email: true, photoUrl: true } },
+        parentUser: { select: { id: true, name: true, email: true, mobileNumber: true } },
+      },
     });
+
+    this.notificationService.sendBookingConfirmation(booking).catch(() => {});
 
     const nameParts = (user.firstName && user.lastName)
       ? [user.firstName, user.lastName]
