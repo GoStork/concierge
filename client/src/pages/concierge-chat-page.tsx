@@ -1697,9 +1697,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       >
                         <span>{msg.content}</span>
                         {msg.createdAt && (
-                          <div className="text-right mt-1 select-none" style={{ fontSize: "10px", lineHeight: "14px", opacity: 0.55 }}>
+                          <span
+                            className="inline-block align-bottom ml-2 whitespace-nowrap select-none"
+                            style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55, verticalAlign: "bottom", position: "relative", top: "3px" }}
+                          >
                             {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
-                          </div>
+                          </span>
                         )}
                       </div>
                     </div>
