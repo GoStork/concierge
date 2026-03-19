@@ -9,7 +9,7 @@ import { BookingEventsService } from "./booking-events.service";
 @Module({
   imports: [NotificationModule],
   controllers: [CalendarController],
-  providers: [GoogleCalendarService, MicrosoftCalendarService, CaldavCalendarService, BookingEventsService],
-  exports: [BookingEventsService],
+  providers: [GoogleCalendarService, MicrosoftCalendarService, CaldavCalendarService, BookingEventsService, CalendarController],
+  exports: [BookingEventsService, CalendarController],
 })
 export class CalendarModule {}

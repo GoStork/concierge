@@ -23,6 +23,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { VideoService } from "./video.service";
 import { NotificationService } from "../notifications/notification.service";
 import { BookingEventsService } from "../calendar/booking-events.service";
+import { CalendarController } from "../calendar/calendar.controller";
 import { hasProviderRole } from "../../../../shared/roles";
 
 @ApiTags("Video")
@@ -36,6 +37,7 @@ export class VideoController {
     @Inject(VideoService) private readonly videoService: VideoService,
     @Inject(NotificationService) private readonly notificationService: NotificationService,
     @Inject(BookingEventsService) private readonly bookingEvents: BookingEventsService,
+    @Inject(CalendarController) private readonly calendarController: CalendarController,
   ) {}
 
   private async isParentAccountMember(userId: string, bookingParentUserId: string | null): Promise<boolean> {
@@ -144,27 +146,18 @@ export class VideoController {
 
     const subject = `Ad-hoc Video Call${session.provider?.name ? ` — ${session.provider.name}` : ""}`;
 
-    const booking = await this.prisma.booking.create({
-      data: {
-        providerUserId: providerUserId!,
-        parentUserId,
-        scheduledAt: new Date(),
-        duration: 30,
-        meetingType: "video",
-        status: "CONFIRMED",
-        meetingUrl: room.url,
-        subject,
-        attendeeName,
-        attendeeEmails,
-        invitedByUserId: user.id,
-      },
-      include: {
-        providerUser: { select: { id: true, name: true, email: true, photoUrl: true } },
-        parentUser: { select: { id: true, name: true, email: true, mobileNumber: true } },
-      },
+    const booking = await this.calendarController.createBookingInternal({
+      providerUserId: providerUserId!,
+      parentUserId,
+      scheduledAt: new Date(),
+      duration: 30,
+      meetingType: "video",
+      meetingUrl: room.url,
+      subject,
+      attendeeName,
+      attendeeEmails,
+      invitedByUserId: user.id,
     });
-
-    this.notificationService.sendBookingConfirmation(booking).catch(() => {});
 
     const nameParts = (user.firstName && user.lastName)
       ? [user.firstName, user.lastName]
@@ -188,22 +181,6 @@ export class VideoController {
         uiCardType: "video_invite",
         uiCardData: { bookingId: booking.id },
       },
-    });
-
-    this.bookingEvents.emit({
-      type: "booking_created",
-      booking: {
-        id: booking.id,
-        subject,
-        status: "CONFIRMED",
-        scheduledAt: booking.scheduledAt.toISOString(),
-        duration: 30,
-        attendeeName,
-        providerUserId: providerUserId!,
-        parentUserId,
-      },
-      targetUserIds: [providerUserId!, parentUserId!].filter(Boolean),
-      actorUserId: user.id,
     });
 
     return { bookingId: booking.id };

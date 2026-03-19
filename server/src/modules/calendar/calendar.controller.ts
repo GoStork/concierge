@@ -530,6 +530,48 @@ export class CalendarController {
     return booking;
   }
 
+  async createBookingInternal(input: {
+    providerUserId: string;
+    parentUserId: string | null;
+    scheduledAt: Date;
+    duration: number;
+    meetingType: string;
+    meetingUrl: string | null;
+    subject: string | null;
+    attendeeName: string | null;
+    attendeeEmails: string[];
+    invitedByUserId: string;
+  }) {
+    const booking = await this.prisma.booking.create({
+      data: {
+        providerUserId: input.providerUserId,
+        parentUserId: input.parentUserId,
+        scheduledAt: input.scheduledAt,
+        duration: input.duration,
+        meetingType: input.meetingType,
+        status: "CONFIRMED",
+        meetingUrl: input.meetingUrl,
+        subject: input.subject,
+        attendeeName: input.attendeeName,
+        attendeeEmails: input.attendeeEmails,
+        invitedByUserId: input.invitedByUserId,
+      },
+      include: {
+        providerUser: { select: { id: true, name: true, email: true, photoUrl: true } },
+        parentUser: { select: { id: true, name: true, email: true, mobileNumber: true } },
+      },
+    });
+
+    this.notifications.sendBookingConfirmation(booking).catch(() => {});
+    this.syncBookingToGoogleCalendar(booking).catch(() => {});
+    this.syncBookingToParentGoogleCalendar(booking).catch(() => {});
+    this.syncBookingToOutlookCalendar(booking).catch(() => {});
+    this.syncBookingToParentOutlookCalendar(booking).catch(() => {});
+    this.emitBookingEvent("booking_created", booking, input.invitedByUserId);
+
+    return booking;
+  }
+
   @Get("bookings/:id")
   @UseGuards(SessionOrJwtGuard)
   async getBookingById(@Req() req: Request, @Param("id") id: string) {
