@@ -746,7 +746,8 @@ export function InlineBookingCalendar({
         <p className="text-xs text-center text-muted-foreground">This meeting has been cancelled and all participants have been notified.</p>
         <button
           onClick={() => { setSelectedDate(null); setSelectedSlot(null); setCurrentMonth(new Date()); setBooking(null); setStep("date"); }}
-          className="w-full text-center text-xs font-medium py-2.5 rounded-lg border border-border hover:bg-muted transition-colors cursor-pointer"
+          className="w-full text-center text-xs font-semibold py-2.5 rounded-lg text-white transition-colors cursor-pointer hover:opacity-90"
+          style={{ backgroundColor: brandColor }}
           data-testid="btn-book-new-after-cancel"
         >
           Schedule a New Meeting
