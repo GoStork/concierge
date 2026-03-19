@@ -12,6 +12,8 @@ import {
   Search, Sparkles, Building2, ChevronDown, MessageCircle, Clock,
 } from "lucide-react";
 import { hasProviderRole } from "@shared/roles";
+import { useAppDispatch } from "@/store";
+import { setHideBottomNav } from "@/store/uiSlice";
 import ConciergeChatPage from "@/pages/concierge-chat-page";
 import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-deck-card";
 import {
@@ -311,6 +313,7 @@ export default function ConversationsPage() {
   const { data: brand } = useBrandSettings();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const dispatch = useAppDispatch();
   const brandColor = brand?.primaryColor || "#004D4D";
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -333,6 +336,11 @@ export default function ConversationsPage() {
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [replyText, setReplyText] = useState("");
   const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    dispatch(setHideBottomNav(!!selectedSessionId));
+    return () => { dispatch(setHideBottomNav(false)); };
+  }, [selectedSessionId, dispatch]);
 
   const parentSessionsQuery = useQuery<ChatSession[]>({
     queryKey: ["/api/my/chat-sessions"],

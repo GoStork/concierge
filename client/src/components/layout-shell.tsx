@@ -328,6 +328,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
 
   const dispatch = useAppDispatch();
   const marketplaceTab = useAppSelector((state) => state.ui.marketplaceTab);
+  const hideBottomNav = useAppSelector((state) => state.ui.hideBottomNav);
 
   const roles = (user as any)?.roles || [];
   const isAdmin = roles.includes('GOSTORK_ADMIN');
@@ -603,7 +604,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       </header>
 
       <div
-        className={`fixed bottom-0 left-0 right-0 z-50 md:hidden safe-area-bottom px-3 pb-2 ${/^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname) ? "hidden" : ""}`}
+        className={`fixed bottom-0 left-0 right-0 z-50 md:hidden safe-area-bottom px-3 pb-2 ${hideBottomNav || /^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname) || location.pathname === "/concierge" ? "hidden" : ""}`}
         style={{ backgroundColor: 'var(--bottom-nav-safe-area-bg, transparent)' }}
       >
       <nav

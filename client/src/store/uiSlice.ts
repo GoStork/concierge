@@ -10,6 +10,7 @@ interface AdminProvidersFilters {
 
 interface UiState {
   sidebarOpen: boolean;
+  hideBottomNav: boolean;
   marketplaceSearchQuery: string;
   marketplaceTab: string;
   activeFilters: Record<string, string[]>;
@@ -36,6 +37,7 @@ function getPersistedTab(): string {
 
 const initialState: UiState = {
   sidebarOpen: false,
+  hideBottomNav: false,
   marketplaceSearchQuery: "",
   marketplaceTab: getPersistedTab(),
   activeFilters: {},
@@ -122,6 +124,9 @@ const uiSlice = createSlice({
     setAdminProvidersFilter(state, action: PayloadAction<Partial<AdminProvidersFilters>>) {
       Object.assign(state.adminProvidersFilters, action.payload);
     },
+    setHideBottomNav(state, action: PayloadAction<boolean>) {
+      state.hideBottomNav = action.payload;
+    },
   },
 });
 
@@ -141,6 +146,7 @@ export const {
   setShowSkippedOnly,
   setShowExperiencedOnly,
   setAdminProvidersFilter,
+  setHideBottomNav,
 } = uiSlice.actions;
 
 export default uiSlice.reducer;
