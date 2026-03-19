@@ -267,12 +267,11 @@ function InlineBookingCalendar({
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
-  const [step, setStep] = useState<"date" | "form" | "confirmed">("date");
+  const [step, setStep] = useState<"date" | "form">("date");
   const [name, setName] = useState(user ? (user as any).name || "" : "");
   const [email, setEmail] = useState(user ? (user as any).email || "" : "");
   const [phone, setPhone] = useState(user ? (user as any).mobileNumber || "" : "");
   const [notes, setNotes] = useState("");
-  const [booking, setBooking] = useState<any>(null);
 
   const dateStr = selectedDate ? format(selectedDate, "yyyy-MM-dd") : null;
   const monthStr = format(currentMonth, "yyyy-MM");
@@ -328,8 +327,7 @@ function InlineBookingCalendar({
     },
     onSuccess: (data) => {
       if (data?.publicToken) {
-        setBooking(data);
-        setStep("confirmed");
+        navigate(`/booking/${data.publicToken}`, { replace: true });
       }
     },
   });
@@ -338,31 +336,6 @@ function InlineBookingCalendar({
     return (
       <div className="flex items-center justify-center py-8">
         <Loader2 className="w-5 h-5 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  if (step === "confirmed" && booking) {
-    const start = new Date(booking.scheduledAt);
-    return (
-      <div className="text-center py-4 space-y-3">
-        <div className="w-12 h-12 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
-          <Check className="w-6 h-6 text-primary" />
-        </div>
-        <p className="font-semibold text-sm" data-testid="text-booking-confirmed-inline">Booking Confirmed!</p>
-        <div className="text-sm text-muted-foreground space-y-1">
-          <p>{format(start, "EEEE, MMMM d, yyyy")}</p>
-          <p>{format(start, "h:mm a")} ({booking.duration || pageInfo?.meetingDuration || 30} min)</p>
-        </div>
-        {booking.publicToken && (
-          <a
-            href={`/booking/${booking.publicToken}`}
-            className="text-sm text-primary hover:underline font-medium inline-block mt-2"
-            data-testid="link-manage-booking-inline"
-          >
-            Manage or reschedule
-          </a>
-        )}
       </div>
     );
   }
