@@ -183,6 +183,14 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.silentQuery;
   }
 
+  get aiChatSession() {
+    return prisma.aiChatSession;
+  }
+
+  get aiChatMessage() {
+    return prisma.aiChatMessage;
+  }
+
   get $transaction() {
     return prisma.$transaction.bind(prisma);
   }

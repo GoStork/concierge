@@ -1519,7 +1519,7 @@ function ConciergeInlineVideoOverlay({ bookingId, onClose }: { bookingId: string
         </Button>
       </div>
       <iframe
-        src={`/video/${bookingId}`}
+        src={`/room/${bookingId}`}
         style={{ width: "100%", height: "100%", border: "none" }}
         allow="camera *; microphone *; autoplay *; display-capture *; fullscreen *"
         data-testid="inline-video-iframe"
