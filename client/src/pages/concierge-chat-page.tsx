@@ -2345,13 +2345,16 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             );
           })()}
           {!externalBookingSlug && !conciergeBookingSlug && (() => {
-            const activeBooking = sessionBookings
-              ?.filter((b: any) => b.status === "PENDING" || b.status === "CONFIRMED")
-              .sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())[0];
-            if (!activeBooking) return null;
-            const consultMsg = messages.find((m: any) => m.consultationCard?.providerId === activeBooking.providerUser?.provider?.id && m.consultationCard?.memberBookingSlug);
+            const latestBooking = sessionBookings
+              ?.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+              .find((b: any) => b.status === "PENDING" || b.status === "CONFIRMED")
+              || sessionBookings?.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())[0];
+            if (!latestBooking) return null;
+            const consultMsg = messages.find((m: any) => m.consultationCard?.providerId === latestBooking.providerUser?.provider?.id && m.consultationCard?.memberBookingSlug);
             const slug = consultMsg?.consultationCard?.memberBookingSlug;
             if (!slug) return null;
+            const headerText = latestBooking.status === "CANCELLED" ? "Meeting Cancelled" :
+              latestBooking.status === "CONFIRMED" ? "Meeting Confirmed" : "Meeting Scheduled";
             return (
               <div className="px-1 pb-2">
                 <div
@@ -2362,7 +2365,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   <div className="p-1.5" style={{ backgroundColor: brandColor }}>
                     <div className="flex items-center gap-2 px-3 py-1.5">
                       <CalendarCheck className="w-4 h-4 text-white" />
-                      <span className="text-white text-xs font-semibold uppercase tracking-wider">Meeting Scheduled</span>
+                      <span className="text-white text-xs font-semibold uppercase tracking-wider">{headerText}</span>
                     </div>
                   </div>
                   <div className="px-4 pb-4">
@@ -2370,7 +2373,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       slug={slug}
                       memberName={consultMsg?.consultationCard?.memberName || consultMsg?.consultationCard?.providerName || "Provider"}
                       brandColor={brandColor}
-                      existingBooking={activeBooking}
+                      existingBooking={latestBooking}
                     />
                   </div>
                 </div>
