@@ -1419,11 +1419,13 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 const alignRight = isOwnMessage || (!isOtherParent && msg.role === "user");
                 return (
                   <>
-                    <div className={`flex ${alignRight ? "justify-end" : "justify-start"} mb-0.5`}>
-                      <span className="text-[11px] font-medium text-muted-foreground" data-testid={`name-label-${i}`}>
-                        {nameLabel}
-                      </span>
-                    </div>
+                    {!alignRight && (
+                      <div className="flex justify-start mb-0.5">
+                        <span className="text-[11px] font-medium text-muted-foreground" data-testid={`name-label-${i}`}>
+                          {nameLabel}
+                        </span>
+                      </div>
+                    )}
                     <div
                       className={`flex ${alignRight ? "justify-end" : "justify-start"}`}
                       data-testid={`chat-message-${msg.role}-${i}`}

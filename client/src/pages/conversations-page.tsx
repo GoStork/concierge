@@ -803,8 +803,9 @@ export default function ConversationsPage() {
                       : msg.role === "user"
                       ? (msg.senderName || detail?.user?.name || "Parent")
                       : "AI";
+                    if (isOwnMsg) return null;
                     return (
-                      <div className={`flex ${isOwnMsg ? "justify-end" : "justify-start"} mb-0.5`}>
+                      <div className="flex justify-start mb-0.5">
                         <span className="text-[11px] font-medium text-muted-foreground" data-testid={`name-label-provider-${i}`}>
                           {nameLabel}
                         </span>
@@ -824,14 +825,12 @@ export default function ConversationsPage() {
                           <div
                             className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-base leading-relaxed font-ui ${
                               isOwnMessage
-                                ? "text-foreground"
-                                : msg.role === "user"
-                                ? "text-foreground"
+                                ? "text-white"
                                 : "text-foreground"
                             }`}
                             style={
                               isOwnMessage
-                                ? { backgroundColor: chatPalette.expertBg, border: `1px solid ${chatPalette.expertBorder}` }
+                                ? { backgroundColor: brandColor }
                                 : msg.role === "user"
                                 ? { backgroundColor: chatPalette.partnerBg, border: `1px solid ${chatPalette.partnerBorder}` }
                                 : msg.senderType === "provider"
