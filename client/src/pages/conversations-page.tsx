@@ -464,7 +464,7 @@ function WhisperProfileCard({ card, brandColor }: { card: any; brandColor: strin
   return null;
 }
 
-function SpecialMessageCard({ msg, brandColor, viewerRole }: { msg: SessionMessage; brandColor: string; viewerRole?: "provider" | "parent" }) {
+function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: { msg: SessionMessage; brandColor: string; viewerRole?: "provider" | "parent"; onOpenInlineVideo?: (bookingId: string) => void }) {
   const data = msg.uiCardData as any;
   if (!data) return null;
 
@@ -494,31 +494,23 @@ function SpecialMessageCard({ msg, brandColor, viewerRole }: { msg: SessionMessa
 
   if (msg.uiCardType === "video_invite") {
     const isProviderViewer = viewerRole === "provider";
-    const handleVideoClick = async (e: React.MouseEvent) => {
+    const videoBookingId = data.bookingId;
+    const legacyRoomUrl = data.roomUrl;
+    const handleVideoClick = (e: React.MouseEvent) => {
       e.preventDefault();
-      try {
-        const res = await fetch("/api/video/chat-room-token", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ roomUrl: data.roomUrl }),
-        });
-        if (!res.ok) throw new Error("Failed to get token");
-        const { token, roomUrl } = await res.json();
-        window.open(`${roomUrl}?t=${token}`, "_blank");
-      } catch {
-        window.open(data.roomUrl, "_blank");
+      if (videoBookingId && onOpenInlineVideo) {
+        onOpenInlineVideo(videoBookingId);
+      } else if (legacyRoomUrl) {
+        window.open(legacyRoomUrl, "_blank");
       }
     };
     return (
       <div className="mt-1" data-testid="video-invite-card">
-        <a
-          href={data.roomUrl}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
           onClick={handleVideoClick}
-          className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 bg-background hover:bg-muted transition-colors cursor-pointer"
+          className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 bg-background hover:bg-muted transition-colors cursor-pointer w-full text-left"
           style={{ borderColor: brandColor }}
+          data-testid="button-video-invite"
         >
           <div className="w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0" style={{ backgroundColor: brandColor }}>
             <Video className="w-5 h-5" />
@@ -527,8 +519,8 @@ function SpecialMessageCard({ msg, brandColor, viewerRole }: { msg: SessionMessa
             <p className="text-sm font-semibold">{isProviderViewer ? "Start Video Call" : "Join Video Call"}</p>
             <p className="text-xs text-muted-foreground">{isProviderViewer ? "Click to start the video consultation" : "Click to join the video consultation"}</p>
           </div>
-          <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
-        </a>
+          {videoBookingId ? <Video className="w-4 h-4 text-muted-foreground shrink-0" /> : <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />}
+        </button>
       </div>
     );
   }
@@ -849,30 +841,30 @@ export default function ConversationsPage() {
     }
   };
 
+  const [inlineVideoBookingId, setInlineVideoBookingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === "video-call-ended") {
+        setInlineVideoBookingId(null);
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
+
   const handleProviderVideo = async () => {
     if (!selectedSessionId) return;
     try {
-      const res = await fetch("/api/video/room", { method: "POST", credentials: "include" });
-      if (!res.ok) throw new Error("Failed to create room");
-      const { url: roomUrl } = await res.json();
-      sendMessageMutation.mutate({
-        sessionId: selectedSessionId,
-        content: "I've started a video call — join when you're ready!",
-        uiCardType: "video_invite",
-        uiCardData: { roomUrl },
-      });
-      const tokenRes = await fetch("/api/video/chat-room-token", {
+      const res = await fetch("/api/video/chat-booking", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ roomUrl }),
+        body: JSON.stringify({ sessionId: selectedSessionId }),
       });
-      if (tokenRes.ok) {
-        const { token } = await tokenRes.json();
-        window.open(`${roomUrl}?t=${token}`, "_blank");
-      } else {
-        window.open(roomUrl, "_blank");
-      }
+      if (!res.ok) throw new Error("Failed to create video booking");
+      const { bookingId } = await res.json();
+      setInlineVideoBookingId(bookingId);
     } catch {
       alert("Failed to create video room. Please try again.");
     }
@@ -934,31 +926,15 @@ export default function ConversationsPage() {
   const handleParentVideo = async () => {
     if (!selectedParentSession) return;
     try {
-      const res = await fetch("/api/video/room", { method: "POST", credentials: "include" });
+      const res = await fetch("/api/video/chat-booking", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ sessionId: selectedParentSession.id }),
+      });
       if (!res.ok) throw new Error("Failed");
-      const { url: roomUrl } = await res.json();
-      await fetch(`/api/chat-session/${selectedParentSession.id}/message`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          content: "I've started a video call — join when you're ready!",
-          uiCardType: "video_invite",
-          uiCardData: { roomUrl },
-        }),
-      });
-      const tokenRes = await fetch("/api/video/chat-room-token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ roomUrl }),
-      });
-      if (tokenRes.ok) {
-        const { token } = await tokenRes.json();
-        window.open(`${roomUrl}?t=${token}`, "_blank");
-      } else {
-        window.open(roomUrl, "_blank");
-      }
+      const { bookingId } = await res.json();
+      setInlineVideoBookingId(bookingId);
     } catch {
       alert("Failed to start video call. Please try again.");
     }
@@ -1182,28 +1158,62 @@ export default function ConversationsPage() {
     ) : null;
 
     return (
-      <ConversationsShell
-        hasSelection={!!selectedParentSession}
-        onBack={() => setSelectedParentSession(null)}
-        isLoading={parentSessionsQuery.isLoading}
-        sidebarItems={sidebarContent}
-        emptyMessage={showConcierge
-          ? "Start a conversation with your AI concierge to get personalized fertility guidance."
-          : "Your provider conversations will appear here."
-        }
-        emptyAction={showConcierge ? (
-          <Button
-            onClick={() => navigate("/account/concierge")}
-            data-testid="btn-start-first-chat"
-            style={{ backgroundColor: brandColor }}
-            className="text-white mt-4"
+      <>
+        <ConversationsShell
+          hasSelection={!!selectedParentSession}
+          onBack={() => setSelectedParentSession(null)}
+          isLoading={parentSessionsQuery.isLoading}
+          sidebarItems={sidebarContent}
+          emptyMessage={showConcierge
+            ? "Start a conversation with your AI concierge to get personalized fertility guidance."
+            : "Your provider conversations will appear here."
+          }
+          emptyAction={showConcierge ? (
+            <Button
+              onClick={() => navigate("/account/concierge")}
+              data-testid="btn-start-first-chat"
+              style={{ backgroundColor: brandColor }}
+              className="text-white mt-4"
+            >
+              Choose Your AI Concierge
+            </Button>
+          ) : undefined}
+          detailContent={parentDetailContent}
+          brandColor={brandColor}
+        />
+        {inlineVideoBookingId && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 9999,
+              background: "hsl(var(--background))",
+            }}
+            data-testid="inline-video-overlay"
           >
-            Choose Your AI Concierge
-          </Button>
-        ) : undefined}
-        detailContent={parentDetailContent}
-        brandColor={brandColor}
-      />
+            <div style={{ position: "absolute", top: 8, right: 8, zIndex: 10001 }}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 rounded-full bg-background/80 hover:bg-background border shadow-sm"
+                onClick={() => setInlineVideoBookingId(null)}
+                data-testid="button-close-inline-video"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            <iframe
+              src={`/video/${inlineVideoBookingId}`}
+              style={{ width: "100%", height: "100%", border: "none" }}
+              allow="camera *; microphone *; autoplay *; display-capture *; fullscreen *"
+              data-testid="inline-video-iframe"
+            />
+          </div>
+        )}
+      </>
     );
   }
 
@@ -1496,7 +1506,7 @@ export default function ConversationsPage() {
                             )}
                           </div>
                         </div>
-                        {msg.uiCardType && <SpecialMessageCard msg={msg} brandColor={brandColor} viewerRole="provider" />}
+                        {msg.uiCardType && <SpecialMessageCard msg={msg} brandColor={brandColor} viewerRole="provider" onOpenInlineVideo={setInlineVideoBookingId} />}
                       </>
                     );
                   })()}
@@ -1703,18 +1713,52 @@ export default function ConversationsPage() {
     ) : null;
 
     return (
-      <ConversationsShell
-        hasSelection={!!selectedSessionId}
-        onBack={() => setSelectedSessionId(null)}
-        isLoading={providerSessionsQuery.isLoading}
-        sidebarItems={sidebarContent}
-        emptyMessage={searchQuery ? "No conversations match your search" : "No conversations yet"}
-        emptyAction={!searchQuery ? (
-          <p className="text-xs text-muted-foreground mt-1">When parents request a consultation, their conversations will appear here</p>
-        ) : undefined}
-        detailContent={providerDetailContent}
-        brandColor={brandColor}
-      />
+      <>
+        <ConversationsShell
+          hasSelection={!!selectedSessionId}
+          onBack={() => setSelectedSessionId(null)}
+          isLoading={providerSessionsQuery.isLoading}
+          sidebarItems={sidebarContent}
+          emptyMessage={searchQuery ? "No conversations match your search" : "No conversations yet"}
+          emptyAction={!searchQuery ? (
+            <p className="text-xs text-muted-foreground mt-1">When parents request a consultation, their conversations will appear here</p>
+          ) : undefined}
+          detailContent={providerDetailContent}
+          brandColor={brandColor}
+        />
+        {inlineVideoBookingId && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 9999,
+              background: "hsl(var(--background))",
+            }}
+            data-testid="inline-video-overlay"
+          >
+            <div style={{ position: "absolute", top: 8, right: 8, zIndex: 10001 }}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 rounded-full bg-background/80 hover:bg-background border shadow-sm"
+                onClick={() => setInlineVideoBookingId(null)}
+                data-testid="button-close-inline-video"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            <iframe
+              src={`/video/${inlineVideoBookingId}`}
+              style={{ width: "100%", height: "100%", border: "none" }}
+              allow="camera *; microphone *; autoplay *; display-capture *; fullscreen *"
+              data-testid="inline-video-iframe"
+            />
+          </div>
+        )}
+      </>
     );
   }
 

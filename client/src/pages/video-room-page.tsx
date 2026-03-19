@@ -218,6 +218,11 @@ export default function VideoRoomPage() {
         if (!isGuest) {
           apiRequest("PATCH", "/api/video/call-ended", { bookingId }).catch(() => {});
         }
+        const isInIframe = window.self !== window.top;
+        if (isInIframe) {
+          try { window.parent.postMessage({ type: "video-call-ended", bookingId }, "*"); } catch {}
+          return;
+        }
         if (user) {
           navigate("/calendar?tab=meetings", { replace: true });
         } else {

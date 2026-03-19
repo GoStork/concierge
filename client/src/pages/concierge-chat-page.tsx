@@ -1463,7 +1463,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
   );
 }
 
-function ConciergeSpecialCard({ msg, brandColor }: { msg: ChatMessage; brandColor: string }) {
+function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo }: { msg: ChatMessage; brandColor: string; onOpenInlineVideo?: (bookingId: string) => void }) {
   const data = msg.uiCardData as any;
   if (!data) return null;
 
@@ -1492,29 +1492,20 @@ function ConciergeSpecialCard({ msg, brandColor }: { msg: ChatMessage; brandColo
   }
 
   if (msg.uiCardType === "video_invite") {
-    const handleVideoClick = async (e: React.MouseEvent) => {
+    const videoBookingId = data.bookingId;
+    const legacyRoomUrl = data.roomUrl;
+    const handleVideoClick = (e: React.MouseEvent) => {
       e.preventDefault();
-      try {
-        const res = await fetch("/api/video/chat-room-token", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ roomUrl: data.roomUrl }),
-        });
-        if (!res.ok) throw new Error("Failed to get token");
-        const { token, roomUrl } = await res.json();
-        window.open(`${roomUrl}?t=${token}`, "_blank");
-      } catch {
-        window.open(data.roomUrl, "_blank");
+      if (videoBookingId && onOpenInlineVideo) {
+        onOpenInlineVideo(videoBookingId);
+      } else if (legacyRoomUrl) {
+        window.open(legacyRoomUrl, "_blank");
       }
     };
     return (
-      <a
-        href={data.roomUrl}
-        target="_blank"
-        rel="noopener noreferrer"
+      <button
         onClick={handleVideoClick}
-        className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 bg-background hover:bg-muted transition-colors cursor-pointer"
+        className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 bg-background hover:bg-muted transition-colors cursor-pointer w-full text-left"
         style={{ borderColor: brandColor }}
         data-testid="concierge-video-invite"
       >
@@ -1525,8 +1516,8 @@ function ConciergeSpecialCard({ msg, brandColor }: { msg: ChatMessage; brandColo
           <p className="text-sm font-semibold">Join Video Call</p>
           <p className="text-xs text-muted-foreground">Click to join the video consultation</p>
         </div>
-        <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
-      </a>
+        {videoBookingId ? <Video className="w-4 h-4 text-muted-foreground shrink-0" /> : <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />}
+      </button>
     );
   }
 
@@ -1649,34 +1640,30 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     }
   }, [sessionId]);
 
+  const [inlineVideoBookingId, setInlineVideoBookingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === "video-call-ended") {
+        setInlineVideoBookingId(null);
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
+
   const handleConciergeVideo = useCallback(async () => {
     if (!sessionId) return;
     try {
-      const res = await fetch("/api/video/room", { method: "POST", credentials: "include" });
+      const res = await fetch("/api/video/chat-booking", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ sessionId }),
+      });
       if (!res.ok) throw new Error("Failed");
-      const { url: roomUrl } = await res.json();
-      await fetch(`/api/chat-session/${sessionId}/message`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          content: "I've started a video call — join when you're ready!",
-          uiCardType: "video_invite",
-          uiCardData: { roomUrl },
-        }),
-      });
-      const tokenRes = await fetch("/api/video/chat-room-token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ roomUrl }),
-      });
-      if (tokenRes.ok) {
-        const { token } = await tokenRes.json();
-        window.open(`${roomUrl}?t=${token}`, "_blank");
-      } else {
-        window.open(roomUrl, "_blank");
-      }
+      const { bookingId } = await res.json();
+      setInlineVideoBookingId(bookingId);
     } catch {
       alert("Failed to start video call. Please try again.");
     }
@@ -2327,7 +2314,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               {msg.uiCardType && msg.uiCardData && (
                 <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} mt-2`}>
                   <div className="max-w-[75%]">
-                    <ConciergeSpecialCard msg={msg} brandColor={brandColor} />
+                    <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} />
                   </div>
                 </div>
               )}
@@ -2496,6 +2483,38 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           userName={(user as any)?.name || ""}
           onClose={() => setBookingCard(null)}
         />
+      )}
+      {inlineVideoBookingId && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 9999,
+            background: "hsl(var(--background))",
+          }}
+          data-testid="inline-video-overlay"
+        >
+          <div style={{ position: "absolute", top: 8, right: 8, zIndex: 10001 }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0 rounded-full bg-background/80 hover:bg-background border shadow-sm"
+              onClick={() => setInlineVideoBookingId(null)}
+              data-testid="button-close-inline-video"
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+          <iframe
+            src={`/video/${inlineVideoBookingId}`}
+            style={{ width: "100%", height: "100%", border: "none" }}
+            allow="camera *; microphone *; autoplay *; display-capture *; fullscreen *"
+            data-testid="inline-video-iframe"
+          />
+        </div>
       )}
     </>
   );

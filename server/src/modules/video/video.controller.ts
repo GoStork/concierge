@@ -57,33 +57,155 @@ export class VideoController {
     }
   }
 
-  @Post("chat-room-token")
+  @Post("chat-booking")
   @UseGuards(SessionOrJwtGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: "Generate a Daily.co token for an ad-hoc chat video call" })
-  async chatRoomToken(@Req() req: any, @Body() body: { roomUrl: string }) {
+  @ApiOperation({ summary: "Create an ad-hoc video booking from a chat session" })
+  async createChatVideoBooking(
+    @Req() req: any,
+    @Body() body: { sessionId: string },
+  ) {
     const user = req.user;
-    const { roomUrl } = body;
-    if (!roomUrl) throw new BadRequestException("roomUrl is required");
+    const { sessionId } = body;
+    if (!sessionId) throw new BadRequestException("sessionId is required");
 
-    const roomName = roomUrl.split("/").pop();
-    if (!roomName) throw new BadRequestException("Invalid room URL");
+    const session = await this.prisma.aiChatSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        provider: { select: { id: true, name: true } },
+      },
+    });
+    if (!session) throw new NotFoundException("Chat session not found");
 
     const isProvider = hasProviderRole(user.roles || []);
     const isAdmin = user.roles?.includes("GOSTORK_ADMIN");
-    const isOwner = isProvider || isAdmin;
 
-    await this.videoService.ensurePrejoinDisabled(roomName);
+    let callerIsSessionParent = session.userId === user.id;
+    if (!callerIsSessionParent && user.parentAccountId) {
+      const sessionOwner = await this.prisma.user.findUnique({
+        where: { id: session.userId },
+        select: { parentAccountId: true },
+      });
+      callerIsSessionParent = !!(sessionOwner?.parentAccountId && sessionOwner.parentAccountId === user.parentAccountId);
+    }
 
-    const token = await this.videoService.generateToken({
-      roomName,
-      userId: user.id,
-      userName: user.name || user.email,
-      isOwner,
-      consentGiven: false,
+    let callerIsSessionProvider = false;
+    if ((isProvider || isAdmin) && session.providerId) {
+      if (isAdmin) {
+        callerIsSessionProvider = true;
+      } else if (user.providerId === session.providerId) {
+        callerIsSessionProvider = true;
+      }
+    }
+
+    if (!callerIsSessionParent && !callerIsSessionProvider) {
+      throw new ForbiddenException("You are not a participant of this chat session");
+    }
+
+    const callerActsAsProvider = callerIsSessionProvider && !callerIsSessionParent;
+
+    let providerUserId: string | null = null;
+    let parentUserId: string | null = null;
+    let attendeeName: string | null = null;
+    let attendeeEmails: string[] = [];
+
+    if (callerActsAsProvider) {
+      const providerUsers = await this.prisma.user.findMany({
+        where: { providerId: session.providerId || undefined },
+        select: { id: true },
+      });
+      providerUserId = providerUsers.find(pu => pu.id === user.id)?.id || providerUsers[0]?.id || user.id;
+      parentUserId = session.userId;
+      const parentUser = await this.prisma.user.findUnique({
+        where: { id: session.userId },
+        select: { name: true, email: true },
+      });
+      attendeeName = parentUser?.name || null;
+      attendeeEmails = parentUser?.email ? [parentUser.email] : [];
+    } else {
+      parentUserId = user.id;
+      if (session.providerId) {
+        const providerUser = await this.prisma.user.findFirst({
+          where: { providerId: session.providerId },
+          select: { id: true, name: true, email: true },
+        });
+        if (providerUser) {
+          providerUserId = providerUser.id;
+          attendeeName = providerUser.name || null;
+          attendeeEmails = providerUser.email ? [providerUser.email] : [];
+        }
+      }
+      if (!providerUserId) {
+        throw new BadRequestException("No provider found for this session");
+      }
+    }
+
+    const room = await this.videoService.createRoom();
+
+    await this.prisma.user.update({
+      where: { id: providerUserId! },
+      data: { dailyRoomUrl: room.url },
     });
 
-    return { token, roomUrl };
+    const subject = `Ad-hoc Video Call${session.provider?.name ? ` — ${session.provider.name}` : ""}`;
+
+    const booking = await this.prisma.booking.create({
+      data: {
+        providerUserId: providerUserId!,
+        parentUserId,
+        scheduledAt: new Date(),
+        duration: 30,
+        meetingType: "video",
+        status: "CONFIRMED",
+        meetingUrl: room.url,
+        subject,
+        attendeeName,
+        attendeeEmails,
+        invitedByUserId: user.id,
+      },
+    });
+
+    const nameParts = (user.firstName && user.lastName)
+      ? [user.firstName, user.lastName]
+      : (user.name || "").trim().split(/\s+/);
+    const senderDisplayName = nameParts.length >= 2
+      ? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}.`
+      : nameParts[0] || (callerActsAsProvider ? "Provider" : "Parent");
+
+    const senderType = callerActsAsProvider ? "provider" : "parent";
+    const messageContent = callerActsAsProvider
+      ? "I've started a video call — join when you're ready!"
+      : "I'd like to start a video call!";
+
+    await this.prisma.aiChatMessage.create({
+      data: {
+        sessionId,
+        role: callerActsAsProvider ? "assistant" : "user",
+        content: messageContent,
+        senderType,
+        senderName: senderDisplayName,
+        uiCardType: "video_invite",
+        uiCardData: { bookingId: booking.id },
+      },
+    });
+
+    this.bookingEvents.emit({
+      type: "booking_created",
+      booking: {
+        id: booking.id,
+        subject,
+        status: "CONFIRMED",
+        scheduledAt: booking.scheduledAt.toISOString(),
+        duration: 30,
+        attendeeName,
+        providerUserId: providerUserId!,
+        parentUserId,
+      },
+      targetUserIds: [providerUserId!, parentUserId!].filter(Boolean),
+      actorUserId: user.id,
+    });
+
+    return { bookingId: booking.id };
   }
 
   @Post("room")
