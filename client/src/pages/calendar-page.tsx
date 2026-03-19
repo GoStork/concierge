@@ -1015,7 +1015,7 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
             />
           </div>
         )}
-        {showRescheduleForm && isConfirmed && (
+        {showRescheduleForm && (isConfirmed || (isPending && !isProvider)) && (
           <div className="border border-border/50 rounded-lg p-3 space-y-2">
             <p className="text-sm font-ui">Reschedule to a new time</p>
             <RescheduleForm
@@ -1039,12 +1039,12 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
               </Button>
             </>
           )}
-          {isConfirmed && !showRescheduleForm && (
+          {(isConfirmed || (isPending && !isProvider)) && !showRescheduleForm && (
             <Button size="sm" variant="outline" className="gap-1" onClick={() => setShowRescheduleForm(true)} data-testid="button-reschedule-booking">
               <CalendarClock className="w-4 h-4" /> Reschedule
             </Button>
           )}
-          {booking.status !== "CANCELLED" && booking.status !== "RESCHEDULED" && !isPending && (
+          {booking.status !== "CANCELLED" && booking.status !== "RESCHEDULED" && (!isPending || !isProvider) && (
             <Button size="sm" variant="outline" className="text-destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending} data-testid="button-cancel-booking">
               {cancelMutation.isPending ? "Cancelling..." : "Cancel Booking"}
             </Button>
