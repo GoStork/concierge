@@ -1423,7 +1423,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
 
     return (
       <div
-        className="w-full max-w-sm aspect-[3/4] animate-[slideUp_0.4s_ease-out_forwards]"
+        className="w-full max-w-md aspect-[3/4] animate-[slideUp_0.4s_ease-out_forwards]"
         data-testid={`match-card-${card.providerId}`}
       >
         <SwipeDeckCard
@@ -1957,7 +1957,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const profileReady = !parentProfileQuery.isLoading;
 
   useEffect(() => {
-    if (greetingSet || !selectedMatchmaker || !user || !profileReady) return;
+    if (greetingSet || !selectedMatchmaker || !user) return;
+    if (!donorIdParam && !profileReady) return;
     if (!sessionLoaded) return;
     if (sessionId || existingSessionId) return;
     let greeting = selectedMatchmaker.initialGreeting
@@ -2311,8 +2312,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 return (
                   <>
                     {!alignRight && msg.matchCards && msg.matchCards.length > 0 && (
-                      <div className="flex justify-start mb-2 ml-0">
-                        <div className="space-y-3">
+                      <div className="flex justify-start mb-2 ml-0 w-full max-w-md">
+                        <div className="space-y-3 w-full">
                           {msg.matchCards.map((card, ci) => (
                             <MatchCardComponent
                               key={ci}
