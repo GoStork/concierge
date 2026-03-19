@@ -205,6 +205,8 @@ function InlineBookingNotification({ booking, brandColor, onUpdate }: { booking:
   const isProvider = booking?.providerUserId === user?.id;
   const isPending = booking?.status === "PENDING";
   const isConfirmed = booking?.status === "CONFIRMED";
+  const isCancelled = booking?.status === "CANCELLED";
+  const isRescheduled = booking?.status === "RESCHEDULED";
 
   const confirmMutation = useMutation({
     mutationFn: async () => {
@@ -262,9 +264,13 @@ function InlineBookingNotification({ booking, brandColor, onUpdate }: { booking:
                 ? "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))]"
                 : isPending
                 ? "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]"
+                : isCancelled
+                ? "bg-destructive/10 text-destructive"
+                : isRescheduled
+                ? "bg-muted text-muted-foreground"
                 : "bg-muted text-foreground"
             }`}>
-              {isPending ? "Pending" : booking.status}
+              {isPending ? "Pending Approval" : isCancelled ? "Cancelled" : isRescheduled ? "Rescheduled" : booking.status}
             </span>
           </div>
 
@@ -322,6 +328,20 @@ function InlineBookingNotification({ booking, brandColor, onUpdate }: { booking:
             <div className="bg-[hsl(var(--brand-success)/0.08)] border border-[hsl(var(--brand-success)/0.3)] rounded-xl p-3">
               <p className="text-xs font-medium text-[hsl(var(--brand-success))]">Meeting confirmed</p>
               <p className="text-[11px] text-[hsl(var(--brand-success))] mt-0.5">This meeting has been confirmed. You'll receive a reminder before it starts.</p>
+            </div>
+          )}
+
+          {isCancelled && (
+            <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-3">
+              <p className="text-xs font-medium text-destructive">Meeting cancelled</p>
+              <p className="text-[11px] text-destructive/80 mt-0.5">This meeting has been cancelled by the parent.</p>
+            </div>
+          )}
+
+          {isRescheduled && (
+            <div className="bg-muted/60 border border-border rounded-xl p-3">
+              <p className="text-xs font-medium text-muted-foreground">Meeting rescheduled</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">This meeting was rescheduled. A new booking has been created.</p>
             </div>
           )}
 
@@ -1413,7 +1433,7 @@ export default function ConversationsPage() {
                 const hasActive = allBookings.some((b: any) => b.status === "PENDING" || b.status === "CONFIRMED");
                 const visible = hasActive
                   ? allBookings.filter((b: any) => b.status !== "CANCELLED" && b.status !== "DECLINED" && b.status !== "RESCHEDULED")
-                  : allBookings.slice(-1);
+                  : allBookings.slice(0, 1);
                 const sorted = [...visible].sort((a: any, b: any) => {
                   const order: Record<string, number> = { CANCELLED: 0, DECLINED: 0, RESCHEDULED: 0, PENDING: 1, CONFIRMED: 2 };
                   return (order[a.status] || 0) - (order[b.status] || 0);
