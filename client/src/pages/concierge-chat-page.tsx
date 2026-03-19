@@ -1581,7 +1581,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       return res.json();
     },
     enabled: !!sessionId,
-    refetchInterval: 30000,
+    refetchInterval: 10000,
   });
 
   const myDisplayName = useMemo(() => {
@@ -2322,8 +2322,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           )}
           {(() => {
             if (!sessionBookings || sessionBookings.length === 0) return null;
-            const hasConsultationCardMsg = messages.some((m) => m.consultationCard);
-            if (hasConsultationCardMsg) return null;
+            if (externalBookingSlug || conciergeBookingSlug) return null;
             const activeBooking = sessionBookings.find((b: any) => b.status === "CONFIRMED")
               || sessionBookings.find((b: any) => b.status === "PENDING")
               || sessionBookings.find((b: any) => b.status === "CANCELLED")
