@@ -2054,27 +2054,27 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 px-2 gap-1.5 font-ui text-xs"
+                  className="h-9 sm:h-8 px-2.5 sm:px-2 gap-1.5 font-ui text-xs"
                   style={{ color: brandColor }}
                   onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
                   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
                   onClick={handleConciergeMeeting}
                   data-testid="btn-meeting"
                 >
-                  <CalendarDays className="w-3.5 h-3.5" />
+                  <CalendarDays className="w-5 h-5 sm:w-3.5 sm:h-3.5" />
                   <span className="hidden sm:inline">Meeting</span>
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 px-2 gap-1.5 font-ui text-xs"
+                  className="h-9 sm:h-8 px-2.5 sm:px-2 gap-1.5 font-ui text-xs"
                   style={{ color: brandColor }}
                   onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
                   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
                   onClick={handleConciergeVideo}
                   data-testid="btn-video"
                 >
-                  <Video className="w-3.5 h-3.5" />
+                  <Video className="w-5 h-5 sm:w-3.5 sm:h-3.5" />
                   <span className="hidden sm:inline">Video</span>
                 </Button>
               </>
