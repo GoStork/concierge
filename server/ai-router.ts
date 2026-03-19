@@ -388,22 +388,24 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Not authenticated" });
     }
     const userId = (req.user as any).id;
-    const { matchmakerId, greeting } = req.body;
+    const { matchmakerId, greeting, forceNew, donorId, donorType } = req.body;
     if (!matchmakerId || !greeting) {
       return res.status(400).json({ error: "matchmakerId and greeting required" });
     }
 
-    const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
-    const accountUserIds = currentUser?.parentAccountId
-      ? (await prisma.user.findMany({ where: { parentAccountId: currentUser.parentAccountId }, select: { id: true } })).map(u => u.id)
-      : [userId];
+    if (!forceNew) {
+      const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
+      const accountUserIds = currentUser?.parentAccountId
+        ? (await prisma.user.findMany({ where: { parentAccountId: currentUser.parentAccountId }, select: { id: true } })).map(u => u.id)
+        : [userId];
 
-    const existing = await prisma.aiChatSession.findFirst({
-      where: { userId: { in: accountUserIds } },
-      select: { id: true },
-    });
-    if (existing) {
-      return res.json({ sessionId: existing.id });
+      const existing = await prisma.aiChatSession.findFirst({
+        where: { userId: { in: accountUserIds } },
+        select: { id: true },
+      });
+      if (existing) {
+        return res.json({ sessionId: existing.id });
+      }
     }
 
     const session = await prisma.aiChatSession.create({

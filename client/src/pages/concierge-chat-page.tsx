@@ -1634,6 +1634,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const matchmakerId = isInline ? (inlineMatchmakerId || null) : searchParams.get("matchmaker");
   const existingSessionId = isInline ? (inlineSessionId || null) : searchParams.get("session");
   const isEmbedded = isInline || searchParams.get("embedded") === "1";
+  const donorIdParam = searchParams.get("donorId");
+  const donorTypeParam = searchParams.get("donorType");
+  const donorProviderIdParam = searchParams.get("providerId");
   const navigate = useNavigate();
   const { user } = useAuth();
   const { data: brand } = useBrandSettings();
@@ -1779,7 +1782,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
   const matchmakers: Matchmaker[] = brand?.matchmakers || [];
   const [resolvedMatchmakerId, setResolvedMatchmakerId] = useState<string | null>(null);
-  const effectiveMatchmakerId = matchmakerId || resolvedMatchmakerId;
+  const effectiveMatchmakerId = matchmakerId || resolvedMatchmakerId
+    || (donorIdParam && matchmakers.find(m => m.isActive)?.id) || null;
   const selectedMatchmaker = matchmakers.find((m) => m.id === effectiveMatchmakerId);
   const brandColor = brand?.primaryColor || "#004D4D";
   const chatPalette = useMemo(() => deriveChatPalette(brandColor), [brandColor]);
@@ -1825,6 +1829,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   useEffect(() => {
     if (sessionLoaded) return;
 
+    if (donorIdParam) {
+      setSessionLoaded(true);
+      return;
+    }
+
     if (existingSessionId) {
       (async () => {
         await loadMessagesForSession(existingSessionId);
@@ -1858,7 +1867,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       } catch {}
       setSessionLoaded(true);
     })();
-  }, [existingSessionId, matchmakerId, sessionLoaded]);
+  }, [existingSessionId, matchmakerId, donorIdParam, sessionLoaded]);
 
   useEffect(() => {
     window.scrollTo(0, document.body.scrollHeight);
@@ -1964,16 +1973,28 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       .replace(/\[First Name\]/gi, firstName)
       .replace(/\[Service\]/gi, service)
       .replace(/\[Location\]/gi, location);
+
+    if (donorIdParam) {
+      const donorLabel = donorTypeParam === "surrogate" ? "Surrogate" : donorTypeParam === "sperm-donor" ? "Sperm Donor" : "Egg Donor";
+      greeting = `Hi ${firstName}! I see you're interested in learning more about a ${donorLabel} profile. I'd love to help you with any questions you have — let's explore this together!`;
+    }
+
     setMessages([{ role: "assistant", content: greeting, createdAt: new Date().toISOString() }]);
     setGreetingSet(true);
 
     (async () => {
       try {
+        const initBody: any = { matchmakerId: effectiveMatchmakerId, greeting };
+        if (donorIdParam) {
+          initBody.donorId = donorIdParam;
+          initBody.donorType = donorTypeParam;
+          initBody.forceNew = true;
+        }
         const res = await fetch("/api/ai-concierge/init-session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ matchmakerId: effectiveMatchmakerId, greeting }),
+          body: JSON.stringify(initBody),
         });
         if (res.ok) {
           const data = await res.json();
@@ -1982,7 +2003,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         }
       } catch {}
     })();
-  }, [selectedMatchmaker, user, profileReady, greetingSet, parentProfileQuery.data, sessionLoaded, sessionId, existingSessionId]);
+  }, [selectedMatchmaker, user, profileReady, greetingSet, parentProfileQuery.data, sessionLoaded, sessionId, existingSessionId, donorIdParam, donorTypeParam]);
 
   if (!effectiveMatchmakerId && !existingSessionId && !sessionId && sessionLoaded) {
     return (

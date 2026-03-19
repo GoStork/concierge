@@ -726,7 +726,9 @@ chatRouter.post("/api/chat-upload", requireAuth, async (req, res) => {
   const crypto = await import("crypto");
   const UPLOADS_DIR = path.resolve(process.cwd(), "public/uploads");
   const MAX_FILE_SIZE = 16 * 1024 * 1024;
-  const ALLOWED_MIME_PREFIXES = ["image/", "application/pdf", "application/msword", "application/vnd.openxmlformats", "text/"];
+  const ALLOWED_MIME_PREFIXES = ["image/", "application/pdf", "application/msword", "application/vnd.openxmlformats", "text/plain"];
+  const BLOCKED_EXTENSIONS = [".html", ".htm", ".svg", ".js", ".mjs", ".jsx", ".ts", ".tsx", ".xml", ".xhtml", ".php", ".sh", ".bat", ".cmd", ".exe"];
+  const SAFE_EXT_MAP: Record<string, string> = { "application/pdf": ".pdf", "application/msword": ".doc", "text/plain": ".txt" };
 
   if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
@@ -767,7 +769,9 @@ chatRouter.post("/api/chat-upload", requireAuth, async (req, res) => {
         if (headerEnd === -1) continue;
         const fileData = Buffer.from(part.slice(headerEnd + 4, part.lastIndexOf("\r\n")), "binary");
 
-        const ext = path.extname(filename) || ".bin";
+        const rawExt = path.extname(filename).toLowerCase();
+        if (BLOCKED_EXTENSIONS.includes(rawExt)) return res.status(400).json({ message: `File extension ${rawExt} not allowed` });
+        const ext = SAFE_EXT_MAP[mimeType] || (mimeType.startsWith("image/") ? rawExt || ".bin" : rawExt || ".bin");
         const hash = crypto.createHash("md5").update(fileData).digest("hex");
         const storedName = `${hash}${ext}`;
         fs.writeFileSync(path.join(UPLOADS_DIR, storedName), fileData);

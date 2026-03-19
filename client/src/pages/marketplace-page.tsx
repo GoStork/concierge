@@ -582,7 +582,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange }: {
                 }
                 setCurrentIndex((prev) => prev - 1);
               } : undefined}
-              onMessage={() => navigate("/concierge")}
+              onMessage={() => navigate(`/concierge?donorId=${currentDonor.id}&donorType=${type}&providerId=${currentDonor.providerId}`)}
               onViewFullProfile={() => navigate(`/${typeToUrlSlug(type)}/${currentDonor.providerId}/${currentDonor.id}`)}
             />
           </div>
@@ -612,7 +612,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange }: {
               onPass={() => { dispatch(passDonor(donor.id)); syncPref("skip", donor.id, "add"); }}
               onSave={() => { const isFav = favoritedIds.includes(donor.id); dispatch(toggleFavoriteDonor(donor.id)); syncPref("favorite", donor.id, isFav ? "remove" : "add"); }}
               onUndo={passedIds.includes(donor.id) ? () => { dispatch(undoPassDonor(donor.id)); syncPref("skip", donor.id, "remove"); } : undefined}
-              onMessage={() => navigate("/concierge")}
+              onMessage={() => navigate(`/concierge?donorId=${donor.id}&donorType=${type}&providerId=${donor.providerId}`)}
               onViewFullProfile={() => navigate(`/${typeToUrlSlug(type)}/${donor.providerId}/${donor.id}`)}
             />
           </div>
