@@ -1403,8 +1403,8 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
 
   if (loading) {
     return (
-      <div className="w-full max-w-sm aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      <div className="w-full max-w-xs aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -1423,7 +1423,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
 
     return (
       <div
-        className="w-full max-w-md aspect-[3/4] animate-[slideUp_0.4s_ease-out_forwards]"
+        className="w-full max-w-xs aspect-[3/4] animate-[slideUp_0.4s_ease-out_forwards]"
         data-testid={`match-card-${card.providerId}`}
       >
         <SwipeDeckCard
@@ -1446,7 +1446,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
 
   return (
     <div
-      className="w-full max-w-sm aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted cursor-pointer relative"
+      className="w-full max-w-xs aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted cursor-pointer relative"
       data-testid={`match-card-${card.providerId}`}
       onClick={() => onViewProfile(card)}
     >
@@ -2312,8 +2312,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 return (
                   <>
                     {!alignRight && msg.matchCards && msg.matchCards.length > 0 && (
-                      <div className="flex justify-start mb-2 ml-0 w-full max-w-md">
-                        <div className="space-y-3 w-full">
+                      <div className="flex justify-start mb-2 ml-0">
+                        <div className="space-y-3">
                           {msg.matchCards.map((card, ci) => (
                             <MatchCardComponent
                               key={ci}

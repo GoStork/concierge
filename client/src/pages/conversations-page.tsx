@@ -1023,12 +1023,16 @@ export default function ConversationsPage() {
       (s.providerJoinedAt && s.providerName) ||
       s.status === "CONSULTATION_BOOKED" ||
       (s.providerId && s.providerName);
-    const evaConversations = allSessions.filter(s => !isProviderThread(s));
+    const allEvaConversations = allSessions.filter(s => !isProviderThread(s));
+    const evaConversations = showConcierge
+      ? allEvaConversations
+      : allEvaConversations.filter(s => s.title && s.title !== "AI Concierge Chat");
     const providerConversations = allSessions.filter(s => isProviderThread(s));
 
     const filteredEva = evaConversations.filter(s =>
       !searchQuery || (s.matchmakerName || "Eva").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.lastMessage || "").toLowerCase().includes(searchQuery.toLowerCase())
+      (s.lastMessage || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.title || "").toLowerCase().includes(searchQuery.toLowerCase())
     );
     const filteredProvider = providerConversations.filter(s =>
       !searchQuery || (s.providerName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1051,7 +1055,7 @@ export default function ConversationsPage() {
     const hasSessions = allSessions.length > 0;
     const sidebarContent = hasSessions ? (
       <div className="pb-24">
-        {showConcierge && filteredEva.length > 0 && (
+        {filteredEva.length > 0 && (
           <div data-testid="section-concierge">
             <div
               className="mx-4 mt-3 mb-2 px-3 py-2 rounded-lg flex items-center gap-2"
