@@ -1976,7 +1976,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
     if (donorIdParam) {
       const donorLabel = donorTypeParam === "surrogate" ? "Surrogate" : donorTypeParam === "sperm-donor" ? "Sperm Donor" : "Egg Donor";
-      greeting = `Hi ${firstName}! I see you're interested in learning more about a ${donorLabel} profile. I'd love to help you with any questions you have — let's explore this together!`;
+      greeting = `Hi ${firstName}! I see you're interested in learning more about a ${donorLabel} profile. I'd love to help you with any questions you have. Do you have a specific question about this ${donorLabel.toLowerCase()}?`;
     }
 
     setMessages([{ role: "assistant", content: greeting, createdAt: new Date().toISOString() }]);
