@@ -242,7 +242,7 @@ function ConversationsShell({
   const [searchQuery, setSearchQuery] = useState("");
 
   return (
-    <div className="flex h-[calc(100dvh-64px)] w-full overflow-hidden" data-testid="conversations-page">
+    <div className="flex h-dvh md:h-[calc(100dvh-64px)] w-full overflow-hidden" data-testid="conversations-page">
       <div className={`${hasSelection ? "hidden md:flex" : "flex"} flex-col w-full md:w-80 lg:w-96 border-r bg-background overflow-hidden`}>
         <div className="shrink-0 bg-background border-b px-4 pt-4 pb-3 space-y-3">
           <div className="flex items-center justify-between">
