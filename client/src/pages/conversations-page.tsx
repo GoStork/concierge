@@ -612,6 +612,14 @@ export default function ConversationsPage() {
       </div>
     ) : null;
 
+    const parentProviderJoined = !!selectedParentSession?.providerJoinedAt;
+    const parentHeaderName = parentProviderJoined
+      ? (selectedParentSession!.providerName || "Provider")
+      : (selectedParentSession?.matchmakerName || "AI Concierge");
+    const parentHeaderAvatar = parentProviderJoined
+      ? selectedParentSession!.providerLogo
+      : selectedParentSession?.matchmakerAvatar;
+
     const parentDetailContent = hasParentSession ? (
       <div className="flex flex-col h-full">
         <div className="flex items-center gap-3 px-4 py-3 border-b bg-background shrink-0" data-testid="parent-chat-header">
@@ -625,10 +633,10 @@ export default function ConversationsPage() {
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div className="w-9 h-9 rounded-full flex-shrink-0 relative">
-            {selectedParentSession!.matchmakerAvatar ? (
+            {parentHeaderAvatar ? (
               <img
-                src={selectedParentSession!.matchmakerAvatar}
-                alt={selectedParentSession!.matchmakerName || ""}
+                src={parentHeaderAvatar}
+                alt={parentHeaderName}
                 className="w-9 h-9 rounded-full object-cover"
               />
             ) : (
@@ -636,13 +644,13 @@ export default function ConversationsPage() {
                 className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold"
                 style={{ backgroundColor: brandColor }}
               >
-                {(selectedParentSession!.matchmakerName || "?").charAt(0)}
+                {parentHeaderName.charAt(0)}
               </div>
             )}
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>
-              {selectedParentSession!.matchmakerName || "AI Concierge"}
+              {parentHeaderName}
             </h2>
             {selectedParentSession!.title && (
               <p className="text-[11px] font-ui text-muted-foreground truncate" data-testid="parent-chat-subject-label">

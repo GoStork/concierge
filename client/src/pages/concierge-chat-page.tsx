@@ -1012,6 +1012,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [greetingSet, setGreetingSet] = useState(false);
   const [providerInChat, setProviderInChat] = useState(false);
+  const [providerChatName, setProviderChatName] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState<string | null>(null);
 
   const myDisplayName = useMemo(() => {
@@ -1072,7 +1073,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         lastPollTimeRef.current = msgs[msgs.length - 1].createdAt;
         msgs.forEach((m: any) => { if (m.id) knownMessageIds.current.add(m.id); });
         if (msgs.some((m: any) => m.senderType === "human")) setHumanEscalated(true);
-        if (msgs.some((m: any) => m.senderType === "provider")) setProviderInChat(true);
+        const providerMsg = msgs.find((m: any) => m.senderType === "provider");
+        if (providerMsg) {
+          setProviderInChat(true);
+          if (providerMsg.senderName) setProviderChatName(providerMsg.senderName);
+        }
       }
     } catch {}
   };
@@ -1181,8 +1186,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           ]);
           lastPollTimeRef.current = unseenMsgs[unseenMsgs.length - 1].createdAt;
           if (unseenMsgs.some((m: any) => m.senderType === "human")) setHumanEscalated(true);
-          if (unseenMsgs.some((m: any) => m.senderType === "provider" || m.senderType === "system")) {
+          const newProviderMsg = unseenMsgs.find((m: any) => m.senderType === "provider");
+          if (newProviderMsg || unseenMsgs.some((m: any) => m.senderType === "system")) {
             setProviderInChat(true);
+            if (newProviderMsg?.senderName) setProviderChatName(newProviderMsg.senderName);
           }
         }
       } catch {}
@@ -1368,7 +1375,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div className="w-9 h-9 rounded-full flex-shrink-0 relative">
-            {selectedMatchmaker?.avatarUrl && (
+            {!providerInChat && selectedMatchmaker?.avatarUrl && (
               <img
                 src={selectedMatchmaker.avatarUrl}
                 alt={selectedMatchmaker.name}
@@ -1380,12 +1387,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold"
               style={{ backgroundColor: brandColor }}
             >
-              {selectedMatchmaker?.name.charAt(0) || "?"}
+              {(providerInChat && providerChatName ? providerChatName : (selectedMatchmaker?.name || "?")).charAt(0)}
             </div>
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>
-              {selectedMatchmaker?.name || "AI Concierge"}
+              {providerInChat && providerChatName ? providerChatName : (selectedMatchmaker?.name || "AI Concierge")}
             </h2>
             {sessionTitle && (
               <p className="text-[11px] font-ui text-muted-foreground truncate" data-testid="chat-subject-label">
@@ -1636,7 +1643,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               <Paperclip className="w-4 h-4" />
             </Button>
             <Input
-              placeholder={`Message ${selectedMatchmaker?.name || "AI Concierge"}...`}
+              placeholder={`Message ${providerInChat && providerChatName ? providerChatName : (selectedMatchmaker?.name || "AI Concierge")}...`}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
