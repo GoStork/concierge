@@ -60,6 +60,19 @@ interface ChatMessage {
   senderName?: string;
   uiCardType?: string;
   uiCardData?: any;
+  createdAt?: string;
+}
+
+function chatDateLabel(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return d.toLocaleDateString("en-US", { weekday: "long" });
+  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined });
 }
 
 const CURATION_LINES = [
@@ -1215,6 +1228,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             consultationCard: extras.consultationCard,
             uiCardType: m.uiCardType,
             uiCardData: m.uiCardData,
+            createdAt: m.createdAt,
           };
         });
         setMessages(parsed);
@@ -1332,6 +1346,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 multiSelect: extras.multiSelect,
                 uiCardType: m.uiCardType,
                 uiCardData: m.uiCardData,
+                createdAt: m.createdAt,
               };
             }),
           ]);
@@ -1365,7 +1380,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       .replace(/\[First Name\]/gi, firstName)
       .replace(/\[Service\]/gi, service)
       .replace(/\[Location\]/gi, location);
-    setMessages([{ role: "assistant", content: greeting }]);
+    setMessages([{ role: "assistant", content: greeting, createdAt: new Date().toISOString() }]);
     setGreetingSet(true);
 
     (async () => {
@@ -1409,7 +1424,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       const updated = prev.map((m, i) =>
         i === prev.length - 1 && m.quickReplies ? { ...m, quickReplies: undefined } : m
       );
-      return [...updated, { role: "user" as const, content: userMessage }];
+      return [...updated, { role: "user" as const, content: userMessage, createdAt: new Date().toISOString() }];
     });
     setSending(true);
 
@@ -1459,6 +1474,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         consultationCard: data.consultationCard,
         senderType: data.message.senderType,
         senderName: data.message.senderName,
+        createdAt: data.message.createdAt || new Date().toISOString(),
       };
 
       if (data.showCuration) {
@@ -1471,7 +1487,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     } catch {
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "I'm sorry, I'm having trouble connecting right now. Please try again." },
+        { role: "assistant", content: "I'm sorry, I'm having trouble connecting right now. Please try again.", createdAt: new Date().toISOString() },
       ]);
     } finally {
       setSending(false);
@@ -1598,6 +1614,20 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" data-testid="concierge-messages">
           {messages.map((msg, i) => (
             <div key={i}>
+              {msg.createdAt && (() => {
+                const msgDate = new Date(msg.createdAt).toDateString();
+                const prevDate = i > 0 && messages[i - 1].createdAt ? new Date(messages[i - 1].createdAt!).toDateString() : null;
+                if (i === 0 || msgDate !== prevDate) {
+                  return (
+                    <div className="flex items-center justify-center my-3">
+                      <span className="px-3 py-1 text-[11px] font-medium text-muted-foreground bg-muted/60 rounded-full shadow-sm">
+                        {chatDateLabel(msg.createdAt)}
+                      </span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
               {(() => {
                 const isOwnMessage = msg.role === "user" && (!msg.senderName || msg.senderName === myDisplayName);
                 const isOtherParent = msg.role === "user" && msg.senderName && msg.senderName !== myDisplayName;
@@ -1665,7 +1695,21 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                               }),
                         }}
                       >
-                        {msg.content}
+                        <span>{msg.content}</span>
+                        {msg.createdAt && (
+                          <span
+                            className="inline-block align-bottom ml-2 whitespace-nowrap select-none"
+                            style={{
+                              fontSize: "10px",
+                              lineHeight: "18px",
+                              opacity: 0.7,
+                              float: "right",
+                              marginTop: "4px",
+                            }}
+                          >
+                            {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </>

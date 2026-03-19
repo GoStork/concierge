@@ -105,6 +105,18 @@ interface SessionDetail {
   messages: SessionMessage[];
 }
 
+function chatDateLabel(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return d.toLocaleDateString("en-US", { weekday: "long" });
+  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined });
+}
+
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -1102,6 +1114,20 @@ export default function ConversationsPage() {
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" data-testid="provider-chat-messages">
               {detail.messages.map((msg, i) => (
                 <div key={msg.id}>
+                  {msg.createdAt && (() => {
+                    const msgDate = new Date(msg.createdAt).toDateString();
+                    const prevDate = i > 0 && detail.messages[i - 1].createdAt ? new Date(detail.messages[i - 1].createdAt).toDateString() : null;
+                    if (i === 0 || msgDate !== prevDate) {
+                      return (
+                        <div className="flex items-center justify-center my-3">
+                          <span className="px-3 py-1 text-[11px] font-medium text-muted-foreground bg-muted/60 rounded-full shadow-sm">
+                            {chatDateLabel(msg.createdAt)}
+                          </span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                   {(() => {
                     const isOwnMsg = isProvider
                       ? msg.senderType === "provider"
@@ -1158,15 +1184,24 @@ export default function ConversationsPage() {
                             }}
                             data-testid={`provider-msg-${i}`}
                           >
-                            {msg.content}
+                            <span>{msg.content}</span>
+                            {msg.createdAt && (
+                              <span
+                                className="inline-block align-bottom ml-2 whitespace-nowrap select-none"
+                                style={{
+                                  fontSize: "10px",
+                                  lineHeight: "18px",
+                                  opacity: 0.7,
+                                  float: "right",
+                                  marginTop: "4px",
+                                }}
+                              >
+                                {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                              </span>
+                            )}
                           </div>
                         </div>
                         {msg.uiCardType && <SpecialMessageCard msg={msg} brandColor={brandColor} />}
-                        <div className={`flex ${isOwnMessage ? "justify-end" : "justify-start"} mt-0.5`}>
-                          <span className="text-[10px] text-muted-foreground">
-                            {timeAgo(msg.createdAt)}
-                          </span>
-                        </div>
                       </>
                     );
                   })()}
