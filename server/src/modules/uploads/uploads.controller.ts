@@ -98,11 +98,9 @@ export class UploadsController {
           }
 
           if (!ALLOWED_TYPES.includes(parsed.contentType)) {
-            res
-              .status(400)
-              .json({
-                message: `File type not allowed. Allowed: ${ALLOWED_TYPES.join(", ")}`,
-              });
+            res.status(400).json({
+              message: `File type not allowed. Allowed: ${ALLOWED_TYPES.join(", ")}`,
+            });
             resolve();
             return;
           }
@@ -292,9 +290,6 @@ export class UploadsController {
   @ApiOperation({ summary: "Remove background from an image using Gemini AI" })
   async removeBackground(@Req() req: Request, @Res() res: Response) {
     try {
-      let imageBuffer: Buffer;
-      let imageMime: string;
-
       const body = req.body;
       if (!body?.imageUrl || typeof body.imageUrl !== "string") {
         res.status(400).json({ message: "imageUrl is required in JSON body" });
@@ -310,12 +305,21 @@ export class UploadsController {
       }
 
       const localPath = path.join(UPLOADS_DIR, path.basename(imageUrl));
-      if (!fs.existsSync(localPath)) {
+
+      // 1. Check file existence and size ASYNCHRONOUSLY before loading into RAM
+      try {
+        const stats = await fs.promises.stat(localPath);
+        if (stats.size > MAX_FILE_SIZE) {
+          res
+            .status(413)
+            .json({ message: "Image too large. Maximum size is 16MB." });
+          return;
+        }
+      } catch {
         res.status(404).json({ message: "Image not found" });
         return;
       }
 
-      imageBuffer = fs.readFileSync(localPath);
       const ext = path.extname(localPath).toLowerCase();
       const mimeMap: Record<string, string> = {
         ".png": "image/png",
@@ -324,7 +328,7 @@ export class UploadsController {
         ".webp": "image/webp",
         ".gif": "image/gif",
       };
-      imageMime = mimeMap[ext] || "image/png";
+      const imageMime = mimeMap[ext] || "image/png";
 
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
@@ -332,15 +336,11 @@ export class UploadsController {
         return;
       }
 
-      if (imageBuffer.length > MAX_FILE_SIZE) {
-        res
-          .status(413)
-          .json({ message: "Image too large. Maximum size is 16MB." });
-        return;
-      }
+      // 2. Read the file ASYNCHRONOUSLY to prevent freezing the server
+      const imageBuffer = await fs.promises.readFile(localPath);
+      const base64Image = imageBuffer.toString("base64");
 
       const ai = new GoogleGenAI({ apiKey });
-      const base64Image = imageBuffer.toString("base64");
 
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-image",
@@ -355,7 +355,7 @@ export class UploadsController {
                 },
               },
               {
-                text: "Remove the background from this image completely and replace it with solid pure white (#FFFFFF, RGB 255,255,255). Every single background pixel must be exactly RGB(255,255,255) — no gradients, no shadows, no anti-aliasing on the background, no off-white pixels. Keep the foreground subject/logo intact with clean edges. Output only the processed image.",
+                text: "Remove the background from this image completely and replace it with solid pure white (#FFFFFF, RGB 255,255,255). Every single background pixel must be exactly RGB(255,255,255) - no gradients, no shadows, no anti-aliasing on the background, no off-white pixels. Keep the foreground subject/logo intact with clean edges. Output only the processed image.",
               },
             ],
           },
@@ -387,7 +387,7 @@ export class UploadsController {
       }
 
       if (!fs.existsSync(UPLOADS_DIR)) {
-        fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+        await fs.promises.mkdir(UPLOADS_DIR, { recursive: true });
       }
 
       const outExt = resultMimeType.includes("png")
@@ -397,7 +397,12 @@ export class UploadsController {
           : ".png";
       const uniqueName = `${crypto.randomBytes(16).toString("hex")}${outExt}`;
       const filePath = path.join(UPLOADS_DIR, uniqueName);
-      fs.writeFileSync(filePath, Buffer.from(resultImageData, "base64"));
+
+      // 3. Write the file ASYNCHRONOUSLY
+      await fs.promises.writeFile(
+        filePath,
+        Buffer.from(resultImageData, "base64"),
+      );
 
       const url = `/uploads/${uniqueName}`;
       res.status(200).json({ url });
