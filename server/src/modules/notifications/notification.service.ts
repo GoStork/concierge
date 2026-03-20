@@ -1208,23 +1208,34 @@ export class NotificationService implements OnModuleInit {
 
   async processReminders() {
     const now = new Date();
-    const pendingReminders = await this.prisma.notification.findMany({
-      where: {
-        channel: "booking_reminder",
-        status: "pending",
-        scheduledFor: { lte: now },
-      },
-      include: {
-        booking: {
-          include: {
-            providerUser: { select: { id: true, name: true, email: true, mobileNumber: true, providerId: true, provider: { select: { name: true } } } },
-            parentUser: { select: { id: true, name: true, email: true, mobileNumber: true } },
-          },
+    let pendingReminders: any[];
+    try {
+      pendingReminders = await this.prisma.notification.findMany({
+        where: {
+          channel: "booking_reminder",
+          status: "pending",
+          scheduledFor: { lte: now },
         },
-        user: { select: { id: true, name: true, email: true } },
-      },
-      take: 50,
-    });
+        include: {
+          booking: {
+            include: {
+              providerUser: { select: { id: true, name: true, email: true, mobileNumber: true, providerId: true, provider: { select: { name: true } } } },
+              parentUser: { select: { id: true, name: true, email: true, mobileNumber: true } },
+            },
+          },
+          user: { select: { id: true, name: true, email: true } },
+        },
+        take: 50,
+      });
+    } catch (dbErr: any) {
+      const msg = dbErr.message || "";
+      if (msg.includes("MaxClientsInSessionMode") || msg.includes("pool") || msg.includes("ECONNREFUSED")) {
+        this.logger.warn(`Reminder scheduler skipped cycle (DB connection issue): ${msg}`);
+      } else {
+        this.logger.error(`Reminder query failed: ${msg}`);
+      }
+      return 0;
+    }
 
     let processed = 0;
     for (const reminder of pendingReminders) {

@@ -50,7 +50,7 @@ export class VideoService implements OnModuleInit {
       try {
         for (const wh of existing) {
           const whId = wh.uuid || wh.id;
-          if (whId) {
+          if (whId && wh.url && wh.url.includes("/api/video/webhook")) {
             this.logger.log(`Deleting stale Daily.co webhook ${whId} (${wh.url})`);
             await this.deleteWebhook(whId);
           }
