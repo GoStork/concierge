@@ -1156,11 +1156,12 @@ export default function ConversationsPage() {
     ) : null;
 
     const parentProviderJoined = !!selectedParentSession?.providerJoinedAt;
-    const parentHeaderName = parentProviderJoined
+    const hasProvider = !!selectedParentSession?.providerId;
+    const parentHeaderName = hasProvider
       ? (selectedParentSession!.providerName || "Provider")
       : (selectedParentSession?.matchmakerName || "AI Concierge");
-    const parentHeaderAvatar = parentProviderJoined
-      ? selectedParentSession!.providerLogo
+    const parentHeaderAvatar = hasProvider
+      ? (selectedParentSession!.providerLogo || null)
       : selectedParentSession?.matchmakerAvatar;
 
     const parentDetailContent = hasParentSession ? (

@@ -458,15 +458,33 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       select: { id: true },
     });
 
+    let resolvedDonorName: string | null = null;
+    let resolvedOwnerProviderId: string | null = null;
+    if (donorId && mcpClient) {
+      try {
+        const donorLabel = donorType === "surrogate" ? "Surrogate" : donorType === "sperm-donor" ? "Sperm Donor" : "Egg Donor";
+        const resolveResult = await mcpClient.callTool({
+          name: "resolve_match_card",
+          arguments: { entityId: donorId, entityType: donorLabel },
+        });
+        const resolved = JSON.parse((resolveResult.content as any)?.[0]?.text || "{}");
+        if (resolved.name) resolvedDonorName = resolved.name;
+        if (resolved.ownerProviderId) resolvedOwnerProviderId = resolved.ownerProviderId;
+      } catch (e) {
+        console.error("[init-session] Error resolving donor name via MCP:", e);
+      }
+    }
+
     if (existing) {
       if (donorId) {
         const donorLabel = donorType === "surrogate" ? "Surrogate" : donorType === "sperm-donor" ? "Sperm Donor" : "Egg Donor";
+        const cardName = resolvedDonorName || donorLabel;
         const matchCardData = {
           matchCards: [{
-            name: donorLabel,
+            name: cardName,
             type: donorLabel,
             providerId: donorId,
-            ownerProviderId: req.body.ownerProviderId || undefined,
+            ownerProviderId: req.body.ownerProviderId || resolvedOwnerProviderId || undefined,
             reasons: [],
           }],
         };
@@ -481,15 +499,17 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
         });
         await prisma.aiChatSession.update({
           where: { id: existing.id },
-          data: { updatedAt: new Date(), title: `${donorLabel} Inquiry` },
+          data: { updatedAt: new Date(), title: `${cardName} Inquiry` },
         });
         return res.json({ sessionId: existing.id, greetingMessageId: greetingMsg.id, reused: true });
       }
       return res.json({ sessionId: existing.id });
     }
 
+    const donorLabel = donorType === "surrogate" ? "Surrogate" : donorType === "sperm-donor" ? "Sperm Donor" : "Egg Donor";
+    const cardName = donorId ? (resolvedDonorName || donorLabel) : null;
     const sessionTitle = donorId
-      ? `${donorType === "surrogate" ? "Surrogate" : donorType === "sperm-donor" ? "Sperm Donor" : "Egg Donor"} Inquiry`
+      ? `${cardName} Inquiry`
       : "AI Concierge Chat";
     const session = await prisma.aiChatSession.create({
       data: { userId, title: sessionTitle, matchmakerId },
@@ -497,13 +517,12 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
 
     let greetingUiCardData: any = undefined;
     if (donorId) {
-      const donorLabel = donorType === "surrogate" ? "Surrogate" : donorType === "sperm-donor" ? "Sperm Donor" : "Egg Donor";
       greetingUiCardData = {
         matchCards: [{
-          name: donorLabel,
+          name: cardName,
           type: donorLabel,
           providerId: donorId,
-          ownerProviderId: req.body.ownerProviderId || undefined,
+          ownerProviderId: req.body.ownerProviderId || resolvedOwnerProviderId || undefined,
           reasons: [],
         }],
       };
@@ -2199,33 +2218,72 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
               select: { providerId: true, matchmakerId: true },
             });
 
-            let targetSessionId = currentSessionId;
+            let enrichedLabel = profileLabel;
+            if (profileLabel && !profileLabel.match(/#\d+/) && profileLabel.match(/^(Egg Donor|Surrogate|Sperm Donor|Donor)$/i)) {
+              try {
+                const richMessages = await prisma.aiChatMessage.findMany({
+                  where: { sessionId: currentSessionId, uiCardType: "rich" },
+                  orderBy: { createdAt: "desc" },
+                  take: 20,
+                  select: { uiCardData: true },
+                });
+                for (const msg of richMessages) {
+                  const cards = (msg.uiCardData as any)?.matchCards || [];
+                  const matched = cards.find((c: any) => c.ownerProviderId === consultProviderId || c.providerId === consultProviderId);
+                  if (matched?.providerId) {
+                    const resolveResult = await mcpClient!.callTool({
+                      name: "resolve_match_card",
+                      arguments: { entityId: matched.providerId, entityType: matched.type || profileLabel },
+                    });
+                    const resolved = JSON.parse((resolveResult.content as any)?.[0]?.text || "{}");
+                    if (resolved.name && resolved.name.match(/#\d+/)) {
+                      enrichedLabel = resolved.name;
+                    }
+                    break;
+                  }
+                }
+              } catch (e) {
+                console.error("[CONSULTATION] Error enriching profile label with external ID:", e);
+              }
+            }
 
-            if (currentSession?.providerId && currentSession.providerId !== consultProviderId) {
+            const currentUserForAccount = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
+            const accountIds = currentUserForAccount?.parentAccountId
+              ? (await prisma.user.findMany({ where: { parentAccountId: currentUserForAccount.parentAccountId }, select: { id: true } })).map((u: any) => u.id)
+              : [userId];
+            const existingProviderSession = await prisma.aiChatSession.findFirst({
+              where: { userId: { in: accountIds }, providerId: consultProviderId },
+              orderBy: { updatedAt: "desc" },
+              select: { id: true },
+            });
+
+            let targetSessionId: string;
+            if (existingProviderSession) {
+              targetSessionId = existingProviderSession.id;
+              await prisma.aiChatSession.update({
+                where: { id: existingProviderSession.id },
+                data: {
+                  status: "CONSULTATION_BOOKED",
+                  updatedAt: new Date(),
+                  ...(enrichedLabel || profileLabel ? { title: enrichedLabel || profileLabel } : {}),
+                },
+              });
+              consultationTargetSessionId = existingProviderSession.id;
+              console.log(`[CONSULTATION] Reusing existing provider session ${targetSessionId} for provider ${consultProviderId} (AI concierge session ${currentSessionId} preserved)`);
+            } else {
               const newSession = await prisma.aiChatSession.create({
                 data: {
                   userId,
                   providerId: consultProviderId,
                   providerName: consultProvider.name,
                   status: "CONSULTATION_BOOKED",
-                  matchmakerId: currentSession.matchmakerId,
-                  title: profileLabel || null,
+                  matchmakerId: currentSession?.matchmakerId || undefined,
+                  title: enrichedLabel || profileLabel || null,
                 },
               });
               targetSessionId = newSession.id;
               consultationTargetSessionId = newSession.id;
-              console.log(`[CONSULTATION] Created new session ${targetSessionId} for provider ${consultProviderId} (previous session ${currentSessionId} already has provider ${currentSession.providerId})`);
-            } else {
-              await prisma.aiChatSession.update({
-                where: { id: currentSessionId },
-                data: {
-                  providerId: consultProviderId,
-                  providerName: consultProvider.name,
-                  status: "CONSULTATION_BOOKED",
-                  ...(profileLabel ? { title: profileLabel } : {}),
-                },
-              });
-              consultationTargetSessionId = currentSessionId;
+              console.log(`[CONSULTATION] Created new provider session ${targetSessionId} for provider ${consultProviderId} (AI concierge session ${currentSessionId} preserved)`);
             }
 
             await prisma.aiChatMessage.create({
@@ -2287,7 +2345,7 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
     if (quickReplies.length > 0) uiExtras.quickReplies = quickReplies;
     if (multiSelect) uiExtras.multiSelect = true;
 
-    const replySessionId = consultationTargetSessionId || currentSessionId;
+    const replySessionId = currentSessionId;
 
     const savedAiMessage = await prisma.aiChatMessage.create({
       data: {
@@ -2309,6 +2367,7 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
       prepDoc: sendPrepDoc || undefined,
       humanNeeded: humanNeeded || undefined,
       consultationCard: consultationCard || undefined,
+      consultationSessionId: consultationTargetSessionId || undefined,
     });
   } catch (error: any) {
     console.error("AI Router Error:", error);
