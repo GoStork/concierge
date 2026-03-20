@@ -38,7 +38,6 @@ const allowlist = [
   "stripe",
   "uuid",
   "ws",
-  "exceljs",
   "zod",
   "zod-validation-error",
 ];
