@@ -1201,6 +1201,7 @@ export default function ConversationsPage() {
               </p>
             )}
           </div>
+          {selectedParentSession!.providerId && (
           <div className="flex items-center gap-1 shrink-0">
             <Button
               variant="ghost"
@@ -1229,6 +1230,7 @@ export default function ConversationsPage() {
               <span className="hidden sm:inline">Video</span>
             </Button>
           </div>
+          )}
         </div>
         <ConciergeChatPage
           key={selectedParentSession!.id}

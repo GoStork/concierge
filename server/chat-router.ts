@@ -645,12 +645,17 @@ chatRouter.get("/api/chat-session/:id/provider-calendar-slug", requireAuth, asyn
     });
     if (!session) return res.status(404).json({ message: "Session not found" });
     if (session.userId !== user.id) {
-      const sameAccount = await prisma.user.findFirst({
-        where: { id: session.userId, parentAccountId: user.parentAccountId || undefined },
-      });
-      if (!sameAccount && user.role !== "admin" && user.role !== "provider") {
-        return res.status(403).json({ message: "Forbidden" });
+      let allowed = false;
+      if (user.parentAccountId) {
+        const sameAccount = await prisma.user.findFirst({
+          where: { id: session.userId, parentAccountId: user.parentAccountId },
+        });
+        if (sameAccount) allowed = true;
       }
+      const roles = user.roles || [];
+      if (roles.includes("GOSTORK_ADMIN")) allowed = true;
+      if (roles.includes("PROVIDER_ADMIN") && session.providerId && user.providerId === session.providerId) allowed = true;
+      if (!allowed) return res.status(403).json({ message: "Forbidden" });
     }
     if (!session.providerId) return res.json({ slug: null, memberName: null });
 
@@ -689,10 +694,14 @@ chatRouter.post("/api/chat-session/:id/message", requireAuth, async (req, res) =
     const session = await prisma.aiChatSession.findUnique({ where: { id: req.params.id } });
     if (!session) return res.status(404).json({ message: "Session not found" });
     if (session.userId !== user.id) {
-      const sameAccount = await prisma.user.findFirst({
-        where: { id: session.userId, parentAccountId: user.parentAccountId || undefined },
-      });
-      if (!sameAccount) return res.status(403).json({ message: "Forbidden" });
+      let allowed = false;
+      if (user.parentAccountId) {
+        const sameAccount = await prisma.user.findFirst({
+          where: { id: session.userId, parentAccountId: user.parentAccountId },
+        });
+        if (sameAccount) allowed = true;
+      }
+      if (!allowed) return res.status(403).json({ message: "Forbidden" });
     }
 
     const nameParts = (user.firstName && user.lastName)

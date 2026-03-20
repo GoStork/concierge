@@ -1839,25 +1839,48 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
     (async () => {
       try {
-        const sessRes = await fetch("/api/my/chat-sessions", { credentials: "include" });
+        const sessRes = await fetch("/api/ai-concierge/my-session", { credentials: "include" });
         if (sessRes.ok) {
-          const sessions = await sessRes.json();
-          const conciergeSession = sessions.find((s: any) => !s.providerId);
-          if (conciergeSession) {
-            setSessionId(conciergeSession.id);
-            if (matchmakerId && conciergeSession.matchmakerId !== matchmakerId) {
-              await fetch("/api/my/chat-session/matchmaker", {
+          const data = await sessRes.json();
+          if (data.session) {
+            setSessionId(data.session.id);
+            if (matchmakerId && data.session.matchmakerId !== matchmakerId) {
+              fetch("/api/my/chat-session/matchmaker", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 credentials: "include",
                 body: JSON.stringify({ matchmakerId }),
               });
               setResolvedMatchmakerId(matchmakerId);
-            } else if (conciergeSession.matchmakerId) {
-              setResolvedMatchmakerId(conciergeSession.matchmakerId);
+            } else if (data.session.matchmakerId) {
+              setResolvedMatchmakerId(data.session.matchmakerId);
             }
-            if (!donorIdParam) {
-              await loadMessagesForSession(conciergeSession.id);
+            if (!donorIdParam && data.messages?.length > 0) {
+              const msgs = data.messages;
+              setSessionTitle(data.session.title || null);
+              if (data.session.providerName) setProviderChatName(data.session.providerName);
+              const parsed: ChatMessage[] = msgs.map((m: any) => {
+                const extras = m.uiCardData || {};
+                return {
+                  id: m.id,
+                  role: m.role as "user" | "assistant",
+                  content: m.content,
+                  senderType: m.senderType,
+                  senderName: m.senderName,
+                  matchCards: extras.matchCards,
+                  prepDoc: extras.prepDoc,
+                  consultationCard: extras.consultationCard,
+                  uiCardType: m.uiCardType,
+                  uiCardData: m.uiCardData,
+                  createdAt: m.createdAt,
+                };
+              });
+              setMessages(parsed);
+              setGreetingSet(true);
+              lastPollTimeRef.current = msgs[msgs.length - 1].createdAt;
+              msgs.forEach((m: any) => { if (m.id) knownMessageIds.current.add(m.id); });
+              if (msgs.some((m: any) => m.senderType === "human")) setHumanEscalated(true);
+              if (msgs.find((m: any) => m.senderType === "provider")) setProviderInChat(true);
             }
           }
         }

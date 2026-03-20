@@ -399,6 +399,43 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
   }
 });
 
+aiRouter.get("/my-session", async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (!user) return res.status(401).json({ message: "Unauthorized" });
+    const userId = user.id;
+    const accountUserIds = user.parentAccountId
+      ? (await prisma.user.findMany({ where: { parentAccountId: user.parentAccountId }, select: { id: true } })).map((u: any) => u.id)
+      : [userId];
+    const session = await prisma.aiChatSession.findFirst({
+      where: { userId: { in: accountUserIds }, providerId: null },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, matchmakerId: true, title: true, provider: { select: { name: true } } },
+    });
+    if (!session) {
+      return res.json({ session: null, messages: [] });
+    }
+    const messages = await prisma.aiChatMessage.findMany({
+      where: { sessionId: session.id },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, role: true, content: true, senderType: true, senderName: true, createdAt: true, uiCardType: true, uiCardData: true },
+    });
+    const filteredMessages = messages.filter((m: any) => {
+      const data = m.uiCardData as any;
+      if (data?.whisperQuestionId) return false;
+      if (m.senderType === "system") return false;
+      return true;
+    });
+    res.json({
+      session: { id: session.id, matchmakerId: session.matchmakerId, title: session.title, providerName: session.provider?.name || null },
+      messages: filteredMessages,
+    });
+  } catch (e: any) {
+    console.error("My session error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
 aiRouter.post("/init-session", async (req: Request, res: Response) => {
   try {
     if (!req.isAuthenticated || !req.isAuthenticated() || !req.user) {
