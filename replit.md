@@ -4,7 +4,7 @@ GoStork is a multi-tenant fertility marketplace connecting Intended Parents with
 
 ## User Preferences
 
-Always use Claude Opus 4.6 for all coding, planning, and debugging tasks in this project. Apply maximum effort to security and multi-tenant logic.
+Always use Claude Sonnet 4.6 for all coding, planning, and debugging tasks in this project. Apply maximum effort to security and multi-tenant logic.
 
 **No dialogs/modals/popups:** Always use full pages or inline expandable sections instead of dialogs, modals, or popups. The app is designed with future native mobile apps in mind, where modals don't translate well. Dialogs are only acceptable for simple destructive-action confirmations (e.g., "Are you sure you want to delete?").
 
