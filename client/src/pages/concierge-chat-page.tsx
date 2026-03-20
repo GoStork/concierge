@@ -1386,22 +1386,20 @@ function buildMatchTabs(profile: any, cardType: string, reasons: string[]): TabS
 
 function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { card: MatchCard; brandColor: string; onAction: (text: string) => void; onViewProfile: (card: MatchCard) => void }) {
   const [profile, setProfile] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!card.ownerProviderId) return;
     const fetchProfile = async () => {
-      if (!card.ownerProviderId) { setLoading(false); return; }
       try {
         const endpoint = getProfileEndpoint(card.type);
         const res = await fetch(`/api/providers/${card.ownerProviderId}/${endpoint}/${card.providerId}`, { credentials: "include" });
         if (res.ok) setProfile(await res.json());
       } catch {}
-      setLoading(false);
     };
     fetchProfile();
   }, [card.ownerProviderId, card.providerId, card.type]);
 
-  if (loading) {
+  if (!profile && !card.photo) {
     return (
       <div className="min-w-[320px] max-w-[420px] w-full aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -1637,6 +1635,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const donorIdParam = searchParams.get("donorId");
   const donorTypeParam = searchParams.get("donorType");
   const donorProviderIdParam = searchParams.get("providerId");
+  const donorPhotoParam = searchParams.get("photoUrl");
   const navigate = useNavigate();
   const { user } = useAuth();
   const { data: brand } = useBrandSettings();
@@ -2004,6 +2003,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         type: donorLabel,
         providerId: donorIdParam,
         ownerProviderId: donorProviderIdParam || undefined,
+        photo: donorPhotoParam || undefined,
         reasons: [],
       }];
     }
