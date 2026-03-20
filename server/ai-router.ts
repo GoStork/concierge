@@ -2263,11 +2263,14 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
             const accountIds = currentUserForAccount?.parentAccountId
               ? (await prisma.user.findMany({ where: { parentAccountId: currentUserForAccount.parentAccountId }, select: { id: true } })).map((u: any) => u.id)
               : [userId];
-            const existingProviderSession = await prisma.aiChatSession.findFirst({
-              where: { userId: { in: accountIds }, providerId: consultProviderId },
-              orderBy: { updatedAt: "desc" },
-              select: { id: true },
-            });
+            const sessionTitle = enrichedLabel || profileLabel || null;
+            const existingProviderSession = sessionTitle
+              ? await prisma.aiChatSession.findFirst({
+                  where: { userId: { in: accountIds }, providerId: consultProviderId, title: sessionTitle },
+                  orderBy: { updatedAt: "desc" },
+                  select: { id: true },
+                })
+              : null;
 
             let targetSessionId: string;
             if (existingProviderSession) {
@@ -2277,11 +2280,10 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
                 data: {
                   status: "CONSULTATION_BOOKED",
                   updatedAt: new Date(),
-                  ...(enrichedLabel || profileLabel ? { title: enrichedLabel || profileLabel } : {}),
                 },
               });
               consultationTargetSessionId = existingProviderSession.id;
-              console.log(`[CONSULTATION] Reusing existing provider session ${targetSessionId} for provider ${consultProviderId} (AI concierge session ${currentSessionId} preserved)`);
+              console.log(`[CONSULTATION] Reusing existing provider session ${targetSessionId} for provider ${consultProviderId} with title "${sessionTitle}" (AI concierge session ${currentSessionId} preserved)`);
             } else {
               const newSession = await prisma.aiChatSession.create({
                 data: {
@@ -2290,7 +2292,7 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
                   providerName: consultProvider.name,
                   status: "CONSULTATION_BOOKED",
                   matchmakerId: currentSession?.matchmakerId || undefined,
-                  title: enrichedLabel || profileLabel || null,
+                  title: sessionTitle,
                 },
               });
               targetSessionId = newSession.id;
