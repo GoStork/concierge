@@ -30,6 +30,27 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (id.includes("node_modules")) {
+            if (id.includes("/react-dom/") || id.includes("/react/") || id.includes("/scheduler/")) {
+              return "vendor-react";
+            }
+            if (id.includes("react-router") || id.includes("@remix-run") || id.includes("wouter")) {
+              return "vendor-router";
+            }
+            if (id.includes("@tanstack") || id.includes("zod") || id.includes("react-hook-form")) {
+              return "vendor-utils";
+            }
+            if (id.includes("lucide-react") || id.includes("date-fns") || id.includes("radix-ui")) {
+              return "vendor-ui";
+            }
+            return "vendor";
+          }
+        },
+      },
+    },
   },
   server: {
     fs: {
