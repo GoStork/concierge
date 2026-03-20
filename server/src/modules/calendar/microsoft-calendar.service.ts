@@ -389,6 +389,23 @@ export class MicrosoftCalendarService {
     }
   }
 
+  async getEvent(userId: string, calendarId: string, eventId: string): Promise<{ status: string } | null> {
+    try {
+      const { token } = await this.getAuthenticatedToken(userId, { calendarId });
+      const data = await this.graphRequest(
+        token,
+        `${GRAPH_BASE_URL}/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+      );
+      if (data?.isCancelled) return { status: "cancelled" };
+      return { status: "confirmed" };
+    } catch (err: any) {
+      if (err.message?.includes("404") || err.message?.includes("ErrorItemNotFound")) {
+        return null;
+      }
+      throw err;
+    }
+  }
+
   async deleteEvent(userId: string, calendarId: string, eventId: string): Promise<boolean> {
     try {
       const { token } = await this.getAuthenticatedToken(userId, { calendarId });

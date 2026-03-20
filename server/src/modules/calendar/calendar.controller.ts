@@ -17,6 +17,9 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
 } from "@nestjs/common";
 import { Request, Response } from "express";
 import { DateTime } from "luxon";
@@ -49,10 +52,12 @@ function slugify(text: string): string {
 }
 
 @Controller("api/calendar")
-export class CalendarController {
+export class CalendarController implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(CalendarController.name);
   private cachedCompanyName: string | null = null;
   private companyNameCacheTime: number = 0;
   private static readonly COMPANY_NAME_CACHE_TTL = 5 * 60 * 1000;
+  private externalSyncInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -62,6 +67,27 @@ export class CalendarController {
     @Inject(CaldavCalendarService) private readonly caldavCalendar: CaldavCalendarService,
     @Inject(BookingEventsService) private readonly bookingEvents: BookingEventsService,
   ) {}
+
+  onModuleInit() {
+    this.externalSyncInterval = setInterval(() => {
+      this.checkExternalCalendarDeletions().catch((e) => {
+        const msg = e.message || "";
+        if (msg.includes("MaxClientsInSessionMode") || msg.includes("pool") || msg.includes("ECONNREFUSED") || msg.includes("Connection")) {
+          this.logger.warn(`External calendar sync skipped (connection issue): ${msg}`);
+        } else {
+          this.logger.error(`External calendar sync failed: ${msg}`);
+        }
+      });
+    }, 5 * 60 * 1000);
+    this.logger.log("External calendar deletion sync started (every 5 min)");
+  }
+
+  onModuleDestroy() {
+    if (this.externalSyncInterval) {
+      clearInterval(this.externalSyncInterval);
+      this.externalSyncInterval = null;
+    }
+  }
 
   private async getCompanyName(): Promise<string> {
     const now = Date.now();
@@ -3241,5 +3267,118 @@ export class CalendarController {
       if (!existing) return candidate;
       attempt++;
     }
+  }
+
+  async checkExternalCalendarDeletions() {
+    const now = new Date();
+    const bookings = await this.prisma.booking.findMany({
+      where: {
+        status: { in: ["PENDING", "CONFIRMED"] },
+        scheduledAt: { gte: now },
+        OR: [
+          { googleEventId: { not: null } },
+          { parentGoogleEventId: { not: null } },
+          { outlookEventId: { not: null } },
+          { parentOutlookEventId: { not: null } },
+        ],
+      },
+      include: {
+        providerUser: { select: { id: true, name: true, email: true, photoUrl: true, mobileNumber: true, providerId: true, provider: { select: { name: true } } } },
+        parentUser: { select: { id: true, name: true, email: true, mobileNumber: true } },
+      },
+    });
+
+    let cancelledCount = 0;
+    for (const booking of bookings) {
+      try {
+        const deleted = await this.isBookingDeletedExternally(booking);
+        if (!deleted) continue;
+
+        const updated = await this.prisma.booking.update({
+          where: { id: booking.id },
+          data: { status: "CANCELLED", cancelledAt: new Date() },
+          include: {
+            providerUser: { select: { id: true, name: true, email: true, photoUrl: true, mobileNumber: true, providerId: true, provider: { select: { name: true } } } },
+            parentUser: { select: { id: true, name: true, email: true, mobileNumber: true } },
+          },
+        });
+
+        this.notifications.sendBookingCancellation(updated).catch(() => {});
+        this.deleteGoogleCalendarEvent(updated).catch(() => {});
+        this.deleteParentGoogleCalendarEvent(updated).catch(() => {});
+        this.deleteOutlookCalendarEvent(updated).catch(() => {});
+        this.deleteParentOutlookCalendarEvent(updated).catch(() => {});
+        this.emitBookingEvent("booking_cancelled", updated);
+
+        cancelledCount++;
+        this.logger.log(`Booking ${booking.id} cancelled — event deleted from external calendar`);
+      } catch (err: any) {
+        this.logger.warn(`External sync check failed for booking ${booking.id}: ${err.message}`);
+      }
+    }
+
+    if (cancelledCount > 0) {
+      this.logger.log(`External calendar sync: cancelled ${cancelledCount} booking(s)`);
+    }
+  }
+
+  private async isBookingDeletedExternally(booking: any): Promise<boolean> {
+    if (booking.googleEventId) {
+      const conn = await this.getBookingCalendarConnection(booking.providerUserId);
+      if (conn) {
+        const calendarId = conn.calendarId || conn.email || "primary";
+        try {
+          const event = await this.googleCalendar.getEvent(booking.providerUserId, calendarId, booking.googleEventId);
+          if (!event || event.status === "cancelled") return true;
+        } catch {
+        }
+      }
+    }
+
+    if (booking.parentGoogleEventId && booking.parentUserId) {
+      let eventMap: Record<string, string>;
+      try { eventMap = JSON.parse(booking.parentGoogleEventId); } catch { eventMap = { [booking.parentUserId]: booking.parentGoogleEventId }; }
+      for (const [memberId, eventId] of Object.entries(eventMap)) {
+        const conn = await this.prisma.calendarConnection.findFirst({
+          where: { userId: memberId, provider: "google", connected: true, isBookingCalendar: true },
+        });
+        if (!conn) continue;
+        const calendarId = conn.calendarId || conn.email || "primary";
+        try {
+          const event = await this.googleCalendar.getEvent(memberId, calendarId, eventId);
+          if (!event || event.status === "cancelled") return true;
+        } catch {
+        }
+      }
+    }
+
+    if (booking.outlookEventId) {
+      const conn = await this.getMicrosoftBookingCalendarConnection(booking.providerUserId);
+      if (conn?.calendarId) {
+        try {
+          const event = await this.microsoftCalendar.getEvent(booking.providerUserId, conn.calendarId, booking.outlookEventId);
+          if (!event || event.status === "cancelled") return true;
+        } catch {
+        }
+      }
+    }
+
+    if (booking.parentOutlookEventId && booking.parentUserId) {
+      let eventMap: Record<string, string>;
+      try { eventMap = JSON.parse(booking.parentOutlookEventId); } catch { eventMap = { [booking.parentUserId]: booking.parentOutlookEventId }; }
+      for (const [memberId, eventId] of Object.entries(eventMap)) {
+        const conn = await this.prisma.calendarConnection.findFirst({
+          where: { userId: memberId, provider: "microsoft", connected: true, isBookingCalendar: true },
+        });
+        if (!conn?.calendarId) continue;
+        try {
+          const event = await this.microsoftCalendar.getEvent(memberId, conn.calendarId, eventId);
+          if (!event || event.status === "cancelled") return true;
+        } catch {
+        }
+      }
+    }
+
+    return false;
   }
 }

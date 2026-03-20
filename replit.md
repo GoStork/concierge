@@ -30,7 +30,7 @@ Always use Claude Sonnet 4.6 for all coding, planning, and debugging tasks in th
 **Technical Implementations & Design Choices:**
 - **Backend:** NestJS, Prisma ORM, PostgreSQL.
 - **Authentication:** Dual-mode (Passport.js/JWT), Redis for sessions, multi-role RBAC.
-- **Calendar & Scheduling:** Calendly-like system with Google, Microsoft, and Apple Calendar integrations, timezone-aware slots.
+- **Calendar & Scheduling:** Calendly-like system with Google, Microsoft, and Apple Calendar integrations, timezone-aware slots. Includes bi-directional sync: events deleted from external calendars (Google/Outlook) are automatically detected every 5 minutes, triggering cancellation in GoStork with full notifications to all parties.
 - **Notification System:** SendGrid for email, Twilio for SMS, exclusively using dynamic templates.
 - **AI-Powered Data Management:** Google Gemini for scraping, syncing, and bulk PDF uploads with multimodal OCR fallback. Dynamic cost sheet parsing with admin approval.
 - **Marketplace Gating:** Provider/donor visibility controlled by service approval.

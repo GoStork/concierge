@@ -261,6 +261,24 @@ export class GoogleCalendarService {
     }
   }
 
+  async getEvent(userId: string, calendarId: string, eventId: string): Promise<{ status: string } | null> {
+    try {
+      const client = await this.getAuthenticatedClient(userId, { calendarId });
+      const calendar = google.calendar({ version: "v3", auth: client });
+      const res = await calendar.events.get({ calendarId, eventId });
+      return { status: res.data.status || "confirmed" };
+    } catch (err: any) {
+      if (err?.code === 404 || err?.response?.status === 404) {
+        return null;
+      }
+      if (err?.code === 410 || err?.response?.status === 410) {
+        return null;
+      }
+      if (this.isAuthError(err)) await this.markUnhealthy(userId);
+      throw err;
+    }
+  }
+
   async updateEvent(
     userId: string,
     calendarId: string,
