@@ -55,7 +55,16 @@ function ensureLocalRedis() {
 async function createSessionStore(): Promise<session.Store> {
   const redisUrl = process.env.REDIS_URL || "redis://127.0.0.1:6379";
   try {
-    const redisClient = createClient({ url: redisUrl, socket: { connectTimeout: 5000 } });
+    const redisClient = createClient({
+      url: redisUrl,
+      socket: {
+        connectTimeout: 5000,
+        reconnectStrategy: (retries: number) => {
+          if (retries > 10) return new Error("Redis max reconnect attempts reached");
+          return Math.min(retries * 200, 3000);
+        },
+      },
+    });
     redisClient.on("error", (err: Error) => log(`Redis error: ${err.message}`, "redis"));
     await redisClient.connect();
     log("Redis connected — using Redis session store", "redis");

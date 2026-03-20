@@ -245,7 +245,12 @@ export class NotificationService implements OnModuleInit {
   onModuleInit() {
     this.reminderInterval = setInterval(() => {
       this.processReminders().catch((e) => {
-        this.logger.error(`Reminder processing failed: ${e.message}`);
+        const msg = e.message || "";
+        if (msg.includes("MaxClientsInSessionMode") || msg.includes("pool") || msg.includes("ECONNREFUSED") || msg.includes("Connection")) {
+          this.logger.warn(`Reminder scheduler skipped cycle (connection issue): ${msg}`);
+        } else {
+          this.logger.error(`Reminder processing failed: ${msg}`);
+        }
       });
     }, 60_000);
     this.logger.log("Reminder scheduler started (every 60s)");

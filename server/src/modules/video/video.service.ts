@@ -32,7 +32,14 @@ export class VideoService implements OnModuleInit {
       const webhookUrl = `https://${domain}/api/video/webhook`;
       const hmacSecret = process.env.DAILY_WEBHOOK_SECRET || undefined;
 
-      const existing = await this.listWebhooks();
+      let existing: any[] = [];
+      try {
+        existing = await this.listWebhooks();
+      } catch (listErr: any) {
+        this.logger.warn(`Could not list Daily.co webhooks: ${listErr.message}`);
+        return;
+      }
+
       for (const wh of existing) {
         if (wh.url === webhookUrl) {
           this.logger.log(`Daily.co webhook already registered: ${webhookUrl}`);
@@ -40,16 +47,25 @@ export class VideoService implements OnModuleInit {
         }
       }
 
-      for (const wh of existing) {
-        const whId = wh.uuid || wh.id;
-        if (whId) {
-          this.logger.log(`Deleting stale Daily.co webhook ${whId} (${wh.url})`);
-          await this.deleteWebhook(whId);
+      try {
+        for (const wh of existing) {
+          const whId = wh.uuid || wh.id;
+          if (whId) {
+            this.logger.log(`Deleting stale Daily.co webhook ${whId} (${wh.url})`);
+            await this.deleteWebhook(whId);
+          }
+        }
+
+        const result = await this.registerWebhook(webhookUrl, hmacSecret);
+        this.logger.log(`Daily.co webhook auto-registered: ${webhookUrl} (id: ${result?.uuid || result?.id})`);
+      } catch (regErr: any) {
+        const msg = regErr.message || "";
+        if (msg.includes("only 1 webhook") || msg.includes("already")) {
+          this.logger.log(`Daily.co webhook already exists for this domain — skipping`);
+        } else {
+          this.logger.warn(`Daily.co webhook registration failed: ${msg}`);
         }
       }
-
-      const result = await this.registerWebhook(webhookUrl, hmacSecret);
-      this.logger.log(`Daily.co webhook auto-registered: ${webhookUrl} (id: ${result?.uuid || result?.id})`);
     } catch (err: any) {
       this.logger.warn(`Daily.co webhook auto-registration failed: ${err.message}`);
     }
