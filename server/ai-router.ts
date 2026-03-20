@@ -390,6 +390,7 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
     const filteredMessages = isProvider ? messages : messages.filter((m: any) => {
       const data = m.uiCardData as any;
       if (data?.whisperQuestionId) return false;
+      if (m.uiCardType === "provider_only") return false;
       if (m.senderType === "system" && !session.providerId) return false;
       return true;
     });
@@ -2303,6 +2304,7 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
                 role: "assistant",
                 content: `Great news! ${userRecord?.name || firstName} has scheduled a consultation. You can now join their group chat to communicate directly.`,
                 senderType: "system",
+                uiCardType: "provider_only",
               },
             });
 
