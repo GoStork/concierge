@@ -439,6 +439,7 @@ export function InlineBookingCalendar({
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
@@ -562,6 +563,8 @@ export function InlineBookingCalendar({
       if (data?.publicToken) {
         setBooking(data);
         setStep("pending");
+        queryClient.invalidateQueries({ queryKey: ["/api/chat-session"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
       }
     },
   });
@@ -729,6 +732,8 @@ export function InlineBookingCalendar({
                 if (res.ok) {
                   setBooking({ ...booking, status: "CANCELLED" });
                   setStep("cancelled");
+                  queryClient.invalidateQueries({ queryKey: ["/api/chat-session"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
                 }
               } catch {} finally { setCancelling(false); }
             }}
