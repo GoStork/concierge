@@ -481,16 +481,33 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
         });
         await prisma.aiChatSession.update({
           where: { id: existing.id },
-          data: { updatedAt: new Date() },
+          data: { updatedAt: new Date(), title: `${donorLabel} Inquiry` },
         });
         return res.json({ sessionId: existing.id, greetingMessageId: greetingMsg.id, reused: true });
       }
       return res.json({ sessionId: existing.id });
     }
 
+    const sessionTitle = donorId
+      ? `${donorType === "surrogate" ? "Surrogate" : donorType === "sperm-donor" ? "Sperm Donor" : "Egg Donor"} Inquiry`
+      : "AI Concierge Chat";
     const session = await prisma.aiChatSession.create({
-      data: { userId, title: "AI Concierge Chat", matchmakerId },
+      data: { userId, title: sessionTitle, matchmakerId },
     });
+
+    let greetingUiCardData: any = undefined;
+    if (donorId) {
+      const donorLabel = donorType === "surrogate" ? "Surrogate" : donorType === "sperm-donor" ? "Sperm Donor" : "Egg Donor";
+      greetingUiCardData = {
+        matchCards: [{
+          name: donorLabel,
+          type: donorLabel,
+          providerId: donorId,
+          ownerProviderId: req.body.ownerProviderId || undefined,
+          reasons: [],
+        }],
+      };
+    }
 
     const greetingMsg = await prisma.aiChatMessage.create({
       data: {
@@ -498,6 +515,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
         role: "assistant",
         content: greeting,
         senderType: "ai",
+        ...(greetingUiCardData ? { uiCardData: greetingUiCardData } : {}),
       },
     });
 
@@ -1181,6 +1199,7 @@ IMPORTANT RULES:
           break;
         }
       }
+      console.log(`[DONOR INQUIRY CHECK] latestMc=${JSON.stringify(latestMc?.providerId || null)}, latestMatchCardIdx=${latestMatchCardIdx}, totalMsgs=${chatHistory.length}`);
       if (latestMc && latestMatchCardIdx >= 0) {
         const messagesAfterCard = chatHistory.slice(latestMatchCardIdx + 1);
         const userMsgsAfterCard = messagesAfterCard.filter((m: any) => m.role === "user");
@@ -1188,10 +1207,11 @@ IMPORTANT RULES:
         const hasIntakeFlow = assistantMsgsAfterCard.some((m: any) =>
           m.content && /frozen embryos|egg source|sperm source|who is.*carry|gestational surrogate|\[\[CURATION\]\]/i.test(m.content)
         );
+        console.log(`[DONOR INQUIRY CHECK] userMsgsAfter=${userMsgsAfterCard.length}, hasIntakeFlow=${hasIntakeFlow}`);
         if (userMsgsAfterCard.length <= 10 && !hasIntakeFlow) {
           isDonorInquiryMode = true;
           inquiryMatchCard = latestMc;
-          console.log(`[DONOR INQUIRY MODE] Detected donor inquiry session. Match card: ${JSON.stringify({ providerId: inquiryMatchCard?.providerId, type: inquiryMatchCard?.type, ownerProviderId: inquiryMatchCard?.ownerProviderId }).slice(0, 200)}`);
+          console.log(`[DONOR INQUIRY MODE] ACTIVATED. Match card: ${JSON.stringify({ providerId: inquiryMatchCard?.providerId, type: inquiryMatchCard?.type, ownerProviderId: inquiryMatchCard?.ownerProviderId }).slice(0, 200)}`);
         }
       }
     } catch (e) {
