@@ -12,7 +12,13 @@ import {
 } from "@nestjs/common";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { Request, Response } from "express";
-import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiQuery } from "@nestjs/swagger";
+import {
+  ApiTags,
+  ApiOperation,
+  ApiConsumes,
+  ApiBody,
+  ApiQuery,
+} from "@nestjs/swagger";
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
@@ -20,7 +26,13 @@ import { GoogleGenAI } from "@google/genai";
 
 const UPLOADS_DIR = path.resolve(process.cwd(), "public/uploads");
 const MAX_FILE_SIZE = 16 * 1024 * 1024;
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"];
+const ALLOWED_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/svg+xml",
+];
 
 @ApiTags("Uploads")
 @Controller("api/uploads")
@@ -29,7 +41,12 @@ export class UploadsController {
   @UseGuards(SessionOrJwtGuard)
   @ApiOperation({ summary: "Upload an image file" })
   @ApiConsumes("multipart/form-data")
-  @ApiBody({ schema: { type: "object", properties: { file: { type: "string", format: "binary" } } } })
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: { file: { type: "string", format: "binary" } },
+    },
+  })
   async uploadFile(@Req() req: Request, @Res() res: Response) {
     if (!fs.existsSync(UPLOADS_DIR)) {
       fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -37,12 +54,18 @@ export class UploadsController {
 
     const contentType = req.headers["content-type"] || "";
     if (!contentType.includes("multipart/form-data")) {
-      throw new HttpException("Content-Type must be multipart/form-data", HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        "Content-Type must be multipart/form-data",
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     const boundaryMatch = contentType.match(/boundary=(.+)/);
     if (!boundaryMatch) {
-      throw new HttpException("Missing boundary in content-type", HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        "Missing boundary in content-type",
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     const chunks: Buffer[] = [];
@@ -53,7 +76,9 @@ export class UploadsController {
         totalSize += chunk.length;
         if (totalSize > MAX_FILE_SIZE) {
           req.destroy();
-          res.status(413).json({ message: "File too large. Maximum size is 16MB." });
+          res
+            .status(413)
+            .json({ message: "File too large. Maximum size is 16MB." });
           resolve();
           return;
         }
@@ -73,7 +98,11 @@ export class UploadsController {
           }
 
           if (!ALLOWED_TYPES.includes(parsed.contentType)) {
-            res.status(400).json({ message: `File type not allowed. Allowed: ${ALLOWED_TYPES.join(", ")}` });
+            res
+              .status(400)
+              .json({
+                message: `File type not allowed. Allowed: ${ALLOWED_TYPES.join(", ")}`,
+              });
             resolve();
             return;
           }
@@ -83,12 +112,23 @@ export class UploadsController {
           const filePath = path.join(UPLOADS_DIR, uniqueName);
 
           let fileData = parsed.data;
-          if (["image/jpeg", "image/png", "image/webp"].includes(parsed.contentType)) {
+          if (
+            ["image/jpeg", "image/png", "image/webp"].includes(
+              parsed.contentType,
+            )
+          ) {
             try {
               const sharp = require("sharp");
               const metadata = await sharp(parsed.data).metadata();
-              if (metadata.width && metadata.height && (metadata.width > 1200 || metadata.height > 1200)) {
-                let pipeline = sharp(parsed.data).resize(1200, 1200, { fit: "inside", withoutEnlargement: true });
+              if (
+                metadata.width &&
+                metadata.height &&
+                (metadata.width > 1200 || metadata.height > 1200)
+              ) {
+                let pipeline = sharp(parsed.data).resize(1200, 1200, {
+                  fit: "inside",
+                  withoutEnlargement: true,
+                });
                 if (parsed.contentType === "image/png") {
                   pipeline = pipeline.png({ quality: 85 });
                 } else if (parsed.contentType === "image/webp") {
@@ -120,7 +160,9 @@ export class UploadsController {
   }
 
   @Get("proxy")
-  @ApiOperation({ summary: "Proxy an external image to avoid cross-origin issues" })
+  @ApiOperation({
+    summary: "Proxy an external image to avoid cross-origin issues",
+  })
   @ApiQuery({ name: "url", required: true, type: String })
   async proxyImage(@Query("url") url: string, @Res() res: Response) {
     if (!url || typeof url !== "string") {
@@ -142,7 +184,7 @@ export class UploadsController {
       const response = await fetch(url, {
         headers: {
           "User-Agent": "Mozilla/5.0 (compatible; GoStork/1.0)",
-          "Accept": "image/*",
+          Accept: "image/*",
         },
         signal: controller.signal,
         redirect: "follow",
@@ -150,44 +192,58 @@ export class UploadsController {
       clearTimeout(timeout);
 
       if (!response.ok) {
-        res.status(502).json({ message: `Upstream returned ${response.status}` });
+        res
+          .status(502)
+          .json({ message: `Upstream returned ${response.status}` });
         return;
       }
 
-      let ct = response.headers.get("content-type") || "image/jpeg";
-      const buffer = Buffer.from(await response.arrayBuffer());
-
-      if (!ct.startsWith("image/")) {
-        const head = buffer.subarray(0, 12);
-        if (head[0] === 0xFF && head[1] === 0xD8) ct = "image/jpeg";
-        else if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4E && head[3] === 0x47) ct = "image/png";
-        else if (head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46) ct = "image/gif";
-        else if (head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 &&
-                 head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50) ct = "image/webp";
-        else {
-          res.status(400).json({ message: "URL did not return an image" });
-          return;
-        }
-      }
-      if (buffer.length > MAX_FILE_SIZE) {
+      // 1. Check file size from headers before downloading to save bandwidth
+      const contentLength = response.headers.get("content-length");
+      if (contentLength && parseInt(contentLength, 10) > MAX_FILE_SIZE) {
         res.status(413).json({ message: "Image too large" });
         return;
       }
 
+      const ct = response.headers.get("content-type") || "image/jpeg";
+
+      // 2. Set response headers immediately
       res.set({
         "Content-Type": ct,
         "Cache-Control": "public, max-age=604800, immutable",
-        "Content-Length": String(buffer.length),
       });
-      res.send(buffer);
+
+      if (contentLength) {
+        res.set("Content-Length", contentLength);
+      }
+
+      // 3. Stream the body directly to the client (Zero Memory Buffer)
+      if (response.body) {
+        const { Readable } = require("stream");
+        // Convert Web Stream to Node Stream and pipe it to Express response
+        const stream = Readable.fromWeb(response.body);
+
+        stream.on("error", (err) => {
+          console.error("Proxy Stream Error:", err);
+          if (!res.headersSent) res.status(500).end();
+        });
+
+        stream.pipe(res);
+      } else {
+        res.end();
+      }
     } catch (err: any) {
-      res.status(502).json({ message: "Failed to fetch image" });
+      if (!res.headersSent) {
+        res.status(502).json({ message: "Failed to fetch image" });
+      }
     }
   }
 
   @Post("transform")
   @UseGuards(SessionOrJwtGuard)
-  @ApiOperation({ summary: "Apply transformation (rotate/flip) to an uploaded image" })
+  @ApiOperation({
+    summary: "Apply transformation (rotate/flip) to an uploaded image",
+  })
   async transformImage(@Req() req: Request, @Res() res: Response) {
     try {
       const { imageUrl, rotation, flipH } = req.body || {};
@@ -196,7 +252,9 @@ export class UploadsController {
         return;
       }
       if (!imageUrl.startsWith("/uploads/")) {
-        res.status(400).json({ message: "Only uploaded images (/uploads/*) are allowed" });
+        res
+          .status(400)
+          .json({ message: "Only uploaded images (/uploads/*) are allowed" });
         return;
       }
       const localPath = path.join(UPLOADS_DIR, path.basename(imageUrl));
@@ -245,7 +303,9 @@ export class UploadsController {
 
       const imageUrl: string = body.imageUrl;
       if (!imageUrl.startsWith("/uploads/")) {
-        res.status(400).json({ message: "Only uploaded images (/uploads/*) are allowed" });
+        res
+          .status(400)
+          .json({ message: "Only uploaded images (/uploads/*) are allowed" });
         return;
       }
 
@@ -257,7 +317,13 @@ export class UploadsController {
 
       imageBuffer = fs.readFileSync(localPath);
       const ext = path.extname(localPath).toLowerCase();
-      const mimeMap: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif" };
+      const mimeMap: Record<string, string> = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+      };
       imageMime = mimeMap[ext] || "image/png";
 
       const apiKey = process.env.GEMINI_API_KEY;
@@ -267,7 +333,9 @@ export class UploadsController {
       }
 
       if (imageBuffer.length > MAX_FILE_SIZE) {
-        res.status(413).json({ message: "Image too large. Maximum size is 16MB." });
+        res
+          .status(413)
+          .json({ message: "Image too large. Maximum size is 16MB." });
         return;
       }
 
@@ -322,7 +390,11 @@ export class UploadsController {
         fs.mkdirSync(UPLOADS_DIR, { recursive: true });
       }
 
-      const outExt = resultMimeType.includes("png") ? ".png" : resultMimeType.includes("webp") ? ".webp" : ".png";
+      const outExt = resultMimeType.includes("png")
+        ? ".png"
+        : resultMimeType.includes("webp")
+          ? ".webp"
+          : ".png";
       const uniqueName = `${crypto.randomBytes(16).toString("hex")}${outExt}`;
       const filePath = path.join(UPLOADS_DIR, uniqueName);
       fs.writeFileSync(filePath, Buffer.from(resultImageData, "base64"));
@@ -349,7 +421,10 @@ function getExtension(contentType: string, filename: string): string {
   return match ? match[0] : ".jpg";
 }
 
-function parseMultipart(body: Buffer, boundary: string): { filename: string; contentType: string; data: Buffer } | null {
+function parseMultipart(
+  body: Buffer,
+  boundary: string,
+): { filename: string; contentType: string; data: Buffer } | null {
   const boundaryBuffer = Buffer.from(`--${boundary}`);
   const parts: Buffer[] = [];
 

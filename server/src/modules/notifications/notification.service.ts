@@ -18,23 +18,6 @@ export type NotificationChannel =
   | "cost_sheet_approved"
   | "cost_sheet_rejected";
 
-const SENDGRID_TEMPLATES = {
-  BOOKING_SUBMITTED_PARENT: "d-4384e4c09fb64e92bb05e5658c57893c",
-  BOOKING_REQUEST_PROVIDER: "d-e2437b8055c64f8db0a577d691cfd01f",
-  BOOKING_CONFIRMED_PARENT: "d-4b37ca0d1a114dda8e9372a8614055a6",
-  BOOKING_CONFIRMED_PROVIDER: "d-6ed7b16b58c047ea8433544eef3d8b25",
-  BOOKING_CANCELLED_PARENT: "d-ed61237a5f3e448e8761d754f760dfd0",
-  BOOKING_CANCELLED_PROVIDER: "d-fbebfc18f6dd4b68ae52ca066cae4a76",
-  BOOKING_RESCHEDULED_PARENT: "d-ba2512c071f74241805f2f987011ebc0",
-  BOOKING_RESCHEDULED_PROVIDER: "d-5d3bd4d458454e5a851753a2d1eea8c8",
-  MEETING_DECLINED_PARENT: "d-5da5879df4ae4cfd9ed9c7e8251f5243",
-  NEW_TIME_SUGGESTED_PARENT: "d-bb2a04d6800641ed8111b3c1e27b549c",
-  CALENDAR_RECONNECTION: "d-61a10d14449b432187b40ef74dff109a",
-  VIDEO_WAITING_PARENT: "d-5ea2aeb3d5b04aca8fdba4692aaaeadd",
-  VIDEO_WAITING_PROVIDER: "d-4820b728f2e1441cb07360de8646115e",
-  MEMBER_INVITATION: "d-47a18c5cfdf14af581a572f3529e90b2",
-  RECORDING_READY: "d-9fdb56ce9e804deb9f70cc22ac57e615",
-};
 
 const TWILIO_TEMPLATES = {
   BOOKING_SUBMITTED_PARENT: "HXa677816cb8bf69768464139042b88515",
@@ -976,58 +959,56 @@ export class NotificationService implements OnModuleInit {
     const parentUser = booking.parentUser || (booking.parentUserId ? await this.prisma.user.findUnique({ where: { id: booking.parentUserId } }) : null);
     const scheduledAt = new Date(booking.scheduledAt);
     const base = getBaseUrl();
+    const brandData = await this.getBrandData();
     const recordingLink = `${base}/recordings/${booking.id}`;
     const meetingSubject = booking.subject || "Consultation";
     const meetingDate = formatDate(scheduledAt, booking.bookerTimezone);
 
+    const buildRecordingEmail = (firstName: string) => buildBrandedEmail(brandData, {
+      title: "Recording Ready",
+      greeting: `Hi ${esc(firstName)},`,
+      body: `The recording from your meeting <strong>${esc(meetingSubject)}</strong> on ${esc(meetingDate)} is now available to view.`,
+      buttons: [
+        { label: "View Recording", url: recordingLink },
+      ],
+    });
+
     if (providerEmail) {
+      const html = buildRecordingEmail(getFirstName(providerUser?.name));
       await this.dispatchNotification({
         userId: booking.providerUserId,
         bookingId: booking.id,
         type: "EMAIL",
         channel: "recording_ready",
         recipient: providerEmail,
-        templateId: SENDGRID_TEMPLATES.RECORDING_READY,
-        templateData: {
-          firstName: getFirstName(providerUser?.name),
-          meetingSubject,
-          meetingDate,
-          recordingLink,
-        },
+        subject: `Recording ready: ${meetingSubject} — ${meetingDate}`,
+        body: html,
       });
     }
 
     if (parentUser?.email) {
+      const html = buildRecordingEmail(getFirstName(parentUser.name));
       await this.dispatchNotification({
         userId: parentUser.id,
         bookingId: booking.id,
         type: "EMAIL",
         channel: "recording_ready",
         recipient: parentUser.email,
-        templateId: SENDGRID_TEMPLATES.RECORDING_READY,
-        templateData: {
-          firstName: getFirstName(parentUser.name),
-          meetingSubject,
-          meetingDate,
-          recordingLink,
-        },
+        subject: `Recording ready: ${meetingSubject} — ${meetingDate}`,
+        body: html,
       });
     }
 
     await this.fanOutParentNotification(booking, async (memberEmail, memberPhone, memberName, memberId) => {
+      const html = buildRecordingEmail(getFirstName(memberName));
       await this.dispatchNotification({
         userId: memberId,
         bookingId: booking.id,
         type: "EMAIL",
         channel: "recording_ready",
         recipient: memberEmail,
-        templateId: SENDGRID_TEMPLATES.RECORDING_READY,
-        templateData: {
-          firstName: getFirstName(memberName),
-          meetingSubject,
-          meetingDate,
-          recordingLink,
-        },
+        subject: `Recording ready: ${meetingSubject} — ${meetingDate}`,
+        body: html,
       });
     });
 

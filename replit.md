@@ -14,7 +14,7 @@ Always use Claude Sonnet 4.6 for all coding, planning, and debugging tasks in th
 
 **Preserve tab/view state on navigation:** All tab state in pages must be stored in URL search params (via `useSearchParams` with `{ replace: true }`), Redux, or sub-routes — never in local `useState`. This ensures the browser back button always returns users to the exact tab they were on. Every back button must navigate to the correct page AND tab. Use `navigate(-1)` when the source page varies, or explicit URLs with `?tab=` params when the destination is fixed.
 
-**All notifications must use SendGrid and Twilio templates:** Every email notification must use a SendGrid dynamic template (`templateId` + `templateData` via `dispatchNotification`). Every SMS notification must use a Twilio Content Template (`contentSid` + `contentVars` via `dispatchSmsTemplate`). Never hardcode HTML email bodies or send raw plain-text SMS. If the required templates don't exist yet, create them first via the SendGrid and Twilio APIs before writing the notification code.
+**All emails must use `buildBrandedEmail()` — no SendGrid templates:** Every email notification must use the `buildBrandedEmail()` function from `server/src/modules/notifications/email-builder.ts`, which renders brand colors, logo, fonts, and button styles from the Brand Settings page. The `SENDGRID_TEMPLATES` constant has been fully removed — no email should ever use `templateId`/`templateData`. SMS notifications must use Twilio Content Templates (`contentSid` + `contentVars` via `dispatchSmsTemplate`). Never hardcode HTML email bodies or send raw plain-text SMS.
 
 ## System Architecture
 
@@ -31,7 +31,7 @@ Always use Claude Sonnet 4.6 for all coding, planning, and debugging tasks in th
 - **Backend:** NestJS, Prisma ORM, PostgreSQL.
 - **Authentication:** Dual-mode (Passport.js/JWT), Redis for sessions, multi-role RBAC.
 - **Calendar & Scheduling:** Calendly-like system with Google, Microsoft, and Apple Calendar integrations, timezone-aware slots. Includes bi-directional sync: events deleted from external calendars (Google/Outlook) are automatically detected every 5 minutes, triggering cancellation in GoStork with full notifications to all parties.
-- **Notification System:** SendGrid for email, Twilio for SMS, exclusively using dynamic templates.
+- **Notification System:** SendGrid for email delivery, Twilio for SMS. All emails use `buildBrandedEmail()` (no SendGrid dynamic templates). SMS uses Twilio Content Templates.
 - **AI-Powered Data Management:** Google Gemini for scraping, syncing, and bulk PDF uploads with multimodal OCR fallback. Dynamic cost sheet parsing with admin approval.
 - **Marketplace Gating:** Provider/donor visibility controlled by service approval.
 - **Telehealth:** HIPAA-compliant video calls via Daily.co with consent-gated recording to Google Cloud Storage and Google Speech-to-Text transcription.
