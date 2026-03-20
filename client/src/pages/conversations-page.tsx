@@ -948,13 +948,20 @@ export default function ConversationsPage() {
   };
 
   useEffect(() => {
-    if (chatEndRef.current) {
-      const container = chatEndRef.current.closest('[data-testid="provider-chat-messages"]');
-      if (container) {
-        container.scrollTop = container.scrollHeight;
+    const scrollToEnd = () => {
+      if (chatEndRef.current) {
+        const container = chatEndRef.current.closest('[data-testid="provider-chat-messages"]');
+        if (container) {
+          container.scrollTop = container.scrollHeight;
+        }
       }
-    }
-  }, [sessionDetailQuery.data?.messages?.length]);
+    };
+    scrollToEnd();
+    const t1 = setTimeout(scrollToEnd, 100);
+    const t2 = setTimeout(scrollToEnd, 300);
+    const t3 = setTimeout(scrollToEnd, 600);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, [sessionDetailQuery.data?.messages?.length, selectedSessionId]);
 
   const handleSendReply = () => {
     if (!replyText.trim() || !selectedSessionId) return;
