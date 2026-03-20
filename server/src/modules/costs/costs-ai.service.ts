@@ -91,13 +91,26 @@ Return ONLY a valid JSON array with objects having these exact fields:
       contentType.includes("excel") ||
       originalFileName.match(/\.xlsx?$/i)
     ) {
-      const XLSX = await import("xlsx");
-      const workbook = XLSX.read(fileBuffer, { type: "buffer" });
+      const ExcelJS = await import("exceljs");
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(fileBuffer);
       const csvParts: string[] = [];
-      for (const sheetName of workbook.SheetNames) {
-        const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
-        csvParts.push(`--- Sheet: ${sheetName} ---\n${csv}`);
-      }
+      workbook.eachSheet((worksheet) => {
+        const rows: string[] = [];
+        worksheet.eachRow({ includeEmpty: false }, (row) => {
+          const values = (row.values as (string | number | null | undefined)[]).slice(1);
+          const csvRow = values
+            .map((v) => {
+              const s = v != null ? String(v) : "";
+              return s.includes(",") || s.includes('"') || s.includes("\n")
+                ? `"${s.replace(/"/g, '""')}"`
+                : s;
+            })
+            .join(",");
+          rows.push(csvRow);
+        });
+        csvParts.push(`--- Sheet: ${worksheet.name} ---\n${rows.join("\n")}`);
+      });
       textContent = csvParts.join("\n\n");
 
       const model = genAI.getGenerativeModel({
