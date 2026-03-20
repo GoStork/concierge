@@ -1979,7 +1979,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   useEffect(() => {
     if (greetingSet || !selectedMatchmaker || !user) return;
     if (!donorIdParam && !profileReady) return;
-    if (!sessionLoaded) return;
+    if (!donorIdParam && !sessionLoaded) return;
     if (!donorIdParam && (sessionId || existingSessionId)) return;
     let greeting = selectedMatchmaker.initialGreeting
       || `Hi there! I'm ${selectedMatchmaker.name}, ${selectedMatchmaker.title.toLowerCase()}. ${selectedMatchmaker.description} How can I help you on your fertility journey today?`;

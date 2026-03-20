@@ -458,33 +458,18 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       select: { id: true },
     });
 
-    let resolvedDonorName: string | null = null;
-    let resolvedOwnerProviderId: string | null = null;
-    if (donorId && mcpClient) {
-      try {
-        const donorLabel = donorType === "surrogate" ? "Surrogate" : donorType === "sperm-donor" ? "Sperm Donor" : "Egg Donor";
-        const resolveResult = await mcpClient.callTool({
-          name: "resolve_match_card",
-          arguments: { entityId: donorId, entityType: donorLabel },
-        });
-        const resolved = JSON.parse((resolveResult.content as any)?.[0]?.text || "{}");
-        if (resolved.name) resolvedDonorName = resolved.name;
-        if (resolved.ownerProviderId) resolvedOwnerProviderId = resolved.ownerProviderId;
-      } catch (e) {
-        console.error("[init-session] Error resolving donor name via MCP:", e);
-      }
-    }
+    const donorLabel = donorId
+      ? (donorType === "surrogate" ? "Surrogate" : donorType === "sperm-donor" ? "Sperm Donor" : "Egg Donor")
+      : null;
 
     if (existing) {
       if (donorId) {
-        const donorLabel = donorType === "surrogate" ? "Surrogate" : donorType === "sperm-donor" ? "Sperm Donor" : "Egg Donor";
-        const cardName = resolvedDonorName || donorLabel;
         const matchCardData = {
           matchCards: [{
-            name: cardName,
+            name: donorLabel,
             type: donorLabel,
             providerId: donorId,
-            ownerProviderId: req.body.ownerProviderId || resolvedOwnerProviderId || undefined,
+            ownerProviderId: req.body.ownerProviderId || undefined,
             reasons: [],
           }],
         };
@@ -499,18 +484,28 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
         });
         await prisma.aiChatSession.update({
           where: { id: existing.id },
-          data: { updatedAt: new Date(), title: `${cardName} Inquiry` },
+          data: { updatedAt: new Date(), title: `${donorLabel} Inquiry` },
         });
-        return res.json({ sessionId: existing.id, greetingMessageId: greetingMsg.id, reused: true });
+        res.json({ sessionId: existing.id, greetingMessageId: greetingMsg.id, reused: true });
+        if (mcpClient) {
+          mcpClient.callTool({ name: "resolve_match_card", arguments: { entityId: donorId, entityType: donorLabel } })
+            .then((resolveResult: any) => {
+              const resolved = JSON.parse((resolveResult.content as any)?.[0]?.text || "{}");
+              if (resolved.name && resolved.name !== donorLabel) {
+                prisma.aiChatSession.update({ where: { id: existing.id }, data: { title: `${resolved.name} Inquiry` } }).catch(() => {});
+                prisma.aiChatMessage.update({
+                  where: { id: greetingMsg.id },
+                  data: { uiCardData: { matchCards: [{ ...matchCardData.matchCards[0], name: resolved.name, ownerProviderId: resolved.ownerProviderId || req.body.ownerProviderId || undefined }] } },
+                }).catch(() => {});
+              }
+            }).catch((e: any) => console.error("[init-session] Background resolve error:", e));
+        }
+        return;
       }
       return res.json({ sessionId: existing.id });
     }
 
-    const donorLabel = donorType === "surrogate" ? "Surrogate" : donorType === "sperm-donor" ? "Sperm Donor" : "Egg Donor";
-    const cardName = donorId ? (resolvedDonorName || donorLabel) : null;
-    const sessionTitle = donorId
-      ? `${cardName} Inquiry`
-      : "AI Concierge Chat";
+    const sessionTitle = donorId ? `${donorLabel} Inquiry` : "AI Concierge Chat";
     const session = await prisma.aiChatSession.create({
       data: { userId, title: sessionTitle, matchmakerId },
     });
@@ -519,10 +514,10 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
     if (donorId) {
       greetingUiCardData = {
         matchCards: [{
-          name: cardName,
+          name: donorLabel,
           type: donorLabel,
           providerId: donorId,
-          ownerProviderId: req.body.ownerProviderId || resolvedOwnerProviderId || undefined,
+          ownerProviderId: req.body.ownerProviderId || undefined,
           reasons: [],
         }],
       };
@@ -539,6 +534,22 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
     });
 
     res.json({ sessionId: session.id, greetingMessageId: greetingMsg.id });
+
+    if (donorId && mcpClient) {
+      mcpClient.callTool({ name: "resolve_match_card", arguments: { entityId: donorId, entityType: donorLabel } })
+        .then((resolveResult: any) => {
+          const resolved = JSON.parse((resolveResult.content as any)?.[0]?.text || "{}");
+          if (resolved.name && resolved.name !== donorLabel) {
+            prisma.aiChatSession.update({ where: { id: session.id }, data: { title: `${resolved.name} Inquiry` } }).catch(() => {});
+            if (greetingUiCardData) {
+              prisma.aiChatMessage.update({
+                where: { id: greetingMsg.id },
+                data: { uiCardData: { matchCards: [{ ...greetingUiCardData.matchCards[0], name: resolved.name, ownerProviderId: resolved.ownerProviderId || req.body.ownerProviderId || undefined }] } },
+              }).catch(() => {});
+            }
+          }
+        }).catch((e: any) => console.error("[init-session] Background resolve error:", e));
+    }
   } catch (e: any) {
     console.error("Init session error:", e);
     res.status(500).json({ error: e.message });
