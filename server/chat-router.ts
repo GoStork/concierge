@@ -865,11 +865,32 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
       return res.status(403).json({ message: "Forbidden" });
     }
 
-    const providerUsers = await prisma.user.findMany({
-      where: { providerId: session.providerId!, roles: { hasSome: PROVIDER_ROLES } },
-      select: { id: true },
-    });
-    const providerUserIds = providerUsers.map(u => u.id);
+    let providerUserIds: string[] = [];
+    if (session.providerId) {
+      const providerUsers = await prisma.user.findMany({
+        where: { providerId: session.providerId, roles: { hasSome: PROVIDER_ROLES } },
+        select: { id: true },
+      });
+      providerUserIds = providerUsers.map(u => u.id);
+    } else {
+      const consultMsgs = await prisma.aiChatMessage.findMany({
+        where: { sessionId: session.id, uiCardType: "rich" },
+        select: { uiCardData: true },
+      });
+      const providerIds = new Set<string>();
+      for (const m of consultMsgs) {
+        const card = (m.uiCardData as any)?.consultationCard;
+        if (card?.providerId) providerIds.add(card.providerId);
+      }
+      if (providerIds.size > 0) {
+        const providerUsers = await prisma.user.findMany({
+          where: { providerId: { in: Array.from(providerIds) }, roles: { hasSome: PROVIDER_ROLES } },
+          select: { id: true },
+        });
+        providerUserIds = providerUsers.map(u => u.id);
+      }
+    }
+    if (providerUserIds.length === 0) return res.json([]);
 
     const bookings = await prisma.booking.findMany({
       where: {
