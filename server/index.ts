@@ -81,6 +81,23 @@ async function createSessionStore(): Promise<session.Store> {
   const app = express();
   const httpServer = createServer(app);
 
+  const port = parseInt(process.env.PORT || "5000", 10);
+  let appReady = false;
+
+  app.get("/__health", (_req, res) => {
+    res.status(200).json({ status: appReady ? "ready" : "starting" });
+  });
+
+  httpServer.listen(
+    {
+      port,
+      host: "0.0.0.0",
+    },
+    () => {
+      log(`serving on port ${port}`);
+    },
+  );
+
   app.use(
     express.json({
       verify: (req, _res, buf) => {
@@ -185,14 +202,6 @@ async function createSessionStore(): Promise<session.Store> {
     await setupVite(httpServer, app);
   }
 
-  const port = parseInt(process.env.PORT || "5000", 10);
-  httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-    },
-    () => {
-      log(`serving on port ${port}`);
-    },
-  );
+  appReady = true;
+  log("Application fully initialized");
 })();
