@@ -2097,7 +2097,8 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
               }
 
               const idField = matched.id || matched.providerId;
-              const nameField = matched.displayName || matched.firstName || matched.name || (matched.externalId ? `${cardType} #${matched.externalId}` : `Match`);
+              const cleanEid = matched.externalId ? matched.externalId.replace(/^[a-zA-Z]+-/, "") : null;
+              const nameField = matched.displayName || matched.firstName || matched.name || (cleanEid ? `${cardType} #${cleanEid}` : `Match`);
               const locationField = matched.location || "";
 
               const reasons: string[] = [];

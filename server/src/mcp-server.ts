@@ -13,6 +13,7 @@ const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const cleanExternalId = (eid: string | null | undefined) => eid ? eid.replace(/^[a-zA-Z]+-/, "") : null;
 
 async function generateSearchEmbedding(text: string): Promise<number[] | null> {
   if (!text || !process.env.OPENAI_API_KEY) return null;
@@ -484,7 +485,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         return {
           ...s,
-          displayName: s.firstName || (s.externalId ? `Surrogate #${s.externalId}` : `Surrogate #${s.id.slice(-4)}`),
+          displayName: s.firstName || (cleanExternalId(s.externalId) ? `Surrogate #${cleanExternalId(s.externalId)}` : `Surrogate #${s.id.slice(-4)}`),
           baseCompensation: s.baseCompensation ? Number(s.baseCompensation) : null,
           ...(Object.keys(profileHighlights).length > 0 ? { profileHighlights } : {}),
         };
@@ -543,7 +544,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { profileData, ...surrogateBasic } = surrogate as any;
       const result = {
         ...surrogateBasic,
-        displayName: surrogateBasic.firstName || (surrogateBasic.externalId ? `Surrogate #${surrogateBasic.externalId}` : `Surrogate`),
+        displayName: surrogateBasic.firstName || (cleanExternalId(surrogateBasic.externalId) ? `Surrogate #${cleanExternalId(surrogateBasic.externalId)}` : `Surrogate`),
         baseCompensation: surrogateBasic.baseCompensation ? Number(surrogateBasic.baseCompensation) : null,
         profileSections,
         additionalDetails: topLevelData,
@@ -604,7 +605,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { profileData, ...donorBasic } = donor as any;
       const result = {
         ...donorBasic,
-        displayName: donorBasic.firstName || (donorBasic.externalId ? `Donor #${donorBasic.externalId}` : `Donor`),
+        displayName: donorBasic.firstName || (cleanExternalId(donorBasic.externalId) ? `Donor #${cleanExternalId(donorBasic.externalId)}` : `Donor`),
         profileSections,
         additionalDetails: topLevelData,
       };
@@ -683,7 +684,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const results = donors.map((d: any) => ({
         ...d,
-        displayName: d.firstName || (d.externalId ? `Donor #${d.externalId}` : `Donor #${d.id.slice(-4)}`),
+        displayName: d.firstName || (cleanExternalId(d.externalId) ? `Donor #${cleanExternalId(d.externalId)}` : `Donor #${d.id.slice(-4)}`),
       }));
 
       return {
@@ -760,7 +761,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const results = donors.map((d: any) => ({
         ...d,
-        displayName: d.firstName || (d.externalId ? `Donor #${d.externalId}` : `Donor #${d.id.slice(-4)}`),
+        displayName: d.firstName || (cleanExternalId(d.externalId) ? `Donor #${cleanExternalId(d.externalId)}` : `Donor #${d.id.slice(-4)}`),
       }));
 
       if (results.length === 0) {
@@ -884,9 +885,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           select: { photoUrl: true, firstName: true, externalId: true, providerId: true, age: true, location: true },
         });
         if (s) {
+          const eid = cleanExternalId(s.externalId);
           result = {
             photo: s.photoUrl || null,
-            name: s.firstName || (s.externalId ? `Surrogate #${s.externalId}` : `Surrogate #${entityId.slice(-4)}`),
+            name: s.firstName || (eid ? `Surrogate #${eid}` : `Surrogate #${entityId.slice(-4)}`),
             ownerProviderId: s.providerId,
           };
         }
@@ -896,9 +898,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           select: { photoUrl: true, firstName: true, externalId: true, providerId: true, age: true, location: true },
         });
         if (d) {
+          const eid = cleanExternalId(d.externalId);
           result = {
             photo: d.photoUrl || null,
-            name: d.firstName || (d.externalId ? `Donor #${d.externalId}` : `Donor #${entityId.slice(-4)}`),
+            name: d.firstName || (eid ? `Donor #${eid}` : `Donor #${entityId.slice(-4)}`),
             ownerProviderId: d.providerId,
           };
         }
@@ -908,9 +911,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           select: { photoUrl: true, firstName: true, externalId: true, providerId: true, age: true, location: true },
         });
         if (d) {
+          const eid = cleanExternalId(d.externalId);
           result = {
             photo: d.photoUrl || null,
-            name: d.firstName || (d.externalId ? `Donor #${d.externalId}` : `Donor #${entityId.slice(-4)}`),
+            name: d.firstName || (eid ? `Donor #${eid}` : `Donor #${entityId.slice(-4)}`),
             ownerProviderId: d.providerId,
           };
         }
