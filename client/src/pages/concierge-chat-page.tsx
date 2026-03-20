@@ -2256,12 +2256,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" data-testid="concierge-messages">
           {(() => {
             const shouldInlineBooking = !externalBookingSlug && !conciergeBookingSlug && sessionBookings && sessionBookings.length > 0;
-            const activeBooking = shouldInlineBooking
-              ? (sessionBookings!.find((b: any) => b.status === "CONFIRMED")
-                || sessionBookings!.find((b: any) => b.status === "PENDING")
-                || sessionBookings!.find((b: any) => b.status === "CANCELLED")
-                || sessionBookings![0])
-              : null;
+            const activeBooking = shouldInlineBooking ? sessionBookings![0] : null;
             type TimelineItem = { type: "message"; msg: ChatMessage; ts: string } | { type: "booking"; booking: any; ts: string };
             const msgItems: TimelineItem[] = messages.map((m) => ({ type: "message" as const, msg: m, ts: m.createdAt || "" }));
             const bookingItems: TimelineItem[] = activeBooking
@@ -2431,10 +2426,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       const providerBookings = sessionBookings.filter(
                         (b: any) => b.providerUser?.provider?.id === msg.consultationCard?.providerId
                       );
-                      return providerBookings.find((b: any) => b.status === "CONFIRMED")
-                        || providerBookings.find((b: any) => b.status === "PENDING")
-                        || providerBookings.find((b: any) => b.status === "CANCELLED")
-                        || providerBookings[0];
+                      return providerBookings[0];
                     })()}
                   />
                 </div>
