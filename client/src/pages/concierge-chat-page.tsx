@@ -1403,7 +1403,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
 
   if (loading) {
     return (
-      <div className="w-full max-w-sm aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center">
+      <div className="min-w-[320px] max-w-[420px] w-full aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -1423,7 +1423,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
 
     return (
       <div
-        className="w-full max-w-sm aspect-[3/4] animate-[slideUp_0.4s_ease-out_forwards]"
+        className="min-w-[320px] max-w-[420px] w-full aspect-[3/4] animate-[slideUp_0.4s_ease-out_forwards]"
         data-testid={`match-card-${card.providerId}`}
       >
         <SwipeDeckCard
@@ -1446,7 +1446,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
 
   return (
     <div
-      className="w-full max-w-sm aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted cursor-pointer relative"
+      className="min-w-[320px] max-w-[420px] w-full aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted cursor-pointer relative"
       data-testid={`match-card-${card.providerId}`}
       onClick={() => onViewProfile(card)}
     >
@@ -2333,7 +2333,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   <>
                     {!alignRight && msg.matchCards && msg.matchCards.length > 0 && (
                       <div className="flex justify-start mb-2 ml-0">
-                        <div className="space-y-3">
+                        <div className="space-y-3 min-w-[320px] max-w-[420px]">
                           {msg.matchCards.map((card, ci) => (
                             <MatchCardComponent
                               key={ci}
