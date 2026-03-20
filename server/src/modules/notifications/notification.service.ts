@@ -27,8 +27,6 @@ const SENDGRID_TEMPLATES = {
   BOOKING_CANCELLED_PROVIDER: "d-fbebfc18f6dd4b68ae52ca066cae4a76",
   BOOKING_RESCHEDULED_PARENT: "d-ba2512c071f74241805f2f987011ebc0",
   BOOKING_RESCHEDULED_PROVIDER: "d-5d3bd4d458454e5a851753a2d1eea8c8",
-  BOOKING_REMINDER_PARENT: "d-32c08ebc87934a89ab4e27408a42710a",
-  BOOKING_REMINDER_PROVIDER: "d-33d33b56da404a21853977d3ff08e3ac",
   MEETING_DECLINED_PARENT: "d-5da5879df4ae4cfd9ed9c7e8251f5243",
   NEW_TIME_SUGGESTED_PARENT: "d-bb2a04d6800641ed8111b3c1e27b549c",
   CALENDAR_RECONNECTION: "d-61a10d14449b432187b40ef74dff109a",
@@ -1262,40 +1260,58 @@ export class NotificationService implements OnModuleInit {
         const isProvider = reminder.recipient === booking.providerUser?.email || reminder.recipient === booking.providerUser?.mobileNumber;
 
         if (reminder.type === "EMAIL") {
-          const templateId = isProvider ? SENDGRID_TEMPLATES.BOOKING_REMINDER_PROVIDER : SENDGRID_TEMPLATES.BOOKING_REMINDER_PARENT;
+          const brandData = await this.getBrandData();
           const reminderVideoRoomLink = `${base}/room/${booking.id}`;
-          const templateData = isProvider
-            ? {
-                firstName: getFirstName(booking.providerUser?.name),
-                parentName: attendeeName,
-                parentEmail: booking.attendeeEmails?.[0] || "",
-                date: formatDate(scheduledAt, booking.bookerTimezone),
-                time: formatTime(scheduledAt, booking.bookerTimezone),
-                duration: String(booking.duration),
-                reminderLabel,
-                meetingLink: booking.meetingUrl || "",
-                videoRoomLink: reminderVideoRoomLink,
-                buttonText: "START MEETING",
-                rescheduleLink: `${base}/booking/${booking.publicToken}`,
-                cancelLink: `${base}/booking/${booking.publicToken}`,
-                providerName,
-              }
-            : {
-                firstName: getFirstName(attendeeName),
-                providerName,
-                staffMember: booking.providerUser?.name || "",
-                date: formatDate(scheduledAt, booking.bookerTimezone),
-                time: formatTime(scheduledAt, booking.bookerTimezone),
-                duration: String(booking.duration),
-                reminderLabel,
-                meetingLink: booking.meetingUrl || "",
-                videoRoomLink: reminderVideoRoomLink,
-                buttonText: "JOIN MEETING",
-                rescheduleLink: `${base}/booking/${booking.publicToken}`,
-                cancelLink: `${base}/booking/${booking.publicToken}`,
-              };
+          const dateStr = formatDate(scheduledAt, booking.bookerTimezone);
+          const timeStr = formatTime(scheduledAt, booking.bookerTimezone);
+          const detailsLink = `${base}/booking/${booking.publicToken}`;
+          const joinLink = booking.meetingUrl || reminderVideoRoomLink;
+          const location = booking.meetingType === "phone" ? "Phone Call" : "Video Call";
+          const staffMember = booking.providerUser?.name || "";
 
-          await this.sendTemplateEmail(reminder.recipient, templateId, templateData);
+          let html: string;
+          let subject: string;
+          if (isProvider) {
+            subject = `Reminder: Your meeting with ${attendeeName} ${reminderLabel}`;
+            html = buildBrandedEmail(brandData, {
+              title: "Meeting Reminder",
+              greeting: `Hi ${esc(getFirstName(booking.providerUser?.name))},`,
+              body: `This is a reminder that your meeting with <strong>${esc(attendeeName)}</strong> ${reminderLabel}.`,
+              detailRows: [
+                { label: "Date", value: dateStr },
+                { label: "Time", value: timeStr },
+                { label: "Duration", value: `${booking.duration} minutes` },
+                { label: "Client", value: esc(attendeeName) },
+                ...(booking.attendeeEmails?.[0] ? [{ label: "Email", value: esc(booking.attendeeEmails[0]) }] : []),
+              ],
+              buttons: [
+                ...(location === "Video Call" ? [{ label: "Start Meeting", url: joinLink }] : []),
+                { label: "Reschedule", url: detailsLink, variant: "secondary" as const },
+                { label: "Cancel", url: detailsLink, variant: "destructive" as const },
+              ],
+            });
+          } else {
+            subject = `Reminder: Your meeting with ${providerName} ${reminderLabel}`;
+            html = buildBrandedEmail(brandData, {
+              title: "Meeting Reminder",
+              greeting: `Hi ${esc(getFirstName(attendeeName))},`,
+              body: `This is a reminder that your meeting with <strong>${esc(providerName)}</strong> ${reminderLabel}.`,
+              detailRows: [
+                { label: "Date", value: dateStr },
+                { label: "Time", value: timeStr },
+                { label: "Duration", value: `${booking.duration} minutes` },
+                { label: "Location", value: location },
+                ...(staffMember ? [{ label: "With", value: esc(staffMember) }] : []),
+              ],
+              buttons: [
+                ...(location === "Video Call" ? [{ label: "Join Meeting", url: joinLink }] : []),
+                { label: "Reschedule", url: detailsLink, variant: "secondary" as const },
+                { label: "Cancel", url: detailsLink, variant: "destructive" as const },
+              ],
+            });
+          }
+
+          await this.sendRawEmail(reminder.recipient, subject, html);
         } else if (reminder.type === "SMS") {
           const otherPartyName = isProvider ? attendeeName : providerName;
           await this.sendSmsWithTemplate(
