@@ -390,7 +390,7 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
     const filteredMessages = isProvider ? messages : messages.filter((m: any) => {
       const data = m.uiCardData as any;
       if (data?.whisperQuestionId) return false;
-      if (m.senderType === "system") return false;
+      if (m.senderType === "system" && !session.providerId) return false;
       return true;
     });
     res.json({ messages: filteredMessages, sessionTitle: session.title || null, providerName: session.provider?.name || null });
