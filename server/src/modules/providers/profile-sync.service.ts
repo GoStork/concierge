@@ -3009,10 +3009,15 @@ async function markStaleProfiles(
   let staleProfiles: { id: string; externalId: string | null; manuallyEditedFields: string[] | null }[];
 
   // Only consider synced profiles as stale candidates (never PDF-uploaded ones)
+  // Use OR to also catch profiles with null externalId (notIn never matches null in Prisma)
+  const scrapedIdArray = Array.from(scrapedExternalIds);
   const staleFilter = {
     providerId,
     status: { not: "INACTIVE" } as const,
-    externalId: { notIn: Array.from(scrapedExternalIds), not: { startsWith: "pdf-" } },
+    OR: [
+      { externalId: { notIn: scrapedIdArray, not: { startsWith: "pdf-" } } },
+      { externalId: null as any },
+    ],
   };
   const staleSelect = { id: true, externalId: true, manuallyEditedFields: true } as const;
   if (type === "egg-donor") {
