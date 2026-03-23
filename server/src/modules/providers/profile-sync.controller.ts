@@ -173,7 +173,7 @@ export class ProfileSyncController {
 
     const chunks: Buffer[] = [];
     let totalSize = 0;
-    const MAX_FILE_SIZE = 50 * 1024 * 1024;
+    const MAX_FILE_SIZE = 200 * 1024 * 1024;
 
     req.on("data", (chunk: Buffer) => {
       totalSize += chunk.length;
