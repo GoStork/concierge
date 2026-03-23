@@ -154,7 +154,7 @@ export interface SyncJob {
   newProfiles: number;
   errors: string[];
   missingFields: MissingFieldSummary[];
-  staleDonorsMarked: number;
+  staleProfilesMarked: number;
   startedAt: Date;
   completedAt?: Date;
   isPdfUpload?: boolean;
@@ -843,7 +843,7 @@ async function upsertEggDonor(
 
   const existing = await prisma.eggDonor.findUnique({
     where: { providerId_externalId: { providerId, externalId: extId } },
-    select: { manuallyEditedFields: true, profileData: true },
+    select: { manuallyEditedFields: true, profileData: true, status: true },
   });
   const isNew = !existing;
   const mf = existing?.manuallyEditedFields || [];
@@ -881,7 +881,7 @@ async function upsertEggDonor(
       hasVideo: skipIfManual("hasVideo", donor.hasVideo || false, mf),
       videoUrl: skipIfManual("videoUrl", donor.videoUrl || (donor.profileData?.["Video URL"] as string) || null, mf),
       profileUrl: donor.profileUrl || null,
-      status: skipIfManual("status", donor.status || "AVAILABLE", mf),
+      status: skipIfManual("status", existing?.status === "INACTIVE" && (!donor.status || donor.status === "AVAILABLE") ? "INACTIVE" : (donor.status || "AVAILABLE"), mf),
       isExperienced: skipIfManual("isExperienced", detectExperienced(mergedProfile, "egg-donor"), mf),
       profileData: mergedProfile,
       cardHash: donor.cardHash || undefined,
@@ -996,7 +996,7 @@ async function upsertSurrogate(
 
   const existing = await prisma.surrogate.findUnique({
     where: { providerId_externalId: { providerId, externalId: extId } },
-    select: { manuallyEditedFields: true, profileData: true },
+    select: { manuallyEditedFields: true, profileData: true, status: true },
   });
   const isNew = !existing;
   const mf = existing?.manuallyEditedFields || [];
@@ -1042,7 +1042,7 @@ async function upsertSurrogate(
       photos: skipIfManual("photos", extractPhotosArray(surrogate), mf),
       videoUrl: skipIfManual("videoUrl", surrogate.videoUrl || (surrogate.profileData?.["Video URL"] as string) || undefined, mf),
       profileUrl: surrogate.profileUrl || undefined,
-      status: skipIfManual("status", surrogate.status || "AVAILABLE", mf),
+      status: skipIfManual("status", existing?.status === "INACTIVE" && (!surrogate.status || surrogate.status === "AVAILABLE") ? "INACTIVE" : (surrogate.status || "AVAILABLE"), mf),
       isExperienced: skipIfManual("isExperienced", detectExperienced(mergedProfile, "surrogate"), mf),
       profileData: mergedProfile,
       cardHash: surrogate.cardHash || undefined,
@@ -1098,7 +1098,7 @@ async function upsertSpermDonor(
 
   const existing = await prisma.spermDonor.findUnique({
     where: { providerId_externalId: { providerId, externalId: extId } },
-    select: { manuallyEditedFields: true, profileData: true },
+    select: { manuallyEditedFields: true, profileData: true, status: true },
   });
   const isNew = !existing;
   const mf = existing?.manuallyEditedFields || [];
@@ -1129,7 +1129,7 @@ async function upsertSpermDonor(
       photos: skipIfManual("photos", extractPhotosArray(donor), mf),
       videoUrl: skipIfManual("videoUrl", donor.videoUrl || (donor.profileData?.["Video URL"] as string) || undefined, mf),
       profileUrl: donor.profileUrl || undefined,
-      status: skipIfManual("status", donor.status || "AVAILABLE", mf),
+      status: skipIfManual("status", existing?.status === "INACTIVE" && (!donor.status || donor.status === "AVAILABLE") ? "INACTIVE" : (donor.status || "AVAILABLE"), mf),
       isExperienced: skipIfManual("isExperienced", detectExperienced(mergedProfile, "sperm-donor"), mf),
       profileData: mergedProfile,
       cardHash: donor.cardHash || undefined,
@@ -1325,7 +1325,7 @@ export async function startSync(
     newProfiles: 0,
     errors: [],
     missingFields: [],
-    staleDonorsMarked: 0,
+    staleProfilesMarked: 0,
     startedAt: new Date(),
   };
   syncJobs.set(jobId, job);
@@ -2979,14 +2979,14 @@ async function fetchEdcAjaxDonors(
   }
 }
 
-async function markStaleDonors(
+async function markStaleProfiles(
   prisma: PrismaService,
   providerId: string,
   type: DonorType,
   scrapedExternalIds: Set<string>,
 ): Promise<number> {
   if (scrapedExternalIds.size === 0) {
-    console.log(`[donor-sync] Skipping stale detection — no scraped IDs to compare against`);
+    console.log(`[profile-sync] Skipping stale detection — no scraped IDs to compare against`);
     return 0;
   }
 
@@ -3002,11 +3002,11 @@ async function markStaleDonors(
   }
 
   if (existingCount > 0 && scrapedExternalIds.size < existingCount * 0.5) {
-    console.warn(`[donor-sync] Skipping stale detection — scraped only ${scrapedExternalIds.size} donors but ${existingCount} exist in DB (possible partial scrape)`);
+    console.warn(`[profile-sync] Skipping stale detection — scraped only ${scrapedExternalIds.size} profiles but ${existingCount} exist in DB (possible partial scrape)`);
     return 0;
   }
 
-  let staleDonors: { id: string; externalId: string | null }[];
+  let staleProfiles: { id: string; externalId: string | null; manuallyEditedFields: string[] | null }[];
 
   // Only consider synced profiles as stale candidates (never PDF-uploaded ones)
   const staleFilter = {
@@ -3014,38 +3014,39 @@ async function markStaleDonors(
     status: { not: "INACTIVE" } as const,
     externalId: { notIn: Array.from(scrapedExternalIds), not: { startsWith: "pdf-" } },
   };
+  const staleSelect = { id: true, externalId: true, manuallyEditedFields: true } as const;
   if (type === "egg-donor") {
-    staleDonors = await prisma.eggDonor.findMany({ where: staleFilter, select: { id: true, externalId: true } });
+    staleProfiles = await prisma.eggDonor.findMany({ where: staleFilter, select: staleSelect });
   } else if (type === "surrogate") {
-    staleDonors = await prisma.surrogate.findMany({ where: staleFilter, select: { id: true, externalId: true } });
+    staleProfiles = await prisma.surrogate.findMany({ where: staleFilter, select: staleSelect });
   } else {
-    staleDonors = await prisma.spermDonor.findMany({ where: staleFilter, select: { id: true, externalId: true } });
+    staleProfiles = await prisma.spermDonor.findMany({ where: staleFilter, select: staleSelect });
   }
 
-  if (staleDonors.length === 0) return 0;
+  if (staleProfiles.length === 0) return 0;
 
-  const staleIds = staleDonors.map((d) => d.id);
-  const staleExtIds = staleDonors.map((d) => d.externalId || d.id.slice(0, 8));
-  console.log(`[donor-sync] Marking ${staleDonors.length} stale ${type} donors as INACTIVE: ${staleExtIds.slice(0, 10).join(", ")}${staleExtIds.length > 10 ? ` +${staleExtIds.length - 10} more` : ""}`);
+  const staleIds = staleProfiles.map((d) => d.id);
+  const staleExtIds = staleProfiles.map((d) => d.externalId || d.id.slice(0, 8));
+  console.log(`[profile-sync] Marking ${staleProfiles.length} stale ${type} profiles as INACTIVE: ${staleExtIds.slice(0, 10).join(", ")}${staleExtIds.length > 10 ? ` +${staleExtIds.length - 10} more` : ""}`);
 
-  if (type === "egg-donor") {
-    await prisma.eggDonor.updateMany({
-      where: { id: { in: staleIds } },
-      data: { status: "INACTIVE" },
-    });
-  } else if (type === "surrogate") {
-    await prisma.surrogate.updateMany({
-      where: { id: { in: staleIds } },
-      data: { status: "INACTIVE" },
-    });
-  } else {
-    await prisma.spermDonor.updateMany({
-      where: { id: { in: staleIds } },
-      data: { status: "INACTIVE" },
-    });
+  const table = type === "egg-donor" ? prisma.eggDonor : type === "surrogate" ? prisma.surrogate : prisma.spermDonor;
+  await (table as any).updateMany({
+    where: { id: { in: staleIds } },
+    data: { status: "INACTIVE" },
+  });
+
+  // Protect INACTIVE status from being overwritten by future syncs
+  for (const profile of staleProfiles) {
+    const mf: string[] = profile.manuallyEditedFields || [];
+    if (!mf.includes("status")) {
+      await (table as any).update({
+        where: { id: profile.id },
+        data: { manuallyEditedFields: [...mf, "status"] },
+      });
+    }
   }
 
-  return staleDonors.length;
+  return staleProfiles.length;
 }
 
 async function runSyncJob(
@@ -3495,9 +3496,9 @@ async function runSyncJob(
 
       try {
         const scrapedIds = new Set(uniqueItems.map((d: any) => d.externalId).filter(Boolean));
-        job.staleDonorsMarked = await markStaleDonors(prisma, job.providerId, job.type, scrapedIds);
+        job.staleProfilesMarked = await markStaleProfiles(prisma, job.providerId, job.type, scrapedIds);
       } catch (e: any) {
-        job.errors.push(`Stale donor detection error: ${e.message}`);
+        job.errors.push(`Stale profile detection error: ${e.message}`);
       }
 
       const syncConfigUpdate = {
@@ -3675,10 +3676,10 @@ async function runSyncJob(
 
       try {
         const scrapedIds = new Set(uniqueItems.map((d: any) => d.externalId).filter(Boolean));
-        job.staleDonorsMarked = await markStaleDonors(prisma, job.providerId, job.type, scrapedIds);
+        job.staleProfilesMarked = await markStaleProfiles(prisma, job.providerId, job.type, scrapedIds);
       } catch (e: any) {
-        job.errors.push(`Stale donor detection error: ${e.message}`);
-        console.error(`[donor-sync] Stale donor detection error: ${e.message}`);
+        job.errors.push(`Stale profile detection error: ${e.message}`);
+        console.error(`[donor-sync] Stale profile detection error: ${e.message}`);
       }
 
       const syncConfigUpdate = {
@@ -3721,7 +3722,7 @@ async function runSyncJob(
         job.completedAt = new Date();
       }
       cancelledJobs.delete(job.id);
-      console.log(`[donor-sync] Sync complete: ${job.succeeded} succeeded, ${job.failed} failed, ${job.staleDonorsMarked} marked inactive out of ${job.total}`);
+      console.log(`[donor-sync] Sync complete: ${job.succeeded} succeeded, ${job.failed} failed, ${job.staleProfilesMarked} marked inactive out of ${job.total}`);
       return;
     }
 
@@ -3863,10 +3864,10 @@ async function runSyncJob(
 
     try {
       const scrapedIds = new Set(uniqueItems.map((d: any) => d.externalId).filter(Boolean));
-      job.staleDonorsMarked = await markStaleDonors(prisma, job.providerId, job.type, scrapedIds);
+      job.staleProfilesMarked = await markStaleProfiles(prisma, job.providerId, job.type, scrapedIds);
     } catch (e: any) {
-      job.errors.push(`Stale donor detection error: ${e.message}`);
-      console.error(`[donor-sync] Stale donor detection error: ${e.message}`);
+      job.errors.push(`Stale profile detection error: ${e.message}`);
+      console.error(`[donor-sync] Stale profile detection error: ${e.message}`);
     }
 
     const syncConfigUpdate = {
@@ -3915,7 +3916,7 @@ async function runSyncJob(
     }
     cancelledJobs.delete(job.id);
     console.log(
-      `[donor-sync] Sync complete: ${job.succeeded} succeeded, ${job.failed} failed, ${job.staleDonorsMarked} marked inactive out of ${job.total}`,
+      `[donor-sync] Sync complete: ${job.succeeded} succeeded, ${job.failed} failed, ${job.staleProfilesMarked} marked inactive out of ${job.total}`,
     );
   } catch (err: any) {
     if (!isJobCancelled(job.id)) {
@@ -4086,7 +4087,7 @@ export async function getScrapersSummary(prisma: PrismaService) {
 
   for (const p of providers) {
     if (p.eggDonorSyncConfig) {
-      const count = await prisma.eggDonor.count({ where: { providerId: p.id } });
+      const count = await prisma.eggDonor.count({ where: { providerId: p.id, status: { not: "INACTIVE" } } });
       const latest = await prisma.eggDonor.findFirst({
         where: { providerId: p.id },
         orderBy: { createdAt: "desc" },
@@ -4106,7 +4107,7 @@ export async function getScrapersSummary(prisma: PrismaService) {
       });
     }
     if (p.surrogateSyncConfig) {
-      const count = await prisma.surrogate.count({ where: { providerId: p.id } });
+      const count = await prisma.surrogate.count({ where: { providerId: p.id, status: { not: "INACTIVE" } } });
       const latest = await prisma.surrogate.findFirst({
         where: { providerId: p.id },
         orderBy: { createdAt: "desc" },
@@ -4126,7 +4127,7 @@ export async function getScrapersSummary(prisma: PrismaService) {
       });
     }
     if (p.spermDonorSyncConfig) {
-      const count = await prisma.spermDonor.count({ where: { providerId: p.id } });
+      const count = await prisma.spermDonor.count({ where: { providerId: p.id, status: { not: "INACTIVE" } } });
       const latest = await prisma.spermDonor.findFirst({
         where: { providerId: p.id },
         orderBy: { createdAt: "desc" },
@@ -4224,7 +4225,7 @@ export function startPdfSync(
     newProfiles: 0,
     errors: [],
     missingFields: [],
-    staleDonorsMarked: 0,
+    staleProfilesMarked: 0,
     startedAt: new Date(),
     isPdfUpload: true,
   };

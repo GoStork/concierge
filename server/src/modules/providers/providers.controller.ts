@@ -117,6 +117,7 @@ export class ProvidersController {
     const donors = await this.prisma.eggDonor.findMany({
       where: {
         hiddenFromSearch: false,
+        status: { not: "INACTIVE" },
         provider: {
           services: {
             some: {
@@ -154,6 +155,7 @@ export class ProvidersController {
     const donors = await this.prisma.surrogate.findMany({
       where: {
         hiddenFromSearch: false,
+        status: { not: "INACTIVE" },
         provider: {
           services: {
             some: {
@@ -191,6 +193,7 @@ export class ProvidersController {
     const donors = await this.prisma.spermDonor.findMany({
       where: {
         hiddenFromSearch: false,
+        status: { not: "INACTIVE" },
         provider: {
           services: {
             some: {

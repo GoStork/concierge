@@ -390,7 +390,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const vectorResults = await vectorSearch(
         "Surrogate", queryText, take * 3,
-        `"hiddenFromSearch" IS NOT TRUE`,
+        `"hiddenFromSearch" IS NOT TRUE AND status != 'INACTIVE'`,
         `id, "providerId", "firstName", "externalId", age, location, "baseCompensation", "agreesToTwins", "agreesToAbortion", "agreesToSelectiveReduction", "openToSameSexCouple", "isExperienced", ethnicity, race, "liveBirths", "photoUrl", religion`,
       );
 
@@ -407,7 +407,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         });
         surrogates = filtered.length > 0 ? filtered.slice(0, take) : vectorResults.slice(0, take);
       } else {
-        const where: any = { hiddenFromSearch: { not: true } };
+        const where: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
         if (agreesToTwins !== undefined) where.agreesToTwins = agreesToTwins;
         if (agreesToAbortion !== undefined) where.agreesToAbortion = agreesToAbortion;
         if (openToSameSexCouple !== undefined) where.openToSameSexCouple = openToSameSexCouple;
@@ -430,7 +430,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         if (surrogates.length === 0) {
           surrogates = await prisma.surrogate.findMany({
-            where: { hiddenFromSearch: { not: true } },
+            where: { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } },
             orderBy: { createdAt: "desc" },
             take,
             select: {
@@ -630,7 +630,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const vectorResults = await vectorSearch(
         "EggDonor", queryText, take * 3,
-        `"hiddenFromSearch" IS NOT TRUE`,
+        `"hiddenFromSearch" IS NOT TRUE AND status != 'INACTIVE'`,
         `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, "donorCompensation", "eggLotCost", "totalCost", "isExperienced", "photoUrl", "numberOfEggs"`,
       );
 
@@ -646,7 +646,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         });
         donors = filtered.length > 0 ? filtered.slice(0, take) : vectorResults.slice(0, take);
       } else {
-        const where: any = { hiddenFromSearch: { not: true } };
+        const where: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
         if (eyeColor) where.eyeColor = { contains: eyeColor, mode: "insensitive" };
         if (hairColor) where.hairColor = { contains: hairColor, mode: "insensitive" };
         if (ethnicity) where.ethnicity = { contains: ethnicity, mode: "insensitive" };
@@ -668,7 +668,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         if (donors.length === 0) {
           donors = await prisma.eggDonor.findMany({
-            where: { hiddenFromSearch: { not: true } },
+            where: { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } },
             orderBy: { createdAt: "desc" },
             take,
             select: {
@@ -708,7 +708,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const vectorResults = await vectorSearch(
         "SpermDonor", queryText, take * 3,
-        `"hiddenFromSearch" IS NOT TRUE`,
+        `"hiddenFromSearch" IS NOT TRUE AND status != 'INACTIVE'`,
         `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, compensation, "isExperienced", "photoUrl"`,
       );
 
@@ -724,7 +724,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         });
         donors = filtered.length > 0 ? filtered.slice(0, take) : vectorResults.slice(0, take);
       } else {
-        const where: any = { hiddenFromSearch: { not: true } };
+        const where: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
         if (eyeColor) where.eyeColor = { contains: eyeColor, mode: "insensitive" };
         if (hairColor) where.hairColor = { contains: hairColor, mode: "insensitive" };
         if (ethnicity) where.ethnicity = { contains: ethnicity, mode: "insensitive" };
@@ -746,7 +746,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         if (donors.length === 0) {
           donors = await prisma.spermDonor.findMany({
-            where: { hiddenFromSearch: { not: true } },
+            where: { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } },
             orderBy: { createdAt: "desc" },
             take,
             select: {
@@ -786,7 +786,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (clinicName) queryParts.push(clinicName);
       const queryText = queryParts.join(", ");
 
-      const ivfClinicTypeCheck = `EXISTS (SELECT 1 FROM "ProviderService" ps JOIN "ProviderType" pt ON pt.id = ps."providerTypeId" WHERE ps."providerId" = "Provider".id AND pt.name = 'IVF Clinic')`;
+      const ivfClinicTypeCheck = `EXISTS (SELECT 1 FROM "ProviderService" ps JOIN "ProviderType" pt ON pt.id = ps."providerTypeId" WHERE ps."providerId" = "Provider".id AND pt.name = 'IVF Clinic' AND ps.status = 'APPROVED')`;
       const vectorResults = await vectorSearch(
         "Provider", queryText, take,
         ivfClinicTypeCheck,
@@ -811,7 +811,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       } else {
         const providerWhere: any = {
           providerServices: {
-            some: { providerType: { name: "IVF Clinic" } },
+            some: { providerType: { name: "IVF Clinic" }, status: "APPROVED" },
           },
         };
         if (clinicName) providerWhere.name = { contains: clinicName, mode: "insensitive" };
@@ -841,7 +841,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           clinics = await prisma.provider.findMany({
             where: {
               providerServices: {
-                some: { providerType: { name: "IVF Clinic" } },
+                some: { providerType: { name: "IVF Clinic" }, status: "APPROVED" },
               },
             },
             orderBy: { name: "asc" },

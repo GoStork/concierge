@@ -210,7 +210,7 @@ export class ScrapersController {
     const missingFields = await analyzeMissingFields(this.prisma, providerId, type as DonorType);
 
     const donorTable = type === "egg-donor" ? "eggDonor" : type === "surrogate" ? "surrogate" : "spermDonor";
-    const totalProfiles = await (this.prisma[donorTable] as any).count({ where: { providerId } });
+    const totalProfiles = await (this.prisma[donorTable] as any).count({ where: { providerId, status: { not: "INACTIVE" } } });
 
     const nightlyStatus = getNightlySyncStatus();
     const nightlyResult = nightlyStatus.results.find(
@@ -220,7 +220,7 @@ export class ScrapersController {
     let lastSyncErrors: string[] = [];
     let lastSyncStats: { succeeded: number; failed: number; total: number } | null = null;
     let lastSyncAt: Date | null = null;
-    let staleDonorsMarked = 0;
+    let staleProfilesMarked = 0;
     let newProfiles = 0;
     let lastSyncStartedAt: Date | null = null;
     let lastSyncEndedAt: Date | null = null;
@@ -244,7 +244,7 @@ export class ScrapersController {
         total: latestJob.total,
       };
       lastSyncAt = latestJob.completedAt || latestJob.startedAt;
-      staleDonorsMarked = latestJob.staleDonorsMarked || 0;
+      staleProfilesMarked = latestJob.staleProfilesMarked || 0;
       newProfiles = latestJob.newProfiles || 0;
       if (latestJob.missingFields && latestJob.missingFields.length > 0) {
         return {
@@ -252,7 +252,7 @@ export class ScrapersController {
           lastSyncErrors,
           lastSyncStats,
           lastSyncAt,
-          staleDonorsMarked,
+          staleProfilesMarked,
           newProfiles,
           totalProfiles,
           lastSyncStartedAt,
@@ -271,7 +271,7 @@ export class ScrapersController {
       if (nightlyResult.jobId) {
         const job = getSyncJob(nightlyResult.jobId);
         if (job) {
-          staleDonorsMarked = job.staleDonorsMarked || 0;
+          staleProfilesMarked = job.staleProfilesMarked || 0;
           newProfiles = job.newProfiles || 0;
           if (job.missingFields && job.missingFields.length > 0) {
             return {
@@ -279,7 +279,7 @@ export class ScrapersController {
               lastSyncErrors,
               lastSyncStats,
               lastSyncAt,
-              staleDonorsMarked,
+              staleProfilesMarked,
               newProfiles,
               totalProfiles,
               lastSyncStartedAt,
@@ -304,7 +304,7 @@ export class ScrapersController {
       lastSyncErrors,
       lastSyncStats,
       lastSyncAt,
-      staleDonorsMarked,
+      staleProfilesMarked,
       newProfiles,
       totalProfiles,
       lastSyncStartedAt,

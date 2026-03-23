@@ -251,6 +251,20 @@ FROM (
     AND p.profile_type IS NOT NULL
 ) enriched`,
 
+    `UPDATE "ProviderService" SET "status" = 'INACTIVE'
+WHERE "id" IN (
+  SELECT ps."id"
+  FROM "ProviderService" ps
+  JOIN "ProviderType" pt ON pt."id" = ps."providerTypeId"
+  JOIN "Provider" prov ON prov."id" = ps."providerId"
+  WHERE pt."name" = 'IVF Clinic'
+    AND prov."cdcClinicId" IS NOT NULL
+    AND ps."status" != 'INACTIVE'
+    AND NOT EXISTS (
+      SELECT 1 FROM _cdc_parsed p WHERE LOWER(p.facility_name) = LOWER(prov."name")
+    )
+)`,
+
     `DELETE FROM "RawCdcData" WHERE "year" = ${safeYear}`,
 
     `DROP TABLE IF EXISTS _cdc_national`,

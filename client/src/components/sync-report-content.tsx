@@ -14,7 +14,7 @@ export interface SyncReport {
   lastSyncErrors: string[];
   lastSyncStats: { succeeded: number; failed: number; total: number } | null;
   lastSyncAt: string | null;
-  staleDonorsMarked: number;
+  staleProfilesMarked: number;
   newProfiles: number;
   totalProfiles: number;
   lastSyncStartedAt: string | null;
@@ -59,7 +59,7 @@ export function SyncReportContent({ data, liveProgress }: { data: SyncReport; li
           </Card>
           <Card data-testid="stat-deleted-profiles">
             <CardContent className="pt-4 pb-3 px-4">
-              <div className="text-2xl font-heading">{(data.staleDonorsMarked || 0).toLocaleString()}</div>
+              <div className="text-2xl font-heading">{(data.staleProfilesMarked || 0).toLocaleString()}</div>
               <div className="text-xs text-muted-foreground">Marked Inactive</div>
             </CardContent>
           </Card>
