@@ -4002,9 +4002,9 @@ export async function runNightlySync(prisma: PrismaService, storageService?: Sto
       allConfigs.push({ providerId: c.providerId, type: "sperm-donor", providerName: c.provider.name });
     }
 
-    console.log(`[nightly-sync] Found ${allConfigs.length} sync configurations`);
+    console.log(`[nightly-sync] Found ${allConfigs.length} sync configurations — running in parallel`);
 
-    for (const config of allConfigs) {
+    const syncPromises = allConfigs.map(async (config) => {
       const result: NightlySyncResult = {
         providerId: config.providerId,
         providerName: config.providerName,
@@ -4058,15 +4058,15 @@ export async function runNightlySync(prisma: PrismaService, storageService?: Sto
         });
 
         console.log(`[nightly-sync] ${config.providerName} (${config.type}): ${result.status} - ${result.succeeded}/${result.total}`);
-
-        await new Promise((r) => setTimeout(r, 2000));
       } catch (err: any) {
         result.status = "failed";
         result.errors = [err.message];
         result.completedAt = new Date();
         console.error(`[nightly-sync] Error syncing ${config.providerName}:`, err.message);
       }
-    }
+    });
+
+    await Promise.allSettled(syncPromises);
   } finally {
     nightlySyncRunning = false;
     console.log("[nightly-sync] Nightly sync complete");
