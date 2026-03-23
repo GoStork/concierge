@@ -161,11 +161,6 @@ export class ProfileSyncController {
     const provider = await this.prisma.provider.findUnique({ where: { id: providerId } });
     if (!provider) return res.status(404).json({ message: "Provider not found" });
 
-    const activeJob = getActiveSyncJob(providerId, "surrogate");
-    if (activeJob) {
-      return res.status(400).json({ message: "A sync job is already running for surrogates. Stop it first." });
-    }
-
     const contentType = req.headers["content-type"] || "";
     if (!contentType.includes("multipart/form-data")) {
       return res.status(400).json({ message: "Content-Type must be multipart/form-data" });
