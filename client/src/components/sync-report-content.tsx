@@ -32,12 +32,12 @@ function formatDuration(startedAt: string | null, endedAt: string | null): strin
   return `${minutes}m ${seconds}s`;
 }
 
-export function SyncReportContent({ data }: { data: SyncReport }) {
+export function SyncReportContent({ data, liveProgress }: { data: SyncReport; liveProgress?: { total: number; processed: number; succeeded: number; failed: number } | null }) {
   const duration = formatDuration(data.lastSyncStartedAt, data.lastSyncEndedAt);
 
   return (
     <div className="space-y-4">
-      {data.lastSyncStats && (
+      {(data.lastSyncStats || liveProgress) && (
         <div className="grid gap-2 md:gap-4 grid-cols-5" data-testid="sync-stats">
           <Card data-testid="stat-total-profiles">
             <CardContent className="pt-4 pb-3 px-4">
@@ -47,7 +47,7 @@ export function SyncReportContent({ data }: { data: SyncReport }) {
           </Card>
           <Card data-testid="stat-profiles-processed">
             <CardContent className="pt-4 pb-3 px-4">
-              <div className="text-2xl font-heading">{data.lastSyncStats.succeeded.toLocaleString()}</div>
+              <div className="text-2xl font-heading">{(liveProgress?.succeeded ?? data.lastSyncStats?.succeeded ?? 0).toLocaleString()}</div>
               <div className="text-xs text-muted-foreground">Profiles Synced</div>
             </CardContent>
           </Card>

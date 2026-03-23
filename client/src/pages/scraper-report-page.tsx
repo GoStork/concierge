@@ -285,7 +285,7 @@ export default function ScraperReportPage() {
           <Loader2 className="w-6 h-6 animate-spin text-primary" />
         </div>
       ) : data ? (
-        <SyncReportContent data={data} />
+        <SyncReportContent data={data} liveProgress={syncProgress} />
       ) : (
         <p className="text-muted-foreground text-sm" data-testid="text-no-report">No report data available.</p>
       )}
