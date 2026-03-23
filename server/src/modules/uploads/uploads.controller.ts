@@ -191,7 +191,6 @@ export class UploadsController {
       clearTimeout(timeout);
 
       if (!response.ok) {
-        console.error("[proxy] upstream error", response.status, url);
         res
           .status(502)
           .json({ message: `Upstream returned ${response.status}` });
@@ -232,7 +231,6 @@ export class UploadsController {
         res.end();
       }
     } catch (err: any) {
-      console.error("[proxy] error fetching", url, err?.message);
       if (!res.headersSent) {
         res.status(502).json({ message: "Failed to fetch image" });
       }
