@@ -23,6 +23,8 @@ interface ScraperSummary {
   type: "egg-donor" | "surrogate" | "sperm-donor";
   syncStatus: string;
   lastSyncAt: string | null;
+  lastSyncStartedAt: string | null;
+  lastSyncEndedAt: string | null;
   totalProfiles: number;
   totalErrors: number;
   latestDonorCreatedAt: string | null;
@@ -995,14 +997,14 @@ function ScraperTypeSection({
               />
               <SortableTableHead
                 label="Started"
-                sortKey="lastSyncAt"
+                sortKey="lastSyncStartedAt"
                 currentSort={sortConfig}
                 onSort={handleSort}
                 className="whitespace-nowrap w-[22%] hidden md:table-cell"
               />
               <SortableTableHead
                 label="Completed"
-                sortKey="latestDonorCreatedAt"
+                sortKey="lastSyncEndedAt"
                 currentSort={sortConfig}
                 onSort={handleSort}
                 className="whitespace-nowrap w-[22%] hidden md:table-cell"
@@ -1043,10 +1045,10 @@ function ScraperTypeSection({
                       {item.totalProfiles}
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-sm text-muted-foreground" data-testid={`text-started-${item.providerId}`}>
-                      {formatDateTime(item.lastSyncAt)}
+                      {formatDateTime(item.lastSyncStartedAt)}
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-sm text-muted-foreground" data-testid={`text-completed-${item.providerId}`}>
-                      {formatDateTime(item.latestDonorCreatedAt)}
+                      {formatDateTime(item.lastSyncEndedAt)}
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <div className="flex flex-col gap-0.5">
