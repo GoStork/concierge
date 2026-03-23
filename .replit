@@ -30,6 +30,7 @@ PORT = "5000"
 deploymentTarget = "autoscale"
 run = ["node", "./dist/index.cjs"]
 build = ["npm", "run", "build"]
+ignorePaths = ["public/uploads", "attached_assets", "client", "server", "shared", "script", ".git", ".claude"]
 
 [workflows]
 runButton = "Project"
