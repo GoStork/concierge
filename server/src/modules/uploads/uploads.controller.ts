@@ -168,6 +168,26 @@ export class UploadsController {
     });
   }
 
+  @Get("gcs/*")
+  @ApiOperation({ summary: "Serve a file from GCS (authenticated)" })
+  async serveGcsFile(@Req() req: Request, @Res() res: Response) {
+    const gcsPath = (req.params as any)[0] || req.url.replace(/^\/api\/uploads\/gcs\//, "");
+    if (!gcsPath || gcsPath.includes("..")) {
+      res.status(400).json({ message: "Invalid path" });
+      return;
+    }
+    if (!this.storageService.isConfigured()) {
+      res.status(503).json({ message: "GCS not configured" });
+      return;
+    }
+    try {
+      const url = await this.storageService.getSignedUrl(gcsPath, 60);
+      res.redirect(url);
+    } catch (err: any) {
+      res.status(404).json({ message: "File not found" });
+    }
+  }
+
   @Get("proxy")
   @ApiOperation({
     summary: "Proxy an external image to avoid cross-origin issues",
