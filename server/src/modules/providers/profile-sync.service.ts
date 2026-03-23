@@ -2990,13 +2990,15 @@ async function markStaleDonors(
     return 0;
   }
 
+  // Only count synced profiles (exclude PDF-uploaded ones with pdf- prefix) for threshold check
+  const syncedFilter = { providerId, status: { not: "INACTIVE" } as const, OR: [{ externalId: null }, { externalId: { not: { startsWith: "pdf-" } } }] };
   let existingCount: number;
   if (type === "egg-donor") {
-    existingCount = await prisma.eggDonor.count({ where: { providerId, status: { not: "INACTIVE" } } });
+    existingCount = await prisma.eggDonor.count({ where: syncedFilter });
   } else if (type === "surrogate") {
-    existingCount = await prisma.surrogate.count({ where: { providerId, status: { not: "INACTIVE" } } });
+    existingCount = await prisma.surrogate.count({ where: syncedFilter });
   } else {
-    existingCount = await prisma.spermDonor.count({ where: { providerId, status: { not: "INACTIVE" } } });
+    existingCount = await prisma.spermDonor.count({ where: syncedFilter });
   }
 
   if (existingCount > 0 && scrapedExternalIds.size < existingCount * 0.5) {
@@ -3006,33 +3008,18 @@ async function markStaleDonors(
 
   let staleDonors: { id: string; externalId: string | null }[];
 
+  // Only consider synced profiles as stale candidates (never PDF-uploaded ones)
+  const staleFilter = {
+    providerId,
+    status: { not: "INACTIVE" } as const,
+    externalId: { notIn: Array.from(scrapedExternalIds), not: { startsWith: "pdf-" } },
+  };
   if (type === "egg-donor") {
-    staleDonors = await prisma.eggDonor.findMany({
-      where: {
-        providerId,
-        status: { not: "INACTIVE" },
-        externalId: { notIn: Array.from(scrapedExternalIds) },
-      },
-      select: { id: true, externalId: true },
-    });
+    staleDonors = await prisma.eggDonor.findMany({ where: staleFilter, select: { id: true, externalId: true } });
   } else if (type === "surrogate") {
-    staleDonors = await prisma.surrogate.findMany({
-      where: {
-        providerId,
-        status: { not: "INACTIVE" },
-        externalId: { notIn: Array.from(scrapedExternalIds) },
-      },
-      select: { id: true, externalId: true },
-    });
+    staleDonors = await prisma.surrogate.findMany({ where: staleFilter, select: { id: true, externalId: true } });
   } else {
-    staleDonors = await prisma.spermDonor.findMany({
-      where: {
-        providerId,
-        status: { not: "INACTIVE" },
-        externalId: { notIn: Array.from(scrapedExternalIds) },
-      },
-      select: { id: true, externalId: true },
-    });
+    staleDonors = await prisma.spermDonor.findMany({ where: staleFilter, select: { id: true, externalId: true } });
   }
 
   if (staleDonors.length === 0) return 0;
