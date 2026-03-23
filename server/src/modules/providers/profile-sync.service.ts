@@ -2985,6 +2985,7 @@ async function markStaleProfiles(
   type: DonorType,
   scrapedExternalIds: Set<string>,
 ): Promise<number> {
+  console.log(`[profile-sync] Stale detection: ${scrapedExternalIds.size} scraped IDs: [${Array.from(scrapedExternalIds).join(", ")}]`);
   if (scrapedExternalIds.size === 0) {
     console.log(`[profile-sync] Skipping stale detection — no scraped IDs to compare against`);
     return 0;
@@ -3001,6 +3002,17 @@ async function markStaleProfiles(
     existingCount = await prisma.spermDonor.count({ where: syncedFilter });
   }
 
+  // Log all profiles for this provider to debug stale detection
+  const allProfilesSelect = { id: true, externalId: true, status: true } as const;
+  let allProfiles: { id: string; externalId: string | null; status: string | null }[];
+  if (type === "egg-donor") {
+    allProfiles = await prisma.eggDonor.findMany({ where: { providerId }, select: allProfilesSelect });
+  } else if (type === "surrogate") {
+    allProfiles = await prisma.surrogate.findMany({ where: { providerId }, select: allProfilesSelect });
+  } else {
+    allProfiles = await prisma.spermDonor.findMany({ where: { providerId }, select: allProfilesSelect });
+  }
+  console.log(`[profile-sync] Stale detection: ${existingCount} existing non-INACTIVE non-PDF profiles in DB. All ${allProfiles.length} profiles: [${allProfiles.map(p => `${p.externalId || 'NULL'}(${p.status})`).join(", ")}]`);
   if (existingCount > 0 && scrapedExternalIds.size < existingCount * 0.5) {
     console.warn(`[profile-sync] Skipping stale detection — scraped only ${scrapedExternalIds.size} profiles but ${existingCount} exist in DB (possible partial scrape)`);
     return 0;
@@ -3028,6 +3040,7 @@ async function markStaleProfiles(
     staleProfiles = await prisma.spermDonor.findMany({ where: staleFilter, select: staleSelect });
   }
 
+  console.log(`[profile-sync] Stale detection: found ${staleProfiles.length} stale candidates: [${staleProfiles.map(p => p.externalId || 'null').join(", ")}]`);
   if (staleProfiles.length === 0) return 0;
 
   const staleIds = staleProfiles.map((d) => d.id);
