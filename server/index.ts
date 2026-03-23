@@ -45,7 +45,7 @@ function ensureLocalRedis() {
   try {
     execSync("which redis-server", { timeout: 2000, stdio: ["pipe", "pipe", "pipe"] });
     log("Starting local Redis server...", "redis");
-    execSync("redis-server --daemonize yes --port 6379 --bind 127.0.0.1", { timeout: 5000, stdio: ["pipe", "pipe", "pipe"] });
+    execSync("redis-server --daemonize yes --port 6379 --bind 127.0.0.1 --save '' --appendonly no", { timeout: 5000, stdio: ["pipe", "pipe", "pipe"] });
     log("Local Redis server started", "redis");
   } catch {
     log("redis-server not found, skipping local auto-start", "redis");
@@ -60,12 +60,21 @@ async function createSessionStore(): Promise<session.Store> {
       socket: {
         connectTimeout: 5000,
         reconnectStrategy: (retries: number) => {
-          if (retries > 10) return new Error("Redis max reconnect attempts reached");
-          return Math.min(retries * 200, 3000);
+          if (retries % 20 === 0) {
+            log(`Redis reconnect attempt ${retries}, retrying...`, "redis");
+            if (!process.env.REDIS_URL) {
+              try { ensureLocalRedis(); } catch {}
+            }
+          }
+          return Math.min(retries * 200, 5000);
         },
       },
     });
-    redisClient.on("error", (err: Error) => log(`Redis error: ${err.message}`, "redis"));
+    redisClient.on("error", (err: Error) => {
+      if (!err.message.includes("connect ECONNREFUSED")) {
+        log(`Redis error: ${err.message}`, "redis");
+      }
+    });
     await redisClient.connect();
     log("Redis connected — using Redis session store", "redis");
     return new RedisStore({ client: redisClient, prefix: "gostork:sess:" });
