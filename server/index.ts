@@ -159,7 +159,8 @@ async function createSessionStore(): Promise<session.Store> {
       if (path.startsWith("/api")) {
         let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
         if (capturedJsonResponse) {
-          logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+          const json = JSON.stringify(capturedJsonResponse);
+          logLine += ` :: ${json.length > 500 ? json.slice(0, 500) + `... (${json.length} chars)` : json}`;
         }
         log(logLine);
       }
