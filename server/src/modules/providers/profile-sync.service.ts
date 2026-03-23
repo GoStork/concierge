@@ -692,6 +692,26 @@ async function persistSinglePhoto(
   storageService: StorageService | null,
 ): Promise<string> {
   if (!url || isAlreadyPersisted(url)) return url;
+
+  // Migrate local /uploads/ paths to GCS when storage is configured
+  if (url.startsWith("/uploads/") && storageService?.isConfigured()) {
+    try {
+      const localFilename = url.replace(/^\/uploads\//, "");
+      const localPath = path.join(UPLOADS_DIR, localFilename);
+      if (fs.existsSync(localPath)) {
+        const buffer = fs.readFileSync(localPath);
+        if (buffer.length >= 500 && buffer.length <= 20 * 1024 * 1024) {
+          const ct = guessContentType(buffer);
+          const gcsPath = `profile-photos/${localFilename}`;
+          return await storageService.uploadBufferPublic(buffer, gcsPath, ct);
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[photo-persist] Failed to migrate local photo to GCS: ${err.message}`);
+    }
+    return url;
+  }
+
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
@@ -762,6 +782,32 @@ async function persistPhotoUrls(
         }
       }
     }
+  }
+}
+
+async function migrateLocalPhotosToGcs(
+  prisma: PrismaService,
+  model: "eggDonor" | "surrogate" | "spermDonor",
+  providerId: string,
+  externalId: string,
+  storageService: StorageService | null,
+): Promise<void> {
+  if (!storageService?.isConfigured()) return;
+  const where = { providerId_externalId: { providerId, externalId } };
+  const record = await (prisma[model] as any).findUnique({ where, select: { id: true, photoUrl: true, photos: true } });
+  if (!record) return;
+  const updates: Record<string, any> = {};
+  if (record.photoUrl?.startsWith("/uploads/")) {
+    const migrated = await persistSinglePhoto(record.photoUrl, providerId, storageService);
+    if (migrated !== record.photoUrl) updates.photoUrl = migrated;
+  }
+  const photos = record.photos as string[] | undefined;
+  if (photos?.some((p: string) => p.startsWith("/uploads/"))) {
+    const migrated = await Promise.all(photos.map((p: string) => p.startsWith("/uploads/") ? persistSinglePhoto(p, providerId, storageService) : Promise.resolve(p)));
+    if (migrated.some((m, i) => m !== photos[i])) updates.photos = migrated;
+  }
+  if (Object.keys(updates).length > 0) {
+    await (prisma[model] as any).update({ where: { id: record.id }, data: updates });
   }
 }
 
@@ -920,6 +966,9 @@ async function upsertEggDonor(
       cardHash: donor.cardHash || null,
     },
   });
+
+  await migrateLocalPhotosToGcs(prisma, "eggDonor", providerId, extId, storageService || null).catch(() => {});
+
   updateProfileEmbedding(prisma, "EggDonor", upsertedDonor.id, mergedProfile).catch(() => {});
   return { isNew };
 }
@@ -1083,6 +1132,9 @@ async function upsertSurrogate(
       cardHash: surrogate.cardHash || null,
     },
   });
+
+  await migrateLocalPhotosToGcs(prisma, "surrogate", providerId, extId, storageService || null).catch(() => {});
+
   updateProfileEmbedding(prisma, "Surrogate", upsertedSurrogate.id, mergedProfile).catch(() => {});
   return { isNew };
 }
@@ -1161,6 +1213,9 @@ async function upsertSpermDonor(
       cardHash: donor.cardHash || null,
     },
   });
+
+  await migrateLocalPhotosToGcs(prisma, "spermDonor", providerId, extId, storageService || null).catch(() => {});
+
   updateProfileEmbedding(prisma, "SpermDonor", upsertedSpermDonor.id, mergedProfile).catch(() => {});
   return { isNew };
 }
@@ -3287,6 +3342,8 @@ async function runSyncJob(
           if (oldHash && oldHash === item.cardHash) {
             skippedUnchanged++;
             job.processed++;
+            const model = job.type === "surrogate" ? "surrogate" as const : job.type === "sperm-donor" ? "spermDonor" as const : "eggDonor" as const;
+            await migrateLocalPhotosToGcs(prisma, model, job.providerId, item.externalId, storageService || null).catch(() => {});
             return;
           }
           if (item.profileUrl) {
@@ -3605,6 +3662,8 @@ async function runSyncJob(
           const oldHash = item.externalId ? existingHashes.get(item.externalId) : null;
           if (oldHash && oldHash === item.cardHash) {
             skippedUnchanged++;
+            const model = job.type === "surrogate" ? "surrogate" as const : job.type === "sperm-donor" ? "spermDonor" as const : "eggDonor" as const;
+            await migrateLocalPhotosToGcs(prisma, model, job.providerId, item.externalId, storageService || null).catch(() => {});
             return;
           }
           if (item.profileUrl) {

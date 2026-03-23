@@ -18,9 +18,16 @@ export class StorageService {
       return;
     }
 
-    const credentials = JSON.parse(keyJson);
-    this.storage = new Storage({ credentials });
-    this.bucketName = process.env.GCS_BUCKET_NAME || "gostork-recordings";
+    try {
+      const credentials = JSON.parse(keyJson);
+      this.storage = new Storage({ credentials });
+      this.bucketName = process.env.GCS_BUCKET_NAME || "gostork-recordings";
+      this.logger.log("GCS storage configured successfully");
+    } catch (err: any) {
+      this.logger.error(`Failed to parse GCS_SERVICE_ACCOUNT_KEY: ${err.message}`);
+      this.storage = null as any;
+      this.bucketName = "";
+    }
   }
 
   private get bucket() {
