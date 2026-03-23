@@ -86,6 +86,7 @@ export default function ProviderScraperStats({ providerId, types, showRunButton 
 
   const configured = statsQueries.filter((q) => q.configQ.data);
   const totalProfiles = statsQueries.reduce((sum, q) => sum + (q.donorsQ.data?.length || 0), 0);
+  const syncedProfiles = statsQueries.reduce((sum, q) => sum + (q.donorsQ.data?.filter((d: any) => d.externalId && !d.externalId.startsWith("pdf-")).length || 0), 0);
   const successCount = configured.filter((q) => q.configQ.data?.syncStatus === "SUCCESS").length;
   const failedCount = configured.filter((q) => q.configQ.data?.syncStatus === "FAILED" || q.configQ.data?.syncStatus === "PARTIAL").length;
   const isLoading = statsQueries.some((q) => q.configQ.isLoading);
@@ -161,7 +162,7 @@ export default function ProviderScraperStats({ providerId, types, showRunButton 
         )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <Card>
           <CardContent className="pt-3 pb-2.5 px-3">
             <div className="text-xl font-heading" data-testid="text-stat-configured">{configured.length}</div>
@@ -172,6 +173,12 @@ export default function ProviderScraperStats({ providerId, types, showRunButton 
           <CardContent className="pt-3 pb-2.5 px-3">
             <div className="text-xl font-heading" data-testid="text-stat-profiles">{totalProfiles.toLocaleString()}</div>
             <div className="text-[11px] text-muted-foreground">Total Profiles</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-3 pb-2.5 px-3">
+            <div className="text-xl font-heading" data-testid="text-stat-synced">{syncedProfiles.toLocaleString()}</div>
+            <div className="text-[11px] text-muted-foreground">Synced Profiles</div>
           </CardContent>
         </Card>
         <Card>
