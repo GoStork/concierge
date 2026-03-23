@@ -106,7 +106,7 @@ export class ProvidersController {
     const isProviderUser = hasProviderRole(roles);
     if (isProviderUser && user?.providerId) {
       const donors = await this.prisma.eggDonor.findMany({
-        where: { providerId: user.providerId },
+        where: { providerId: user.providerId, status: { not: "INACTIVE" } },
         include: { provider: { select: { id: true, name: true, logoUrl: true } } },
         orderBy: { createdAt: "desc" },
       });
@@ -144,7 +144,7 @@ export class ProvidersController {
     const isProviderUser = hasProviderRole(roles);
     if (isProviderUser && user?.providerId) {
       const donors = await this.prisma.surrogate.findMany({
-        where: { providerId: user.providerId },
+        where: { providerId: user.providerId, status: { not: "INACTIVE" } },
         include: { provider: { select: { id: true, name: true, logoUrl: true } } },
         orderBy: { createdAt: "desc" },
       });
@@ -182,7 +182,7 @@ export class ProvidersController {
     const isProviderUser = hasProviderRole(roles);
     if (isProviderUser && user?.providerId) {
       const donors = await this.prisma.spermDonor.findMany({
-        where: { providerId: user.providerId },
+        where: { providerId: user.providerId, status: { not: "INACTIVE" } },
         include: { provider: { select: { id: true, name: true, logoUrl: true } } },
         orderBy: { createdAt: "desc" },
       });

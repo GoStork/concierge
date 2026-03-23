@@ -4201,7 +4201,7 @@ export async function getDonors(
   type: DonorType,
   options?: { excludeHidden?: boolean },
 ) {
-  const where: any = { providerId };
+  const where: any = { providerId, status: { not: "INACTIVE" } };
   if (options?.excludeHidden) {
     where.hiddenFromSearch = false;
   }

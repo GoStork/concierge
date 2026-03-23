@@ -531,7 +531,7 @@ export default function ProfileDatabasePanel({
               <div className="text-[11px] text-muted-foreground">Sync Status</div>
             </button>
             <div className="border rounded-lg pt-3 pb-2.5 px-3">
-              <div className="text-xl font-heading" data-testid={`text-stat-profiles-${type}`}>{profiles.filter((p: any) => p.status !== "INACTIVE").length.toLocaleString()}</div>
+              <div className="text-xl font-heading" data-testid={`text-stat-profiles-${type}`}>{profiles.length.toLocaleString()}</div>
               <div className="text-[11px] text-muted-foreground">Total Profiles</div>
             </div>
             <div className="border rounded-lg pt-3 pb-2.5 px-3">
@@ -1064,8 +1064,8 @@ export default function ProfileDatabasePanel({
             className="font-heading text-sm"
             data-testid={`profiles-table-title-${type}`}
           >
-            {label} Records ({profiles.filter((p: any) => p.status !== "INACTIVE").length})
-            {filteredProfiles.length !== profiles.filter((p: any) => p.status !== "INACTIVE").length && (
+            {label} Records ({profiles.length})
+            {filteredProfiles.length !== profiles.length && (
               <span className="text-muted-foreground font-normal ml-1">
                 — showing {filteredProfiles.length}
               </span>
