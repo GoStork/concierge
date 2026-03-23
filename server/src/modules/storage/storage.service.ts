@@ -115,6 +115,14 @@ export class StorageService {
     return url;
   }
 
+  async downloadBuffer(objectPath: string): Promise<{ buffer: Buffer; contentType: string }> {
+    this.ensureConfigured();
+    const file = this.bucket.file(objectPath);
+    const [metadata] = await file.getMetadata();
+    const [contents] = await file.download();
+    return { buffer: contents, contentType: (metadata.contentType as string) || "application/octet-stream" };
+  }
+
   async deleteObject(objectPath: string): Promise<void> {
     this.ensureConfigured();
     this.logger.log(`Deleting from GCS: ${objectPath}`);

@@ -183,8 +183,10 @@ export class UploadsController {
       return;
     }
     try {
-      const url = await this.storageService.getSignedUrl(gcsPath, 60);
-      res.redirect(url);
+      const { buffer, contentType } = await this.storageService.downloadBuffer(gcsPath);
+      res.set("Content-Type", contentType);
+      res.set("Cache-Control", "public, max-age=86400");
+      res.send(buffer);
     } catch (err: any) {
       res.status(404).json({ message: "File not found" });
     }

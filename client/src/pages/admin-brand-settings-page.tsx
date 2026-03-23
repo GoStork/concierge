@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { BrandSettings, BRAND_DEFAULTS, applyBrandPreview, applyBrandToDocument } from "@/hooks/use-brand-settings";
 import { deriveChatPalette, hslString } from "@/lib/chat-palette";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import { Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -701,6 +702,7 @@ function FileDropZone({
   disabled?: boolean;
   darkPreview?: boolean;
 }) {
+  const displayUrl = getPhotoSrc(currentUrl);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -744,12 +746,12 @@ function FileDropZone({
     }
   };
 
-  if (editing && currentUrl) {
+  if (editing && displayUrl) {
     return (
       <div className="space-y-2">
         <Label className="text-sm font-medium">{label}</Label>
         <LogoEditor
-          imageUrl={currentUrl}
+          imageUrl={displayUrl}
           onSave={(newUrl) => {
             onUpload(newUrl);
             setEditing(false);
@@ -799,14 +801,14 @@ function FileDropZone({
         />
         {uploading ? (
           <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" />
-        ) : currentUrl ? (
+        ) : displayUrl ? (
           <div className="flex flex-col items-center gap-3">
             <div
               className="rounded-lg p-1"
               style={{ backgroundImage: darkPreview ? CHECKER_BG_DARK : CHECKER_BG, backgroundSize: "16px 16px" }}
             >
               <img
-                src={currentUrl}
+                src={displayUrl}
                 alt={label}
                 className="max-h-16 max-w-[200px] object-contain"
                 data-testid={`${testId}-preview`}
