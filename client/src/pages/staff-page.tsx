@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
 import { Plus, UserCircle, Trash2, Pencil, Loader2, Phone, Search, XCircle, Calendar, ChevronDown, Copy, Check } from "lucide-react";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import { useToast } from "@/hooks/use-toast";
 import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
 import MembersTable from "@/components/members-table";
@@ -20,6 +21,7 @@ type StaffMember = {
   email: string;
   roles: string[];
   mobileNumber: string | null;
+  photoUrl: string | null;
   providerId: string | null;
   allLocations: boolean;
   createdAt?: string;
@@ -241,9 +243,13 @@ function GostorkAdminUsersView() {
               <TableRow key={member.id} data-testid={`row-staff-${member.id}`} className="cursor-pointer" onClick={() => navigate(`/users/${member.id}`)}>
                 <TableCell className="font-ui">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                      <UserCircle className="w-4 h-4" />
-                    </div>
+                    {getPhotoSrc(member.photoUrl) ? (
+                      <img src={getPhotoSrc(member.photoUrl)!} alt="" className="w-8 h-8 rounded-lg object-cover" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                        <UserCircle className="w-4 h-4" />
+                      </div>
+                    )}
                     <button type="button" className="text-left hover:text-primary hover:underline transition-colors cursor-pointer" onClick={(e) => { e.stopPropagation(); navigate(`/users/${member.id}`); }} data-testid={`link-user-name-${member.id}`}>{member.name || "-"}</button>
                     {member.name && <CopyButton value={member.name} testId={`btn-copy-name-${member.id}`} />}
                   </div>
