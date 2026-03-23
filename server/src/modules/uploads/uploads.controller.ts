@@ -8,7 +8,6 @@ import {
   Res,
   HttpException,
   HttpStatus,
-  Inject,
 } from "@nestjs/common";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { Request, Response } from "express";
@@ -24,6 +23,7 @@ import * as path from "path";
 import * as crypto from "crypto";
 import { Readable } from "stream";
 import { GoogleGenAI } from "@google/genai";
+import { StorageService } from "../storage/storage.service";
 
 const UPLOADS_DIR = path.resolve(process.cwd(), "public/uploads");
 const MAX_FILE_SIZE = 16 * 1024 * 1024;
@@ -38,6 +38,7 @@ const ALLOWED_TYPES = [
 @ApiTags("Uploads")
 @Controller("api/uploads")
 export class UploadsController {
+  constructor(private readonly storageService: StorageService) {}
   @Post()
   @UseGuards(SessionOrJwtGuard)
   @ApiOperation({ summary: "Upload an image file" })
@@ -140,9 +141,18 @@ export class UploadsController {
             } catch {}
           }
 
-          fs.writeFileSync(filePath, fileData);
+          let url: string;
+          if (this.storageService.isConfigured()) {
+            url = await this.storageService.uploadBufferPublic(
+              fileData,
+              `uploads/${uniqueName}`,
+              parsed.contentType,
+            );
+          } else {
+            fs.writeFileSync(filePath, fileData);
+            url = `/uploads/${uniqueName}`;
+          }
 
-          const url = `/uploads/${uniqueName}`;
           res.status(201).json({ url });
           resolve();
         } catch (err) {

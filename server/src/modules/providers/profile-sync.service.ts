@@ -690,7 +690,7 @@ const UPLOADS_DIR = path.resolve(process.cwd(), "public/uploads");
 async function persistSinglePhoto(
   url: string,
   providerId: string,
-  _storageService: StorageService | null,
+  storageService: StorageService | null,
 ): Promise<string> {
   if (!url || isAlreadyPersisted(url)) return url;
   try {
@@ -709,6 +709,12 @@ async function persistSinglePhoto(
     const ext = guessExtension(ct);
     const hash = createHash("md5").update(buffer).digest("hex");
     const filename = `${hash}${ext}`;
+
+    if (storageService?.isConfigured()) {
+      const gcsPath = `profile-photos/${filename}`;
+      return await storageService.uploadBufferPublic(buffer, gcsPath, ct);
+    }
+
     const filePath = path.join(UPLOADS_DIR, filename);
     if (!fs.existsSync(UPLOADS_DIR)) {
       fs.mkdirSync(UPLOADS_DIR, { recursive: true });

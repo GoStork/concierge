@@ -98,7 +98,7 @@ export class StorageService {
   ): Promise<string> {
     this.ensureConfigured();
     const file = this.bucket.file(destPath);
-    await file.save(buffer, { contentType });
+    await file.save(buffer, { contentType, predefinedAcl: "publicRead" });
     return `https://storage.googleapis.com/${this.bucketName}/${destPath}`;
   }
 
