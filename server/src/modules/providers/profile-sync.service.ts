@@ -665,7 +665,6 @@ function extractPhotosArray(entity: any): string[] {
 
 function isAlreadyPersisted(url: string): boolean {
   if (!url) return false;
-  if (url.startsWith("/uploads")) return true;
   if (/storage\.googleapis\.com/i.test(url) && /gostork/i.test(url)) return true;
   return false;
 }
