@@ -37,12 +37,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-
-function proxyImageUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  if (url.startsWith("/")) return url;
-  return `/api/uploads/proxy?url=${encodeURIComponent(url)}`;
-}
+import { getPhotoSrc } from "@/lib/profile-utils";
 
 type LocationData = {
   id?: string;
@@ -382,7 +377,7 @@ export default function CompanyTab() {
         <div className="flex items-start gap-4">
           {logoUrl && (
             <img
-              src={proxyImageUrl(logoUrl) || logoUrl}
+              src={getPhotoSrc(logoUrl) || logoUrl}
               alt="Logo"
               className="w-16 h-16 rounded-lg object-contain bg-secondary shrink-0"
               referrerPolicy="no-referrer"
@@ -800,7 +795,7 @@ export default function CompanyTab() {
                     {member.photoUrl && (
                       <div className="mt-1.5 flex items-center gap-2">
                         <img
-                          src={proxyImageUrl(member.photoUrl)!}
+                          src={getPhotoSrc(member.photoUrl)!}
                           alt={member.name}
                           className="w-10 h-10 rounded-full object-cover bg-secondary"
                           referrerPolicy="no-referrer"
@@ -864,7 +859,7 @@ export default function CompanyTab() {
                     {member.name ? member.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() : "?"}
                     {member.photoUrl && (
                       <img
-                        src={proxyImageUrl(member.photoUrl)!}
+                        src={getPhotoSrc(member.photoUrl)!}
                         alt={member.name}
                         className="absolute inset-0 w-full h-full rounded-full object-cover"
                         referrerPolicy="no-referrer"

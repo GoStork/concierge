@@ -41,7 +41,8 @@ export function normalizeRelationshipStatus(val: string | null | undefined): str
 
 export function getPhotoSrc(url: string | null | undefined): string | null {
   if (!url) return null;
-  if (url.startsWith("/uploads")) return url;
+  if (url.startsWith("/")) return url;
+  if (url.startsWith("data:")) return url;
   if (/storage\.googleapis\.com\/gostork/i.test(url)) return url;
   return `/api/uploads/proxy?url=${encodeURIComponent(url)}`;
 }

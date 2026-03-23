@@ -76,11 +76,7 @@ type UserData = {
   assignedLocations?: { id: string; locationId: string; location: ProviderLocationData }[];
 };
 
-function proxyImageUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  if (url.startsWith("/")) return url;
-  return `/api/uploads/proxy?url=${encodeURIComponent(url)}`;
-}
+import { getPhotoSrc } from "@/lib/profile-utils";
 
 function CalendarLinkSection({ slug }: { slug: string }) {
   const [copied, setCopied] = useState(false);
@@ -363,7 +359,7 @@ export default function AdminUserEditPage() {
     ? [userData.parentAccountRole]
     : (userData.roles || []);
   const roleDisplay = roleBadges.map(r => roleBadgeLabel(r)).join(", ");
-  const photoSrc = proxyImageUrl(localPhotoUrl);
+  const photoSrc = getPhotoSrc(localPhotoUrl);
   const locationDisplay = [userData.city, userData.state].filter(Boolean).join(", ") || null;
 
   return (

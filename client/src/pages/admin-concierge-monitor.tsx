@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -154,7 +155,7 @@ export default function AdminConciergeMonitor() {
           </Button>
           <div className="flex items-center gap-2 flex-1">
             {detail.user.avatarUrl ? (
-              <img src={detail.user.avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
+              <img src={getPhotoSrc(detail.user.avatarUrl) || undefined} alt="" className="w-8 h-8 rounded-full object-cover" />
             ) : (
               <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
                 <User className="w-4 h-4 text-muted-foreground" />
@@ -366,7 +367,7 @@ export default function AdminConciergeMonitor() {
               <CardContent className="py-4 px-5">
                 <div className="flex items-start gap-3">
                   {s.userAvatar ? (
-                    <img src={s.userAvatar} alt="" className="w-10 h-10 rounded-full object-cover" />
+                    <img src={getPhotoSrc(s.userAvatar) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
                   ) : (
                     <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
                       <User className="w-5 h-5 text-muted-foreground" />

@@ -4663,12 +4663,10 @@ async function extractTextFromPdfDoc(
 
 async function saveExtractedImages(
   extractedImages: Array<{ data: Buffer; contentType: string }>,
+  storageService: StorageService | null,
 ): Promise<string[]> {
   const photoUrls: string[] = [];
   const uploadsDir = path.resolve(process.cwd(), "public/uploads");
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-  }
   const sharpMod = (await import("sharp")).default;
   for (let imgIdx = 0; imgIdx < extractedImages.length; imgIdx++) {
     try {
@@ -4676,12 +4674,22 @@ async function saveExtractedImages(
       const oriented = await sharpMod(img.data).rotate().toBuffer();
       const ext = img.contentType === "image/png" ? "png" : "jpg";
       const hash = createHash("md5").update(oriented).digest("hex");
-      const localFilename = `${hash}.${ext}`;
-      const localPath = path.join(uploadsDir, localFilename);
-      if (!fs.existsSync(localPath)) {
-        fs.writeFileSync(localPath, oriented);
+      const filename = `${hash}.${ext}`;
+      const ct = ext === "png" ? "image/png" : "image/jpeg";
+
+      if (storageService?.isConfigured()) {
+        const gcsUrl = await storageService.uploadBufferPublic(oriented, `pdf-photos/${filename}`, ct);
+        photoUrls.push(gcsUrl);
+      } else {
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        const localPath = path.join(uploadsDir, filename);
+        if (!fs.existsSync(localPath)) {
+          fs.writeFileSync(localPath, oriented);
+        }
+        photoUrls.push(`/uploads/${filename}`);
       }
-      photoUrls.push(`/uploads/${localFilename}`);
     } catch (imgErr: any) {
       console.error(`[pdf-sync] Failed to save image ${imgIdx}: ${imgErr.message}`);
     }
@@ -4795,7 +4803,7 @@ async function processSinglePdf(
     tracker.setStage(fileIndex, `Analyzing ${shortName} with AI`, 35);
 
     const [photoUrls, aiData] = await Promise.all([
-      saveExtractedImages(extractedImages),
+      saveExtractedImages(extractedImages, storageService),
       (async () => {
         if (isJobCancelled(job.id)) return null;
         const model = genAI.getGenerativeModel({

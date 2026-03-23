@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Link, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import { User, Building2, Users, Calendar, Camera, Loader2, Eye, EyeOff, Phone, Mail, Shield, CalendarPlus, AlertTriangle, Check, Pencil, Plus, Trash2, Palette, Egg, Baby, FlaskConical, DollarSign, LogOut, Sparkles, Brain, RefreshCw } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
@@ -84,9 +85,7 @@ function AccountTab() {
   const userIdentification = (user as any).identification as string | null;
   const locationDisplay = [userCity, userState].filter(Boolean).join(", ") || null;
 
-  const photoSrc = photoUrl
-    ? (photoUrl.startsWith("/uploads") ? photoUrl : `/api/uploads/proxy?url=${encodeURIComponent(photoUrl)}`)
-    : null;
+  const photoSrc = getPhotoSrc(photoUrl);
 
   const profileLoading = isParent && parentProfileQuery.isLoading;
 

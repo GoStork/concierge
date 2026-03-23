@@ -16,12 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Building2, Loader2, Pencil, Globe, Trash2, Search, MapPin, ArrowUp, ArrowDown, ArrowUpDown, Calendar, ChevronDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { ProviderWithRelations } from "@shared/schema";
-
-function proxyImageUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  if (url.startsWith("/")) return url;
-  return `/api/uploads/proxy?url=${encodeURIComponent(url)}`;
-}
+import { getPhotoSrc } from "@/lib/profile-utils";
 
 const STATUS_OPTIONS = ["NEW", "IN_PROGRESS", "APPROVED", "DECLINED"] as const;
 
@@ -338,7 +333,7 @@ export default function AdminProvidersPage() {
                   <TableCell className="font-ui">
                     <div className="flex items-center gap-3">
                       {provider.logoUrl ? (
-                        <img src={proxyImageUrl(provider.logoUrl) || provider.logoUrl} alt="" className="w-8 h-8 rounded-lg object-contain bg-background p-0.5 border" referrerPolicy="no-referrer" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                        <img src={getPhotoSrc(provider.logoUrl) || provider.logoUrl} alt="" className="w-8 h-8 rounded-lg object-contain bg-background p-0.5 border" referrerPolicy="no-referrer" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                       ) : (
                         <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
                           <Building2 className="w-4 h-4" />

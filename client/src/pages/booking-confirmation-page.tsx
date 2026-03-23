@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -85,11 +86,7 @@ export default function BookingConfirmationPage() {
   const isConfirmed = booking.status === "CONFIRMED";
   const isActive = !isCancelled && !isRescheduled;
 
-  const providerPhoto = booking.providerUser?.photoUrl
-    ? booking.providerUser.photoUrl.startsWith("/uploads")
-      ? booking.providerUser.photoUrl
-      : `/api/uploads/proxy?url=${encodeURIComponent(booking.providerUser.photoUrl)}`
-    : null;
+  const providerPhoto = getPhotoSrc(booking.providerUser?.photoUrl);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background flex items-center justify-center p-4">

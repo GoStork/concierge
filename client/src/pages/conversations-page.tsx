@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -452,7 +453,7 @@ function WhisperProfileCard({ card, brandColor }: { card: any; brandColor: strin
   if (card?.photo) {
     return (
       <div className="w-full max-w-sm aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted relative mb-2" data-testid={`whisper-profile-card-${card.providerId}`}>
-        <img src={card.photo} alt={card.name} className="w-full h-full object-cover" />
+        <img src={getPhotoSrc(card.photo) || undefined} alt={card.name} className="w-full h-full object-cover" />
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-24 pb-6 px-4">
           <h3 className="text-white font-heading text-xl leading-tight">{card.name}</h3>
           {card.location && <p className="text-white/70 text-sm mt-1">{card.location}</p>}
@@ -474,7 +475,7 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
       <div className="mt-1" data-testid="attachment-card">
         {isImage ? (
           <a href={data.url} target="_blank" rel="noopener noreferrer">
-            <img src={data.url} alt={data.originalName} className="max-w-[240px] rounded-lg border" />
+            <img src={getPhotoSrc(data.url) || undefined} alt={data.originalName} className="max-w-[240px] rounded-lg border" />
           </a>
         ) : (
           <a
@@ -1124,7 +1125,7 @@ export default function ConversationsPage() {
                 <Collapsible key={providerId} open={isExpanded} onOpenChange={() => toggleProvider(providerId)}>
                   <CollapsibleTrigger className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted/30 transition-colors text-left" data-testid={`provider-group-${providerId}`}>
                     {first.providerLogo ? (
-                      <img src={first.providerLogo} alt="" className="w-8 h-8 rounded-full object-cover border flex-shrink-0" />
+                      <img src={getPhotoSrc(first.providerLogo) || undefined} alt="" className="w-8 h-8 rounded-full object-cover border flex-shrink-0" />
                     ) : (
                       <div className="w-8 h-8 rounded-full flex items-center justify-center bg-muted text-muted-foreground flex-shrink-0">
                         <Building2 className="w-4 h-4" />
@@ -1311,7 +1312,7 @@ export default function ConversationsPage() {
               data-testid={`provider-session-${s.id}`}
             >
               {s.userAvatar ? (
-                <img src={s.userAvatar} alt="" className="w-11 h-11 rounded-full object-cover flex-shrink-0" />
+                <img src={getPhotoSrc(s.userAvatar) || undefined} alt="" className="w-11 h-11 rounded-full object-cover flex-shrink-0" />
               ) : (
                 <div className="w-11 h-11 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
                   {sIsJoined || sIsBooked ? (
@@ -1376,7 +1377,7 @@ export default function ConversationsPage() {
           </Button>
           <div className="flex items-center gap-2 flex-1">
             {detail.user.photoUrl ? (
-              <img src={detail.user.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
+              <img src={getPhotoSrc(detail.user.photoUrl) || undefined} alt="" className="w-8 h-8 rounded-full object-cover" />
             ) : (
               <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
                 {hasJoined || isConsultationBooked ? (

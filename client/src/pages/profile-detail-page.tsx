@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { typeToUrlSlug, deriveTypeFromPath, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields } from "@/lib/profile-utils";
+import { typeToUrlSlug, deriveTypeFromPath, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields, getPhotoSrc } from "@/lib/profile-utils";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { hasProviderRole, hasAnyRole, GOSTORK_ROLES } from "@shared/roles";
@@ -248,13 +248,6 @@ function PhotoGalleryBar({ photos, videoUrl }: { photos: string[]; videoUrl?: st
   );
 }
 
-function proxyImageUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  if (url.startsWith("/")) return url;
-  if (/storage\.googleapis\.com\/gostork/i.test(url)) return url;
-  return `/api/uploads/proxy?url=${encodeURIComponent(url)}`;
-}
-
 function formatFieldLabel(key: string): string {
   return key
     .replace(/([A-Z])/g, " $1")
@@ -449,7 +442,7 @@ export default function DonorProfilePage() {
       return false;
     };
     const addPhoto = (url: string) => {
-      const proxied = proxyImageUrl(url);
+      const proxied = getPhotoSrc(url);
       if (proxied && !urls.includes(proxied) && isValidPhoto(url)) urls.push(proxied);
     };
     if (donor.photoUrl) addPhoto(donor.photoUrl);

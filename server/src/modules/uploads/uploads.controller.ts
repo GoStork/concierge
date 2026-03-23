@@ -259,20 +259,39 @@ export class UploadsController {
         res.status(400).json({ message: "imageUrl is required" });
         return;
       }
-      if (!imageUrl.startsWith("/uploads/")) {
+      // Accept local /uploads/ paths and GCS URLs
+      const isLocal = imageUrl.startsWith("/uploads/");
+      const isGcs = /storage\.googleapis\.com\//.test(imageUrl);
+      if (!isLocal && !isGcs) {
         res
           .status(400)
-          .json({ message: "Only uploaded images (/uploads/*) are allowed" });
-        return;
-      }
-      const localPath = path.join(UPLOADS_DIR, path.basename(imageUrl));
-      if (!fs.existsSync(localPath)) {
-        res.status(404).json({ message: "Image not found" });
+          .json({ message: "Only uploaded images are allowed" });
         return;
       }
 
+      let sourceBuffer: Buffer;
+      let ext: string;
+      if (isLocal) {
+        const localPath = path.join(UPLOADS_DIR, path.basename(imageUrl));
+        if (!fs.existsSync(localPath)) {
+          res.status(404).json({ message: "Image not found" });
+          return;
+        }
+        sourceBuffer = fs.readFileSync(localPath);
+        ext = path.extname(localPath).toLowerCase() || ".jpg";
+      } else {
+        const resp = await fetch(imageUrl);
+        if (!resp.ok) {
+          res.status(404).json({ message: "Image not found" });
+          return;
+        }
+        sourceBuffer = Buffer.from(await resp.arrayBuffer());
+        const ct = resp.headers.get("content-type") || "image/jpeg";
+        ext = ct.includes("png") ? ".png" : ct.includes("webp") ? ".webp" : ".jpg";
+      }
+
       const sharp = (await import("sharp")).default;
-      let pipeline = sharp(localPath);
+      let pipeline = sharp(sourceBuffer);
 
       if (rotation && typeof rotation === "number" && rotation !== 0) {
         pipeline = pipeline.rotate(rotation);
@@ -282,12 +301,17 @@ export class UploadsController {
       }
 
       const resultBuffer = await pipeline.toBuffer();
-      const ext = path.extname(localPath).toLowerCase() || ".jpg";
       const uniqueName = `${crypto.randomBytes(16).toString("hex")}${ext}`;
-      const outPath = path.join(UPLOADS_DIR, uniqueName);
-      fs.writeFileSync(outPath, resultBuffer);
 
-      const url = `/uploads/${uniqueName}`;
+      let url: string;
+      if (this.storageService.isConfigured()) {
+        const contentType = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
+        url = await this.storageService.uploadBufferPublic(resultBuffer, `uploads/${uniqueName}`, contentType);
+      } else {
+        const outPath = path.join(UPLOADS_DIR, uniqueName);
+        fs.writeFileSync(outPath, resultBuffer);
+        url = `/uploads/${uniqueName}`;
+      }
       res.status(200).json({ url });
     } catch (err: any) {
       console.error("Transform image error:", err?.message || err);
@@ -307,38 +331,51 @@ export class UploadsController {
       }
 
       const imageUrl: string = body.imageUrl;
-      if (!imageUrl.startsWith("/uploads/")) {
+      const isLocal = imageUrl.startsWith("/uploads/");
+      const isGcs = /storage\.googleapis\.com\//.test(imageUrl);
+      if (!isLocal && !isGcs) {
         res
           .status(400)
-          .json({ message: "Only uploaded images (/uploads/*) are allowed" });
+          .json({ message: "Only uploaded images are allowed" });
         return;
       }
 
-      const localPath = path.join(UPLOADS_DIR, path.basename(imageUrl));
+      let imageBuffer: Buffer;
+      let imageMime: string;
 
-      // 1. Check file existence and size ASYNCHRONOUSLY before loading into RAM
-      try {
-        const stats = await fs.promises.stat(localPath);
-        if (stats.size > MAX_FILE_SIZE) {
-          res
-            .status(413)
-            .json({ message: "Image too large. Maximum size is 16MB." });
+      if (isLocal) {
+        const localPath = path.join(UPLOADS_DIR, path.basename(imageUrl));
+        try {
+          const stats = await fs.promises.stat(localPath);
+          if (stats.size > MAX_FILE_SIZE) {
+            res.status(413).json({ message: "Image too large. Maximum size is 16MB." });
+            return;
+          }
+        } catch {
+          res.status(404).json({ message: "Image not found" });
           return;
         }
-      } catch {
-        res.status(404).json({ message: "Image not found" });
-        return;
+        const ext = path.extname(localPath).toLowerCase();
+        const mimeMap: Record<string, string> = {
+          ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+          ".webp": "image/webp", ".gif": "image/gif",
+        };
+        imageMime = mimeMap[ext] || "image/png";
+        imageBuffer = await fs.promises.readFile(localPath);
+      } else {
+        const resp = await fetch(imageUrl);
+        if (!resp.ok) {
+          res.status(404).json({ message: "Image not found" });
+          return;
+        }
+        imageBuffer = Buffer.from(await resp.arrayBuffer());
+        if (imageBuffer.length > MAX_FILE_SIZE) {
+          res.status(413).json({ message: "Image too large. Maximum size is 16MB." });
+          return;
+        }
+        const ct = resp.headers.get("content-type") || "image/png";
+        imageMime = ct.includes("jpeg") ? "image/jpeg" : ct.includes("webp") ? "image/webp" : "image/png";
       }
-
-      const ext = path.extname(localPath).toLowerCase();
-      const mimeMap: Record<string, string> = {
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".webp": "image/webp",
-        ".gif": "image/gif",
-      };
-      const imageMime = mimeMap[ext] || "image/png";
 
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
@@ -346,8 +383,6 @@ export class UploadsController {
         return;
       }
 
-      // 2. Read the file ASYNCHRONOUSLY to prevent freezing the server
-      const imageBuffer = await fs.promises.readFile(localPath);
       const base64Image = imageBuffer.toString("base64");
 
       const ai = new GoogleGenAI({ apiKey });
@@ -396,25 +431,24 @@ export class UploadsController {
         return;
       }
 
-      if (!fs.existsSync(UPLOADS_DIR)) {
-        await fs.promises.mkdir(UPLOADS_DIR, { recursive: true });
-      }
-
       const outExt = resultMimeType.includes("png")
         ? ".png"
         : resultMimeType.includes("webp")
           ? ".webp"
           : ".png";
       const uniqueName = `${crypto.randomBytes(16).toString("hex")}${outExt}`;
-      const filePath = path.join(UPLOADS_DIR, uniqueName);
+      const outputBuffer = Buffer.from(resultImageData, "base64");
 
-      // 3. Write the file ASYNCHRONOUSLY
-      await fs.promises.writeFile(
-        filePath,
-        Buffer.from(resultImageData, "base64"),
-      );
-
-      const url = `/uploads/${uniqueName}`;
+      let url: string;
+      if (this.storageService.isConfigured()) {
+        url = await this.storageService.uploadBufferPublic(outputBuffer, `uploads/${uniqueName}`, resultMimeType);
+      } else {
+        if (!fs.existsSync(UPLOADS_DIR)) {
+          await fs.promises.mkdir(UPLOADS_DIR, { recursive: true });
+        }
+        await fs.promises.writeFile(path.join(UPLOADS_DIR, uniqueName), outputBuffer);
+        url = `/uploads/${uniqueName}`;
+      }
       res.status(200).json({ url });
     } catch (err: any) {
       console.error("Remove background error:", err?.message || err);

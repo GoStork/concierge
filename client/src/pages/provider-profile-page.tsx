@@ -10,12 +10,7 @@ import {
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { IvfSuccessRatesSection } from "@/components/ivf-success-rates-section";
-
-function proxyImageUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  if (url.startsWith("/")) return url;
-  return `/api/uploads/proxy?url=${encodeURIComponent(url)}`;
-}
+import { getPhotoSrc } from "@/lib/profile-utils";
 
 function SectionHeader({ title }: { title: string }) {
   return (
@@ -92,7 +87,7 @@ export default function ProviderProfilePage() {
     );
   }
 
-  const logoSrc = proxyImageUrl(provider.logoUrl);
+  const logoSrc = getPhotoSrc(provider.logoUrl);
 
   return (
     <div className="space-y-6 w-full">
@@ -187,7 +182,7 @@ export default function ProviderProfilePage() {
           <div className="p-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {provider.members.map((member: any) => {
-                const memberPhoto = proxyImageUrl(member.photoUrl);
+                const memberPhoto = getPhotoSrc(member.photoUrl);
                 const memberLocations = member.locations
                   ?.map((ml: any) => {
                     const l = ml.location;

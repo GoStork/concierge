@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, Search, Video, User, Building2, Shield, Loader2 } from "lucide-react";
 import { useCompanyName } from "@/hooks/use-brand-settings";
+import { getPhotoSrc } from "@/lib/profile-utils";
 
 interface BookableProvider {
   id: string;
@@ -39,10 +40,7 @@ export default function ParentNewAppointmentPage() {
   const goStorkMembers = filtered.filter((p) => p.isGoStorkMember);
   const providerStaff = filtered.filter((p) => !p.isGoStorkMember);
 
-  const photoSrc = (url: string | null) => {
-    if (!url) return null;
-    return url.startsWith("/uploads") ? url : `/api/uploads/proxy?url=${encodeURIComponent(url)}`;
-  };
+  const photoSrc = (url: string | null) => getPhotoSrc(url);
 
   const handleSelect = (provider: BookableProvider) => {
     navigate(`/book/${provider.slug}`);

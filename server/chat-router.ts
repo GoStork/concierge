@@ -1,6 +1,9 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "./db";
 import { generateAgreement } from "./pandadoc-service";
+import { StorageService } from "./src/modules/storage/storage.service";
+
+const storageService = new StorageService();
 
 const PROVIDER_ROLES = ["PROVIDER_ADMIN", "SURROGACY_COORDINATOR", "EGG_DONOR_COORDINATOR", "SPERM_DONOR_COORDINATOR", "IVF_CLINIC_COORDINATOR", "DOCTOR", "BILLING_MANAGER"];
 
@@ -757,7 +760,7 @@ chatRouter.post("/api/chat-upload", requireAuth, async (req, res) => {
     if (totalSize <= MAX_FILE_SIZE) chunks.push(chunk);
   });
 
-  req.on("end", () => {
+  req.on("end", async () => {
     if (totalSize > MAX_FILE_SIZE) return res.status(413).json({ message: "File too large (max 16MB)" });
 
     const body = Buffer.concat(chunks);
@@ -783,10 +786,17 @@ chatRouter.post("/api/chat-upload", requireAuth, async (req, res) => {
         const ext = SAFE_EXT_MAP[mimeType] || (mimeType.startsWith("image/") ? rawExt || ".bin" : rawExt || ".bin");
         const hash = crypto.createHash("md5").update(fileData).digest("hex");
         const storedName = `${hash}${ext}`;
-        fs.writeFileSync(path.join(UPLOADS_DIR, storedName), fileData);
+
+        let url: string;
+        if (storageService.isConfigured()) {
+          url = await storageService.uploadBufferPublic(fileData, `uploads/${storedName}`, mimeType);
+        } else {
+          fs.writeFileSync(path.join(UPLOADS_DIR, storedName), fileData);
+          url = `/uploads/${storedName}`;
+        }
 
         return res.json({
-          url: `/uploads/${storedName}`,
+          url,
           originalName: filename,
           mimeType,
           size: fileData.length,

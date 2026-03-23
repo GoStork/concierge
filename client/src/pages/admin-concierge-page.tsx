@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import { useToast } from "@/hooks/use-toast";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { Button } from "@/components/ui/button";
@@ -785,7 +786,7 @@ export default function AdminConciergePage() {
             <Label className="text-sm font-medium">Avatar</Label>
             <div className="flex items-center gap-3">
               {editForm.avatarUrl && (
-                <img src={editForm.avatarUrl} alt={editForm.name || "Avatar"} className="w-10 h-10 rounded-full object-cover border" data-testid="img-matchmaker-avatar-preview" />
+                <img src={getPhotoSrc(editForm.avatarUrl) || undefined} alt={editForm.name || "Avatar"} className="w-10 h-10 rounded-full object-cover border" data-testid="img-matchmaker-avatar-preview" />
               )}
               <label className="cursor-pointer">
                 <input type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleAvatarUpload(file, (url) => setEditForm({ ...editForm, avatarUrl: url })); }} data-testid="input-matchmaker-avatar-upload" />
@@ -866,7 +867,7 @@ export default function AdminConciergePage() {
                   <div className="flex-shrink-0 text-muted-foreground/40"><GripVertical className="w-4 h-4" /></div>
                   <div className="flex-shrink-0">
                     {m.avatarUrl ? (
-                      <img src={m.avatarUrl} alt={m.name} className="w-11 h-11 rounded-full object-cover border" />
+                      <img src={getPhotoSrc(m.avatarUrl) || undefined} alt={m.name} className="w-11 h-11 rounded-full object-cover border" />
                     ) : (
                       <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">{m.name.charAt(0)}</div>
                     )}

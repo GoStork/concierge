@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -165,7 +166,7 @@ export default function ConciergeSettingsTab() {
                   <div className="w-14 h-14 rounded-full flex-shrink-0 relative">
                     {m.avatarUrl && (
                       <img
-                        src={m.avatarUrl}
+                        src={getPhotoSrc(m.avatarUrl) || undefined}
                         alt={m.name}
                         className="w-14 h-14 rounded-full object-cover border-2 absolute inset-0 z-10"
                         style={{ borderColor: isSelected ? brandColor : "transparent" }}

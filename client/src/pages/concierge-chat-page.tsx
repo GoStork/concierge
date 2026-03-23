@@ -5,6 +5,7 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { deriveChatPalette } from "@/lib/chat-palette";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -580,9 +581,7 @@ export function InlineBookingCalendar({
   if (step === "pending" && booking) {
     const start = new Date(booking.scheduledAt);
     const providerUser = booking.providerUser;
-    const providerPhotoSrc = providerUser?.photoUrl
-      ? providerUser.photoUrl.startsWith("/uploads") ? providerUser.photoUrl : `/api/uploads/proxy?url=${encodeURIComponent(providerUser.photoUrl)}`
-      : null;
+    const providerPhotoSrc = getPhotoSrc(providerUser?.photoUrl);
     const providerName = providerUser?.name || memberName;
     const providerOrgName = providerUser?.provider?.name || "";
     const isConfirmed = booking.status === "CONFIRMED";
@@ -1128,7 +1127,7 @@ function ConsultationBookingCard({
         <div className="flex items-center gap-3 mb-3">
           {card.providerLogo ? (
             <img
-              src={card.providerLogo.startsWith("/") ? card.providerLogo : `/api/uploads/proxy?url=${encodeURIComponent(card.providerLogo)}`}
+              src={getPhotoSrc(card.providerLogo)!}
               alt={card.providerName}
               className="w-12 h-12 rounded-full object-cover border-2"
               style={{ borderColor: `${brandColor}30` }}
@@ -1454,7 +1453,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
       onClick={() => onViewProfile(card)}
     >
       {card.photo && (
-        <img src={card.photo} alt={card.name} className="w-full h-full object-cover" />
+        <img src={getPhotoSrc(card.photo) || undefined} alt={card.name} className="w-full h-full object-cover" />
       )}
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-24 pb-6 px-4">
         <h3 className="text-white font-heading text-xl leading-tight">{card.name}</h3>
@@ -1540,8 +1539,8 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo }: { msg: Cha
     return (
       <div data-testid="concierge-attachment-card">
         {isImage ? (
-          <a href={data.url} target="_blank" rel="noopener noreferrer">
-            <img src={data.url} alt={data.originalName} className="max-w-[240px] rounded-lg border" />
+          <a href={getPhotoSrc(data.url) || data.url} target="_blank" rel="noopener noreferrer">
+            <img src={getPhotoSrc(data.url) || undefined} alt={data.originalName} className="max-w-[240px] rounded-lg border" />
           </a>
         ) : (
           <a
@@ -2182,7 +2181,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           <div className="w-9 h-9 rounded-full flex-shrink-0 relative">
             {!providerInChat && selectedMatchmaker?.avatarUrl && (
               <img
-                src={selectedMatchmaker.avatarUrl}
+                src={getPhotoSrc(selectedMatchmaker.avatarUrl) || undefined}
                 alt={selectedMatchmaker.name}
                 className="w-9 h-9 rounded-full object-cover border absolute inset-0"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}

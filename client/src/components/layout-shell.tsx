@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { queryClient } from "@/lib/queryClient";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import { 
   LogOut, 
   Baby, 
@@ -499,9 +500,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
 
   const displayName = user.name || user.email || 'User';
   const userPhoto = (user as any).photoUrl as string | null;
-  const userPhotoSrc = userPhoto
-    ? (userPhoto.startsWith("/uploads") ? userPhoto : `/api/uploads/proxy?url=${encodeURIComponent(userPhoto)}`)
-    : null;
+  const userPhotoSrc = getPhotoSrc(userPhoto);
 
   return (
     <div className="min-h-screen bg-background">

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -251,7 +252,7 @@ export default function AdminUserAddPage() {
                     <SelectItem key={m.id} value={m.id} data-testid={`select-member-${m.id}`}>
                       <span className="flex items-center gap-2">
                         {m.photoUrl ? (
-                          <img src={m.photoUrl.startsWith("/uploads") ? m.photoUrl : `/api/uploads/proxy?url=${encodeURIComponent(m.photoUrl)}`} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
+                          <img src={getPhotoSrc(m.photoUrl)!} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
                         ) : (
                           <UserCircle className="w-5 h-5 text-muted-foreground shrink-0" />
                         )}

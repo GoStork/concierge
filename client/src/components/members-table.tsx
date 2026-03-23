@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -267,7 +268,7 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
                   <TableCell className="font-ui">
                     <div className="flex items-center gap-2">
                       {member.photoUrl ? (
-                        <img src={member.photoUrl.startsWith("/uploads") ? member.photoUrl : `/api/uploads/proxy?url=${encodeURIComponent(member.photoUrl)}`} alt="" className="w-7 h-7 rounded-lg object-cover shrink-0" />
+                        <img src={getPhotoSrc(member.photoUrl)!} alt="" className="w-7 h-7 rounded-lg object-cover shrink-0" />
                       ) : (
                         <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
                           <UserCircle className="w-4 h-4" />

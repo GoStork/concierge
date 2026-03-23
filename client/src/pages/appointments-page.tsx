@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -114,11 +115,7 @@ export default function AppointmentsPage() {
             const start = new Date(booking.scheduledAt);
             const isUpcoming = start >= now && booking.status !== "CANCELLED" && booking.status !== "RESCHEDULED";
             const otherParty = booking.providerUserId === user?.id ? booking.parentUser : booking.providerUser;
-            const otherPhotoSrc = otherParty?.photoUrl
-              ? otherParty.photoUrl.startsWith("/uploads")
-                ? otherParty.photoUrl
-                : `/api/uploads/proxy?url=${encodeURIComponent(otherParty.photoUrl)}`
-              : null;
+            const otherPhotoSrc = getPhotoSrc(otherParty?.photoUrl);
 
             return (
               <div

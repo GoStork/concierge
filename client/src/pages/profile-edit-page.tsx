@@ -4,7 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { typeToUrlSlug, deriveTypeFromPath } from "@/lib/profile-utils";
+import { typeToUrlSlug, deriveTypeFromPath, getPhotoSrc } from "@/lib/profile-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -112,12 +112,6 @@ function FieldRow({
       )}
     </div>
   );
-}
-
-function proxyImageUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  if (url.startsWith("/uploads/") || url.startsWith("data:")) return url;
-  return `/api/uploads/proxy?url=${encodeURIComponent(url)}`;
 }
 
 export default function DonorEditPage() {
@@ -753,7 +747,7 @@ function PhotoCard({
   onReplaceUrl: (newUrl: string) => void;
 }) {
   const [transforming, setTransforming] = useState(false);
-  const displayUrl = proxyImageUrl(url) || url;
+  const displayUrl = getPhotoSrc(url) || url;
   const isLocal = url.startsWith("/uploads/");
 
   const handleTransform = async (opts: { rotation?: number; flipH?: boolean }) => {
