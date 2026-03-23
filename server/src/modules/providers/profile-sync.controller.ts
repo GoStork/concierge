@@ -28,7 +28,7 @@ import {
   getActiveSyncJob,
   getActivePdfJob,
   cancelSync,
-  getDonors,
+  getProfiles,
   DonorType,
   getScrapersSummary,
   runNightlySync,
@@ -316,7 +316,7 @@ export class ProfileSyncController {
     if (parent && !(await hasApprovedService(this.prisma, providerId, "egg-donor"))) {
       return [];
     }
-    const donors = await getDonors(this.prisma, providerId, "egg-donor", { excludeHidden: parent });
+    const donors = await getProfiles(this.prisma, providerId, "egg-donor", { excludeHidden: parent });
     if (!parent) {
       return enrichDonorsWithPendingCosts(this.prisma, providerId, "egg-donor", donors);
     }
@@ -349,7 +349,7 @@ export class ProfileSyncController {
     if (parent && !(await hasApprovedService(this.prisma, providerId, "surrogate"))) {
       return [];
     }
-    const donors = await getDonors(this.prisma, providerId, "surrogate", { excludeHidden: parent });
+    const donors = await getProfiles(this.prisma, providerId, "surrogate", { excludeHidden: parent });
     if (!parent) {
       return enrichDonorsWithPendingCosts(this.prisma, providerId, "surrogate", donors);
     }
@@ -380,7 +380,7 @@ export class ProfileSyncController {
     if (parent && !(await hasApprovedService(this.prisma, providerId, "sperm-donor"))) {
       return [];
     }
-    return getDonors(this.prisma, providerId, "sperm-donor", { excludeHidden: parent });
+    return getProfiles(this.prisma, providerId, "sperm-donor", { excludeHidden: parent });
   }
 
   @Get("sperm-donors/:donorId")

@@ -4195,7 +4195,7 @@ export async function getScrapersSummary(prisma: PrismaService) {
   };
 }
 
-export async function getDonors(
+export async function getProfiles(
   prisma: PrismaService,
   providerId: string,
   type: DonorType,
