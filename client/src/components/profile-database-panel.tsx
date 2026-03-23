@@ -423,6 +423,13 @@ export default function ProfileDatabasePanel({
         const job: SyncJob = await res.json();
         setPdfJobProgress(job);
 
+        // Refresh profiles list as each PDF is processed
+        if (job.succeeded > 0) {
+          queryClient.invalidateQueries({
+            queryKey: [`/api/providers/${providerId}/${TYPE_ENDPOINTS[type]}`],
+          });
+        }
+
         if (job.status === "completed" || job.status === "failed") {
           if (pdfPollRef.current) clearInterval(pdfPollRef.current);
           pdfPollRef.current = null;
