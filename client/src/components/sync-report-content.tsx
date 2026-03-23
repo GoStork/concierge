@@ -38,11 +38,17 @@ export function SyncReportContent({ data }: { data: SyncReport }) {
   return (
     <div className="space-y-4">
       {data.lastSyncStats && (
-        <div className="grid gap-2 md:gap-4 grid-cols-4" data-testid="sync-stats">
+        <div className="grid gap-2 md:gap-4 grid-cols-5" data-testid="sync-stats">
+          <Card data-testid="stat-total-profiles">
+            <CardContent className="pt-4 pb-3 px-4">
+              <div className="text-2xl font-heading">{(data.totalProfiles || 0).toLocaleString()}</div>
+              <div className="text-xs text-muted-foreground">Total Profiles</div>
+            </CardContent>
+          </Card>
           <Card data-testid="stat-profiles-processed">
             <CardContent className="pt-4 pb-3 px-4">
               <div className="text-2xl font-heading">{data.lastSyncStats.succeeded.toLocaleString()}</div>
-              <div className="text-xs text-muted-foreground">Profiles Processed</div>
+              <div className="text-xs text-muted-foreground">Profiles Synced</div>
             </CardContent>
           </Card>
           <Card data-testid="stat-new-profiles">
