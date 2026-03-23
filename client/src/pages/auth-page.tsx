@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertCircle, Baby, Loader2, CheckCircle2 } from "lucide-react";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import { useEffect, useRef, useCallback } from "react";
 import { useCompanyName, useBrandSettings } from "@/hooks/use-brand-settings";
 
@@ -67,12 +68,12 @@ export default function AuthPage() {
         <div className="relative z-10 flex-1 flex flex-col justify-between">
           <div className="flex items-center gap-3">
             {brandSettings?.logoWithNameUrl ? (
-              <img src={brandSettings.logoWithNameUrl} alt={companyName} className="h-20 object-contain brightness-0 invert" data-testid="img-login-logo" />
+              <img src={getPhotoSrc(brandSettings.logoWithNameUrl) || brandSettings.logoWithNameUrl} alt={companyName} className="h-20 object-contain brightness-0 invert" data-testid="img-login-logo" />
             ) : brandSettings?.darkLogoWithNameUrl ? (
-              <img src={brandSettings.darkLogoWithNameUrl} alt={companyName} className="h-20 object-contain" data-testid="img-login-logo" />
+              <img src={getPhotoSrc(brandSettings.darkLogoWithNameUrl) || brandSettings.darkLogoWithNameUrl} alt={companyName} className="h-20 object-contain" data-testid="img-login-logo" />
             ) : brandSettings?.logoUrl || brandSettings?.darkLogoUrl ? (
               <>
-                <img src={(brandSettings.logoUrl || brandSettings.darkLogoUrl)!} alt="" className="w-20 h-20 rounded-lg object-contain" data-testid="img-login-logo" />
+                <img src={getPhotoSrc(brandSettings.logoUrl || brandSettings.darkLogoUrl) || (brandSettings.logoUrl || brandSettings.darkLogoUrl)!} alt="" className="w-20 h-20 rounded-lg object-contain" data-testid="img-login-logo" />
                 <span className="font-display font-heading text-2xl tracking-wide">{companyName}</span>
               </>
             ) : (

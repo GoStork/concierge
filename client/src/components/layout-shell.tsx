@@ -509,7 +509,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
           <Link to={isParentOnly && brandSettings?.enableAiConcierge && brandSettings?.parentExperienceMode !== 'MARKETPLACE_ONLY' ? '/chat' : '/marketplace'} className="flex items-center gap-2.5 shrink-0" data-testid="link-logo">
             {brandSettings?.logoWithNameUrl ? (
               <img
-                src={brandSettings.logoWithNameUrl}
+                src={getPhotoSrc(brandSettings.logoWithNameUrl) || brandSettings.logoWithNameUrl}
                 alt={brandSettings?.companyName || "GoStork"}
                 className="h-14 sm:h-14 w-auto max-w-[200px] sm:max-w-[260px] object-contain"
                 data-testid="img-logo-with-name"
@@ -517,7 +517,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
             ) : (
               <>
                 {brandSettings?.logoUrl ? (
-                  <img src={brandSettings.logoUrl} alt="" className="w-11 h-11 rounded-lg object-contain" data-testid="img-logo-icon" />
+                  <img src={getPhotoSrc(brandSettings.logoUrl) || brandSettings.logoUrl} alt="" className="w-11 h-11 rounded-lg object-contain" data-testid="img-logo-icon" />
                 ) : (
                   <div className="w-11 h-11 rounded-lg bg-primary flex items-center justify-center text-white shadow-md shadow-primary/20">
                     <Baby className="w-6 h-6" />

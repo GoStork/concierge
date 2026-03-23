@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { getPhotoSrc } from "@/lib/profile-utils";
 
 export interface Matchmaker {
   id: string;
@@ -360,7 +361,8 @@ export function applyBrandToDocument(settings: BrandSettings) {
     const ext = pathname.substring(pathname.lastIndexOf("."));
     faviconEl.type = mimeMap[ext] || "";
     const separator = settings.faviconUrl.includes("?") ? "&" : "?";
-    faviconEl.href = `${settings.faviconUrl}${separator}v=${Date.now()}`;
+    const resolvedFavicon = getPhotoSrc(settings.faviconUrl) || settings.faviconUrl;
+    faviconEl.href = `${resolvedFavicon}${resolvedFavicon.includes("?") ? "&" : "?"}v=${Date.now()}`;
   }
 }
 
