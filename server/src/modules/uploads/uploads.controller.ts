@@ -22,6 +22,7 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
+import { Readable } from "stream";
 import { GoogleGenAI } from "@google/genai";
 
 const UPLOADS_DIR = path.resolve(process.cwd(), "public/uploads");
@@ -217,9 +218,8 @@ export class UploadsController {
 
       // 3. Stream the body directly to the client (Zero Memory Buffer)
       if (response.body) {
-        const { Readable } = require("stream");
         // Convert Web Stream to Node Stream and pipe it to Express response
-        const stream = Readable.fromWeb(response.body);
+        const stream = Readable.fromWeb(response.body as any);
 
         stream.on("error", (err) => {
           console.error("Proxy Stream Error:", err);
