@@ -188,7 +188,7 @@ export default function ScraperReportPage() {
           size="sm"
           className="gap-1.5"
           onClick={() => handleRestart()}
-          disabled={isRestarting || isSyncing}
+          disabled={isRestarting}
           data-testid="button-restart-sync-report"
         >
           {isRestarting ? (
@@ -204,7 +204,7 @@ export default function ScraperReportPage() {
           size="sm"
           className="gap-1.5"
           onClick={() => handleRestart(10)}
-          disabled={isTestSyncing || isSyncing}
+          disabled={isTestSyncing}
           data-testid="button-sync-10-report"
         >
           {isTestSyncing ? (
