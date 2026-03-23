@@ -44,9 +44,8 @@ export function getPhotoSrc(url: string | null | undefined): string | null {
   if (url.startsWith("/")) return url;
   if (url.startsWith("data:")) return url;
   if (/storage\.googleapis\.com\/gostork/i.test(url)) {
-    // Extract GCS path and serve through authenticated endpoint
     const match = url.match(/storage\.googleapis\.com\/[^/]+\/(.+)/);
-    if (match) return `/api/uploads/gcs/${match[1]}`;
+    if (match) return `/api/uploads/gcs?path=${encodeURIComponent(match[1])}`;
     return url;
   }
   return `/api/uploads/proxy?url=${encodeURIComponent(url)}`;

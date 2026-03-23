@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   Query,
+  Inject,
   UseGuards,
   Req,
   Res,
@@ -38,7 +39,7 @@ const ALLOWED_TYPES = [
 @ApiTags("Uploads")
 @Controller("api/uploads")
 export class UploadsController {
-  constructor(private readonly storageService: StorageService) {}
+  constructor(@Inject(StorageService) private readonly storageService: StorageService) {}
   @Post()
   @UseGuards(SessionOrJwtGuard)
   @ApiOperation({ summary: "Upload an image file" })
@@ -155,7 +156,8 @@ export class UploadsController {
 
           res.status(201).json({ url });
           resolve();
-        } catch (err) {
+        } catch (err: any) {
+          console.error("[uploads] Upload error:", err?.message, err?.errors || "");
           res.status(500).json({ message: "Failed to process upload" });
           resolve();
         }
@@ -168,10 +170,10 @@ export class UploadsController {
     });
   }
 
-  @Get("gcs/*")
+  @Get("gcs")
   @ApiOperation({ summary: "Serve a file from GCS (authenticated)" })
-  async serveGcsFile(@Req() req: Request, @Res() res: Response) {
-    const gcsPath = (req.params as any)[0] || req.url.replace(/^\/api\/uploads\/gcs\//, "");
+  @ApiQuery({ name: "path", required: true, type: String })
+  async serveGcsFile(@Query("path") gcsPath: string, @Res() res: Response) {
     if (!gcsPath || gcsPath.includes("..")) {
       res.status(400).json({ message: "Invalid path" });
       return;

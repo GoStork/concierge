@@ -161,7 +161,7 @@ async function main() {
     (id, url) => prisma.eggDonor.update({ where: { id }, data: { photoUrl: url } }).then(() => {}),
   );
   await migrateArrayField("EggDonor", "id", "photos",
-    () => prisma.eggDonor.findMany({ where: { photos: { hasSome: [] } }, select: { id: true, photos: true } }).then(rows => rows.filter(r => r.photos.some((p: string) => p.startsWith("/uploads/")))),
+    () => prisma.eggDonor.findMany({ where: { NOT: { photos: { equals: [] } } }, select: { id: true, photos: true } }).then(rows => rows.filter(r => r.photos.some((p: string) => p.startsWith("/uploads/")))),
     (id, urls) => prisma.eggDonor.update({ where: { id }, data: { photos: urls } }).then(() => {}),
   );
 
@@ -171,7 +171,7 @@ async function main() {
     (id, url) => prisma.surrogate.update({ where: { id }, data: { photoUrl: url } }).then(() => {}),
   );
   await migrateArrayField("Surrogate", "id", "photos",
-    () => prisma.surrogate.findMany({ where: { photos: { hasSome: [] } }, select: { id: true, photos: true } }).then(rows => rows.filter(r => r.photos.some((p: string) => p.startsWith("/uploads/")))),
+    () => prisma.surrogate.findMany({ where: { NOT: { photos: { equals: [] } } }, select: { id: true, photos: true } }).then(rows => rows.filter(r => r.photos.some((p: string) => p.startsWith("/uploads/")))),
     (id, urls) => prisma.surrogate.update({ where: { id }, data: { photos: urls } }).then(() => {}),
   );
 
@@ -181,7 +181,7 @@ async function main() {
     (id, url) => prisma.spermDonor.update({ where: { id }, data: { photoUrl: url } }).then(() => {}),
   );
   await migrateArrayField("SpermDonor", "id", "photos",
-    () => prisma.spermDonor.findMany({ where: { photos: { hasSome: [] } }, select: { id: true, photos: true } }).then(rows => rows.filter(r => r.photos.some((p: string) => p.startsWith("/uploads/")))),
+    () => prisma.spermDonor.findMany({ where: { NOT: { photos: { equals: [] } } }, select: { id: true, photos: true } }).then(rows => rows.filter(r => r.photos.some((p: string) => p.startsWith("/uploads/")))),
     (id, urls) => prisma.spermDonor.update({ where: { id }, data: { photos: urls } }).then(() => {}),
   );
 
