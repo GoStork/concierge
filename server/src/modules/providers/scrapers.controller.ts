@@ -55,7 +55,7 @@ export class ScrapersController {
     @Inject(StorageService) private readonly storageService: StorageService,
   ) {
     this.cdcSyncService = new CdcSyncService(prisma);
-    this.clinicEnrichmentService = new ClinicEnrichmentService(prisma);
+    this.clinicEnrichmentService = new ClinicEnrichmentService(prisma, storageService);
     this.resumeInterruptedProcesses();
   }
 

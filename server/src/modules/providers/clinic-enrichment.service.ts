@@ -1,5 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { createHash } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
+import { StorageService } from "../storage/storage.service";
 import { scrapeProviderWebsite } from "./scrape.service";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
@@ -627,10 +629,39 @@ export function mergeTeamMembers(
   return finalMembers;
 }
 
+async function persistPhotoToGcs(
+  url: string | null | undefined,
+  storageService: StorageService | null,
+): Promise<string | null> {
+  if (!url) return null;
+  // Already persisted
+  if (url.startsWith("/uploads")) return url;
+  if (/storage\.googleapis\.com/i.test(url) && /gostork/i.test(url)) return url;
+  if (!storageService?.isConfigured()) return url;
+
+  try {
+    const resp = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!resp.ok) return url;
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    if (buffer.length < 200) return url; // too small, probably not a real image
+    const ct = resp.headers.get("content-type") || "image/jpeg";
+    const ext = ct.includes("png") ? ".png" : ct.includes("webp") ? ".webp" : ct.includes("svg") ? ".svg" : ".jpg";
+    const hash = createHash("md5").update(buffer).digest("hex");
+    const gcsPath = `profile-photos/${hash}${ext}`;
+    return await storageService.uploadBufferPublic(buffer, gcsPath, ct);
+  } catch (err: any) {
+    console.warn(`[clinic-enrichment] Failed to persist photo ${url}: ${err.message}`);
+    return url; // fall back to external URL
+  }
+}
+
 export class ClinicEnrichmentService {
   private activeRunId: string | null = null;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storageService: StorageService | null = null,
+  ) {}
 
   async enrichClinicProfile(providerId: string): Promise<boolean> {
     const provider = await this.prisma.provider.findUnique({
@@ -675,7 +706,7 @@ export class ClinicEnrichmentService {
     if (scraped?.about) updateData.about = scraped.about;
     if (scraped?.phone) updateData.phone = scraped.phone;
     else if (sartPhone) updateData.phone = sartPhone;
-    if (scraped?.logoUrl) updateData.logoUrl = scraped.logoUrl;
+    if (scraped?.logoUrl) updateData.logoUrl = await persistPhotoToGcs(scraped.logoUrl, this.storageService);
     if (scraped?.yearFounded) updateData.yearFounded = scraped.yearFounded;
     if (scraped?.email) updateData.email = scraped.email;
     else if (sartEmail) updateData.email = sartEmail;
@@ -702,13 +733,14 @@ export class ClinicEnrichmentService {
 
       for (let i = 0; i < mergedTeam.length; i++) {
         const tm = mergedTeam[i];
+        const persistedPhoto = await persistPhotoToGcs(tm.photoUrl, this.storageService);
         await this.prisma.providerMember.create({
           data: {
             providerId,
             name: tm.name,
             title: tm.title,
             bio: tm.bio,
-            photoUrl: tm.photoUrl,
+            photoUrl: persistedPhoto,
             isMedicalDirector: tm.isMedicalDirector,
             sortOrder: i,
           },
