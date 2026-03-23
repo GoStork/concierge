@@ -91,6 +91,11 @@ export default function ScraperReportPage() {
       return res.json();
     },
     enabled: !!providerId && !!type,
+    refetchInterval: (query) => {
+      // Refetch report while sync is running to update stat boxes
+      const d = query.state.data as SyncReport | undefined;
+      return d?.lastSyncEndedAt ? false : 3000;
+    },
   });
 
   const { data: summaryData } = useQuery<SummaryResponse>({
