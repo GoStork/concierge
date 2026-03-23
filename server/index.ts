@@ -53,16 +53,24 @@ function ensureLocalRedis() {
 }
 
 async function createSessionStore(): Promise<session.Store> {
-  const redisUrl = process.env.REDIS_URL || "redis://127.0.0.1:6379";
+  const redisUrl = process.env.REDIS_URL;
+
+  // In production without REDIS_URL, skip Redis entirely to avoid startup delay
+  if (!redisUrl && process.env.NODE_ENV === "production") {
+    log("No REDIS_URL configured — using MemoryStore", "redis");
+    return new session.MemoryStore();
+  }
+
+  const url = redisUrl || "redis://127.0.0.1:6379";
   try {
     const redisClient = createClient({
-      url: redisUrl,
+      url,
       socket: {
         connectTimeout: 5000,
         reconnectStrategy: (retries: number) => {
           if (retries % 20 === 0) {
             log(`Redis reconnect attempt ${retries}, retrying...`, "redis");
-            if (!process.env.REDIS_URL) {
+            if (!redisUrl) {
               try { ensureLocalRedis(); } catch {}
             }
           }
@@ -85,7 +93,9 @@ async function createSessionStore(): Promise<session.Store> {
 }
 
 (async () => {
-  ensureLocalRedis();
+  if (process.env.NODE_ENV !== "production") {
+    ensureLocalRedis();
+  }
 
   const app = express();
   const httpServer = createServer(app);
