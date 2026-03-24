@@ -122,7 +122,7 @@ export class ProvidersController {
           services: {
             some: {
               status: "APPROVED",
-              providerType: { name: { in: ["Egg Donor Agency", "Egg/Sperm Bank"] } },
+              providerType: { name: { in: ["Egg Donor Agency", "Egg Bank"] } },
             },
           },
         },
@@ -198,7 +198,7 @@ export class ProvidersController {
           services: {
             some: {
               status: "APPROVED",
-              providerType: { name: { in: ["Egg/Sperm Bank"] } },
+              providerType: { name: { in: ["Sperm Bank"] } },
             },
           },
         },

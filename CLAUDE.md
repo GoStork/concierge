@@ -2,7 +2,7 @@
 
 ## Overview
 
-GoStork is a multi-tenant fertility marketplace connecting Intended Parents with fertility service Providers (IVF Clinics, Egg Donor Agencies, Surrogacy Agencies, Egg/Sperm Banks, Legal Services). It aims to streamline discovery, comparison, scheduling, and engagement within the fertility industry. Key capabilities include comprehensive provider profiles, enhanced user experience, improved operational efficiency, and AI integration for advanced analytics, cost sheet processing, and sophisticated booking. The vision is to be the leading digital marketplace, simplifying the fertility journey and offering significant market potential.
+GoStork is a multi-tenant fertility marketplace connecting Intended Parents with fertility service Providers (IVF Clinics, Egg Donor Agencies, Surrogacy Agencies, Egg Banks, Sperm Banks, Legal Services). It aims to streamline discovery, comparison, scheduling, and engagement within the fertility industry. Key capabilities include comprehensive provider profiles, enhanced user experience, improved operational efficiency, and AI integration for advanced analytics, cost sheet processing, and sophisticated booking. The vision is to be the leading digital marketplace, simplifying the fertility journey and offering significant market potential.
 
 ## User Preferences
 

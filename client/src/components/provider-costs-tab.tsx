@@ -1740,7 +1740,8 @@ const SERVICE_LABELS: Record<string, string> = {
   "Egg Donor Agency": "Egg Donation",
   "Surrogacy Agency": "Surrogacy",
   "IVF Clinic": "IVF",
-  "Egg/Sperm Bank": "Egg/Sperm Bank",
+  "Egg Bank": "Egg Bank",
+  "Sperm Bank": "Sperm Bank",
   "Legal Services": "Legal",
 };
 

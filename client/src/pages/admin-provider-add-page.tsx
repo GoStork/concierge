@@ -337,7 +337,7 @@ export default function AdminProviderAddPage() {
             name: previewAdminName.trim() || null,
             roles: ["PROVIDER_ADMIN"],
             allLocations: true,
-            mustCompleteProfile: true,
+            mustCompleteProfile: false,
           });
           toast({ title: "Provider admin created", description: `Account created for ${previewAdminEmail.trim()}`, variant: "success" });
         } catch (userErr: any) {

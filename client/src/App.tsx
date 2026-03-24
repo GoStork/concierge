@@ -59,7 +59,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     );
   }
   if (!user) return <Navigate to="/" replace state={{ returnTo: location.pathname + location.search }} />;
-  if (user.mustCompleteProfile) return <Navigate to="/onboarding" replace />;
+  if (user.mustCompleteProfile && !hasProviderRole(user.roles || [])) return <Navigate to="/onboarding" replace />;
   return <>{children}</>;
 }
 

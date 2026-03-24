@@ -52,9 +52,9 @@ function isParentUser(user: any): boolean {
 }
 
 const DONOR_TYPE_SERVICE_NAMES: Record<string, string[]> = {
-  "egg-donor": ["Egg Donor Agency", "Egg/Sperm Bank"],
+  "egg-donor": ["Egg Donor Agency", "Egg Bank"],
   "surrogate": ["Surrogacy Agency"],
-  "sperm-donor": ["Egg/Sperm Bank"],
+  "sperm-donor": ["Sperm Bank"],
 };
 
 async function hasApprovedService(

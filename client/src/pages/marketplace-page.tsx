@@ -754,6 +754,30 @@ export default function MarketplacePage() {
   const isParentOnly = userRoles.includes('PARENT') && !isAdmin && !hasProviderRole(userRoles);
   const [scheduleProvider, setScheduleProvider] = useState<{ id: string; name: string } | null>(null);
 
+  // Determine which marketplace tabs a provider can see based on their approved services
+  const [providerTabs, setProviderTabs] = useState<string[]>([]);
+  useEffect(() => {
+    if (!isProviderUser || !(user as any)?.providerId) return;
+    fetch(`/api/providers/${(user as any).providerId}/services`, { credentials: "include" })
+      .then(res => res.ok ? res.json() : [])
+      .then((services: any[]) => {
+        const tabs: string[] = [];
+        for (const s of services) {
+          if (s.status !== "APPROVED") continue;
+          const name = (s.providerType?.name || "").toLowerCase();
+          if (name.includes("sperm bank") && !tabs.includes("sperm-donors")) tabs.push("sperm-donors");
+          if ((name.includes("egg donor") || name.includes("egg bank")) && !tabs.includes("egg-donors")) tabs.push("egg-donors");
+          if (name.includes("surrogacy") && !tabs.includes("surrogates")) tabs.push("surrogates");
+          if ((name.includes("ivf") || name.includes("clinic")) && !tabs.includes("ivf-clinics")) tabs.push("ivf-clinics");
+        }
+        setProviderTabs(tabs);
+        if (tabs.length > 0 && !tabs.includes(activeTab)) {
+          dispatch(setMarketplaceTab(tabs[0]));
+        }
+      })
+      .catch(() => {});
+  }, [isProviderUser, (user as any)?.providerId, dispatch]);
+
   useEffect(() => {
     fetch("/api/donor-preferences", { credentials: "include" })
       .then(res => res.ok ? res.json() : null)
@@ -898,10 +922,10 @@ export default function MarketplacePage() {
 
   return (
     <div className="space-y-4">
-      {isAdmin && (
+      {(isAdmin || (isProviderUser && providerTabs.length > 1)) && (
         <UnderlineTabs value={activeTab} onValueChange={(val) => dispatch(setMarketplaceTab(val))}>
           <UnderlineTabsList className="overflow-x-auto">
-            {TABS.map((tab) => (
+            {(isAdmin ? TABS : TABS.filter(tab => providerTabs.includes(tab.id))).map((tab) => (
               <UnderlineTabsTrigger key={tab.id} value={tab.id} data-testid={`tab-${tab.id}`}>
                 <tab.Icon className="w-5 h-5 inline-block" />
                 {tab.label}

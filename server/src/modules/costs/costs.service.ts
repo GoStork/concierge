@@ -353,13 +353,13 @@ export class CostsService {
     if (sheet.providerTypeId) {
       const pt = await this.prisma.providerType.findUnique({ where: { id: sheet.providerTypeId } });
       const providerTypeName = pt?.name;
-      if (providerTypeName === "Egg Donor Agency" || providerTypeName === "Egg/Sperm Bank") {
+      if (providerTypeName === "Egg Donor Agency" || providerTypeName === "Egg Bank") {
         donorTypesToRecalc.push("egg-donor");
       }
       if (providerTypeName === "Surrogacy Agency") {
         donorTypesToRecalc.push("surrogate");
       }
-      if (providerTypeName === "Egg/Sperm Bank") {
+      if (providerTypeName === "Sperm Bank") {
         donorTypesToRecalc.push("sperm-donor");
       }
     } else {
