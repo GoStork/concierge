@@ -96,10 +96,20 @@ export class ScrapersController {
             lastSyncStartedAt: { gt: staleThreshold },
             lastSyncEndedAt: null,
           },
-          select: { providerId: true, provider: { select: { name: true } } },
+          select: { providerId: true, lastSyncStartedAt: true, syncStatus: true, lastSyncAt: true, provider: { select: { name: true } } },
         });
 
         for (const config of interrupted) {
+          // If the last completed sync was successful and recent, this interrupted run
+          // is just a stuck retry — don't resume it, mark it as ended
+          if (config.syncStatus === "SUCCESS" && config.lastSyncAt && config.lastSyncAt > staleThreshold) {
+            console.log(`[Donor Sync] Skipping auto-resume for "${config.provider?.name || config.providerId}" — last completed sync was successful at ${config.lastSyncAt.toISOString()}, marking interrupted run as ended`);
+            await (this.prisma[table] as any).update({
+              where: { providerId: config.providerId },
+              data: { lastSyncEndedAt: new Date() },
+            });
+            continue;
+          }
           console.log(`[Donor Sync] Auto-resuming ${type} sync for "${config.provider?.name || config.providerId}"`);
           startSync(this.prisma, config.providerId, type, undefined, this.storageService).catch((err: any) => {
             console.error(`[Donor Sync] Failed to auto-resume ${type} sync for ${config.providerId}:`, err.message);

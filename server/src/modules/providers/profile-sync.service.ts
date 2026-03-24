@@ -260,17 +260,39 @@ async function authenticateAndGetCookies(
       postUrl = loginUrl.origin + "/Account/Login";
     }
     let tokenValue: string | null = null;
+    let tokenFieldName = "__RequestVerificationToken";
     if (formActionMatch) {
       const formIdx = loginHtml.indexOf(`action="${formActionMatch}"`);
       if (formIdx >= 0) {
         const formSlice = loginHtml.substring(formIdx, formIdx + 2000);
         const sliceTokenMatch = formSlice.match(/name="__RequestVerificationToken"[^>]*value="([^"]*)"/);
         if (sliceTokenMatch) tokenValue = sliceTokenMatch[1];
+        if (!tokenValue) {
+          const laravelTokenMatch = formSlice.match(/name="_token"[^>]*value="([^"]*)"/);
+          if (laravelTokenMatch) {
+            tokenValue = laravelTokenMatch[1];
+            tokenFieldName = "_token";
+          }
+        }
       }
     }
     if (!tokenValue) {
       const globalTokenMatch = loginHtml.match(/name="__RequestVerificationToken"[^>]*value="([^"]*)"/);
       if (globalTokenMatch) tokenValue = globalTokenMatch[1];
+    }
+    if (!tokenValue) {
+      const laravelGlobalMatch = loginHtml.match(/name="_token"[^>]*value="([^"]*)"/);
+      if (laravelGlobalMatch) {
+        tokenValue = laravelGlobalMatch[1];
+        tokenFieldName = "_token";
+      }
+    }
+    if (!tokenValue) {
+      const metaCsrfMatch = loginHtml.match(/<meta\s+name="csrf-token"\s+content="([^"]*)"/);
+      if (metaCsrfMatch) {
+        tokenValue = metaCsrfMatch[1];
+        tokenFieldName = "_token";
+      }
     }
 
     const emailFieldMatch = loginHtml.match(
@@ -285,7 +307,7 @@ async function authenticateAndGetCookies(
 
     const body = new URLSearchParams();
     if (tokenValue) {
-      body.set("__RequestVerificationToken", tokenValue);
+      body.set(tokenFieldName, tokenValue);
     }
     body.set(emailField, username);
     body.set(passwordField, password);
@@ -541,6 +563,7 @@ Extract ALL sperm donor profiles visible on this page. For each donor, extract:
 - compensation: Price per vial as a number (no $ sign)
 - status: "AVAILABLE" or "SOLD_OUT"
 - photoUrl: URL to donor's photo if visible
+- profileUrl: URL to this donor's individual profile page (if visible as a link)
 
 Return a JSON object:
 {
@@ -561,7 +584,8 @@ Return a JSON object:
       "occupation": "string or null",
       "compensation": number or null,
       "status": "AVAILABLE",
-      "photoUrl": "string or null"
+      "photoUrl": "string or null",
+      "profileUrl": "string or null"
     }
   ],
   "profileLinks": ["URLs to individual donor profiles"],
@@ -569,7 +593,7 @@ Return a JSON object:
   "totalDonorsOnPage": number
 }
 
-IMPORTANT: Extract ALL donors visible. Include profile and pagination URLs. Return ONLY JSON.`;
+IMPORTANT: Extract ALL donors visible. Include profile and pagination URLs. Resolve relative URLs to absolute. Return ONLY JSON.`;
 
 function getPromptForType(type: DonorType): string {
   switch (type) {
@@ -582,11 +606,128 @@ function getPromptForType(type: DonorType): string {
   }
 }
 
+/**
+ * Try to extract sperm donors directly from structured HTML using regex patterns.
+ * Works for sites like Sperm Bank California that render donor cards server-side.
+ * Returns null if the page doesn't match the expected pattern.
+ */
+function tryDirectSpermDonorExtraction(html: string, pageUrl: string): any | null {
+  const cleanedText = cleanHtml(html);
+  // Check if page has multiple "Donor #" entries — indicates structured sperm donor listing
+  const donorIdMatches = cleanedText.match(/Donor\s*#\s*\w+/gi);
+  if (!donorIdMatches || donorIdMatches.length < 2) return null;
+
+  console.log(`[donor-sync] Direct extraction: found ${donorIdMatches.length} "Donor #" entries, parsing without Gemini`);
+
+  const base = new URL(pageUrl);
+  const donors: any[] = [];
+  const profileLinks: string[] = [];
+
+  // Extract profile links from raw HTML (links containing donor IDs or profile paths)
+  const linkMatches = html.match(/<a[^>]+href="([^"]*(?:donor|profile|search\/\w+)[^"]*)"[^>]*>/gi) || [];
+  const allLinks = linkMatches.map(m => {
+    const hrefMatch = m.match(/href="([^"]*)"/i);
+    return hrefMatch ? hrefMatch[1] : "";
+  }).filter(Boolean);
+
+  // Extract image URLs mapped by nearby donor ID
+  const imgMap = new Map<string, string>();
+  const imgDonorPattern = /Donor\s*#\s*(\w+)[\s\S]{0,500}?(?:src|background-image)[=:][\s'"]*([^"'\s)]+(?:\.(?:jpg|jpeg|png|webp|gif))[^"'\s)]*)/gi;
+  let imgMatch;
+  while ((imgMatch = imgDonorPattern.exec(html)) !== null) {
+    const donorId = imgMatch[1];
+    let imgUrl = imgMatch[2];
+    try { imgUrl = new URL(imgUrl, base).href; } catch {}
+    if (!imgMap.has(donorId)) imgMap.set(donorId, imgUrl);
+  }
+  // Also try reverse order: image before donor ID
+  const reverseImgPattern = /(?:src|background-image)[=:][\s'"]*([^"'\s)]+(?:\.(?:jpg|jpeg|png|webp|gif))[^"'\s)]*?)[\s\S]{0,500}?Donor\s*#\s*(\w+)/gi;
+  while ((imgMatch = reverseImgPattern.exec(html)) !== null) {
+    const donorId = imgMatch[2];
+    let imgUrl = imgMatch[1];
+    try { imgUrl = new URL(imgUrl, base).href; } catch {}
+    if (!imgMap.has(donorId)) imgMap.set(donorId, imgUrl);
+  }
+
+  // Split cleaned text by "Donor #" entries
+  const parts = cleanedText.split(/(?=Donor\s*#\s*\w)/i);
+
+  for (const part of parts) {
+    const idMatch = part.match(/Donor\s*#\s*(\w+)/i);
+    if (!idMatch) continue;
+
+    const externalId = idMatch[1];
+    const text = part;
+
+    // Extract fields using common patterns
+    const heightMatch = text.match(/(?:Height[:\s]*)?(\d{2,3})\s*(?:"|in|inches)?/);
+    const eyeColorMatch = text.match(/(?:Eye\s*Color[:\s]*)?(\w+)\s+(?:\w+\s+)?Donor\s*Type/i) ||
+                          text.match(/Eye\s*Color[:\s]*(\w+)/i);
+    const hairColorMatch = text.match(/(?:Hair\s*Color[:\s]*)?(\w+)\s+Donor\s*Type/i) ||
+                           text.match(/Hair\s*Color[:\s]*(\w+)/i);
+    const donorTypeMatch = text.match(/Donor\s*Type[:\s]*(\w+)/i);
+    const raceMatch = text.match(/Race[:\s]*([A-Za-z\s/,]+?)(?:\s{2,}|$|Donor\s*Type|genetic|Height|Eye|Hair|Ethnicity)/i);
+    const ethnicityMatch = text.match(/Ethnicity[:\s]*([A-Za-z\s/,]+?)(?:\s{2,}|$|Donor|Race|genetic|Height)/i);
+    // Try to find height as a standalone number (inches) after donor ID
+    let height: string | null = null;
+    const heightNumberMatch = text.match(/Donor\s*#\s*\w+\s+(\d{2,3})\s/);
+    if (heightNumberMatch) {
+      const h = parseInt(heightNumberMatch[1]);
+      if (h >= 60 && h <= 84) { // reasonable height range in inches
+        const feet = Math.floor(h / 12);
+        const inches = h % 12;
+        height = `${feet}'${inches}"`;
+      }
+    }
+
+    // Find profile link for this donor
+    const donorLink = allLinks.find(l => l.includes(externalId));
+    let profileUrl: string | null = null;
+    if (donorLink) {
+      try { profileUrl = new URL(donorLink, base).href; } catch {}
+      profileLinks.push(profileUrl || donorLink);
+    }
+
+    const donor: any = {
+      externalId,
+      height: height || (heightMatch ? heightMatch[1] : null),
+      eyeColor: eyeColorMatch ? eyeColorMatch[1].trim() : null,
+      hairColor: hairColorMatch ? hairColorMatch[1].trim() : null,
+      donorType: donorTypeMatch ? donorTypeMatch[1].trim() : null,
+      race: raceMatch ? raceMatch[1].trim() : null,
+      ethnicity: ethnicityMatch ? ethnicityMatch[1].trim() : null,
+      photoUrl: imgMap.get(externalId) || null,
+      profileUrl,
+      status: "AVAILABLE",
+    };
+
+    donors.push(donor);
+  }
+
+  if (donors.length === 0) return null;
+
+  console.log(`[donor-sync] Direct extraction: parsed ${donors.length} sperm donors`);
+  return {
+    donors,
+    profileLinks,
+    paginationLinks: [],
+    totalDonorsOnPage: donors.length,
+  };
+}
+
 async function extractDonorsFromPage(
   html: string,
   pageUrl: string,
   type: DonorType,
 ): Promise<any> {
+  // Fast path: try direct regex extraction for sperm donor listing pages
+  if (type === "sperm-donor") {
+    const directResult = tryDirectSpermDonorExtraction(html, pageUrl);
+    if (directResult && directResult.donors.length > 0) {
+      return directResult;
+    }
+  }
+
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
     generationConfig: { temperature: 0 } as any,
@@ -594,6 +735,8 @@ async function extractDonorsFromPage(
 
   const cleanedText = cleanHtml(html);
   const imgTags = (html.match(/<img[^>]+>/gi) || []).slice(0, 100).join("\n");
+
+  console.log(`[donor-sync] Gemini extraction: cleaned text ${cleanedText.length} chars, ${imgTags.split("\n").filter(Boolean).length} img tags, sending to Gemini...`);
 
   const prompt = `${getPromptForType(type)}
 
@@ -606,15 +749,91 @@ IMAGE TAGS FOUND ON PAGE:
 ${imgTags.slice(0, 10000)}`;
 
   try {
-    const result = await model.generateContent(prompt);
+    const result = await Promise.race([
+      model.generateContent(prompt),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Gemini extraction timed out after 120s")), 120000)),
+    ]);
     const text = result.response.text().trim();
+    console.log(`[donor-sync] Gemini response received (${text.length} chars)`);
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
     }
+    console.warn(`[donor-sync] Gemini response did not contain valid JSON`);
     return null;
   } catch (err: any) {
     console.error(`[donor-sync] Gemini extraction error:`, err.message);
+    return null;
+  }
+}
+
+const PROFILE_DETAIL_SECTIONS_PROMPT = `You are extracting the COMPLETE profile data from an individual donor/surrogate profile page.
+This page shows a single person's detailed profile organized into sections (e.g. "General Characteristics", "Physical Features", "Education and Occupation", "Ethnic Background", "Personality Traits", "Religious Background", "Advice to Future Children", etc.)
+
+Extract ALL sections and ALL field-value pairs exactly as they appear on the page. Preserve the original section names and field names.
+
+Return a JSON object:
+{
+  "_sections": {
+    "Section Name": {
+      "Field Label": "Field Value",
+      "Another Field": "Another Value"
+    },
+    "Another Section": {
+      "Field Label": "Field Value"
+    }
+  },
+  "photoUrl": "URL to profile photo if visible",
+  "externalId": "Donor/surrogate ID if visible"
+}
+
+IMPORTANT RULES:
+- Extract EVERY section and EVERY field-value pair — do not skip any
+- Use the exact section heading text as the key (e.g. "General Characteristics", "Physical Features")
+- Use the exact field label text as the key (e.g. "Age When Donated", "Hair Type", "Blood Type")
+- Use the exact displayed value as the value (e.g. "BROWN", "5'11\\" (180 CM)", "27")
+- Skip fields where the value is empty, blank, or "N/A"
+- If a section has sub-headings with tables, include them as nested objects
+- Return ONLY the JSON object, no markdown formatting or explanation`;
+
+async function extractProfileDetailSections(
+  html: string,
+  pageUrl: string,
+): Promise<{ _sections: Record<string, Record<string, any>>; photoUrl?: string; externalId?: string } | null> {
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    generationConfig: { temperature: 0 } as any,
+  });
+
+  const cleanedText = cleanHtml(html);
+  const imgTags = (html.match(/<img[^>]+>/gi) || []).slice(0, 50).join("\n");
+
+  const prompt = `${PROFILE_DETAIL_SECTIONS_PROMPT}
+
+BASE URL: ${pageUrl}
+
+PAGE CONTENT:
+${cleanedText.slice(0, 80000)}
+
+IMAGE TAGS FOUND ON PAGE:
+${imgTags.slice(0, 5000)}`;
+
+  try {
+    const result = await Promise.race([
+      model.generateContent(prompt),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Gemini profile detail extraction timed out after 120s")), 120000)),
+    ]);
+    const text = result.response.text().trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed._sections && typeof parsed._sections === "object" && Object.keys(parsed._sections).length > 0) {
+        return parsed;
+      }
+    }
+    return null;
+  } catch (err: any) {
+    console.error(`[donor-sync] Gemini profile detail extraction error:`, err.message);
     return null;
   }
 }
@@ -1496,7 +1715,9 @@ async function tryFetchEdcDonorData(
       }
     }
 
-    if (syncType !== "egg-donor") {
+    // Only try EDC dashboard URLs if the page references EDC-specific paths or donor card elements
+    const hasEdcSignatures = pageHtml.includes("donorCard") || pageHtml.includes("DonorDashboard") || pageHtml.includes("SpermDonorDashboard") || pageHtml.includes("SurrogateDashboard") || pageHtml.includes("/Recipient/_");
+    if (syncType !== "egg-donor" && hasEdcSignatures) {
       for (const dashPath of endpoints.dashboards) {
         try {
           const dashUrl = base.origin + dashPath;
@@ -1513,6 +1734,8 @@ async function tryFetchEdcDonorData(
           console.warn(`[donor-sync] EDC ${syncType} dashboard ${dashPath} failed: ${err.message}`);
         }
       }
+    } else if (syncType !== "egg-donor") {
+      console.log(`[donor-sync] Skipping EDC dashboard probing — no EDC signatures found in page`);
     }
 
     return null;
@@ -3257,7 +3480,7 @@ async function runSyncJob(
       const typeNavKeywords: Record<DonorType, RegExp> = {
         "egg-donor": /egg\s*donor|donor\s*match|donor\s*database|donor\s*search|find\s*(?:a\s*)?donor|browse\s*donor/i,
         "surrogate": /surrogate|gestational\s*carrier|\bgc\b|surrogate\s*match|find\s*(?:a\s*)?surrogate|browse\s*surrogate/i,
-        "sperm-donor": /sperm\s*donor|sperm\s*bank|sperm\s*match|find\s*sperm|browse\s*sperm/i,
+        "sperm-donor": /sperm\s*donor|sperm\s*bank|sperm\s*match|find\s*sperm|browse\s*sperm|donor\s*search|donor\s*database|find\s*(?:a\s*)?donor|browse\s*donor/i,
       };
       const navPattern = typeNavKeywords[job.type];
       const linkMatches = [...mainHtml.matchAll(/href="([^"]+)"[^>]*>([^<]*)</gi)];
@@ -3278,6 +3501,23 @@ async function runSyncJob(
           }
         } catch (err: any) {
           console.warn(`[donor-sync] Type-aware nav link failed: ${err.message}`);
+        }
+      } else {
+        // Fallback: try common search/listing paths when no nav link was found
+        const origin = new URL(sourceUrl).origin;
+        const fallbackPaths = ["/search", "/donor-search", "/donors", "/database"];
+        for (const path of fallbackPaths) {
+          try {
+            const fallbackHtml = await fetchHtml(origin + path, sessionCookies);
+            if (fallbackHtml.length > 1000 && !fallbackHtml.includes('type="password"')) {
+              mainHtml = fallbackHtml;
+              sourceUrl = origin + path;
+              console.log(`[donor-sync] Found donor listing at fallback path ${path} (${fallbackHtml.length} chars)`);
+              break;
+            }
+          } catch (err: any) {
+            // Ignore — try next path
+          }
         }
       }
     }
@@ -3898,45 +4138,88 @@ async function runSyncJob(
       uniqueItems = uniqueItems.slice(0, profileLimit);
     }
 
+    // Try to assign profileUrls from profileLinks by matching externalId in URLs
+    for (const item of uniqueItems) {
+      if (!item.profileUrl && item.externalId && profileLinks.length > 0) {
+        const matchingLink = profileLinks.find((link: string) =>
+          link.includes(item.externalId) || link.toLowerCase().includes(item.externalId.toLowerCase())
+        );
+        if (matchingLink) {
+          item.profileUrl = matchingLink;
+        }
+      }
+    }
+
     job.total = uniqueItems.length;
     job.processed = 0;
 
-    console.log(`[donor-sync] Found ${uniqueItems.length} unique ${job.type} profiles to import`);
+    console.log(`[donor-sync] Found ${uniqueItems.length} unique ${job.type} profiles to enrich & import`);
 
-    for (let i = 0; i < uniqueItems.length; i++) {
+    // Enrich + import in a single pass so records appear live in the UI
+    const BATCH_SIZE = 3;
+    for (let i = 0; i < uniqueItems.length; i += BATCH_SIZE) {
       if (isJobCancelled(job.id)) {
-        console.log(`[donor-sync] Sync cancelled, stopping import at ${i}/${uniqueItems.length}`);
+        console.log(`[donor-sync] Sync cancelled at ${i}/${uniqueItems.length}`);
         break;
       }
-      const item = uniqueItems[i];
-      try {
-        let isNew = false;
-        switch (job.type) {
-          case "egg-donor": {
-            const r = await upsertEggDonor(prisma, job.providerId, item, storageService);
-            isNew = r.isNew;
-            break;
-          }
-          case "surrogate": {
-            const r = await upsertSurrogate(prisma, job.providerId, item, storageService);
-            isNew = r.isNew;
-            break;
-          }
-          case "sperm-donor": {
-            const r = await upsertSpermDonor(prisma, job.providerId, item, storageService);
-            isNew = r.isNew;
-            break;
+      const batch = uniqueItems.slice(i, i + BATCH_SIZE);
+
+      // Enrich batch in parallel (fetch individual profile pages)
+      await Promise.all(batch.map(async (item) => {
+        if (isJobCancelled(job.id)) return;
+        const hasSections = item.profileData?._sections || item._sections;
+        if (!hasSections && item.profileUrl) {
+          try {
+            const profileHtml = await fetchHtml(item.profileUrl, sessionCookies);
+            if (profileHtml && !profileHtml.includes('type="password"')) {
+              const sections = await extractProfileDetailSections(profileHtml, item.profileUrl);
+              if (sections?._sections) {
+                if (!item.profileData) item.profileData = {};
+                item.profileData._sections = sections._sections;
+                if (sections.photoUrl && !item.photoUrl) item.photoUrl = sections.photoUrl;
+                console.log(`[donor-sync] Enriched ${item.externalId} with ${Object.keys(sections._sections).length} sections`);
+              }
+            }
+          } catch (err: any) {
+            console.warn(`[donor-sync] Profile enrichment failed for ${item.externalId}: ${err.message}`);
           }
         }
-        job.succeeded++;
-        if (isNew) job.newProfiles++;
-      } catch (err: any) {
-        job.failed++;
-        job.errors.push(
-          `Failed to import ${item.externalId || "unknown"}: ${err.message}`,
-        );
+      }));
+
+      // Import batch sequentially
+      for (const item of batch) {
+        if (isJobCancelled(job.id)) break;
+        try {
+          let isNew = false;
+          switch (job.type) {
+            case "egg-donor": {
+              const r = await upsertEggDonor(prisma, job.providerId, item, storageService);
+              isNew = r.isNew;
+              break;
+            }
+            case "surrogate": {
+              const r = await upsertSurrogate(prisma, job.providerId, item, storageService);
+              isNew = r.isNew;
+              break;
+            }
+            case "sperm-donor": {
+              const r = await upsertSpermDonor(prisma, job.providerId, item, storageService);
+              isNew = r.isNew;
+              break;
+            }
+          }
+          job.succeeded++;
+          if (isNew) job.newProfiles++;
+        } catch (err: any) {
+          job.failed++;
+          job.errors.push(`Failed to import ${item.externalId || "unknown"}: ${err.message}`);
+        }
+        job.processed++;
       }
-      job.processed = i + 1;
+
+      if (i + BATCH_SIZE < uniqueItems.length) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
     }
 
     try {
@@ -4003,6 +4286,24 @@ async function runSyncJob(
     }
     cancelledJobs.delete(job.id);
     console.error(`[donor-sync] Sync failed:`, err);
+
+    // Ensure DB records the sync ended so auto-resume doesn't restart stuck syncs
+    try {
+      const failUpdate = { lastSyncEndedAt: new Date(), syncStatus: "FAILED" };
+      switch (job.type) {
+        case "egg-donor":
+          await prisma.eggDonorSyncConfig.update({ where: { providerId: job.providerId }, data: failUpdate });
+          break;
+        case "surrogate":
+          await prisma.surrogateSyncConfig.update({ where: { providerId: job.providerId }, data: failUpdate });
+          break;
+        case "sperm-donor":
+          await prisma.spermDonorSyncConfig.update({ where: { providerId: job.providerId }, data: failUpdate });
+          break;
+      }
+    } catch (dbErr: any) {
+      console.error(`[donor-sync] Failed to update sync config after error: ${dbErr.message}`);
+    }
   }
 }
 
