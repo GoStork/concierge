@@ -360,7 +360,8 @@ async function getExpertGuidanceRules(): Promise<string> {
 
 let mcpClient: Client | null = null;
 
-async function initMcp() {
+async function initMcp(attempt = 1): Promise<void> {
+  const maxAttempts = 3;
   try {
     const transport = new StdioClientTransport({
       command: "npx",
@@ -376,8 +377,14 @@ async function initMcp() {
     await mcpClient.connect(transport);
     console.log("Express Client successfully connected to the MCP Database Server");
   } catch (error) {
-    console.error("Failed to start MCP Client:", error);
+    console.error(`Failed to start MCP Client (attempt ${attempt}/${maxAttempts}):`, error);
     mcpClient = null;
+    if (attempt < maxAttempts) {
+      const delay = attempt * 5000;
+      console.log(`Retrying MCP connection in ${delay / 1000}s...`);
+      await new Promise(r => setTimeout(r, delay));
+      return initMcp(attempt + 1);
+    }
   }
 }
 
