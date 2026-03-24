@@ -2191,12 +2191,17 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
     const consultationMatch = finalContent.match(/\[\[CONSULTATION_BOOKING:(.*?)\]\]/);
     if (consultationMatch) {
       const consultProviderId = consultationMatch[1].trim();
+      console.log(`[CONSULTATION] Processing CONSULTATION_BOOKING for providerId="${consultProviderId}"`);
+      if (!consultProviderId) {
+        console.warn("[CONSULTATION] Empty provider ID in CONSULTATION_BOOKING tag");
+      }
       try {
         const cpResult = await mcpClient!.callTool({
           name: "resolve_provider",
           arguments: { providerId: consultProviderId },
         });
         const consultProvider = JSON.parse((cpResult.content as any)?.[0]?.text || "{}");
+        console.log(`[CONSULTATION] resolve_provider result: ${JSON.stringify({ id: consultProvider?.id, name: consultProvider?.name, error: consultProvider?.error }).slice(0, 200)}`);
         if (consultProvider && !consultProvider.error) {
           let memberBookingSlug: string | null = null;
           let memberName: string | null = null;
@@ -2234,6 +2239,7 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
             memberName,
             memberPhoto,
           };
+          console.log(`[CONSULTATION] Card built: slug=${memberBookingSlug}, bookingUrl=${consultationCard.bookingUrl}, provider=${consultProvider.name}`);
 
           // Compute profile label and attach metadata to consultationCard.
           // The 3-way chat session is created LATER when the parent actually books via the calendar.
@@ -2312,6 +2318,9 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
         console.error("Failed to process CONSULTATION_BOOKING:", e);
       }
       finalContent = finalContent.replace(/\[\[CONSULTATION_BOOKING:.*?\]\]/g, "").trim();
+      if (!consultationCard) {
+        console.warn(`[CONSULTATION] consultationCard is NULL after processing — calendar will NOT show`);
+      }
     }
 
     const uiExtras: Record<string, any> = {};

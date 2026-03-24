@@ -1730,7 +1730,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       const data = await res.json();
       if (data.slug) {
         setConciergeBookingSlug({ slug: data.slug, memberName: data.memberName || "Provider" });
-        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+        setTimeout(() => {
+          const container = messagesEndRef.current?.closest('[data-testid="concierge-messages"]');
+          if (container) container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+        }, 100);
       } else {
         alert("This provider hasn't set up online scheduling yet. You can message them to arrange a meeting.");
       }
@@ -1943,8 +1946,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     })();
   }, [existingSessionId, matchmakerId, donorIdParam, sessionLoaded]);
 
+  // Initial scroll — use container scroll, not window scroll
   useEffect(() => {
-    window.scrollTo(0, document.body.scrollHeight);
+    const container = document.querySelector('[data-testid="concierge-messages"]');
+    if (container) container.scrollTop = container.scrollHeight;
   }, []);
 
   const parentProfileQuery = useQuery<{ interestedServices?: string[] }>({
@@ -1958,26 +1963,74 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   });
 
   const initialScrollDone = useRef(false);
+  const scrollToBottom = useRef((behavior?: "smooth") => {
+    if (messagesEndRef.current) {
+      const container = messagesEndRef.current.closest('[data-testid="concierge-messages"]');
+      if (container) {
+        if (behavior === "smooth") {
+          container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+        } else {
+          container.scrollTop = container.scrollHeight;
+        }
+      }
+    }
+  });
+
+  // Scroll to bottom on messages change
   useEffect(() => {
     if (!messages.length) return;
     if (!initialScrollDone.current) {
-      const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "instant" as ScrollBehavior });
-      scrollToBottom();
-      const t1 = setTimeout(scrollToBottom, 100);
-      const t2 = setTimeout(scrollToBottom, 300);
-      const t3 = setTimeout(() => {
-        scrollToBottom();
+      scrollToBottom.current();
+      const t1 = setTimeout(() => scrollToBottom.current(), 150);
+      const t2 = setTimeout(() => scrollToBottom.current(), 400);
+      const t3 = setTimeout(() => scrollToBottom.current(), 800);
+      const t4 = setTimeout(() => {
+        scrollToBottom.current();
         initialScrollDone.current = true;
-      }, 600);
-      return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+      }, 1500);
+      return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); };
     } else {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      scrollToBottom.current("smooth");
     }
   }, [messages]);
 
+  // Watch for layout shifts (image loads, card renders) and keep scrolled to bottom during initial load
+  useEffect(() => {
+    const container = document.querySelector('[data-testid="concierge-messages"]');
+    if (!container || !messages.length) return;
+
+    const scrollDown = () => {
+      if (!initialScrollDone.current) {
+        container.scrollTop = container.scrollHeight;
+      }
+    };
+
+    // MutationObserver catches DOM changes (new elements, attribute changes from image loads)
+    const mutObs = new MutationObserver(scrollDown);
+    mutObs.observe(container, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "style", "class"] });
+
+    // Capture image load events bubbling up
+    container.addEventListener("load", scrollDown, true);
+
+    // Stop observing after 3 seconds to avoid interfering with user scroll
+    const stopTimer = setTimeout(() => {
+      mutObs.disconnect();
+      container.removeEventListener("load", scrollDown, true);
+    }, 3000);
+
+    return () => {
+      mutObs.disconnect();
+      container.removeEventListener("load", scrollDown, true);
+      clearTimeout(stopTimer);
+    };
+  }, [messages.length]);
+
   useEffect(() => {
     if (externalBookingSlug) {
-      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+      setTimeout(() => {
+        const container = messagesEndRef.current?.closest('[data-testid="concierge-messages"]');
+        if (container) container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+      }, 100);
     }
   }, [externalBookingSlug]);
 
@@ -2312,7 +2365,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             </h2>
             {sessionTitle && (
               <p className="text-[11px] font-ui text-muted-foreground truncate" data-testid="chat-subject-label">
-                Subject: {sessionTitle}
+                {sessionTitle}
               </p>
             )}
           </div>
@@ -2540,8 +2593,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                     onSchedule={(c) => setBookingCard(c)}
                     existingBooking={(() => {
                       if (!sessionBookings) return undefined;
+                      const now = new Date();
                       const providerBookings = sessionBookings.filter(
                         (b: any) => b.providerUser?.provider?.id === msg.consultationCard?.providerId
+                          && b.status !== "CANCELLED"
+                          && new Date(b.scheduledAt) > now
                       );
                       return providerBookings[0];
                     })()}

@@ -955,7 +955,9 @@ export default function ConversationsPage() {
     }
   };
 
+  const providerScrollDone = useRef(false);
   useEffect(() => {
+    providerScrollDone.current = false;
     const scrollToEnd = () => {
       if (chatEndRef.current) {
         const container = chatEndRef.current.closest('[data-testid="provider-chat-messages"]');
@@ -965,11 +967,29 @@ export default function ConversationsPage() {
       }
     };
     scrollToEnd();
-    const t1 = setTimeout(scrollToEnd, 100);
-    const t2 = setTimeout(scrollToEnd, 300);
-    const t3 = setTimeout(scrollToEnd, 600);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    const t1 = setTimeout(scrollToEnd, 150);
+    const t2 = setTimeout(scrollToEnd, 400);
+    const t3 = setTimeout(scrollToEnd, 800);
+    const t4 = setTimeout(() => { scrollToEnd(); providerScrollDone.current = true; }, 1500);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); };
   }, [sessionDetailQuery.data?.messages?.length, selectedSessionId]);
+
+  // Watch for layout shifts (image loads) in provider chat during initial load
+  useEffect(() => {
+    if (!chatEndRef.current) return;
+    const container = chatEndRef.current.closest('[data-testid="provider-chat-messages"]');
+    if (!container) return;
+    const observer = new ResizeObserver(() => {
+      if (!providerScrollDone.current) {
+        container.scrollTop = container.scrollHeight;
+      }
+    });
+    observer.observe(container.firstElementChild || container);
+    container.addEventListener("load", () => {
+      if (!providerScrollDone.current) container.scrollTop = container.scrollHeight;
+    }, true);
+    return () => observer.disconnect();
+  }, [selectedSessionId]);
 
   const handleSendReply = async () => {
     if ((!replyText.trim() && providerStagedFiles.length === 0) || !selectedSessionId) return;
