@@ -1440,29 +1440,11 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
     );
   }
 
-  // Use age/egg-source from AI match card data for personalized rates
-  const cardLabel = card.successRateLabel || null;
-  const cardAgeGroup = card.ageGroup || "under_35";
-  const cardEggSource = card.eggSource || "own_eggs";
-  const cardIsNew = card.isNewPatient === true;
-  const allRates = provider.ivfSuccessRates || [];
-  let rates: any = null;
-  if (cardEggSource === "donor") {
-    rates = allRates.find((r: any) => r.profileType === "donor" && r.metricCode === "pct_transfers_live_births_donor");
-  } else if (cardIsNew) {
-    // First-time IVF: prefer new-patient metric, fall back to all-patients
-    rates = allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === cardAgeGroup && r.isNewPatient === true && r.metricCode === "pct_new_patients_live_birth_after_1_retrieval")
-      || allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === cardAgeGroup && r.metricCode === "pct_intended_retrievals_live_births");
-  } else {
-    // Prior cycles: use all-patients metric
-    rates = allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === cardAgeGroup && !r.isNewPatient && r.metricCode === "pct_intended_retrievals_live_births")
-      || allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === cardAgeGroup && r.metricCode === "pct_intended_retrievals_live_births");
-  }
-  // Fallback to under_35 own_eggs if no match
-  if (!rates) {
-    rates = allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === "under_35" && r.metricCode === "pct_intended_retrievals_live_births")
-      || null;
-  }
+  // Match marketplace logic: pick the highest success rate from the filtered set
+  const allRates = (provider.ivfSuccessRates || []).filter((r: any) => r.successRate != null);
+  const rates = allRates.length === 1 ? allRates[0] : allRates.length > 1
+    ? allRates.reduce((a: any, b: any) => Number(b.successRate) > Number(a.successRate) ? b : a)
+    : null;
   const pct = rates ? Math.round(Number(rates.successRate) * 100) : null;
   const natAvg = rates ? Math.round(Number(rates.nationalAverage) * 100) : null;
   const isTop10 = rates?.top10pct === true;
@@ -1507,7 +1489,11 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
               <span className="text-2xl font-heading text-foreground">{pct}%</span>
               <span className="text-sm text-muted-foreground">success rate</span>
             </div>
-            <p className="text-xs text-muted-foreground mb-2">{cardLabel || "Own eggs · Under 35 · First-time IVF"}</p>
+            <p className="text-xs text-muted-foreground mb-2">{rates?.profileType === "donor" ? "Donor eggs" : [
+              "Own eggs",
+              rates?.ageGroup === "under_35" ? "Under 35" : rates?.ageGroup === "35_37" ? "35-37" : rates?.ageGroup === "38_40" ? "38-40" : rates?.ageGroup === "over_40" ? "Over 40" : "Under 35",
+              rates?.isNewPatient ? "First-time IVF" : "All patients",
+            ].join(" · ")}</p>
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">This clinic</span>
