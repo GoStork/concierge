@@ -35,6 +35,9 @@ interface MatchCard {
   reasons: string[];
   providerId: string;
   ownerProviderId?: string;
+  eggSource?: string;
+  ageGroup?: string;
+  isNewPatient?: boolean;
 }
 
 interface ConsultationCardData {
@@ -1440,14 +1443,26 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
     );
   }
 
-  // Match marketplace default: own_eggs, under_35, new patient, pct_new_patients_live_birth_after_1_retrieval
-  // This is identical to the server-side successRateWhere logic in providers.controller.ts
+  // Use parent context from AI match card data, fall back to marketplace defaults
+  const cardEggSource = card.eggSource || "own_eggs";
+  const cardAgeGroup = card.ageGroup || "under_35";
+  const cardIsNew = card.isNewPatient !== undefined ? card.isNewPatient : true; // marketplace defaults to new patient
   const allRates = provider.ivfSuccessRates || [];
-  const rates = allRates.find((r: any) =>
-    r.profileType === "own_eggs" && r.ageGroup === "under_35" && r.isNewPatient === true && r.metricCode === "pct_new_patients_live_birth_after_1_retrieval"
-  ) || allRates.find((r: any) =>
-    r.profileType === "own_eggs" && r.ageGroup === "under_35" && r.metricCode === "pct_intended_retrievals_live_births"
-  ) || null;
+
+  // Select rate using same logic as providers.controller.ts
+  let rates: any = null;
+  if (cardEggSource === "donor") {
+    rates = allRates.find((r: any) => r.profileType === "donor" && r.metricCode === "pct_transfers_live_births_donor");
+  } else if (cardIsNew) {
+    rates = allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === cardAgeGroup && r.isNewPatient === true && r.metricCode === "pct_new_patients_live_birth_after_1_retrieval")
+      || allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === cardAgeGroup && r.metricCode === "pct_intended_retrievals_live_births");
+  } else {
+    rates = allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === cardAgeGroup && !r.isNewPatient && r.metricCode === "pct_intended_retrievals_live_births");
+  }
+  // Fallback to marketplace default
+  if (!rates) {
+    rates = allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === "under_35" && r.isNewPatient === true && r.metricCode === "pct_new_patients_live_birth_after_1_retrieval") || null;
+  }
   const pct = rates ? Math.round(Number(rates.successRate) * 100) : null;
   const natAvg = rates ? Math.round(Number(rates.nationalAverage) * 100) : null;
   const isTop10 = rates?.top10pct === true;
@@ -1492,7 +1507,11 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
               <span className="text-2xl font-heading text-foreground">{pct}%</span>
               <span className="text-sm text-muted-foreground">success rate</span>
             </div>
-            <p className="text-xs text-muted-foreground mb-2">Own eggs · Under 35 · First-time IVF</p>
+            <p className="text-xs text-muted-foreground mb-2">{cardEggSource === "donor" ? "Donor eggs" : [
+              "Own eggs",
+              cardAgeGroup === "under_35" ? "Under 35" : cardAgeGroup === "35_37" ? "35-37" : cardAgeGroup === "38_40" ? "38-40" : "Over 40",
+              cardIsNew ? "First-time IVF" : "Prior cycles",
+            ].join(" · ")}</p>
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">This clinic</span>
