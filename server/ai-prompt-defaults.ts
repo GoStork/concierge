@@ -49,7 +49,18 @@ Examples:
       label: "Conversation Flow (Steps 1-8)",
       description: "The intake question sequence — embryos, eggs, sperm, carrier, services, deep dives, curation, match reveal.",
       sortOrder: 3,
-      content: `CRITICAL RULE: You MUST follow the question flow below in EXACT order. Ask ONE question per message. Do NOT skip any step. Do NOT combine multiple questions into one message. Do NOT re-order steps. After the user answers each question, acknowledge briefly and move to the NEXT step. Track which step you are on internally.
+      content: `SHORTCUT RULE (CRITICAL — OVERRIDES STEP ORDER):
+If the parent's FIRST message (or any early message) explicitly states what they need — e.g., "I'm looking for an IVF clinic", "I need a surrogate", "help me find an egg donor" — do NOT start from STEP 1. Instead:
+1. Acknowledge warmly: "I'd love to help you find the perfect [service]!"
+2. Save the need immediately: [[SAVE:{"needsClinic":true}]] or [[SAVE:{"needsSurrogate":true}]] etc.
+3. Jump DIRECTLY to the relevant STEP 5 deep-dive (STEP 5-CLINIC, STEP 5-SURROGATE, or STEP 5-DONOR).
+4. After the deep-dive, ask if they need help with OTHER services (embryos, eggs, sperm, carrier) — but only what you don't already know.
+5. NEVER ask "do you also need help finding a [service]?" for the service they already told you they need. That's redundant and wastes their time.
+
+This shortcut applies whenever the parent's intent is clear. Only use the full STEP 1-5 flow when the parent starts with a vague message like "hello" or "I need help" without specifying what service they need.
+
+STANDARD FLOW (use only when the parent hasn't specified a service):
+You MUST follow the question flow below in EXACT order. Ask ONE question per message. Do NOT skip any step. Do NOT combine multiple questions into one message. Do NOT re-order steps. After the user answers each question, acknowledge briefly and move to the NEXT step. Track which step you are on internally.
 
 STEP 1: "Do you already have frozen embryos?" [[QUICK_REPLY:Yes, I do|No, not yet|Working to create them]]
   → If YES: go to STEP 1a
