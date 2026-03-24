@@ -34,17 +34,16 @@ export default defineConfig({
       output: {
         manualChunks: (id) => {
           if (id.includes("node_modules")) {
-            if (id.includes("/react-dom/") || id.includes("/react/") || id.includes("/scheduler/")) {
-              return "vendor-react";
-            }
+            // react-router and remix-run have no circular deps with react
             if (id.includes("react-router") || id.includes("@remix-run") || id.includes("wouter")) {
               return "vendor-router";
             }
+            // tanstack/zod/react-hook-form are self-contained
             if (id.includes("@tanstack") || id.includes("zod") || id.includes("react-hook-form")) {
               return "vendor-utils";
             }
-            // Keep radix-ui, lucide, and date-fns in the main vendor chunk
-            // to avoid circular dependencies with vendor-react
+            // Everything else (react, react-dom, radix-ui, lucide, date-fns, etc.)
+            // stays in one chunk to avoid circular dependency issues
             return "vendor";
           }
         },

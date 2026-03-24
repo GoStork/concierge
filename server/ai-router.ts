@@ -14,6 +14,29 @@ function cleanTitle(title: string | null | undefined): string | null {
 export const aiRouter = Router();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// Cache MCP tools list — refreshed every 5 minutes instead of every message
+let cachedOpenAiTools: OpenAI.Chat.ChatCompletionTool[] = [];
+let toolsCacheExpiry = 0;
+async function getCachedMcpTools(mcpClient: Client | null): Promise<OpenAI.Chat.ChatCompletionTool[]> {
+  if (!mcpClient) return [];
+  if (Date.now() < toolsCacheExpiry && cachedOpenAiTools.length > 0) return cachedOpenAiTools;
+  try {
+    const mcpToolsList = await mcpClient.listTools();
+    cachedOpenAiTools = mcpToolsList.tools.map((tool) => ({
+      type: "function" as const,
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.inputSchema as any,
+      },
+    }));
+    toolsCacheExpiry = Date.now() + 5 * 60 * 1000;
+  } catch (e) {
+    console.error("MCP tools unavailable:", e);
+  }
+  return cachedOpenAiTools;
+}
+
 
 function escapeHtml(str: string): string {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
@@ -691,10 +714,40 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       });
     }
 
-    const chatHistory = await prisma.aiChatMessage.findMany({
-      where: { sessionId: currentSessionId },
-      orderBy: { createdAt: "asc" },
-    });
+    // Parallelize all independent queries for performance
+    const matchmakerId = req.body.matchmakerId;
+    const [chatHistory, matchmaker, userRecord, openAiTools] = await Promise.all([
+      prisma.aiChatMessage.findMany({
+        where: { sessionId: currentSessionId },
+        orderBy: { createdAt: "asc" },
+      }),
+      matchmakerId
+        ? prisma.matchmaker.findUnique({ where: { id: matchmakerId } })
+        : null,
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          firstName: true,
+          lastName: true,
+          name: true,
+          city: true,
+          state: true,
+          gender: true,
+          sexualOrientation: true,
+          relationshipStatus: true,
+          partnerFirstName: true,
+          partnerAge: true,
+          dateOfBirth: true,
+          parentAccountId: true,
+          parentAccount: {
+            select: {
+              intendedParentProfile: true,
+            },
+          },
+        },
+      }),
+      getCachedMcpTools(mcpClient),
+    ]);
 
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = chatHistory.map(
       (msg) => ({
@@ -703,39 +756,12 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       }),
     );
 
-    const matchmakerId = req.body.matchmakerId;
     let personalityBlock = "You are Eva, the expert fertility concierge for GoStork.";
     let initialGreeting: string | null = null;
-    if (matchmakerId) {
-      const matchmaker = await prisma.matchmaker.findUnique({ where: { id: matchmakerId } });
-      if (matchmaker) {
-        personalityBlock = matchmaker.personalityPrompt;
-        initialGreeting = matchmaker.initialGreeting;
-      }
+    if (matchmaker) {
+      personalityBlock = matchmaker.personalityPrompt;
+      initialGreeting = matchmaker.initialGreeting;
     }
-
-    const userRecord = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        firstName: true,
-        lastName: true,
-        name: true,
-        city: true,
-        state: true,
-        gender: true,
-        sexualOrientation: true,
-        relationshipStatus: true,
-        partnerFirstName: true,
-        partnerAge: true,
-        dateOfBirth: true,
-        parentAccountId: true,
-        parentAccount: {
-          select: {
-            intendedParentProfile: true,
-          },
-        },
-      },
-    });
 
     const firstName = userRecord?.firstName || userRecord?.name?.split(" ")[0] || "there";
     const city = userRecord?.city || "";
@@ -1202,53 +1228,45 @@ IMPORTANT RULES:
 - When transitioning from asking about embryos/eggs to asking about services, use a warm transition like: "Now that I have a clear picture of your family-building journey, let's figure out the exact support you need."
 `;
 
-    const guidanceRules = await getExpertGuidanceRules();
+    const userMessage = req.body.message || "";
+    const ragProviderId = req.body.providerId || undefined;
 
-    let answeredWhispersContext = "";
-    try {
-      const answeredWhispers = await prisma.silentQuery.findMany({
-        where: {
-          parentUserId: userId,
-          sessionId: currentSessionId,
-          status: "ANSWERED",
-        },
+    // Parallelize guidance rules, whisper answers, and RAG search
+    const [guidanceRules, answeredWhispers, knowledgeResults] = await Promise.all([
+      getExpertGuidanceRules(),
+      prisma.silentQuery.findMany({
+        where: { parentUserId: userId, sessionId: currentSessionId, status: "ANSWERED" },
         select: { questionText: true, answerText: true, providerId: true },
         orderBy: { updatedAt: "desc" },
         take: 5,
-      });
-      if (answeredWhispers.length > 0) {
-        const uniqueProviderIds = [...new Set(answeredWhispers.map((w: any) => w.providerId))];
-        const providerNameMap = new Map<string, string>();
-        for (const pid of uniqueProviderIds) {
-          try {
-            const pRes = await mcpClient!.callTool({ name: "resolve_provider", arguments: { providerId: pid } });
-            const pData = JSON.parse((pRes.content as any)?.[0]?.text || "{}");
-            providerNameMap.set(pid, pData.name || "the agency");
-          } catch { providerNameMap.set(pid, "the agency"); }
-        }
-        const whisperParts = answeredWhispers.map(
-          (w: any) => `- Question about ${providerNameMap.get(w.providerId) || "the agency"}: "${w.questionText}" → Answer: "${w.answerText}"`,
-        );
-        answeredWhispersContext = `\nPROVIDER WHISPER ANSWERS (recently answered by providers — present these naturally when relevant):\n${whisperParts.join("\n")}\nWhen presenting a whisper answer, lead with: "I have an update! I heard back from the agency and they confirmed: [Answer]."\nAfter sharing the answer, ask if the parent has any more questions: "Does that answer your question? Do you have anything else you'd like to know, or are you ready to schedule a free consultation call?"\nIf the parent wants to schedule a consultation, use [[CONSULTATION_BOOKING:PROVIDER_ID]] to present the booking card.\n`;
-      }
-    } catch (e) {
-      console.error("Failed to load whisper answers:", e);
+      }).catch(() => [] as any[]),
+      searchKnowledgeBase(userMessage, ragProviderId, 5).catch(() => [] as any[]),
+    ]);
+
+    let answeredWhispersContext = "";
+    if (answeredWhispers.length > 0) {
+      const uniqueProviderIds = [...new Set(answeredWhispers.map((w: any) => w.providerId))];
+      const providerNameMap = new Map<string, string>();
+      await Promise.all(uniqueProviderIds.map(async (pid) => {
+        try {
+          const pRes = await mcpClient!.callTool({ name: "resolve_provider", arguments: { providerId: pid } });
+          const pData = JSON.parse((pRes.content as any)?.[0]?.text || "{}");
+          providerNameMap.set(pid, pData.name || "the agency");
+        } catch { providerNameMap.set(pid, "the agency"); }
+      }));
+      const whisperParts = answeredWhispers.map(
+        (w: any) => `- Question about ${providerNameMap.get(w.providerId) || "the agency"}: "${w.questionText}" → Answer: "${w.answerText}"`,
+      );
+      answeredWhispersContext = `\nPROVIDER WHISPER ANSWERS (recently answered by providers — present these naturally when relevant):\n${whisperParts.join("\n")}\nWhen presenting a whisper answer, lead with: "I have an update! I heard back from the agency and they confirmed: [Answer]."\nAfter sharing the answer, ask if the parent has any more questions: "Does that answer your question? Do you have anything else you'd like to know, or are you ready to schedule a free consultation call?"\nIf the parent wants to schedule a consultation, use [[CONSULTATION_BOOKING:PROVIDER_ID]] to present the booking card.\n`;
     }
 
-    const userMessage = req.body.message || "";
-    const ragProviderId = req.body.providerId || undefined;
     let ragContext = "";
-    try {
-      const knowledgeResults = await searchKnowledgeBase(userMessage, ragProviderId, 5);
-      const relevantResults = knowledgeResults.filter((r) => r.score > 0.3);
-      if (relevantResults.length > 0) {
-        const contextParts = relevantResults.map(
-          (r) => `[Tier ${r.sourceTier} - ${r.sourceType}]: ${r.content}`,
-        );
-        ragContext = `\nKNOWLEDGE BASE CONTEXT (use this information to answer accurately):\n${contextParts.join("\n\n")}\n\nIMPORTANT: If the knowledge base has relevant information, use it confidently. If you're asked about a specific provider detail that isn't in the knowledge base or your tools, say: "I don't have that specific detail right now — let me flag this so the provider can get back to you directly." Do NOT make up information.\n`;
-      }
-    } catch (e) {
-      console.error("RAG context fetch failed:", e);
+    const relevantResults = knowledgeResults.filter((r: any) => r.score > 0.3);
+    if (relevantResults.length > 0) {
+      const contextParts = relevantResults.map(
+        (r: any) => `[Tier ${r.sourceTier} - ${r.sourceType}]: ${r.content}`,
+      );
+      ragContext = `\nKNOWLEDGE BASE CONTEXT (use this information to answer accurately):\n${contextParts.join("\n\n")}\n\nIMPORTANT: If the knowledge base has relevant information, use it confidently. If you're asked about a specific provider detail that isn't in the knowledge base or your tools, say: "I don't have that specific detail right now — let me flag this so the provider can get back to you directly." Do NOT make up information.\n`;
     }
 
     let isDonorInquiryMode = false;
@@ -1414,22 +1432,7 @@ When the parent asks a follow-up question about a specific egg donor (eye color,
       }
     }
 
-    let openAiTools: OpenAI.Chat.ChatCompletionTool[] = [];
-    if (mcpClient) {
-      try {
-        const mcpToolsList = await mcpClient.listTools();
-        openAiTools = mcpToolsList.tools.map((tool) => ({
-          type: "function",
-          function: {
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.inputSchema as any,
-          },
-        }));
-      } catch (e) {
-        console.error("MCP tools unavailable:", e);
-      }
-    }
+    // openAiTools already fetched in parallel above (cached)
 
     const schedulingIntent = /what.?s next|what happens next|what now|next step|move forward|let.?s (go|proceed|do it|move)|ready to (book|schedule|proceed)|i.?m ready|let.?s book|sign me up|yes.*schedule|schedule.*consultation|yes.*free consultation|book.*consultation|^schedule[.!]?$/i.test(userMessage.trim());
     const shortAffirmative = /^(yes|sure|ok|absolutely|definitely|please|do it|set it up|sounds good|let.?s do it|i.?d love that|that.?d be great|go ahead|go for it)[.!,\s]*$/i.test(userMessage.trim());
@@ -1464,10 +1467,17 @@ The parent's message was: "${userMessage}"`,
       }
     }
 
+    // Skip tools only during early Q&A steps (before any curation/matching has happened)
+    const hasEnteredMatchingPhase = messages.some(m => {
+      const c = typeof m.content === "string" ? m.content : "";
+      return c.includes("[[CURATION]]") || c === "ready" || c.includes("MATCH_CARD") || c.includes("[[CONSULTATION_BOOKING");
+    });
+    const needsTools = hasEnteredMatchingPhase || shouldTriggerScheduling || isDonorInquiryMode;
+
     let response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages,
-      tools: openAiTools.length > 0 ? openAiTools : undefined,
+      tools: needsTools && openAiTools.length > 0 ? openAiTools : undefined,
     });
 
     let responseMessage = response.choices[0].message;

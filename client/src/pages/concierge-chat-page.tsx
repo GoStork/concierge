@@ -2077,6 +2077,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           if (unseenMsgs.some((m: any) => m.senderType === "provider" || m.senderType === "system")) {
             setProviderInChat(true);
           }
+          // Mark newly polled messages as read since user is actively viewing this chat
+          fetch(`/api/chat-sessions/${sessionId}/read`, { method: "POST", credentials: "include" }).catch(() => {});
         }
 
         // Periodically refresh delivery status on existing messages (every 3rd poll)
@@ -2420,7 +2422,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" data-testid="concierge-messages">
           {(() => {
             const shouldInlineBooking = !externalBookingSlug && !conciergeBookingSlug && sessionBookings && sessionBookings.length > 0;
-            const activeBooking = shouldInlineBooking ? sessionBookings![0] : null;
+            // Skip standalone booking card if a ConsultationBookingCard already shows this booking inline
+            const consultationCardProviderIds = new Set(messages.filter(m => m.consultationCard?.providerId).map(m => m.consultationCard!.providerId));
+            const activeBooking = shouldInlineBooking
+              ? sessionBookings!.find((b: any) => !consultationCardProviderIds.has(b.providerUser?.provider?.id)) || null
+              : null;
             type TimelineItem = { type: "message"; msg: ChatMessage; ts: string } | { type: "booking"; booking: any; ts: string };
             const msgItems: TimelineItem[] = messages.map((m) => ({ type: "message" as const, msg: m, ts: m.createdAt || "" }));
             const bookingItems: TimelineItem[] = activeBooking
@@ -2585,7 +2591,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 </div>
               )}
 
-              {msg.consultationCard && (
+              {msg.consultationCard && (() => {
+                // Only show consultation card on the LAST message that has one for this provider
+                const lastMsgWithCard = [...messages].reverse().find(
+                  m => m.consultationCard?.providerId === msg.consultationCard?.providerId
+                );
+                if (lastMsgWithCard && lastMsgWithCard !== msg) return null;
+                return true;
+              })() && (
                 <div className="flex justify-start mt-3 ml-0">
                   <ConsultationBookingCard
                     card={msg.consultationCard}

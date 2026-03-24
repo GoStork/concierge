@@ -169,7 +169,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
 
     const provider = await this.prisma.provider.findUnique({
       where: { id: consultProviderId },
-      select: { id: true, name: true },
+      select: { id: true, name: true, services: { include: { providerType: true }, where: { status: "APPROVED" } } },
     });
     if (!provider) return;
 
@@ -264,6 +264,44 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
             providerName: provider.name,
             message: `${parentName} requested a consultation with ${provider.name}`,
           },
+        },
+      });
+    }
+
+    // Send confirmation message back to the AI concierge chat
+    if (body.aiSessionId) {
+      const conciergeSessionId = body.aiSessionId;
+      // Determine what the parent was looking for to offer continuing the search
+      const conciergeSession = await this.prisma.aiChatSession.findUnique({
+        where: { id: conciergeSessionId },
+        select: { matchmakerId: true },
+      });
+      let matchmakerName = "your AI concierge";
+      if (conciergeSession?.matchmakerId) {
+        const mm = await this.prisma.matchmaker.findUnique({
+          where: { id: conciergeSession.matchmakerId },
+          select: { name: true },
+        });
+        if (mm?.name) matchmakerName = mm.name;
+      }
+      // Determine what the parent is searching for based on provider type
+      const providerTypeName = provider.services?.[0]?.providerType?.name || "";
+      const serviceGoalMap: Record<string, string> = {
+        "Surrogacy Agency": "finding you the perfect surrogate",
+        "Egg Donor Agency": "finding you the perfect egg donor",
+        "Egg Bank": "finding you the perfect egg donor",
+        "Sperm Bank": "finding you the perfect sperm donor",
+        "IVF Clinic": "finding you the right fertility clinic",
+        "Legal Services": "finding you the right legal support",
+      };
+      const continueGoal = serviceGoalMap[providerTypeName] || "your fertility journey";
+
+      await this.prisma.aiChatMessage.create({
+        data: {
+          sessionId: conciergeSessionId,
+          role: "assistant",
+          content: `Great news! Your consultation with ${provider.name} is all set! I've created a separate chat where you can communicate directly with them — you'll find it in your inbox under "Provider Conversations."\n\nNow, let's continue with ${continueGoal}!`,
+          senderType: "ai",
         },
       });
     }
