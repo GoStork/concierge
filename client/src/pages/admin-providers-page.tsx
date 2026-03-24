@@ -220,7 +220,7 @@ export default function AdminProvidersPage() {
           </PopoverTrigger>
           <PopoverContent className="w-48 p-2" align="start">
             <div className="space-y-1">
-              {[{ value: "All", label: "All Types" }, { value: "IVF Clinic", label: "IVF Clinic" }, { value: "Surrogacy Agency", label: "Surrogacy Agency" }, { value: "Egg Donor Agency", label: "Egg Donor Agency" }].map((opt) => (
+              {[{ value: "All", label: "All Types" }, ...(providerTypes || []).map((t: any) => ({ value: t.name, label: t.name }))].map((opt) => (
                 <Button key={opt.value} variant={providerType === opt.value ? "default" : "ghost"} size="sm" className="w-full justify-start text-xs" onClick={() => setProviderType(opt.value)} data-testid={`provider-type-${opt.value}`}>
                   {opt.label}
                 </Button>
