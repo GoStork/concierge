@@ -211,6 +211,8 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
           matchmakerId: body.matchmakerId || undefined,
           title: sessionTitle,
           profilePhotoUrl: body.profilePhotoUrl || undefined,
+          subjectProfileId: body.subjectProfileId || undefined,
+          subjectType: body.subjectType || undefined,
         },
       });
       targetSessionId = newSession.id;

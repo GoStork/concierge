@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -49,6 +49,8 @@ interface ChatSession {
   providerName: string | null;
   providerLogo: string | null;
   profilePhotoUrl: string | null;
+  subjectProfileId: string | null;
+  subjectType: string | null;
   providerJoinedAt: string | null;
   humanRequested: boolean;
   lastMessage: string | null;
@@ -74,6 +76,8 @@ interface ProviderSession {
   providerName: string | null;
   title: string | null;
   profilePhotoUrl: string | null;
+  subjectProfileId: string | null;
+  subjectType: string | null;
   messageCount: number;
   lastMessage: string | null;
   lastMessageAt: string;
@@ -741,6 +745,8 @@ export default function ConversationsPage() {
   const { user } = useAuth();
   const { data: brand } = useBrandSettings();
   const navigate = useNavigate();
+  const { entityId: urlEntityId, subjectId: urlSubjectId } = useParams<{ entityId?: string; subjectId?: string }>();
+  const isConciergeUrl = window.location.pathname === "/chat/concierge";
   const queryClient = useQueryClient();
   const dispatch = useAppDispatch();
   const brandColor = brand?.primaryColor || "#004D4D";
@@ -761,7 +767,26 @@ export default function ConversationsPage() {
       : parts[0] || "";
   }, [user]);
 
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  // Helper: build chat URL from session data
+  const buildChatUrl = (session: ChatSession | ProviderSession | null): string => {
+    if (!session) return "/chat";
+    // AI concierge sessions (no providerId for parents)
+    if ("matchmakerId" in session && session.matchmakerId && !session.providerId) {
+      return "/chat/concierge";
+    }
+    // Provider chat sessions - use providerId + subjectProfileId
+    const entityId = isProvider ? (session as ProviderSession).userId : (session as ChatSession).providerId;
+    const subjectId = session.subjectProfileId;
+    if (entityId && subjectId) return `/chat/${entityId}/${subjectId}`;
+    if (entityId) return `/chat/${entityId}/${session.id}`;
+    return "/chat";
+  };
+
+  const [selectedSessionId, _setSelectedSessionId] = useState<string | null>(null);
+  const setSelectedSessionId = (id: string | null, session?: ChatSession | ProviderSession | null) => {
+    _setSelectedSessionId(id);
+    navigate(session ? buildChatUrl(session) : "/chat", { replace: true });
+  };
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [replyText, setReplyText] = useState("");
@@ -793,6 +818,17 @@ export default function ConversationsPage() {
     staleTime: 0,
     refetchOnMount: "always",
   });
+
+  // Resolve provider selectedSessionId from URL params when sessions load
+  useEffect(() => {
+    if (!isProvider || !urlEntityId || !urlSubjectId) return;
+    const sessions = providerSessionsQuery.data || [];
+    const match = sessions.find(s => s.userId === urlEntityId && s.subjectProfileId === urlSubjectId)
+      || sessions.find(s => s.userId === urlEntityId && s.id === urlSubjectId);
+    if (match && selectedSessionId !== match.id) {
+      _setSelectedSessionId(match.id);
+    }
+  }, [isProvider, urlEntityId, urlSubjectId, providerSessionsQuery.data]);
 
   const sessionDetailQuery = useQuery<SessionDetail>({
     queryKey: ["/api/provider/concierge-sessions", selectedSessionId],
@@ -1024,15 +1060,38 @@ export default function ConversationsPage() {
     }
   };
 
-  const [selectedParentSession, setSelectedParentSession] = useState<ChatSession | null>(null);
+  const parentSessions: ChatSession[] = parentSessionsQuery.data || [];
+  // Resolve selected parent session from URL params
+  const selectedParentSession = useMemo(() => {
+    if (isConciergeUrl) {
+      // Find the AI concierge session (no providerId)
+      return parentSessions.find(s => s.matchmakerId && !s.providerId) || null;
+    }
+    if (urlEntityId && urlSubjectId) {
+      // Match by providerId + subjectProfileId first, fallback to session id
+      return parentSessions.find(s => s.providerId === urlEntityId && s.subjectProfileId === urlSubjectId)
+        || parentSessions.find(s => s.providerId === urlEntityId && s.id === urlSubjectId)
+        || null;
+    }
+    return null;
+  }, [parentSessions, isConciergeUrl, urlEntityId, urlSubjectId]);
+  const setSelectedParentSession = (session: ChatSession | null) => {
+    navigate(session ? buildChatUrl(session) : "/chat", { replace: true });
+  };
 
   const handleParentSessionClick = (session: ChatSession) => {
     const isMobile = window.innerWidth < 768;
     if (isMobile) {
-      const params = new URLSearchParams();
-      if (session.matchmakerId) params.set("matchmaker", session.matchmakerId);
-      params.set("session", session.id);
-      navigate(`/concierge?${params.toString()}`);
+      // AI concierge chats go to dedicated concierge page on mobile
+      if (session.matchmakerId && !session.providerId) {
+        const params = new URLSearchParams();
+        params.set("matchmaker", session.matchmakerId);
+        params.set("session", session.id);
+        navigate(`/concierge?${params.toString()}`);
+      } else {
+        // Provider chats use the same URL scheme on mobile
+        navigate(buildChatUrl(session));
+      }
     } else {
       setSelectedParentSession(session);
     }
@@ -1109,6 +1168,11 @@ export default function ConversationsPage() {
   };
 
   if (isParent) {
+    // New parent with no sessions — go straight to matchmaker selection
+    if (!parentSessionsQuery.isLoading && parentSessionsQuery.data && parentSessionsQuery.data.length === 0) {
+      navigate("/matchmaker-selection", { replace: true });
+      return null;
+    }
     const allSessions = parentSessionsQuery.data || [];
     const isProviderThread = (s: ChatSession) =>
       (s.providerJoinedAt && s.providerName) ||
@@ -1331,7 +1395,7 @@ export default function ConversationsPage() {
             <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>
               {parentHeaderName}
             </h2>
-            {selectedParentSession!.title && (
+            {selectedParentSession!.title && selectedParentSession!.providerId && (
               <p className="text-[11px] font-ui text-muted-foreground truncate" data-testid="parent-chat-subject-label">
                 Subject: {selectedParentSession!.title}
               </p>
@@ -1466,7 +1530,7 @@ export default function ConversationsPage() {
                 className={`w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left border-b border-border/20 ${
                   selectedSessionId === s.id ? "bg-muted/70" : ""
                 } ${sIsBooked ? "bg-primary/5" : ""}`}
-                onClick={() => setSelectedSessionId(s.id)}
+                onClick={() => setSelectedSessionId(s.id, s)}
                 data-testid={`provider-session-${s.id}`}
               >
                 <div className="w-11 h-11 rounded-full flex-shrink-0 relative">
@@ -1850,7 +1914,7 @@ export default function ConversationsPage() {
                             }}
                             data-testid={`provider-msg-${i}`}
                           >
-                            <span>{msg.content}</span>
+                            <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>
                             {msg.createdAt && (
                               <>
                                 <span className={`inline-block ${isOwnMessage ? "w-[4.75rem]" : "w-[3.5rem]"}`} aria-hidden="true">&nbsp;</span>

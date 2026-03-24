@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
@@ -35,8 +35,12 @@ function FieldItem({ label, value }: { label: string; value: string | null | und
 export default function ProviderProfilePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
+  const chatState = location.state as { fromChat?: boolean; chatPath?: string } | null;
+  const fromChat = chatState?.fromChat === true;
+  const chatPath = chatState?.chatPath || "/chat";
 
   const filterContext = useMemo(() => {
     const eggSource = searchParams.get("eggSource");
@@ -79,8 +83,8 @@ export default function ProviderProfilePage() {
   if (!provider) {
     return (
       <div className="space-y-4 p-6">
-        <Button variant="ghost" onClick={() => navigate(-1)} data-testid="link-back-marketplace">
-          <ArrowLeft className="w-4 h-4 mr-2" /> Back to Marketplace
+        <Button variant="ghost" onClick={() => fromChat ? navigate(chatPath) : navigate(-1)} data-testid="link-back-marketplace">
+          <ArrowLeft className="w-4 h-4 mr-2" /> {fromChat ? "Back to Chat" : "Back to Marketplace"}
         </Button>
         <p className="text-muted-foreground text-center py-8" data-testid="text-not-found">Provider not found.</p>
       </div>
@@ -92,8 +96,8 @@ export default function ProviderProfilePage() {
   return (
     <div className="space-y-6 w-full">
       <div className="flex items-center justify-between">
-        <Button variant="ghost" onClick={() => navigate(-1)} data-testid="link-back-marketplace">
-          <ArrowLeft className="w-4 h-4 mr-2" /> Back to Marketplace
+        <Button variant="ghost" onClick={() => fromChat ? navigate(chatPath) : navigate(-1)} data-testid="link-back-marketplace">
+          <ArrowLeft className="w-4 h-4 mr-2" /> {fromChat ? "Back to Chat" : "Back to Marketplace"}
         </Button>
       </div>
 

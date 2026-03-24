@@ -807,7 +807,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           },
         });
         const locMap = new Map(withLocations.map((c: any) => [c.id, c]));
-        clinics = ids.map((id: string) => locMap.get(id)).filter(Boolean);
+        let ordered = ids.map((id: string) => locMap.get(id)).filter(Boolean);
+        // Filter by state/city if provided — vector search only uses them as query hints
+        if (state) {
+          const stateFiltered = ordered.filter((c: any) => c.locations?.some((l: any) => l.state?.toLowerCase().includes(state.toLowerCase())));
+          if (stateFiltered.length > 0) ordered = stateFiltered;
+        }
+        if (city) {
+          const cityFiltered = ordered.filter((c: any) => c.locations?.some((l: any) => l.city?.toLowerCase().includes(city.toLowerCase())));
+          if (cityFiltered.length > 0) ordered = cityFiltered;
+        }
+        clinics = ordered;
       } else {
         const providerWhere: any = {
           providerServices: {

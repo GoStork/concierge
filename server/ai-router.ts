@@ -776,6 +776,11 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         .replace(/\[First Name\]/gi, firstName)
         .replace(/\[Service\]/gi, service)
         .replace(/\[Location\]/gi, location);
+      // Add line breaks for readability: before "Here is how", "To find", "First things"
+      initialGreeting = initialGreeting
+        .replace(/\.\s+(Here is how|Here's how)/g, ".\n\n$1")
+        .replace(/\.\s+(To find)/g, ".\n\n$1")
+        .replace(/\.\s+(First things|First,|So,|Now,|Let'?s start)/g, ".\n\n$1");
     }
 
     let userContextBlock = "";
@@ -958,7 +963,7 @@ STEP 8 — MATCH REVEAL:
   - Call search_surrogates if user needs a surrogate (pass filters like agreesToTwins, agreesToAbortion based on their answers)
   - Call search_egg_donors if user needs an egg donor (pass filters like eyeColor, hairColor, ethnicity based on their answers)
   - Call search_sperm_donors if user needs a sperm donor
-  - Call search_clinics if user needs a clinic (pass state/city if known from their location)
+  - Call search_clinics if user needs a clinic — ALWAYS pass the user's state and city from their profile location. Clinics must be near the parent
   You MUST use ONLY the results returned by these tools. Do NOT invent or fabricate ANY names or IDs.
   Present matches for the services the user ACTUALLY asked for:
   - If user needs a SURROGATE: present individual surrogate profiles (we have real surrogates in our database, not agencies).
@@ -974,12 +979,21 @@ STEP 8 — MATCH REVEAL:
   - For surrogates: call search_surrogates with filters based on user's answers (twins, termination, etc.), set type to "Surrogate" in the MATCH_CARD
   - For egg donors: call search_egg_donors with filters (eye color, hair color, ethnicity, etc.), set type to "Egg Donor" in the MATCH_CARD
   - For sperm donors: call search_sperm_donors with filters, set type to "Sperm Donor" in the MATCH_CARD
-  - For clinics: call search_clinics with location filters, set type to "Clinic" in the MATCH_CARD
+  - For clinics: call search_clinics and ALWAYS pass the user's state (and city if available) as filters. Location proximity is critical for clinics — parents need to visit in person. Set type to "Clinic" in the MATCH_CARD
 
   ONE PROFILE AT A TIME RULE (CRITICAL):
   You MUST present exactly ONE match profile per message. NEVER show multiple MATCH_CARD tags in the same response.
   After presenting the single profile, STOP and wait for the parent's feedback before doing anything else.
   This creates a personal, curated experience — like a concierge hand-selecting each match individually.
+
+  NO EXACT MATCH FALLBACK (IMPORTANT):
+  If the search tools return zero results for the parent's exact preferences (e.g., no clinics in their city, no surrogates matching all criteria), do NOT say "I couldn't find anything" or give up. Instead:
+  1. Broaden the search — try removing one filter at a time (e.g., search the state instead of the city, relax age range, drop one preference).
+  2. Present the BEST AVAILABLE option as a "close match" and be TRANSPARENT about what doesn't perfectly match. For example:
+     - "I searched for clinics in Manhattan but the closest top-rated option I found is in New Jersey — just a short trip across the river. They have incredible success rates, so let me show you..."
+     - "I couldn't find a surrogate in Florida who matches all your criteria, but here's someone in Georgia who checks every other box — open to twins, experienced, pro-choice. The only difference is location."
+  3. Always frame it positively — lead with what DOES match, then briefly mention the one thing that differs, and explain why this option is still worth considering.
+  4. After presenting, ask: "Would you like me to keep looking, or does this feel like it could work?" [[QUICK_REPLY:Keep looking|Tell me more|Let's go with this one]]
 
   Present the match using the MATCH CARD format:
   [[MATCH_CARD:{"name":"displayName from tool results","type":"Surrogate","location":"location from tool results","photo":"","reasons":["Specific preference match 1","Specific preference match 2","Specific preference match 3"],"providerId":"id-from-tool-results"}]]
@@ -1222,6 +1236,7 @@ IMPORTANT RULES:
 - End every response with a single, clear question to maintain momentum.
 - Never give medical or legal advice, but always validate the user's feelings.
 - Keep responses concise — 2-3 sentences max before the question.
+- Use line breaks (\\n) between distinct thoughts to make messages easy to scan. Never send a wall of text.
 - Be conversational and human, not robotic or clinical.
 - When summarizing what you heard, always frame it positively and confirm: "Based on that, it sounds like [X] is your top priority. Am I reading that right?"
 - NEVER use cold, clinical terms like "biological plan" or "medical baseline." Instead, use warm phrases like "where you are in your journey," "your path to parenthood," or "your family-building steps."
@@ -2256,6 +2271,8 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
           if (currentSessionId) {
             let profileLabel: string | null = null;
             let profilePhotoUrl: string | null = null;
+            let subjectProfileId: string | null = null;
+            let subjectType: string | null = null;
             try {
               const richMessages = await prisma.aiChatMessage.findMany({
                 where: { sessionId: currentSessionId, uiCardType: "rich" },
@@ -2269,6 +2286,8 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
                 if (matched?.name) {
                   profileLabel = matched.name;
                   if (matched.photo) profilePhotoUrl = matched.photo;
+                  subjectProfileId = matched.providerId || null;
+                  subjectType = matched.type || null;
                   break;
                 }
               }
@@ -2321,6 +2340,8 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
             consultationCard.matchmakerId = currentSession?.matchmakerId || null;
             consultationCard.profileLabel = sessionTitle;
             consultationCard.profilePhotoUrl = profilePhotoUrl;
+            consultationCard.subjectProfileId = subjectProfileId;
+            consultationCard.subjectType = subjectType;
             console.log(`[CONSULTATION] Calendar card shown for provider ${consultProviderId}, profile "${sessionTitle}" (session will be created on actual booking)`);
           }
         }

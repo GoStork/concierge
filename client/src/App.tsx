@@ -147,6 +147,8 @@ function AppRoutes() {
         <Route path="/matchmaker-selection" element={<ProtectedRoute><MatchmakerSelectionPage /></ProtectedRoute>} />
         <Route path="/concierge" element={<ProtectedRoute><ConciergeChatPage /></ProtectedRoute>} />
         <Route path="/chat" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
+        <Route path="/chat/concierge" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
+        <Route path="/chat/:entityId/:subjectId" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
         <Route path="/admin/concierge-monitor" element={<ProtectedRoute><AdminConciergeMonitor /></ProtectedRoute>} />
         <Route path="/provider/conversations" element={<Navigate to="/chat" replace />} />
         <Route path="/admin/branding" element={<Navigate to="/account/branding" replace />} />

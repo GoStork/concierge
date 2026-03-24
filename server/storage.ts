@@ -65,6 +65,7 @@ export class DatabaseStorage implements IStorage {
       include: {
         services: { include: { providerType: true } },
         locations: true,
+        ivfSuccessRates: true,
       },
     });
   }

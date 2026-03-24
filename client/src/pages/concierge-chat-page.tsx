@@ -51,6 +51,8 @@ interface ConsultationCardData {
   matchmakerId?: string | null;
   profileLabel?: string | null;
   profilePhotoUrl?: string | null;
+  subjectProfileId?: string | null;
+  subjectType?: string | null;
 }
 
 interface ChatMessage {
@@ -445,7 +447,7 @@ export function InlineBookingCalendar({
   memberName: string;
   brandColor: string;
   existingBooking?: any;
-  consultationMeta?: { aiSessionId?: string; matchmakerId?: string | null; profileLabel?: string | null; profilePhotoUrl?: string | null; providerId?: string };
+  consultationMeta?: { aiSessionId?: string; matchmakerId?: string | null; profileLabel?: string | null; profilePhotoUrl?: string | null; providerId?: string; subjectProfileId?: string | null; subjectType?: string | null };
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -572,6 +574,8 @@ export function InlineBookingCalendar({
         body.matchmakerId = consultationMeta.matchmakerId;
         body.profileLabel = consultationMeta.profileLabel;
         body.profilePhotoUrl = consultationMeta.profilePhotoUrl;
+        body.subjectProfileId = consultationMeta.subjectProfileId;
+        body.subjectType = consultationMeta.subjectType;
       }
       const res = await apiRequest("POST", `/api/calendar/book/${slug}`, body);
       return res.json();
@@ -1121,7 +1125,7 @@ function ConsultationBookingCard({
             memberName={card.memberName || card.providerName}
             brandColor={brandColor}
             existingBooking={existingBooking}
-            consultationMeta={{ aiSessionId: card.aiSessionId, matchmakerId: card.matchmakerId, profileLabel: card.profileLabel, profilePhotoUrl: card.profilePhotoUrl, providerId: card.providerId }}
+            consultationMeta={{ aiSessionId: card.aiSessionId, matchmakerId: card.matchmakerId, profileLabel: card.profileLabel, profilePhotoUrl: card.profilePhotoUrl, providerId: card.providerId, subjectProfileId: card.subjectProfileId, subjectType: card.subjectType }}
           />
         </div>
       </div>
@@ -1405,11 +1409,119 @@ function buildMatchTabs(profile: any, cardType: string, reasons: string[]): TabS
   return baseTabs;
 }
 
-function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { card: MatchCard; brandColor: string; onAction: (text: string) => void; onViewProfile: (card: MatchCard) => void }) {
-  const [profile, setProfile] = useState<any>(null);
+function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: MatchCard; brandColor: string; onAction: (text: string) => void; onViewProfile: (card: MatchCard) => void }) {
+  const [provider, setProvider] = useState<any>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    if (!card.ownerProviderId) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/providers/${card.providerId}`, { credentials: "include" });
+        if (res.ok) setProvider(await res.json());
+      } catch {}
+    })();
+  }, [card.providerId]);
+
+  if (!provider) {
+    return (
+      <div className="min-w-[320px] max-w-[420px] w-full rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const rates = (provider.ivfSuccessRates || []).find((r: any) => r.eggSource === "Own eggs" && r.ageGroup === "Under 35" && r.isNewPatient === "Yes") || (provider.ivfSuccessRates || [])[0];
+  const pct = rates ? Number(rates.successRate) * 100 : null;
+  const natAvg = rates ? Number(rates.nationalAverage) * 100 : null;
+  const isTop10 = rates?.top10pct === true;
+  const location = provider.locations?.[0];
+  const locationStr = location ? `${location.city || ""}${location.state ? `, ${location.state}` : ""}` : card.location;
+
+  return (
+    <div
+      className="min-w-[320px] max-w-[420px] w-full animate-[slideUp_0.4s_ease-out_forwards] border border-border bg-card overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
+      style={{ borderRadius: "var(--container-radius, 0.5rem)" }}
+      data-testid={`match-card-${card.providerId}`}
+      onClick={() => navigate(`/providers/${card.providerId}`, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } })}
+    >
+      <div className="p-4 space-y-3">
+        <div className="flex items-start gap-3">
+          {provider.logoUrl ? (
+            <img src={getPhotoSrc(provider.logoUrl) || undefined} alt="" className="w-10 h-10 rounded-lg object-contain border border-border/30 bg-background p-0.5 shrink-0" />
+          ) : (
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ backgroundColor: brandColor }}>
+              {(provider.name || "C").charAt(0)}
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <h3 className="text-base font-heading text-foreground leading-tight">{provider.name}</h3>
+            {locationStr && (
+              <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
+                <Globe className="w-3.5 h-3.5 shrink-0" />
+                {locationStr}
+              </p>
+            )}
+          </div>
+          {isTop10 && (
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 shrink-0">
+              Top 10%
+            </span>
+          )}
+        </div>
+
+        {pct !== null && (
+          <div>
+            <div className="flex items-baseline gap-1.5 mb-0.5">
+              <span className="text-2xl font-heading text-foreground">{pct.toFixed(1)}%</span>
+              <span className="text-sm text-muted-foreground">success rate</span>
+            </div>
+            <p className="text-xs text-muted-foreground mb-2">Own eggs · Under 35 · First-time IVF</p>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">This clinic</span>
+                <span className="font-ui text-foreground">{pct.toFixed(1)}%</span>
+              </div>
+              <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+                <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: brandColor }} />
+              </div>
+              {natAvg !== null && natAvg > 0 && (
+                <>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">National average</span>
+                    <span className="font-ui text-muted-foreground">{natAvg.toFixed(1)}%</span>
+                  </div>
+                  <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+                    <div className="h-full bg-accent rounded-full transition-all" style={{ width: `${Math.min(natAvg, 100)}%` }} />
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {card.reasons?.length > 0 && (
+          <p className="text-xs text-muted-foreground">{card.reasons.join(" · ")}</p>
+        )}
+      </div>
+
+      <div className="border-t border-border/50 px-4 py-3 flex gap-2">
+        <Button variant="outline" className="flex-1 text-xs font-ui h-8" onClick={(e) => { e.stopPropagation(); navigate(`/providers/${card.providerId}`, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } }); }}>
+          View Details
+        </Button>
+        <Button className="flex-1 text-xs font-ui h-8 text-white" style={{ backgroundColor: brandColor }} onClick={(e) => { e.stopPropagation(); onAction(`I'd like to schedule a consultation with ${provider.name}`); }}>
+          Schedule Consultation
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { card: MatchCard; brandColor: string; onAction: (text: string) => void; onViewProfile: (card: MatchCard) => void }) {
+  const [profile, setProfile] = useState<any>(null);
+  const isClinic = card.type.toLowerCase() === "clinic";
+
+  useEffect(() => {
+    if (!card.ownerProviderId || isClinic) return;
     const fetchProfile = async () => {
       try {
         const endpoint = getProfileEndpoint(card.type);
@@ -1418,7 +1530,11 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
       } catch {}
     };
     fetchProfile();
-  }, [card.ownerProviderId, card.providerId, card.type]);
+  }, [card.ownerProviderId, card.providerId, card.type, isClinic]);
+
+  if (isClinic) {
+    return <ClinicMatchCard card={card} brandColor={brandColor} onAction={onAction} onViewProfile={onViewProfile} />;
+  }
 
   if (!profile && !card.photo) {
     return (
@@ -1469,15 +1585,23 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
       data-testid={`match-card-${card.providerId}`}
       onClick={() => onViewProfile(card)}
     >
-      {card.photo && (
+      {card.photo ? (
         <img src={getPhotoSrc(card.photo) || undefined} alt={card.name} className="w-full h-full object-cover" />
+      ) : (
+        <div className="w-full h-full flex flex-col items-center justify-center px-6" style={{ backgroundColor: `${brandColor}10` }}>
+          <div className="w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl font-bold mb-4" style={{ backgroundColor: brandColor }}>
+            {(card.name || "").charAt(0)}
+          </div>
+          <h3 className="font-heading text-xl text-center leading-tight">{card.name}</h3>
+          {card.location && <p className="text-muted-foreground text-sm mt-1">{card.location}</p>}
+        </div>
       )}
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-24 pb-6 px-4">
-        <h3 className="text-white font-heading text-xl leading-tight">{card.name}</h3>
-        {card.location && (
-          <p className="text-white/70 text-sm mt-1">{card.location}</p>
-        )}
-      </div>
+      {card.photo && (
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-24 pb-6 px-4">
+          <h3 className="text-white font-heading text-xl leading-tight">{card.name}</h3>
+          {card.location && <p className="text-white/70 text-sm mt-1">{card.location}</p>}
+        </div>
+      )}
     </div>
   );
 }
@@ -2564,7 +2688,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                               }),
                         }}
                       >
-                        <span>{msg.content}</span>
+                        <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>
                         {msg.createdAt && (
                           <>
                             <span className={`inline-block ${alignRight ? "w-[4.75rem]" : "w-[3.5rem]"}`} aria-hidden="true">&nbsp;</span>
