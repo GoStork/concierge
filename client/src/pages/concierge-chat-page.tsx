@@ -1430,7 +1430,11 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
     );
   }
 
-  const rates = (provider.ivfSuccessRates || []).find((r: any) => r.eggSource === "Own eggs" && r.ageGroup === "Under 35" && r.isNewPatient === "Yes") || (provider.ivfSuccessRates || [])[0];
+  const rates = (provider.ivfSuccessRates || []).find((r: any) =>
+    r.profileType === "own_eggs" && r.ageGroup === "under_35" && r.isNewPatient === true && r.metricCode === "pct_new_patients_live_birth_after_1_retrieval"
+  ) || (provider.ivfSuccessRates || []).find((r: any) =>
+    r.profileType === "own_eggs" && r.ageGroup === "under_35" && r.metricCode === "pct_intended_retrievals_live_births"
+  ) || null;
   const pct = rates ? Number(rates.successRate) * 100 : null;
   const natAvg = rates ? Number(rates.nationalAverage) * 100 : null;
   const isTop10 = rates?.top10pct === true;

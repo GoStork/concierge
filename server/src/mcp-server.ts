@@ -273,9 +273,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "string",
               description: "Search by clinic name (partial match)",
             },
+            minSuccessRate: {
+              type: "number",
+              description: "Minimum success rate percentage to filter by (e.g. 50 for 50%+). Based on live birth rate per intended egg retrieval, own eggs, new patients, under 35.",
+            },
             limit: {
               type: "number",
-              description: "Number of results to return (default 3, max 5)",
+              description: "Number of results to return (default 5, max 10)",
             },
           },
         },
@@ -776,55 +780,61 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_clinics") {
-      const { query, state, city, name: clinicName, limit: rawLimit } = args as any;
-      const take = Math.min(rawLimit || 3, 5);
-
-      const queryParts: string[] = ["IVF clinic fertility center"];
-      if (query) queryParts.push(query);
-      if (city) queryParts.push(`in ${city}`);
-      if (state) queryParts.push(`in ${state}`);
-      if (clinicName) queryParts.push(clinicName);
-      const queryText = queryParts.join(", ");
-
-      const ivfClinicTypeCheck = `EXISTS (SELECT 1 FROM "ProviderService" ps JOIN "ProviderType" pt ON pt.id = ps."providerTypeId" WHERE ps."providerId" = "Provider".id AND pt.name = 'IVF Clinic' AND ps.status = 'APPROVED')`;
-      const vectorResults = await vectorSearch(
-        "Provider", queryText, take,
-        ivfClinicTypeCheck,
-        `"Provider".id, "Provider".name, "Provider"."logoUrl", "Provider".about`,
-      );
+      const { query, state, city, name: clinicName, limit: rawLimit, minSuccessRate } = args as any;
+      const take = Math.min(rawLimit || 5, 10);
+      const clinicSelect = {
+        id: true, name: true, logoUrl: true, about: true,
+        locations: { select: { city: true, state: true, address: true }, orderBy: { sortOrder: "asc" as const } },
+        members: { select: { name: true, title: true, bio: true, isMedicalDirector: true }, orderBy: { sortOrder: "asc" as const }, take: 10 },
+        ivfSuccessRates: {
+          where: { metricCode: { in: ["pct_new_patients_live_birth_after_1_retrieval", "pct_intended_retrievals_live_births"] }, profileType: "own_eggs" },
+          select: { successRate: true, nationalAverage: true, ageGroup: true, isNewPatient: true, metricCode: true, top10pct: true, cycleCount: true },
+        },
+      };
 
       let clinics: any[];
-      if (vectorResults && vectorResults.length > 0) {
-        const ids = vectorResults.map((r: any) => r.id);
-        const withLocations = await prisma.provider.findMany({
-          where: { id: { in: ids } },
-          select: {
-            id: true, name: true, logoUrl: true, about: true,
-            locations: {
-              select: { city: true, state: true, address: true },
-              take: 1,
-            },
-          },
-        });
-        const locMap = new Map(withLocations.map((c: any) => [c.id, c]));
-        let ordered = ids.map((id: string) => locMap.get(id)).filter(Boolean);
-        // Filter by state/city if provided — vector search only uses them as query hints
-        if (state) {
-          const stateFiltered = ordered.filter((c: any) => c.locations?.some((l: any) => l.state?.toLowerCase().includes(state.toLowerCase())));
-          if (stateFiltered.length > 0) ordered = stateFiltered;
+
+      // When location is specified, use direct DB query (vector search doesn't know about ProviderLocation)
+      const hasLocationFilter = !!(city || state);
+
+      if (!hasLocationFilter && !clinicName) {
+        // Generic search — use vector search
+        const queryParts: string[] = ["IVF clinic fertility center"];
+        if (query) queryParts.push(query);
+        const queryText = queryParts.join(", ");
+
+        const ivfClinicTypeCheck = `EXISTS (SELECT 1 FROM "ProviderService" ps JOIN "ProviderType" pt ON pt.id = ps."providerTypeId" WHERE ps."providerId" = "Provider".id AND pt.name = 'IVF Clinic' AND ps.status = 'APPROVED')`;
+        const vectorResults = await vectorSearch(
+          "Provider", queryText, take,
+          ivfClinicTypeCheck,
+          `"Provider".id, "Provider".name, "Provider"."logoUrl", "Provider".about`,
+        );
+
+        if (vectorResults && vectorResults.length > 0) {
+          const ids = vectorResults.map((r: any) => r.id);
+          const withDetails = await prisma.provider.findMany({
+            where: { id: { in: ids } },
+            select: clinicSelect,
+          });
+          const detailMap = new Map(withDetails.map((c: any) => [c.id, c]));
+          clinics = ids.map((id: string) => detailMap.get(id)).filter(Boolean);
+        } else {
+          clinics = [];
         }
-        if (city) {
-          const cityFiltered = ordered.filter((c: any) => c.locations?.some((l: any) => l.city?.toLowerCase().includes(city.toLowerCase())));
-          if (cityFiltered.length > 0) ordered = cityFiltered;
-        }
-        clinics = ordered;
       } else {
         const providerWhere: any = {
           providerServices: {
             some: { providerType: { name: "IVF Clinic" }, status: "APPROVED" },
           },
         };
-        if (clinicName) providerWhere.name = { contains: clinicName, mode: "insensitive" };
+        if (clinicName) {
+          const nameTerms = clinicName.trim().split(/[\s\-_]+/).filter(Boolean);
+          if (nameTerms.length > 1) {
+            providerWhere.AND = nameTerms.map((term: string) => ({ name: { contains: term, mode: "insensitive" } }));
+          } else {
+            providerWhere.name = { contains: clinicName.trim(), mode: "insensitive" };
+          }
+        }
 
         const locationWhere: any = {};
         if (state) locationWhere.state = { contains: state, mode: "insensitive" };
@@ -837,14 +847,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         clinics = await prisma.provider.findMany({
           where: providerWhere,
           orderBy: { name: "asc" },
-          take,
-          select: {
-            id: true, name: true, logoUrl: true, about: true,
-            locations: {
-              select: { city: true, state: true, address: true },
-              take: 1,
-            },
-          },
+          take: take * 2, // fetch extra so we can filter by success rate
+          select: clinicSelect,
         });
 
         if (clinics.length === 0 && (state || city || clinicName)) {
@@ -856,31 +860,70 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
             orderBy: { name: "asc" },
             take,
-            select: {
-              id: true, name: true, logoUrl: true, about: true,
-              locations: {
-                select: { city: true, state: true, address: true },
-                take: 1,
-              },
-            },
+            select: clinicSelect,
           });
         }
       }
 
-      const results = clinics.map((c: any) => {
-        const loc = c.locations?.[0];
+      // Build rich results with locations, doctors, and success rates
+      let results = clinics.map((c: any) => {
+        const locations = (c.locations || []).map((l: any) => [l.city, l.state].filter(Boolean).join(", ")).filter(Boolean);
+        const doctors = (c.members || []).map((m: any) => ({
+          name: m.name,
+          title: m.title || null,
+          isMedicalDirector: m.isMedicalDirector,
+        }));
+
+        // Pick the primary success rate (new patient under 35, or all patients under 35)
+        const rates = c.ivfSuccessRates || [];
+        const primaryRate = rates.find((r: any) => r.ageGroup === "under_35" && r.isNewPatient === true && r.metricCode === "pct_new_patients_live_birth_after_1_retrieval")
+          || rates.find((r: any) => r.ageGroup === "under_35" && r.metricCode === "pct_intended_retrievals_live_births");
+        const successPct = primaryRate ? Number(primaryRate.successRate) * 100 : null;
+        const nationalAvgPct = primaryRate ? Number(primaryRate.nationalAverage) * 100 : null;
+
+        // Build age-group breakdown
+        const ratesByAge: Record<string, number> = {};
+        for (const r of rates) {
+          if (r.metricCode === "pct_new_patients_live_birth_after_1_retrieval" || r.metricCode === "pct_intended_retrievals_live_births") {
+            const label = r.ageGroup === "under_35" ? "Under 35" : r.ageGroup === "35_37" ? "35-37" : r.ageGroup === "38_40" ? "38-40" : r.ageGroup === "over_40" ? "Over 40" : r.ageGroup;
+            if (!ratesByAge[label]) ratesByAge[label] = Number(r.successRate) * 100;
+          }
+        }
+
         return {
           id: c.id,
           name: c.name,
           logoUrl: c.logoUrl,
-          city: loc?.city || null,
-          state: loc?.state || null,
-          location: loc ? [loc.city, loc.state].filter(Boolean).join(", ") : "N/A",
+          about: c.about ? c.about.slice(0, 200) : null,
+          locations,
+          doctors: doctors.slice(0, 5),
+          successRate: successPct !== null ? `${successPct.toFixed(1)}%` : null,
+          nationalAverage: nationalAvgPct !== null ? `${nationalAvgPct.toFixed(1)}%` : null,
+          top10pct: primaryRate?.top10pct || false,
+          cycleCount: primaryRate?.cycleCount || null,
+          successRatesByAge: Object.keys(ratesByAge).length > 0 ? ratesByAge : null,
         };
       });
 
+      // Filter by minimum success rate if requested
+      if (minSuccessRate && typeof minSuccessRate === "number") {
+        results = results.filter((r: any) => {
+          const pct = r.successRate ? parseFloat(r.successRate) : 0;
+          return pct >= minSuccessRate;
+        });
+      }
+
+      // Sort by success rate descending
+      results.sort((a: any, b: any) => {
+        const aRate = a.successRate ? parseFloat(a.successRate) : 0;
+        const bRate = b.successRate ? parseFloat(b.successRate) : 0;
+        return bRate - aRate;
+      });
+
+      results = results.slice(0, take);
+
       return {
-        content: [{ type: "text", text: `Found ${results.length} IVF clinics:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Clinic" in your MATCH_CARDs.` }],
+        content: [{ type: "text", text: `Found ${results.length} IVF clinics:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Clinic" in your MATCH_CARDs. Present ONE clinic at a time. Use the locations, doctors, and success rates to write a personalized blurb.` }],
       };
     }
 

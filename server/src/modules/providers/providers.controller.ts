@@ -222,7 +222,15 @@ export class ProvidersController {
     const where: any = {};
 
     if (query.search) {
-      where.name = { contains: query.search, mode: "insensitive" };
+      // Normalize search: strip dashes/special chars so "Kindbody New York" matches "Kindbody-New York"
+      const searchTerms = query.search.trim().split(/[\s\-_]+/).filter(Boolean);
+      if (searchTerms.length > 1) {
+        where.AND = searchTerms.map((term: string) => ({
+          name: { contains: term, mode: "insensitive" },
+        }));
+      } else {
+        where.name = { contains: query.search.trim(), mode: "insensitive" };
+      }
     }
 
     if (query.location) {

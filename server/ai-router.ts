@@ -986,7 +986,8 @@ STEP 8 — MATCH REVEAL:
   - For surrogates: call search_surrogates with filters based on user's answers (twins, termination, etc.), set type to "Surrogate" in the MATCH_CARD
   - For egg donors: call search_egg_donors with filters (eye color, hair color, ethnicity, etc.), set type to "Egg Donor" in the MATCH_CARD
   - For sperm donors: call search_sperm_donors with filters, set type to "Sperm Donor" in the MATCH_CARD
-  - For clinics: call search_clinics and ALWAYS pass the user's state (and city if available) as filters. Location proximity is critical for clinics — parents need to visit in person. Set type to "Clinic" in the MATCH_CARD
+  - For clinics: call search_clinics and ALWAYS pass the user's state (and city if available) as filters. Location proximity is critical for clinics — parents need to visit in person. Set type to "Clinic" in the MATCH_CARD. NEVER mention a clinic by name without a [[MATCH_CARD]] — if you reference a clinic, you MUST include its match card so the parent can see the profile and schedule a consultation.
+  - search_clinics returns rich data: all locations, doctors/team members, success rates by age group, cycle counts, and Top 10% status. Use this data to write detailed, personalized blurbs. Mention specific doctors by name when relevant (e.g., "led by Dr. Smith"). If the parent asks about success rates, use the successRatesByAge data to give age-specific answers. Use minSuccessRate parameter when the parent asks for clinics above a certain success rate threshold.
 
   ONE PROFILE AT A TIME RULE (CRITICAL):
   You MUST present exactly ONE match profile per message. NEVER show multiple MATCH_CARD tags in the same response.

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { typeToUrlSlug } from "@/lib/profile-utils";
 import { api } from "@shared/routes";
 import { type ProviderWithRelations } from "@shared/schema";
@@ -787,13 +787,41 @@ export default function MarketplacePage() {
       .catch(() => {});
   }, [dispatch]);
 
-  const [ivfLocation, setIvfLocation] = useState("");
-  const [ivfSearch, setIvfSearch] = useState("");
-  const [eggSource, setEggSource] = useState("own_eggs");
-  const [ageGroup, setAgeGroup] = useState("under_35");
-  const [isNewPatient, setIsNewPatient] = useState("true");
-  const [sortBy, setSortBy] = useState("highest_success");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const ivfLocation = searchParams.get("location") || "";
+  const ivfSearch = searchParams.get("search") || "";
+  const eggSource = searchParams.get("eggSource") || "own_eggs";
+  const ageGroup = searchParams.get("ageGroup") || "under_35";
+  const isNewPatient = searchParams.get("ivfHistory") || "true";
+  const sortBy = searchParams.get("sortBy") || "highest_success";
   const [showCdcInfo, setShowCdcInfo] = useState(false);
+
+  const updateParam = useCallback((key: string, value: string, defaultValue?: string) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (!value || value === defaultValue) {
+        next.delete(key);
+      } else {
+        next.set(key, value);
+      }
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  const setIvfLocation = (v: string) => updateParam("location", v);
+  // Debounce search input to avoid excessive URL updates and API calls
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const [localSearch, setLocalSearch] = useState(ivfSearch);
+  useEffect(() => { setLocalSearch(ivfSearch); }, [ivfSearch]);
+  const setIvfSearch = (v: string) => {
+    setLocalSearch(v);
+    clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => updateParam("search", v), 350);
+  };
+  const setEggSource = (v: string) => updateParam("eggSource", v, "own_eggs");
+  const setAgeGroup = (v: string) => updateParam("ageGroup", v, "under_35");
+  const setIsNewPatient = (v: string) => updateParam("ivfHistory", v, "true");
+  const setSortBy = (v: string) => updateParam("sortBy", v, "highest_success");
 
   const isProviderTab = activeTab === "ivf-clinics" || activeTab === "surrogacy-agencies";
   const isIvfTab = activeTab === "ivf-clinics";
@@ -944,7 +972,7 @@ export default function MarketplacePage() {
               {...(isIvfTab ? {
                 ivfLocation,
                 onIvfLocationChange: setIvfLocation,
-                ivfSearch,
+                ivfSearch: localSearch,
                 onIvfSearchChange: setIvfSearch,
                 ivfEggSource: eggSource,
                 onIvfEggSourceChange: setEggSource,

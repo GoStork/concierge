@@ -174,7 +174,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     if (!provider) return;
 
     const parentName = booking.parentUser.name || booking.attendeeName || "Parent";
-    const sessionTitle = body.profileLabel || null;
+    const sessionTitle = body.profileLabel || provider?.name || null;
 
     // Check for existing provider session with same title
     const parentAccount = await this.prisma.user.findUnique({
