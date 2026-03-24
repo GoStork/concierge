@@ -7,6 +7,9 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { MessageStatus } from "@/components/ui/message-status";
+import { OnlineIndicator } from "@/components/ui/online-indicator";
+import { useOnlineStatus } from "@/hooks/use-online-status";
 import {
   ArrowLeft, MessageSquare, Send, User, Loader2, FileText, X,
   MapPin, Mail, CheckCircle2, UserPlus, Shield, ThumbsUp, ThumbsDown,
@@ -45,11 +48,16 @@ interface ChatSession {
   providerId: string | null;
   providerName: string | null;
   providerLogo: string | null;
+  profilePhotoUrl: string | null;
   providerJoinedAt: string | null;
   humanRequested: boolean;
   lastMessage: string | null;
   lastMessageAt: string;
   lastMessageSenderType: string | null;
+  lastMessageRole: string | null;
+  lastMessageDeliveredAt: string | null;
+  lastMessageReadAt: string | null;
+  unreadCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -64,9 +72,13 @@ interface ProviderSession {
   sessionType: string;
   providerJoinedAt: string | null;
   providerName: string | null;
+  title: string | null;
+  profilePhotoUrl: string | null;
   messageCount: number;
   lastMessage: string | null;
   lastMessageAt: string;
+  lastMessageSenderType: string | null;
+  unreadCount: number;
   createdAt: string;
   pendingQuestions: number;
 }
@@ -80,6 +92,8 @@ interface SessionMessage {
   createdAt: string;
   uiCardType?: string;
   uiCardData?: any;
+  deliveredAt?: string | null;
+  readAt?: string | null;
 }
 
 interface SessionDetail {
@@ -471,17 +485,17 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
 
   if (msg.uiCardType === "attachment") {
     const isImage = data.mimeType?.startsWith("image/");
+    const fileUrl = getPhotoSrc(data.url) || data.url;
     return (
       <div className="mt-1" data-testid="attachment-card">
         {isImage ? (
-          <a href={data.url} target="_blank" rel="noopener noreferrer">
-            <img src={getPhotoSrc(data.url) || undefined} alt={data.originalName} className="max-w-[240px] rounded-lg border" />
+          <a href={fileUrl} target="_blank" rel="noopener noreferrer">
+            <img src={fileUrl} alt={data.originalName} className="max-w-[240px] rounded-lg border" />
           </a>
         ) : (
           <a
-            href={data.url}
-            target="_blank"
-            rel="noopener noreferrer"
+            href={fileUrl}
+            download={data.originalName}
             className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-background hover:bg-muted transition-colors"
           >
             <FileText className="w-5 h-5 shrink-0" style={{ color: brandColor }} />
@@ -752,6 +766,7 @@ export default function ConversationsPage() {
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [replyText, setReplyText] = useState("");
   const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
+  const [expandedParents, setExpandedParents] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     dispatch(setHideBottomNav(!!selectedSessionId));
@@ -828,8 +843,12 @@ export default function ConversationsPage() {
       if (!res.ok) throw new Error("Failed to send");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       setReplyText("");
+      // Optimistic sidebar update
+      queryClient.setQueryData<ProviderSession[]>(["/api/provider/concierge-sessions"], (old) =>
+        old?.map(s => s.id === variables.sessionId ? { ...s, lastMessage: variables.content, lastMessageAt: new Date().toISOString(), lastMessageSenderType: "provider" } : s)
+      );
       queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions", selectedSessionId] });
       queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions"] });
     },
@@ -872,30 +891,18 @@ export default function ConversationsPage() {
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const uploadMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/chat-upload", { method: "POST", credentials: "include", body: formData });
-      if (!res.ok) throw new Error("Upload failed");
-      return res.json();
-    },
-    onSuccess: (data) => {
-      if (!selectedSessionId) return;
-      sendMessageMutation.mutate({
-        sessionId: selectedSessionId,
-        content: data.originalName ? `Shared a file: ${data.originalName}` : "Shared a file",
-        uiCardType: "attachment",
-        uiCardData: data,
-      });
-    },
-  });
+  const [providerStagedFiles, setProviderStagedFiles] = useState<File[]>([]);
+  const [providerUploading, setProviderUploading] = useState(false);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) uploadMutation.mutate(file);
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
     e.target.value = "";
+    setProviderStagedFiles(prev => [...prev, ...Array.from(files)]);
+  };
+
+  const removeProviderStagedFile = (index: number) => {
+    setProviderStagedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleProviderMeeting = async () => {
@@ -964,9 +971,37 @@ export default function ConversationsPage() {
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [sessionDetailQuery.data?.messages?.length, selectedSessionId]);
 
-  const handleSendReply = () => {
-    if (!replyText.trim() || !selectedSessionId) return;
-    sendMessageMutation.mutate({ sessionId: selectedSessionId, content: replyText.trim() });
+  const handleSendReply = async () => {
+    if ((!replyText.trim() && providerStagedFiles.length === 0) || !selectedSessionId) return;
+    // Upload staged files first
+    if (providerStagedFiles.length > 0) {
+      setProviderUploading(true);
+      try {
+        for (const file of providerStagedFiles) {
+          const formData = new FormData();
+          formData.append("file", file);
+          const res = await fetch("/api/chat-upload", { method: "POST", credentials: "include", body: formData });
+          if (!res.ok) throw new Error("Upload failed");
+          const data = await res.json();
+          await sendMessageMutation.mutateAsync({
+            sessionId: selectedSessionId,
+            content: data.originalName ? `Shared a file: ${data.originalName}` : "Shared a file",
+            uiCardType: "attachment",
+            uiCardData: data,
+          });
+        }
+        setProviderStagedFiles([]);
+      } catch {
+        alert("Failed to upload file. Please try again.");
+        setProviderUploading(false);
+        return;
+      }
+      setProviderUploading(false);
+    }
+    // Send text message if any
+    if (replyText.trim()) {
+      sendMessageMutation.mutate({ sessionId: selectedSessionId, content: replyText.trim() });
+    }
   };
 
   const [selectedParentSession, setSelectedParentSession] = useState<ChatSession | null>(null);
@@ -983,6 +1018,21 @@ export default function ConversationsPage() {
     }
   };
 
+  // Send read receipt when opening a session + optimistically clear unread count
+  useEffect(() => {
+    const sid = isProvider ? selectedSessionId : selectedParentSession?.id;
+    if (sid) {
+      // Optimistically clear unread count in both parent and provider caches
+      queryClient.setQueryData<ChatSession[]>(["/api/my/chat-sessions"], (old) =>
+        old?.map(s => s.id === sid ? { ...s, unreadCount: 0 } : s)
+      );
+      queryClient.setQueryData<ProviderSession[]>(["/api/provider/concierge-sessions"], (old) =>
+        old?.map(s => s.id === sid ? { ...s, unreadCount: 0 } : s)
+      );
+      fetch(`/api/chat-sessions/${sid}/read`, { method: "POST", credentials: "include" }).catch(() => {});
+    }
+  }, [isProvider, selectedSessionId, selectedParentSession?.id, queryClient]);
+
   const detail = sessionDetailQuery.data;
   const profile = detail?.user?.parentAccount?.intendedParentProfile;
   const selectedSession = (providerSessionsQuery.data || []).find(s => s.id === selectedSessionId);
@@ -990,6 +1040,19 @@ export default function ConversationsPage() {
   const isConsultationBooked = selectedSession?.status === "CONSULTATION_BOOKED" || detail?.status === "CONSULTATION_BOOKED";
   const isWhisperPhase = !hasJoined && !isConsultationBooked && (selectedSession?.pendingQuestions || 0) > 0;
   const canReply = hasJoined || isWhisperPhase || isConsultationBooked;
+
+  // Online presence tracking
+  const onlineProviderIds = useMemo(() => {
+    if (!isParent) return [];
+    return [...new Set((parentSessionsQuery.data || []).map(s => s.providerId).filter(Boolean) as string[])];
+  }, [isParent, parentSessionsQuery.data]);
+  const onlineUserIds = useMemo(() => {
+    if (!isProvider) return [];
+    const ids = (providerSessionsQuery.data || []).map(s => s.userId).filter(Boolean);
+    if (detail?.user?.id) ids.push(detail.user.id);
+    return [...new Set(ids)];
+  }, [isProvider, providerSessionsQuery.data, detail?.user?.id]);
+  const { statuses: onlineStatuses } = useOnlineStatus(onlineUserIds, onlineProviderIds);
 
   const [parentBookingOverlay, setParentBookingOverlay] = useState<{ slug: string; memberName: string } | null>(null);
 
@@ -1083,7 +1146,7 @@ export default function ConversationsPage() {
                 <div className="w-11 h-11 rounded-full flex-shrink-0 relative">
                   {session.matchmakerAvatar && (
                     <img
-                      src={session.matchmakerAvatar}
+                      src={getPhotoSrc(session.matchmakerAvatar) || undefined}
                       alt={session.matchmakerName || ""}
                       className="w-11 h-11 rounded-full object-cover border absolute inset-0"
                       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
@@ -1099,13 +1162,22 @@ export default function ConversationsPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-ui truncate" style={{ fontWeight: 600 }}>{session.matchmakerName || "Eva"}</span>
-                    <span className="text-[11px] text-muted-foreground flex-shrink-0">{timeAgo(session.lastMessageAt)}</span>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span className={`text-[11px] ${session.unreadCount > 0 ? "font-semibold" : "text-muted-foreground"}`} style={session.unreadCount > 0 ? { color: brandColor } : undefined}>{timeAgo(session.lastMessageAt)}</span>
+                      {session.unreadCount > 0 && (
+                        <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1" style={{ backgroundColor: brandColor }}>
+                          {session.unreadCount}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  {session.title && session.title !== "AI Concierge Chat" && (
-                    <p className="text-xs font-medium truncate mt-0.5" style={{ color: brandColor }}>{session.title}</p>
-                  )}
                   {session.lastMessage && (
-                    <p className="text-sm text-muted-foreground truncate mt-0.5">{truncateMessage(session.lastMessage)}</p>
+                    <p className="text-sm text-muted-foreground truncate mt-0.5 flex items-center gap-1">
+                      {session.lastMessageRole === "user" && (
+                        <MessageStatus deliveredAt={session.lastMessageDeliveredAt} readAt={session.lastMessageReadAt} brandColor={brandColor} className="flex-shrink-0" />
+                      )}
+                      <span className="truncate">{truncateMessage(session.lastMessage)}</span>
+                    </p>
                   )}
                 </div>
               </button>
@@ -1124,36 +1196,70 @@ export default function ConversationsPage() {
               return (
                 <Collapsible key={providerId} open={isExpanded} onOpenChange={() => toggleProvider(providerId)}>
                   <CollapsibleTrigger className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted/30 transition-colors text-left" data-testid={`provider-group-${providerId}`}>
-                    {first.providerLogo ? (
-                      <img src={getPhotoSrc(first.providerLogo) || undefined} alt="" className="w-8 h-8 rounded-full object-cover border flex-shrink-0" />
-                    ) : (
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center bg-muted text-muted-foreground flex-shrink-0">
-                        <Building2 className="w-4 h-4" />
-                      </div>
-                    )}
+                    <div className="w-8 h-8 rounded-full flex-shrink-0 relative">
+                      {first.providerLogo ? (
+                        <img src={getPhotoSrc(first.providerLogo) || undefined} alt="" className="w-8 h-8 rounded-full object-cover border" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center bg-muted text-muted-foreground">
+                          <Building2 className="w-4 h-4" />
+                        </div>
+                      )}
+                      {first.providerId && onlineStatuses[first.providerId] && <OnlineIndicator size="sm" />}
+                    </div>
                     <span className="font-medium text-sm font-ui flex-1">{first.providerName}</span>
                     <span className="text-[11px] text-muted-foreground mr-1">{sessions.length}</span>
                     <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
                   </CollapsibleTrigger>
                   <CollapsibleContent>
-                    {sessions.map(session => (
-                      <button
-                        key={session.id}
-                        className="w-full flex items-center gap-3 pl-14 pr-4 py-3 hover:bg-muted/50 transition-colors text-left border-b border-border/10"
-                        onClick={() => handleParentSessionClick(session)}
-                        data-testid={`chat-session-provider-${session.id}`}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-medium text-sm font-ui truncate">{session.title || session.matchmakerName || "Conversation"}</span>
-                            <span className="text-[11px] text-muted-foreground flex-shrink-0">{timeAgo(session.lastMessageAt)}</span>
+                    {sessions.map(session => {
+                      const photoSrc = getPhotoSrc(session.profilePhotoUrl);
+                      return (
+                        <button
+                          key={session.id}
+                          className="w-full flex items-center gap-3 pl-10 pr-4 py-3 hover:bg-muted/50 transition-colors text-left border-b border-border/10"
+                          onClick={() => handleParentSessionClick(session)}
+                          data-testid={`chat-session-provider-${session.id}`}
+                        >
+                          <div className="w-8 h-8 rounded-full flex-shrink-0 relative">
+                            {photoSrc && (
+                              <img
+                                src={photoSrc}
+                                alt={session.title || ""}
+                                className="w-8 h-8 rounded-full object-cover absolute inset-0"
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                              />
+                            )}
+                            <div
+                              className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                              style={{ backgroundColor: brandColor }}
+                            >
+                              {(session.title || "C").charAt(0)}
+                            </div>
                           </div>
-                          {session.lastMessage && (
-                            <p className="text-sm text-muted-foreground truncate mt-0.5">{truncateMessage(session.lastMessage)}</p>
-                          )}
-                        </div>
-                      </button>
-                    ))}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-medium text-sm font-ui truncate">{session.title || session.matchmakerName || "Conversation"}</span>
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                <span className={`text-[11px] ${session.unreadCount > 0 ? "font-semibold" : "text-muted-foreground"}`} style={session.unreadCount > 0 ? { color: brandColor } : undefined}>{timeAgo(session.lastMessageAt)}</span>
+                                {session.unreadCount > 0 && (
+                                  <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1" style={{ backgroundColor: brandColor }}>
+                                    {session.unreadCount}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {session.lastMessage && (
+                              <p className="text-sm text-muted-foreground truncate mt-0.5 flex items-center gap-1">
+                                {session.lastMessageRole === "user" && (
+                                  <MessageStatus deliveredAt={session.lastMessageDeliveredAt} readAt={session.lastMessageReadAt} brandColor={brandColor} className="flex-shrink-0" />
+                                )}
+                                <span className="truncate">{truncateMessage(session.lastMessage)}</span>
+                              </p>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </CollapsibleContent>
                 </Collapsible>
               );
@@ -1170,7 +1276,7 @@ export default function ConversationsPage() {
       : (selectedParentSession?.matchmakerName || "AI Concierge");
     const parentHeaderAvatar = hasProvider
       ? (selectedParentSession!.providerLogo || null)
-      : selectedParentSession?.matchmakerAvatar;
+      : getPhotoSrc(selectedParentSession?.matchmakerAvatar) || null;
 
     const parentDetailContent = hasParentSession ? (
       <div className="flex flex-col h-full">
@@ -1199,6 +1305,7 @@ export default function ConversationsPage() {
                 {parentHeaderName.charAt(0)}
               </div>
             )}
+            {selectedParentSession?.providerId && onlineStatuses[selectedParentSession.providerId] && <OnlineIndicator size="md" />}
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>
@@ -1292,68 +1399,224 @@ export default function ConversationsPage() {
       !searchQuery ||
       (s.userName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
       (s.userEmail || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.lastMessage || "").toLowerCase().includes(searchQuery.toLowerCase())
+      (s.lastMessage || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.title || "").toLowerCase().includes(searchQuery.toLowerCase())
     );
+
+    // Group sessions by parent userId
+    const parentGroups: Record<string, ProviderSession[]> = {};
+    filteredSessions.forEach(s => {
+      const key = s.userId;
+      if (!parentGroups[key]) parentGroups[key] = [];
+      parentGroups[key].push(s);
+    });
+
+    // Sort groups: most recent first
+    const sortedGroupEntries = Object.entries(parentGroups).sort((a, b) => {
+      const aLatest = Math.max(...a[1].map(s => new Date(s.lastMessageAt).getTime()));
+      const bLatest = Math.max(...b[1].map(s => new Date(s.lastMessageAt).getTime()));
+      return bLatest - aLatest;
+    });
+
+    const toggleParent = (userId: string) => {
+      setExpandedParents(prev => ({ ...prev, [userId]: !prev[userId] }));
+    };
 
     const hasSessions = filteredSessions.length > 0;
     const sidebarContent = hasSessions ? (
       <>
-        {filteredSessions.map(s => {
-          const sIsJoined = s.status === "PROVIDER_JOINED";
-          const sIsBooked = s.status === "CONSULTATION_BOOKED";
-          const hasPending = s.pendingQuestions > 0;
-          return (
-            <button
-              key={s.id}
-              className={`w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left border-b border-border/20 ${
-                selectedSessionId === s.id ? "bg-muted/70" : ""
-              } ${sIsBooked ? "bg-primary/5" : ""}`}
-              onClick={() => setSelectedSessionId(s.id)}
-              data-testid={`provider-session-${s.id}`}
-            >
-              {s.userAvatar ? (
-                <img src={getPhotoSrc(s.userAvatar) || undefined} alt="" className="w-11 h-11 rounded-full object-cover flex-shrink-0" />
-              ) : (
-                <div className="w-11 h-11 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-                  {sIsJoined || sIsBooked ? (
-                    <User className="w-5 h-5 text-muted-foreground" />
+        {sortedGroupEntries.map(([parentUserId, groupSessions]) => {
+          const first = groupSessions[0];
+          const totalUnread = groupSessions.reduce((sum, s) => sum + s.unreadCount, 0);
+          const latestMsg = groupSessions.reduce((latest, s) =>
+            new Date(s.lastMessageAt).getTime() > new Date(latest.lastMessageAt).getTime() ? s : latest
+          , groupSessions[0]);
+          const hasOnlyOne = groupSessions.length === 1;
+          const isExpanded = expandedParents[parentUserId] !== false;
+
+          // If only one session for this parent, render it flat (no collapsible)
+          if (hasOnlyOne) {
+            const s = first;
+            const sIsJoined = s.status === "PROVIDER_JOINED";
+            const sIsBooked = s.status === "CONSULTATION_BOOKED";
+            const hasPending = s.pendingQuestions > 0;
+            return (
+              <button
+                key={s.id}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left border-b border-border/20 ${
+                  selectedSessionId === s.id ? "bg-muted/70" : ""
+                } ${sIsBooked ? "bg-primary/5" : ""}`}
+                onClick={() => setSelectedSessionId(s.id)}
+                data-testid={`provider-session-${s.id}`}
+              >
+                <div className="w-11 h-11 rounded-full flex-shrink-0 relative">
+                  {s.userAvatar ? (
+                    <img src={getPhotoSrc(s.userAvatar) || undefined} alt="" className="w-11 h-11 rounded-full object-cover" />
                   ) : (
-                    <Sparkles className="w-5 h-5" style={{ color: brandColor }} />
+                    <div className="w-11 h-11 rounded-full bg-muted flex items-center justify-center">
+                      {sIsJoined || sIsBooked ? (
+                        <User className="w-5 h-5 text-muted-foreground" />
+                      ) : (
+                        <Sparkles className="w-5 h-5" style={{ color: brandColor }} />
+                      )}
+                    </div>
+                  )}
+                  {onlineStatuses[s.userId] && <OnlineIndicator size="md" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-semibold text-sm font-ui truncate">{s.userName || "Prospective Parent"}</span>
+                      {sIsJoined ? (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[9px] font-bold uppercase flex-shrink-0">
+                          <CheckCircle2 className="w-2.5 h-2.5" />
+                          Joined
+                        </span>
+                      ) : sIsBooked ? (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase flex-shrink-0" style={{ backgroundColor: `${brandColor}15`, color: brandColor }}>
+                          <UserPlus className="w-2.5 h-2.5" />
+                          Ready to Join
+                        </span>
+                      ) : hasPending ? (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] text-[9px] font-bold uppercase flex-shrink-0">
+                          {s.pendingQuestions} pending
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground text-[9px] font-bold uppercase flex-shrink-0">
+                          <MessageCircle className="w-2.5 h-2.5" />
+                          Q&A
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span className={`text-[11px] ${s.unreadCount > 0 ? "font-semibold" : "text-muted-foreground"}`} style={s.unreadCount > 0 ? { color: brandColor } : undefined}>{timeAgo(s.lastMessageAt)}</span>
+                      {s.unreadCount > 0 && (
+                        <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1" style={{ backgroundColor: brandColor }}>
+                          {s.unreadCount}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {s.lastMessage && (
+                    <p className="text-sm text-muted-foreground truncate mt-0.5 flex items-center gap-1">
+                      {s.lastMessageSenderType === "provider" && (
+                        <MessageStatus deliveredAt={null} readAt={null} brandColor={brandColor} className="flex-shrink-0" />
+                      )}
+                      <span className="truncate">{truncateMessage(s.lastMessage)}</span>
+                    </p>
                   )}
                 </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="font-semibold text-sm font-ui truncate">{s.userName || "Prospective Parent"}</span>
-                    {sIsJoined ? (
-                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[9px] font-bold uppercase flex-shrink-0">
-                        <CheckCircle2 className="w-2.5 h-2.5" />
-                        Joined
-                      </span>
-                    ) : sIsBooked ? (
-                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase flex-shrink-0" style={{ backgroundColor: `${brandColor}15`, color: brandColor }}>
-                        <UserPlus className="w-2.5 h-2.5" />
-                        Ready to Join
-                      </span>
-                    ) : hasPending ? (
-                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] text-[9px] font-bold uppercase flex-shrink-0">
-                        {s.pendingQuestions} pending
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground text-[9px] font-bold uppercase flex-shrink-0">
-                        <MessageCircle className="w-2.5 h-2.5" />
-                        Q&A
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[11px] text-muted-foreground flex-shrink-0">{timeAgo(s.lastMessageAt)}</span>
+              </button>
+            );
+          }
+
+          // Multiple sessions — collapsible parent group
+          return (
+            <Collapsible key={parentUserId} open={isExpanded} onOpenChange={() => toggleParent(parentUserId)}>
+              <CollapsibleTrigger className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted/30 transition-colors text-left border-b border-border/20" data-testid={`parent-group-${parentUserId}`}>
+                <div className="w-11 h-11 rounded-full flex-shrink-0 relative">
+                  {first.userAvatar ? (
+                    <img src={getPhotoSrc(first.userAvatar) || undefined} alt="" className="w-11 h-11 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-11 h-11 rounded-full bg-muted flex items-center justify-center">
+                      <User className="w-5 h-5 text-muted-foreground" />
+                    </div>
+                  )}
+                  {onlineStatuses[first.userId] && <OnlineIndicator size="md" />}
                 </div>
-                {s.lastMessage && (
-                  <p className="text-sm text-muted-foreground truncate mt-0.5">{truncateMessage(s.lastMessage)}</p>
-                )}
-              </div>
-            </button>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-sm font-ui truncate">{first.userName || "Prospective Parent"}</span>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span className={`text-[11px] ${totalUnread > 0 ? "font-semibold" : "text-muted-foreground"}`} style={totalUnread > 0 ? { color: brandColor } : undefined}>{timeAgo(latestMsg.lastMessageAt)}</span>
+                      {totalUnread > 0 && (
+                        <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1" style={{ backgroundColor: brandColor }}>
+                          {totalUnread}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground truncate mt-0.5">{latestMsg.lastMessage ? truncateMessage(latestMsg.lastMessage) : ""}</p>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <span className="text-[11px] text-muted-foreground">{groupSessions.length}</span>
+                  <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                </div>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                {groupSessions.map(s => {
+                  const sIsJoined = s.status === "PROVIDER_JOINED";
+                  const sIsBooked = s.status === "CONSULTATION_BOOKED";
+                  const hasPending = s.pendingQuestions > 0;
+                  const photoSrc = getPhotoSrc(s.profilePhotoUrl);
+                  return (
+                    <button
+                      key={s.id}
+                      className={`w-full flex items-center gap-3 pl-10 pr-4 py-3 hover:bg-muted/50 transition-colors text-left border-b border-border/10 ${
+                        selectedSessionId === s.id ? "bg-muted/70" : ""
+                      }`}
+                      onClick={() => setSelectedSessionId(s.id)}
+                      data-testid={`provider-session-${s.id}`}
+                    >
+                      <div className="w-8 h-8 rounded-full flex-shrink-0 relative">
+                        {photoSrc ? (
+                          <img
+                            src={photoSrc}
+                            alt={s.title || ""}
+                            className="w-8 h-8 rounded-full object-cover absolute inset-0"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          />
+                        ) : null}
+                        <div
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                          style={{ backgroundColor: brandColor }}
+                        >
+                          {(s.title || "C").charAt(0)}
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="font-medium text-sm font-ui truncate">{s.title || "Conversation"}</span>
+                            {sIsJoined ? (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[9px] font-bold uppercase flex-shrink-0">
+                                <CheckCircle2 className="w-2.5 h-2.5" />
+                                Joined
+                              </span>
+                            ) : sIsBooked ? (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase flex-shrink-0" style={{ backgroundColor: `${brandColor}15`, color: brandColor }}>
+                                <UserPlus className="w-2.5 h-2.5" />
+                                Ready
+                              </span>
+                            ) : hasPending ? (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] text-[9px] font-bold uppercase flex-shrink-0">
+                                {s.pendingQuestions}
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <span className={`text-[11px] ${s.unreadCount > 0 ? "font-semibold" : "text-muted-foreground"}`} style={s.unreadCount > 0 ? { color: brandColor } : undefined}>{timeAgo(s.lastMessageAt)}</span>
+                            {s.unreadCount > 0 && (
+                              <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1" style={{ backgroundColor: brandColor }}>
+                                {s.unreadCount}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {s.lastMessage && (
+                          <p className="text-sm text-muted-foreground truncate mt-0.5 flex items-center gap-1">
+                            {s.lastMessageSenderType === "provider" && (
+                              <MessageStatus deliveredAt={null} readAt={null} brandColor={brandColor} className="flex-shrink-0" />
+                            )}
+                            <span className="truncate">{truncateMessage(s.lastMessage)}</span>
+                          </p>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </CollapsibleContent>
+            </Collapsible>
           );
         })}
       </>
@@ -1376,17 +1639,20 @@ export default function ConversationsPage() {
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div className="flex items-center gap-2 flex-1">
-            {detail.user.photoUrl ? (
-              <img src={getPhotoSrc(detail.user.photoUrl) || undefined} alt="" className="w-8 h-8 rounded-full object-cover" />
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                {hasJoined || isConsultationBooked ? (
-                  <User className="w-4 h-4 text-muted-foreground" />
-                ) : (
-                  <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
-                )}
-              </div>
-            )}
+            <div className="w-8 h-8 rounded-full flex-shrink-0 relative">
+              {detail.user.photoUrl ? (
+                <img src={getPhotoSrc(detail.user.photoUrl) || undefined} alt="" className="w-8 h-8 rounded-full object-cover" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                  {hasJoined || isConsultationBooked ? (
+                    <User className="w-4 h-4 text-muted-foreground" />
+                  ) : (
+                    <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
+                  )}
+                </div>
+              )}
+              {onlineStatuses[detail.user.id] && <OnlineIndicator size="sm" />}
+            </div>
             <div className="min-w-0">
               <h3 className="font-semibold text-sm font-ui">{detail.user.name || "Prospective Parent"}</h3>
               {detail.title ? (
@@ -1543,7 +1809,7 @@ export default function ConversationsPage() {
                       <>
                         <div className={`flex ${isOwnMessage ? "justify-end" : "justify-start"}`}>
                           <div
-                            className={`max-w-[75%] px-4 py-2.5 text-base leading-relaxed font-ui ${
+                            className={`relative max-w-[75%] px-4 py-2.5 text-base leading-relaxed font-ui ${
                               isOwnMessage
                                 ? "text-white"
                                 : "text-foreground"
@@ -1566,12 +1832,18 @@ export default function ConversationsPage() {
                           >
                             <span>{msg.content}</span>
                             {msg.createdAt && (
-                              <span
-                                className="inline-block align-bottom ml-2 whitespace-nowrap select-none"
-                                style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55, verticalAlign: "bottom", position: "relative", top: "3px" }}
-                              >
-                                {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
-                              </span>
+                              <>
+                                <span className={`inline-block ${isOwnMessage ? "w-[4.75rem]" : "w-[3.5rem]"}`} aria-hidden="true">&nbsp;</span>
+                                <span
+                                  className="absolute bottom-1.5 right-3 whitespace-nowrap select-none flex items-center gap-0.5"
+                                  style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55 }}
+                                >
+                                  {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                                  {isOwnMessage && (
+                                    <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />
+                                  )}
+                                </span>
+                              </>
                             )}
                           </div>
                         </div>
@@ -1594,12 +1866,26 @@ export default function ConversationsPage() {
                     <span>Your answer will be relayed to the parent by the AI concierge</span>
                   </div>
                 )}
+                {providerStagedFiles.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {providerStagedFiles.map((file, i) => (
+                      <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border bg-muted/50 text-xs">
+                        <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: brandColor }} />
+                        <span className="truncate max-w-[140px]">{file.name}</span>
+                        <button onClick={() => removeProviderStagedFile(i)} className="ml-0.5 hover:text-destructive">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
                   <input
                     ref={fileInputRef}
                     type="file"
                     className="hidden"
                     accept="image/*,application/pdf,.doc,.docx,.txt"
+                    multiple
                     capture={undefined}
                     onChange={handleFileSelect}
                     data-testid="input-provider-file"
@@ -1612,10 +1898,10 @@ export default function ConversationsPage() {
                     onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
                     onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={uploadMutation.isPending}
+                    disabled={providerUploading}
                     data-testid="btn-provider-attach"
                   >
-                    {uploadMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
+                    {providerUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
                   </Button>
                   <Input
                     placeholder={hasJoined ? "Type a message to the parent..." : "Type your answer..."}
@@ -1627,19 +1913,19 @@ export default function ConversationsPage() {
                         handleSendReply();
                       }
                     }}
-                    disabled={sendMessageMutation.isPending}
+                    disabled={sendMessageMutation.isPending || providerUploading}
                     className="flex-1 !text-base font-ui rounded-full"
                     data-testid="input-provider-message"
                   />
                   <Button
                     size="sm"
                     onClick={handleSendReply}
-                    disabled={!replyText.trim() || sendMessageMutation.isPending}
+                    disabled={(!replyText.trim() && providerStagedFiles.length === 0) || sendMessageMutation.isPending || providerUploading}
                     className="h-10 w-10 p-0 rounded-full text-white shrink-0"
                     style={{ backgroundColor: brandColor }}
                     data-testid="btn-send-provider-message"
                   >
-                    {sendMessageMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    {(sendMessageMutation.isPending || providerUploading) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   </Button>
                 </div>
               </div>

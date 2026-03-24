@@ -2,6 +2,7 @@ import { Injectable, Inject, Logger } from "@nestjs/common";
 import { Subject, Observable, merge, from } from "rxjs";
 import { filter, map, mergeMap } from "rxjs/operators";
 import { PrismaService } from "../prisma/prisma.service";
+import { trackConnect, trackDisconnect, isUserOnline } from "../../../online-tracker";
 
 export interface BookingEvent {
   type: "booking_created" | "booking_confirmed" | "booking_declined" | "booking_cancelled" | "booking_rescheduled" | "booking_new_time" | "video_participant_joined";
@@ -24,7 +25,6 @@ export interface BookingEvent {
 export class BookingEventsService {
   private readonly logger = new Logger(BookingEventsService.name);
   private subject = new Subject<BookingEvent>();
-  private connectedUsers = new Set<string>();
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
@@ -35,7 +35,7 @@ export class BookingEventsService {
 
     for (const userId of event.targetUserIds) {
       if (userId === event.actorUserId) continue;
-      if (this.connectedUsers.has(userId)) continue;
+      if (isUserOnline(userId)) continue;
 
       try {
         await this.prisma.inAppNotification.create({
@@ -56,7 +56,7 @@ export class BookingEventsService {
   }
 
   subscribe(userId: string): Observable<MessageEvent> {
-    this.connectedUsers.add(userId);
+    trackConnect(userId);
 
     const pending$ = from(this.drainPending(userId)).pipe(
       mergeMap((items) => from(items)),
@@ -81,7 +81,7 @@ export class BookingEventsService {
   }
 
   disconnect(userId: string) {
-    this.connectedUsers.delete(userId);
+    trackDisconnect(userId);
   }
 
   private async drainPending(userId: string): Promise<MessageEvent[]> {

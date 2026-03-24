@@ -55,7 +55,11 @@ export async function registerRoutes(
   app.post(api.auth.logout.path, (req, res, next) => {
     req.logout((err) => {
       if (err) return next(err);
-      res.json({ message: "Logged out" });
+      req.session.destroy((destroyErr) => {
+        if (destroyErr) console.error("Session destroy error:", destroyErr);
+        res.clearCookie("connect.sid", { path: "/" });
+        res.json({ message: "Logged out" });
+      });
     });
   });
 
@@ -298,6 +302,7 @@ export async function registerRoutes(
         providerId: s.providerId,
         providerName: s.provider?.name || null,
         providerLogo: s.provider?.logoUrl || null,
+        profilePhotoUrl: (s as any).profilePhotoUrl || null,
         providerJoinedAt: s.providerJoinedAt,
         humanRequested: s.humanRequested,
         lastMessage: s.messages[0]?.content || null,

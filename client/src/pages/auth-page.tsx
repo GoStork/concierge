@@ -40,6 +40,13 @@ export default function AuthPage() {
 
   useEffect(() => {
     if (autoLoginAttempted.current || user) return;
+    // Skip autofill auto-login if the user just signed out
+    const justLoggedOut = sessionStorage.getItem("just_logged_out");
+    if (justLoggedOut) {
+      sessionStorage.removeItem("just_logged_out");
+      autoLoginAttempted.current = true;
+      return;
+    }
     const checkAutofill = () => {
       if (autoLoginAttempted.current) return;
       const emailEl = document.getElementById("email") as HTMLInputElement | null;

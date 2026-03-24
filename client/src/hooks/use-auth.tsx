@@ -57,9 +57,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await apiRequest("POST", api.auth.logout.path);
     },
     onSuccess: () => {
-      queryClient.setQueryData([api.auth.me.path], null);
+      queryClient.clear();
       dispatch(clearUser());
-      window.location.href = "/";
+      // Flag so auth page skips autofill auto-login
+      sessionStorage.setItem("just_logged_out", "1");
+      window.location.replace("/");
     },
     onError: (error: Error) => {
       toast({

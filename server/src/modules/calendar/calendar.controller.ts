@@ -158,6 +158,117 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  /**
+   * Creates a 3-way chat session (parent ↔ provider ↔ AI) after a parent
+   * actually books a consultation through the calendar widget.
+   */
+  private async createConsultationChatSession(body: any, booking: any) {
+    const parentUserId = booking.parentUser.id;
+    const consultProviderId = body.consultationProviderId || booking.providerUser?.providerId;
+    if (!consultProviderId) return;
+
+    const provider = await this.prisma.provider.findUnique({
+      where: { id: consultProviderId },
+      select: { id: true, name: true },
+    });
+    if (!provider) return;
+
+    const parentName = booking.parentUser.name || booking.attendeeName || "Parent";
+    const sessionTitle = body.profileLabel || null;
+
+    // Check for existing provider session with same title
+    const parentAccount = await this.prisma.user.findUnique({
+      where: { id: parentUserId },
+      select: { parentAccountId: true },
+    });
+    const accountIds = parentAccount?.parentAccountId
+      ? (await this.prisma.user.findMany({ where: { parentAccountId: parentAccount.parentAccountId }, select: { id: true } })).map(u => u.id)
+      : [parentUserId];
+
+    const existingSession = sessionTitle
+      ? await this.prisma.aiChatSession.findFirst({
+          where: { userId: { in: accountIds }, providerId: consultProviderId, title: sessionTitle },
+          orderBy: { updatedAt: "desc" },
+          select: { id: true },
+        })
+      : null;
+
+    let targetSessionId: string;
+    if (existingSession) {
+      targetSessionId = existingSession.id;
+      await this.prisma.aiChatSession.update({
+        where: { id: existingSession.id },
+        data: { status: "CONSULTATION_BOOKED", profilePhotoUrl: body.profilePhotoUrl || undefined, updatedAt: new Date() },
+      });
+      this.logger.log(`[CONSULTATION] Reusing session ${targetSessionId} for provider ${consultProviderId}`);
+    } else {
+      const newSession = await this.prisma.aiChatSession.create({
+        data: {
+          userId: parentUserId,
+          providerId: consultProviderId,
+          providerName: provider.name,
+          status: "CONSULTATION_BOOKED",
+          matchmakerId: body.matchmakerId || undefined,
+          title: sessionTitle,
+          profilePhotoUrl: body.profilePhotoUrl || undefined,
+        },
+      });
+      targetSessionId = newSession.id;
+      this.logger.log(`[CONSULTATION] Created session ${targetSessionId} for provider ${consultProviderId}`);
+    }
+
+    // System message for provider
+    await this.prisma.aiChatMessage.create({
+      data: {
+        sessionId: targetSessionId,
+        role: "assistant",
+        content: `Great news! ${parentName} has scheduled a consultation. You can now join their group chat to communicate directly.`,
+        senderType: "system",
+        uiCardType: "provider_only",
+      },
+    });
+
+    // Notify provider users
+    const providerUsers = await this.prisma.user.findMany({
+      where: { providerId: consultProviderId },
+      select: { id: true },
+    });
+    for (const pu of providerUsers) {
+      await this.prisma.inAppNotification.create({
+        data: {
+          userId: pu.id,
+          eventType: "CONSULTATION_BOOKED_CHAT",
+          payload: {
+            sessionId: targetSessionId,
+            parentName,
+            message: `${parentName} has scheduled a consultation — click "Join Group Chat" to start chatting directly`,
+          },
+        },
+      });
+    }
+
+    // Notify admins
+    const admins = await this.prisma.user.findMany({
+      where: { roles: { has: "GOSTORK_ADMIN" } },
+      select: { id: true },
+    });
+    for (const admin of admins) {
+      await this.prisma.inAppNotification.create({
+        data: {
+          userId: admin.id,
+          eventType: "CONSULTATION_REQUESTED",
+          payload: {
+            parentName,
+            parentUserId,
+            providerId: consultProviderId,
+            providerName: provider.name,
+            message: `${parentName} requested a consultation with ${provider.name}`,
+          },
+        },
+      });
+    }
+  }
+
   @Get("config")
   @UseGuards(SessionOrJwtGuard)
   async getConfig(@Req() req: Request, @Query("browserTimezone") browserTimezone?: string) {
@@ -1601,6 +1712,13 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
           select: { id: true, name: true, email: true },
         });
       }
+    }
+
+    // Create 3-way chat session when booking originates from AI concierge consultation
+    if (body.aiSessionId && booking.parentUser) {
+      this.createConsultationChatSession(body, booking).catch((e) =>
+        this.logger.error(`Failed to create consultation chat session: ${e.message}`),
+      );
     }
 
     return { ...booking, parentAccountMembers };

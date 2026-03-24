@@ -166,7 +166,8 @@ async function createSessionStore(): Promise<session.Store> {
 
     res.on("finish", () => {
       const duration = Date.now() - start;
-      if (path.startsWith("/api")) {
+      const quietPaths = ["/api/calendar/bookings/imminent", "/api/brand/settings", "/api/user", "/api/uploads/gcs", "/api/uploads/proxy"];
+      if (path.startsWith("/api") && !quietPaths.includes(path)) {
         let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
         if (capturedJsonResponse) {
           const json = JSON.stringify(capturedJsonResponse);

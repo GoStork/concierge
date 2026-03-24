@@ -2,6 +2,7 @@ import { Injectable, Inject, Logger } from "@nestjs/common";
 import { Subject, Observable, merge, from } from "rxjs";
 import { filter, map, mergeMap, delay } from "rxjs/operators";
 import { PrismaService } from "../prisma/prisma.service";
+import { trackConnect, trackDisconnect, getConnectedCount } from "../../../online-tracker";
 
 export interface AppEvent {
   type: "cost_sheet_submitted" | "cost_sheet_approved" | "cost_sheet_rejected" | "cost_sheet_deleted";
@@ -14,7 +15,6 @@ export interface AppEvent {
 export class AppEventsService {
   private readonly logger = new Logger(AppEventsService.name);
   private subject = new Subject<AppEvent>();
-  private connectedCounts = new Map<string, number>();
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
@@ -23,7 +23,7 @@ export class AppEventsService {
 
     for (const userId of event.targetUserIds) {
       if (userId === event.actorUserId) continue;
-      if ((this.connectedCounts.get(userId) || 0) > 0) continue;
+      if (getConnectedCount(userId) > 0) continue;
 
       try {
         await this.prisma.inAppNotification.create({
@@ -43,8 +43,7 @@ export class AppEventsService {
   }
 
   subscribe(userId: string): Observable<MessageEvent> {
-    const currentCount = this.connectedCounts.get(userId) || 0;
-    this.connectedCounts.set(userId, currentCount + 1);
+    trackConnect(userId);
 
     const pending$ = from(this.drainPending(userId)).pipe(
       delay(1500),
@@ -69,12 +68,7 @@ export class AppEventsService {
   }
 
   disconnect(userId: string) {
-    const currentCount = this.connectedCounts.get(userId) || 0;
-    if (currentCount > 1) {
-      this.connectedCounts.set(userId, currentCount - 1);
-    } else {
-      this.connectedCounts.delete(userId);
-    }
+    trackDisconnect(userId);
   }
 
   private async drainPending(userId: string): Promise<MessageEvent[]> {

@@ -43,9 +43,8 @@ export default defineConfig({
             if (id.includes("@tanstack") || id.includes("zod") || id.includes("react-hook-form")) {
               return "vendor-utils";
             }
-            if (id.includes("lucide-react") || id.includes("date-fns") || id.includes("radix-ui")) {
-              return "vendor-ui";
-            }
+            // Keep radix-ui, lucide, and date-fns in the main vendor chunk
+            // to avoid circular dependencies with vendor-react
             return "vendor";
           }
         },

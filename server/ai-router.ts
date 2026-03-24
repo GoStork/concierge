@@ -3,6 +3,13 @@ import OpenAI from "openai";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { prisma } from "./db";
+import { isUserOnline } from "./online-tracker";
+
+// Clean session titles: strip alphabetic prefixes from IDs (e.g. "Surrogate #pdf-23068" → "Surrogate #23068")
+function cleanTitle(title: string | null | undefined): string | null {
+  if (!title) return null;
+  return title.replace(/#([A-Za-z]+-)/g, "#");
+}
 
 export const aiRouter = Router();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -385,7 +392,7 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
     const messages = await prisma.aiChatMessage.findMany({
       where,
       orderBy: { createdAt: "asc" },
-      select: { id: true, role: true, content: true, senderType: true, senderName: true, createdAt: true, uiCardType: true, uiCardData: true },
+      select: { id: true, role: true, content: true, senderType: true, senderName: true, createdAt: true, uiCardType: true, uiCardData: true, deliveredAt: true, readAt: true },
     });
     const filteredMessages = isProvider ? messages : messages.filter((m: any) => {
       const data = m.uiCardData as any;
@@ -394,7 +401,22 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       if (m.senderType === "system" && !session.providerId) return false;
       return true;
     });
-    res.json({ messages: filteredMessages, sessionTitle: session.title || null, providerName: session.provider?.name || null });
+
+    // Auto-mark messages from others as delivered when fetched
+    const undeliveredFromOthers = filteredMessages.filter(m =>
+      !m.deliveredAt && (
+        isProvider ? m.senderType !== "provider" : m.role !== "user"
+      )
+    );
+    if (undeliveredFromOthers.length > 0) {
+      prisma.aiChatMessage.updateMany({
+        where: { id: { in: undeliveredFromOthers.map(m => m.id) }, deliveredAt: null },
+        data: { deliveredAt: new Date() },
+      }).catch(() => {});
+      for (const m of undeliveredFromOthers) (m as any).deliveredAt = new Date();
+    }
+
+    res.json({ messages: filteredMessages, sessionTitle: cleanTitle(session.title) || null, providerName: session.provider?.name || null });
   } catch (e: any) {
     res.status(500).json({ message: e.message });
   }
@@ -419,7 +441,7 @@ aiRouter.get("/my-session", async (req: Request, res: Response) => {
     const messages = await prisma.aiChatMessage.findMany({
       where: { sessionId: session.id },
       orderBy: { createdAt: "asc" },
-      select: { id: true, role: true, content: true, senderType: true, senderName: true, createdAt: true, uiCardType: true, uiCardData: true },
+      select: { id: true, role: true, content: true, senderType: true, senderName: true, createdAt: true, uiCardType: true, uiCardData: true, deliveredAt: true, readAt: true },
     });
     const filteredMessages = messages.filter((m: any) => {
       const data = m.uiCardData as any;
@@ -428,7 +450,7 @@ aiRouter.get("/my-session", async (req: Request, res: Response) => {
       return true;
     });
     res.json({
-      session: { id: session.id, matchmakerId: session.matchmakerId, title: session.title, providerName: session.provider?.name || null },
+      session: { id: session.id, matchmakerId: session.matchmakerId, title: cleanTitle(session.title), providerName: session.provider?.name || null },
       messages: filteredMessages,
     });
   } catch (e: any) {
@@ -621,6 +643,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         sessionId: currentSessionId,
         role: "user",
         content: req.body.message,
+        senderType: "parent",
         senderName: parentDisplayName,
       },
     });
@@ -630,11 +653,21 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       select: { providerJoinedAt: true, providerId: true, status: true },
     });
     if (currentSession?.providerJoinedAt && currentSession.status === "PROVIDER_JOINED") {
+      let userMsgDeliveredAt: string | null = null;
       if (currentSession.providerId) {
         const providerUsers = await prisma.user.findMany({
           where: { providerId: currentSession.providerId },
           select: { id: true },
         });
+        // Mark delivered if any provider user is online
+        if (providerUsers.some(u => isUserOnline(u.id))) {
+          const now = new Date();
+          userMsgDeliveredAt = now.toISOString();
+          prisma.aiChatMessage.update({
+            where: { id: savedUserMsg.id },
+            data: { deliveredAt: now },
+          }).catch(() => {});
+        }
         for (const pu of providerUsers) {
           await prisma.inAppNotification.create({
             data: {
@@ -653,6 +686,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         message: { id: null, content: "", senderType: "ai", role: "assistant" },
         sessionId: currentSessionId,
         userMessageId: savedUserMsg.id,
+        userMessageDeliveredAt: userMsgDeliveredAt,
         skipAiResponse: true,
       });
     }
@@ -1397,7 +1431,7 @@ When the parent asks a follow-up question about a specific egg donor (eye color,
       }
     }
 
-    const schedulingIntent = /what.?s next|what happens next|what now|next step|move forward|let.?s (go|proceed|do it|move)|ready to (book|schedule|proceed)|i.?m ready|let.?s book|sign me up|yes.*schedule|schedule.*consultation|yes.*free consultation|book.*consultation/i.test(userMessage);
+    const schedulingIntent = /what.?s next|what happens next|what now|next step|move forward|let.?s (go|proceed|do it|move)|ready to (book|schedule|proceed)|i.?m ready|let.?s book|sign me up|yes.*schedule|schedule.*consultation|yes.*free consultation|book.*consultation|^schedule[.!]?$/i.test(userMessage.trim());
     const shortAffirmative = /^(yes|sure|ok|absolutely|definitely|please|do it|set it up|sounds good|let.?s do it|i.?d love that|that.?d be great|go ahead|go for it)[.!,\s]*$/i.test(userMessage.trim());
     let affirmativeIsScheduling = false;
     if (shortAffirmative && currentSessionId) {
@@ -2153,7 +2187,7 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
     }
 
     let consultationCard: any = null;
-    let consultationTargetSessionId: string | null = null;
+
     const consultationMatch = finalContent.match(/\[\[CONSULTATION_BOOKING:(.*?)\]\]/);
     if (consultationMatch) {
       const consultProviderId = consultationMatch[1].trim();
@@ -2201,8 +2235,11 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
             memberPhoto,
           };
 
+          // Compute profile label and attach metadata to consultationCard.
+          // The 3-way chat session is created LATER when the parent actually books via the calendar.
           if (currentSessionId) {
             let profileLabel: string | null = null;
+            let profilePhotoUrl: string | null = null;
             try {
               const richMessages = await prisma.aiChatMessage.findMany({
                 where: { sessionId: currentSessionId, uiCardType: "rich" },
@@ -2215,12 +2252,14 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
                 const matched = cards.find((c: any) => c.ownerProviderId === consultProviderId || c.providerId === consultProviderId);
                 if (matched?.name) {
                   profileLabel = matched.name;
+                  if (matched.photo) profilePhotoUrl = matched.photo;
                   break;
                 }
               }
               if (!profileLabel) {
                 const mc = await findLatestMatchCard(currentSessionId);
                 if (mc?.name) profileLabel = mc.name;
+                if (mc?.photo || mc?.photoUrl) profilePhotoUrl = mc.photo || mc.photoUrl;
               }
             } catch (e) {
               console.error("[CONSULTATION] Error finding match card for profile label:", e);
@@ -2260,92 +2299,13 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
               }
             }
 
-            const currentUserForAccount = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
-            const accountIds = currentUserForAccount?.parentAccountId
-              ? (await prisma.user.findMany({ where: { parentAccountId: currentUserForAccount.parentAccountId }, select: { id: true } })).map((u: any) => u.id)
-              : [userId];
             const sessionTitle = enrichedLabel || profileLabel || null;
-            const existingProviderSession = sessionTitle
-              ? await prisma.aiChatSession.findFirst({
-                  where: { userId: { in: accountIds }, providerId: consultProviderId, title: sessionTitle },
-                  orderBy: { updatedAt: "desc" },
-                  select: { id: true },
-                })
-              : null;
-
-            let targetSessionId: string;
-            if (existingProviderSession) {
-              targetSessionId = existingProviderSession.id;
-              await prisma.aiChatSession.update({
-                where: { id: existingProviderSession.id },
-                data: {
-                  status: "CONSULTATION_BOOKED",
-                  updatedAt: new Date(),
-                },
-              });
-              consultationTargetSessionId = existingProviderSession.id;
-              console.log(`[CONSULTATION] Reusing existing provider session ${targetSessionId} for provider ${consultProviderId} with title "${sessionTitle}" (AI concierge session ${currentSessionId} preserved)`);
-            } else {
-              const newSession = await prisma.aiChatSession.create({
-                data: {
-                  userId,
-                  providerId: consultProviderId,
-                  providerName: consultProvider.name,
-                  status: "CONSULTATION_BOOKED",
-                  matchmakerId: currentSession?.matchmakerId || undefined,
-                  title: sessionTitle,
-                },
-              });
-              targetSessionId = newSession.id;
-              consultationTargetSessionId = newSession.id;
-              console.log(`[CONSULTATION] Created new provider session ${targetSessionId} for provider ${consultProviderId} (AI concierge session ${currentSessionId} preserved)`);
-            }
-
-            await prisma.aiChatMessage.create({
-              data: {
-                sessionId: targetSessionId,
-                role: "assistant",
-                content: `Great news! ${userRecord?.name || firstName} has scheduled a consultation. You can now join their group chat to communicate directly.`,
-                senderType: "system",
-                uiCardType: "provider_only",
-              },
-            });
-
-            const puResult = await mcpClient!.callTool({
-              name: "get_provider_users",
-              arguments: { providerId: consultProviderId },
-            });
-            const providerUsers = JSON.parse((puResult.content as any)?.[0]?.text || "[]");
-            for (const pu of providerUsers) {
-              await prisma.inAppNotification.create({
-                data: {
-                  userId: pu.id,
-                  eventType: "CONSULTATION_BOOKED_CHAT",
-                  payload: {
-                    sessionId: targetSessionId,
-                    parentName: userRecord?.name || firstName,
-                    message: `${firstName} has scheduled a consultation — click "Join Group Chat" to start chatting directly`,
-                  },
-                },
-              });
-            }
-          }
-
-          const admins = await prisma.user.findMany({ where: { roles: { has: "GOSTORK_ADMIN" } }, select: { id: true } });
-          for (const admin of admins) {
-            await prisma.inAppNotification.create({
-              data: {
-                userId: admin.id,
-                eventType: "CONSULTATION_REQUESTED",
-                payload: {
-                  parentName: userRecord?.name || firstName,
-                  parentUserId: userId,
-                  providerId: consultProviderId,
-                  providerName: consultProvider.name,
-                  message: `${firstName} requested a consultation with ${consultProvider.name}`,
-                },
-              },
-            });
+            // Attach metadata so the booking flow can create the 3-way session later
+            consultationCard.aiSessionId = currentSessionId;
+            consultationCard.matchmakerId = currentSession?.matchmakerId || null;
+            consultationCard.profileLabel = sessionTitle;
+            consultationCard.profilePhotoUrl = profilePhotoUrl;
+            console.log(`[CONSULTATION] Calendar card shown for provider ${consultProviderId}, profile "${sessionTitle}" (session will be created on actual booking)`);
           }
         }
       } catch (e) {
@@ -2363,18 +2323,26 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
 
     const replySessionId = currentSessionId;
 
+    const now = new Date();
     const savedAiMessage = await prisma.aiChatMessage.create({
       data: {
         sessionId: replySessionId,
         role: "assistant",
         content: finalContent,
+        deliveredAt: now,
         ...(Object.keys(uiExtras).length > 0 ? { uiCardType: "rich", uiCardData: uiExtras } : {}),
       },
     });
+    // Mark the user's message as delivered (AI processed it)
+    prisma.aiChatMessage.update({
+      where: { id: savedUserMsg.id },
+      data: { deliveredAt: now },
+    }).catch(() => {});
 
     res.json({
       sessionId: replySessionId,
       userMessageId: savedUserMsg.id,
+      userMessageDeliveredAt: now.toISOString(),
       message: savedAiMessage,
       quickReplies: quickReplies.length > 0 ? quickReplies : undefined,
       multiSelect: multiSelect || undefined,
@@ -2383,7 +2351,6 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
       prepDoc: sendPrepDoc || undefined,
       humanNeeded: humanNeeded || undefined,
       consultationCard: consultationCard || undefined,
-      consultationSessionId: consultationTargetSessionId || undefined,
     });
   } catch (error: any) {
     console.error("AI Router Error:", error);

@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { prisma } from "./db";
 import { generateAgreement } from "./pandadoc-service";
 import { StorageService } from "./src/modules/storage/storage.service";
+import { isUserOnline, getOnlineUserIds } from "./online-tracker";
 
 const storageService = new StorageService();
 
@@ -23,6 +24,12 @@ function escapeHtml(str: string): string {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
 
+// Clean session titles: strip alphabetic prefixes from IDs (e.g. "Surrogate #pdf-23068" → "Surrogate #23068")
+function cleanSessionTitle(title: string | null): string | null {
+  if (!title) return null;
+  return title.replace(/#([A-Za-z]+-)/g, "#");
+}
+
 function requireAuth(req: Request, res: Response, next: () => void) {
   if (!req.isAuthenticated || !req.isAuthenticated() || !req.user) {
     return res.status(401).json({ message: "Not authenticated" });
@@ -31,6 +38,46 @@ function requireAuth(req: Request, res: Response, next: () => void) {
 }
 
 export const chatRouter = Router();
+
+// Returns online status for a list of user IDs (or provider IDs).
+// Query: ?userIds=id1,id2 or ?providerIds=id1,id2
+chatRouter.get("/api/online-status", requireAuth, async (req, res) => {
+  try {
+    const result: Record<string, boolean> = {};
+
+    const userIdParam = req.query.userIds as string | undefined;
+    if (userIdParam) {
+      const userIds = userIdParam.split(",").filter(Boolean);
+      for (const id of userIds) {
+        result[id] = isUserOnline(id);
+      }
+    }
+
+    const providerIdParam = req.query.providerIds as string | undefined;
+    if (providerIdParam) {
+      const providerIds = providerIdParam.split(",").filter(Boolean);
+      if (providerIds.length > 0) {
+        const onlineUserIds = new Set(getOnlineUserIds());
+        const providerUsers = await prisma.user.findMany({
+          where: { providerId: { in: providerIds } },
+          select: { id: true, providerId: true },
+        });
+        const providerOnline: Record<string, boolean> = {};
+        for (const pid of providerIds) providerOnline[pid] = false;
+        for (const u of providerUsers) {
+          if (u.providerId && onlineUserIds.has(u.id)) {
+            providerOnline[u.providerId] = true;
+          }
+        }
+        Object.assign(result, providerOnline);
+      }
+    }
+
+    res.json(result);
+  } catch (e: any) {
+    res.status(500).json({ message: e.message });
+  }
+});
 
 chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
   const user = req.user as any;
@@ -51,9 +98,25 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       ? await prisma.matchmaker.findMany({ where: { id: { in: matchmakerIds } } })
       : [];
     const matchmakerMap = Object.fromEntries(matchmakers.map(m => [m.id, m]));
+    // Count unread messages per session (messages from others that parent hasn't read)
+    const sessionIds = sessions.map(s => s.id);
+    const unreadCounts = sessionIds.length > 0
+      ? await prisma.aiChatMessage.groupBy({
+          by: ["sessionId"],
+          where: {
+            sessionId: { in: sessionIds },
+            readAt: null,
+            role: "assistant",
+          },
+          _count: true,
+        })
+      : [];
+    const unreadMap: Record<string, number> = {};
+    for (const uc of unreadCounts) unreadMap[uc.sessionId] = uc._count;
+
     const result = sessions.map(s => ({
       id: s.id,
-      title: s.title,
+      title: cleanSessionTitle(s.title),
       status: s.status,
       matchmakerId: s.matchmakerId,
       matchmakerName: s.matchmakerId ? matchmakerMap[s.matchmakerId]?.name : null,
@@ -62,11 +125,16 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       providerId: s.providerId,
       providerName: s.provider?.name || null,
       providerLogo: s.provider?.logoUrl || null,
+      profilePhotoUrl: (s as any).profilePhotoUrl || null,
       providerJoinedAt: s.providerJoinedAt,
       humanRequested: s.humanRequested,
       lastMessage: s.messages[0]?.content || null,
       lastMessageAt: s.messages[0]?.createdAt || s.updatedAt,
       lastMessageSenderType: s.messages[0]?.senderType || null,
+      lastMessageRole: s.messages[0]?.role || null,
+      lastMessageDeliveredAt: s.messages[0]?.deliveredAt || null,
+      lastMessageReadAt: s.messages[0]?.readAt || null,
+      unreadCount: unreadMap[s.id] || 0,
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
     }));
@@ -74,6 +142,54 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
   } catch (e) {
     console.error("My chat sessions error:", e);
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Mark messages as read when a user opens/views a chat session
+chatRouter.post("/api/chat-sessions/:id/read", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  try {
+    const session = await prisma.aiChatSession.findUnique({
+      where: { id: req.params.id },
+      select: { userId: true, providerId: true },
+    });
+    if (!session) return res.status(404).json({ message: "Not found" });
+
+    // Determine which messages to mark as read (messages NOT sent by this viewer)
+    const isProvider = !!user.providerId && session.providerId === user.providerId;
+    let isAccountMember = false;
+    if (!isProvider && user.parentAccountId) {
+      const owner = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
+      isAccountMember = !!owner && owner.parentAccountId === user.parentAccountId;
+    }
+    const isOwner = session.userId === user.id;
+    const isAdmin = (user.roles || []).includes("GOSTORK_ADMIN");
+    if (!isOwner && !isAccountMember && !isProvider && !isAdmin) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const now = new Date();
+    // For providers: mark parent/AI messages as read
+    // For parents: mark provider/AI messages as read
+    const senderFilter = isProvider
+      ? { senderType: { notIn: ["provider"] } }
+      : { NOT: { AND: [{ role: "user" }, { senderType: { in: ["user", "parent"] } }] } };
+
+    const updated = await prisma.aiChatMessage.updateMany({
+      where: {
+        sessionId: req.params.id,
+        readAt: null,
+        ...(isProvider
+          ? { senderType: { not: "provider" } }
+          : { OR: [{ role: "assistant" }, { senderType: { in: ["provider", "system", "human", "ai"] } }] }),
+      },
+      data: { readAt: now, deliveredAt: now },
+    });
+
+    res.json({ updated: updated.count });
+  } catch (e: any) {
+    console.error("Mark read error:", e);
+    res.status(500).json({ message: e.message });
   }
 });
 
@@ -314,6 +430,22 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       pendingBySession[pc.sessionId] = pc._count;
     }
 
+    // Count unread messages per session (messages from non-providers that provider hasn't read)
+    const sessionIds = sessions.map(s => s.id);
+    const unreadCounts = sessionIds.length > 0
+      ? await prisma.aiChatMessage.groupBy({
+          by: ["sessionId"],
+          where: {
+            sessionId: { in: sessionIds },
+            readAt: null,
+            senderType: { in: ["parent", "user"] },
+          },
+          _count: true,
+        })
+      : [];
+    const unreadMap: Record<string, number> = {};
+    for (const uc of unreadCounts) unreadMap[uc.sessionId] = uc._count;
+
     const result = sessions.map(s => {
       const isJoined = s.status === "PROVIDER_JOINED";
       const isConsultationBooked = s.status === "CONSULTATION_BOOKED";
@@ -327,9 +459,13 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
         sessionType: (s as any).sessionType || "PARENT",
         providerJoinedAt: s.providerJoinedAt,
         providerName: (s as any).providerName,
+        title: cleanSessionTitle(s.title) || null,
+        profilePhotoUrl: (s as any).profilePhotoUrl || null,
         messageCount: s._count.messages,
         lastMessage: s.messages[0]?.content?.slice(0, 120) || null,
         lastMessageAt: s.messages[0]?.createdAt || s.updatedAt,
+        lastMessageSenderType: s.messages[0]?.senderType || null,
+        unreadCount: unreadMap[s.id] || 0,
         createdAt: s.createdAt,
         pendingQuestions: pendingBySession[s.id] || 0,
       };
@@ -397,6 +533,7 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
 
     const responseSession = {
       ...session,
+      title: cleanSessionTitle(session.title),
       user: showIdentity ? session.user : {
         id: session.user.id,
         name: "Prospective Parent",
@@ -409,6 +546,13 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
       messages: isJoined ? session.messages : providerMessages,
       accountMembers: showIdentity ? accountMembers.map(m => ({ id: m.id, displayName: formatInitials(m) })) : [],
     };
+
+    // Auto-mark non-provider messages as delivered when provider views them
+    prisma.aiChatMessage.updateMany({
+      where: { sessionId: session.id, senderType: { not: "provider" }, deliveredAt: null },
+      data: { deliveredAt: new Date() },
+    }).catch(() => {});
+
     res.json(responseSession);
   } catch (e: any) {
     console.error("Provider concierge session detail error:", e);
@@ -503,6 +647,15 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
     };
     if (uiCardType) messageData.uiCardType = uiCardType;
     if (uiCardData) messageData.uiCardData = uiCardData;
+
+    // Check if the parent (or any shared account member) is online — if so, mark as delivered
+    const sessionOwnerForDelivery = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
+    const parentUserIds = sessionOwnerForDelivery?.parentAccountId
+      ? (await prisma.user.findMany({ where: { parentAccountId: sessionOwnerForDelivery.parentAccountId }, select: { id: true } })).map(u => u.id)
+      : [session.userId];
+    if (parentUserIds.some(id => isUserOnline(id))) {
+      messageData.deliveredAt = new Date();
+    }
 
     const message = await prisma.aiChatMessage.create({ data: messageData });
 
@@ -723,6 +876,18 @@ chatRouter.post("/api/chat-session/:id/message", requireAuth, async (req, res) =
     };
     if (uiCardType) messageData.uiCardType = uiCardType;
     if (uiCardData) messageData.uiCardData = uiCardData;
+
+    // Check if any provider user is online — if so, mark as delivered immediately
+    if (session.providerId) {
+      const providerUsers = await prisma.user.findMany({
+        where: { providerId: session.providerId },
+        select: { id: true },
+      });
+      const anyOnline = providerUsers.some(u => isUserOnline(u.id));
+      if (anyOnline) {
+        messageData.deliveredAt = new Date();
+      }
+    }
 
     const message = await prisma.aiChatMessage.create({ data: messageData });
     res.json(message);

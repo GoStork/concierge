@@ -867,6 +867,7 @@ model AiChatSession {
   providerId       String?
   providerJoinedAt DateTime?
   providerName     String?
+  profilePhotoUrl  String?
   matchmakerId     String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
@@ -884,17 +885,19 @@ model AiChatSession {
 }
 
 model AiChatMessage {
-  id         String        @id @default(uuid())
-  sessionId  String
-  role       String        
-  content    String        
-  senderType String        @default("ai")
-  senderName String?       
-  uiCardType String?       
-  uiCardData Json?         
-  createdAt  DateTime      @default(now())
-  
-  session    AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  id          String        @id @default(uuid())
+  sessionId   String
+  role        String
+  content     String
+  senderType  String        @default("ai")
+  senderName  String?
+  uiCardType  String?
+  uiCardData  Json?
+  deliveredAt DateTime?
+  readAt      DateTime?
+  createdAt   DateTime      @default(now())
+
+  session     AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId])
 }

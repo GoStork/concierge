@@ -5,6 +5,7 @@ import {
   Param,
   Get,
   Req,
+  Res,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -66,14 +67,16 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Logout and destroy session" })
   @ApiResponse({ status: 200, description: "Logged out", type: LogoutResponseDto })
-  logout(@Req() req: Request) {
-    return new Promise<LogoutResponseDto>((resolve, reject) => {
-      req.logout((err) => {
-        if (err) {
-          reject(new InternalServerErrorException("Logout failed"));
-          return;
-        }
-        resolve({ message: "Logged out" });
+  logout(@Req() req: Request, @Res() res: any) {
+    req.logout((err) => {
+      if (err) {
+        res.status(500).json({ message: "Logout failed" });
+        return;
+      }
+      (req as any).session?.destroy?.((destroyErr: any) => {
+        if (destroyErr) console.error("Session destroy error:", destroyErr);
+        res.clearCookie("connect.sid", { path: "/" });
+        res.json({ message: "Logged out" });
       });
     });
   }

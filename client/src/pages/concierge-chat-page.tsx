@@ -9,6 +9,7 @@ import { getPhotoSrc } from "@/lib/profile-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { MessageStatus } from "@/components/ui/message-status";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-deck-card";
@@ -46,6 +47,10 @@ interface ConsultationCardData {
   memberBookingSlug?: string;
   memberName?: string;
   memberPhoto?: string;
+  aiSessionId?: string;
+  matchmakerId?: string | null;
+  profileLabel?: string | null;
+  profilePhotoUrl?: string | null;
 }
 
 interface ChatMessage {
@@ -61,6 +66,8 @@ interface ChatMessage {
   senderName?: string;
   uiCardType?: string;
   uiCardData?: any;
+  deliveredAt?: string | null;
+  readAt?: string | null;
   createdAt?: string;
 }
 
@@ -432,11 +439,13 @@ export function InlineBookingCalendar({
   memberName,
   brandColor,
   existingBooking: existingBookingProp,
+  consultationMeta,
 }: {
   slug: string;
   memberName: string;
   brandColor: string;
   existingBooking?: any;
+  consultationMeta?: { aiSessionId?: string; matchmakerId?: string | null; profileLabel?: string | null; profilePhotoUrl?: string | null; providerId?: string };
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -556,6 +565,13 @@ export function InlineBookingCalendar({
       if (finalAttendees.length > 0) {
         body.additionalAttendees = finalAttendees.map(a => a.email);
         body.attendeeDetails = Object.fromEntries(finalAttendees.map(a => [a.email, { name: a.name, phone: a.phone }]));
+      }
+      if (consultationMeta?.aiSessionId) {
+        body.aiSessionId = consultationMeta.aiSessionId;
+        body.consultationProviderId = consultationMeta.providerId;
+        body.matchmakerId = consultationMeta.matchmakerId;
+        body.profileLabel = consultationMeta.profileLabel;
+        body.profilePhotoUrl = consultationMeta.profilePhotoUrl;
       }
       const res = await apiRequest("POST", `/api/calendar/book/${slug}`, body);
       return res.json();
@@ -1105,6 +1121,7 @@ function ConsultationBookingCard({
             memberName={card.memberName || card.providerName}
             brandColor={brandColor}
             existingBooking={existingBooking}
+            consultationMeta={{ aiSessionId: card.aiSessionId, matchmakerId: card.matchmakerId, profileLabel: card.profileLabel, profilePhotoUrl: card.profilePhotoUrl, providerId: card.providerId }}
           />
         </div>
       </div>
@@ -1536,17 +1553,17 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo }: { msg: Cha
 
   if (msg.uiCardType === "attachment") {
     const isImage = data.mimeType?.startsWith("image/");
+    const fileUrl = getPhotoSrc(data.url) || data.url;
     return (
       <div data-testid="concierge-attachment-card">
         {isImage ? (
-          <a href={getPhotoSrc(data.url) || data.url} target="_blank" rel="noopener noreferrer">
-            <img src={getPhotoSrc(data.url) || undefined} alt={data.originalName} className="max-w-[240px] rounded-lg border" />
+          <a href={fileUrl} target="_blank" rel="noopener noreferrer">
+            <img src={fileUrl} alt={data.originalName} className="max-w-[240px] rounded-lg border" />
           </a>
         ) : (
           <a
-            href={data.url}
-            target="_blank"
-            rel="noopener noreferrer"
+            href={fileUrl}
+            download={data.originalName}
             className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-background hover:bg-muted transition-colors"
           >
             <FileText className="w-5 h-5 shrink-0" style={{ color: brandColor }} />
@@ -1661,6 +1678,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [conciergeBookingSlug, setConciergeBookingSlug] = useState<{ slug: string; memberName: string } | null>(null);
   const parentFileInputRef = useRef<HTMLInputElement>(null);
   const [parentUploading, setParentUploading] = useState(false);
+  const [stagedFiles, setStagedFiles] = useState<File[]>([]);
 
   const { data: sessionBookings } = useQuery<any[]>({
     queryKey: ["/api/chat-session", sessionId, "bookings"],
@@ -1750,38 +1768,65 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     }
   }, [sessionId]);
 
-  const handleParentFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !sessionId) return;
+  const handleParentFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
     e.target.value = "";
+    setStagedFiles(prev => [...prev, ...Array.from(files)]);
+  }, []);
+
+  const removeStagedFile = useCallback((index: number) => {
+    setStagedFiles(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const uploadAndSendFiles = useCallback(async (messageText: string) => {
+    if (!sessionId) return;
     setParentUploading(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const uploadRes = await fetch("/api/chat-upload", { method: "POST", credentials: "include", body: formData });
-      if (!uploadRes.ok) throw new Error("Upload failed");
-      const uploadData = await uploadRes.json();
-      await fetch(`/api/chat-session/${sessionId}/message`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          content: uploadData.originalName ? `Shared a file: ${uploadData.originalName}` : "Shared a file",
-          uiCardType: "attachment",
-          uiCardData: uploadData,
-        }),
-      });
+      // Upload each file and send as a message
+      for (const file of stagedFiles) {
+        const formData = new FormData();
+        formData.append("file", file);
+        const uploadRes = await fetch("/api/chat-upload", { method: "POST", credentials: "include", body: formData });
+        if (!uploadRes.ok) throw new Error("Upload failed");
+        const uploadData = await uploadRes.json();
+        await fetch(`/api/chat-session/${sessionId}/message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            content: uploadData.originalName ? `Shared a file: ${uploadData.originalName}` : "Shared a file",
+            uiCardType: "attachment",
+            uiCardData: uploadData,
+          }),
+        });
+      }
+      setStagedFiles([]);
+      // Optimistic sidebar update for last file
+      if (sessionId) {
+        const lastName = stagedFiles[stagedFiles.length - 1]?.name || "file";
+        queryClient.setQueryData<any[]>(["/api/my/chat-sessions"], (old) =>
+          old?.map(s => s.id === sessionId ? { ...s, lastMessage: `Shared a file: ${lastName}`, lastMessageAt: new Date().toISOString(), lastMessageRole: "user" } : s)
+        );
+      }
+
+      // Send text message via the AI chat if there's text
+      if (messageText.trim()) {
+        return true; // signal caller to send the text message
+      }
     } catch {
       alert("Failed to upload file. Please try again.");
     } finally {
       setParentUploading(false);
     }
-  }, [sessionId]);
+    return false;
+  }, [sessionId, stagedFiles]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
   const lastPollTimeRef = useRef<string | null>(null);
   const knownMessageIds = useRef<Set<string>>(new Set());
+  const statusPollCounter = useRef(0);
 
   const matchmakers: Matchmaker[] = brand?.matchmakers || [];
   const [resolvedMatchmakerId, setResolvedMatchmakerId] = useState<string | null>(null);
@@ -1813,6 +1858,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             consultationCard: extras.consultationCard,
             uiCardType: m.uiCardType,
             uiCardData: m.uiCardData,
+            deliveredAt: m.deliveredAt,
+            readAt: m.readAt,
             createdAt: m.createdAt,
           };
         });
@@ -1825,6 +1872,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         if (providerMsg) {
           setProviderInChat(true);
         }
+        // Send read receipt
+        fetch(`/api/chat-sessions/${existingSessionId}/read`, { method: "POST", credentials: "include" }).catch(() => {});
       }
     } catch {}
   };
@@ -1875,6 +1924,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   consultationCard: extras.consultationCard,
                   uiCardType: m.uiCardType,
                   uiCardData: m.uiCardData,
+                  deliveredAt: m.deliveredAt,
+                  readAt: m.readAt,
                   createdAt: m.createdAt,
                 };
               });
@@ -1962,6 +2013,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 multiSelect: extras.multiSelect,
                 uiCardType: m.uiCardType,
                 uiCardData: m.uiCardData,
+                deliveredAt: m.deliveredAt,
+                readAt: m.readAt,
                 createdAt: m.createdAt,
               };
             }),
@@ -1970,6 +2023,31 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           if (unseenMsgs.some((m: any) => m.senderType === "human")) setHumanEscalated(true);
           if (unseenMsgs.some((m: any) => m.senderType === "provider" || m.senderType === "system")) {
             setProviderInChat(true);
+          }
+        }
+
+        // Periodically refresh delivery status on existing messages (every 3rd poll)
+        statusPollCounter.current = (statusPollCounter.current || 0) + 1;
+        if (statusPollCounter.current >= 3) {
+          statusPollCounter.current = 0;
+          const statusRes = await fetch(`/api/ai-concierge/session/${sessionId}/messages`, { credentials: "include" });
+          if (statusRes.ok) {
+            const statusData = await statusRes.json();
+            const allMsgs: any[] = Array.isArray(statusData) ? statusData : (statusData.messages || []);
+            const statusMap = new Map(allMsgs.map((m: any) => [m.id, { deliveredAt: m.deliveredAt, readAt: m.readAt }]));
+            setMessages(prev => {
+              let changed = false;
+              const updated = prev.map(m => {
+                if (!m.id) return m;
+                const status = statusMap.get(m.id);
+                if (status && (status.deliveredAt !== m.deliveredAt || status.readAt !== m.readAt)) {
+                  changed = true;
+                  return { ...m, deliveredAt: status.deliveredAt, readAt: status.readAt };
+                }
+                return m;
+              });
+              return changed ? updated : prev;
+            });
           }
         }
       } catch {}
@@ -2054,16 +2132,34 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   }
 
   const sendMessage = async (text: string) => {
-    if (!text.trim() || sending || sendingRef.current || showCuration) return;
+    const hasFiles = stagedFiles.length > 0;
+    if (!text.trim() && !hasFiles) return;
+    if (sending || sendingRef.current || showCuration) return;
+
+    // Upload staged files first (if any)
+    if (hasFiles) {
+      const shouldContinue = await uploadAndSendFiles(text);
+      if (!text.trim()) return; // files-only, no AI chat needed
+      if (!shouldContinue) return;
+    }
+
+    if (!text.trim()) return;
     sendingRef.current = true;
     const userMessage = text.trim();
     setInput("");
+    const now = new Date().toISOString();
     setMessages((prev) => {
       const updated = prev.map((m, i) =>
         i === prev.length - 1 && m.quickReplies ? { ...m, quickReplies: undefined } : m
       );
-      return [...updated, { role: "user" as const, content: userMessage, createdAt: new Date().toISOString() }];
+      return [...updated, { role: "user" as const, content: userMessage, createdAt: now }];
     });
+    // Optimistically update sidebar with latest message (reset delivery status for new msg)
+    if (sessionId) {
+      queryClient.setQueryData<any[]>(["/api/my/chat-sessions"], (old) =>
+        old?.map(s => s.id === sessionId ? { ...s, lastMessage: userMessage, lastMessageAt: now, lastMessageRole: "user", lastMessageSenderType: "parent", lastMessageDeliveredAt: null, lastMessageReadAt: null } : s)
+      );
+    }
     setSending(true);
 
     try {
@@ -2085,7 +2181,21 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
       }
 
-      if (data.userMessageId) knownMessageIds.current.add(data.userMessageId);
+      if (data.userMessageId) {
+        knownMessageIds.current.add(data.userMessageId);
+        // Back-fill the optimistic user message with its real id + deliveredAt
+        setMessages(prev => prev.map(m =>
+          m.role === "user" && m.content === userMessage && !m.id
+            ? { ...m, id: data.userMessageId, deliveredAt: data.userMessageDeliveredAt || null }
+            : m
+        ));
+        // Update sidebar delivery status
+        if (data.userMessageDeliveredAt && sessionId) {
+          queryClient.setQueryData<any[]>(["/api/my/chat-sessions"], (old) =>
+            old?.map(s => s.id === sessionId ? { ...s, lastMessageDeliveredAt: data.userMessageDeliveredAt } : s)
+          );
+        }
+      }
 
       if (data.skipAiResponse) {
         setSending(false);
@@ -2113,6 +2223,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         consultationCard: data.consultationCard,
         senderType: data.message.senderType,
         senderName: data.message.senderName,
+        deliveredAt: data.message.deliveredAt,
+        readAt: data.message.readAt,
         createdAt: data.message.createdAt || new Date().toISOString(),
       };
 
@@ -2357,7 +2469,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       data-testid={`chat-message-${msg.role}-${i}`}
                     >
                       <div
-                        className={`max-w-[80%] px-4 py-2.5 text-base leading-relaxed font-ui ${
+                        className={`relative max-w-[80%] px-4 py-2.5 text-base leading-relaxed font-ui ${
                           isOwnMessage
                             ? "text-white chat-bubble-dark"
                             : isOtherParent
@@ -2395,12 +2507,18 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       >
                         <span>{msg.content}</span>
                         {msg.createdAt && (
-                          <span
-                            className="inline-block align-bottom ml-2 whitespace-nowrap select-none"
-                            style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55, verticalAlign: "bottom", position: "relative", top: "3px" }}
-                          >
-                            {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
-                          </span>
+                          <>
+                            <span className={`inline-block ${alignRight ? "w-[4.75rem]" : "w-[3.5rem]"}`} aria-hidden="true">&nbsp;</span>
+                            <span
+                              className="absolute bottom-1.5 right-3 whitespace-nowrap select-none flex items-center gap-0.5"
+                              style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55 }}
+                            >
+                              {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                              {alignRight && (
+                                <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />
+                              )}
+                            </span>
+                          </>
                         )}
                       </div>
                     </div>
@@ -2546,12 +2664,26 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         </div>
 
         <div className="border-t px-4 py-3" data-testid="concierge-input-area">
+          {stagedFiles.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {stagedFiles.map((file, i) => (
+                <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border bg-muted/50 text-xs">
+                  <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: brandColor }} />
+                  <span className="truncate max-w-[140px]">{file.name}</span>
+                  <button onClick={() => removeStagedFile(i)} className="ml-0.5 hover:text-destructive">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <input
               ref={parentFileInputRef}
               type="file"
               className="hidden"
               accept="image/*,application/pdf,.doc,.docx,.txt"
+              multiple
               onChange={handleParentFileSelect}
               data-testid="input-parent-file"
             />
@@ -2573,19 +2705,19 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              disabled={sending}
+              disabled={sending || parentUploading}
               className="flex-1 !text-base font-ui rounded-full"
               data-testid="input-concierge-message"
             />
             <Button
               size="sm"
               onClick={handleSend}
-              disabled={!input.trim() || sending}
+              disabled={(!input.trim() && stagedFiles.length === 0) || sending || parentUploading}
               className="h-10 w-10 p-0 rounded-full text-white shrink-0"
               style={{ backgroundColor: brandColor }}
               data-testid="btn-send-message"
             >
-              {sending ? (
+              {(sending || parentUploading) ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <Send className="w-4 h-4" />

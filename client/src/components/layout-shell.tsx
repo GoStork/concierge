@@ -444,6 +444,33 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     };
   }, [brandSettings?.bottomNavOpacity, brandSettings?.bottomNavBgColor, brandSettings?.bottomNavBlur, brandSettings?.bottomNavShadow]);
 
+  // Total unread chat messages badge (must be before early returns to preserve hook order)
+  const { data: chatSessions } = useQuery<{ unreadCount: number }[]>({
+    queryKey: ["/api/my/chat-sessions"],
+    queryFn: async () => {
+      const res = await fetch("/api/my/chat-sessions", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!user,
+    refetchInterval: 30000,
+  });
+  const { data: providerChatSessions } = useQuery<{ unreadCount: number }[]>({
+    queryKey: ["/api/provider/concierge-sessions"],
+    queryFn: async () => {
+      const res = await fetch("/api/provider/concierge-sessions", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!user && isProvider,
+    refetchInterval: 30000,
+  });
+  const totalUnread = useMemo(() => {
+    const parentUnread = (chatSessions || []).reduce((sum, s) => sum + (s.unreadCount || 0), 0);
+    const providerUnread = (providerChatSessions || []).reduce((sum, s) => sum + (s.unreadCount || 0), 0);
+    return parentUnread + providerUnread;
+  }, [chatSessions, providerChatSessions]);
+
   if (!user) return <>{children}</>;
 
   const reminderPopup = <MeetingReminderPopup />;
@@ -458,11 +485,11 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     { id: "sperm-donors", label: "Sperm Donors", mobileLabel: "Sperm", icon: SpermIcon },
   ];
 
-  const navigation: { show: boolean; to: string; icon: any; label: string; mobileLabel: string; tabId?: string; mobileOnly?: boolean; submenuItems?: typeof MARKETPLACE_TABS }[] = [
+  const navigation: { show: boolean; to: string; icon: any; label: string; mobileLabel: string; tabId?: string; mobileOnly?: boolean; submenuItems?: typeof MARKETPLACE_TABS; badge?: number }[] = [
     { show: false /* hidden for now */, to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', mobileLabel: 'Dashboard' },
     { show: isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS },
     { show: isProvider && !isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS },
-    { show: isParentOnly, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats' },
+    { show: isParentOnly, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats', badge: totalUnread },
     ...(isParentOnly && !(brandSettings?.enableAiConcierge && brandSettings?.parentExperienceMode !== 'MARKETPLACE_ONLY')
       ? MARKETPLACE_TABS.map((tab) => ({
           show: true,
@@ -472,7 +499,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
           mobileLabel: tab.mobileLabel,
           tabId: tab.id,
         })) : []),
-    { show: !isParentOnly, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats' },
+    { show: !isParentOnly, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats', badge: totalUnread },
     { show: isAdmin, to: '/admin/providers', icon: Building2, label: 'Providers', mobileLabel: 'Providers' },
     { show: isAdmin, to: '/admin/concierge-monitor', icon: Headphones, label: 'Concierge', mobileLabel: 'Concierge' },
     { show: isAdmin || isProvider, to: '/users', icon: Users, label: 'Parents', mobileLabel: 'Parents' },
@@ -555,7 +582,14 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                       : 'desktop-nav-inactive'
                   }`}
                 >
-                  <Icon className="w-5 h-5 shrink-0" />
+                  <div className="relative">
+                    <Icon className="w-5 h-5 shrink-0" />
+                    {!!item.badge && item.badge > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] rounded-full flex items-center justify-center text-[8px] font-bold text-white px-0.5" style={{ backgroundColor: 'hsl(var(--primary))' }}>
+                        {item.badge > 99 ? "99+" : item.badge}
+                      </span>
+                    )}
+                  </div>
                   <span>{item.label}</span>
                 </Link>
               );
@@ -692,10 +726,15 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                 }}
               >
                 <div
-                  className="p-1.5 rounded-lg transition-colors duration-200 flex items-center justify-center"
+                  className="p-1.5 rounded-lg transition-colors duration-200 flex items-center justify-center relative"
                   style={active ? { backgroundColor: `color-mix(in srgb, var(--bottom-nav-active-fg, hsl(var(--primary))) 10%, transparent)` } : undefined}
                 >
                   <Icon className={iconOnly ? "w-7 h-7 shrink-0" : "w-6 h-6 shrink-0"} />
+                  {!!item.badge && item.badge > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-0.5" style={{ backgroundColor: 'hsl(var(--primary))' }}>
+                      {item.badge > 99 ? "99+" : item.badge}
+                    </span>
+                  )}
                 </div>
                 {!iconOnly && <span>{item.mobileLabel}</span>}
               </Link>
