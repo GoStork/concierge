@@ -15,7 +15,7 @@ import {
   MapPin, Mail, CheckCircle2, UserPlus, Shield, ThumbsUp, ThumbsDown,
   Search, Sparkles, Building2, ChevronDown, MessageCircle, Clock,
   CalendarDays, Video, Paperclip, Download, ExternalLink, Image as ImageIcon,
-  Crown, Users, CalendarClock, Check, Maximize, Minimize,
+  Crown, Users, CalendarClock, Check, Maximize, Minimize, Trash2,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -658,6 +658,7 @@ function ConversationsShell({
   emptyAction,
   detailContent,
   brandColor,
+  headerAction,
 }: {
   hasSelection: boolean;
   onBack: () => void;
@@ -667,6 +668,7 @@ function ConversationsShell({
   emptyAction?: ReactNode;
   detailContent: ReactNode;
   brandColor: string;
+  headerAction?: ReactNode;
 }) {
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -677,6 +679,7 @@ function ConversationsShell({
         <div className="shrink-0 bg-background border-b px-4 pt-4 pb-3 space-y-3">
           <div className="flex items-center justify-between">
             <h1 className="font-display text-lg font-bold" data-testid="text-inbox-title">Conversations</h1>
+            {headerAction}
           </div>
           <div className="flex items-center gap-2">
             <div className="flex gap-1.5 flex-shrink-0">
@@ -757,6 +760,39 @@ export default function ConversationsPage() {
   const isParent = roles.includes("PARENT") && !roles.some((r: string) => ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE", "GOSTORK_DEVELOPER"].includes(r)) && !hasProviderRole(roles);
   const isProvider = hasProviderRole(roles) || (roles.includes("GOSTORK_ADMIN") && !!(user as any)?.providerId);
   const showConcierge = brand?.enableAiConcierge !== false;
+  const isAdmin = roles.includes("GOSTORK_ADMIN");
+  const { toast } = useToast();
+
+  const resetAllChatsMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("DELETE", "/api/admin/reset-all-chats");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "All chats reset", description: `Deleted ${data.deleted.sessions} sessions, ${data.deleted.bookings} bookings, ${data.deleted.parentProfiles} parent profiles` });
+      queryClient.invalidateQueries();
+    },
+    onError: (err: any) => {
+      toast({ title: "Reset failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const adminHeaderAction = isAdmin ? (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-7 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+      onClick={() => {
+        if (window.confirm("Delete ALL chats, meetings, agreements, and parent profiles? This cannot be undone.")) {
+          resetAllChatsMutation.mutate();
+        }
+      }}
+      disabled={resetAllChatsMutation.isPending}
+    >
+      {resetAllChatsMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Trash2 className="w-3.5 h-3.5 mr-1" />}
+      Delete Chats
+    </Button>
+  ) : undefined;
 
   const myDisplayName = useMemo(() => {
     const u = user as any;
@@ -1466,6 +1502,7 @@ export default function ConversationsPage() {
           ) : undefined}
           detailContent={parentDetailContent}
           brandColor={brandColor}
+          headerAction={adminHeaderAction}
         />
         {inlineVideoBookingId && (
           <InlineVideoOverlay
@@ -2164,6 +2201,7 @@ export default function ConversationsPage() {
           ) : undefined}
           detailContent={providerDetailContent}
           brandColor={brandColor}
+          headerAction={adminHeaderAction}
         />
         {inlineVideoBookingId && (
           <InlineVideoOverlay

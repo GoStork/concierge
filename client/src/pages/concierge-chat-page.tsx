@@ -1422,6 +1422,16 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
     })();
   }, [card.providerId]);
 
+  // Build provider URL with filter context from match card data (must be before early return)
+  const providerUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    if (card.eggSource) params.set("eggSource", card.eggSource);
+    if (card.ageGroup) params.set("ageGroup", card.ageGroup);
+    if (card.isNewPatient !== undefined) params.set("isNewPatient", String(card.isNewPatient));
+    const qs = params.toString();
+    return `/providers/${card.providerId}${qs ? `?${qs}` : ""}`;
+  }, [card.providerId, card.eggSource, card.ageGroup, card.isNewPatient]);
+
   if (!provider) {
     return (
       <div className="min-w-[320px] max-w-[420px] w-full rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center py-12">
@@ -1430,13 +1440,31 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
     );
   }
 
-  const rates = (provider.ivfSuccessRates || []).find((r: any) =>
-    r.profileType === "own_eggs" && r.ageGroup === "under_35" && r.isNewPatient === true && r.metricCode === "pct_new_patients_live_birth_after_1_retrieval"
-  ) || (provider.ivfSuccessRates || []).find((r: any) =>
-    r.profileType === "own_eggs" && r.ageGroup === "under_35" && r.metricCode === "pct_intended_retrievals_live_births"
-  ) || null;
-  const pct = rates ? Number(rates.successRate) * 100 : null;
-  const natAvg = rates ? Number(rates.nationalAverage) * 100 : null;
+  // Use age/egg-source from AI match card data for personalized rates
+  const cardLabel = card.successRateLabel || null;
+  const cardAgeGroup = card.ageGroup || "under_35";
+  const cardEggSource = card.eggSource || "own_eggs";
+  const cardIsNew = card.isNewPatient === true;
+  const allRates = provider.ivfSuccessRates || [];
+  let rates: any = null;
+  if (cardEggSource === "donor") {
+    rates = allRates.find((r: any) => r.profileType === "donor" && r.metricCode === "pct_transfers_live_births_donor");
+  } else if (cardIsNew) {
+    // First-time IVF: prefer new-patient metric, fall back to all-patients
+    rates = allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === cardAgeGroup && r.isNewPatient === true && r.metricCode === "pct_new_patients_live_birth_after_1_retrieval")
+      || allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === cardAgeGroup && r.metricCode === "pct_intended_retrievals_live_births");
+  } else {
+    // Prior cycles: use all-patients metric
+    rates = allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === cardAgeGroup && !r.isNewPatient && r.metricCode === "pct_intended_retrievals_live_births")
+      || allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === cardAgeGroup && r.metricCode === "pct_intended_retrievals_live_births");
+  }
+  // Fallback to under_35 own_eggs if no match
+  if (!rates) {
+    rates = allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === "under_35" && r.metricCode === "pct_intended_retrievals_live_births")
+      || null;
+  }
+  const pct = rates ? Math.round(Number(rates.successRate) * 100) : null;
+  const natAvg = rates ? Math.round(Number(rates.nationalAverage) * 100) : null;
   const isTop10 = rates?.top10pct === true;
   const location = provider.locations?.[0];
   const locationStr = location ? `${location.city || ""}${location.state ? `, ${location.state}` : ""}` : card.location;
@@ -1446,7 +1474,7 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
       className="min-w-[320px] max-w-[420px] w-full animate-[slideUp_0.4s_ease-out_forwards] border border-border bg-card overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
       style={{ borderRadius: "var(--container-radius, 0.5rem)" }}
       data-testid={`match-card-${card.providerId}`}
-      onClick={() => navigate(`/providers/${card.providerId}`, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } })}
+      onClick={() => navigate(providerUrl, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } })}
     >
       <div className="p-4 space-y-3">
         <div className="flex items-start gap-3">
@@ -1476,14 +1504,14 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
         {pct !== null && (
           <div>
             <div className="flex items-baseline gap-1.5 mb-0.5">
-              <span className="text-2xl font-heading text-foreground">{pct.toFixed(1)}%</span>
+              <span className="text-2xl font-heading text-foreground">{pct}%</span>
               <span className="text-sm text-muted-foreground">success rate</span>
             </div>
-            <p className="text-xs text-muted-foreground mb-2">Own eggs · Under 35 · First-time IVF</p>
+            <p className="text-xs text-muted-foreground mb-2">{cardLabel || "Own eggs · Under 35 · First-time IVF"}</p>
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">This clinic</span>
-                <span className="font-ui text-foreground">{pct.toFixed(1)}%</span>
+                <span className="font-ui text-foreground">{pct}%</span>
               </div>
               <div className="h-2.5 bg-muted rounded-full overflow-hidden">
                 <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: brandColor }} />
@@ -1492,7 +1520,7 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
                 <>
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">National average</span>
-                    <span className="font-ui text-muted-foreground">{natAvg.toFixed(1)}%</span>
+                    <span className="font-ui text-muted-foreground">{natAvg}%</span>
                   </div>
                   <div className="h-2.5 bg-muted rounded-full overflow-hidden">
                     <div className="h-full bg-accent rounded-full transition-all" style={{ width: `${Math.min(natAvg, 100)}%` }} />
@@ -1509,7 +1537,7 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
       </div>
 
       <div className="border-t border-border/50 px-4 py-3 flex gap-2">
-        <Button variant="outline" className="flex-1 text-xs font-ui h-8" onClick={(e) => { e.stopPropagation(); navigate(`/providers/${card.providerId}`, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } }); }}>
+        <Button variant="outline" className="flex-1 text-xs font-ui h-8" onClick={(e) => { e.stopPropagation(); navigate(providerUrl, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } }); }}>
           View Details
         </Button>
         <Button className="flex-1 text-xs font-ui h-8 text-white" style={{ backgroundColor: brandColor }} onClick={(e) => { e.stopPropagation(); onAction(`I'd like to schedule a consultation with ${provider.name}`); }}>

@@ -231,7 +231,7 @@ function PersonalizedView({ rates, filterContext }: { rates: IvfSuccessRate[]; f
 
       <div className="flex items-baseline gap-3">
         <span className="text-4xl font-heading text-foreground" data-testid="text-personalized-rate">
-          {clinicPct.toFixed(1)}%
+          {Math.round(clinicPct)}%
         </span>
         <span className="text-sm text-muted-foreground">live birth rate</span>
       </div>
@@ -245,7 +245,7 @@ function PersonalizedView({ rates, filterContext }: { rates: IvfSuccessRate[]; f
               style={{ width: `${clinicPct}%`, backgroundColor: "hsl(var(--primary))" }}
             />
           </div>
-          <span className="text-xs font-heading text-foreground w-12 text-right">{clinicPct.toFixed(1)}%</span>
+          <span className="text-xs font-heading text-foreground w-12 text-right">{Math.round(clinicPct)}%</span>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-muted-foreground w-28 shrink-0">National Average</span>
@@ -255,12 +255,12 @@ function PersonalizedView({ rates, filterContext }: { rates: IvfSuccessRate[]; f
               style={{ width: `${natPct}%`, backgroundColor: "hsl(var(--accent))" }}
             />
           </div>
-          <span className="text-xs text-muted-foreground w-12 text-right">{natPct.toFixed(1)}%</span>
+          <span className="text-xs text-muted-foreground w-12 text-right">{Math.round(natPct)}%</span>
         </div>
       </div>
 
       <div className={`text-sm font-heading ${diff >= 0 ? "text-[hsl(var(--brand-success))]" : "text-destructive"}`} data-testid="text-rate-diff">
-        {diff >= 0 ? "+" : ""}{diff.toFixed(1)}% vs. national average
+        {diff >= 0 ? "+" : ""}{Math.round(diff)}% vs. national average
       </div>
 
       {matchedRate.top10pct && (
@@ -273,8 +273,12 @@ function PersonalizedView({ rates, filterContext }: { rates: IvfSuccessRate[]; f
 }
 
 export function IvfSuccessRatesSection({ rates, filterContext }: { rates: IvfSuccessRate[]; filterContext?: IvfFilterContext }) {
-  const [tab, setTab] = useState<"own" | "donor">("own");
-  const [patientType, setPatientType] = useState<"all" | "new">("all");
+  const [tab, setTab] = useState<"own" | "donor">(() =>
+    filterContext?.eggSource === "donor" ? "donor" : "own"
+  );
+  const [patientType, setPatientType] = useState<"all" | "new">(() =>
+    filterContext?.isNewPatient === "true" || filterContext?.isNewPatient === "yes" ? "new" : "all"
+  );
 
   const hasFilterContext = filterContext && (filterContext.eggSource || filterContext.ageGroup);
 

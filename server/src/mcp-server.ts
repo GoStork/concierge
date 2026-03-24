@@ -131,6 +131,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "number",
               description: "Number of results to return (default 3, max 5)",
             },
+            excludeIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "Array of surrogate IDs to exclude from results (already presented profiles)",
+            },
           },
         },
       },
@@ -205,6 +210,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "number",
               description: "Number of results to return (default 3, max 5)",
             },
+            excludeIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "Array of egg donor IDs to exclude from results (already presented profiles)",
+            },
           },
         },
       },
@@ -247,6 +257,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "number",
               description: "Number of results to return (default 3, max 5)",
             },
+            excludeIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "Array of sperm donor IDs to exclude from results (already presented profiles)",
+            },
           },
         },
       },
@@ -275,11 +290,30 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             minSuccessRate: {
               type: "number",
-              description: "Minimum success rate percentage to filter by (e.g. 50 for 50%+). Based on live birth rate per intended egg retrieval, own eggs, new patients, under 35.",
+              description: "Minimum success rate percentage to filter by (e.g. 50 for 50%+). Applies to the selected ageGroup and eggSource.",
+            },
+            ageGroup: {
+              type: "string",
+              enum: ["under_35", "35_37", "38_40", "over_40"],
+              description: "Parent's age group for success rate matching. MUST be provided when searching for clinics. Determines which age-specific success rate is shown as the primary rate.",
+            },
+            eggSource: {
+              type: "string",
+              enum: ["own_eggs", "donor"],
+              description: "Whether the parent is using own eggs or donor eggs. Affects which success rate metric is used. Default: own_eggs.",
+            },
+            isNewPatient: {
+              type: "boolean",
+              description: "Whether the parent is a first-time IVF patient (true) or has done IVF before (false). When true, shows new-patient-specific success rates.",
             },
             limit: {
               type: "number",
               description: "Number of results to return (default 5, max 10)",
+            },
+            excludeIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "Array of clinic/provider IDs to exclude from results (already presented profiles)",
             },
           },
         },
@@ -380,8 +414,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_surrogates") {
-      const { query, agreesToTwins, agreesToAbortion, openToSameSexCouple, isExperienced, location, maxCompensation, limit: rawLimit } = args as any;
+      const { query, agreesToTwins, agreesToAbortion, openToSameSexCouple, isExperienced, location, maxCompensation, limit: rawLimit, excludeIds } = args as any;
       const take = Math.min(rawLimit || 3, 5);
+      const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
 
       const queryParts: string[] = ["surrogate carrier"];
       if (query) queryParts.push(query);
@@ -401,6 +436,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       let surrogates: any[];
       if (vectorResults && vectorResults.length > 0) {
         let filtered = vectorResults.filter((s: any) => {
+          if (excludeSet.has(s.id)) return false;
           if (agreesToTwins !== undefined && s.agreesToTwins !== agreesToTwins) return false;
           if (agreesToAbortion !== undefined && s.agreesToAbortion !== agreesToAbortion) return false;
           if (openToSameSexCouple !== undefined && s.openToSameSexCouple !== openToSameSexCouple) return false;
@@ -409,9 +445,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           if (location && s.location && !s.location.toLowerCase().includes(location.toLowerCase())) return false;
           return true;
         });
-        surrogates = filtered.length > 0 ? filtered.slice(0, take) : vectorResults.slice(0, take);
+        surrogates = filtered.length > 0 ? filtered.slice(0, take) : vectorResults.filter((s: any) => !excludeSet.has(s.id)).slice(0, take);
       } else {
         const where: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
+        if (excludeSet.size > 0) where.id = { notIn: Array.from(excludeSet) };
         if (agreesToTwins !== undefined) where.agreesToTwins = agreesToTwins;
         if (agreesToAbortion !== undefined) where.agreesToAbortion = agreesToAbortion;
         if (openToSameSexCouple !== undefined) where.openToSameSexCouple = openToSameSexCouple;
@@ -433,8 +470,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         });
 
         if (surrogates.length === 0) {
+          const fallbackWhere: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
+          if (excludeSet.size > 0) fallbackWhere.id = { notIn: Array.from(excludeSet) };
           surrogates = await prisma.surrogate.findMany({
-            where: { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } },
+            where: fallbackWhere,
             orderBy: { createdAt: "desc" },
             take,
             select: {
@@ -620,8 +659,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_egg_donors") {
-      const { query, eyeColor, hairColor, ethnicity, maxAge, education, limit: rawLimit } = args as any;
+      const { query, eyeColor, hairColor, ethnicity, maxAge, education, limit: rawLimit, excludeIds } = args as any;
       const take = Math.min(rawLimit || 3, 5);
+      const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
 
       const queryParts: string[] = ["egg donor"];
       if (query) queryParts.push(query);
@@ -641,6 +681,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       let donors: any[];
       if (vectorResults && vectorResults.length > 0) {
         let filtered = vectorResults.filter((d: any) => {
+          if (excludeSet.has(d.id)) return false;
           if (eyeColor && d.eyeColor && !d.eyeColor.toLowerCase().includes(eyeColor.toLowerCase())) return false;
           if (hairColor && d.hairColor && !d.hairColor.toLowerCase().includes(hairColor.toLowerCase())) return false;
           if (ethnicity && d.ethnicity && !d.ethnicity.toLowerCase().includes(ethnicity.toLowerCase())) return false;
@@ -648,9 +689,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           if (education && d.education && !d.education.toLowerCase().includes(education.toLowerCase())) return false;
           return true;
         });
-        donors = filtered.length > 0 ? filtered.slice(0, take) : vectorResults.slice(0, take);
+        donors = filtered.length > 0 ? filtered.slice(0, take) : vectorResults.filter((d: any) => !excludeSet.has(d.id)).slice(0, take);
       } else {
         const where: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
+        if (excludeSet.size > 0) where.id = { notIn: Array.from(excludeSet) };
         if (eyeColor) where.eyeColor = { contains: eyeColor, mode: "insensitive" };
         if (hairColor) where.hairColor = { contains: hairColor, mode: "insensitive" };
         if (ethnicity) where.ethnicity = { contains: ethnicity, mode: "insensitive" };
@@ -671,8 +713,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         });
 
         if (donors.length === 0) {
+          const fallbackWhere: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
+          if (excludeSet.size > 0) fallbackWhere.id = { notIn: Array.from(excludeSet) };
           donors = await prisma.eggDonor.findMany({
-            where: { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } },
+            where: fallbackWhere,
             orderBy: { createdAt: "desc" },
             take,
             select: {
@@ -697,8 +741,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_sperm_donors") {
-      const { query, eyeColor, hairColor, ethnicity, maxAge, education, height, limit: rawLimit } = args as any;
+      const { query, eyeColor, hairColor, ethnicity, maxAge, education, height, limit: rawLimit, excludeIds } = args as any;
       const take = Math.min(rawLimit || 3, 5);
+      const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
 
       const queryParts: string[] = ["sperm donor"];
       if (query) queryParts.push(query);
@@ -719,6 +764,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       let donors: any[];
       if (vectorResults && vectorResults.length > 0) {
         let filtered = vectorResults.filter((d: any) => {
+          if (excludeSet.has(d.id)) return false;
           if (eyeColor && d.eyeColor && !d.eyeColor.toLowerCase().includes(eyeColor.toLowerCase())) return false;
           if (hairColor && d.hairColor && !d.hairColor.toLowerCase().includes(hairColor.toLowerCase())) return false;
           if (ethnicity && d.ethnicity && !d.ethnicity.toLowerCase().includes(ethnicity.toLowerCase())) return false;
@@ -726,9 +772,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           if (education && d.education && !d.education.toLowerCase().includes(education.toLowerCase())) return false;
           return true;
         });
-        donors = filtered.length > 0 ? filtered.slice(0, take) : vectorResults.slice(0, take);
+        donors = filtered.length > 0 ? filtered.slice(0, take) : vectorResults.filter((d: any) => !excludeSet.has(d.id)).slice(0, take);
       } else {
         const where: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
+        if (excludeSet.size > 0) where.id = { notIn: Array.from(excludeSet) };
         if (eyeColor) where.eyeColor = { contains: eyeColor, mode: "insensitive" };
         if (hairColor) where.hairColor = { contains: hairColor, mode: "insensitive" };
         if (ethnicity) where.ethnicity = { contains: ethnicity, mode: "insensitive" };
@@ -749,8 +796,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         });
 
         if (donors.length === 0) {
+          const fallbackWhere: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
+          if (excludeSet.size > 0) fallbackWhere.id = { notIn: Array.from(excludeSet) };
           donors = await prisma.spermDonor.findMany({
-            where: { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } },
+            where: fallbackWhere,
             orderBy: { createdAt: "desc" },
             take,
             select: {
@@ -780,15 +829,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_clinics") {
-      const { query, state, city, name: clinicName, limit: rawLimit, minSuccessRate } = args as any;
+      const { query, state, city, name: clinicName, limit: rawLimit, minSuccessRate, excludeIds, ageGroup, eggSource, isNewPatient } = args as any;
+      const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
+      const targetAgeGroup = ageGroup || "under_35";
+      const targetEggSource = eggSource || "own_eggs";
       const take = Math.min(rawLimit || 5, 10);
       const clinicSelect = {
         id: true, name: true, logoUrl: true, about: true,
         locations: { select: { city: true, state: true, address: true }, orderBy: { sortOrder: "asc" as const } },
         members: { select: { name: true, title: true, bio: true, isMedicalDirector: true }, orderBy: { sortOrder: "asc" as const }, take: 10 },
         ivfSuccessRates: {
-          where: { metricCode: { in: ["pct_new_patients_live_birth_after_1_retrieval", "pct_intended_retrievals_live_births"] }, profileType: "own_eggs" },
-          select: { successRate: true, nationalAverage: true, ageGroup: true, isNewPatient: true, metricCode: true, top10pct: true, cycleCount: true },
+          where: { metricCode: { in: ["pct_new_patients_live_birth_after_1_retrieval", "pct_intended_retrievals_live_births", "pct_transfers_live_births_donor"] } },
+          select: { successRate: true, nationalAverage: true, ageGroup: true, isNewPatient: true, metricCode: true, top10pct: true, cycleCount: true, profileType: true },
         },
       };
 
@@ -811,7 +863,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         );
 
         if (vectorResults && vectorResults.length > 0) {
-          const ids = vectorResults.map((r: any) => r.id);
+          const ids = vectorResults.map((r: any) => r.id).filter((id: string) => !excludeSet.has(id));
           const withDetails = await prisma.provider.findMany({
             where: { id: { in: ids } },
             select: clinicSelect,
@@ -823,10 +875,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       } else {
         const providerWhere: any = {
-          providerServices: {
+          services: {
             some: { providerType: { name: "IVF Clinic" }, status: "APPROVED" },
           },
         };
+        if (excludeSet.size > 0) providerWhere.id = { notIn: Array.from(excludeSet) };
         if (clinicName) {
           const nameTerms = clinicName.trim().split(/[\s\-_]+/).filter(Boolean);
           if (nameTerms.length > 1) {
@@ -847,17 +900,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         clinics = await prisma.provider.findMany({
           where: providerWhere,
           orderBy: { name: "asc" },
-          take: take * 2, // fetch extra so we can filter by success rate
+          take: 50, // fetch all matching clinics so we can sort by success rate and pick the best
           select: clinicSelect,
         });
 
         if (clinics.length === 0 && (state || city || clinicName)) {
-          clinics = await prisma.provider.findMany({
-            where: {
-              providerServices: {
-                some: { providerType: { name: "IVF Clinic" }, status: "APPROVED" },
-              },
+          const fallbackWhere: any = {
+            services: {
+              some: { providerType: { name: "IVF Clinic" }, status: "APPROVED" },
             },
+          };
+          if (excludeSet.size > 0) fallbackWhere.id = { notIn: Array.from(excludeSet) };
+          clinics = await prisma.provider.findMany({
+            where: fallbackWhere,
             orderBy: { name: "asc" },
             take,
             select: clinicSelect,
@@ -874,21 +929,43 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           isMedicalDirector: m.isMedicalDirector,
         }));
 
-        // Pick the primary success rate (new patient under 35, or all patients under 35)
+        // Pick the primary success rate based on parent's age group and egg source
         const rates = c.ivfSuccessRates || [];
-        const primaryRate = rates.find((r: any) => r.ageGroup === "under_35" && r.isNewPatient === true && r.metricCode === "pct_new_patients_live_birth_after_1_retrieval")
-          || rates.find((r: any) => r.ageGroup === "under_35" && r.metricCode === "pct_intended_retrievals_live_births");
+        let primaryRate: any = null;
+        if (targetEggSource === "donor") {
+          // Donor egg rates are not age-specific
+          primaryRate = rates.find((r: any) => r.profileType === "donor" && r.metricCode === "pct_transfers_live_births_donor");
+        } else {
+          // Own eggs: prefer new patient metric if isNewPatient, then fall back to general
+          if (isNewPatient) {
+            primaryRate = rates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === targetAgeGroup && r.metricCode === "pct_new_patients_live_birth_after_1_retrieval");
+          }
+          if (!primaryRate) {
+            primaryRate = rates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === targetAgeGroup && r.metricCode === "pct_intended_retrievals_live_births");
+          }
+          // Fallback to under_35 if target age group not found
+          if (!primaryRate) {
+            primaryRate = rates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === "under_35" && r.metricCode === "pct_new_patients_live_birth_after_1_retrieval")
+              || rates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === "under_35" && r.metricCode === "pct_intended_retrievals_live_births");
+          }
+        }
         const successPct = primaryRate ? Number(primaryRate.successRate) * 100 : null;
         const nationalAvgPct = primaryRate ? Number(primaryRate.nationalAverage) * 100 : null;
 
-        // Build age-group breakdown
+        // Build age-group breakdown (own eggs only)
         const ratesByAge: Record<string, number> = {};
         for (const r of rates) {
-          if (r.metricCode === "pct_new_patients_live_birth_after_1_retrieval" || r.metricCode === "pct_intended_retrievals_live_births") {
+          if (r.profileType === "own_eggs" && (r.metricCode === "pct_new_patients_live_birth_after_1_retrieval" || r.metricCode === "pct_intended_retrievals_live_births")) {
             const label = r.ageGroup === "under_35" ? "Under 35" : r.ageGroup === "35_37" ? "35-37" : r.ageGroup === "38_40" ? "38-40" : r.ageGroup === "over_40" ? "Over 40" : r.ageGroup;
-            if (!ratesByAge[label]) ratesByAge[label] = Number(r.successRate) * 100;
+            if (!ratesByAge[label]) ratesByAge[label] = Math.round(Number(r.successRate) * 100);
           }
         }
+        // Add donor egg rate if available
+        const donorRate = rates.find((r: any) => r.profileType === "donor" && r.metricCode === "pct_transfers_live_births_donor");
+        if (donorRate) ratesByAge["Donor eggs"] = Math.round(Number(donorRate.successRate) * 100);
+
+        const ageLabel = targetAgeGroup === "under_35" ? "Under 35" : targetAgeGroup === "35_37" ? "35-37" : targetAgeGroup === "38_40" ? "38-40" : "Over 40";
+        const rateLabel = targetEggSource === "donor" ? "Donor eggs" : `Own eggs, ${ageLabel}`;
 
         return {
           id: c.id,
@@ -897,21 +974,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           about: c.about ? c.about.slice(0, 200) : null,
           locations,
           doctors: doctors.slice(0, 5),
-          successRate: successPct !== null ? `${successPct.toFixed(1)}%` : null,
-          nationalAverage: nationalAvgPct !== null ? `${nationalAvgPct.toFixed(1)}%` : null,
+          successRate: successPct !== null ? `${Math.round(successPct)}%` : null,
+          successRateLabel: rateLabel,
+          nationalAverage: nationalAvgPct !== null ? `${Math.round(nationalAvgPct)}%` : null,
           top10pct: primaryRate?.top10pct || false,
           cycleCount: primaryRate?.cycleCount || null,
           successRatesByAge: Object.keys(ratesByAge).length > 0 ? ratesByAge : null,
         };
       });
-
-      // Filter by minimum success rate if requested
-      if (minSuccessRate && typeof minSuccessRate === "number") {
-        results = results.filter((r: any) => {
-          const pct = r.successRate ? parseFloat(r.successRate) : 0;
-          return pct >= minSuccessRate;
-        });
-      }
 
       // Sort by success rate descending
       results.sort((a: any, b: any) => {
@@ -920,10 +990,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return bRate - aRate;
       });
 
+      // Filter by minimum success rate if requested, with fallback to top results
+      let minRateNote = "";
+      if (minSuccessRate && typeof minSuccessRate === "number") {
+        const filtered = results.filter((r: any) => {
+          const pct = r.successRate ? parseFloat(r.successRate) : 0;
+          return pct >= minSuccessRate;
+        });
+        if (filtered.length > 0) {
+          results = filtered;
+        } else {
+          minRateNote = `\n\nNOTE: No clinics met the ${minSuccessRate}% minimum success rate threshold for this age group and egg source. The results below are the TOP clinics sorted by success rate. Present the best available options and be transparent about the rates — do NOT say "no clinics found". Instead say something like: "The highest success rates in your area for your profile are around X%. Here's the top clinic..."`;
+        }
+      }
+
       results = results.slice(0, take);
 
+      const ageLabel = targetAgeGroup === "under_35" ? "Under 35" : targetAgeGroup === "35_37" ? "35-37" : targetAgeGroup === "38_40" ? "38-40" : "Over 40";
       return {
-        content: [{ type: "text", text: `Found ${results.length} IVF clinics:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Clinic" in your MATCH_CARDs. Present ONE clinic at a time. Use the locations, doctors, and success rates to write a personalized blurb.` }],
+        content: [{ type: "text", text: `Found ${results.length} IVF clinics (success rates shown for: ${targetEggSource === "donor" ? "donor eggs" : `own eggs, age group ${ageLabel}`}${isNewPatient ? ", first-time IVF" : ""}):\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Clinic" in your MATCH_CARDs. Present ONE clinic at a time. Use the "successRateLabel" to tell the parent which metric the rate represents (e.g., "For patients in your age group (${ageLabel}) using ${targetEggSource === "donor" ? "donor eggs" : "their own eggs"}, this clinic has a X% live birth rate"). Use the locations, doctors, and successRatesByAge to write a personalized blurb.${minRateNote}` }],
       };
     }
 

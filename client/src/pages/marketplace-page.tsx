@@ -136,8 +136,8 @@ function IvfClinicCard({ provider, matchedRate, filterLabel, onSchedule, onNavig
   onSchedule: (p: { id: string; name: string }) => void;
   onNavigate: () => void;
 }) {
-  const pct = matchedRate ? Number(matchedRate.successRate) * 100 : null;
-  const natAvg = matchedRate ? Number(matchedRate.nationalAverage) * 100 : null;
+  const pct = matchedRate ? Math.round(Number(matchedRate.successRate) * 100) : null;
+  const natAvg = matchedRate ? Math.round(Number(matchedRate.nationalAverage) * 100) : null;
   const isTop10 = matchedRate?.top10pct === true;
 
   return (
@@ -179,7 +179,7 @@ function IvfClinicCard({ provider, matchedRate, filterLabel, onSchedule, onNavig
         {pct !== null && (
           <div data-testid={`ivf-rate-section-${provider.id}`}>
             <div className="flex items-baseline gap-1.5 mb-0.5">
-              <span className="text-2xl font-heading text-foreground">{pct.toFixed(1)}%</span>
+              <span className="text-2xl font-heading text-foreground">{pct}%</span>
               <span className="text-sm text-muted-foreground">success rate</span>
             </div>
             <p className="text-xs text-muted-foreground mb-2">{filterLabel}</p>
@@ -187,7 +187,7 @@ function IvfClinicCard({ provider, matchedRate, filterLabel, onSchedule, onNavig
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">This clinic</span>
-                <span className="font-ui text-foreground">{pct.toFixed(1)}%</span>
+                <span className="font-ui text-foreground">{pct}%</span>
               </div>
               <div className="h-2.5 bg-muted rounded-full overflow-hidden">
                 <div
@@ -200,7 +200,7 @@ function IvfClinicCard({ provider, matchedRate, filterLabel, onSchedule, onNavig
                 <>
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">National average</span>
-                    <span className="font-ui text-muted-foreground">{natAvg.toFixed(1)}%</span>
+                    <span className="font-ui text-muted-foreground">{natAvg}%</span>
                   </div>
                   <div className="h-2.5 bg-muted rounded-full overflow-hidden">
                     <div

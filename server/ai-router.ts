@@ -20,7 +20,7 @@ async function getPromptSections(): Promise<Map<string, string> | null> {
     const sections = await prisma.conciergePromptSection.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } });
     if (sections.length === 0) return null; // fallback to hardcoded
     promptSectionsCache = new Map(sections.map(s => [s.key, s.content]));
-    promptSectionsCacheExpiry = Date.now() + 2 * 60 * 1000;
+    promptSectionsCacheExpiry = Date.now() + 30 * 1000;
     return promptSectionsCache;
   } catch {
     return null;
@@ -37,6 +37,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // Cache MCP tools list — refreshed every 5 minutes instead of every message
 let cachedOpenAiTools: OpenAI.Chat.ChatCompletionTool[] = [];
 let toolsCacheExpiry = 0;
+export function invalidateMcpToolsCache() { toolsCacheExpiry = 0; cachedOpenAiTools = []; }
 async function getCachedMcpTools(mcpClient: Client | null): Promise<OpenAI.Chat.ChatCompletionTool[]> {
   if (!mcpClient) return [];
   if (Date.now() < toolsCacheExpiry && cachedOpenAiTools.length > 0) return cachedOpenAiTools;
@@ -917,6 +918,7 @@ STEP 2 — EGGS:
   - If parent is FEMALE (or has a female partner who could provide eggs):
     - If HAS embryos (past tense): "For those embryos, were the eggs yours/your partner's or from a donor?" [[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs]]
     - If does NOT have embryos (future tense): "What's your plan for eggs — are you thinking of using your own/your partner's, or are you considering a donor?" [[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]
+  → IMMEDIATELY save the egg source: [[SAVE:{"eggSource":"[answer: my own eggs / partner's eggs / donor eggs]"}]]
   → If DONOR EGGS AND parent does NOT have embryos: go to STEP 2a
   → If DONOR EGGS AND parent already HAS embryos: SKIP step 2a (the donor was already used to create the embryos, no need to find one now). Go to STEP 3.
   → Otherwise: go to STEP 3
@@ -930,6 +932,7 @@ STEP 3 — SPERM:
   - If parent is MALE (or has a male partner who could provide sperm):
     - If HAS embryos (past tense): "And for sperm, did you use your own/your partner's or donor sperm?" [[QUICK_REPLY:My own|My partner's|Donor sperm]]
     - If does NOT have embryos (future tense): "And for sperm, will you be using your own/your partner's, donor sperm, or are you still deciding?" [[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]
+  → IMMEDIATELY save the sperm source: [[SAVE:{"spermSource":"[answer: my own / partner's / donor sperm]"}]]
   → If DONOR SPERM AND parent does NOT have embryos: go to STEP 3a
   → If DONOR SPERM AND parent already HAS embryos: SKIP step 3a (the donor was already used to create the embryos, no need to find one now). Go to STEP 4.
   → Otherwise: go to STEP 4
@@ -944,6 +947,7 @@ STEP 4 — CARRIER:
     - If HAS embryos (past tense): "And who is carrying the pregnancy?" [[QUICK_REPLY:Me|My partner|A gestational surrogate]]
     - If does NOT have embryos (future tense): "And who is planning to carry the pregnancy?" [[QUICK_REPLY:Me|My partner|A gestational surrogate]]
   - If SINGLE (no partner): do NOT offer "My partner" option.
+  → IMMEDIATELY save the carrier: [[SAVE:{"carrier":"[answer: me / my partner / gestational surrogate]"}]]
   → If GESTATIONAL SURROGATE: go to STEP 4a
   → Otherwise: go to STEP 5
 
@@ -964,12 +968,45 @@ STEP 5 — SERVICE DEEP DIVES (ask deep dive questions for each service that app
   - Ask STEP 5-SURROGATE if: the user said they need help finding a surrogate in STEP 4a.
 
 STEP 5-CLINIC (only if user is looking for a Fertility Clinic — ask ALL of these in order, one per message):
+  IMPORTANT: Clinic success rates vary dramatically based on the EGG PROVIDER's age and egg source (own eggs vs donor eggs). You MUST collect this information BEFORE searching for clinics. Without it, you cannot provide accurate, personalized success rate data.
+
+  GENDER-AWARE EGG SOURCE LOGIC:
+  - If the parent is FEMALE and using her own eggs → HER age determines the success rate age group.
+  - If the parent is MALE (straight, with a female partner) → The PARTNER provides the eggs. The PARTNER's age determines the success rate age group. Ask for the partner's age, NOT the parent's.
+  - If the parent said "my partner's eggs" or "partner eggs" → This means OWN EGGS (not donor eggs). The partner IS the egg source. Ask for the PARTNER's age.
+  - "Donor eggs" means eggs from a THIRD-PARTY anonymous/known donor, NOT from the partner. Do NOT confuse partner's eggs with donor eggs.
+  - If using DONOR EGGS → Age group doesn't matter (donor rates are not age-specific). Skip the age question.
+
   5-CLINIC-A: "Since you're looking for a clinic, what's your main reason for seeking one out?" [[QUICK_REPLY:Medically necessary|Single parent|LGBTQ+|Changing clinics]]
-  → After answer, acknowledge, then ask:
-  5-CLINIC-B: "What's the most important thing to you when choosing a clinic?" [[QUICK_REPLY:Success rates|Cost|Location|Volume of births]]
+  → After answer, acknowledge, then:
+  5-CLINIC-B: CRITICAL — Do NOT ask about egg source again if it was ALREADY answered earlier in the conversation (STEP 2). Look back through the conversation: if the parent already said "my own eggs", "my partner's eggs", "donor eggs", or anything similar — SKIP THIS QUESTION and go directly to 5-CLINIC-C (or 5-CLINIC-D if using donor eggs).
+  ONLY ask this question if the egg source was truly never discussed:
+    - If FEMALE: "Will you be using your own eggs or donor eggs?" [[QUICK_REPLY:My own eggs|Donor eggs|I'm not sure yet]]
+    - If MALE with female partner: "Will you be using your partner's eggs or donor eggs?" [[QUICK_REPLY:My partner's eggs|Donor eggs|I'm not sure yet]]
+    - If MALE single or same-sex couple: "Will you be using donor eggs?" (They must use donor eggs)
+  → Egg source mapping:
+    - "my partner's eggs" or "partner's eggs" → OWN EGGS (eggSource = "own_eggs"). Ask for PARTNER's age in the next step.
+    - "my own eggs" → OWN EGGS (eggSource = "own_eggs"). Ask for the parent's age in the next step.
+    - "donor eggs" → eggSource = "donor". Skip the age question (donor rates are not age-specific). Go to 5-CLINIC-D.
+  5-CLINIC-C: Ask for the AGE of whoever is providing the eggs:
+    - If female parent using own eggs and age NOT in USER CONTEXT: "How old are you? Clinic success rates are reported by age group, so this helps me find the most accurate match for you."
+    - If male parent using partner's eggs and partner's age NOT in USER CONTEXT: "How old is your partner? Since she'll be the egg provider, her age determines which success rate data applies."
+    - If age IS already known from USER CONTEXT, skip this question.
+    → Map the egg provider's age to an age group: under 35 → "under_35", 35-37 → "35_37", 38-40 → "38_40", over 40 → "over_40"
   → After answer, ask:
-  5-CLINIC-C: "Do you have any specific preferences for your physician? For example, gender or background." [[QUICK_REPLY:I prefer a male physician|I prefer a female physician|I prefer a BIPOC physician|I prefer a LGBTQA+ physician|No preference]]
+  5-CLINIC-D: "Is this your first time doing IVF, or have you been through it before?" [[QUICK_REPLY:First time|I've done IVF before]]
+  → After answer, ask:
+  5-CLINIC-E: "What's the most important thing to you when choosing a clinic?" [[QUICK_REPLY:Success rates|Cost|Location|Volume of births]]
+  → After answer, ask:
+  5-CLINIC-F: "Do you have any specific preferences for your physician? For example, gender or background." [[QUICK_REPLY:I prefer a male physician|I prefer a female physician|I prefer a BIPOC physician|I prefer a LGBTQA+ physician|No preference]]
   → After answer, go to next applicable service deep dive or STEP 6
+
+  CLINIC MATCHING GATE — CRITICAL:
+  If a parent asks you to find or match them with a clinic BEFORE you have collected their egg source and the egg provider's age, do NOT call search_clinics. Instead, explain WHY you need this info first:
+  "Great question! Before I search for clinics, I need to know a couple of things so I can show you the most accurate success rates. Clinic outcomes vary a lot based on whether you're using your own eggs or donor eggs, and the egg provider's age group. Let me ask you a few quick questions first!"
+  Then proceed with the STEP 5-CLINIC questions above. Only call search_clinics AFTER you have egg source and age.
+
+  When you DO search for clinics, use the egg provider's age to highlight the correct age-group success rate in your blurb (e.g., "For patients in your partner's age group (Under 35), this clinic has a 65% live birth rate"). Use the successRatesByAge data from the search results.
 
 STEP 5-DONOR (only if user said they need donor eggs OR donor sperm AND need help finding one — ask ALL of these in order, one per message):
   5-DONOR-A: "Let's talk about your ideal egg donor. We have thousands of profiles. What eye color preferences do you have? You can pick more than one." [[MULTI_SELECT:Blue|Green|Brown|Hazel|Any]]
@@ -1024,8 +1061,8 @@ STEP 8 — MATCH REVEAL:
   - For surrogates: call search_surrogates with filters based on user's answers (twins, termination, etc.), set type to "Surrogate" in the MATCH_CARD
   - For egg donors: call search_egg_donors with filters (eye color, hair color, ethnicity, etc.), set type to "Egg Donor" in the MATCH_CARD
   - For sperm donors: call search_sperm_donors with filters, set type to "Sperm Donor" in the MATCH_CARD
-  - For clinics: call search_clinics and ALWAYS pass the user's state (and city if available) as filters. Location proximity is critical for clinics — parents need to visit in person. Set type to "Clinic" in the MATCH_CARD. NEVER mention a clinic by name without a [[MATCH_CARD]] — if you reference a clinic, you MUST include its match card so the parent can see the profile and schedule a consultation.
-  - search_clinics returns rich data: all locations, doctors/team members, success rates by age group, cycle counts, and Top 10% status. Use this data to write detailed, personalized blurbs. Mention specific doctors by name when relevant (e.g., "led by Dr. Smith"). If the parent asks about success rates, use the successRatesByAge data to give age-specific answers. Use minSuccessRate parameter when the parent asks for clinics above a certain success rate threshold.
+  - For clinics: call search_clinics and ALWAYS pass: (1) the user's state and city as filters, (2) ageGroup based on the parent's age (under_35, 35_37, 38_40, over_40), (3) eggSource ("own_eggs" or "donor"), (4) isNewPatient (true if first-time IVF). These parameters ensure the success rates shown are personalized to the parent. Set type to "Clinic" in the MATCH_CARD. Include "successRateLabel" in the MATCH_CARD JSON with a human-readable description like "Own eggs · 35-37 · First-time IVF". NEVER mention a clinic by name without a [[MATCH_CARD]] — if you reference a clinic, you MUST include its match card so the parent can see the profile and schedule a consultation.
+  - search_clinics returns rich data: all locations, doctors/team members, success rates by age group, cycle counts, and Top 10% status. The primary success rate shown is personalized to the parent's age and egg source. Use the "successRateLabel" from results to describe which metric the rate represents. Mention specific doctors by name when relevant (e.g., "led by Dr. Smith"). Use minSuccessRate parameter when the parent asks for clinics above a certain success rate threshold.
 
   ONE PROFILE AT A TIME RULE (CRITICAL):
   You MUST present exactly ONE match profile per message. NEVER show multiple MATCH_CARD tags in the same response.
@@ -1043,6 +1080,8 @@ STEP 8 — MATCH REVEAL:
 
   Present the match using the MATCH CARD format:
   [[MATCH_CARD:{"name":"displayName from tool results","type":"Surrogate","location":"location from tool results","photo":"","reasons":["Specific preference match 1","Specific preference match 2","Specific preference match 3"],"providerId":"id-from-tool-results"}]]
+  For CLINIC match cards, also include these fields so the card shows the correct personalized success rate:
+  [[MATCH_CARD:{"name":"clinic name","type":"Clinic","location":"city, state","photo":"","reasons":["reason1"],"providerId":"id","successRateLabel":"Own eggs · 35-37","ageGroup":"35_37","eggSource":"own_eggs","isNewPatient":false}]]
   The photo field can be empty — the system will automatically load the real photo from the database based on the providerId and type.
 
   PERSONALIZED MATCH BLURB (CRITICAL — DO NOT SKIP):
@@ -1395,6 +1434,18 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
 
     const effectiveLogic = isDonorInquiryMode ? donorInquiryPrompt : biologicalMasterLogic;
 
+    // Collect all previously-presented match card provider IDs to prevent re-suggesting
+    const presentedProviderIds = new Set<string>();
+    for (const msg of chatHistory) {
+      const cards = (msg as any).uiCardData?.matchCards || [];
+      for (const card of cards) {
+        if (card?.providerId) presentedProviderIds.add(card.providerId);
+      }
+    }
+    const alreadyPresentedContext = presentedProviderIds.size > 0
+      ? `\nALREADY PRESENTED PROFILES (NEVER suggest these again — use excludeIds parameter to filter them out):\n${JSON.stringify(Array.from(presentedProviderIds))}\nWhen calling search tools (search_surrogates, search_egg_donors, search_sperm_donors, search_clinics), ALWAYS pass the above IDs in the "excludeIds" parameter to ensure the parent sees NEW profiles they haven't seen before.\n`
+      : "";
+
     const systemPrompt = `${personalityBlock}
 
 USER CONTEXT (already collected — do NOT ask again):
@@ -1404,6 +1455,7 @@ ${effectiveLogic}
 ${guidanceRules}
 ${ragContext}
 ${answeredWhispersContext}
+${alreadyPresentedContext}
 ${dbSections?.get("tool_usage") || `When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS use the MCP database tools (search_surrogates, search_egg_donors, search_sperm_donors, search_clinics). NEVER fabricate any provider data.
 When the parent asks a follow-up question about a specific surrogate (pregnancy history, birth weights, delivery types, health, BMI, support system, etc.), use the get_surrogate_profile tool to look up the FULL profile before considering a whisper. This tool returns ALL profile details.
 When the parent asks a follow-up question about a specific egg donor (eye color, hair color, ethnicity, education, medical history, etc.), use the get_egg_donor_profile tool to look up the FULL profile before considering a whisper.`}`;
@@ -2254,6 +2306,96 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
       } catch (e) {
         console.error("Match card resolution via MCP failed:", e);
         card.photo = null;
+      }
+    }
+
+    // Auto-inject clinic context into Clinic match cards from parent profile + chat history.
+    // ALWAYS override AI values — the AI is unreliable at setting these correctly.
+    for (const card of matchCards) {
+      if ((card.type || "").toLowerCase() === "clinic") {
+        // Step 1: Determine egg source from profile DB or chat history
+        let resolvedEggSource = "own_eggs";
+        if (profile?.eggSource) {
+          resolvedEggSource = profile.eggSource.toLowerCase().includes("donor") ? "donor" : "own_eggs";
+        } else {
+          // Scan chat history for egg source answers
+          for (let i = chatHistory.length - 1; i >= Math.max(0, chatHistory.length - 30); i--) {
+            const c = (chatHistory[i].content || "").toLowerCase();
+            if (chatHistory[i].role === "user") {
+              if (/\bdonor eggs?\b|egg donor/i.test(c)) { resolvedEggSource = "donor"; break; }
+              if (/\bmy (own )?eggs?\b|partner'?s eggs?\b|my eggs/i.test(c)) { resolvedEggSource = "own_eggs"; break; }
+            }
+          }
+        }
+        card.eggSource = resolvedEggSource;
+
+        // Step 2: Determine egg provider's age from profile/user data or chat history
+        let eggProviderAge: number | null = null;
+        if (resolvedEggSource !== "donor") {
+          // Check if partner's eggs → use partner's age
+          const esSaved = (profile?.eggSource || "").toLowerCase();
+          const isPartnerEggs = esSaved.includes("partner") ||
+            (userRecord?.gender === "Male" && resolvedEggSource === "own_eggs");
+
+          if (isPartnerEggs && userRecord?.partnerAge) {
+            eggProviderAge = Number(userRecord.partnerAge);
+          } else if (!isPartnerEggs && userRecord?.dateOfBirth) {
+            eggProviderAge = Math.floor((Date.now() - new Date(userRecord.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+          }
+
+          // If still no age, scan chat history for age mentions
+          if (eggProviderAge === null) {
+            for (let i = chatHistory.length - 1; i >= Math.max(0, chatHistory.length - 30); i--) {
+              if (chatHistory[i].role !== "user") continue;
+              const c = chatHistory[i].content || "";
+              const ageMatch = c.match(/\b(\d{2})\b/);
+              // Only match if the message looks like an age answer (short message with a 2-digit number in plausible range)
+              if (ageMatch && c.length < 50) {
+                const age = parseInt(ageMatch[1], 10);
+                if (age >= 20 && age <= 50) { eggProviderAge = age; break; }
+              }
+            }
+          }
+        }
+
+        if (resolvedEggSource === "donor") {
+          card.ageGroup = "under_35"; // doesn't matter for donor, but set a default
+        } else if (eggProviderAge !== null) {
+          if (eggProviderAge < 35) card.ageGroup = "under_35";
+          else if (eggProviderAge <= 37) card.ageGroup = "35_37";
+          else if (eggProviderAge <= 40) card.ageGroup = "38_40";
+          else card.ageGroup = "over_40";
+        } else {
+          card.ageGroup = card.ageGroup || "under_35";
+        }
+
+        // Step 3: Determine isNewPatient from chat history (ALWAYS scan, never trust AI)
+        let resolvedIsNew: boolean | null = null;
+        for (let i = chatHistory.length - 1; i >= Math.max(0, chatHistory.length - 30); i--) {
+          const c = (chatHistory[i].content || "").toLowerCase();
+          if (chatHistory[i].role === "user") {
+            if (/first.?time|new to ivf|never done|^first$|^new$/i.test(c)) { resolvedIsNew = true; break; }
+            if (/done.*(ivf|before)|i'?ve done|not my first|been through|returning|had prior|prior cycle/i.test(c)) { resolvedIsNew = false; break; }
+          }
+          // Also check AI questions to provide context
+          if (chatHistory[i].role === "assistant" && /first time.*ivf|been through.*before/i.test(c)) {
+            // The next user message after this is the answer — check it
+            if (i + 1 < chatHistory.length && chatHistory[i + 1].role === "user") {
+              const answer = (chatHistory[i + 1].content || "").toLowerCase();
+              if (/first|new|^yes/i.test(answer)) { resolvedIsNew = true; break; }
+              if (/before|done|no|prior|returning/i.test(answer)) { resolvedIsNew = false; break; }
+            }
+          }
+        }
+        card.isNewPatient = resolvedIsNew ?? false;
+
+        // Step 4: Build the label
+        const ageLbl = card.ageGroup === "under_35" ? "Under 35" : card.ageGroup === "35_37" ? "35-37" : card.ageGroup === "38_40" ? "38-40" : "Over 40";
+        card.successRateLabel = card.eggSource === "donor"
+          ? "Donor eggs"
+          : `Own eggs · ${ageLbl} · ${card.isNewPatient ? "First-time IVF" : "Prior cycles"}`;
+
+        console.log(`[CLINIC CARD ENRICHMENT] eggSource=${card.eggSource}, ageGroup=${card.ageGroup}, isNewPatient=${card.isNewPatient}, eggProviderAge=${eggProviderAge}, label=${card.successRateLabel}`);
       }
     }
 

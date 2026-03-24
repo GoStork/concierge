@@ -1142,6 +1142,39 @@ chatRouter.post("/api/admin/concierge-prompts/seed", requireAuth, async (req, re
   }
 });
 
+// Admin-only: Delete ALL chats, meetings, and reset parent profiles (for testing)
+chatRouter.delete("/api/admin/reset-all-chats", requireAuth, async (req, res) => {
+  if (!isAdminUser(req.user)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    // Delete in dependency order
+    const [agreements, silentQueries, messages, sessions, bookings, notifications, profiles] = await prisma.$transaction([
+      prisma.agreement.deleteMany({}),
+      prisma.silentQuery.deleteMany({}),
+      prisma.aiChatMessage.deleteMany({}),
+      prisma.aiChatSession.deleteMany({}),
+      prisma.booking.deleteMany({}),
+      prisma.notification.deleteMany({}),
+      prisma.intendedParentProfile.deleteMany({}),
+    ]);
+    console.log(`[ADMIN RESET] Deleted: ${agreements.count} agreements, ${silentQueries.count} silent queries, ${messages.count} messages, ${sessions.count} sessions, ${bookings.count} bookings, ${notifications.count} notifications, ${profiles.count} parent profiles`);
+    res.json({
+      message: "All chats, meetings, and parent profiles reset successfully",
+      deleted: {
+        agreements: agreements.count,
+        silentQueries: silentQueries.count,
+        messages: messages.count,
+        sessions: sessions.count,
+        bookings: bookings.count,
+        notifications: notifications.count,
+        parentProfiles: profiles.count,
+      },
+    });
+  } catch (e: any) {
+    console.error("[ADMIN RESET] Error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
 chatRouter.put("/api/admin/concierge-prompts/:id", requireAuth, async (req, res) => {
   if (!isAdminUser(req.user)) return res.status(403).json({ message: "Forbidden" });
   try {
