@@ -1001,6 +1001,18 @@ model KnowledgeChunk {
   @@index([sourceTier])
 }
 
+model ConciergePromptSection {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  label       String
+  description String?
+  content     String
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model ExpertGuidanceRule {
   id        String   @id @default(uuid())
   condition String

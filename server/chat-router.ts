@@ -1112,3 +1112,49 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
     res.status(500).json({ message: e.message });
   }
 });
+
+// ── Concierge Prompt Sections (admin only) ──
+
+chatRouter.get("/api/admin/concierge-prompts", requireAuth, async (req, res) => {
+  if (!isAdminUser(req.user)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const sections = await prisma.conciergePromptSection.findMany({ orderBy: { sortOrder: "asc" } });
+    res.json(sections);
+  } catch (e: any) {
+    res.status(500).json({ message: e.message });
+  }
+});
+
+chatRouter.post("/api/admin/concierge-prompts/seed", requireAuth, async (req, res) => {
+  if (!isAdminUser(req.user)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const existing = await prisma.conciergePromptSection.count();
+    if (existing > 0) return res.json({ message: "Already seeded", count: existing });
+
+    const { getDefaultPromptSections } = await import("./ai-prompt-defaults");
+    const sections = getDefaultPromptSections();
+    for (const s of sections) {
+      await prisma.conciergePromptSection.create({ data: s });
+    }
+    res.json({ message: "Seeded", count: sections.length });
+  } catch (e: any) {
+    res.status(500).json({ message: e.message });
+  }
+});
+
+chatRouter.put("/api/admin/concierge-prompts/:id", requireAuth, async (req, res) => {
+  if (!isAdminUser(req.user)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const { content, isActive } = req.body;
+    const updated = await prisma.conciergePromptSection.update({
+      where: { id: req.params.id },
+      data: {
+        ...(content !== undefined ? { content } : {}),
+        ...(isActive !== undefined ? { isActive } : {}),
+      },
+    });
+    res.json(updated);
+  } catch (e: any) {
+    res.status(500).json({ message: e.message });
+  }
+});

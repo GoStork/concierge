@@ -11,6 +11,26 @@ function cleanTitle(title: string | null | undefined): string | null {
   return title.replace(/#([A-Za-z]+-)/g, "#");
 }
 
+// Load prompt sections from DB (cached 2 min), fallback to null if empty
+let promptSectionsCache: Map<string, string> | null = null;
+let promptSectionsCacheExpiry = 0;
+async function getPromptSections(): Promise<Map<string, string> | null> {
+  if (Date.now() < promptSectionsCacheExpiry && promptSectionsCache) return promptSectionsCache;
+  try {
+    const sections = await prisma.conciergePromptSection.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } });
+    if (sections.length === 0) return null; // fallback to hardcoded
+    promptSectionsCache = new Map(sections.map(s => [s.key, s.content]));
+    promptSectionsCacheExpiry = Date.now() + 2 * 60 * 1000;
+    return promptSectionsCache;
+  } catch {
+    return null;
+  }
+}
+
+function assemblePromptFromSections(sections: Map<string, string>, sectionKeys: string[]): string {
+  return sectionKeys.map(k => sections.get(k) || "").filter(Boolean).join("\n\n");
+}
+
 export const aiRouter = Router();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -818,7 +838,14 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       userContextBlock = parts.join(" ");
     }
 
-    const biologicalMasterLogic = `
+    // Try loading prompt sections from DB (admin-editable)
+    const dbSections = await getPromptSections();
+    const biologicalMasterLogicFromDb = dbSections ? assemblePromptFromSections(dbSections, [
+      "expert_persona", "ui_components", "conversation_flow", "matching_rules",
+      "match_blurb_rules", "protocols", "post_match_behavior", "agency_confidentiality", "general_behavior",
+    ]) : null;
+
+    const biologicalMasterLogic = biologicalMasterLogicFromDb || `
 CONVERSATIONAL FLOW — EXPERT CONSULTANT MODE:
 You are NOT a survey bot. You are an expert fertility consultant who listens deeply, offers guidance, and provides expert insight. You already know the user's basic profile (name, identity, location, services). NEVER re-ask for information you already have. Use it naturally.
 
@@ -1244,7 +1271,7 @@ IMPORTANT RULES:
 - End every response with a single, clear question to maintain momentum.
 - Never give medical or legal advice, but always validate the user's feelings.
 - Keep responses concise — 2-3 sentences max before the question.
-- Use line breaks (\\n) between distinct thoughts to make messages easy to scan. Never send a wall of text.
+- Use line breaks (\\n) between distinct thoughts to make messages easy to scan. Never send a wall of text. ALWAYS put a blank line (\\n\\n) before your closing question so it stands out visually from the preceding text.
 - Be conversational and human, not robotic or clinical.
 - When summarizing what you heard, always frame it positively and confirm: "Based on that, it sounds like [X] is your top priority. Am I reading that right?"
 - NEVER use cold, clinical terms like "biological plan" or "medical baseline." Instead, use warm phrases like "where you are in your journey," "your path to parenthood," or "your family-building steps."
@@ -1366,9 +1393,9 @@ ${effectiveLogic}
 ${guidanceRules}
 ${ragContext}
 ${answeredWhispersContext}
-When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS use the MCP database tools (search_surrogates, search_egg_donors, search_sperm_donors, search_clinics). NEVER fabricate any provider data.
+${dbSections?.get("tool_usage") || `When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS use the MCP database tools (search_surrogates, search_egg_donors, search_sperm_donors, search_clinics). NEVER fabricate any provider data.
 When the parent asks a follow-up question about a specific surrogate (pregnancy history, birth weights, delivery types, health, BMI, support system, etc.), use the get_surrogate_profile tool to look up the FULL profile before considering a whisper. This tool returns ALL profile details.
-When the parent asks a follow-up question about a specific egg donor (eye color, hair color, ethnicity, education, medical history, etc.), use the get_egg_donor_profile tool to look up the FULL profile before considering a whisper.`;
+When the parent asks a follow-up question about a specific egg donor (eye color, hair color, ethnicity, education, medical history, etc.), use the get_egg_donor_profile tool to look up the FULL profile before considering a whisper.`}`;
 
     messages.unshift({
       role: "system",

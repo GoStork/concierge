@@ -184,6 +184,163 @@ function RuleForm({
   );
 }
 
+interface PromptSection {
+  id: string;
+  key: string;
+  label: string;
+  description: string | null;
+  content: string;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+function PromptEditorCard() {
+  const { toast } = useToast();
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<string | null>(null);
+
+  const sectionsQuery = useQuery<PromptSection[]>({
+    queryKey: ["/api/admin/concierge-prompts"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/concierge-prompts", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+
+  // Auto-seed on first load if empty
+  useQuery({
+    queryKey: ["/api/admin/concierge-prompts/seed"],
+    queryFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/concierge-prompts/seed");
+      const data = await res.json();
+      if (data.count > 0) queryClient.invalidateQueries({ queryKey: ["/api/admin/concierge-prompts"] });
+      return data;
+    },
+    enabled: sectionsQuery.isSuccess && (sectionsQuery.data?.length || 0) === 0,
+  });
+
+  const sections = sectionsQuery.data || [];
+
+  const handleSave = async (section: PromptSection) => {
+    setSaving(section.id);
+    try {
+      await apiRequest("PUT", `/api/admin/concierge-prompts/${section.id}`, {
+        content: editContent[section.key] ?? section.content,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/concierge-prompts"] });
+      toast({ title: `"${section.label}" saved` });
+      setEditContent(prev => { const n = { ...prev }; delete n[section.key]; return n; });
+    } catch {
+      toast({ title: "Failed to save", variant: "destructive" });
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const handleToggle = async (section: PromptSection) => {
+    try {
+      await apiRequest("PUT", `/api/admin/concierge-prompts/${section.id}`, { isActive: !section.isActive });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/concierge-prompts"] });
+      toast({ title: section.isActive ? "Section disabled" : "Section enabled" });
+    } catch {
+      toast({ title: "Failed", variant: "destructive" });
+    }
+  };
+
+  return (
+    <Card className="rounded-xl p-6" data-testid="card-prompt-editor">
+      <div className="flex items-center gap-2.5 mb-4">
+        <FileText className="w-5 h-5 text-primary" />
+        <div>
+          <h3 className="font-display text-base font-semibold">AI Prompt Instructions</h3>
+          <p className="text-xs text-muted-foreground">Edit the system prompt sections that control AI concierge behavior. Changes take effect within 2 minutes.</p>
+        </div>
+      </div>
+
+      {sectionsQuery.isLoading ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : sections.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-4">Loading prompt sections...</p>
+      ) : (
+        <div className="space-y-2">
+          {sections.map(section => {
+            const isExpanded = expandedKey === section.key;
+            const currentContent = editContent[section.key] ?? section.content;
+            const hasChanges = editContent[section.key] !== undefined && editContent[section.key] !== section.content;
+
+            return (
+              <div key={section.id} className={`rounded-lg border ${!section.isActive ? "opacity-50" : ""}`}>
+                <button
+                  className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/30 transition-colors"
+                  onClick={() => setExpandedKey(isExpanded ? null : section.key)}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-semibold text-foreground">{section.label}</span>
+                      {section.description && (
+                        <p className="text-xs text-muted-foreground truncate">{section.description}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {!section.isActive && <span className="text-xs text-muted-foreground">Disabled</span>}
+                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </div>
+                </button>
+
+                {isExpanded && (
+                  <div className="px-4 pb-4 space-y-3">
+                    <Textarea
+                      value={currentContent}
+                      onChange={(e) => setEditContent(prev => ({ ...prev, [section.key]: e.target.value }))}
+                      className="min-h-[300px] font-mono text-xs leading-relaxed"
+                      placeholder="Enter prompt instructions..."
+                    />
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={section.isActive}
+                          onCheckedChange={() => handleToggle(section)}
+                        />
+                        <span className="text-xs text-muted-foreground">
+                          {section.isActive ? "Active" : "Disabled"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {hasChanges && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditContent(prev => { const n = { ...prev }; delete n[section.key]; return n; })}
+                          >
+                            Discard
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          disabled={!hasChanges || saving === section.id}
+                          onClick={() => handleSave(section)}
+                        >
+                          {saving === section.id ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <CheckCircle className="w-3.5 h-3.5 mr-1.5" />}
+                          Save
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function IntelligenceRulesCard() {
   const { toast } = useToast();
   const [showNewRule, setShowNewRule] = useState(false);
@@ -933,6 +1090,8 @@ export default function AdminConciergePage() {
           </div>
         )}
       </Card>
+
+      <PromptEditorCard />
 
       <IntelligenceRulesCard />
 
