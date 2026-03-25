@@ -78,6 +78,21 @@ async function buildAll() {
     external: [...externals, ...nestOptionalExternals],
     logLevel: "info",
   });
+
+  console.log("building mcp-server...");
+  await esbuild({
+    entryPoints: ["server/src/mcp-server.ts"],
+    platform: "node",
+    bundle: true,
+    format: "cjs",
+    outfile: "dist/mcp-server.cjs",
+    define: {
+      "process.env.NODE_ENV": '"production"',
+    },
+    minify: true,
+    external: [...externals, ...nestOptionalExternals],
+    logLevel: "info",
+  });
 }
 
 buildAll().catch((err) => {

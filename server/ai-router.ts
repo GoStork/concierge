@@ -384,9 +384,12 @@ let mcpClient: Client | null = null;
 async function initMcp(attempt = 1): Promise<void> {
   const maxAttempts = 3;
   try {
+    const isProd = process.env.NODE_ENV === "production";
     const transport = new StdioClientTransport({
-      command: "npx",
-      args: ["tsx", "server/src/mcp-server.ts"],
+      command: "node",
+      args: isProd
+        ? ["dist/mcp-server.cjs"]
+        : ["--import", "tsx/esm", "server/src/mcp-server.ts"],
       env: { ...process.env, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME || `${process.env.HOME}/.config` } as Record<string, string>,
     });
 
