@@ -1670,6 +1670,15 @@ The parent's message was: "${userMessage}"`,
           } else if (etype === "sperm donor") {
             profileToolName = "search_sperm_donors";
             profileToolArgs = { query: userMessage, limit: 1 };
+          } else if (etype === "clinic") {
+            profileToolName = "search_clinics";
+            profileToolArgs = { query: userMessage, limit: 1 };
+            try {
+              const clinicProvider = await prisma.provider.findUnique({ where: { id: entityId }, select: { name: true } });
+              if (clinicProvider?.name) {
+                profileToolArgs = { name: clinicProvider.name, limit: 1 };
+              }
+            } catch {}
           }
 
           if (profileToolName) {
@@ -1682,7 +1691,7 @@ The parent's message was: "${userMessage}"`,
 
             if (profileText && profileText.length > 50) {
               console.log(`[QUESTION INTERCEPT] Got profile data (${profileText.length} chars), re-asking AI to answer question instead of showing new match`);
-              const pronounLabel = etype === "sperm donor" ? "him" : "her";
+              const pronounLabel = etype === "clinic" ? "them" : etype === "sperm donor" ? "him" : "her";
               messages.push({
                 role: "user",
                 content: `SYSTEM OVERRIDE: The parent asked a QUESTION about the currently presented match profile. They did NOT ask to skip or see a new match. You MUST answer their question using the profile data below. Do NOT present a new match card. Do NOT call search tools. Just answer the question.\n\nFULL PROFILE DATA:\n${profileText}\n\nParent's question: "${userMessage}"\n\nAnswer the question directly from the profile data. After answering, ask if they have more questions: "Anything else you'd like to know about ${pronounLabel}?" [[QUICK_REPLY:More questions|I like ${pronounLabel}!|Show me someone else]]`,
@@ -1753,6 +1762,15 @@ The parent's message was: "${userMessage}"`,
           } else if (etype === "sperm donor") {
             profileToolName = "search_sperm_donors";
             profileToolArgs = { query: userMessage, limit: 1 };
+          } else if (etype === "clinic") {
+            profileToolName = "search_clinics";
+            profileToolArgs = { query: userMessage, limit: 1 };
+            try {
+              const clinicProvider = await prisma.provider.findUnique({ where: { id: entityId }, select: { name: true } });
+              if (clinicProvider?.name) {
+                profileToolArgs = { name: clinicProvider.name, limit: 1 };
+              }
+            } catch {}
           }
 
           if (profileToolName) {
@@ -2046,6 +2064,7 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
         if (etype === "surrogate") profileToolName = "get_surrogate_profile";
         else if (etype === "egg donor") profileToolName = "search_egg_donors";
         else if (etype === "sperm donor") profileToolName = "search_sperm_donors";
+        else if (etype === "clinic") profileToolName = "search_clinics";
 
         if (profileToolName) {
           try {
@@ -2057,6 +2076,14 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
                 arguments: { surrogateId: recentEntityId },
               });
               profileText = (profileResult.content as any)?.[0]?.text || "";
+            } else if (profileToolName === "search_clinics") {
+              let clinicArgs: any = { query: userMessage, limit: 1 };
+              try {
+                const clinicProvider = await prisma.provider.findUnique({ where: { id: recentEntityId }, select: { name: true } });
+                if (clinicProvider?.name) clinicArgs = { name: clinicProvider.name, limit: 1 };
+              } catch {}
+              const searchResult = await mcpClient.callTool({ name: "search_clinics", arguments: clinicArgs });
+              profileText = (searchResult.content as any)?.[0]?.text || "";
             } else {
               const searchResult = await mcpClient.callTool({
                 name: profileToolName,
