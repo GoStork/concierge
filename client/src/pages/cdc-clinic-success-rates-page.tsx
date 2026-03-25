@@ -255,7 +255,7 @@ function OwnEggsSection({ allMetrics }: { allMetrics: Record<string, MetricEntry
 
         {hasAllPatients && (
           <div data-testid="own-eggs-table-all-patients">
-            <div className="border rounded-lg overflow-hidden">
+            <div className="border rounded-[var(--radius)] overflow-hidden">
               <table className="w-full text-sm table-fixed">
                 <thead>
                   <tr className="bg-muted text-foreground border-b border-border">
@@ -287,7 +287,7 @@ function OwnEggsSection({ allMetrics }: { allMetrics: Record<string, MetricEntry
 
         {hasNewPatients && (
           <div data-testid="own-eggs-table-new-patients">
-            <div className="border rounded-lg overflow-hidden">
+            <div className="border rounded-[var(--radius)] overflow-hidden">
               <table className="w-full text-sm table-fixed">
                 <thead>
                   <tr className="bg-muted text-foreground border-b border-border">
@@ -344,7 +344,7 @@ function DonorEggsSection({ allMetrics }: { allMetrics: Record<string, MetricEnt
         <h3 className="text-lg font-heading" data-testid="section-donor-eggs">
           Noncumulative ART Success Rates for Transfers — Donor Eggs
         </h3>
-        <div className="border rounded-lg overflow-hidden" data-testid="donor-eggs-table">
+        <div className="border rounded-[var(--radius)] overflow-hidden" data-testid="donor-eggs-table">
           <table className="w-full text-sm table-fixed">
             <thead>
               <tr className="bg-muted text-foreground border-b border-border">

@@ -78,7 +78,7 @@ export function SyncReportContent({ data, liveProgress }: { data: SyncReport; li
             <XCircle className="w-4 h-4" />
             Sync Errors ({data.lastSyncErrors.length})
           </h4>
-          <div className="bg-error/5 dark:bg-error/10 rounded-lg border border-error/20 dark:border-error/30 p-3">
+          <div className="bg-error/5 dark:bg-error/10 rounded-[var(--radius)] border border-error/20 dark:border-error/30 p-3">
             {data.lastSyncErrors.map((err, i) => (
               <div key={i} className="text-xs text-error dark:text-error/80 py-0.5" data-testid={`sync-error-${i}`}>
                 {err}
@@ -94,7 +94,7 @@ export function SyncReportContent({ data, liveProgress }: { data: SyncReport; li
             <AlertTriangle className="w-4 h-4" />
             Missing Mandatory Fields ({data.missingFields.length} fields incomplete)
           </h4>
-          <Card className="rounded-lg">
+          <Card className="rounded-[var(--radius)]">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-warning/5 dark:bg-warning/10">
                 <tr>
@@ -146,7 +146,7 @@ export function SyncReportContent({ data, liveProgress }: { data: SyncReport; li
           </Card>
         </div>
       ) : (
-        <div className="flex items-center gap-2 text-success bg-success/5 dark:bg-success/10 rounded-lg p-4 border border-success/20 dark:border-success/30" data-testid="no-missing-fields">
+        <div className="flex items-center gap-2 text-success bg-success/5 dark:bg-success/10 rounded-[var(--radius)] p-4 border border-success/20 dark:border-success/30" data-testid="no-missing-fields">
           <CheckCircle2 className="w-5 h-5" />
           <span className="text-sm font-ui">All mandatory fields are complete across all profiles.</span>
         </div>

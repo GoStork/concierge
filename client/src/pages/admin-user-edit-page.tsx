@@ -87,7 +87,7 @@ function CalendarLinkSection({ slug }: { slug: string }) {
     setTimeout(() => setCopied(false), 2000);
   };
   return (
-    <div className="bg-card rounded-xl border border-border/50 shadow-sm p-6 space-y-4">
+    <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
       <div className="flex items-center gap-2">
         <Link2 className="w-5 h-5 text-primary" />
         <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Your Calendar Link</h2>
@@ -96,7 +96,7 @@ function CalendarLinkSection({ slug }: { slug: string }) {
         Share this link with anyone to let them book time with you. It can be embedded on websites or shared via email.
       </p>
       <div className="flex items-center gap-2">
-        <div className="flex-1 flex items-center bg-secondary/30 border border-border/50 rounded-lg px-3 py-2">
+        <div className="flex-1 flex items-center bg-secondary/30 border border-border/50 rounded-[var(--radius)] px-3 py-2">
           <span className="text-sm text-muted-foreground mr-1 shrink-0">/book/</span>
           <span className="text-sm font-ui font-heading" data-testid="text-calendar-slug">{slug}</span>
         </div>
@@ -441,7 +441,7 @@ export default function AdminUserEditPage() {
               </div>
               <div className="space-y-2">
                 <Label>Email</Label>
-                <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-border/40 bg-muted/30">
+                <div className="flex items-center gap-2 h-10 px-3 rounded-[var(--radius)] border border-border/40 bg-muted/30">
                   <Mail className="w-4 h-4 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground" data-testid="text-account-email">{userData.email}</span>
                 </div>
@@ -528,7 +528,7 @@ export default function AdminUserEditPage() {
               </div>
               <div className="space-y-2">
                 <Label>Role</Label>
-                <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-border/40 bg-muted/30">
+                <div className="flex items-center gap-2 h-10 px-3 rounded-[var(--radius)] border border-border/40 bg-muted/30">
                   <Shield className="w-4 h-4 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground" data-testid="text-account-role">{roleDisplay}</span>
                 </div>
@@ -536,7 +536,7 @@ export default function AdminUserEditPage() {
               {userData.provider && (
                 <div className="space-y-2">
                   <Label>Organization</Label>
-                  <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-border/40 bg-muted/30">
+                  <div className="flex items-center gap-2 h-10 px-3 rounded-[var(--radius)] border border-border/40 bg-muted/30">
                     <Building2 className="w-4 h-4 text-muted-foreground" />
                     <span className="text-sm text-muted-foreground" data-testid="text-account-provider">{userData.provider.name}</span>
                   </div>
@@ -546,9 +546,9 @@ export default function AdminUserEditPage() {
           </div>
 
           {isParentAccountMode && userData.parentAccountRole !== "INTENDED_PARENT_1" && id !== currentUser?.id && (
-            <div className="mt-8 bg-card rounded-xl border border-border/50 shadow-sm p-6 space-y-4">
+            <div className="mt-8 bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
               <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Account Role</h2>
-              <div className="space-y-2 border rounded-lg p-3">
+              <div className="space-y-2 border rounded-[var(--radius)] p-3">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="radio" name="parentAccountRole" value="INTENDED_PARENT_2" checked={parentAccountRole === "INTENDED_PARENT_2"} onChange={() => setParentAccountRole("INTENDED_PARENT_2")} data-testid="radio-role-ip2" />
                   <div>
@@ -568,9 +568,9 @@ export default function AdminUserEditPage() {
           )}
 
           {isGostorkTeamUser && (
-            <div className="mt-8 bg-card rounded-xl border border-border/50 shadow-sm p-6 space-y-4">
+            <div className="mt-8 bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
               <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">GoStork Role</h2>
-              <div className="space-y-2 border rounded-lg p-3">
+              <div className="space-y-2 border rounded-[var(--radius)] p-3">
                 {GOSTORK_ROLES.map(r => (
                   <label key={r.value} className="flex items-center gap-2 cursor-pointer">
                     <Checkbox checked={roles.includes(r.value)} onCheckedChange={() => toggleRole(r.value)} data-testid={`checkbox-edit-role-${r.value}`} />
@@ -582,12 +582,12 @@ export default function AdminUserEditPage() {
           )}
 
           {isProviderUser && (
-            <div className="mt-8 bg-card rounded-xl border border-border/50 shadow-sm p-6 space-y-4">
+            <div className="mt-8 bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
               <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Roles & Access</h2>
 
               <div className="space-y-2">
                 <Label>Roles</Label>
-                <div className="space-y-2 border rounded-lg p-3">
+                <div className="space-y-2 border rounded-[var(--radius)] p-3">
                   {PROVIDER_ROLES.map(r => (
                     <label key={r.value} className="flex items-center gap-2 cursor-pointer">
                       <Checkbox checked={roles.includes(r.value)} onCheckedChange={() => toggleRole(r.value)} data-testid={`checkbox-edit-role-${r.value}`} />
@@ -604,7 +604,7 @@ export default function AdminUserEditPage() {
                   <span className="text-sm">All Locations</span>
                 </label>
                 {providerLocations && providerLocations.length > 0 && (
-                  <div className={`space-y-2 border rounded-lg p-3 mt-2 ${allLocations ? "opacity-50" : ""}`}>
+                  <div className={`space-y-2 border rounded-[var(--radius)] p-3 mt-2 ${allLocations ? "opacity-50" : ""}`}>
                     {providerLocations.map(loc => (
                       <label key={loc.id} className="flex items-center gap-2 cursor-pointer">
                         <Checkbox checked={allLocations || locationIds.includes(loc.id)} onCheckedChange={() => { if (!allLocations) toggleLocationId(loc.id); }} disabled={allLocations} data-testid={`checkbox-edit-location-${loc.id}`} />
@@ -618,7 +618,7 @@ export default function AdminUserEditPage() {
           )}
 
           {userData.dailyRoomUrl && (
-            <div className="mt-8 bg-card rounded-xl border border-border/50 shadow-sm p-6 space-y-4">
+            <div className="mt-8 bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
               <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Video Room</h2>
               <div className="flex items-center gap-2">
                 <Video className="w-4 h-4 text-primary shrink-0" />
@@ -630,7 +630,7 @@ export default function AdminUserEditPage() {
           )}
 
           {!isParentAccountMode && (
-            <div className="mt-8 bg-card rounded-xl border border-border/50 shadow-sm p-6 space-y-4">
+            <div className="mt-8 bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
               <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Connected Calendars</h2>
               {userData.calendarConnections && userData.calendarConnections.length > 0 ? (
                 <div className="space-y-2">

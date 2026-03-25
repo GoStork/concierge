@@ -450,17 +450,17 @@ export default function AdminProviderEditPage() {
             const scraped = scrapedValues[field] || "";
             if (!current && scraped) return null;
             return (
-              <div key={field} className="border rounded-lg p-3 space-y-2" data-testid={`edit-merge-field-${field}`}>
+              <div key={field} className="border rounded-[var(--radius)] p-3 space-y-2" data-testid={`edit-merge-field-${field}`}>
                 <Label className="font-ui text-sm">{labels[field] || field}</Label>
                 <div className="space-y-1.5">
-                  <label className={`flex items-start gap-2 p-2 rounded-md cursor-pointer text-sm ${choice === "keep" ? "bg-accent/10 border border-accent/30 dark:bg-accent/15 dark:border-accent/30" : "bg-secondary/30 hover:bg-secondary/50"}`}>
+                  <label className={`flex items-start gap-2 p-2 rounded-[var(--radius)] cursor-pointer text-sm ${choice === "keep" ? "bg-accent/10 border border-accent/30 dark:bg-accent/15 dark:border-accent/30" : "bg-secondary/30 hover:bg-secondary/50"}`}>
                     <input type="radio" name={`edit-merge-${field}`} checked={choice === "keep"} onChange={() => setEditMergeSelections(prev => ({ ...prev, [field]: "keep" }))} className="mt-0.5" />
                     <div className="flex-1 min-w-0">
                       <span className="text-xs font-ui text-muted-foreground">Keep current:</span>
                       <p className={field === "about" ? "whitespace-pre-wrap break-words" : "truncate"}>{current}</p>
                     </div>
                   </label>
-                  <label className={`flex items-start gap-2 p-2 rounded-md cursor-pointer text-sm ${choice === "scraped" ? "bg-[hsl(var(--brand-success)/0.08)] border border-[hsl(var(--brand-success)/0.3)] dark:bg-[hsl(var(--brand-success)/0.15)] dark:border-[hsl(var(--brand-success)/0.3)]" : "bg-secondary/30 hover:bg-secondary/50"}`}>
+                  <label className={`flex items-start gap-2 p-2 rounded-[var(--radius)] cursor-pointer text-sm ${choice === "scraped" ? "bg-[hsl(var(--brand-success)/0.08)] border border-[hsl(var(--brand-success)/0.3)] dark:bg-[hsl(var(--brand-success)/0.15)] dark:border-[hsl(var(--brand-success)/0.3)]" : "bg-secondary/30 hover:bg-secondary/50"}`}>
                     <input type="radio" name={`edit-merge-${field}`} checked={choice === "scraped"} onChange={() => setEditMergeSelections(prev => ({ ...prev, [field]: "scraped" }))} className="mt-0.5" />
                     <div className="flex-1 min-w-0">
                       <span className="text-xs font-ui text-muted-foreground">Use scraped:</span>
@@ -472,7 +472,7 @@ export default function AdminProviderEditPage() {
             );
           })}
           {editScrapedData.locations && editScrapedData.locations.length > 0 && (
-            <div className="border rounded-lg p-3 space-y-2" data-testid="edit-merge-field-locations">
+            <div className="border rounded-[var(--radius)] p-3 space-y-2" data-testid="edit-merge-field-locations">
               <Label className="font-ui text-sm">Locations ({editScrapedData.locations.length} found by scraper)</Label>
               <p className="text-xs text-muted-foreground">Scraped locations will be added to any existing locations.</p>
               <div className="space-y-1">
@@ -486,7 +486,7 @@ export default function AdminProviderEditPage() {
             </div>
           )}
           {editScrapedData.suggestedServices && editScrapedData.suggestedServices.length > 0 && (
-            <div className="border rounded-lg p-3 space-y-2" data-testid="edit-merge-field-services">
+            <div className="border rounded-[var(--radius)] p-3 space-y-2" data-testid="edit-merge-field-services">
               <Label className="font-ui text-sm">Suggested Services</Label>
               <div className="flex flex-wrap gap-2">
                 {editScrapedData.suggestedServices.map((svc, idx) => (
@@ -496,7 +496,7 @@ export default function AdminProviderEditPage() {
             </div>
           )}
           {editScrapedData.teamMembers && editScrapedData.teamMembers.length > 0 && (
-            <div className="border rounded-lg p-3 space-y-2" data-testid="edit-merge-field-team">
+            <div className="border rounded-[var(--radius)] p-3 space-y-2" data-testid="edit-merge-field-team">
               <Label className="font-ui text-sm">Team Members ({editScrapedData.teamMembers.length} found by scraper)</Label>
               <p className="text-xs text-muted-foreground">Scraped team members will be added to any existing ones.</p>
               <div className="space-y-1">
@@ -528,7 +528,7 @@ export default function AdminProviderEditPage() {
   const showEggDonors = svcNames.some((n: string) => n.includes("egg donor") || n.includes("egg bank"));
   const showSurrogates = svcNames.some((n: string) => n.includes("surrogacy"));
   const showSpermDonors = svcNames.some((n: string) => n.includes("sperm"));
-  const tabTriggerClass = "flex-1 h-full text-sm font-ui rounded-md data-[state=active]:bg-background dark:data-[state=active]:bg-foreground/90 data-[state=active]:shadow data-[state=active]:text-primary data-[state=inactive]:text-muted-foreground dark:data-[state=inactive]:text-muted-foreground";
+  const tabTriggerClass = "flex-1 h-full text-sm font-ui rounded-[var(--radius)] data-[state=active]:bg-background dark:data-[state=active]:bg-foreground/90 data-[state=active]:shadow data-[state=active]:text-primary data-[state=inactive]:text-muted-foreground dark:data-[state=inactive]:text-muted-foreground";
 
 
   return (
@@ -547,7 +547,7 @@ export default function AdminProviderEditPage() {
       </div>
 
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="w-full h-12 bg-muted dark:bg-muted p-1 rounded-lg border border-border dark:border-border">
+        <TabsList className="w-full h-12 bg-muted dark:bg-muted p-1 rounded-[var(--radius)] border border-border dark:border-border">
           <TabsTrigger value="profile" className={tabTriggerClass} data-testid="tab-edit-profile">Profile</TabsTrigger>
           <TabsTrigger value="users" className={tabTriggerClass} data-testid="tab-edit-users">Team</TabsTrigger>
           {showEggDonors && <TabsTrigger value="egg-donors" className={tabTriggerClass} data-testid="tab-edit-egg-donors">Egg Donors</TabsTrigger>}
@@ -572,7 +572,7 @@ export default function AdminProviderEditPage() {
               <div className="flex items-start gap-4">
                 <button
                   type="button"
-                  className="relative w-16 h-16 rounded-lg bg-secondary shrink-0 overflow-hidden group cursor-pointer border border-border/40 hover:border-primary/40 transition-colors"
+                  className="relative w-16 h-16 rounded-[var(--radius)] bg-secondary shrink-0 overflow-hidden group cursor-pointer border border-border/40 hover:border-primary/40 transition-colors"
                   onClick={() => document.getElementById("edit-logo-upload")?.click()}
                   data-testid="btn-upload-logo"
                 >
@@ -798,7 +798,7 @@ export default function AdminProviderEditPage() {
                       const sortId = getSortId(member, idx);
                       return (
                         <SortableItem key={sortId} id={sortId} disabled={editingEditMemberIdx === idx}>
-                          <div className="border rounded-lg p-3" data-testid={`edit-team-member-${idx}`}>
+                          <div className="border rounded-[var(--radius)] p-3" data-testid={`edit-team-member-${idx}`}>
                     {editingEditMemberIdx === idx ? (
                       <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-3">
@@ -912,7 +912,7 @@ export default function AdminProviderEditPage() {
                         {provider && provider.locations && provider.locations.length > 0 && (
                           <div className="space-y-1">
                             <Label className="text-xs">Assigned Locations</Label>
-                            <div className="border rounded-lg p-2 space-y-1.5">
+                            <div className="border rounded-[var(--radius)] p-2 space-y-1.5">
                               {provider.locations.map((loc: any) => (
                                 <label key={loc.id} className="flex items-center gap-2 cursor-pointer">
                                   <Checkbox
@@ -1100,7 +1100,7 @@ function ProviderBrandingTab({ providerId, brandingEnabled: initialEnabled, prov
   };
 
   const headerSlot = (
-    <Card className="flex items-center justify-between p-4 rounded-2xl">
+    <Card className="flex items-center justify-between p-4 rounded-[var(--container-radius)]">
       <div className="flex items-center gap-3">
         <Palette className="w-5 h-5 text-primary" />
         <div>

@@ -357,7 +357,7 @@ export default function EnrichmentReportPage() {
       )}
 
       {isLive && (
-        <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3" data-testid="enrichment-live-banner">
+        <div className="rounded-[var(--radius)] border border-primary/20 bg-primary/5 p-4 space-y-3" data-testid="enrichment-live-banner">
           <div className="flex items-center gap-2">
             <Activity className="w-4 h-4 text-primary animate-pulse" />
             <span className="text-sm font-heading text-primary">Live — Enrichment in Progress</span>
@@ -547,7 +547,7 @@ export default function EnrichmentReportPage() {
             <XCircle className="w-4 h-4" />
             Enrichment Error
           </h3>
-          <div className="bg-error/5 dark:bg-error/10 rounded-lg border border-error/20 dark:border-error/30 p-4">
+          <div className="bg-error/5 dark:bg-error/10 rounded-[var(--radius)] border border-error/20 dark:border-error/30 p-4">
             <p className="text-sm text-error dark:text-error/80">{job.enrichmentErrorMessage}</p>
           </div>
         </div>
@@ -582,7 +582,7 @@ export default function EnrichmentReportPage() {
       )}
 
       {missingWebsite.length === 0 && job.enrichmentStatus === "COMPLETED" && (
-        <div className="flex items-center gap-2 text-success bg-success/5 dark:bg-success/10 rounded-lg p-4 border border-success/20 dark:border-success/30" data-testid="enrichment-complete-success">
+        <div className="flex items-center gap-2 text-success bg-success/5 dark:bg-success/10 rounded-[var(--radius)] p-4 border border-success/20 dark:border-success/30" data-testid="enrichment-complete-success">
           <CheckCircle2 className="w-5 h-5" />
           <span className="text-sm font-ui">All clinics have a website URL populated.</span>
         </div>

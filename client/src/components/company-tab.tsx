@@ -379,7 +379,7 @@ export default function CompanyTab() {
             <img
               src={getPhotoSrc(logoUrl) || logoUrl}
               alt="Logo"
-              className="w-16 h-16 rounded-lg object-contain bg-secondary shrink-0"
+              className="w-16 h-16 rounded-[var(--radius)] object-contain bg-secondary shrink-0"
               referrerPolicy="no-referrer"
               onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
               data-testid="img-company-logo"
@@ -708,7 +708,7 @@ export default function CompanyTab() {
                 const sortId = getSortId(member, idx);
                 return (
                   <SortableItem key={sortId} id={sortId} disabled={editingMemberIdx === idx} readOnly={readOnly}>
-                    <div className="border rounded-lg p-3" data-testid={`company-member-${idx}`}>
+                    <div className="border rounded-[var(--radius)] p-3" data-testid={`company-member-${idx}`}>
               {editingMemberIdx === idx && !readOnly ? (
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
@@ -822,7 +822,7 @@ export default function CompanyTab() {
                   {locations.length > 0 && (
                     <div className="space-y-1">
                       <Label className="text-xs">Assigned Locations</Label>
-                      <div className="border rounded-lg p-2 space-y-1.5">
+                      <div className="border rounded-[var(--radius)] p-2 space-y-1.5">
                         {locations.filter(l => l.id).map((loc) => (
                           <label key={loc.id} className="flex items-center gap-2 cursor-pointer">
                             <Checkbox

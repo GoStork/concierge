@@ -143,7 +143,7 @@ function ScrollWheel({
   return (
     <div className="relative" style={{ height: visibleCount * itemHeight }}>
       <div
-        className="absolute left-0 right-0 bg-muted rounded-lg pointer-events-none z-0"
+        className="absolute left-0 right-0 bg-muted rounded-[var(--radius)] pointer-events-none z-0"
         style={{ top: Math.floor(visibleCount / 2) * itemHeight, height: itemHeight }}
       />
       <div
@@ -1077,7 +1077,7 @@ function StepPhone({
             {selected.label} {selected.code} <ChevronLeft className="w-4 h-4 rotate-[-90deg]" />
           </button>
           {showCodes && (
-            <div className="absolute top-full left-0 mt-1 bg-background border border-border rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto w-48">
+            <div className="absolute top-full left-0 mt-1 bg-background border border-border rounded-[var(--radius)] shadow-lg z-10 max-h-48 overflow-y-auto w-48">
               {COUNTRY_CODES.map(cc => (
                 <button
                   key={cc.code}

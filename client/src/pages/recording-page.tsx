@@ -226,7 +226,7 @@ export default function RecordingPage() {
 
         if (!consented) {
           return (
-            <div className="flex flex-col items-center justify-center py-16 text-center border rounded-lg bg-secondary/20">
+            <div className="flex flex-col items-center justify-center py-16 text-center border rounded-[var(--radius)] bg-secondary/20">
               <Video className="w-10 h-10 text-muted-foreground mb-3" />
               <h2 className="text-lg font-heading" data-testid="text-no-recording">No recording for this call</h2>
               <p className="text-sm text-muted-foreground mt-1">
@@ -238,7 +238,7 @@ export default function RecordingPage() {
 
         if (isStale) {
           return (
-            <div className="flex flex-col items-center justify-center py-16 text-center border rounded-lg bg-secondary/20" data-testid="recording-unavailable">
+            <div className="flex flex-col items-center justify-center py-16 text-center border rounded-[var(--radius)] bg-secondary/20" data-testid="recording-unavailable">
               <AlertCircle className="w-10 h-10 text-muted-foreground mb-3" />
               <h2 className="text-lg font-heading" data-testid="text-recording-unavailable">Recording Unavailable</h2>
               <p className="text-sm text-muted-foreground mt-1 max-w-md">
@@ -271,7 +271,7 @@ export default function RecordingPage() {
         const activeStep = callEnded && consented ? 1 : 0;
 
         return (
-          <div className="border rounded-lg p-6" data-testid="recording-progress">
+          <div className="border rounded-[var(--radius)] p-6" data-testid="recording-progress">
             <div className="flex items-center gap-2 mb-6">
               <Loader2 className="w-4 h-4 animate-spin text-primary" />
               <p className="text-sm font-ui">Processing your recording...</p>
@@ -489,7 +489,7 @@ export default function RecordingPage() {
             </div>
 
             {recording.transcriptStatus === "processing" && (
-              <div className="flex items-center gap-2 p-3 bg-secondary/30 rounded-lg">
+              <div className="flex items-center gap-2 p-3 bg-secondary/30 rounded-[var(--radius)]">
                 <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">
                   Transcribing recording...
@@ -498,7 +498,7 @@ export default function RecordingPage() {
             )}
 
             {recording.transcriptStatus === "failed" && (
-              <div className="flex items-center gap-2 p-3 bg-destructive/10 rounded-lg">
+              <div className="flex items-center gap-2 p-3 bg-destructive/10 rounded-[var(--radius)]">
                 <AlertCircle className="w-4 h-4 text-destructive" />
                 <span className="text-sm text-destructive">
                   Transcription failed
@@ -531,7 +531,7 @@ export default function RecordingPage() {
                     <h3 className="text-sm font-ui">Transcript</h3>
                   </div>
                   <div
-                    className="bg-secondary/30 rounded-lg p-4"
+                    className="bg-secondary/30 rounded-[var(--radius)] p-4"
                     data-testid="transcript-content"
                   >
                     <pre className="text-sm whitespace-pre-wrap font-sans leading-body">

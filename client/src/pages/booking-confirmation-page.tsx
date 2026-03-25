@@ -91,7 +91,7 @@ export default function BookingConfirmationPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="bg-card rounded-2xl border border-border/50 shadow-lg p-8">
+        <div className="bg-card rounded-[var(--container-radius)] border border-border/50 shadow-lg p-8">
           <div className="text-center mb-6">
             {isCancelled ? (
               <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-destructive/15 flex items-center justify-center">
@@ -124,7 +124,7 @@ export default function BookingConfirmationPage() {
             </span>
           </div>
 
-          <div className="bg-secondary/30 rounded-xl p-4 space-y-3 mb-6">
+          <div className="bg-secondary/30 rounded-[var(--radius)] p-4 space-y-3 mb-6">
             <div className="flex items-center gap-3">
               {providerPhoto ? (
                 <img src={providerPhoto} alt="" className="w-10 h-10 rounded-full object-cover" />
@@ -198,7 +198,7 @@ export default function BookingConfirmationPage() {
             }
             if (participants.length === 0) return null;
             return (
-              <div className="bg-secondary/30 rounded-xl p-4 mb-6" data-testid="section-participants">
+              <div className="bg-secondary/30 rounded-[var(--radius)] p-4 mb-6" data-testid="section-participants">
                 <div className="flex items-center gap-2 mb-2">
                   <Users className="w-4 h-4 text-primary" />
                   <span className="text-sm font-ui">Participants</span>
@@ -221,7 +221,7 @@ export default function BookingConfirmationPage() {
           })()}
 
           {isPending && (
-            <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-lg p-3 mb-4">
+            <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-[var(--radius)] p-3 mb-4">
               <p className="text-sm text-[hsl(var(--brand-warning))] font-ui">Awaiting provider confirmation</p>
               <p className="text-xs text-[hsl(var(--brand-warning))] mt-1">We'll send you an email once {booking.providerUser?.name || "the provider"} confirms your booking.</p>
             </div>
@@ -237,7 +237,7 @@ export default function BookingConfirmationPage() {
               {booking.providerUser?.dailyRoomUrl && (
                 <a
                   href={`/room/${booking.id}`}
-                  className="flex items-center justify-center gap-2 mt-3 w-full py-2.5 px-4 rounded-lg bg-primary text-white text-sm font-ui hover:bg-primary/90 transition-colors"
+                  className="flex items-center justify-center gap-2 mt-3 w-full py-2.5 px-4 rounded-[var(--radius)] bg-primary text-primary-foreground text-sm font-ui hover:bg-primary/90 transition-colors"
                   data-testid="button-join-video-call"
                 >
                   <Video className="w-4 h-4" />

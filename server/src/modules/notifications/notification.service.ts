@@ -68,6 +68,29 @@ function esc(str: string): string {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
+/** Mix a hex color toward white by a given ratio (0 = original, 1 = white) */
+function tintHex(hex: string, ratio: number): string {
+  const m = hex.match(/^#?([0-9a-fA-F]{6})$/);
+  if (!m) return hex;
+  const r = parseInt(m[1].slice(0, 2), 16);
+  const g = parseInt(m[1].slice(2, 4), 16);
+  const b = parseInt(m[1].slice(4, 6), 16);
+  const tr = Math.round(r + (255 - r) * ratio);
+  const tg = Math.round(g + (255 - g) * ratio);
+  const tb = Math.round(b + (255 - b) * ratio);
+  return `#${tr.toString(16).padStart(2, "0")}${tg.toString(16).padStart(2, "0")}${tb.toString(16).padStart(2, "0")}`;
+}
+
+/** Darken a hex color by a given ratio (0 = original, 1 = black) */
+function shadeHex(hex: string, ratio: number): string {
+  const m = hex.match(/^#?([0-9a-fA-F]{6})$/);
+  if (!m) return hex;
+  const r = Math.round(parseInt(m[1].slice(0, 2), 16) * (1 - ratio));
+  const g = Math.round(parseInt(m[1].slice(2, 4), 16) * (1 - ratio));
+  const b = Math.round(parseInt(m[1].slice(4, 6), 16) * (1 - ratio));
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+}
+
 function buildBrandedEmail(
   brand: Record<string, string>,
   opts: {
@@ -88,20 +111,30 @@ function buildBrandedEmail(
   };
   const btnTextColor = (v?: string) => {
     if (v === "secondary") return brand.brandColor;
-    return "#ffffff";
+    return brand.primaryForegroundColor;
   };
   const btnBorder = (v?: string) => {
     if (v === "secondary") return `2px solid ${brand.brandColor}`;
     return "none";
   };
 
-  const alertBg: Record<string, string> = { warning: "#FFFBEB", success: "#F0FDF4", info: brand.secondaryColor, error: "#FEF2F2" };
+  const alertBg: Record<string, string> = {
+    warning: tintHex(brand.warningColor, 0.9),
+    success: tintHex(brand.successColor, 0.9),
+    info: brand.secondaryColor,
+    error: tintHex(brand.errorColor, 0.9),
+  };
   const alertBorderColor: Record<string, string> = { warning: brand.warningColor, success: brand.successColor, info: brand.accentColor, error: brand.errorColor };
-  const alertTextColor: Record<string, string> = { warning: "#92400E", success: "#166534", info: brand.brandColor, error: "#991B1B" };
+  const alertTextColor: Record<string, string> = {
+    warning: shadeHex(brand.warningColor, 0.4),
+    success: shadeHex(brand.successColor, 0.4),
+    info: brand.brandColor,
+    error: shadeHex(brand.errorColor, 0.4),
+  };
 
   const detailsHtml = opts.detailRows?.length
-    ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;background:#f9fafb;border-radius:8px;overflow:hidden;">
-${opts.detailRows.map(r => `<tr><td style="padding:10px 16px;color:#6b7280;font-size:14px;font-family:${brand.bodyFontStack};border-bottom:1px solid #f0f0f0;white-space:nowrap;width:120px;">${r.label}</td><td style="padding:10px 16px;font-size:14px;font-family:${brand.bodyFontStack};border-bottom:1px solid #f0f0f0;font-weight:500;">${r.value}</td></tr>`).join("\n")}
+    ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;background:${tintHex(brand.backgroundColor, 0.02)};border-radius:${btnRadius};overflow:hidden;">
+${opts.detailRows.map(r => `<tr><td style="padding:10px 16px;color:${brand.mutedForegroundColor};font-size:14px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};white-space:nowrap;width:120px;">${r.label}</td><td style="padding:10px 16px;color:${brand.foregroundColor};font-size:14px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};font-weight:500;">${r.value}</td></tr>`).join("\n")}
 </table>` : "";
 
   const alertHtml = opts.alertBox
@@ -112,23 +145,23 @@ ${opts.detailRows.map(r => `<tr><td style="padding:10px 16px;color:#6b7280;font-
         `<td style="padding:0 6px;"><table cellpadding="0" cellspacing="0"><tr><td style="background:${btnColor(b.variant)};border-radius:${btnRadius};border:${btnBorder(b.variant)};"><a href="${b.url}" style="display:inline-block;padding:12px 24px;color:${btnTextColor(b.variant)};text-decoration:none;font-weight:600;font-size:14px;font-family:${brand.bodyFontStack};">${b.label}</a></td></tr></table></td>`
       ).join("")}</tr></table>` : "";
 
-  const footerHtml = opts.footer ? `<p style="color:#9ca3af;font-size:12px;line-height:1.5;margin:24px 0 0;padding-top:16px;border-top:1px solid #f0f0f0;font-family:${brand.bodyFontStack};">${opts.footer}</p>` : "";
+  const footerHtml = opts.footer ? `<p style="color:${brand.mutedForegroundColor};font-size:12px;line-height:1.5;margin:24px 0 0;padding-top:16px;border-top:1px solid ${brand.borderColor};font-family:${brand.bodyFontStack};">${opts.footer}</p>` : "";
 
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background-color:#f5f5f0;font-family:${brand.bodyFontStack};">
-<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f0;padding:40px 20px;">
+<body style="margin:0;padding:0;background-color:${tintHex(brand.backgroundColor, 0.03)};font-family:${brand.bodyFontStack};">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:${tintHex(brand.backgroundColor, 0.03)};padding:40px 20px;">
 <tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;">
+<table width="600" cellpadding="0" cellspacing="0" style="background-color:${brand.cardColor};border-radius:${brand.containerRadius};overflow:hidden;">
 <tr><td style="background-color:${brand.brandColor};padding:30px;text-align:center;">
 ${brand.logoUrl ? `<img src="${brand.logoUrl}" alt="${esc(brand.companyName)}" style="max-height:40px;margin-bottom:8px;" />` : ""}
-<h1 style="color:#ffffff;font-family:${brand.headingFontStack};font-size:24px;margin:0;">${esc(brand.companyName)}</h1>
+<h1 style="color:${brand.primaryForegroundColor};font-family:${brand.headingFontStack};font-size:24px;margin:0;">${esc(brand.companyName)}</h1>
 </td></tr>
 <tr><td style="padding:40px 30px;">
 <h2 style="font-family:${brand.headingFontStack};color:${brand.brandColor};font-size:22px;margin:0 0 16px;">${opts.title}</h2>
-<p style="color:#333;font-size:15px;line-height:1.6;font-family:${brand.bodyFontStack};margin:0 0 12px;">${opts.greeting}</p>
-<div style="color:#333;font-size:15px;line-height:1.6;font-family:${brand.bodyFontStack};margin:0 0 16px;">${opts.body}</div>
+<p style="color:${brand.foregroundColor};font-size:15px;line-height:1.6;font-family:${brand.bodyFontStack};margin:0 0 12px;">${opts.greeting}</p>
+<div style="color:${brand.foregroundColor};font-size:15px;line-height:1.6;font-family:${brand.bodyFontStack};margin:0 0 16px;">${opts.body}</div>
 ${detailsHtml}
 ${alertHtml}
 ${buttonsHtml}
@@ -176,16 +209,23 @@ export class NotificationService implements OnModuleInit {
     }
     const defaults: Record<string, string> = {
       brandColor: "#004D4D",
+      primaryForegroundColor: "#ffffff",
       secondaryColor: "#F0FAF5",
       accentColor: "#0DA4EA",
       successColor: "#16a34a",
       warningColor: "#f59e0b",
       errorColor: "#ef4444",
+      foregroundColor: "#0A0A0A",
+      mutedForegroundColor: "#737373",
+      backgroundColor: "#ffffff",
+      cardColor: "#ffffff",
+      borderColor: "#e5e5e5",
       companyName: "GoStork",
       logoUrl: "",
       headingFont: "Playfair Display",
       bodyFont: "DM Sans",
       buttonRadius: "8px",
+      containerRadius: "12px",
       headingFontStack: "'Playfair Display',Georgia,serif",
       bodyFontStack: "'DM Sans',Arial,sans-serif",
     };
@@ -202,6 +242,12 @@ export class NotificationService implements OnModuleInit {
         defaults.companyName = s.companyName || defaults.companyName;
         const rawLogo = s.logoWithNameUrl || s.logoUrl || "";
         defaults.logoUrl = rawLogo && rawLogo.startsWith("/") ? `${getBaseUrl()}${rawLogo}` : rawLogo;
+        defaults.primaryForegroundColor = s.primaryForegroundColor || defaults.primaryForegroundColor;
+        defaults.foregroundColor = s.foregroundColor || defaults.foregroundColor;
+        defaults.mutedForegroundColor = s.mutedForegroundColor || defaults.mutedForegroundColor;
+        defaults.backgroundColor = s.backgroundColor || defaults.backgroundColor;
+        defaults.cardColor = s.cardColor || defaults.cardColor;
+        defaults.borderColor = s.borderColor || defaults.borderColor;
         defaults.headingFont = s.headingFont || defaults.headingFont;
         defaults.bodyFont = s.bodyFont || defaults.bodyFont;
         const borderRadiusRem = typeof s.borderRadius === "number" ? s.borderRadius : 0.5;
@@ -211,6 +257,8 @@ export class NotificationService implements OnModuleInit {
         else if (borderRadiusRem <= 0.5) defaults.buttonRadius = "8px";
         else if (borderRadiusRem <= 0.75) defaults.buttonRadius = "12px";
         else defaults.buttonRadius = "9999px";
+        const containerRadiusRem = typeof s.containerRadius === "number" ? s.containerRadius : 0.75;
+        defaults.containerRadius = `${Math.round(containerRadiusRem * 16)}px`;
         const hf = defaults.headingFont;
         defaults.headingFontStack = `'${hf}',Georgia,serif`;
         const bf = defaults.bodyFont;
@@ -1448,33 +1496,13 @@ export class NotificationService implements OnModuleInit {
     const companyName = brandData.companyName;
     const firstName = userName ? getFirstName(userName) : "there";
 
-    const html = `
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background-color:#f5f5f0;font-family:${brandData.bodyFontStack};">
-<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f0;padding:40px 20px;">
-<tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;">
-<tr><td style="background-color:${brandData.brandColor};padding:30px;text-align:center;">
-${brandData.logoUrl ? `<img src="${brandData.logoUrl}" alt="${companyName}" style="max-height:40px;margin-bottom:8px;" />` : ""}
-<h1 style="color:#ffffff;font-family:${brandData.headingFontStack};font-size:24px;margin:0;">${companyName}</h1>
-</td></tr>
-<tr><td style="padding:40px 30px;">
-<h2 style="font-family:${brandData.headingFontStack};color:${brandData.brandColor};font-size:22px;margin:0 0 16px;">Reset Your Password</h2>
-<p style="color:#333;font-size:15px;line-height:1.6;margin:0 0 12px;">Hi ${firstName},</p>
-<p style="color:#333;font-size:15px;line-height:1.6;margin:0 0 24px;">We received a request to reset your password. Click the button below to create a new password. This link will expire in 1 hour.</p>
-<table cellpadding="0" cellspacing="0" style="margin:0 auto 24px;"><tr><td style="background-color:${brandData.brandColor};border-radius:${brandData.buttonRadius};padding:14px 32px;">
-<a href="${resetLink}" style="color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;display:inline-block;">Reset Password</a>
-</td></tr></table>
-<p style="color:#666;font-size:13px;line-height:1.5;margin:0 0 8px;">If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
-<p style="color:#999;font-size:12px;line-height:1.5;margin:24px 0 0;padding-top:16px;border-top:1px solid #eee;">If the button doesn't work, copy and paste this link into your browser:<br><a href="${resetLink}" style="color:${brandData.brandColor};word-break:break-all;">${resetLink}</a></p>
-</td></tr>
-</table>
-</td></tr>
-</table>
-</body>
-</html>`;
+    const html = buildBrandedEmail(brandData, {
+      title: "Reset Your Password",
+      greeting: `Hi ${firstName},`,
+      body: `We received a request to reset your password. Click the button below to create a new password. This link will expire in 1 hour.`,
+      buttons: [{ label: "Reset Password", url: resetLink }],
+      footer: `If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.<br><br>If the button doesn't work, copy and paste this link into your browser:<br><a href="${resetLink}" style="color:${brandData.brandColor};word-break:break-all;">${resetLink}</a>`,
+    });
 
     await this.sendRawEmail(email, `Reset Your ${companyName} Password`, html);
   }
@@ -1565,26 +1593,16 @@ ${brandData.logoUrl ? `<img src="${brandData.logoUrl}" alt="${companyName}" styl
     const submitterEmail = this.escapeHtml(params.submitterEmail);
     const reviewUrl = `${getBaseUrl()}/admin/providers/${params.providerId}?tab=costs`;
     const subject = `Cost Sheet Submitted — ${params.providerName} (v${params.version})`;
-    const btnStyle = `display:inline-block;background:${brandData.brandColor};color:#fff;padding:12px 24px;border-radius:${brandData.buttonRadius};text-decoration:none;font-weight:600;font-size:14px;`;
-    const html = `
-<!DOCTYPE html>
-<html><body style="font-family:${brandData.bodyFontStack};color:#333;max-width:600px;margin:0 auto;padding:20px;">
-<div style="background:${brandData.brandColor};padding:20px;border-radius:8px 8px 0 0;">
-  ${brandData.logoUrl ? `<img src="${brandData.logoUrl}" alt="${this.escapeHtml(brandData.companyName)}" style="max-height:32px;margin-bottom:6px;" />` : ""}
-  <h2 style="color:#fff;margin:0;font-family:${brandData.headingFontStack};">${this.escapeHtml(brandData.companyName)}</h2>
-</div>
-<div style="border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 8px 8px;">
-  <h3 style="margin-top:0;font-family:${brandData.headingFontStack};">New Cost Sheet Submitted</h3>
-  <p><strong>${providerName}</strong> has submitted a cost sheet for review.</p>
-  <table style="width:100%;border-collapse:collapse;margin:16px 0;">
-    <tr><td style="padding:8px 0;border-bottom:1px solid #eee;color:#666;">Submitted by</td><td style="padding:8px 0;border-bottom:1px solid #eee;">${submitterName} (${submitterEmail})</td></tr>
-    <tr><td style="padding:8px 0;border-bottom:1px solid #eee;color:#666;">Version</td><td style="padding:8px 0;border-bottom:1px solid #eee;">${params.version}</td></tr>
-  </table>
-  <div style="text-align:center;margin:24px 0;">
-    <a href="${reviewUrl}" style="${btnStyle}">Review Cost Sheet</a>
-  </div>
-</div>
-</body></html>`;
+    const html = buildBrandedEmail(brandData, {
+      title: "New Cost Sheet Submitted",
+      greeting: `<strong>${providerName}</strong> has submitted a cost sheet for review.`,
+      body: "",
+      detailRows: [
+        { label: "Submitted by", value: `${submitterName} (${submitterEmail})` },
+        { label: "Version", value: `${params.version}` },
+      ],
+      buttons: [{ label: "Review Cost Sheet", url: reviewUrl }],
+    });
 
     for (const admin of admins) {
       await this.dispatchNotification({
@@ -1607,26 +1625,13 @@ ${brandData.logoUrl ? `<img src="${brandData.logoUrl}" alt="${companyName}" styl
     const providerName = this.escapeHtml(params.providerName);
     const viewUrl = `${getBaseUrl()}/account/costs`;
     const subject = `Cost Sheet Approved — Now Live`;
-    const btnStyle = `display:inline-block;background:${brandData.brandColor};color:#fff;padding:12px 24px;border-radius:${brandData.buttonRadius};text-decoration:none;font-weight:600;font-size:14px;`;
-    const html = `
-<!DOCTYPE html>
-<html><body style="font-family:${brandData.bodyFontStack};color:#333;max-width:600px;margin:0 auto;padding:20px;">
-<div style="background:${brandData.brandColor};padding:20px;border-radius:8px 8px 0 0;">
-  ${brandData.logoUrl ? `<img src="${brandData.logoUrl}" alt="${this.escapeHtml(brandData.companyName)}" style="max-height:32px;margin-bottom:6px;" />` : ""}
-  <h2 style="color:#fff;margin:0;font-family:${brandData.headingFontStack};">${this.escapeHtml(brandData.companyName)}</h2>
-</div>
-<div style="border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 8px 8px;">
-  <h3 style="margin-top:0;font-family:${brandData.headingFontStack};">Cost Sheet Approved</h3>
-  <p>Great news! Your cost sheet (v${params.version}) for <strong>${providerName}</strong> has been approved by the admin team.</p>
-  <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-left:4px solid #22C55E;padding:16px;border-radius:4px;margin:16px 0;">
-    <strong style="color:#166534;">Your updated costs are now live on your GoStork profile.</strong>
-    <p style="margin:8px 0 0;color:#15803D;">Parents browsing the marketplace will see your latest pricing immediately.</p>
-  </div>
-  <div style="text-align:center;margin:24px 0;">
-    <a href="${viewUrl}" style="${btnStyle}">View Your Cost Sheet</a>
-  </div>
-</div>
-</body></html>`;
+    const html = buildBrandedEmail(brandData, {
+      title: "Cost Sheet Approved",
+      greeting: `Great news! Your cost sheet (v${params.version}) for <strong>${providerName}</strong> has been approved by the admin team.`,
+      body: "Parents browsing the marketplace will see your latest pricing immediately.",
+      alertBox: { text: "Your updated costs are now live on your profile.", type: "success" },
+      buttons: [{ label: "View Your Cost Sheet", url: viewUrl }],
+    });
 
     for (const email of params.providerUserEmails) {
       const user = await this.prisma.user.findFirst({ where: { email } });
@@ -1654,26 +1659,13 @@ ${brandData.logoUrl ? `<img src="${brandData.logoUrl}" alt="${companyName}" styl
     const feedback = this.escapeHtml(params.feedback);
     const viewUrl = `${getBaseUrl()}/account/costs`;
     const subject = `Cost Sheet Rejected — Action Required`;
-    const btnStyle = `display:inline-block;background:${brandData.brandColor};color:#fff;padding:12px 24px;border-radius:${brandData.buttonRadius};text-decoration:none;font-weight:600;font-size:14px;`;
-    const html = `
-<!DOCTYPE html>
-<html><body style="font-family:${brandData.bodyFontStack};color:#333;max-width:600px;margin:0 auto;padding:20px;">
-<div style="background:${brandData.brandColor};padding:20px;border-radius:8px 8px 0 0;">
-  ${brandData.logoUrl ? `<img src="${brandData.logoUrl}" alt="${this.escapeHtml(brandData.companyName)}" style="max-height:32px;margin-bottom:6px;" />` : ""}
-  <h2 style="color:#fff;margin:0;font-family:${brandData.headingFontStack};">${this.escapeHtml(brandData.companyName)}</h2>
-</div>
-<div style="border:1px solid #e5e5e5;border-top:none;padding:24px;border-radius:0 0 8px 8px;">
-  <h3 style="margin-top:0;font-family:${brandData.headingFontStack};">Cost Sheet Rejected</h3>
-  <p>Your cost sheet (v${params.version}) for <strong>${providerName}</strong> has been rejected by the admin team.</p>
-  <div style="background:#FEF2F2;border:1px solid #FECACA;border-left:4px solid #EF4444;padding:16px;border-radius:4px;margin:16px 0;">
-    <strong style="color:#991B1B;">Admin Feedback:</strong>
-    <p style="margin:8px 0 0;color:#7F1D1D;">${feedback}</p>
-  </div>
-  <div style="text-align:center;margin:24px 0;">
-    <a href="${viewUrl}" style="${btnStyle}">Revise Cost Sheet</a>
-  </div>
-</div>
-</body></html>`;
+    const html = buildBrandedEmail(brandData, {
+      title: "Cost Sheet Rejected",
+      greeting: `Your cost sheet (v${params.version}) for <strong>${providerName}</strong> has been rejected by the admin team.`,
+      body: `<strong>Admin Feedback:</strong><br>${feedback}`,
+      alertBox: { text: `<strong>Admin Feedback:</strong> ${feedback}`, type: "error" },
+      buttons: [{ label: "Revise Cost Sheet", url: viewUrl }],
+    });
 
     for (const email of params.providerUserEmails) {
       const user = await this.prisma.user.findFirst({ where: { email } });

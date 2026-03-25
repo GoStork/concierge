@@ -62,7 +62,7 @@ export default function ForgotPasswordPage() {
                 placeholder="Enter your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="h-12 rounded-lg"
+                className="h-12 rounded-[var(--radius)]"
                 data-testid="input-reset-email"
               />
             </div>

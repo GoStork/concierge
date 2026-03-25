@@ -409,7 +409,7 @@ export default function CdcSyncReportPage() {
       )}
 
       {isLive && (
-        <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3" data-testid="cdc-sync-live-banner">
+        <div className="rounded-[var(--radius)] border border-primary/20 bg-primary/5 p-4 space-y-3" data-testid="cdc-sync-live-banner">
           <div className="flex items-center gap-2">
             <Activity className="w-4 h-4 text-primary animate-pulse" />
             <span className="text-sm font-heading text-primary">Live — CDC Sync in Progress</span>
@@ -471,14 +471,14 @@ export default function CdcSyncReportPage() {
             <XCircle className="w-4 h-4" />
             Sync Error
           </h3>
-          <div className="bg-error/5 dark:bg-error/10 rounded-lg border border-error/20 dark:border-error/30 p-4">
+          <div className="bg-error/5 dark:bg-error/10 rounded-[var(--radius)] border border-error/20 dark:border-error/30 p-4">
             <p className="text-sm text-error dark:text-error/80">{job.errorMessage}</p>
           </div>
         </div>
       )}
 
       {!job.errorMessage && job.status === "COMPLETED" && (
-        <div className="flex items-center gap-2 text-success bg-success/5 dark:bg-success/10 rounded-lg p-4 border border-success/20 dark:border-success/30" data-testid="cdc-report-success">
+        <div className="flex items-center gap-2 text-success bg-success/5 dark:bg-success/10 rounded-[var(--radius)] p-4 border border-success/20 dark:border-success/30" data-testid="cdc-report-success">
           <CheckCircle2 className="w-5 h-5" />
           <span className="text-sm font-ui">Sync completed successfully with {job.clinicsProcessed.toLocaleString()} clinics and {stats.totalSuccessRates.toLocaleString()} success rate records.</span>
         </div>

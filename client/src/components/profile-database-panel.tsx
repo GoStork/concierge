@@ -515,7 +515,7 @@ export default function ProfileDatabasePanel({
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <button
               type="button"
-              className="border rounded-lg pt-3 pb-2.5 px-3 text-left w-full hover:bg-muted/50 transition-colors cursor-pointer"
+              className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3 text-left w-full hover:bg-muted/50 transition-colors cursor-pointer"
               onClick={() => setShowReport(!showReport)}
               data-testid={`btn-toggle-report-${type}`}
             >
@@ -537,11 +537,11 @@ export default function ProfileDatabasePanel({
               </div>
               <div className="text-[11px] text-muted-foreground">Sync Status</div>
             </button>
-            <div className="border rounded-lg pt-3 pb-2.5 px-3">
+            <div className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3">
               <div className="text-xl font-heading" data-testid={`text-stat-profiles-${type}`}>{profiles.length.toLocaleString()}</div>
               <div className="text-[11px] text-muted-foreground">Total Profiles</div>
             </div>
-            <div className="border rounded-lg pt-3 pb-2.5 px-3">
+            <div className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3">
               <div className="text-xl font-heading" data-testid={`text-stat-latest-${type}`}>
                 {profiles.length > 0
                   ? (() => { const d = new Date(Math.max(...profiles.map((p) => new Date(p.createdAt).getTime()))); return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} at ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}`; })()
@@ -549,13 +549,13 @@ export default function ProfileDatabasePanel({
               </div>
               <div className="text-[11px] text-muted-foreground">Latest Profile Added</div>
             </div>
-            <div className="border rounded-lg pt-3 pb-2.5 px-3">
+            <div className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3">
               <div className="text-xl font-heading" data-testid={`text-stat-last-synced-donor-${type}`}>
                 {lastSyncedProfileLabel}
               </div>
               <div className="text-[11px] text-muted-foreground">Last Synced At</div>
             </div>
-            <div className="border rounded-lg pt-3 pb-2.5 px-3">
+            <div className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3">
               <div className="text-xl font-heading text-muted-foreground" data-testid={`text-stat-errors-${type}`}>
                 {lastReport?.failed || 0}
               </div>
@@ -563,14 +563,14 @@ export default function ProfileDatabasePanel({
             </div>
           </div>
           {showReport && (
-            <div className="bg-muted/30 border rounded-lg px-5 py-4" data-testid={`expanded-report-${type}`}>
+            <div className="bg-muted/30 border rounded-[var(--radius)] px-5 py-4" data-testid={`expanded-report-${type}`}>
               <SyncReportFetcher providerId={providerId} type={type} />
             </div>
           )}
         </div>
       )}
 
-      {isAdminOrProvider && <div className={`border rounded-lg p-4 space-y-4 ${!isAdmin ? "opacity-60" : ""}`}>
+      {isAdminOrProvider && <div className={`border rounded-[var(--radius)] p-4 space-y-4 ${!isAdmin ? "opacity-60" : ""}`}>
         <h4
           className="font-heading text-sm flex items-center gap-2"
           data-testid="sync-config-title"
@@ -739,7 +739,7 @@ export default function ProfileDatabasePanel({
 
       {isSyncRunning && jobProgress && (
         <div
-          className="border rounded-lg p-4 space-y-3"
+          className="border rounded-[var(--radius)] p-4 space-y-3"
           data-testid={`sync-progress-${type}`}
         >
           <div className="flex items-center justify-between">
@@ -789,7 +789,7 @@ export default function ProfileDatabasePanel({
 
       {lastReport && (
         <div
-          className={`border rounded-lg p-4 space-y-3 ${
+          className={`border rounded-[var(--radius)] p-4 space-y-3 ${
             lastReport.status === "completed"
               ? "border-[hsl(var(--brand-success)/0.3)] bg-[hsl(var(--brand-success)/0.08)]"
               : "border-destructive/30 bg-destructive/10"
@@ -816,13 +816,13 @@ export default function ProfileDatabasePanel({
             </Button>
           </div>
           <div className="grid grid-cols-4 gap-3 text-center">
-            <Card className="p-2 rounded-lg text-center">
+            <Card className="p-2 rounded-[var(--radius)] text-center">
               <div className="text-lg font-heading">{lastReport.total}</div>
               <div className="text-xs text-muted-foreground">
                 Total Found
               </div>
             </Card>
-            <Card className="p-2 rounded-lg text-center">
+            <Card className="p-2 rounded-[var(--radius)] text-center">
               <div className="text-lg font-heading text-[hsl(var(--brand-success))]">
                 {lastReport.succeeded}
               </div>
@@ -830,13 +830,13 @@ export default function ProfileDatabasePanel({
                 Imported
               </div>
             </Card>
-            <Card className="p-2 rounded-lg text-center">
+            <Card className="p-2 rounded-[var(--radius)] text-center">
               <div className="text-lg font-heading text-destructive">
                 {lastReport.failed}
               </div>
               <div className="text-xs text-muted-foreground">Failed</div>
             </Card>
-            <Card className="p-2 rounded-lg text-center">
+            <Card className="p-2 rounded-[var(--radius)] text-center">
               <div className="text-lg font-heading">
                 {lastReport.completedAt
                   ? (() => {
@@ -865,7 +865,7 @@ export default function ProfileDatabasePanel({
               <h5 className="text-xs font-ui text-destructive">
                 Errors ({lastReport.errors.length}):
               </h5>
-              <Card className="text-xs text-destructive space-y-1 p-2 rounded-md">
+              <Card className="text-xs text-destructive space-y-1 p-2 rounded-[var(--radius)]">
                 {lastReport.errors.map((err, i) => (
                   <div key={i} className="flex items-start gap-1">
                     <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
@@ -881,7 +881,7 @@ export default function ProfileDatabasePanel({
                 <AlertTriangle className="w-3.5 h-3.5" />
                 Missing Mandatory Fields ({lastReport.missingFields.length} fields incomplete)
               </h5>
-              <Card className="rounded-md">
+              <Card className="rounded-[var(--radius)]">
                 <table className="w-full text-xs">
                   <thead className="sticky top-0 bg-[hsl(var(--brand-warning)/0.08)]">
                     <tr>
@@ -914,7 +914,7 @@ export default function ProfileDatabasePanel({
       )}
 
       {type === "surrogate" && (isAdmin || roles.includes("PROVIDER_ADMIN")) && (
-        <div className="border rounded-lg p-4 space-y-4" data-testid="pdf-upload-card">
+        <div className="border rounded-[var(--radius)] p-4 space-y-4" data-testid="pdf-upload-card">
           <h4 className="font-heading text-sm flex items-center gap-2">
             <FileUp className="w-4 h-4" />
             Bulk PDF Upload
@@ -1021,7 +1021,7 @@ export default function ProfileDatabasePanel({
               </div>
             )}
             {isPdfRunning && pdfJobProgress && (
-              <div className="border rounded-lg p-4 space-y-3" data-testid="pdf-progress">
+              <div className="border rounded-[var(--radius)] p-4 space-y-3" data-testid="pdf-progress">
                 <div className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -1173,7 +1173,7 @@ function ProfileDetailSection({ sectionName, sectionData }: { sectionName: strin
             if (typeof answer === "object" && answer !== null && !Array.isArray(answer)) {
               const subEntries = Object.entries(answer);
               return (
-                <div key={question} className="py-2 px-3 rounded-lg bg-accent/10 border border-accent/20">
+                <div key={question} className="py-2 px-3 rounded-[var(--radius)] bg-accent/10 border border-accent/20">
                   <p className="text-xs font-ui text-accent-foreground mb-1">{question}</p>
                   <div className="grid grid-cols-2 gap-1">
                     {subEntries.map(([subKey, subVal]) => (
@@ -1191,7 +1191,7 @@ function ProfileDetailSection({ sectionName, sectionData }: { sectionName: strin
             const isLong = answerStr.length > 100;
 
             return (
-              <div key={question} className={`py-2 px-3 rounded-lg bg-muted/50 border border-border/50 ${isLong ? "col-span-2" : ""}`}>
+              <div key={question} className={`py-2 px-3 rounded-[var(--radius)] bg-muted/50 border border-border/50 ${isLong ? "col-span-2" : ""}`}>
                 <p className="text-xs text-muted-foreground">{question}</p>
                 <p className={`text-sm ${isLong ? "leading-body mt-1" : "font-ui"} break-words`}>{answerStr}</p>
               </div>
@@ -1232,7 +1232,7 @@ function ProfileDataSection({ data }: { data: Record<string, any> }) {
       {longTextEntries.map(([key, value]) => (
         <div
           key={key}
-          className="py-3 px-4 rounded-lg bg-muted/50 border border-border/50"
+          className="py-3 px-4 rounded-[var(--radius)] bg-muted/50 border border-border/50"
           data-testid={`scraped-field-${key.toLowerCase().replace(/\s+/g, "-")}`}
         >
           <p className="text-xs text-muted-foreground mb-1">{formatFieldLabel(key)}</p>
@@ -1251,7 +1251,7 @@ function ProfileDataSection({ data }: { data: Record<string, any> }) {
             return (
               <div
                 key={key}
-                className="py-2 px-3 rounded-lg bg-muted/50 border border-border/50"
+                className="py-2 px-3 rounded-[var(--radius)] bg-muted/50 border border-border/50"
                 data-testid={`scraped-field-${key.toLowerCase().replace(/\s+/g, "-")}`}
               >
                 <p className="text-xs text-muted-foreground">{formatFieldLabel(key)}</p>
@@ -1271,7 +1271,7 @@ function ProfileDataSection({ data }: { data: Record<string, any> }) {
                 <img
                   src={`/api/uploads/proxy?url=${encodeURIComponent(url)}`}
                   alt={`${formatFieldLabel(key)} ${idx + 1}`}
-                  className="w-full h-auto rounded-md border border-border object-cover hover:opacity-80 transition-opacity"
+                  className="w-full h-auto rounded-[var(--radius)] border border-border object-cover hover:opacity-80 transition-opacity"
                   loading="lazy"
                   data-testid={`img-${key.toLowerCase().replace(/\s+/g, "-")}-${idx}`}
                 />

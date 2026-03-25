@@ -135,7 +135,7 @@ export default function ResetPasswordPage() {
                   placeholder="New Password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="h-12 rounded-lg pr-10"
+                  className="h-12 rounded-[var(--radius)] pr-10"
                   data-testid="input-new-password"
                 />
                 <button
@@ -158,7 +158,7 @@ export default function ResetPasswordPage() {
                   placeholder="Confirm New Password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="h-12 rounded-lg pr-10"
+                  className="h-12 rounded-[var(--radius)] pr-10"
                   data-testid="input-confirm-password"
                 />
                 <button

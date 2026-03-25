@@ -562,7 +562,7 @@ export function CalendarSettings() {
               return (
                 <div
                   key={conn.id}
-                  className="flex items-center gap-3 p-3 rounded-lg border border-border/30 bg-secondary/10"
+                  className="flex items-center gap-3 p-3 rounded-[var(--radius)] border border-border/30 bg-secondary/10"
                   data-testid={`connection-${conn.id}`}
                 >
                   <div
@@ -698,7 +698,7 @@ export function CalendarSettings() {
           Share this link with anyone to let them book time with you. It can be embedded on websites or shared via email.
         </p>
         <div className="flex items-center gap-2 mb-3">
-          <div className="flex-1 flex items-center bg-secondary/30 border border-border/50 rounded-lg px-3 py-2">
+          <div className="flex-1 flex items-center bg-secondary/30 border border-border/50 rounded-[var(--radius)] px-3 py-2">
             <span className="text-sm text-muted-foreground mr-1 shrink-0">/book/</span>
             <Input
               value={bookingPageSlug}
@@ -816,7 +816,7 @@ export function CalendarSettings() {
           </Label>
           {authUser?.dailyRoomUrl ? (
             <div className="flex items-center gap-2">
-              <div className="flex-1 flex items-center gap-2 min-w-0 border rounded-lg px-3 py-2 bg-muted/30">
+              <div className="flex-1 flex items-center gap-2 min-w-0 border rounded-[var(--radius)] px-3 py-2 bg-muted/30">
                 <Video className="w-4 h-4 text-primary shrink-0" />
                 <a href={authUser.dailyRoomUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline truncate" data-testid="link-video-conference-room">
                   {authUser.dailyRoomUrl}
@@ -977,7 +977,7 @@ export function CalendarSettings() {
             {overrides.map((ov) => (
               <div
                 key={ov.id}
-                className="flex items-center gap-3 p-3 rounded-lg border border-border/30 bg-secondary/10"
+                className="flex items-center gap-3 p-3 rounded-[var(--radius)] border border-border/30 bg-secondary/10"
                 data-testid={`override-${ov.id}`}
               >
                 <div className={`w-2 h-8 rounded-full shrink-0 ${ov.isAvailable ? "bg-[hsl(var(--brand-success))]" : "bg-destructive/60"}`} />
@@ -1014,7 +1014,7 @@ export function CalendarSettings() {
             ))}
           </div>
         ) : (
-          <div className="text-center py-4 text-sm text-muted-foreground border border-dashed border-border/50 rounded-lg">
+          <div className="text-center py-4 text-sm text-muted-foreground border border-dashed border-border/50 rounded-[var(--radius)]">
             No date overrides set. Your weekly availability applies to all dates.
           </div>
         )}
@@ -1094,11 +1094,11 @@ export function CalendarSettings() {
                         setConnectStep("apple-connect");
                       }
                     }}
-                    className="flex flex-col items-center gap-3 p-5 rounded-xl border-2 transition-all text-center group border-border/40 hover:border-primary/30 hover:shadow-md cursor-pointer disabled:opacity-50"
+                    className="flex flex-col items-center gap-3 p-5 rounded-[var(--radius)] border-2 transition-all text-center group border-border/40 hover:border-primary/30 hover:shadow-md cursor-pointer disabled:opacity-50"
                     style={{ backgroundColor: p.bg }}
                     data-testid={`button-connect-${p.id}`}
                   >
-                    <div className="w-12 h-12 rounded-xl flex items-center justify-center shadow-sm overflow-hidden bg-card">
+                    <div className="w-12 h-12 rounded-[var(--radius)] flex items-center justify-center shadow-sm overflow-hidden bg-card">
                       <p.icon className="w-7 h-7" />
                     </div>
                     <div className="space-y-0.5">
@@ -1120,7 +1120,7 @@ export function CalendarSettings() {
                   </button>
                 ))}
               </div>
-              <div className="flex items-start gap-2 rounded-lg border border-[hsl(var(--brand-warning)/0.3)] dark:border-[hsl(var(--brand-warning)/0.3)] bg-[hsl(var(--brand-warning)/0.08)] dark:bg-[hsl(var(--brand-warning)/0.1)] px-3 py-2.5" data-testid="info-yahoo-workaround">
+              <div className="flex items-start gap-2 rounded-[var(--radius)] border border-[hsl(var(--brand-warning)/0.3)] dark:border-[hsl(var(--brand-warning)/0.3)] bg-[hsl(var(--brand-warning)/0.08)] dark:bg-[hsl(var(--brand-warning)/0.1)] px-3 py-2.5" data-testid="info-yahoo-workaround">
                 <AlertTriangle className="w-4 h-4 text-[hsl(var(--brand-warning))] dark:text-[hsl(var(--brand-warning))] shrink-0 mt-0.5" />
                 <p className="text-xs text-[hsl(var(--brand-warning))] dark:text-[hsl(var(--brand-warning))]">
                   <span className="font-ui">Using Yahoo Calendar?</span> Subscribe to it within a free Google Calendar account, then connect that Google account here.
@@ -1176,7 +1176,7 @@ export function CalendarSettings() {
                       return (
                         <div
                           key={cal.id}
-                          className={`rounded-lg border transition-colors ${
+                          className={`rounded-[var(--radius)] border transition-colors ${
                             isSelected ? "border-primary/50 bg-primary/5" : "border-border/50 hover:bg-secondary/30"
                           }`}
                         >
@@ -1196,7 +1196,7 @@ export function CalendarSettings() {
                             <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
                               isSelected ? "bg-primary border-primary" : "border-muted-foreground/30"
                             }`}>
-                              {isSelected && <Check className="w-3 h-3 text-white" />}
+                              {isSelected && <Check className="w-3 h-3 text-primary-foreground" />}
                             </div>
                             <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: cal.backgroundColor || "#4285f4" }} />
                             <div className="flex-1 min-w-0">
@@ -1288,7 +1288,7 @@ export function CalendarSettings() {
                       return (
                         <div
                           key={cal.id}
-                          className={`rounded-lg border transition-colors ${
+                          className={`rounded-[var(--radius)] border transition-colors ${
                             isSelected ? "border-primary/50 bg-primary/5" : "border-border/50 hover:bg-secondary/30"
                           }`}
                         >
@@ -1308,7 +1308,7 @@ export function CalendarSettings() {
                             <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
                               isSelected ? "bg-primary border-primary" : "border-muted-foreground/30"
                             }`}>
-                              {isSelected && <Check className="w-3 h-3 text-white" />}
+                              {isSelected && <Check className="w-3 h-3 text-primary-foreground" />}
                             </div>
                             <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: cal.backgroundColor || "#0078d4" }} />
                             <div className="flex-1 min-w-0">
@@ -1390,7 +1390,7 @@ export function CalendarSettings() {
                 Because Apple prioritizes security, you will need to generate a one-time &ldquo;App-Specific Password&rdquo; to connect your calendar. It only takes a minute!
               </p>
               <div className="space-y-3 py-2">
-                <div className="bg-secondary/30 rounded-lg p-4 space-y-2">
+                <div className="bg-secondary/30 rounded-[var(--radius)] p-4 space-y-2">
                   <ol className="text-sm text-foreground space-y-2 list-decimal list-inside">
                     <li>Go to <a href="https://appleid.apple.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-ui">appleid.apple.com</a> and sign in.</li>
                     <li>Select <span className="font-ui">Sign-In and Security</span>.</li>
@@ -1491,7 +1491,7 @@ export function CalendarSettings() {
                       return (
                         <div
                           key={cal.id}
-                          className={`rounded-lg border transition-colors ${
+                          className={`rounded-[var(--radius)] border transition-colors ${
                             isSelected ? "border-primary/50 bg-primary/5" : "border-border/50 hover:bg-secondary/30"
                           }`}
                         >
@@ -1511,7 +1511,7 @@ export function CalendarSettings() {
                             <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
                               isSelected ? "bg-primary border-primary" : "border-muted-foreground/30"
                             }`}>
-                              {isSelected && <Check className="w-3 h-3 text-white" />}
+                              {isSelected && <Check className="w-3 h-3 text-primary-foreground" />}
                             </div>
                             <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: cal.color || "#6b7280" }} />
                             <div className="flex-1 min-w-0">
@@ -1593,12 +1593,12 @@ export function CalendarSettings() {
               />
             </div>
 
-            <div className="flex items-center gap-3 p-3 rounded-lg border border-border/30">
+            <div className="flex items-center gap-3 p-3 rounded-[var(--radius)] border border-border/30">
               <div className="flex items-center gap-3 flex-1">
                 <button
                   type="button"
                   onClick={() => setOverrideIsAvailable(true)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-ui transition-colors ${
+                  className={`flex items-center gap-2 px-3 py-2 rounded-[var(--radius)] text-sm font-ui transition-colors ${
                     overrideIsAvailable
                       ? "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))] border border-[hsl(var(--brand-success)/0.3)]"
                       : "text-muted-foreground hover:bg-secondary/30"
@@ -1610,7 +1610,7 @@ export function CalendarSettings() {
                 <button
                   type="button"
                   onClick={() => setOverrideIsAvailable(false)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-ui transition-colors ${
+                  className={`flex items-center gap-2 px-3 py-2 rounded-[var(--radius)] text-sm font-ui transition-colors ${
                     !overrideIsAvailable
                       ? "bg-destructive/15 text-destructive border border-destructive/30"
                       : "text-muted-foreground hover:bg-secondary/30"

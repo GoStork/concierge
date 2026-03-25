@@ -45,8 +45,8 @@ const TYPE_ENDPOINTS: Record<string, string> = {
 
 function SectionHeader({ title }: { title: string }) {
   return (
-    <div className="bg-primary px-4 py-2 rounded-t-lg">
-      <h3 className="text-sm font-heading text-white" data-testid={`section-header-${title.toLowerCase().replace(/\s+/g, "-")}`}>
+    <div className="bg-primary px-4 py-2 rounded-t-[var(--radius)]">
+      <h3 className="text-sm font-heading text-primary-foreground" data-testid={`section-header-${title.toLowerCase().replace(/\s+/g, "-")}`}>
         {title}
       </h3>
     </div>
@@ -94,7 +94,7 @@ function FieldRow({
         <select
           value={value === "true" ? "true" : value === "false" ? "false" : ""}
           onChange={(e) => onChange(field, e.target.value)}
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex h-10 w-full rounded-[var(--radius)] border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           data-testid={`input-${field}`}
         >
           <option value="">—</option>
@@ -437,7 +437,7 @@ export default function DonorEditPage() {
                 <Label className="text-xs font-ui">Search Visibility</Label>
                 <button
                   type="button"
-                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-lg border text-sm transition-colors ${
+                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-[var(--radius)] border text-sm transition-colors ${
                     formData.hiddenFromSearch
                       ? "bg-[hsl(var(--brand-warning)/0.08)] border-[hsl(var(--brand-warning)/0.3)] text-[hsl(var(--brand-warning))]"
                       : "bg-[hsl(var(--brand-success)/0.08)] border-[hsl(var(--brand-success)/0.3)] text-[hsl(var(--brand-success))]"
@@ -467,7 +467,7 @@ export default function DonorEditPage() {
                 <Label className="text-xs font-ui">Experienced</Label>
                 <button
                   type="button"
-                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-lg border text-sm transition-colors ${
+                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-[var(--radius)] border text-sm transition-colors ${
                     formData.isExperienced
                       ? "bg-[hsl(var(--brand-accent)/0.08)] border-[hsl(var(--brand-accent)/0.3)] text-[hsl(var(--brand-accent))]"
                       : "bg-muted/30 border-border text-muted-foreground"
@@ -774,7 +774,7 @@ function PhotoCard({
   };
 
   return (
-    <div className="relative group border rounded-lg overflow-hidden bg-muted" data-testid={`photo-card-${index}`}>
+    <div className="relative group border rounded-[var(--radius)] overflow-hidden bg-muted" data-testid={`photo-card-${index}`}>
       <img
         src={displayUrl}
         alt={`Photo ${index + 1}`}
@@ -788,7 +788,7 @@ function PhotoCard({
       )}
       {isPrimary && (
         <div className="absolute top-1 left-1">
-          <Badge className="bg-[hsl(var(--brand-warning))] text-white text-[10px] px-1">
+          <Badge className="bg-[hsl(var(--brand-warning))] text-primary-foreground text-[10px] px-1">
             <Star className="w-2.5 h-2.5 mr-0.5" /> Primary
           </Badge>
         </div>

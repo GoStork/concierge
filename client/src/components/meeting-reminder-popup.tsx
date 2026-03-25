@@ -104,7 +104,7 @@ export function MeetingReminderPopup() {
     >
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={handleDismiss} />
       <div
-        className="relative bg-white rounded-2xl shadow-2xl w-[90vw] max-w-[440px] p-8 flex flex-col items-center text-center animate-in fade-in zoom-in-95 duration-300"
+        className="relative bg-white rounded-[var(--container-radius)] shadow-2xl w-[90vw] max-w-[440px] p-8 flex flex-col items-center text-center animate-in fade-in zoom-in-95 duration-300"
         data-testid="meeting-reminder-popup"
       >
         <button
@@ -134,7 +134,7 @@ export function MeetingReminderPopup() {
         </p>
 
         <Button
-          className="w-full h-12 text-white font-medium gap-2 rounded-xl text-sm"
+          className="w-full h-12 text-primary-foreground font-medium gap-2 rounded-[var(--radius)] text-sm"
           style={{ backgroundColor: brandColor }}
           onClick={() => handleJoin(true)}
           data-testid="btn-record-and-join"

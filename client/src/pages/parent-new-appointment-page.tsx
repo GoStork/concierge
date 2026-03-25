@@ -54,7 +54,7 @@ export default function ParentNewAppointmentPage() {
             variant="ghost"
             size="icon"
             onClick={() => navigate("/calendar")}
-            className="rounded-lg"
+            className="rounded-[var(--radius)]"
             data-testid="button-back-to-calendar"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -97,7 +97,7 @@ export default function ParentNewAppointmentPage() {
                     <button
                       key={p.id}
                       onClick={() => handleSelect(p)}
-                      className="w-full flex items-center gap-4 p-4 rounded-xl border border-border/50 bg-card hover:border-primary/30 hover:bg-primary/5 transition-colors text-left"
+                      className="w-full flex items-center gap-4 p-4 rounded-[var(--radius)] border border-border/50 bg-card hover:border-primary/30 hover:bg-primary/5 transition-colors text-left"
                       data-testid={`button-select-provider-${p.id}`}
                     >
                       {photoSrc(p.photoUrl) ? (
@@ -132,7 +132,7 @@ export default function ParentNewAppointmentPage() {
                     <button
                       key={p.id}
                       onClick={() => handleSelect(p)}
-                      className="w-full flex items-center gap-4 p-4 rounded-xl border border-border/50 bg-card hover:border-primary/30 hover:bg-primary/5 transition-colors text-left"
+                      className="w-full flex items-center gap-4 p-4 rounded-[var(--radius)] border border-border/50 bg-card hover:border-primary/30 hover:bg-primary/5 transition-colors text-left"
                       data-testid={`button-select-provider-${p.id}`}
                     >
                       {photoSrc(p.photoUrl) ? (

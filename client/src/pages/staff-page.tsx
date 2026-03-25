@@ -244,9 +244,9 @@ function GostorkAdminUsersView() {
                 <TableCell className="font-ui">
                   <div className="flex items-center gap-3">
                     {getPhotoSrc(member.photoUrl) ? (
-                      <img src={getPhotoSrc(member.photoUrl)!} alt="" className="w-8 h-8 rounded-lg object-cover" />
+                      <img src={getPhotoSrc(member.photoUrl)!} alt="" className="w-8 h-8 rounded-[var(--radius)] object-cover" />
                     ) : (
-                      <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                      <div className="w-8 h-8 rounded-[var(--radius)] bg-primary/10 flex items-center justify-center text-primary">
                         <UserCircle className="w-4 h-4" />
                       </div>
                     )}
@@ -365,7 +365,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
               <TableRow key={parent.id} data-testid={`row-parent-contact-${parent.id}`}>
                 <TableCell className="font-ui">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                    <div className="w-8 h-8 rounded-[var(--radius)] bg-primary/10 flex items-center justify-center text-primary">
                       <UserCircle className="w-4 h-4" />
                     </div>
                     <span data-testid={`text-parent-name-${parent.id}`}>{parent.name || "-"}</span>

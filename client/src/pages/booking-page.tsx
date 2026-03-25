@@ -252,7 +252,7 @@ export default function BookingPage() {
                 : "You're all set. Details are below."}
             </p>
 
-            <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-5 space-y-3.5 text-left mb-6">
+            <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-[var(--container-radius)] p-5 space-y-3.5 text-left mb-6">
               <div className="flex items-center gap-3 text-sm">
                 <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                   <Calendar className="w-4 h-4 text-primary" />
@@ -310,7 +310,7 @@ export default function BookingPage() {
               }
               if (participants.length === 0) return null;
               return (
-                <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-5 text-left mb-6" data-testid="section-participants">
+                <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-[var(--container-radius)] p-5 text-left mb-6" data-testid="section-participants">
                   <div className="flex items-center gap-2 mb-3">
                     <Users className="w-4 h-4 text-primary" />
                     <span className="text-sm font-medium" style={{ fontFamily: fontHeading }}>Participants</span>
@@ -333,7 +333,7 @@ export default function BookingPage() {
             })()}
 
             {isPending && (
-              <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-xl p-4 mb-5">
+              <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-[var(--radius)] p-4 mb-5">
                 <p className="text-sm text-[hsl(var(--brand-warning))] font-medium" style={{ fontFamily: fontBody }}>Awaiting provider confirmation</p>
                 <p className="text-xs text-[hsl(var(--brand-warning))] mt-1" style={{ fontFamily: fontBody }}>We'll send you an email once your booking is confirmed.</p>
               </div>
@@ -405,7 +405,7 @@ export default function BookingPage() {
 
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-primary/8 flex items-center justify-center shrink-0">
+                  <div className="w-9 h-9 rounded-[var(--radius)] bg-primary/8 flex items-center justify-center shrink-0">
                     <Clock className="w-4.5 h-4.5 text-secondary-foreground/60" />
                   </div>
                   <span className="text-sm text-muted-foreground" style={{ fontFamily: fontBody }}>
@@ -413,13 +413,13 @@ export default function BookingPage() {
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-primary/8 flex items-center justify-center shrink-0">
+                  <div className="w-9 h-9 rounded-[var(--radius)] bg-primary/8 flex items-center justify-center shrink-0">
                     <Video className="w-4.5 h-4.5 text-secondary-foreground/60" />
                   </div>
                   <span className="text-sm text-muted-foreground" style={{ fontFamily: fontBody }}>Video call</span>
                 </div>
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-primary/8 flex items-center justify-center shrink-0">
+                  <div className="w-9 h-9 rounded-[var(--radius)] bg-primary/8 flex items-center justify-center shrink-0">
                     <Globe className="w-4.5 h-4.5 text-secondary-foreground/60" />
                   </div>
                   <Popover open={tzSearchOpen} onOpenChange={setTzSearchOpen}>
@@ -476,7 +476,7 @@ export default function BookingPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-9 w-9 rounded-xl hover:bg-white/10"
+                        className="h-9 w-9 rounded-[var(--radius)] hover:bg-white/10"
                         onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
                         data-testid="button-prev-month"
                       >
@@ -491,7 +491,7 @@ export default function BookingPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-9 w-9 rounded-xl hover:bg-white/10"
+                        className="h-9 w-9 rounded-[var(--radius)] hover:bg-white/10"
                         onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
                         data-testid="button-next-month"
                       >
@@ -551,7 +551,7 @@ export default function BookingPage() {
                         {format(selectedDate, "EEEE, MMMM d")}
                       </h4>
                       {availability?.parentCalendarActive && (
-                        <div className="flex items-center gap-1.5 text-xs text-primary bg-primary/5 backdrop-blur-sm px-3 py-2 rounded-xl border border-primary/10" data-testid="text-parent-calendar-active">
+                        <div className="flex items-center gap-1.5 text-xs text-primary bg-primary/5 backdrop-blur-sm px-3 py-2 rounded-[var(--radius)] border border-primary/10" data-testid="text-parent-calendar-active">
                           <Calendar className="w-3.5 h-3.5" />
                           <span style={{ fontFamily: fontBody }}>Showing times that work for both of you</span>
                         </div>
@@ -561,7 +561,7 @@ export default function BookingPage() {
                           <Loader2 className="w-5 h-5 animate-spin text-primary" />
                         </div>
                       ) : availability?.slots?.length === 0 ? (
-                        <div className="flex flex-col items-center gap-3 py-8 px-4 bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10" data-testid="text-no-slots">
+                        <div className="flex flex-col items-center gap-3 py-8 px-4 bg-white/5 backdrop-blur-sm rounded-[var(--container-radius)] border border-white/10" data-testid="text-no-slots">
                           <Clock className="w-8 h-8 text-muted-foreground/40" />
                           <p className="text-sm font-medium" style={{ fontFamily: fontHeading }}>No available times</p>
                           <p className="text-xs text-muted-foreground text-center" style={{ fontFamily: fontBody }}>There are no open slots on this date. Please try another day.</p>
@@ -574,7 +574,7 @@ export default function BookingPage() {
                               <button
                                 key={slot.time}
                                 onClick={() => { setSelectedSlot(slot.time); setStep("form"); }}
-                                className={`px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer ${
+                                className={`px-3 py-2.5 rounded-[var(--radius)] text-sm font-medium transition-all duration-200 cursor-pointer ${
                                   isSlotSelected
                                     ? "bg-primary text-primary-foreground shadow-lg shadow-primary/30 scale-[1.02]"
                                     : "bg-white/5 border border-white/10 hover:bg-primary/15 hover:border-primary/40 text-foreground/80"
@@ -604,8 +604,8 @@ export default function BookingPage() {
                     <span style={{ fontFamily: fontBody }}>Back</span>
                   </button>
 
-                  <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-4 flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                  <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-[var(--container-radius)] p-4 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-[var(--radius)] bg-primary/10 flex items-center justify-center shrink-0">
                       <Calendar className="w-4 h-4 text-primary" />
                     </div>
                     <div>
@@ -624,7 +624,7 @@ export default function BookingPage() {
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         required
-                        className="bg-white/5 border-white/10 focus:border-primary/50 rounded-xl h-11"
+                        className="bg-white/5 border-white/10 focus:border-primary/50 rounded-[var(--radius)] h-11"
                         data-testid="input-book-name"
                       />
                     </div>
@@ -635,7 +635,7 @@ export default function BookingPage() {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         required
-                        className="bg-white/5 border-white/10 focus:border-primary/50 rounded-xl h-11"
+                        className="bg-white/5 border-white/10 focus:border-primary/50 rounded-[var(--radius)] h-11"
                         data-testid="input-book-email"
                       />
                     </div>
@@ -645,7 +645,7 @@ export default function BookingPage() {
                         type="tel"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
-                        className="bg-white/5 border-white/10 focus:border-primary/50 rounded-xl h-11"
+                        className="bg-white/5 border-white/10 focus:border-primary/50 rounded-[var(--radius)] h-11"
                         data-testid="input-book-phone"
                       />
                     </div>
@@ -656,7 +656,7 @@ export default function BookingPage() {
                           {additionalAttendees.map((ae) => (
                             <div
                               key={ae.email}
-                              className="flex items-center gap-2 bg-primary/5 border border-primary/10 rounded-xl px-3 py-2.5"
+                              className="flex items-center gap-2 bg-primary/5 border border-primary/10 rounded-[var(--radius)] px-3 py-2.5"
                               data-testid={`attendee-chip-${ae.email}`}
                             >
                               <div className="flex-1 min-w-0">
@@ -688,7 +688,7 @@ export default function BookingPage() {
                           Add Additional Attendees
                         </button>
                       ) : (
-                        <div className="space-y-3 bg-white/5 border border-white/10 rounded-2xl p-4">
+                        <div className="space-y-3 bg-white/5 border border-white/10 rounded-[var(--container-radius)] p-4">
                           <Label className="flex items-center gap-1.5 text-sm font-medium" style={{ fontFamily: fontHeading }}>
                             <UserPlus className="w-3.5 h-3.5" />
                             Additional Attendees
@@ -701,7 +701,7 @@ export default function BookingPage() {
                               {additionalAttendees.map((ae) => (
                                 <div
                                   key={ae.email}
-                                  className="flex items-center gap-2 bg-primary/5 border border-primary/10 rounded-xl px-3 py-2.5"
+                                  className="flex items-center gap-2 bg-primary/5 border border-primary/10 rounded-[var(--radius)] px-3 py-2.5"
                                   data-testid={`attendee-chip-${ae.email}`}
                                 >
                                   <div className="flex-1 min-w-0">
@@ -730,7 +730,7 @@ export default function BookingPage() {
                                 if (e.key === "Enter") { e.preventDefault(); addAttendee(); }
                               }}
                               placeholder="Email address *"
-                              className="bg-white/5 border-white/10 focus:border-primary/50 rounded-xl h-9 text-sm"
+                              className="bg-white/5 border-white/10 focus:border-primary/50 rounded-[var(--radius)] h-9 text-sm"
                               data-testid="input-additional-attendee"
                             />
                             <div className="flex gap-2">
@@ -739,7 +739,7 @@ export default function BookingPage() {
                                 value={newAttendeeName}
                                 onChange={(e) => setNewAttendeeName(e.target.value)}
                                 placeholder="Full Name (optional)"
-                                className="bg-white/5 border-white/10 focus:border-primary/50 rounded-xl flex-1 h-9 text-sm"
+                                className="bg-white/5 border-white/10 focus:border-primary/50 rounded-[var(--radius)] flex-1 h-9 text-sm"
                                 data-testid="input-additional-attendee-name"
                               />
                               <Input
@@ -747,7 +747,7 @@ export default function BookingPage() {
                                 value={newAttendeePhone}
                                 onChange={(e) => setNewAttendeePhone(e.target.value)}
                                 placeholder="Mobile (optional)"
-                                className="bg-white/5 border-white/10 focus:border-primary/50 rounded-xl flex-1 h-9 text-sm"
+                                className="bg-white/5 border-white/10 focus:border-primary/50 rounded-[var(--radius)] flex-1 h-9 text-sm"
                                 data-testid="input-additional-attendee-phone"
                               />
                             </div>
@@ -756,7 +756,7 @@ export default function BookingPage() {
                               variant="outline"
                               size="sm"
                               onClick={addAttendee}
-                              className="h-9 w-full gap-1.5 text-xs rounded-xl border-white/10 hover:bg-white/10"
+                              className="h-9 w-full gap-1.5 text-xs rounded-[var(--radius)] border-white/10 hover:bg-white/10"
                               disabled={!newAttendeeEmail.trim()}
                               data-testid="button-add-attendee"
                             >
@@ -785,7 +785,7 @@ export default function BookingPage() {
                         onChange={(e) => setNotes(e.target.value)}
                         placeholder="Anything you'd like to share beforehand..."
                         rows={3}
-                        className="bg-white/5 border-white/10 focus:border-primary/50 rounded-xl resize-none"
+                        className="bg-white/5 border-white/10 focus:border-primary/50 rounded-[var(--radius)] resize-none"
                         data-testid="input-book-notes"
                       />
                     </div>
@@ -796,7 +796,7 @@ export default function BookingPage() {
 
                     <Button
                       type="submit"
-                      className="w-full h-12 rounded-xl text-sm font-semibold shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all duration-200"
+                      className="w-full h-12 rounded-[var(--radius)] text-sm font-semibold shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all duration-200"
                       disabled={bookMutation.isPending}
                       data-testid="button-confirm-booking"
                     >

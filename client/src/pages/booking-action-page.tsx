@@ -105,7 +105,7 @@ export default function BookingActionPage({ action }: { action: ActionType }) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background flex items-center justify-center p-4">
         <div className="w-full max-w-md">
-          <div className="bg-card rounded-2xl border border-border/50 shadow-lg p-8 text-center">
+          <div className="bg-card rounded-[var(--container-radius)] border border-border/50 shadow-lg p-8 text-center">
             <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-destructive/15 flex items-center justify-center">
               <X className="w-7 h-7 text-destructive" />
             </div>
@@ -127,7 +127,7 @@ export default function BookingActionPage({ action }: { action: ActionType }) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background flex items-center justify-center p-4">
         <div className="w-full max-w-md">
-          <div className="bg-card rounded-2xl border border-border/50 shadow-lg p-8">
+          <div className="bg-card rounded-[var(--container-radius)] border border-border/50 shadow-lg p-8">
             <div className="text-center mb-6">
               <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
                 <CalendarClock className="w-7 h-7 text-primary" />
@@ -139,7 +139,7 @@ export default function BookingActionPage({ action }: { action: ActionType }) {
             </div>
 
             {start && (
-              <div className="bg-secondary/30 rounded-xl p-3 mb-4">
+              <div className="bg-secondary/30 rounded-[var(--radius)] p-3 mb-4">
                 <p className="text-xs text-muted-foreground mb-1">Originally requested:</p>
                 <div className="flex items-center gap-2 text-sm">
                   <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -193,7 +193,7 @@ export default function BookingActionPage({ action }: { action: ActionType }) {
   return (
     <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="bg-card rounded-2xl border border-border/50 shadow-lg p-8 text-center">
+        <div className="bg-card rounded-[var(--container-radius)] border border-border/50 shadow-lg p-8 text-center">
           <div className={`w-14 h-14 mx-auto mb-4 rounded-full flex items-center justify-center ${
             isConfirm ? "bg-[hsl(var(--brand-success)/0.12)]" : isDecline ? "bg-destructive/15" : "bg-primary/10"
           }`}>
@@ -211,7 +211,7 @@ export default function BookingActionPage({ action }: { action: ActionType }) {
           </p>
 
           {start && booking && (
-            <div className="bg-secondary/30 rounded-xl p-4 space-y-3 text-left mb-4">
+            <div className="bg-secondary/30 rounded-[var(--radius)] p-4 space-y-3 text-left mb-4">
               <div className="flex items-center gap-2 text-sm">
                 <Calendar className="w-4 h-4 text-primary shrink-0" />
                 <span className="font-ui">{format(start, "EEEE, MMMM d, yyyy")}</span>

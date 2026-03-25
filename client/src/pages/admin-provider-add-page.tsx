@@ -393,7 +393,7 @@ export default function AdminProviderAddPage() {
               />
             </div>
             {scrapeError && (
-              <div className="flex items-start gap-2 text-sm text-destructive dark:text-destructive bg-destructive/10 dark:bg-destructive/10 border border-destructive/30 dark:border-destructive/30 rounded-md p-3" data-testid="text-scrape-error">
+              <div className="flex items-start gap-2 text-sm text-destructive dark:text-destructive bg-destructive/10 dark:bg-destructive/10 border border-destructive/30 dark:border-destructive/30 rounded-[var(--radius)] p-3" data-testid="text-scrape-error">
                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                 <span>{scrapeError}</span>
               </div>
@@ -473,17 +473,17 @@ export default function AdminProviderAddPage() {
             const scraped = scrapedValues[field] || "";
             if (!current && scraped) return null;
             return (
-              <div key={field} className="border rounded-lg p-3 space-y-2" data-testid={`merge-field-${field}`}>
+              <div key={field} className="border rounded-[var(--radius)] p-3 space-y-2" data-testid={`merge-field-${field}`}>
                 <Label className="font-ui text-sm">{labels[field] || field}</Label>
                 <div className="space-y-1.5">
-                  <label className={`flex items-start gap-2 p-2 rounded-md cursor-pointer text-sm ${choice === "keep" ? "bg-accent/10 border border-accent/30 dark:bg-accent/15 dark:border-accent/30" : "bg-secondary/30 hover:bg-secondary/50"}`}>
+                  <label className={`flex items-start gap-2 p-2 rounded-[var(--radius)] cursor-pointer text-sm ${choice === "keep" ? "bg-accent/10 border border-accent/30 dark:bg-accent/15 dark:border-accent/30" : "bg-secondary/30 hover:bg-secondary/50"}`}>
                     <input type="radio" name={`merge-${field}`} checked={choice === "keep"} onChange={() => setMergeSelections(prev => ({ ...prev, [field]: "keep" }))} className="mt-0.5" />
                     <div className="flex-1 min-w-0">
                       <span className="text-xs font-ui text-muted-foreground">Keep current:</span>
                       <p className={field === "about" ? "whitespace-pre-wrap break-words" : "truncate"}>{current}</p>
                     </div>
                   </label>
-                  <label className={`flex items-start gap-2 p-2 rounded-md cursor-pointer text-sm ${choice === "scraped" ? "bg-[hsl(var(--brand-success)/0.08)] border border-[hsl(var(--brand-success)/0.3)] dark:bg-[hsl(var(--brand-success)/0.15)] dark:border-[hsl(var(--brand-success)/0.3)]" : "bg-secondary/30 hover:bg-secondary/50"}`}>
+                  <label className={`flex items-start gap-2 p-2 rounded-[var(--radius)] cursor-pointer text-sm ${choice === "scraped" ? "bg-[hsl(var(--brand-success)/0.08)] border border-[hsl(var(--brand-success)/0.3)] dark:bg-[hsl(var(--brand-success)/0.15)] dark:border-[hsl(var(--brand-success)/0.3)]" : "bg-secondary/30 hover:bg-secondary/50"}`}>
                     <input type="radio" name={`merge-${field}`} checked={choice === "scraped"} onChange={() => setMergeSelections(prev => ({ ...prev, [field]: "scraped" }))} className="mt-0.5" />
                     <div className="flex-1 min-w-0">
                       <span className="text-xs font-ui text-muted-foreground">Use scraped:</span>
@@ -496,7 +496,7 @@ export default function AdminProviderAddPage() {
           })}
 
           {scrapedData.locations && scrapedData.locations.length > 0 && (
-            <div className="border rounded-lg p-3 space-y-2" data-testid="merge-field-locations">
+            <div className="border rounded-[var(--radius)] p-3 space-y-2" data-testid="merge-field-locations">
               <Label className="font-ui text-sm">Locations ({scrapedData.locations.length} found by scraper)</Label>
               <p className="text-xs text-muted-foreground">Scraped locations will be added to any existing locations.</p>
               <div className="space-y-1">
@@ -511,7 +511,7 @@ export default function AdminProviderAddPage() {
           )}
 
           {scrapedData.suggestedServices && scrapedData.suggestedServices.length > 0 && (
-            <div className="border rounded-lg p-3 space-y-2" data-testid="merge-field-services">
+            <div className="border rounded-[var(--radius)] p-3 space-y-2" data-testid="merge-field-services">
               <Label className="font-ui text-sm">Suggested Services</Label>
               <div className="flex flex-wrap gap-2">
                 {scrapedData.suggestedServices.map((svc, idx) => (
@@ -522,7 +522,7 @@ export default function AdminProviderAddPage() {
           )}
 
           {scrapedData.teamMembers && scrapedData.teamMembers.length > 0 && (
-            <div className="border rounded-lg p-3 space-y-2" data-testid="merge-field-team">
+            <div className="border rounded-[var(--radius)] p-3 space-y-2" data-testid="merge-field-team">
               <Label className="font-ui text-sm">Team Members ({scrapedData.teamMembers.length} found by scraper)</Label>
               <p className="text-xs text-muted-foreground">Scraped team members will be added to any existing ones.</p>
               <div className="space-y-1">
@@ -621,7 +621,7 @@ export default function AdminProviderAddPage() {
       </div>
 
       <div className="space-y-6">
-        <div className="bg-card rounded-xl border border-border/40 p-6 space-y-5">
+        <div className="bg-card rounded-[var(--radius)] border border-border/40 p-6 space-y-5">
           <h3 className="text-lg font-heading flex items-center gap-2">
             <Building2 className="w-5 h-5 text-primary" /> Company Profile
           </h3>
@@ -630,7 +630,7 @@ export default function AdminProviderAddPage() {
               <img
                 src={getPhotoSrc(previewLogoUrl) || previewLogoUrl}
                 alt="Provider logo"
-                className="w-16 h-16 object-contain rounded-lg bg-secondary shrink-0"
+                className="w-16 h-16 object-contain rounded-[var(--radius)] bg-secondary shrink-0"
                 referrerPolicy="no-referrer"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                 data-testid="img-preview-logo"
@@ -711,7 +711,7 @@ export default function AdminProviderAddPage() {
           </div>
         </div>
 
-        <div className="bg-card rounded-xl border border-border/40 p-6 space-y-4">
+        <div className="bg-card rounded-[var(--radius)] border border-border/40 p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-heading flex items-center gap-2">
               <MapPin className="w-5 h-5 text-primary" /> Locations ({previewLocations.length})
@@ -750,7 +750,7 @@ export default function AdminProviderAddPage() {
           )}
         </div>
 
-        <div className="bg-card rounded-xl border border-border/40 p-6 space-y-4">
+        <div className="bg-card rounded-[var(--radius)] border border-border/40 p-6 space-y-4">
           <Label>Services</Label>
           <div className="flex flex-wrap gap-2">
             {previewServices.map((svc, idx) => (
@@ -793,7 +793,7 @@ export default function AdminProviderAddPage() {
           </div>
         )}
 
-        <div className="bg-card rounded-xl border border-border/40 p-6 space-y-4">
+        <div className="bg-card rounded-[var(--radius)] border border-border/40 p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-heading flex items-center gap-2">
               <User className="w-5 h-5 text-primary" /> Team Members ({previewTeamMembers.length})
@@ -808,7 +808,7 @@ export default function AdminProviderAddPage() {
           {previewTeamMembers.length > 0 && (
             <div className="space-y-3">
               {previewTeamMembers.map((member, idx) => (
-                <div key={idx} className="border rounded-lg p-3" data-testid={`preview-team-member-${idx}`}>
+                <div key={idx} className="border rounded-[var(--radius)] p-3" data-testid={`preview-team-member-${idx}`}>
                   {editingMemberIdx === idx ? (
                     <div className="space-y-3">
                       <div className="grid grid-cols-2 gap-3">
@@ -922,7 +922,7 @@ export default function AdminProviderAddPage() {
                       {previewLocations.length > 0 && (
                         <div className="space-y-1">
                           <Label className="text-xs">Assigned Locations</Label>
-                          <div className="border rounded-lg p-2 space-y-1.5">
+                          <div className="border rounded-[var(--radius)] p-2 space-y-1.5">
                             {previewLocations.map((loc, locIdx) => {
                               const locKey = `${loc.city}|${loc.state}|${loc.address || ""}`;
                               const selected = member.locationHints?.includes(locKey) || false;
@@ -1024,7 +1024,7 @@ export default function AdminProviderAddPage() {
         </div>
       </div>
 
-      <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
+      <div className="border rounded-[var(--radius)] p-4 space-y-3 bg-muted/30">
         <div className="flex items-center gap-2">
           <User className="w-4 h-4 text-muted-foreground" />
           <Label className="text-sm font-heading">Create Provider's Admin User</Label>

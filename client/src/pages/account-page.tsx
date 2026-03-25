@@ -286,7 +286,7 @@ function AccountTab() {
               </div>
               <div className="space-y-2">
                 <Label>Email</Label>
-                <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-border/40 bg-muted/30">
+                <div className="flex items-center gap-2 h-10 px-3 rounded-[var(--radius)] border border-border/40 bg-muted/30">
                   <Mail className="w-4 h-4 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground" data-testid="text-account-email">{user.email}</span>
                 </div>
@@ -480,7 +480,7 @@ function AccountTab() {
               </div>
               <div className="space-y-2">
                 <Label>Role</Label>
-                <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-border/40 bg-muted/30">
+                <div className="flex items-center gap-2 h-10 px-3 rounded-[var(--radius)] border border-border/40 bg-muted/30">
                   <Shield className="w-4 h-4 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground" data-testid="text-account-role">{roleDisplay}</span>
                 </div>
@@ -488,7 +488,7 @@ function AccountTab() {
               {providerName && (
                 <div className="space-y-2">
                   <Label>Organization</Label>
-                  <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-border/40 bg-muted/30">
+                  <div className="flex items-center gap-2 h-10 px-3 rounded-[var(--radius)] border border-border/40 bg-muted/30">
                     <Building2 className="w-4 h-4 text-muted-foreground" />
                     <span className="text-sm text-muted-foreground" data-testid="text-account-provider">{providerName}</span>
                   </div>
@@ -790,7 +790,7 @@ function ParentCalendarTab() {
                 <button
                   key={cal.id}
                   onClick={() => setSelectedCalendarIds(prev => isSelected ? prev.filter(id => id !== cal.id) : [...prev, cal.id])}
-                  className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer text-left ${
+                  className={`w-full flex items-center gap-3 p-3 rounded-[var(--radius)] border transition-colors cursor-pointer text-left ${
                     isSelected ? "border-primary/50 bg-primary/5" : "border-border/50 hover:bg-secondary/30"
                   }`}
                   data-testid={`button-gcal-${cal.id}`}
@@ -798,7 +798,7 @@ function ParentCalendarTab() {
                   <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
                     isSelected ? "bg-primary border-primary" : "border-muted-foreground/30"
                   }`}>
-                    {isSelected && <Check className="w-3 h-3 text-white" />}
+                    {isSelected && <Check className="w-3 h-3 text-primary-foreground" />}
                   </div>
                   <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: cal.backgroundColor || "#4285f4" }} />
                   <div className="flex-1 min-w-0">
@@ -846,7 +846,7 @@ function ParentCalendarTab() {
         ) : (
           <div className="space-y-4">
             {connections!.map((conn) => (
-              <div key={conn.id} className="rounded-lg border border-border/30 bg-secondary/10 p-4" data-testid={`connection-${conn.id}`}>
+              <div key={conn.id} className="rounded-[var(--radius)] border border-border/30 bg-secondary/10 p-4" data-testid={`connection-${conn.id}`}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: conn.color }} />

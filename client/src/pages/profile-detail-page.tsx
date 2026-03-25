@@ -118,7 +118,7 @@ function PhotoGalleryBar({ photos, videoUrl }: { photos: string[]; videoUrl?: st
           {videoUrl && (
             <button
               onClick={() => setShowVideo(true)}
-              className="shrink-0 cursor-pointer overflow-hidden rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 relative"
+              className="shrink-0 cursor-pointer overflow-hidden rounded-[var(--radius)] focus:outline-none focus:ring-2 focus:ring-primary/40 relative"
               style={{ scrollSnapAlign: "start" }}
               data-testid="gallery-video-thumb"
             >
@@ -143,7 +143,7 @@ function PhotoGalleryBar({ photos, videoUrl }: { photos: string[]; videoUrl?: st
             <button
               key={idx}
               onClick={() => setLightboxIdx(idx)}
-              className="shrink-0 cursor-pointer overflow-hidden rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
+              className="shrink-0 cursor-pointer overflow-hidden rounded-[var(--radius)] focus:outline-none focus:ring-2 focus:ring-primary/40"
               style={{ scrollSnapAlign: "start" }}
               data-testid={`gallery-photo-${idx}`}
             >
@@ -175,7 +175,7 @@ function PhotoGalleryBar({ photos, videoUrl }: { photos: string[]; videoUrl?: st
             {isEmbedVideo(videoUrl) ? (
               <iframe
                 src={getEmbedUrl(videoUrl)}
-                className="w-full h-full rounded-lg shadow-2xl"
+                className="w-full h-full rounded-[var(--radius)] shadow-2xl"
                 allow="autoplay; fullscreen; picture-in-picture"
                 allowFullScreen
                 data-testid="video-player-iframe"
@@ -183,7 +183,7 @@ function PhotoGalleryBar({ photos, videoUrl }: { photos: string[]; videoUrl?: st
             ) : isIframeVideo(videoUrl) ? (
               <iframe
                 src={videoUrl}
-                className="w-full h-full rounded-lg shadow-2xl"
+                className="w-full h-full rounded-[var(--radius)] shadow-2xl"
                 allow="autoplay; fullscreen; picture-in-picture"
                 allowFullScreen
                 data-testid="video-player-iframe"
@@ -193,7 +193,7 @@ function PhotoGalleryBar({ photos, videoUrl }: { photos: string[]; videoUrl?: st
                 src={isDirectVideo(videoUrl) ? videoUrl : `/api/uploads/proxy?url=${encodeURIComponent(videoUrl)}`}
                 controls
                 autoPlay
-                className="w-full h-full rounded-lg shadow-2xl bg-black"
+                className="w-full h-full rounded-[var(--radius)] shadow-2xl bg-black"
                 data-testid="video-player"
               />
             )}
@@ -235,7 +235,7 @@ function PhotoGalleryBar({ photos, videoUrl }: { photos: string[]; videoUrl?: st
           <img
             src={photos[lightboxIdx]}
             alt={`Photo ${lightboxIdx + 1}`}
-            className="max-h-[85vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
+            className="max-h-[85vh] max-w-[90vw] object-contain rounded-[var(--radius)] shadow-2xl"
             onClick={(e) => e.stopPropagation()}
             data-testid="lightbox-image"
           />
@@ -307,8 +307,8 @@ const TYPE_ENDPOINTS: Record<string, string> = {
 
 function SectionHeader({ title }: { title: string }) {
   return (
-    <div className="bg-primary px-4 py-2 rounded-t-lg">
-      <h3 className="text-sm font-heading text-white" data-testid={`section-header-${title.toLowerCase().replace(/\s+/g, "-")}`}>
+    <div className="bg-primary px-4 py-2 rounded-t-[var(--radius)]">
+      <h3 className="text-sm font-heading text-primary-foreground" data-testid={`section-header-${title.toLowerCase().replace(/\s+/g, "-")}`}>
         {title}
       </h3>
     </div>
@@ -1301,7 +1301,7 @@ export default function DonorProfilePage() {
                   <img
                     src={`/api/uploads/proxy?url=${encodeURIComponent(url)}`}
                     alt={`${formatFieldLabel(key)} ${idx + 1}`}
-                    className="w-full aspect-square rounded-lg border border-border/30 object-cover hover:opacity-80 transition-opacity"
+                    className="w-full aspect-square rounded-[var(--radius)] border border-border/30 object-cover hover:opacity-80 transition-opacity"
                     loading="lazy"
                     data-testid={`img-${key.toLowerCase().replace(/\s+/g, "-")}-${idx}`}
                   />

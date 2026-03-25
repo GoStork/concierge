@@ -198,8 +198,8 @@ function PrepDocCard({ brandColor }: { brandColor: string }) {
     >
       <div className="p-1.5" style={{ backgroundColor: brandColor }}>
         <div className="flex items-center gap-2 px-3 py-1.5">
-          <FileText className="w-4 h-4 text-white" />
-          <span className="text-white text-xs font-semibold uppercase tracking-wider">Match Call Prep Guide</span>
+          <FileText className="w-4 h-4 text-primary-foreground" />
+          <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">Match Call Prep Guide</span>
         </div>
       </div>
       <div className="p-4 space-y-3">
@@ -366,7 +366,7 @@ function RescheduleCalendarPicker({
               disabled={!isAvailable}
               className={`aspect-square flex items-center justify-center text-xs rounded-full transition-colors cursor-pointer
                 ${!inMonth ? "text-muted-foreground/20" : ""}
-                ${isSelected ? "text-white font-bold" : ""}
+                ${isSelected ? "text-primary-foreground font-bold" : ""}
                 ${isAvailable && !isSelected ? "hover:bg-muted font-medium" : ""}
                 ${inMonth && !isAvailable ? "text-muted-foreground/30 cursor-not-allowed" : ""}
                 ${isTodayDate && !isSelected ? "ring-1 ring-primary" : ""}`}
@@ -401,7 +401,7 @@ function RescheduleCalendarPicker({
                   <button
                     key={t}
                     onClick={() => setSelectedSlot(t)}
-                    className={`text-xs py-1.5 rounded-md border transition-colors cursor-pointer ${isSel ? "text-white border-transparent font-semibold" : "border-border hover:bg-muted"}`}
+                    className={`text-xs py-1.5 rounded-[var(--radius)] border transition-colors cursor-pointer ${isSel ? "text-primary-foreground border-transparent font-semibold" : "border-border hover:bg-muted"}`}
                     style={isSel ? { backgroundColor: brandColor } : undefined}
                     data-testid={`reschedule-slot-${t}`}
                   >
@@ -419,7 +419,7 @@ function RescheduleCalendarPicker({
         <div className="flex gap-2">
           <button
             onClick={onCancel}
-            className="flex-1 text-center text-xs font-medium py-2.5 rounded-lg border border-border hover:bg-muted transition-colors cursor-pointer"
+            className="flex-1 text-center text-xs font-medium py-2.5 rounded-[var(--radius)] border border-border hover:bg-muted transition-colors cursor-pointer"
             data-testid="btn-reschedule-cancel"
           >
             Cancel
@@ -427,7 +427,7 @@ function RescheduleCalendarPicker({
           <button
             onClick={handleReschedule}
             disabled={submitting}
-            className="flex-1 text-center text-xs font-medium py-2.5 rounded-lg text-white transition-colors cursor-pointer disabled:opacity-50"
+            className="flex-1 text-center text-xs font-medium py-2.5 rounded-[var(--radius)] text-primary-foreground transition-colors cursor-pointer disabled:opacity-50"
             style={{ backgroundColor: brandColor }}
             data-testid="btn-reschedule-confirm"
           >
@@ -649,7 +649,7 @@ export function InlineBookingCalendar({
           )}
         </div>
 
-        <div className="bg-muted/40 rounded-xl p-3 space-y-2.5 border border-border">
+        <div className="bg-muted/40 rounded-[var(--radius)] p-3 space-y-2.5 border border-border">
           <div className="flex items-center gap-3">
             {providerPhotoSrc ? (
               <img src={providerPhotoSrc} alt={providerName} className="w-10 h-10 rounded-full object-cover" />
@@ -674,7 +674,7 @@ export function InlineBookingCalendar({
         </div>
 
         {participants.length > 0 && (
-          <div className="bg-muted/40 rounded-xl p-3 border border-border">
+          <div className="bg-muted/40 rounded-[var(--radius)] p-3 border border-border">
             <div className="flex items-center gap-2 mb-2">
               <Globe className="w-3.5 h-3.5 text-primary" />
               <span className="text-xs font-semibold">Participants</span>
@@ -694,12 +694,12 @@ export function InlineBookingCalendar({
         )}
 
         {isConfirmed ? (
-          <div className="bg-[hsl(var(--brand-success,142_71%_45%)/0.08)] border border-[hsl(var(--brand-success,142_71%_45%)/0.3)] rounded-xl p-3">
+          <div className="bg-[hsl(var(--brand-success,142_71%_45%)/0.08)] border border-[hsl(var(--brand-success,142_71%_45%)/0.3)] rounded-[var(--radius)] p-3">
             <p className="text-xs font-medium text-[hsl(var(--brand-success,142_71%_45%))]">Meeting confirmed</p>
             <p className="text-[11px] text-[hsl(var(--brand-success,142_71%_45%))] mt-0.5">Your consultation with {providerName} is confirmed. You'll receive a reminder before the meeting.</p>
           </div>
         ) : (
-          <div className="bg-[hsl(var(--brand-warning,40_96%_53%)/0.08)] border border-[hsl(var(--brand-warning,40_96%_53%)/0.3)] rounded-xl p-3">
+          <div className="bg-[hsl(var(--brand-warning,40_96%_53%)/0.08)] border border-[hsl(var(--brand-warning,40_96%_53%)/0.3)] rounded-[var(--radius)] p-3">
             <p className="text-xs font-medium text-[hsl(var(--brand-warning,40_96%_53%))]">Awaiting provider confirmation</p>
             <p className="text-[11px] text-[hsl(var(--brand-warning,40_96%_53%))] mt-0.5">We'll send you an email once {providerName} confirms your booking.</p>
           </div>
@@ -709,14 +709,14 @@ export function InlineBookingCalendar({
           <div className="flex gap-2">
             <button
               onClick={() => { setSelectedDate(null); setSelectedSlot(null); setCurrentMonth(new Date()); setStep("reschedule"); }}
-              className="flex-1 text-center text-xs font-medium py-2 rounded-lg border border-border hover:bg-muted transition-colors cursor-pointer"
+              className="flex-1 text-center text-xs font-medium py-2 rounded-[var(--radius)] border border-border hover:bg-muted transition-colors cursor-pointer"
               data-testid="btn-reschedule-inline"
             >
               Reschedule
             </button>
             <button
               onClick={() => setStep("cancel_confirm")}
-              className="flex-1 text-center text-xs font-medium py-2 rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/5 transition-colors cursor-pointer"
+              className="flex-1 text-center text-xs font-medium py-2 rounded-[var(--radius)] border border-destructive/30 text-destructive hover:bg-destructive/5 transition-colors cursor-pointer"
               data-testid="btn-cancel-inline"
             >
               Cancel
@@ -741,7 +741,7 @@ export function InlineBookingCalendar({
         <div className="flex gap-2">
           <button
             onClick={() => setStep("pending")}
-            className="flex-1 text-center text-xs font-medium py-2.5 rounded-lg border border-border hover:bg-muted transition-colors cursor-pointer"
+            className="flex-1 text-center text-xs font-medium py-2.5 rounded-[var(--radius)] border border-border hover:bg-muted transition-colors cursor-pointer"
             data-testid="btn-cancel-keep"
           >
             Keep Meeting
@@ -760,7 +760,7 @@ export function InlineBookingCalendar({
               } catch {} finally { setCancelling(false); }
             }}
             disabled={cancelling}
-            className="flex-1 text-center text-xs font-medium py-2.5 rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors cursor-pointer disabled:opacity-50"
+            className="flex-1 text-center text-xs font-medium py-2.5 rounded-[var(--radius)] bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors cursor-pointer disabled:opacity-50"
             data-testid="btn-cancel-confirm"
           >
             {cancelling ? "Cancelling..." : "Yes, Cancel"}
@@ -785,7 +785,7 @@ export function InlineBookingCalendar({
         <p className="text-xs text-center text-muted-foreground">This meeting has been cancelled and all participants have been notified.</p>
         <button
           onClick={() => { setSelectedDate(null); setSelectedSlot(null); setCurrentMonth(new Date()); setBooking(null); setStep("date"); }}
-          className="w-full text-center text-xs font-semibold py-2.5 rounded-lg text-white transition-colors cursor-pointer hover:opacity-90"
+          className="w-full text-center text-xs font-semibold py-2.5 rounded-[var(--radius)] text-primary-foreground transition-colors cursor-pointer hover:opacity-90"
           style={{ backgroundColor: brandColor }}
           data-testid="btn-book-new-after-cancel"
         >
@@ -832,7 +832,7 @@ export function InlineBookingCalendar({
           <ChevronLeft className="w-3 h-3" />
           Back
         </button>
-        <div className="bg-muted/50 rounded-lg p-3 flex items-center gap-2 text-sm">
+        <div className="bg-muted/50 rounded-[var(--radius)] p-3 flex items-center gap-2 text-sm">
           <CalendarCheck className="w-4 h-4 text-primary shrink-0" />
           <span className="font-medium">{format(selectedDate, "EEE, MMM d")}</span>
           <span className="text-muted-foreground">at {formatTime12(selectedSlot)}</span>
@@ -857,7 +857,7 @@ export function InlineBookingCalendar({
                 {additionalAttendees.map((ae) => (
                   <div
                     key={ae.email}
-                    className="flex items-center gap-2 bg-primary/5 border border-primary/10 rounded-lg px-2.5 py-2"
+                    className="flex items-center gap-2 bg-primary/5 border border-primary/10 rounded-[var(--radius)] px-2.5 py-2"
                     data-testid={`attendee-chip-inline-${ae.email}`}
                   >
                     <div className="flex-1 min-w-0">
@@ -888,7 +888,7 @@ export function InlineBookingCalendar({
                 Add Additional Attendees
               </button>
             ) : (
-              <div className="space-y-2 bg-muted/30 border border-border rounded-lg p-3">
+              <div className="space-y-2 bg-muted/30 border border-border rounded-[var(--radius)] p-3">
                 <Label className="flex items-center gap-1.5 text-xs font-medium">
                   <UserPlus className="w-3.5 h-3.5" />
                   Additional Attendees
@@ -901,7 +901,7 @@ export function InlineBookingCalendar({
                     {additionalAttendees.map((ae) => (
                       <div
                         key={ae.email}
-                        className="flex items-center gap-2 bg-primary/5 border border-primary/10 rounded-lg px-2.5 py-2"
+                        className="flex items-center gap-2 bg-primary/5 border border-primary/10 rounded-[var(--radius)] px-2.5 py-2"
                         data-testid={`attendee-chip-inline-${ae.email}`}
                       >
                         <div className="flex-1 min-w-0">
@@ -987,7 +987,7 @@ export function InlineBookingCalendar({
           )}
           <Button
             type="submit"
-            className="w-full h-10 text-sm font-semibold text-white"
+            className="w-full h-10 text-sm font-semibold text-primary-foreground"
             style={{ backgroundColor: brandColor }}
             disabled={bookMutation.isPending}
             data-testid="button-confirm-booking-inline"
@@ -1082,7 +1082,7 @@ export function InlineBookingCalendar({
                 <button
                   key={slot.time}
                   onClick={() => { setSelectedSlot(slot.time); setStep("form"); }}
-                  className="px-2 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer bg-muted/50 border border-border hover:bg-primary/10 hover:border-primary/40 text-foreground/80"
+                  className="px-2 py-2 rounded-[var(--radius)] text-xs font-medium transition-all cursor-pointer bg-muted/50 border border-border hover:bg-primary/10 hover:border-primary/40 text-foreground/80"
                   data-testid={`slot-inline-${slot.time}`}
                 >
                   {formatTime12(slot.time)}
@@ -1116,8 +1116,8 @@ function ConsultationBookingCard({
       >
         <div className="p-1.5" style={{ backgroundColor: brandColor }}>
           <div className="flex items-center gap-2 px-3 py-1.5">
-            <CalendarCheck className="w-4 h-4 text-white" />
-            <span className="text-white text-xs font-semibold uppercase tracking-wider">
+            <CalendarCheck className="w-4 h-4 text-primary-foreground" />
+            <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
               {existingBooking && existingBooking.status !== "CANCELLED" ? "Meeting Scheduled" : "Schedule a Free Consultation"}
             </span>
           </div>
@@ -1143,8 +1143,8 @@ function ConsultationBookingCard({
     >
       <div className="p-1.5" style={{ backgroundColor: brandColor }}>
         <div className="flex items-center gap-2 px-3 py-1.5">
-          <CalendarCheck className="w-4 h-4 text-white" />
-          <span className="text-white text-xs font-semibold uppercase tracking-wider">Book a Consultation</span>
+          <CalendarCheck className="w-4 h-4 text-primary-foreground" />
+          <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">Book a Consultation</span>
         </div>
       </div>
       <div className="p-4">
@@ -1158,7 +1158,7 @@ function ConsultationBookingCard({
             />
           ) : (
             <div
-              className="w-12 h-12 rounded-full flex items-center justify-center text-white text-lg font-bold"
+              className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-lg font-bold"
               style={{ backgroundColor: brandColor }}
             >
               {card.providerName.charAt(0)}
@@ -1173,7 +1173,7 @@ function ConsultationBookingCard({
           Take the next step in your journey. Schedule a consultation to discuss your options directly with {card.providerName}.
         </p>
         <Button
-          className="w-full gap-2 text-white"
+          className="w-full gap-2 text-primary-foreground"
           style={{ backgroundColor: brandColor, borderRadius: "var(--radius, 0.5rem)" }}
           onClick={() => onSchedule(card)}
           data-testid="btn-schedule-consultation"
@@ -1281,7 +1281,7 @@ function BookingOverlay({
               href={card.bookingUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-6 py-3 text-white text-sm font-medium transition-opacity hover:opacity-90"
+              className="inline-flex items-center gap-2 px-6 py-3 text-primary-foreground text-sm font-medium transition-opacity hover:opacity-90"
               style={{ backgroundColor: brandColor, borderRadius: "var(--radius, 0.5rem)" }}
               data-testid="link-external-booking"
             >
@@ -1307,7 +1307,7 @@ function BookingOverlay({
             <Button
               onClick={onClose}
               style={{ backgroundColor: brandColor, borderRadius: "var(--radius, 0.5rem)" }}
-              className="text-white mt-2"
+              className="text-primary-foreground mt-2"
               data-testid="btn-back-to-chat-after-submit"
             >
               Back to Chat
@@ -1351,7 +1351,7 @@ function BookingOverlay({
               </div>
               <Button
                 type="submit"
-                className="w-full text-white gap-2"
+                className="w-full text-primary-foreground gap-2"
                 style={{ backgroundColor: brandColor, borderRadius: "var(--radius, 0.5rem)" }}
                 disabled={submitting}
                 data-testid="btn-submit-callback"
@@ -1479,9 +1479,9 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
       <div className="p-4 space-y-3">
         <div className="flex items-start gap-3">
           {provider.logoUrl ? (
-            <img src={getPhotoSrc(provider.logoUrl) || undefined} alt="" className="w-10 h-10 rounded-lg object-contain border border-border/30 bg-background p-0.5 shrink-0" />
+            <img src={getPhotoSrc(provider.logoUrl) || undefined} alt="" className="w-10 h-10 rounded-[var(--radius)] object-contain border border-border/30 bg-background p-0.5 shrink-0" />
           ) : (
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ backgroundColor: brandColor }}>
+            <div className="w-10 h-10 rounded-[var(--radius)] flex items-center justify-center text-primary-foreground text-sm font-bold shrink-0" style={{ backgroundColor: brandColor }}>
               {(provider.name || "C").charAt(0)}
             </div>
           )}
@@ -1544,7 +1544,7 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
         <Button variant="outline" className="flex-1 text-xs font-ui h-8" onClick={(e) => { e.stopPropagation(); navigate(providerUrl, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } }); }}>
           View Details
         </Button>
-        <Button className="flex-1 text-xs font-ui h-8 text-white" style={{ backgroundColor: brandColor }} onClick={(e) => { e.stopPropagation(); onAction(`I'd like to schedule a consultation with ${provider.name}`); }}>
+        <Button className="flex-1 text-xs font-ui h-8 text-primary-foreground" style={{ backgroundColor: brandColor }} onClick={(e) => { e.stopPropagation(); onAction(`I'd like to schedule a consultation with ${provider.name}`); }}>
           Schedule Consultation
         </Button>
       </div>
@@ -1625,7 +1625,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
         <img src={getPhotoSrc(card.photo) || undefined} alt={card.name} className="w-full h-full object-cover" />
       ) : (
         <div className="w-full h-full flex flex-col items-center justify-center px-6" style={{ backgroundColor: `${brandColor}10` }}>
-          <div className="w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl font-bold mb-4" style={{ backgroundColor: brandColor }}>
+          <div className="w-20 h-20 rounded-full flex items-center justify-center text-primary-foreground text-3xl font-bold mb-4" style={{ backgroundColor: brandColor }}>
             {(card.name || "").charAt(0)}
           </div>
           <h3 className="font-heading text-xl text-center leading-tight">{card.name}</h3>
@@ -1718,13 +1718,13 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo }: { msg: Cha
       <div data-testid="concierge-attachment-card">
         {isImage ? (
           <a href={fileUrl} target="_blank" rel="noopener noreferrer">
-            <img src={fileUrl} alt={data.originalName} className="max-w-[240px] rounded-lg border" />
+            <img src={fileUrl} alt={data.originalName} className="max-w-[240px] rounded-[var(--radius)] border" />
           </a>
         ) : (
           <a
             href={fileUrl}
             download={data.originalName}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-background hover:bg-muted transition-colors"
+            className="flex items-center gap-2 px-3 py-2 rounded-[var(--radius)] border bg-background hover:bg-muted transition-colors"
           >
             <FileText className="w-5 h-5 shrink-0" style={{ color: brandColor }} />
             <span className="text-sm font-medium truncate">{data.originalName || "File"}</span>
@@ -1739,8 +1739,8 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo }: { msg: Cha
     const videoBookingId = data.bookingId;
     if (!videoBookingId) {
       return (
-        <div className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 bg-muted/50 w-full text-left opacity-60" style={{ borderColor: brandColor }}>
-          <div className="w-10 h-10 rounded-full flex items-center justify-center text-white/70 shrink-0" style={{ backgroundColor: brandColor }}>
+        <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border-2 bg-muted/50 w-full text-left opacity-60" style={{ borderColor: brandColor }}>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground/70 shrink-0" style={{ backgroundColor: brandColor }}>
             <Video className="w-5 h-5" />
           </div>
           <div className="flex-1 min-w-0">
@@ -1759,11 +1759,11 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo }: { msg: Cha
     return (
       <button
         onClick={handleVideoClick}
-        className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 bg-background hover:bg-muted transition-colors cursor-pointer w-full text-left"
+        className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border-2 bg-background hover:bg-muted transition-colors cursor-pointer w-full text-left"
         style={{ borderColor: brandColor }}
         data-testid="concierge-video-invite"
       >
-        <div className="w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0" style={{ backgroundColor: brandColor }}>
+        <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: brandColor }}>
           <Video className="w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
@@ -1781,11 +1781,11 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo }: { msg: Cha
         href={data.bookingUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 bg-background hover:bg-muted transition-colors"
+        className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border-2 bg-background hover:bg-muted transition-colors"
         style={{ borderColor: brandColor }}
         data-testid="concierge-calendar-share"
       >
-        <div className="w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0" style={{ backgroundColor: brandColor }}>
+        <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: brandColor }}>
           <CalendarDays className="w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
@@ -2515,7 +2515,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               />
             )}
             <div
-              className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold"
+              className="w-9 h-9 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold"
               style={{ backgroundColor: brandColor }}
             >
               {(providerInChat && providerChatName ? providerChatName : (selectedMatchmaker?.name || "?")).charAt(0)}
@@ -2605,8 +2605,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                     >
                       <div className="p-1.5" style={{ backgroundColor: brandColor }}>
                         <div className="flex items-center gap-2 px-3 py-1.5">
-                          <CalendarCheck className="w-4 h-4 text-white" />
-                          <span className="text-white text-xs font-semibold uppercase tracking-wider">
+                          <CalendarCheck className="w-4 h-4 text-primary-foreground" />
+                          <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
                             {item.booking.status === "CANCELLED" ? "Meeting Cancelled" : "Meeting Scheduled"}
                           </span>
                         </div>
@@ -2690,11 +2690,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       <div
                         className={`relative max-w-[80%] px-4 py-2.5 text-base leading-relaxed font-ui ${
                           isOwnMessage
-                            ? "text-white chat-bubble-dark"
+                            ? "text-primary-foreground chat-bubble-dark"
                             : isOtherParent
                             ? "text-foreground"
                             : msg.role === "user"
-                            ? "text-white chat-bubble-dark"
+                            ? "text-primary-foreground chat-bubble-dark"
                             : "text-foreground"
                         }`}
                         style={{
@@ -2874,8 +2874,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 >
                   <div className="p-1.5" style={{ backgroundColor: brandColor }}>
                     <div className="flex items-center gap-2 px-3 py-1.5">
-                      <CalendarCheck className="w-4 h-4 text-white" />
-                      <span className="text-white text-xs font-semibold uppercase tracking-wider">Schedule a Meeting</span>
+                      <CalendarCheck className="w-4 h-4 text-primary-foreground" />
+                      <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">Schedule a Meeting</span>
                     </div>
                   </div>
                   <div className="px-4 pb-4">
@@ -2896,7 +2896,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           {stagedFiles.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-2">
               {stagedFiles.map((file, i) => (
-                <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border bg-muted/50 text-xs">
+                <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[var(--radius)] border bg-muted/50 text-xs">
                   <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: brandColor }} />
                   <span className="truncate max-w-[140px]">{file.name}</span>
                   <button onClick={() => removeStagedFile(i)} className="ml-0.5 hover:text-destructive">
@@ -2942,7 +2942,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               size="sm"
               onClick={handleSend}
               disabled={(!input.trim() && stagedFiles.length === 0) || sending || parentUploading}
-              className="h-10 w-10 p-0 rounded-full text-white shrink-0"
+              className="h-10 w-10 p-0 rounded-full text-primary-foreground shrink-0"
               style={{ backgroundColor: brandColor }}
               data-testid="btn-send-message"
             >

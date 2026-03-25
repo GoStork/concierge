@@ -89,7 +89,7 @@ export function AddToCalendarButtons({ booking }: { booking: any }) {
         href={googleCalUrl(booking)}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center gap-3 w-full px-4 py-3 rounded-lg border border-border/50 hover:border-primary/30 hover:bg-secondary/20 transition-colors cursor-pointer"
+        className="flex items-center gap-3 w-full px-4 py-3 rounded-[var(--radius)] border border-border/50 hover:border-primary/30 hover:bg-secondary/20 transition-colors cursor-pointer"
         data-testid="link-add-google-cal"
       >
         <GoogleIcon className="w-5 h-5 shrink-0" />
@@ -98,7 +98,7 @@ export function AddToCalendarButtons({ booking }: { booking: any }) {
       <button
         type="button"
         onClick={() => downloadIcs(booking)}
-        className="flex items-center gap-3 w-full px-4 py-3 rounded-lg border border-border/50 hover:border-primary/30 hover:bg-secondary/20 transition-colors cursor-pointer text-left"
+        className="flex items-center gap-3 w-full px-4 py-3 rounded-[var(--radius)] border border-border/50 hover:border-primary/30 hover:bg-secondary/20 transition-colors cursor-pointer text-left"
         data-testid="button-add-apple-cal"
       >
         <AppleIcon className="w-5 h-5 shrink-0" />
@@ -108,7 +108,7 @@ export function AddToCalendarButtons({ booking }: { booking: any }) {
         href={outlookCalUrl(booking)}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center gap-3 w-full px-4 py-3 rounded-lg border border-border/50 hover:border-primary/30 hover:bg-secondary/20 transition-colors cursor-pointer"
+        className="flex items-center gap-3 w-full px-4 py-3 rounded-[var(--radius)] border border-border/50 hover:border-primary/30 hover:bg-secondary/20 transition-colors cursor-pointer"
         data-testid="link-add-outlook-cal"
       >
         <MicrosoftIcon className="w-5 h-5 shrink-0" />
@@ -117,7 +117,7 @@ export function AddToCalendarButtons({ booking }: { booking: any }) {
       <button
         type="button"
         onClick={() => downloadIcs(booking)}
-        className="flex items-center gap-3 w-full px-4 py-3 rounded-lg border border-border/50 hover:border-primary/30 hover:bg-secondary/20 transition-colors cursor-pointer text-left"
+        className="flex items-center gap-3 w-full px-4 py-3 rounded-[var(--radius)] border border-border/50 hover:border-primary/30 hover:bg-secondary/20 transition-colors cursor-pointer text-left"
         data-testid="button-add-other-cal"
       >
         <Calendar className="w-5 h-5 shrink-0 text-muted-foreground" />

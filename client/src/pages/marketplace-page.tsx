@@ -72,7 +72,7 @@ function ScheduleConsultationDialog({ providerId, providerName, open, onClose }:
                 <a
                   key={m.id}
                   href={`/book/${m.slug}`}
-                  className="flex items-center gap-3 p-3 rounded-lg border border-border/50 hover:bg-secondary/30 transition-colors"
+                  className="flex items-center gap-3 p-3 rounded-[var(--radius)] border border-border/50 hover:bg-secondary/30 transition-colors"
                   data-testid={`link-book-${m.id}`}
                 >
                   {photoSrc ? (
@@ -152,7 +152,7 @@ function IvfClinicCard({ provider, matchedRate, filterLabel, onSchedule, onNavig
             <img
               src={getPhotoSrc(provider.logoUrl) || ""}
               alt=""
-              className="w-10 h-10 rounded-lg object-contain border border-border/30 bg-background p-0.5 shrink-0"
+              className="w-10 h-10 rounded-[var(--radius)] object-contain border border-border/30 bg-background p-0.5 shrink-0"
             />
           )}
           <div className="flex-1 min-w-0">
@@ -344,7 +344,7 @@ function ProviderGrid({ providers, searchQuery, providerTypeName, onSchedule }: 
                 <img
                   src={getPhotoSrc(provider.logoUrl) || ""}
                   alt=""
-                  className="w-10 h-10 rounded-lg object-contain border border-border/30 bg-background p-0.5"
+                  className="w-10 h-10 rounded-[var(--radius)] object-contain border border-border/30 bg-background p-0.5"
                 />
               )}
               <div className="flex-1 min-w-0">
@@ -1007,7 +1007,7 @@ export default function MarketplacePage() {
               <Info className="w-3 h-3" />
             </button>
             {showCdcInfo && (
-              <div className="absolute top-full left-0 mt-1 z-20 bg-card border border-border rounded-lg shadow-lg p-3 max-w-sm" data-testid="alert-cdc-info">
+              <div className="absolute top-full left-0 mt-1 z-20 bg-card border border-border rounded-[var(--radius)] shadow-lg p-3 max-w-sm" data-testid="alert-cdc-info">
                 <ul className="text-xs text-muted-foreground space-y-0.5 list-disc list-inside">
                   <li>Patient characteristics affect success rates and may not be comparable between clinics</li>
                   <li>These statistics do not predict your individual chances of success</li>

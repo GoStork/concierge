@@ -247,7 +247,7 @@ export default function AdminProvidersPage() {
         </Popover>
       </div>
 
-      <div className={`bg-card rounded-xl border border-border/50 shadow-sm overflow-hidden transition-opacity ${isFetching && !isLoading ? "opacity-60" : ""}`}>
+      <div className={`bg-card rounded-[var(--radius)] border border-border/50 shadow-sm overflow-hidden transition-opacity ${isFetching && !isLoading ? "opacity-60" : ""}`}>
         <Table>
           <TableHeader>
             <TableRow>
@@ -333,9 +333,9 @@ export default function AdminProvidersPage() {
                   <TableCell className="font-ui">
                     <div className="flex items-center gap-3">
                       {provider.logoUrl ? (
-                        <img src={getPhotoSrc(provider.logoUrl) || provider.logoUrl} alt="" className="w-8 h-8 rounded-lg object-contain bg-background p-0.5 border" referrerPolicy="no-referrer" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                        <img src={getPhotoSrc(provider.logoUrl) || provider.logoUrl} alt="" className="w-8 h-8 rounded-[var(--radius)] object-contain bg-background p-0.5 border" referrerPolicy="no-referrer" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                       ) : (
-                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                        <div className="w-8 h-8 rounded-[var(--radius)] bg-primary/10 flex items-center justify-center text-primary">
                           <Building2 className="w-4 h-4" />
                         </div>
                       )}
@@ -450,7 +450,7 @@ export default function AdminProvidersPage() {
             {manageServicesProvider?.services && manageServicesProvider.services.length > 0 ? (
               <div className="space-y-3">
                 {manageServicesProvider.services.map((service: any) => (
-                  <div key={service.id} className="flex items-center justify-between gap-3 p-3 border rounded-lg" data-testid={`service-row-${service.id}`}>
+                  <div key={service.id} className="flex items-center justify-between gap-3 p-3 border rounded-[var(--radius)]" data-testid={`service-row-${service.id}`}>
                     <span className="text-sm font-ui">{service.providerType?.name || "Service"}</span>
                     <Select
                       value={service.status}

@@ -104,7 +104,7 @@ export default function BookingManagePage() {
     return (
       <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background flex items-center justify-center p-4">
         <div className="w-full max-w-md">
-          <div className="bg-card rounded-2xl border border-border/50 shadow-lg p-8 text-center">
+          <div className="bg-card rounded-[var(--container-radius)] border border-border/50 shadow-lg p-8 text-center">
             <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-destructive/15 flex items-center justify-center">
               <X className="w-7 h-7 text-destructive" />
             </div>
@@ -128,7 +128,7 @@ export default function BookingManagePage() {
     return (
       <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background flex items-center justify-center p-4">
         <div className="w-full max-w-md">
-          <div className="bg-card rounded-2xl border border-border/50 shadow-lg p-8 text-center">
+          <div className="bg-card rounded-[var(--container-radius)] border border-border/50 shadow-lg p-8 text-center">
             <div className={`w-14 h-14 mx-auto mb-4 rounded-full flex items-center justify-center ${
               isConfirm ? "bg-[hsl(var(--brand-success)/0.12)]" : isDecline ? "bg-destructive/15" : "bg-primary/10"
             }`}>
@@ -146,7 +146,7 @@ export default function BookingManagePage() {
             </p>
 
             {start && rb && (
-              <div className="bg-secondary/30 rounded-xl p-4 space-y-3 text-left mb-4">
+              <div className="bg-secondary/30 rounded-[var(--radius)] p-4 space-y-3 text-left mb-4">
                 <div className="flex items-center gap-2 text-sm">
                   <Calendar className="w-4 h-4 text-primary shrink-0" />
                   <span className="font-ui">{format(start, "EEEE, MMMM d, yyyy")}</span>
@@ -188,7 +188,7 @@ export default function BookingManagePage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="bg-card rounded-2xl border border-border/50 shadow-lg p-8">
+        <div className="bg-card rounded-[var(--container-radius)] border border-border/50 shadow-lg p-8">
           <div className="text-center mb-6">
             <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-[hsl(var(--brand-warning)/0.12)] flex items-center justify-center">
               <CalendarClock className="w-7 h-7 text-[hsl(var(--brand-warning))]" />
@@ -215,7 +215,7 @@ export default function BookingManagePage() {
           </div>
 
           {start && booking && (
-            <div className="bg-secondary/30 rounded-xl p-4 space-y-3 mb-6">
+            <div className="bg-secondary/30 rounded-[var(--radius)] p-4 space-y-3 mb-6">
               {booking.subject && (
                 <div className="flex items-center gap-2 text-sm">
                   <MessageSquare className="w-4 h-4 text-primary shrink-0" />
@@ -266,7 +266,7 @@ export default function BookingManagePage() {
           {isPending && actionState === "idle" && (
             <div className="space-y-3">
               <Button
-                className="w-full gap-2 bg-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success))] text-white"
+                className="w-full gap-2 bg-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success))] text-primary-foreground"
                 onClick={() => setActionState("confirming")}
                 data-testid="button-manage-confirm"
               >
@@ -293,7 +293,7 @@ export default function BookingManagePage() {
 
           {actionState === "confirming" && (
             <div className="space-y-3">
-              <div className="bg-[hsl(var(--brand-success)/0.08)] border border-[hsl(var(--brand-success)/0.3)] rounded-lg p-3">
+              <div className="bg-[hsl(var(--brand-success)/0.08)] border border-[hsl(var(--brand-success)/0.3)] rounded-[var(--radius)] p-3">
                 <p className="text-sm text-[hsl(var(--brand-success))] font-ui">Confirm this meeting?</p>
                 <p className="text-xs text-[hsl(var(--brand-success))] mt-1">{booking.attendeeName || "The parent"} will be notified and the meeting will be added to your calendar.</p>
               </div>
@@ -308,7 +308,7 @@ export default function BookingManagePage() {
                   Back
                 </Button>
                 <Button
-                  className="flex-1 gap-2 bg-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success))] text-white"
+                  className="flex-1 gap-2 bg-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success))] text-primary-foreground"
                   onClick={() => executeAction("confirm")}
                   disabled={submitting}
                   data-testid="button-confirm-yes"
@@ -322,7 +322,7 @@ export default function BookingManagePage() {
 
           {actionState === "declining" && (
             <div className="space-y-3">
-              <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3">
+              <div className="bg-destructive/10 border border-destructive/30 rounded-[var(--radius)] p-3">
                 <p className="text-sm text-destructive font-ui">Decline this meeting?</p>
                 <p className="text-xs text-destructive mt-1">{booking.attendeeName || "The parent"} will be notified that the meeting was declined.</p>
               </div>
@@ -353,7 +353,7 @@ export default function BookingManagePage() {
           {actionState === "suggesting" && (
             <div className="space-y-3">
               {start && (
-                <div className="bg-secondary/50 rounded-lg p-3">
+                <div className="bg-secondary/50 rounded-[var(--radius)] p-3">
                   <p className="text-xs text-muted-foreground mb-1">Originally requested:</p>
                   <div className="flex items-center gap-2 text-sm">
                     <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />

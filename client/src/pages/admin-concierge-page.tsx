@@ -62,7 +62,7 @@ function SystemSettingsCard() {
   };
 
   return (
-    <Card className="rounded-xl p-6" data-testid="card-system-settings">
+    <Card className="rounded-[var(--radius)] p-6" data-testid="card-system-settings">
       <div className="flex items-center gap-2.5 mb-1">
         <Settings className="w-5 h-5 text-primary" />
         <h3 className="font-display text-base font-semibold">Parent Experience Mode</h3>
@@ -79,14 +79,14 @@ function SystemSettingsCard() {
             className="space-y-2"
             data-testid="radio-parent-mode"
           >
-            <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/30 transition-colors">
+            <label className="flex items-start gap-3 p-3 rounded-[var(--radius)] border cursor-pointer hover:bg-muted/30 transition-colors">
               <RadioGroupItem value="CONCIERGE_FIRST" className="mt-0.5" data-testid="radio-concierge-first" />
               <div>
                 <span className="text-sm font-medium">AI First</span>
                 <p className="text-xs text-muted-foreground">Direct parents to Eva after onboarding</p>
               </div>
             </label>
-            <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/30 transition-colors">
+            <label className="flex items-start gap-3 p-3 rounded-[var(--radius)] border cursor-pointer hover:bg-muted/30 transition-colors">
               <RadioGroupItem value="MARKETPLACE_ONLY" className="mt-0.5" data-testid="radio-marketplace-only" />
               <div>
                 <span className="text-sm font-medium">Marketplace Only</span>
@@ -148,7 +148,7 @@ function RuleForm({
           value={guidance}
           onChange={(e) => setGuidance(e.target.value)}
           placeholder="Mention that GoStork partners offer financing options through Prosper..."
-          className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[80px] resize-y"
+          className="mt-1 w-full rounded-[var(--radius)] border border-input bg-background px-3 py-2 text-sm min-h-[80px] resize-y"
           data-testid="input-rule-guidance"
         />
       </div>
@@ -250,7 +250,7 @@ function PromptEditorCard() {
   };
 
   return (
-    <Card className="rounded-xl p-6" data-testid="card-prompt-editor">
+    <Card className="rounded-[var(--radius)] p-6" data-testid="card-prompt-editor">
       <div className="flex items-center gap-2.5 mb-4">
         <FileText className="w-5 h-5 text-primary" />
         <div>
@@ -273,7 +273,7 @@ function PromptEditorCard() {
             const hasChanges = editContent[section.key] !== undefined && editContent[section.key] !== section.content;
 
             return (
-              <div key={section.id} className={`rounded-lg border ${!section.isActive ? "opacity-50" : ""}`}>
+              <div key={section.id} className={`rounded-[var(--radius)] border ${!section.isActive ? "opacity-50" : ""}`}>
                 <button
                   className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/30 transition-colors"
                   onClick={() => setExpandedKey(isExpanded ? null : section.key)}
@@ -389,7 +389,7 @@ function IntelligenceRulesCard() {
   const rules = rulesQuery.data || [];
 
   return (
-    <Card className="rounded-xl p-6" data-testid="card-intelligence-rules">
+    <Card className="rounded-[var(--radius)] p-6" data-testid="card-intelligence-rules">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2.5">
           <Brain className="w-5 h-5 text-primary" />
@@ -423,7 +423,7 @@ function IntelligenceRulesCard() {
           <Loader2 className="w-4 h-4 animate-spin" /> Loading rules...
         </div>
       ) : rules.length === 0 && !showNewRule ? (
-        <div className="p-6 text-center border rounded-lg">
+        <div className="p-6 text-center border rounded-[var(--radius)]">
           <p className="text-sm text-muted-foreground">No expert guidance rules yet. Add rules to steer the AI concierge's responses.</p>
         </div>
       ) : (
@@ -589,7 +589,7 @@ function KnowledgeBaseCard() {
   const answeredWhispers = whispers.filter((w: any) => w.status === "ANSWERED");
 
   return (
-    <Card className="rounded-xl p-6" data-testid="card-knowledge-base">
+    <Card className="rounded-[var(--radius)] p-6" data-testid="card-knowledge-base">
       <div className="flex items-center gap-2.5 mb-1">
         <Brain className="w-5 h-5 text-primary" />
         <h3 className="font-display text-base font-semibold">Knowledge Base</h3>
@@ -599,7 +599,7 @@ function KnowledgeBaseCard() {
       </p>
 
       <div className="space-y-4">
-        <div className="rounded-lg border p-4" data-testid="section-unanswered-questions">
+        <div className="rounded-[var(--radius)] border p-4" data-testid="section-unanswered-questions">
           <h4 className="text-sm font-semibold mb-1 flex items-center gap-2">
             <MessageCircleQuestion className="w-4 h-4 text-[hsl(var(--brand-warning))]" />
             Unanswered AI Questions
@@ -617,7 +617,7 @@ function KnowledgeBaseCard() {
           ) : (
             <div className="space-y-3">
               {pendingWhispers.map((w: any) => (
-                <div key={w.id} className="p-3 rounded-lg border border-[hsl(var(--brand-warning))]/30 bg-[hsl(var(--brand-warning))]/5" data-testid={`card-whisper-${w.id}`}>
+                <div key={w.id} className="p-3 rounded-[var(--radius)] border border-[hsl(var(--brand-warning))]/30 bg-[hsl(var(--brand-warning))]/5" data-testid={`card-whisper-${w.id}`}>
                   <p className="text-sm font-medium mb-1">"{w.questionText}"</p>
                   <p className="text-xs text-muted-foreground mb-2">
                     {new Date(w.createdAt).toLocaleDateString()} · Anonymous prospective parent
@@ -626,7 +626,7 @@ function KnowledgeBaseCard() {
                     value={answerInputs[w.id] || ""}
                     onChange={(e) => setAnswerInputs((prev) => ({ ...prev, [w.id]: e.target.value }))}
                     placeholder="Type your answer..."
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[60px] resize-y"
+                    className="w-full rounded-[var(--radius)] border border-input bg-background px-3 py-2 text-sm min-h-[60px] resize-y"
                     data-testid={`input-whisper-answer-${w.id}`}
                   />
                   <div className="flex justify-end mt-2">
@@ -646,7 +646,7 @@ function KnowledgeBaseCard() {
           )}
         </div>
 
-        <div className="rounded-lg border p-4" data-testid="section-answered-questions">
+        <div className="rounded-[var(--radius)] border p-4" data-testid="section-answered-questions">
           <h4 className="text-sm font-semibold mb-1 flex items-center gap-2">
             <CheckCircle className="w-4 h-4 text-[hsl(var(--brand-success))]" />
             Answered Questions
@@ -656,7 +656,7 @@ function KnowledgeBaseCard() {
           ) : (
             <div className="space-y-2 mt-3">
               {answeredWhispers.slice(0, 5).map((w: any) => (
-                <div key={w.id} className="p-3 rounded-lg border opacity-70" data-testid={`card-answered-${w.id}`}>
+                <div key={w.id} className="p-3 rounded-[var(--radius)] border opacity-70" data-testid={`card-answered-${w.id}`}>
                   <p className="text-xs font-medium">Q: {w.questionText}</p>
                   <p className="text-xs text-muted-foreground mt-1">A: {w.answerText}</p>
                   <p className="text-xs text-muted-foreground mt-1">
@@ -668,13 +668,13 @@ function KnowledgeBaseCard() {
           )}
         </div>
 
-        <div className="rounded-lg border p-4" data-testid="section-documents">
+        <div className="rounded-[var(--radius)] border p-4" data-testid="section-documents">
           <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
             <FileText className="w-4 h-4" />
             Documents
           </h4>
           <div
-            className={`p-6 border-2 border-dashed rounded-lg transition-colors cursor-pointer ${
+            className={`p-6 border-2 border-dashed rounded-[var(--radius)] transition-colors cursor-pointer ${
               dragOver ? "border-primary bg-primary/5" : "border-border/60 hover:border-primary/40"
             }`}
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -719,7 +719,7 @@ function KnowledgeBaseCard() {
             ) : (
               <div className="space-y-2">
                 {docs.map((doc: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between p-3 rounded-lg border" data-testid={`card-document-${i}`}>
+                  <div key={i} className="flex items-center justify-between p-3 rounded-[var(--radius)] border" data-testid={`card-document-${i}`}>
                     <div className="flex items-center gap-3 min-w-0">
                       {doc.sourceType === "WEBSITE" ? (
                         <Globe className="w-4 h-4 text-[hsl(var(--accent))] shrink-0" />
@@ -755,7 +755,7 @@ function KnowledgeBaseCard() {
           </div>
         </div>
 
-        <div className="rounded-lg border p-4" data-testid="section-bulk-sync">
+        <div className="rounded-[var(--radius)] border p-4" data-testid="section-bulk-sync">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium">Bulk Provider Website Sync</p>
@@ -777,7 +777,7 @@ function KnowledgeBaseCard() {
           </div>
 
           {bulkSyncResult && (
-            <div className="mt-4 p-3 rounded-md bg-muted/50 text-sm space-y-1" data-testid="text-bulk-sync-result">
+            <div className="mt-4 p-3 rounded-[var(--radius)] bg-muted/50 text-sm space-y-1" data-testid="text-bulk-sync-result">
               <div className="flex items-center gap-2">
                 <CheckCircle className="w-4 h-4 text-[hsl(var(--brand-success))]" />
                 <span>{bulkSyncResult.synced} providers synced successfully</span>
@@ -904,7 +904,7 @@ export default function AdminConciergePage() {
     };
 
     return (
-      <Card className="rounded-xl p-5 space-y-4 border-primary/20 border-2" data-testid={isNew ? "matchmaker-add-form" : `matchmaker-edit-form-${editingId}`}>
+      <Card className="rounded-[var(--radius)] p-5 space-y-4 border-primary/20 border-2" data-testid={isNew ? "matchmaker-add-form" : `matchmaker-edit-form-${editingId}`}>
         <div className="flex items-center gap-2 pb-2 border-b">
           <Bot className="w-4 h-4 text-primary" />
           <span className="font-medium text-sm">{isNew ? "New Matchmaker" : "Edit Matchmaker"}</span>
@@ -947,7 +947,7 @@ export default function AdminConciergePage() {
               )}
               <label className="cursor-pointer">
                 <input type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleAvatarUpload(file, (url) => setEditForm({ ...editForm, avatarUrl: url })); }} data-testid="input-matchmaker-avatar-upload" />
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-md hover:bg-muted transition-colors">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-[var(--radius)] hover:bg-muted transition-colors">
                   <Upload className="w-3.5 h-3.5" />
                   {editForm.avatarUrl ? "Change" : "Upload"}
                 </span>
@@ -983,7 +983,7 @@ export default function AdminConciergePage() {
     <div className="space-y-6" data-testid="admin-concierge-page">
       <SystemSettingsCard />
 
-      <Card className="rounded-xl p-6" data-testid="card-personas">
+      <Card className="rounded-[var(--radius)] p-6" data-testid="card-personas">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2.5">
             <Bot className="w-5 h-5 text-primary" />
@@ -1019,7 +1019,7 @@ export default function AdminConciergePage() {
             editingId === m.id ? (
               <div key={m.id}>{renderForm(false)}</div>
             ) : (
-              <Card key={m.id} className={`rounded-xl overflow-hidden transition-all ${!m.isActive ? "opacity-60" : ""}`} data-testid={`matchmaker-card-${m.id}`}>
+              <Card key={m.id} className={`rounded-[var(--radius)] overflow-hidden transition-all ${!m.isActive ? "opacity-60" : ""}`} data-testid={`matchmaker-card-${m.id}`}>
                 <div className="flex items-center gap-3 p-4">
                   <div className="flex-shrink-0 text-muted-foreground/40"><GripVertical className="w-4 h-4" /></div>
                   <div className="flex-shrink-0">
@@ -1060,14 +1060,14 @@ export default function AdminConciergePage() {
                         <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                           <Bot className="w-3.5 h-3.5" /> Personality Prompt
                         </div>
-                        <p className="text-sm bg-muted/50 rounded-lg p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">{m.personalityPrompt}</p>
+                        <p className="text-sm bg-muted/50 rounded-[var(--radius)] p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">{m.personalityPrompt}</p>
                       </div>
                       <div className="space-y-1">
                         <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                           <MessageSquare className="w-3.5 h-3.5" /> Initial Greeting
                         </div>
                         {m.initialGreeting ? (
-                          <p className="text-sm bg-muted/50 rounded-lg p-3 leading-relaxed">{m.initialGreeting}</p>
+                          <p className="text-sm bg-muted/50 rounded-[var(--radius)] p-3 leading-relaxed">{m.initialGreeting}</p>
                         ) : (
                           <p className="text-sm text-muted-foreground italic p-3">No custom greeting set</p>
                         )}
@@ -1081,7 +1081,7 @@ export default function AdminConciergePage() {
         </div>
 
         {!matchmakersQuery.isLoading && matchmakers.length === 0 && !showAddForm && (
-          <div className="rounded-xl p-12 text-center border" data-testid="matchmakers-empty">
+          <div className="rounded-[var(--radius)] p-12 text-center border" data-testid="matchmakers-empty">
             <Sparkles className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
             <p className="text-sm text-muted-foreground">No matchmaker personas configured yet.</p>
             <Button size="sm" className="mt-4" onClick={() => { setShowAddForm(true); setEditForm({ isActive: true }); }} data-testid="btn-add-first-matchmaker">

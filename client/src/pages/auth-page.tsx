@@ -68,7 +68,7 @@ export default function AuthPage() {
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
-      <div className="hidden lg:flex flex-col bg-primary relative overflow-hidden p-12 text-white">
+      <div className="hidden lg:flex flex-col bg-primary relative overflow-hidden p-12 text-primary-foreground">
         <div className="absolute top-0 right-0 w-96 h-96 bg-accent opacity-20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-white opacity-10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2" />
         
@@ -80,12 +80,12 @@ export default function AuthPage() {
               <img src={getPhotoSrc(brandSettings.darkLogoWithNameUrl) || brandSettings.darkLogoWithNameUrl} alt={companyName} className="h-20 object-contain" data-testid="img-login-logo" />
             ) : brandSettings?.logoUrl || brandSettings?.darkLogoUrl ? (
               <>
-                <img src={getPhotoSrc(brandSettings.logoUrl || brandSettings.darkLogoUrl) || (brandSettings.logoUrl || brandSettings.darkLogoUrl)!} alt="" className="w-20 h-20 rounded-lg object-contain" data-testid="img-login-logo" />
+                <img src={getPhotoSrc(brandSettings.logoUrl || brandSettings.darkLogoUrl) || (brandSettings.logoUrl || brandSettings.darkLogoUrl)!} alt="" className="w-20 h-20 rounded-[var(--radius)] object-contain" data-testid="img-login-logo" />
                 <span className="font-display font-heading text-2xl tracking-wide">{companyName}</span>
               </>
             ) : (
               <>
-                <div className="w-12 h-12 bg-white/10 backdrop-blur rounded-xl flex items-center justify-center">
+                <div className="w-12 h-12 bg-white/10 backdrop-blur rounded-[var(--radius)] flex items-center justify-center">
                   <Baby className="w-7 h-7 text-white" />
                 </div>
                 <span className="font-display font-heading text-2xl tracking-wide">{companyName}</span>
@@ -94,7 +94,7 @@ export default function AuthPage() {
           </div>
 
           <div className="max-w-md">
-            <h1 className="font-display text-5xl font-heading leading-heading mb-6 text-white">
+            <h1 className="font-display text-5xl font-heading leading-heading mb-6 text-primary-foreground">
               Your Journey to Parenthood Starts Here
             </h1>
             <p className="text-lg text-primary-foreground/80 leading-body">
@@ -120,7 +120,7 @@ export default function AuthPage() {
           <CardContent>
               <div className="space-y-4">
                 {passwordReset && (
-                  <div className="flex items-center gap-2 p-3 rounded-lg bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-sm" data-testid="text-password-reset-success">
+                  <div className="flex items-center gap-2 p-3 rounded-[var(--radius)] bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-sm" data-testid="text-password-reset-success">
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
                     Your password has been reset successfully. Please sign in with your new password.
                   </div>
@@ -132,7 +132,7 @@ export default function AuthPage() {
                       id="email" 
                       type="email"
                       placeholder="Enter your email"
-                      className="h-12 rounded-lg"
+                      className="h-12 rounded-[var(--radius)]"
                       data-testid="input-email"
                       {...loginForm.register("email")} 
                     />
@@ -143,13 +143,13 @@ export default function AuthPage() {
                       id="password" 
                       type="password" 
                       placeholder="Enter your password"
-                      className="h-12 rounded-lg"
+                      className="h-12 rounded-[var(--radius)]"
                       data-testid="input-password"
                       {...loginForm.register("password")} 
                     />
                   </div>
                   {loginMutation.isError && (
-                    <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-sm text-destructive" data-testid="text-login-error">
+                    <div className="flex items-center gap-2 p-3 rounded-[var(--radius)] bg-destructive/10 border border-destructive/20 text-sm text-destructive" data-testid="text-login-error">
                       <AlertCircle className="w-4 h-4 shrink-0" />
                       <span>Invalid email or password. Please try again.</span>
                     </div>

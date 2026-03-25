@@ -188,7 +188,7 @@ export default function AdminConciergeMonitor() {
                   {msg.role === "assistant" && msg.senderType === "human" && (
                     <div className="flex items-center gap-1.5 mb-1 ml-1">
                       <div
-                        className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white"
+                        className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-primary-foreground"
                         style={{ backgroundColor: brandColor }}
                       >
                         GoStork Expert
@@ -200,7 +200,7 @@ export default function AdminConciergeMonitor() {
                   )}
                   {msg.role === "assistant" && msg.senderType === "provider" && (
                     <div className="flex items-center gap-1.5 mb-1 ml-1">
-                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white bg-[hsl(var(--brand-success))]">
+                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-primary-foreground bg-[hsl(var(--brand-success))]">
                         Provider
                       </div>
                       {msg.senderName && (
@@ -210,16 +210,16 @@ export default function AdminConciergeMonitor() {
                   )}
                   {msg.role === "assistant" && msg.senderType === "system" && (
                     <div className="flex items-center gap-1.5 mb-1 ml-1">
-                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--accent))] text-white">
+                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--accent))] text-primary-foreground">
                         Eva
                       </div>
                     </div>
                   )}
                   <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                     <div
-                      className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                      className={`max-w-[75%] rounded-[var(--container-radius)] px-4 py-2.5 text-sm leading-relaxed ${
                         msg.role === "user"
-                          ? "text-white"
+                          ? "text-primary-foreground"
                           : msg.senderType === "human"
                           ? "text-foreground border-2"
                           : msg.senderType === "provider"
@@ -275,7 +275,7 @@ export default function AdminConciergeMonitor() {
                   size="sm"
                   onClick={handleSendReply}
                   disabled={!replyText.trim() || sendMessageMutation.isPending}
-                  className="h-10 px-4 text-white"
+                  className="h-10 px-4 text-primary-foreground"
                   style={{ backgroundColor: brandColor }}
                   data-testid="btn-send-expert-message"
                 >
@@ -416,7 +416,7 @@ export default function AdminConciergeMonitor() {
                     <div className="text-xs text-muted-foreground mt-1">{s.messageCount} msgs</div>
                     <Button
                       size="sm"
-                      className="mt-2 h-7 text-xs text-white"
+                      className="mt-2 h-7 text-xs text-primary-foreground"
                       style={{ backgroundColor: brandColor }}
                       onClick={(e) => {
                         e.stopPropagation();

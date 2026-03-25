@@ -106,11 +106,11 @@ export default function ProviderProfilePage() {
           <img
             src={logoSrc}
             alt={provider.name}
-            className="w-20 h-20 rounded-xl object-contain border border-border/30 shrink-0 bg-background p-1"
+            className="w-20 h-20 rounded-[var(--radius)] object-contain border border-border/30 shrink-0 bg-background p-1"
             data-testid="img-provider-logo"
           />
         ) : (
-          <div className="w-20 h-20 rounded-xl bg-secondary/30 flex items-center justify-center border border-border/30 shrink-0">
+          <div className="w-20 h-20 rounded-[var(--radius)] bg-secondary/30 flex items-center justify-center border border-border/30 shrink-0">
             <Building2 className="w-10 h-10 text-muted-foreground/30" />
           </div>
         )}

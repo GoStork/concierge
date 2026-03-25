@@ -20,7 +20,7 @@ export function ProfileCard({
     <div
       data-testid="profile-card"
       className={cn(
-        "relative w-full overflow-hidden rounded-2xl aspect-[3/4] group",
+        "relative w-full overflow-hidden rounded-[var(--container-radius)] aspect-[3/4] group",
         className
       )}
     >

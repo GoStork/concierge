@@ -20,7 +20,7 @@ export default function LeadsPage() {
           <p className="text-muted-foreground" data-testid="text-page-description">Manage and track leads.</p>
         </div>
       </div>
-      <div className="bg-card rounded-xl border border-border/40 p-12 text-center text-muted-foreground" data-testid="leads-placeholder">
+      <div className="bg-card rounded-[var(--radius)] border border-border/40 p-12 text-center text-muted-foreground" data-testid="leads-placeholder">
         <p>Leads management coming soon.</p>
       </div>
     </div>

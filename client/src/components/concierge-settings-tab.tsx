@@ -131,7 +131,7 @@ export default function ConciergeSettingsTab() {
             return (
               <div
                 key={m.id}
-                className={`relative rounded-lg border-2 p-4 space-y-3 transition-all duration-200 ${
+                className={`relative rounded-[var(--radius)] border-2 p-4 space-y-3 transition-all duration-200 ${
                   isParent ? "cursor-pointer hover:shadow-md" : ""
                 } ${
                   isSelected
@@ -147,7 +147,7 @@ export default function ConciergeSettingsTab() {
               >
                 {isCurrent && (
                   <div
-                    className="absolute top-3 right-3 px-2 py-0.5 rounded-full text-[10px] font-semibold text-white"
+                    className="absolute top-3 right-3 px-2 py-0.5 rounded-full text-[10px] font-semibold text-primary-foreground"
                     style={{ backgroundColor: brandColor }}
                     data-testid={`badge-current-${m.id}`}
                   >
@@ -156,7 +156,7 @@ export default function ConciergeSettingsTab() {
                 )}
                 {selectedId === m.id && selectedId !== currentMatchmakerId && (
                   <div
-                    className="absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center text-white"
+                    className="absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center text-primary-foreground"
                     style={{ backgroundColor: brandColor }}
                   >
                     <Check className="w-3.5 h-3.5" />
@@ -174,7 +174,7 @@ export default function ConciergeSettingsTab() {
                       />
                     )}
                     <div
-                      className="w-14 h-14 rounded-full flex items-center justify-center text-white text-lg font-bold"
+                      className="w-14 h-14 rounded-full flex items-center justify-center text-primary-foreground text-lg font-bold"
                       style={{ backgroundColor: brandColor }}
                     >
                       {m.name.charAt(0)}

@@ -201,7 +201,7 @@ function InlineSuggestTimeForm({ bookingId, onCancel, onSuccess }: { bookingId: 
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         placeholder="Add a message (optional)"
-        className="w-full text-xs rounded-md border border-input bg-background px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+        className="w-full text-xs rounded-[var(--radius)] border border-input bg-background px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
         rows={2}
         data-testid="input-suggest-message-inline"
       />
@@ -269,8 +269,8 @@ function InlineBookingNotification({ booking, brandColor, onUpdate }: { booking:
       >
         <div className="p-1.5" style={{ backgroundColor: brandColor }}>
           <div className="flex items-center gap-2 px-3 py-1.5">
-            <CalendarClock className="w-4 h-4 text-white" />
-            <span className="text-white text-xs font-semibold uppercase tracking-wider">
+            <CalendarClock className="w-4 h-4 text-primary-foreground" />
+            <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
               {orgName ? `${orgName} Consultation Call` : "Consultation Call"}
             </span>
           </div>
@@ -293,7 +293,7 @@ function InlineBookingNotification({ booking, brandColor, onUpdate }: { booking:
             </span>
           </div>
 
-          <div className="bg-muted/40 rounded-xl p-3 space-y-2.5 border border-border">
+          <div className="bg-muted/40 rounded-[var(--radius)] p-3 space-y-2.5 border border-border">
             <div className="flex items-center gap-2 text-sm">
               <CalendarClock className="w-4 h-4 text-muted-foreground shrink-0" />
               <span>{format(start, "EEEE, MMMM d, yyyy")}</span>
@@ -304,7 +304,7 @@ function InlineBookingNotification({ booking, brandColor, onUpdate }: { booking:
             </div>
           </div>
 
-          <div className="bg-muted/40 rounded-xl p-3 border border-border">
+          <div className="bg-muted/40 rounded-[var(--radius)] p-3 border border-border">
             <div className="flex items-center gap-2 mb-2">
               <Crown className="w-3.5 h-3.5" style={{ color: brandColor }} />
               <span className="text-xs font-semibold">Participants</span>
@@ -330,42 +330,42 @@ function InlineBookingNotification({ booking, brandColor, onUpdate }: { booking:
           </div>
 
           {isPending && isProvider && (
-            <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-xl p-3">
+            <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-[var(--radius)] p-3">
               <p className="text-xs font-medium text-[hsl(var(--brand-warning))]">This meeting request needs your confirmation</p>
               <p className="text-[11px] text-[hsl(var(--brand-warning))] mt-0.5">Requested by {booking.attendeeName || booking.parentUser?.name || "a parent"}.</p>
             </div>
           )}
 
           {isPending && !isProvider && (
-            <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-xl p-3">
+            <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-[var(--radius)] p-3">
               <p className="text-xs font-medium text-[hsl(var(--brand-warning))]">Awaiting provider confirmation</p>
               <p className="text-[11px] text-[hsl(var(--brand-warning))] mt-0.5">We'll send you an email once {providerName} confirms your booking.</p>
             </div>
           )}
 
           {isConfirmed && (
-            <div className="bg-[hsl(var(--brand-success)/0.08)] border border-[hsl(var(--brand-success)/0.3)] rounded-xl p-3">
+            <div className="bg-[hsl(var(--brand-success)/0.08)] border border-[hsl(var(--brand-success)/0.3)] rounded-[var(--radius)] p-3">
               <p className="text-xs font-medium text-[hsl(var(--brand-success))]">Meeting confirmed</p>
               <p className="text-[11px] text-[hsl(var(--brand-success))] mt-0.5">This meeting has been confirmed. You'll receive a reminder before it starts.</p>
             </div>
           )}
 
           {isCancelled && (
-            <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-3">
+            <div className="bg-destructive/5 border border-destructive/20 rounded-[var(--radius)] p-3">
               <p className="text-xs font-medium text-destructive">Meeting cancelled</p>
               <p className="text-[11px] text-destructive/80 mt-0.5">This meeting has been cancelled by the parent.</p>
             </div>
           )}
 
           {isRescheduled && (
-            <div className="bg-muted/60 border border-border rounded-xl p-3">
+            <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
               <p className="text-xs font-medium text-muted-foreground">Meeting rescheduled</p>
               <p className="text-[11px] text-muted-foreground mt-0.5">This meeting was rescheduled. A new booking has been created.</p>
             </div>
           )}
 
           {showSuggestForm && isPending && isProvider && (
-            <div className="border border-border/50 rounded-xl p-3 space-y-2">
+            <div className="border border-border/50 rounded-[var(--radius)] p-3 space-y-2">
               <p className="text-sm font-medium">Suggest a new time</p>
               <InlineSuggestTimeForm
                 bookingId={booking.id}
@@ -494,13 +494,13 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
       <div className="mt-1" data-testid="attachment-card">
         {isImage ? (
           <a href={fileUrl} target="_blank" rel="noopener noreferrer">
-            <img src={fileUrl} alt={data.originalName} className="max-w-[240px] rounded-lg border" />
+            <img src={fileUrl} alt={data.originalName} className="max-w-[240px] rounded-[var(--radius)] border" />
           </a>
         ) : (
           <a
             href={fileUrl}
             download={data.originalName}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-background hover:bg-muted transition-colors"
+            className="flex items-center gap-2 px-3 py-2 rounded-[var(--radius)] border bg-background hover:bg-muted transition-colors"
           >
             <FileText className="w-5 h-5 shrink-0" style={{ color: brandColor }} />
             <span className="text-sm font-medium truncate">{data.originalName || "File"}</span>
@@ -517,8 +517,8 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
     if (!videoBookingId) {
       return (
         <div className="mt-1" data-testid="video-invite-card">
-          <div className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 bg-muted/50 w-full text-left opacity-60" style={{ borderColor: brandColor }}>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center text-white/70 shrink-0" style={{ backgroundColor: brandColor }}>
+          <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border-2 bg-muted/50 w-full text-left opacity-60" style={{ borderColor: brandColor }}>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground/70 shrink-0" style={{ backgroundColor: brandColor }}>
               <Video className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
@@ -539,11 +539,11 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
       <div className="mt-1" data-testid="video-invite-card">
         <button
           onClick={handleVideoClick}
-          className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 bg-background hover:bg-muted transition-colors cursor-pointer w-full text-left"
+          className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border-2 bg-background hover:bg-muted transition-colors cursor-pointer w-full text-left"
           style={{ borderColor: brandColor }}
           data-testid="button-video-invite"
         >
-          <div className="w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0" style={{ backgroundColor: brandColor }}>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: brandColor }}>
             <Video className="w-5 h-5" />
           </div>
           <div className="flex-1 min-w-0">
@@ -563,10 +563,10 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
           href={data.bookingUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 bg-background hover:bg-muted transition-colors"
+          className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border-2 bg-background hover:bg-muted transition-colors"
           style={{ borderColor: brandColor }}
         >
-          <div className="w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0" style={{ backgroundColor: brandColor }}>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: brandColor }}>
             <CalendarDays className="w-5 h-5" />
           </div>
           <div className="flex-1 min-w-0">
@@ -688,7 +688,7 @@ function ConversationsShell({
                   key={tab}
                   className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                     activeFilter === tab
-                      ? "text-white"
+                      ? "text-primary-foreground"
                       : "bg-muted text-muted-foreground hover:bg-muted/80"
                   }`}
                   style={activeFilter === tab ? { backgroundColor: brandColor } : undefined}
@@ -1250,7 +1250,7 @@ export default function ConversationsPage() {
         {filteredEva.length > 0 && (
           <div data-testid="section-concierge">
             <div
-              className="mx-4 mt-3 mb-2 px-3 py-2 rounded-lg flex items-center gap-2"
+              className="mx-4 mt-3 mb-2 px-3 py-2 rounded-[var(--radius)] flex items-center gap-2"
               style={{ backgroundColor: `${brandColor}08` }}
             >
               <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
@@ -1273,7 +1273,7 @@ export default function ConversationsPage() {
                     />
                   )}
                   <div
-                    className="w-11 h-11 rounded-full flex items-center justify-center text-white text-sm font-bold"
+                    className="w-11 h-11 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold"
                     style={{ backgroundColor: brandColor }}
                   >
                     {(session.matchmakerName || "E").charAt(0)}
@@ -1285,7 +1285,7 @@ export default function ConversationsPage() {
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       <span className={`text-[11px] ${session.unreadCount > 0 ? "font-semibold" : "text-muted-foreground"}`} style={session.unreadCount > 0 ? { color: brandColor } : undefined}>{timeAgo(session.lastMessageAt)}</span>
                       {session.unreadCount > 0 && (
-                        <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1" style={{ backgroundColor: brandColor }}>
+                        <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-primary-foreground px-1" style={{ backgroundColor: brandColor }}>
                           {session.unreadCount}
                         </span>
                       )}
@@ -1350,7 +1350,7 @@ export default function ConversationsPage() {
                               />
                             )}
                             <div
-                              className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                              className="w-8 h-8 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
                               style={{ backgroundColor: brandColor }}
                             >
                               {(session.title || "C").charAt(0)}
@@ -1362,7 +1362,7 @@ export default function ConversationsPage() {
                               <div className="flex items-center gap-1.5 flex-shrink-0">
                                 <span className={`text-[11px] ${session.unreadCount > 0 ? "font-semibold" : "text-muted-foreground"}`} style={session.unreadCount > 0 ? { color: brandColor } : undefined}>{timeAgo(session.lastMessageAt)}</span>
                                 {session.unreadCount > 0 && (
-                                  <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1" style={{ backgroundColor: brandColor }}>
+                                  <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-primary-foreground px-1" style={{ backgroundColor: brandColor }}>
                                     {session.unreadCount}
                                   </span>
                                 )}
@@ -1419,7 +1419,7 @@ export default function ConversationsPage() {
               />
             ) : (
               <div
-                className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold"
+                className="w-9 h-9 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold"
                 style={{ backgroundColor: brandColor }}
               >
                 {parentHeaderName.charAt(0)}
@@ -1495,7 +1495,7 @@ export default function ConversationsPage() {
               onClick={() => navigate("/account/concierge")}
               data-testid="btn-start-first-chat"
               style={{ backgroundColor: brandColor }}
-              className="text-white mt-4"
+              className="text-primary-foreground mt-4"
             >
               Choose Your AI Concierge
             </Button>
@@ -1612,7 +1612,7 @@ export default function ConversationsPage() {
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       <span className={`text-[11px] ${s.unreadCount > 0 ? "font-semibold" : "text-muted-foreground"}`} style={s.unreadCount > 0 ? { color: brandColor } : undefined}>{timeAgo(s.lastMessageAt)}</span>
                       {s.unreadCount > 0 && (
-                        <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1" style={{ backgroundColor: brandColor }}>
+                        <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-primary-foreground px-1" style={{ backgroundColor: brandColor }}>
                           {s.unreadCount}
                         </span>
                       )}
@@ -1651,7 +1651,7 @@ export default function ConversationsPage() {
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       <span className={`text-[11px] ${totalUnread > 0 ? "font-semibold" : "text-muted-foreground"}`} style={totalUnread > 0 ? { color: brandColor } : undefined}>{timeAgo(latestMsg.lastMessageAt)}</span>
                       {totalUnread > 0 && (
-                        <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1" style={{ backgroundColor: brandColor }}>
+                        <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-primary-foreground px-1" style={{ backgroundColor: brandColor }}>
                           {totalUnread}
                         </span>
                       )}
@@ -1689,7 +1689,7 @@ export default function ConversationsPage() {
                           />
                         ) : null}
                         <div
-                          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
                           style={{ backgroundColor: brandColor }}
                         >
                           {(s.title || "C").charAt(0)}
@@ -1718,7 +1718,7 @@ export default function ConversationsPage() {
                           <div className="flex items-center gap-1.5 flex-shrink-0">
                             <span className={`text-[11px] ${s.unreadCount > 0 ? "font-semibold" : "text-muted-foreground"}`} style={s.unreadCount > 0 ? { color: brandColor } : undefined}>{timeAgo(s.lastMessageAt)}</span>
                             {s.unreadCount > 0 && (
-                              <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-white px-1" style={{ backgroundColor: brandColor }}>
+                              <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-primary-foreground px-1" style={{ backgroundColor: brandColor }}>
                                 {s.unreadCount}
                               </span>
                             )}
@@ -1820,7 +1820,7 @@ export default function ConversationsPage() {
           ) : isConsultationBooked ? (
             <Button
               size="sm"
-              className="h-8 text-xs text-white gap-1"
+              className="h-8 text-xs text-primary-foreground gap-1"
               style={{ backgroundColor: brandColor }}
               onClick={() => joinMutation.mutate(selectedSessionId!)}
               disabled={joinMutation.isPending}
@@ -1932,7 +1932,7 @@ export default function ConversationsPage() {
                           <div
                             className={`relative max-w-[75%] px-4 py-2.5 text-base leading-relaxed font-ui ${
                               isOwnMessage
-                                ? "text-white"
+                                ? "text-primary-foreground"
                                 : "text-foreground"
                             }`}
                             style={{
@@ -1990,7 +1990,7 @@ export default function ConversationsPage() {
                 {providerStagedFiles.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-2">
                     {providerStagedFiles.map((file, i) => (
-                      <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border bg-muted/50 text-xs">
+                      <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[var(--radius)] border bg-muted/50 text-xs">
                         <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: brandColor }} />
                         <span className="truncate max-w-[140px]">{file.name}</span>
                         <button onClick={() => removeProviderStagedFile(i)} className="ml-0.5 hover:text-destructive">
@@ -2042,7 +2042,7 @@ export default function ConversationsPage() {
                     size="sm"
                     onClick={handleSendReply}
                     disabled={(!replyText.trim() && providerStagedFiles.length === 0) || sendMessageMutation.isPending || providerUploading}
-                    className="h-10 w-10 p-0 rounded-full text-white shrink-0"
+                    className="h-10 w-10 p-0 rounded-full text-primary-foreground shrink-0"
                     style={{ backgroundColor: brandColor }}
                     data-testid="btn-send-provider-message"
                   >
@@ -2055,7 +2055,7 @@ export default function ConversationsPage() {
                 <p className="text-sm text-muted-foreground mb-2">This parent has booked a consultation. Join the group chat to communicate directly.</p>
                 <Button
                   size="sm"
-                  className="text-white gap-1"
+                  className="text-primary-foreground gap-1"
                   style={{ backgroundColor: brandColor }}
                   onClick={() => joinMutation.mutate(selectedSessionId!)}
                   disabled={joinMutation.isPending}
@@ -2083,13 +2083,13 @@ export default function ConversationsPage() {
                   Questions from this prospective parent are forwarded here by the AI concierge. Your answers are relayed back — the parent's identity stays private until they schedule a consultation.
                 </p>
                 {selectedSession && selectedSession.pendingQuestions > 0 && (
-                  <div className="rounded-lg p-3 bg-[hsl(var(--brand-warning))]/10 border border-[hsl(var(--brand-warning))]/20">
+                  <div className="rounded-[var(--radius)] p-3 bg-[hsl(var(--brand-warning))]/10 border border-[hsl(var(--brand-warning))]/20">
                     <p className="text-sm font-medium text-[hsl(var(--brand-warning))]">{selectedSession.pendingQuestions} question{selectedSession.pendingQuestions > 1 ? "s" : ""} pending</p>
                     <p className="text-xs text-muted-foreground mt-1">Reply below to answer the most recent question</p>
                   </div>
                 )}
                 {isConsultationBooked && (
-                  <div className="rounded-lg p-3 bg-primary/5 border border-primary/20">
+                  <div className="rounded-[var(--radius)] p-3 bg-primary/5 border border-primary/20">
                     <p className="text-sm font-medium" style={{ color: brandColor }}>Consultation Booked</p>
                     <p className="text-xs text-muted-foreground mt-1">Click "Join Group Chat" to start communicating directly with this parent</p>
                   </div>
@@ -2132,7 +2132,7 @@ export default function ConversationsPage() {
                     <div className="space-y-2">
                       <Button
                         size="sm"
-                        className="w-full text-white gap-1.5 text-xs"
+                        className="w-full text-primary-foreground gap-1.5 text-xs"
                         style={{ backgroundColor: "var(--brand-success, #22c55e)" }}
                         onClick={() => consultationStatusMutation.mutate({ sessionId: selectedSessionId!, status: "READY_FOR_MATCH" })}
                         disabled={consultationStatusMutation.isPending}
@@ -2144,7 +2144,7 @@ export default function ConversationsPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="w-full gap-1.5 text-xs border-destructive text-destructive hover:bg-destructive hover:text-white"
+                        className="w-full gap-1.5 text-xs border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
                         onClick={() => consultationStatusMutation.mutate({ sessionId: selectedSessionId!, status: "NOT_A_FIT" })}
                         disabled={consultationStatusMutation.isPending}
                         data-testid="btn-not-a-fit"

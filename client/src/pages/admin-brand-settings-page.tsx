@@ -57,6 +57,9 @@ import {
   Users,
   Search as SearchIcon,
   CalendarDays,
+  Undo2,
+  Send,
+  Crown,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, SpermIcon } from "@/components/icons/marketplace-icons";
@@ -600,7 +603,7 @@ function LogoEditor({
 
       <div
         ref={containerRef}
-        className="relative border border-border rounded-xl overflow-hidden cursor-grab active:cursor-grabbing select-none touch-none"
+        className="relative border border-border rounded-[var(--radius)] overflow-hidden cursor-grab active:cursor-grabbing select-none touch-none"
         style={{
           height: 250,
           backgroundImage: CHECKER_BG,
@@ -771,7 +774,7 @@ function FileDropZone({
     <div className="space-y-2">
       <Label className="text-sm font-medium">{label}</Label>
       <div
-        className={`relative border-2 border-dashed rounded-xl p-6 text-center transition-colors ${
+        className={`relative border-2 border-dashed rounded-[var(--radius)] p-6 text-center transition-colors ${
           disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
         } ${
           dragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"
@@ -804,7 +807,7 @@ function FileDropZone({
         ) : displayUrl ? (
           <div className="flex flex-col items-center gap-3">
             <div
-              className="rounded-lg p-1"
+              className="rounded-[var(--radius)] p-1"
               style={{ backgroundImage: darkPreview ? CHECKER_BG_DARK : CHECKER_BG, backgroundSize: "16px 16px" }}
             >
               <img
@@ -881,7 +884,7 @@ function ColorInput({
             type="color"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className="w-10 h-10 rounded-lg border border-border cursor-pointer p-0.5"
+            className="w-10 h-10 rounded-[var(--radius)] border border-border cursor-pointer p-0.5"
             disabled={disabled}
             data-testid={`${testId}-picker`}
           />
@@ -898,7 +901,7 @@ function ColorInput({
           data-testid={`${testId}-input`}
         />
         <div
-          className="w-10 h-10 rounded-lg border border-border shrink-0"
+          className="w-10 h-10 rounded-[var(--radius)] border border-border shrink-0"
           style={{ backgroundColor: value }}
         />
       </div>
@@ -931,7 +934,7 @@ function OptionalColorInput({
             type="color"
             value={isSet ? value! : "#888888"}
             onChange={(e) => onChange(e.target.value)}
-            className={`w-8 h-8 rounded-md border border-border cursor-pointer p-0.5 ${!isSet ? "opacity-40" : ""}`}
+            className={`w-8 h-8 rounded-[var(--radius)] border border-border cursor-pointer p-0.5 ${!isSet ? "opacity-40" : ""}`}
             disabled={disabled}
             data-testid={`${testId}-picker`}
           />
@@ -960,7 +963,7 @@ function OptionalColorInput({
         {isSet && !disabled && (
           <button
             type="button"
-            className="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            className="w-6 h-6 flex items-center justify-center rounded-[var(--radius)] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
             onClick={() => onChange(null)}
             title="Reset to default"
             data-testid={`${testId}-clear`}
@@ -1098,7 +1101,7 @@ function TemplateManager({
   const anyPending = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending || renameMutation.isPending;
 
   return (
-    <Card className="rounded-2xl p-6 space-y-4">
+    <Card className="rounded-[var(--container-radius)] p-6 space-y-4">
       <div className="flex items-center gap-2">
         <LayoutTemplate className="w-5 h-5 text-primary" />
         <h2 className="font-display text-lg font-semibold">Brand Templates</h2>
@@ -1284,7 +1287,7 @@ function NavPreview({ form }: { form: BrandSettings }) {
     <div className="pt-2">
       <Label className="text-xs text-muted-foreground mb-2 block">Preview</Label>
       <div
-        className="relative overflow-hidden rounded-lg border"
+        className="relative overflow-hidden rounded-[var(--radius)] border"
         style={{
           background: 'repeating-conic-gradient(hsl(var(--muted)) 0% 25%, hsl(var(--background)) 0% 50%) 50% / 16px 16px',
         }}
@@ -1346,7 +1349,7 @@ function NavPreview({ form }: { form: BrandSettings }) {
                 style={{ color }}
                 data-testid={`preview-nav-${tab.label.toLowerCase()}`}
               >
-                <div className={`p-1 rounded-lg transition-colors duration-200 ${isActive && !form.bottomNavActiveFgColor ? 'bg-primary/10' : ''}`}>
+                <div className={`p-1 rounded-[var(--radius)] transition-colors duration-200 ${isActive && !form.bottomNavActiveFgColor ? 'bg-primary/10' : ''}`}>
                   <TabIcon className={iconSize} />
                 </div>
                 {!isIconOnly && <span className="text-[11px] font-medium">{tab.label}</span>}
@@ -1378,7 +1381,7 @@ function TabPreview({ form }: { form: BrandSettings }) {
   return (
     <div className="pt-2">
       <Label className="text-xs text-muted-foreground mb-2 block">Preview</Label>
-      <div className="border rounded-lg overflow-hidden bg-card" data-testid="preview-tab-nav">
+      <div className="border rounded-[var(--radius)] overflow-hidden bg-card" data-testid="preview-tab-nav">
         <div className="border-b border-border/40">
           <nav className="flex">
             {TAB_PREVIEW_TABS.map((tab, idx) => {
@@ -1439,12 +1442,12 @@ function HeaderNavPreview({ form, previewMode, setPreviewMode }: { form: BrandSe
 
     if (isPill) {
       if (isActive) {
-        return { ...base, backgroundColor: activeColor, color: form.primaryForegroundColor || '#FFFFFF', borderRadius: '9999px' };
+        return { ...base, backgroundColor: activeColor, color: form.primaryForegroundColor || 'hsl(var(--primary-foreground))', borderRadius: '9999px' };
       }
       if (isHovered) {
-        return { ...base, backgroundColor: hoverColor, color: form.secondaryForegroundColor || '#0A0A0A', borderRadius: '9999px' };
+        return { ...base, backgroundColor: hoverColor, color: form.secondaryForegroundColor || 'hsl(var(--secondary-foreground))', borderRadius: '9999px' };
       }
-      return { ...base, color: previewMode === "dark" ? '#aaa' : inactiveColor };
+      return { ...base, color: previewMode === "dark" ? 'hsl(var(--muted-foreground))' : inactiveColor };
     }
 
     if (isActive) {
@@ -1453,7 +1456,7 @@ function HeaderNavPreview({ form, previewMode, setPreviewMode }: { form: BrandSe
     if (isHovered) {
       return { ...base, color: hoverColor, borderBottom: `2px solid ${hoverColor}`, borderRadius: 0 };
     }
-    return { ...base, color: previewMode === "dark" ? '#aaa' : inactiveColor, borderBottom: '2px solid transparent', borderRadius: 0 };
+    return { ...base, color: previewMode === "dark" ? 'hsl(var(--muted-foreground))' : inactiveColor, borderBottom: '2px solid transparent', borderRadius: 0 };
   };
 
   return (
@@ -1461,9 +1464,9 @@ function HeaderNavPreview({ form, previewMode, setPreviewMode }: { form: BrandSe
       <div className="flex items-center gap-2 mb-2">
         <Eye className="w-4 h-4 text-muted-foreground" />
         <Label className="text-xs text-muted-foreground">Header Preview</Label>
-        <div className="flex items-center ml-auto gap-1 bg-secondary rounded-lg p-0.5">
+        <div className="flex items-center ml-auto gap-1 bg-secondary rounded-[var(--radius)] p-0.5">
           <button
-            className={`px-3 py-1 rounded-md text-xs font-medium transition ${
+            className={`px-3 py-1 rounded-[var(--radius)] text-xs font-medium transition ${
               previewMode === "light" ? "bg-card shadow-sm" : "text-muted-foreground"
             }`}
             onClick={() => setPreviewMode("light")}
@@ -1473,7 +1476,7 @@ function HeaderNavPreview({ form, previewMode, setPreviewMode }: { form: BrandSe
             Light
           </button>
           <button
-            className={`px-3 py-1 rounded-md text-xs font-medium transition ${
+            className={`px-3 py-1 rounded-[var(--radius)] text-xs font-medium transition ${
               previewMode === "dark" ? "bg-card shadow-sm" : "text-muted-foreground"
             }`}
             onClick={() => setPreviewMode("dark")}
@@ -1485,7 +1488,7 @@ function HeaderNavPreview({ form, previewMode, setPreviewMode }: { form: BrandSe
         </div>
       </div>
       <div
-        className={`rounded-xl border border-border/40 p-4 flex items-center gap-3 ${
+        className={`rounded-[var(--radius)] border border-border/40 p-4 flex items-center gap-3 ${
           previewMode === "dark" ? "bg-foreground" : "bg-card"
         }`}
         data-testid="brand-header-preview"
@@ -1508,7 +1511,7 @@ function HeaderNavPreview({ form, previewMode, setPreviewMode }: { form: BrandSe
               className="font-bold text-lg leading-none"
               style={{
                 fontFamily: `'${form.headingFont}', serif`,
-                color: previewMode === "dark" ? "white" : form.primaryColor,
+                color: previewMode === "dark" ? "hsl(var(--foreground))" : form.primaryColor,
               }}
             >
               {form.companyName || "GoStork"}
@@ -1517,7 +1520,7 @@ function HeaderNavPreview({ form, previewMode, setPreviewMode }: { form: BrandSe
         ) : (
           <div className="flex items-center gap-2.5">
             <div
-              className="w-9 h-9 rounded-lg flex items-center justify-center text-white shadow-md"
+              className="w-9 h-9 rounded-[var(--radius)] flex items-center justify-center text-primary-foreground shadow-md"
               style={{ backgroundColor: form.primaryColor }}
             >
               <Baby className="w-5 h-5" />
@@ -1526,7 +1529,7 @@ function HeaderNavPreview({ form, previewMode, setPreviewMode }: { form: BrandSe
               className="font-bold text-lg leading-none"
               style={{
                 fontFamily: `'${form.headingFont}', serif`,
-                color: previewMode === "dark" ? "white" : form.primaryColor,
+                color: previewMode === "dark" ? "hsl(var(--foreground))" : form.primaryColor,
               }}
             >
               {form.companyName || "GoStork"}
@@ -1722,7 +1725,7 @@ export function BrandSettingsForm({
 
       <div className={`grid grid-cols-1 lg:grid-cols-3 gap-6 ${formDisabled ? "opacity-50 pointer-events-none" : ""}`}>
         <div className="lg:col-span-2 space-y-6">
-          <Card className="rounded-2xl p-6 space-y-6">
+          <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
             <div className="flex items-center gap-2">
               <Building2 className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold">Identity</h2>
@@ -1743,7 +1746,7 @@ export function BrandSettingsForm({
             </div>
           </Card>
 
-          <Card className="rounded-2xl p-6 space-y-6">
+          <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Image className="w-5 h-5 text-primary" />
@@ -1839,7 +1842,7 @@ export function BrandSettingsForm({
 
           </Card>
 
-          <Card className="rounded-2xl p-6 space-y-6">
+          <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
             <div className="flex items-center gap-2">
               <Palette className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold">Color System</h2>
@@ -1857,9 +1860,9 @@ export function BrandSettingsForm({
             <div className="border-t border-border/30 pt-4 space-y-3">
               <Label className="text-sm font-medium">WCAG Contrast — Primary Color</Label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="flex items-center gap-3 p-3 rounded-xl border border-border/40 bg-secondary/30">
+                <div className="flex items-center gap-3 p-3 rounded-[var(--radius)] border border-border/40 bg-secondary/30">
                   <div
-                    className="w-12 h-12 rounded-lg flex items-center justify-center font-bold text-lg text-white shrink-0"
+                    className="w-12 h-12 rounded-[var(--radius)] flex items-center justify-center font-bold text-lg text-white shrink-0"
                     style={{ backgroundColor: form.primaryColor }}
                   >
                     Aa
@@ -1872,9 +1875,9 @@ export function BrandSettingsForm({
                     <span className="text-xs text-muted-foreground">White text — {whiteContrast.toFixed(1)}:1</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 p-3 rounded-xl border border-border/40 bg-secondary/30">
+                <div className="flex items-center gap-3 p-3 rounded-[var(--radius)] border border-border/40 bg-secondary/30">
                   <div
-                    className="w-12 h-12 rounded-lg flex items-center justify-center font-bold text-lg text-foreground shrink-0"
+                    className="w-12 h-12 rounded-[var(--radius)] flex items-center justify-center font-bold text-lg text-foreground shrink-0"
                     style={{ backgroundColor: form.primaryColor }}
                   >
                     Aa
@@ -1891,7 +1894,7 @@ export function BrandSettingsForm({
             </div>
           </Card>
 
-          <Card className="rounded-2xl p-6 space-y-6">
+          <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
             <div className="flex items-center gap-2">
               <MessageCircle className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold" data-testid="heading-chat-palette">Chat Participant Palette</h2>
@@ -1903,8 +1906,8 @@ export function BrandSettingsForm({
               const palette = deriveChatPalette(form.primaryColor);
               return (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="flex items-center gap-3 p-3 rounded-xl border border-border/40 bg-secondary/30" data-testid="palette-ai">
-                    <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: `${form.primaryColor}14`, border: `1px solid ${form.primaryColor}33` }}>
+                  <div className="flex items-center gap-3 p-3 rounded-[var(--radius)] border border-border/40 bg-secondary/30" data-testid="palette-ai">
+                    <div className="w-10 h-10 rounded-[var(--container-radius)] flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: `${form.primaryColor}14`, border: `1px solid ${form.primaryColor}33` }}>
                       AI
                     </div>
                     <div>
@@ -1912,8 +1915,8 @@ export function BrandSettingsForm({
                       <span className="text-[10px] text-muted-foreground">Primary · 8% tint</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 p-3 rounded-xl border border-border/40 bg-secondary/30" data-testid="palette-partner">
-                    <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: palette.partnerBg, border: `1px solid ${palette.partnerBorder}` }}>
+                  <div className="flex items-center gap-3 p-3 rounded-[var(--radius)] border border-border/40 bg-secondary/30" data-testid="palette-partner">
+                    <div className="w-10 h-10 rounded-[var(--container-radius)] flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: palette.partnerBg, border: `1px solid ${palette.partnerBorder}` }}>
                       P
                     </div>
                     <div>
@@ -1921,8 +1924,8 @@ export function BrandSettingsForm({
                       <span className="text-[10px] text-muted-foreground">Hue +30° · 8% tint</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 p-3 rounded-xl border border-border/40 bg-secondary/30" data-testid="palette-expert">
-                    <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: palette.expertBg, border: `1px solid ${palette.expertBorder}` }}>
+                  <div className="flex items-center gap-3 p-3 rounded-[var(--radius)] border border-border/40 bg-secondary/30" data-testid="palette-expert">
+                    <div className="w-10 h-10 rounded-[var(--container-radius)] flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: palette.expertBg, border: `1px solid ${palette.expertBorder}` }}>
                       E
                     </div>
                     <div>
@@ -1935,106 +1938,245 @@ export function BrandSettingsForm({
             })()}
           </Card>
 
-          <Card className="rounded-2xl p-6 space-y-6">
+          <Card className="rounded-[var(--container-radius)] p-6 space-y-8">
             <div className="flex items-center gap-2">
-              <Palette className="w-5 h-5 text-primary" />
-              <h2 className="font-display text-lg font-semibold" data-testid="heading-marketplace-action-colors">Marketplace Action Colors</h2>
+              <LayoutTemplate className="w-5 h-5 text-primary" />
+              <h2 className="font-display text-lg font-semibold" data-testid="heading-marketplace">Marketplace</h2>
             </div>
-            <p className="text-xs text-muted-foreground">
-              These vibrant colors are used exclusively for the high-energy swipe actions in the marketplace to ensure clear visual feedback.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-x-6 gap-y-4">
-              <OptionalColorInput label="Pass" value={form.swipePassColor} onChange={(v) => updateField("swipePassColor", v)} testId="color-swipe-pass" disabled={formDisabled} />
-              <OptionalColorInput label="Save" value={form.swipeSaveColor} onChange={(v) => updateField("swipeSaveColor", v)} testId="color-swipe-save" disabled={formDisabled} />
-              <OptionalColorInput label="Undo" value={form.swipeUndoColor} onChange={(v) => updateField("swipeUndoColor", v)} testId="color-swipe-undo" disabled={formDisabled} />
-              <OptionalColorInput label="Chat" value={form.swipeChatColor} onChange={(v) => updateField("swipeChatColor", v)} testId="color-swipe-chat" disabled={formDisabled} />
-              <OptionalColorInput label="Compare" value={form.swipeCompareColor} onChange={(v) => updateField("swipeCompareColor", v)} testId="color-swipe-compare" disabled={formDisabled} />
+
+            {/* Action Colors subsection */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Palette className="w-4 h-4 text-muted-foreground" />
+                <Label className="text-sm font-medium" data-testid="heading-marketplace-action-colors">Action Colors</Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                These vibrant colors are used exclusively for the high-energy swipe actions in the marketplace to ensure clear visual feedback.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-x-6 gap-y-4">
+                <OptionalColorInput label="Pass" value={form.swipePassColor} onChange={(v) => updateField("swipePassColor", v)} testId="color-swipe-pass" disabled={formDisabled} />
+                <OptionalColorInput label="Save" value={form.swipeSaveColor} onChange={(v) => updateField("swipeSaveColor", v)} testId="color-swipe-save" disabled={formDisabled} />
+                <OptionalColorInput label="Undo" value={form.swipeUndoColor} onChange={(v) => updateField("swipeUndoColor", v)} testId="color-swipe-undo" disabled={formDisabled} />
+                <OptionalColorInput label="Chat" value={form.swipeChatColor} onChange={(v) => updateField("swipeChatColor", v)} testId="color-swipe-chat" disabled={formDisabled} />
+                <OptionalColorInput label="Compare" value={form.swipeCompareColor} onChange={(v) => updateField("swipeCompareColor", v)} testId="color-swipe-compare" disabled={formDisabled} />
+              </div>
+            </div>
+
+            <div className="border-t border-border/40" />
+
+            {/* Sizing subsection */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Type className="w-4 h-4 text-muted-foreground" />
+                <Label className="text-sm font-medium" data-testid="heading-marketplace-sizing">Sizing</Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Control font sizes and layout dimensions on marketplace cards, filter labels, badges, and the filter drawer.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Card Title</Label>
+                    <span className="text-sm text-muted-foreground" data-testid="text-card-title-size">{form.cardTitleSize ?? 24}px</span>
+                  </div>
+                  <Slider min={16} max={40} step={1} value={[form.cardTitleSize ?? 24]} onValueChange={([v]) => updateField("cardTitleSize", v)} disabled={formDisabled} data-testid="slider-card-title-size" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Card Overlay Text</Label>
+                    <span className="text-sm text-muted-foreground" data-testid="text-card-overlay-size">{form.cardOverlaySize ?? 16}px</span>
+                  </div>
+                  <Slider min={12} max={28} step={1} value={[form.cardOverlaySize ?? 16]} onValueChange={([v]) => updateField("cardOverlaySize", v)} disabled={formDisabled} data-testid="slider-card-overlay-size" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Filter Labels</Label>
+                    <span className="text-sm text-muted-foreground" data-testid="text-filter-label-size">{form.filterLabelSize ?? 18}px</span>
+                  </div>
+                  <Slider min={12} max={28} step={1} value={[form.filterLabelSize ?? 18]} onValueChange={([v]) => updateField("filterLabelSize", v)} disabled={formDisabled} data-testid="slider-filter-label-size" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Badge Text</Label>
+                    <span className="text-sm text-muted-foreground" data-testid="text-badge-text-size">{form.badgeTextSize ?? 13}px</span>
+                  </div>
+                  <Slider min={10} max={22} step={1} value={[form.badgeTextSize ?? 13]} onValueChange={([v]) => updateField("badgeTextSize", v)} disabled={formDisabled} data-testid="slider-badge-text-size" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Drawer Min Height</Label>
+                    <span className="text-sm text-muted-foreground" data-testid="text-drawer-min-height">{form.drawerMinHeight ?? 50}%</span>
+                  </div>
+                  <Slider min={30} max={80} step={5} value={[form.drawerMinHeight ?? 50]} onValueChange={([v]) => updateField("drawerMinHeight", v)} disabled={formDisabled} data-testid="slider-drawer-min-height" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Drawer Title</Label>
+                    <span className="text-sm text-muted-foreground" data-testid="text-drawer-title-size">{form.drawerTitleSize ?? 24}px</span>
+                  </div>
+                  <Slider min={16} max={40} step={1} value={[form.drawerTitleSize ?? 24]} onValueChange={([v]) => updateField("drawerTitleSize", v)} disabled={formDisabled} data-testid="slider-drawer-title-size" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Drawer Body Text</Label>
+                    <span className="text-sm text-muted-foreground" data-testid="text-drawer-body-size">{form.drawerBodySize ?? 16}px</span>
+                  </div>
+                  <Slider min={12} max={24} step={1} value={[form.drawerBodySize ?? 16]} onValueChange={([v]) => updateField("drawerBodySize", v)} disabled={formDisabled} data-testid="slider-drawer-body-size" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Drawer Handle Width</Label>
+                    <span className="text-sm text-muted-foreground" data-testid="text-drawer-handle-width">{form.drawerHandleWidth ?? 60}px</span>
+                  </div>
+                  <Slider min={30} max={120} step={5} value={[form.drawerHandleWidth ?? 60]} onValueChange={([v]) => updateField("drawerHandleWidth", v)} disabled={formDisabled} data-testid="slider-drawer-handle-width" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Slider Value Text</Label>
+                    <span className="text-sm text-muted-foreground" data-testid="text-slider-value-size">{form.sliderValueSize ?? 22}px</span>
+                  </div>
+                  <Slider min={14} max={36} step={1} value={[form.sliderValueSize ?? 22]} onValueChange={([v]) => updateField("sliderValueSize", v)} disabled={formDisabled} data-testid="slider-slider-value-size" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Slider Thumb Size</Label>
+                    <span className="text-sm text-muted-foreground" data-testid="text-slider-thumb-size">{form.sliderThumbSize ?? 24}px</span>
+                  </div>
+                  <Slider min={16} max={40} step={1} value={[form.sliderThumbSize ?? 24]} onValueChange={([v]) => updateField("sliderThumbSize", v)} disabled={formDisabled} data-testid="slider-slider-thumb-size" />
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-border/40" />
+
+            {/* Live Preview */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Eye className="w-4 h-4 text-muted-foreground" />
+                <Label className="text-sm font-medium">Preview</Label>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Card Preview */}
+                <div className="space-y-3">
+                  <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Card</span>
+                  <div className="relative w-full aspect-[3/4] max-w-[280px] rounded-[var(--container-radius,16px)] overflow-hidden shadow-lg bg-muted" data-testid="marketplace-preview-card">
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary/30 via-accent/20 to-muted" />
+                    <div className="absolute inset-0 flex items-center justify-center opacity-20">
+                      <User className="w-20 h-20" />
+                    </div>
+                    <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/50 via-black/20 to-transparent h-16 z-[1]" />
+                    <div className="absolute top-0 left-0 right-0 flex gap-1 px-3 pt-3 z-[2]">
+                      {[0, 1, 2].map((i) => (
+                        <div key={i} className={`h-[3px] flex-1 rounded-full ${i === 0 ? "bg-white" : "bg-white/40"}`} />
+                      ))}
+                    </div>
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-16 pb-20 px-3 z-[2]">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <Badge
+                          className="bg-[hsl(var(--brand-warning))]/90 text-white font-ui px-2 py-0.5 gap-1"
+                          style={{ fontSize: `${form.badgeTextSize ?? 13}px` }}
+                        >
+                          <Crown className="w-3 h-3" />
+                          Premium
+                        </Badge>
+                        <Badge
+                          className="bg-accent/90 text-accent-foreground font-ui px-2 py-0.5"
+                          style={{ fontSize: `${form.badgeTextSize ?? 13}px` }}
+                        >
+                          New York
+                        </Badge>
+                      </div>
+                      <h3 className="text-white font-heading leading-tight" style={{ fontSize: `${form.cardTitleSize ?? 24}px` }}>
+                        Sarah M.
+                      </h3>
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        <Badge
+                          variant="secondary"
+                          className="bg-white/12 text-white border border-white/10 font-ui px-2.5 py-1 backdrop-blur-sm"
+                          style={{ fontSize: `${form.cardOverlaySize ?? 16}px` }}
+                        >
+                          Age 28
+                        </Badge>
+                        <Badge
+                          variant="secondary"
+                          className="bg-white/12 text-white border border-white/10 font-ui px-2.5 py-1 backdrop-blur-sm"
+                          style={{ fontSize: `${form.cardOverlaySize ?? 16}px` }}
+                        >
+                          5'6"
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="absolute bottom-4 left-0 right-0 px-3 z-[3] flex items-center justify-center gap-2">
+                      <div className="h-9 w-9 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 border border-white/10 shadow-lg flex items-center justify-center">
+                        <Undo2 className="w-5 h-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]" style={{ color: form.swipeUndoColor || "#FFB300" }} strokeWidth={3} />
+                      </div>
+                      <div className="h-11 w-11 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 border border-white/10 shadow-lg flex items-center justify-center">
+                        <X className="w-6 h-6 drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]" style={{ color: form.swipePassColor || "#FF4B4B" }} strokeWidth={3} />
+                      </div>
+                      <div className="h-11 w-11 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 border border-white/10 shadow-lg flex items-center justify-center">
+                        <Heart className="w-6 h-6 drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]" style={{ color: form.swipeSaveColor || "#2DE182" }} strokeWidth={3} />
+                      </div>
+                      <div className="h-11 w-11 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 border border-white/10 shadow-lg flex items-center justify-center">
+                        <Send className="w-5 h-5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]" style={{ color: form.swipeChatColor || "#9B51E0" }} strokeWidth={3} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filter & Drawer Preview */}
+                <div className="space-y-3">
+                  <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Filters & Drawer</span>
+                  <div className="space-y-4" data-testid="marketplace-preview-filters">
+                    {/* Filter pills */}
+                    <div className="flex flex-wrap gap-2">
+                      {["Ethnicity", "Age", "Location"].map((label) => (
+                        <Button key={label} variant="outline" size="sm" className="h-9 font-ui rounded-full px-3.5" style={{ fontSize: `${form.badgeTextSize ?? 13}px` }}>
+                          {label}
+                        </Button>
+                      ))}
+                    </div>
+
+                    {/* Drawer mock */}
+                    <div className="rounded-[var(--container-radius)] border border-border bg-card overflow-hidden shadow-sm" data-testid="marketplace-preview-drawer">
+                      <div className="flex justify-center pt-3 pb-2">
+                        <div className="h-1.5 rounded-full bg-muted-foreground/25" style={{ width: `${form.drawerHandleWidth ?? 60}px` }} />
+                      </div>
+                      <div className="px-4 pb-4 space-y-3">
+                        <h4 className="font-heading text-foreground" style={{ fontSize: `${form.drawerTitleSize ?? 24}px` }}>
+                          Ethnicity
+                        </h4>
+                        <div className="flex flex-wrap gap-1.5">
+                          {["Caucasian", "Asian", "Hispanic", "Mixed"].map((tag) => (
+                            <Badge key={tag} variant="secondary" className="font-ui px-3 py-1.5" style={{ fontSize: `${form.badgeTextSize ?? 13}px` }}>
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+
+                        <div className="pt-2 space-y-1.5">
+                          <span className="font-ui" style={{ fontSize: `${form.filterLabelSize ?? 18}px` }}>Height</span>
+                          <p className="font-body text-muted-foreground" style={{ fontSize: `${form.drawerBodySize ?? 16}px`, opacity: 0.7 }}>
+                            Filter donors by height range
+                          </p>
+                          <div className="flex items-center gap-3 pt-1">
+                            <span className="font-heading tabular-nums" style={{ fontSize: `${form.sliderValueSize ?? 22}px` }}>5'2"</span>
+                            <div className="flex-1 relative h-2 bg-muted rounded-full">
+                              <div className="absolute left-[20%] right-[30%] top-0 bottom-0 bg-primary rounded-full" />
+                              <div className="absolute rounded-full bg-primary border-2 border-white shadow-sm" style={{ width: `${form.sliderThumbSize ?? 24}px`, height: `${form.sliderThumbSize ?? 24}px`, top: '50%', left: '20%', transform: 'translate(-50%, -50%)' }} />
+                              <div className="absolute rounded-full bg-primary border-2 border-white shadow-sm" style={{ width: `${form.sliderThumbSize ?? 24}px`, height: `${form.sliderThumbSize ?? 24}px`, top: '50%', left: '70%', transform: 'translate(-50%, -50%)' }} />
+                            </div>
+                            <span className="font-heading tabular-nums" style={{ fontSize: `${form.sliderValueSize ?? 22}px` }}>5'9"</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </Card>
 
-          <Card className="rounded-2xl p-6 space-y-6">
-            <div className="flex items-center gap-2">
-              <Type className="w-5 h-5 text-primary" />
-              <h2 className="font-display text-lg font-semibold" data-testid="heading-marketplace-sizing">Marketplace Sizing</h2>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Control font sizes and layout dimensions on marketplace cards, filter labels, badges, and the filter drawer.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Card Title</Label>
-                  <span className="text-sm text-muted-foreground" data-testid="text-card-title-size">{form.cardTitleSize ?? 24}px</span>
-                </div>
-                <Slider min={16} max={40} step={1} value={[form.cardTitleSize ?? 24]} onValueChange={([v]) => updateField("cardTitleSize", v)} disabled={formDisabled} data-testid="slider-card-title-size" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Card Overlay Text</Label>
-                  <span className="text-sm text-muted-foreground" data-testid="text-card-overlay-size">{form.cardOverlaySize ?? 16}px</span>
-                </div>
-                <Slider min={12} max={28} step={1} value={[form.cardOverlaySize ?? 16]} onValueChange={([v]) => updateField("cardOverlaySize", v)} disabled={formDisabled} data-testid="slider-card-overlay-size" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Filter Labels</Label>
-                  <span className="text-sm text-muted-foreground" data-testid="text-filter-label-size">{form.filterLabelSize ?? 18}px</span>
-                </div>
-                <Slider min={12} max={28} step={1} value={[form.filterLabelSize ?? 18]} onValueChange={([v]) => updateField("filterLabelSize", v)} disabled={formDisabled} data-testid="slider-filter-label-size" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Badge Text</Label>
-                  <span className="text-sm text-muted-foreground" data-testid="text-badge-text-size">{form.badgeTextSize ?? 13}px</span>
-                </div>
-                <Slider min={10} max={22} step={1} value={[form.badgeTextSize ?? 13]} onValueChange={([v]) => updateField("badgeTextSize", v)} disabled={formDisabled} data-testid="slider-badge-text-size" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Drawer Min Height</Label>
-                  <span className="text-sm text-muted-foreground" data-testid="text-drawer-min-height">{form.drawerMinHeight ?? 50}%</span>
-                </div>
-                <Slider min={30} max={80} step={5} value={[form.drawerMinHeight ?? 50]} onValueChange={([v]) => updateField("drawerMinHeight", v)} disabled={formDisabled} data-testid="slider-drawer-min-height" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Drawer Title</Label>
-                  <span className="text-sm text-muted-foreground" data-testid="text-drawer-title-size">{form.drawerTitleSize ?? 24}px</span>
-                </div>
-                <Slider min={16} max={40} step={1} value={[form.drawerTitleSize ?? 24]} onValueChange={([v]) => updateField("drawerTitleSize", v)} disabled={formDisabled} data-testid="slider-drawer-title-size" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Drawer Body Text</Label>
-                  <span className="text-sm text-muted-foreground" data-testid="text-drawer-body-size">{form.drawerBodySize ?? 16}px</span>
-                </div>
-                <Slider min={12} max={24} step={1} value={[form.drawerBodySize ?? 16]} onValueChange={([v]) => updateField("drawerBodySize", v)} disabled={formDisabled} data-testid="slider-drawer-body-size" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Drawer Handle Width</Label>
-                  <span className="text-sm text-muted-foreground" data-testid="text-drawer-handle-width">{form.drawerHandleWidth ?? 60}px</span>
-                </div>
-                <Slider min={30} max={120} step={5} value={[form.drawerHandleWidth ?? 60]} onValueChange={([v]) => updateField("drawerHandleWidth", v)} disabled={formDisabled} data-testid="slider-drawer-handle-width" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Slider Value Text</Label>
-                  <span className="text-sm text-muted-foreground" data-testid="text-slider-value-size">{form.sliderValueSize ?? 22}px</span>
-                </div>
-                <Slider min={14} max={36} step={1} value={[form.sliderValueSize ?? 22]} onValueChange={([v]) => updateField("sliderValueSize", v)} disabled={formDisabled} data-testid="slider-slider-value-size" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Slider Thumb Size</Label>
-                  <span className="text-sm text-muted-foreground" data-testid="text-slider-thumb-size">{form.sliderThumbSize ?? 24}px</span>
-                </div>
-                <Slider min={16} max={40} step={1} value={[form.sliderThumbSize ?? 24]} onValueChange={([v]) => updateField("sliderThumbSize", v)} disabled={formDisabled} data-testid="slider-slider-thumb-size" />
-              </div>
-            </div>
-          </Card>
-
-          <Card className="rounded-2xl p-6 space-y-6">
+          <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
             <div className="flex items-center gap-2">
               <Layers className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold" data-testid="heading-advanced-colors">Advanced Theme Colors</h2>
@@ -2087,7 +2229,7 @@ export function BrandSettingsForm({
                 </div>
           </Card>
 
-          <Card className="rounded-2xl p-6 space-y-6">
+          <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
             <div className="flex items-center gap-2">
               <Type className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold">Typography</h2>
@@ -2322,7 +2464,7 @@ export function BrandSettingsForm({
 
             <div className="border-t border-border/30 pt-4 space-y-3">
               <Label className="text-sm font-medium">Typography Preview</Label>
-              <div className="p-4 rounded-xl border border-border/40 bg-secondary/10 space-y-3">
+              <div className="p-4 rounded-[var(--radius)] border border-border/40 bg-secondary/10 space-y-3">
                 <h2
                   className="text-2xl"
                   style={{
@@ -2349,7 +2491,7 @@ export function BrandSettingsForm({
                 </p>
                 <div className="flex items-center gap-3 pt-2">
                   <button
-                    className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm transition-opacity hover:opacity-90"
+                    className="px-4 py-2 rounded-[var(--radius)] bg-primary text-primary-foreground text-sm transition-opacity hover:opacity-90"
                     style={{
                       fontWeight: Number(form.uiButtonWeight),
                       textTransform: form.buttonTextCase === "uppercase" ? "uppercase" : form.buttonTextCase === "capitalize" ? "capitalize" : "none",
@@ -2374,7 +2516,7 @@ export function BrandSettingsForm({
             </div>
           </Card>
 
-          <Card className="rounded-2xl p-6 space-y-6">
+          <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
             <div className="flex items-center gap-2">
               <Frame className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold">Shape & Radius</h2>
@@ -2396,7 +2538,7 @@ export function BrandSettingsForm({
                         type="button"
                         onClick={() => updateField("headerNavStyle", opt.value)}
                         disabled={formDisabled}
-                        className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium border-2 transition-all duration-200 ${
+                        className={`flex-1 px-4 py-2.5 rounded-[var(--radius)] text-sm font-medium border-2 transition-all duration-200 ${
                           (form.headerNavStyle || "pill") === opt.value
                             ? "border-primary bg-primary/5"
                             : "border-border hover:border-primary/30"
@@ -2911,7 +3053,7 @@ export function BrandSettingsForm({
         </div>
 
         <div className="space-y-6">
-          <Card className="rounded-2xl p-6 space-y-5 lg:sticky lg:top-20">
+          <Card className="rounded-[var(--container-radius)] p-6 space-y-5 lg:sticky lg:top-20">
             <h3 className="font-display text-base font-semibold">Theme Preview</h3>
 
             <div className="space-y-3">
@@ -2921,7 +3063,7 @@ export function BrandSettingsForm({
               </Button>
               <Button
                 className="w-full"
-                style={{ backgroundColor: form.accentColor, color: form.accentForegroundColor || "#0A0A0A" }}
+                style={{ backgroundColor: form.accentColor, color: form.accentForegroundColor || 'hsl(var(--accent-foreground))' }}
                 data-testid="preview-accent-button"
               >
                 Accent Button
@@ -2969,7 +3111,7 @@ export function BrandSettingsForm({
             <div className="space-y-2">
               <Label className="text-xs text-muted-foreground">Alerts</Label>
               <div
-                className="p-3 rounded-md text-sm flex items-center gap-2"
+                className="p-3 rounded-[var(--radius)] text-sm flex items-center gap-2"
                 style={{ backgroundColor: form.successColor + "15", color: form.successColor, border: `1px solid ${form.successColor}30` }}
                 data-testid="preview-alert-success"
               >
@@ -2977,7 +3119,7 @@ export function BrandSettingsForm({
                 Success alert message
               </div>
               <div
-                className="p-3 rounded-md text-sm flex items-center gap-2"
+                className="p-3 rounded-[var(--radius)] text-sm flex items-center gap-2"
                 style={{ backgroundColor: form.warningColor + "15", color: form.warningColor, border: `1px solid ${form.warningColor}30` }}
                 data-testid="preview-alert-warning"
               >
@@ -2985,7 +3127,7 @@ export function BrandSettingsForm({
                 Warning alert message
               </div>
               <div
-                className="p-3 rounded-md text-sm flex items-center gap-2"
+                className="p-3 rounded-[var(--radius)] text-sm flex items-center gap-2"
                 style={{ backgroundColor: form.errorColor + "15", color: form.errorColor, border: `1px solid ${form.errorColor}30` }}
                 data-testid="preview-alert-error"
               >
@@ -2999,7 +3141,7 @@ export function BrandSettingsForm({
               <Card className="p-4 space-y-2">
                 <div className="flex items-center gap-2">
                   <div
-                    className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
                     style={{ backgroundColor: form.primaryColor }}
                   >
                     EA

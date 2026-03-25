@@ -160,9 +160,9 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`px-3 py-1.5 text-xs font-ui rounded-md transition-colors ${
+      className={`px-3 py-1.5 text-xs font-ui rounded-[var(--radius)] transition-colors ${
         active
-          ? "bg-primary text-white"
+          ? "bg-primary text-primary-foreground"
           : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
       }`}
       data-testid={testId}

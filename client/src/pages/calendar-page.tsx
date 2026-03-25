@@ -399,7 +399,7 @@ function CreateAppointmentDialog({ open, onClose, config }: { open: boolean; onC
                       className="text-sm"
                     />
                     {showContacts && activeAttendeeIdx === idx && filteredContacts.length > 0 && (
-                      <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                      <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-card border border-border rounded-[var(--radius)] shadow-lg max-h-40 overflow-y-auto">
                         {filteredContacts.slice(0, 8).map((c, ci) => (
                           <button
                             key={ci}
@@ -494,7 +494,7 @@ function SuggestTimeForm({ bookingId, onCancel, onSuccess }: { bookingId: string
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         placeholder="Add a message (optional)"
-        className="w-full text-xs rounded-md border border-input bg-background px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+        className="w-full text-xs rounded-[var(--radius)] border border-input bg-background px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
         rows={2}
         data-testid="input-suggest-message"
       />
@@ -537,7 +537,7 @@ function PendingBookingCard({ booking, start, onSelect, readOnly }: { booking: a
 
   return (
     <div
-      className="bg-[hsl(var(--brand-warning)/0.08)] rounded-lg border border-[hsl(var(--brand-warning)/0.3)] p-3 space-y-2"
+      className="bg-[hsl(var(--brand-warning)/0.08)] rounded-[var(--radius)] border border-[hsl(var(--brand-warning)/0.3)] p-3 space-y-2"
       style={{ borderLeft: "3px solid hsl(var(--brand-warning))" }}
       data-testid={`pending-card-${booking.id}`}
     >
@@ -688,7 +688,7 @@ function BlockEditForm({
   return (
     <div className="space-y-4" data-testid="block-edit-form">
       {isRecurringOccurrence && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 px-3 py-2 rounded-md">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 px-3 py-2 rounded-[var(--radius)]">
           <Repeat className="w-3 h-3" />
           This is part of a recurring series. Changes apply to the entire series.
         </div>
@@ -699,7 +699,7 @@ function BlockEditForm({
           <button
             type="button"
             onClick={() => handleBlockTypeChange("available")}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-ui transition-colors ${
+            className={`flex items-center gap-2 px-3 py-2 rounded-[var(--radius)] text-sm font-ui transition-colors ${
               blockType === "available"
                 ? "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))] border border-[hsl(var(--brand-success)/0.3)]"
                 : "text-muted-foreground hover:bg-secondary/30"
@@ -711,7 +711,7 @@ function BlockEditForm({
           <button
             type="button"
             onClick={() => handleBlockTypeChange("busy")}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-ui transition-colors ${
+            className={`flex items-center gap-2 px-3 py-2 rounded-[var(--radius)] text-sm font-ui transition-colors ${
               blockType === "busy"
                 ? "bg-destructive/15 text-destructive border border-destructive/30"
                 : "text-muted-foreground hover:bg-secondary/30"
@@ -849,7 +849,7 @@ function RescheduleForm({ bookingId, onCancel, onSuccess }: { bookingId: string;
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         placeholder="Add a message (optional)"
-        className="w-full text-xs rounded-md border border-input bg-background px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+        className="w-full text-xs rounded-[var(--radius)] border border-input bg-background px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
         rows={2}
         data-testid="input-reschedule-message"
       />
@@ -956,7 +956,7 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
             </div>
           )}
           {booking.notes && (
-            <p className="text-sm text-muted-foreground bg-secondary/30 rounded-lg p-2">{booking.notes}</p>
+            <p className="text-sm text-muted-foreground bg-secondary/30 rounded-[var(--radius)] p-2">{booking.notes}</p>
           )}
           <div className="flex items-center gap-2">
             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-ui ${
@@ -973,7 +973,7 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
               href={`/room/${booking.id}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 w-full justify-center rounded-lg px-4 py-2.5 text-sm font-ui bg-primary text-primary-foreground transition-colors hover:bg-primary/90"
+              className="inline-flex items-center gap-2 w-full justify-center rounded-[var(--radius)] px-4 py-2.5 text-sm font-ui bg-primary text-primary-foreground transition-colors hover:bg-primary/90"
               data-testid={isProvider ? "button-start-meeting" : "button-join-meeting"}
             >
               <Video className="w-4 h-4" />
@@ -982,14 +982,14 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
           )}
 
           {isPending && isProvider && (
-            <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-lg p-3">
+            <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-[var(--radius)] p-3">
               <p className="text-sm text-[hsl(var(--brand-warning))] font-ui">This meeting request needs your confirmation</p>
               <p className="text-xs text-[hsl(var(--brand-warning))] mt-1">Requested by {booking.attendeeName || booking.parentUser?.name || "a parent"}.</p>
             </div>
           )}
 
           {isPending && !isProvider && (
-            <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-lg p-3">
+            <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-[var(--radius)] p-3">
               <p className="text-sm text-[hsl(var(--brand-warning))] font-ui">Awaiting provider confirmation</p>
             </div>
           )}
@@ -997,7 +997,7 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
           {booking.actualEndedAt && booking.consentGiven && (
             <Link
               to={`/recordings/${booking.id}`}
-              className="inline-flex items-center gap-2 w-full justify-center rounded-lg px-4 py-2.5 text-sm font-ui border border-border hover:bg-secondary/50 transition-colors"
+              className="inline-flex items-center gap-2 w-full justify-center rounded-[var(--radius)] px-4 py-2.5 text-sm font-ui border border-border hover:bg-secondary/50 transition-colors"
               data-testid="link-view-recording"
             >
               <FileText className="w-4 h-4" />
@@ -1006,7 +1006,7 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
           )}
         </div>
         {showSuggestForm && isPending && isProvider && (
-          <div className="border border-border/50 rounded-lg p-3 space-y-2">
+          <div className="border border-border/50 rounded-[var(--radius)] p-3 space-y-2">
             <p className="text-sm font-ui">Suggest a new time</p>
             <SuggestTimeForm
               bookingId={booking.id}
@@ -1016,7 +1016,7 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
           </div>
         )}
         {showRescheduleForm && (isConfirmed || (isPending && !isProvider)) && (
-          <div className="border border-border/50 rounded-lg p-3 space-y-2">
+          <div className="border border-border/50 rounded-[var(--radius)] p-3 space-y-2">
             <p className="text-sm font-ui">Reschedule to a new time</p>
             <RescheduleForm
               bookingId={booking.id}
@@ -1103,7 +1103,7 @@ function ParentBookDialog({ open, onClose }: { open: boolean; onClose: () => voi
               className="text-sm"
             />
             {showDropdown && filtered.length > 0 && (
-              <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-lg max-h-40 overflow-y-auto">
+              <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-card border border-border rounded-[var(--radius)] shadow-lg max-h-40 overflow-y-auto">
                 {filtered.slice(0, 8).map((p: any) => (
                   <button
                     key={p.id}
@@ -1120,7 +1120,7 @@ function ParentBookDialog({ open, onClose }: { open: boolean; onClose: () => voi
               </div>
             )}
             {showDropdown && search.trim() && filtered.length === 0 && (
-              <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-lg px-3 py-3">
+              <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-card border border-border rounded-[var(--radius)] shadow-lg px-3 py-3">
                 <p className="text-sm text-muted-foreground" data-testid="text-no-providers">No providers found.</p>
               </div>
             )}
@@ -1174,14 +1174,14 @@ function MiniCalendar({
         <div className="flex items-center gap-0.5">
           <button
             onClick={() => setDisplayMonth((d) => { const n = new Date(d); n.setMonth(n.getMonth() - 1); return n; })}
-            className="p-1 rounded-md hover:bg-secondary/60 text-muted-foreground transition-colors"
+            className="p-1 rounded-[var(--radius)] hover:bg-secondary/60 text-muted-foreground transition-colors"
             data-testid="mini-cal-prev"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => setDisplayMonth((d) => { const n = new Date(d); n.setMonth(n.getMonth() + 1); return n; })}
-            className="p-1 rounded-md hover:bg-secondary/60 text-muted-foreground transition-colors"
+            className="p-1 rounded-[var(--radius)] hover:bg-secondary/60 text-muted-foreground transition-colors"
             data-testid="mini-cal-next"
           >
             <ChevronRight className="w-3.5 h-3.5" />
@@ -1204,10 +1204,10 @@ function MiniCalendar({
               key={day.toISOString()}
               onClick={() => onDateSelect(day)}
               className={`
-                relative flex flex-col items-center py-1 text-[11px] rounded-md transition-colors
+                relative flex flex-col items-center py-1 text-[11px] rounded-[var(--radius)] transition-colors
                 ${isCurrentMonth ? "text-foreground" : "text-muted-foreground/40"}
                 ${isSelected && !isToday ? "bg-primary/10 text-primary font-heading" : ""}
-                ${isToday ? "bg-primary text-white font-heading" : ""}
+                ${isToday ? "bg-primary text-primary-foreground font-heading" : ""}
                 ${!isToday && !isSelected ? "hover:bg-secondary/60" : ""}
               `}
               data-testid={`mini-cal-day-${dateKey}`}
@@ -1870,7 +1870,7 @@ export default function CalendarPage() {
           </h2>
         </div>
         <div className="flex items-center gap-2 flex-1 justify-end">
-          <div className="hidden sm:flex items-center border border-border/40 rounded-lg overflow-hidden">
+          <div className="hidden sm:flex items-center border border-border/40 rounded-[var(--radius)] overflow-hidden">
             <button
               onClick={() => {
                 const d = new Date(currentDate);
@@ -1922,7 +1922,7 @@ export default function CalendarPage() {
             </button>
             <button
               onClick={() => setCurrentDate(new Date())}
-              className="px-2 py-1 text-xs font-ui text-foreground border border-border/40 rounded-md"
+              className="px-2 py-1 text-xs font-ui text-foreground border border-border/40 rounded-[var(--radius)]"
               data-testid="button-today-mobile"
             >
               Today
@@ -1942,7 +1942,7 @@ export default function CalendarPage() {
               <ChevronRight className="w-5 h-5" />
             </button>
           </div>
-          <div className="hidden sm:flex items-center bg-muted/40 rounded-lg p-0.5">
+          <div className="hidden sm:flex items-center bg-muted/40 rounded-[var(--radius)] p-0.5">
             {[
               { key: Views.DAY, label: "Day" },
               { key: Views.WEEK, label: "Week" },
@@ -1951,7 +1951,7 @@ export default function CalendarPage() {
               <button
                 key={key}
                 onClick={() => { setView(key); setShowList(false); }}
-                className={`px-3.5 py-1.5 text-xs font-ui rounded-md transition-all ${
+                className={`px-3.5 py-1.5 text-xs font-ui rounded-[var(--radius)] transition-all ${
                   view === key && !showList
                     ? "bg-primary text-primary-foreground shadow-sm"
                     : "hover:text-foreground"
@@ -1964,7 +1964,7 @@ export default function CalendarPage() {
             ))}
             <button
               onClick={() => setShowList(!showList)}
-              className={`px-3 py-1.5 text-xs font-ui rounded-md transition-all flex items-center gap-1 ${
+              className={`px-3 py-1.5 text-xs font-ui rounded-[var(--radius)] transition-all flex items-center gap-1 ${
                 showList
                   ? "bg-primary text-primary-foreground shadow-sm"
                   : "hover:text-foreground"
@@ -2031,7 +2031,7 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      <div className="flex sm:hidden items-center bg-muted/40 rounded-lg p-0.5">
+      <div className="flex sm:hidden items-center bg-muted/40 rounded-[var(--radius)] p-0.5">
         {[
           { key: Views.DAY, label: "Day" },
           { key: MULTI_DAY_KEY, label: "Multi-Day" },
@@ -2040,7 +2040,7 @@ export default function CalendarPage() {
           <button
             key={key}
             onClick={() => { setView(key); setShowList(false); }}
-            className={`flex-1 px-2 py-1.5 text-xs font-ui rounded-md transition-all text-center ${
+            className={`flex-1 px-2 py-1.5 text-xs font-ui rounded-[var(--radius)] transition-all text-center ${
               view === key && !showList
                 ? "bg-primary text-primary-foreground shadow-sm"
                 : "hover:text-foreground"
@@ -2053,7 +2053,7 @@ export default function CalendarPage() {
         ))}
         <button
           onClick={() => setShowList(!showList)}
-          className={`flex-1 px-2 py-1.5 text-xs font-ui rounded-md transition-all text-center ${
+          className={`flex-1 px-2 py-1.5 text-xs font-ui rounded-[var(--radius)] transition-all text-center ${
             showList
               ? "bg-primary text-primary-foreground shadow-sm"
               : "hover:text-foreground"
@@ -2191,7 +2191,7 @@ export default function CalendarPage() {
           )}
           <button
             onClick={() => setMobileDateOpen(!mobileDateOpen)}
-            className={`sm:hidden flex items-center justify-center w-8 h-8 rounded-md border transition-colors shrink-0 ml-auto ${
+            className={`sm:hidden flex items-center justify-center w-8 h-8 rounded-[var(--radius)] border transition-colors shrink-0 ml-auto ${
               mobileDateOpen || searchFrom || searchTo
                 ? "border-primary/30 bg-primary/5 text-primary"
                 : "border-border/40 text-muted-foreground hover:text-foreground"
@@ -2424,7 +2424,7 @@ export default function CalendarPage() {
               return (
               <Card className="shadow-[0_1px_2px_rgba(0,0,0,0.07)] overflow-hidden">
                 <div className="px-4 py-3 border-b border-border/20">
-                  <div className="flex gap-1 bg-muted/30 p-1 rounded-lg w-fit" data-testid="past-meetings-tabs">
+                  <div className="flex gap-1 bg-muted/30 p-1 rounded-[var(--radius)] w-fit" data-testid="past-meetings-tabs">
                     {tabs.map((tab) => {
                       const Icon = tab.icon;
                       const isActive = pastMeetingsTab === tab.key;
@@ -2432,7 +2432,7 @@ export default function CalendarPage() {
                         <button
                           key={tab.key}
                           onClick={() => setPastMeetingsTab(tab.key)}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-ui transition-colors ${
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius)] text-xs font-ui transition-colors ${
                             isActive
                               ? "bg-primary text-primary-foreground shadow-sm"
                               : "hover:text-foreground"
@@ -2566,7 +2566,7 @@ export default function CalendarPage() {
 
             <Card className="shadow-[0_1px_2px_rgba(0,0,0,0.07)] overflow-hidden">
               <div className="px-3 py-2.5 border-b border-border/20">
-                <div className="flex gap-0.5 bg-muted/30 p-0.5 rounded-lg" data-testid="sidebar-tabs">
+                <div className="flex gap-0.5 bg-muted/30 p-0.5 rounded-[var(--radius)]" data-testid="sidebar-tabs">
                   {([
                     { key: "upcoming" as const, label: "Upcoming", icon: CalendarClock, count: upcomingBookings.length },
                     { key: "past" as const, label: "Past", icon: Clock, count: sidebarPastBookings.length },
@@ -2579,7 +2579,7 @@ export default function CalendarPage() {
                       <button
                         key={tab.key}
                         onClick={() => setSidebarTab(tab.key)}
-                        className={`flex-1 flex items-center justify-center gap-1 px-1.5 py-1.5 rounded-md text-[10px] font-ui transition-colors ${
+                        className={`flex-1 flex items-center justify-center gap-1 px-1.5 py-1.5 rounded-[var(--radius)] text-[10px] font-ui transition-colors ${
                           isActive
                             ? "bg-primary text-primary-foreground shadow-sm"
                             : "hover:text-foreground"
@@ -2626,7 +2626,7 @@ export default function CalendarPage() {
                                   <button
                                     key={b.id}
                                     onClick={() => setSelectedBooking(b)}
-                                    className="w-full text-left flex items-stretch gap-2.5 rounded-lg px-2.5 py-2 bg-primary/[0.04] hover:bg-primary/10 transition-colors cursor-pointer group"
+                                    className="w-full text-left flex items-stretch gap-2.5 rounded-[var(--radius)] px-2.5 py-2 bg-primary/[0.04] hover:bg-primary/10 transition-colors cursor-pointer group"
                                     data-testid={`upcoming-${b.id}`}
                                   >
                                     <div className="w-[3px] self-stretch rounded-full shrink-0 bg-primary" />
@@ -2649,7 +2649,7 @@ export default function CalendarPage() {
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         onClick={(e) => e.stopPropagation()}
-                                        className="self-center shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-ui bg-primary text-primary-foreground transition-colors hover:bg-primary/90"
+                                        className="self-center shrink-0 inline-flex items-center gap-1 rounded-[var(--radius)] px-2 py-1 text-[10px] font-ui bg-primary text-primary-foreground transition-colors hover:bg-primary/90"
                                         data-testid={isParentUser ? `button-join-meeting-upcoming-${b.id}` : `button-start-meeting-upcoming-${b.id}`}
                                       >
                                         <Video className="w-3 h-3" />
@@ -2684,7 +2684,7 @@ export default function CalendarPage() {
                             <button
                               key={b.id}
                               onClick={() => setSelectedBooking(b)}
-                              className="w-full text-left flex items-stretch gap-2.5 rounded-lg px-2.5 py-2 hover:bg-muted/40 transition-colors cursor-pointer group"
+                              className="w-full text-left flex items-stretch gap-2.5 rounded-[var(--radius)] px-2.5 py-2 hover:bg-muted/40 transition-colors cursor-pointer group"
                               data-testid={`sidebar-past-${b.id}`}
                             >
                               <div className="w-[3px] self-stretch rounded-full shrink-0 bg-primary/30" />
@@ -2876,10 +2876,10 @@ export default function CalendarPage() {
                 </div>
 
                 {isRecurring ? (
-                  <div className="border rounded-lg p-4 space-y-3">
+                  <div className="border rounded-[var(--radius)] p-4 space-y-3">
                     <p className="text-sm font-ui">Availability Override</p>
 
-                    <div className={`flex items-center justify-between rounded-md px-3 py-2.5 ${isSingleFree ? "bg-[hsl(var(--brand-success)/0.08)] dark:bg-[hsl(var(--brand-success)/0.15)] border border-[hsl(var(--brand-success)/0.3)] dark:border-[hsl(var(--brand-success)/0.3)]" : "bg-muted/30 border"}`}>
+                    <div className={`flex items-center justify-between rounded-[var(--radius)] px-3 py-2.5 ${isSingleFree ? "bg-[hsl(var(--brand-success)/0.08)] dark:bg-[hsl(var(--brand-success)/0.15)] border border-[hsl(var(--brand-success)/0.3)] dark:border-[hsl(var(--brand-success)/0.3)]" : "bg-muted/30 border"}`}>
                       <div className="flex items-center gap-2">
                         {isSingleFree ? <Check className="h-4 w-4 text-[hsl(var(--brand-success))]" /> : <X className="h-4 w-4 text-muted-foreground" />}
                         <div>
@@ -2910,7 +2910,7 @@ export default function CalendarPage() {
                       </button>
                     </div>
 
-                    <div className={`flex items-center justify-between rounded-md px-3 py-2.5 ${isSeriesFree ? "bg-[hsl(var(--brand-success)/0.08)] dark:bg-[hsl(var(--brand-success)/0.15)] border border-[hsl(var(--brand-success)/0.3)] dark:border-[hsl(var(--brand-success)/0.3)]" : "bg-muted/30 border"}`}>
+                    <div className={`flex items-center justify-between rounded-[var(--radius)] px-3 py-2.5 ${isSeriesFree ? "bg-[hsl(var(--brand-success)/0.08)] dark:bg-[hsl(var(--brand-success)/0.15)] border border-[hsl(var(--brand-success)/0.3)] dark:border-[hsl(var(--brand-success)/0.3)]" : "bg-muted/30 border"}`}>
                       <div className="flex items-center gap-2">
                         {isSeriesFree ? <Check className="h-4 w-4 text-[hsl(var(--brand-success))]" /> : <X className="h-4 w-4 text-muted-foreground" />}
                         <div>
@@ -2941,7 +2941,7 @@ export default function CalendarPage() {
                       </button>
                     </div>
 
-                    <div className={`flex items-center gap-2 text-sm rounded-md px-3 py-2 ${isFree ? "bg-[hsl(var(--brand-success)/0.08)] text-[hsl(var(--brand-success))] dark:bg-[hsl(var(--brand-success)/0.15)] dark:text-[hsl(var(--brand-success))]" : "bg-muted/50 text-muted-foreground"}`}>
+                    <div className={`flex items-center gap-2 text-sm rounded-[var(--radius)] px-3 py-2 ${isFree ? "bg-[hsl(var(--brand-success)/0.08)] text-[hsl(var(--brand-success))] dark:bg-[hsl(var(--brand-success)/0.15)] dark:text-[hsl(var(--brand-success))]" : "bg-muted/50 text-muted-foreground"}`}>
                       {isFree ? (
                         <>
                           <Check className="h-4 w-4" />
@@ -2956,7 +2956,7 @@ export default function CalendarPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="border rounded-lg p-4 space-y-3">
+                  <div className="border rounded-[var(--radius)] p-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm font-ui">Availability Override</p>
@@ -2984,7 +2984,7 @@ export default function CalendarPage() {
                         <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${isFree ? "translate-x-5" : "translate-x-0"}`} />
                       </button>
                     </div>
-                    <div className={`flex items-center gap-2 text-sm rounded-md px-3 py-2 ${isFree ? "bg-[hsl(var(--brand-success)/0.08)] text-[hsl(var(--brand-success))] dark:bg-[hsl(var(--brand-success)/0.15)] dark:text-[hsl(var(--brand-success))]" : "bg-muted/50 text-muted-foreground"}`}>
+                    <div className={`flex items-center gap-2 text-sm rounded-[var(--radius)] px-3 py-2 ${isFree ? "bg-[hsl(var(--brand-success)/0.08)] text-[hsl(var(--brand-success))] dark:bg-[hsl(var(--brand-success)/0.15)] dark:text-[hsl(var(--brand-success))]" : "bg-muted/50 text-muted-foreground"}`}>
                       {isFree ? (
                         <>
                           <Check className="h-4 w-4" />

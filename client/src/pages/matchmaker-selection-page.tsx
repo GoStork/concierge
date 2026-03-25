@@ -64,7 +64,7 @@ export default function MatchmakerSelectionPage() {
               />
             )}
             <div
-              className="w-24 h-24 rounded-full flex items-center justify-center text-white text-3xl font-bold"
+              className="w-24 h-24 rounded-full flex items-center justify-center text-primary-foreground text-3xl font-bold"
               style={{ backgroundColor: brand?.primaryColor || "#004D4D" }}
             >
               {transitionMatchmaker.name.charAt(0)}
@@ -144,7 +144,7 @@ export default function MatchmakerSelectionPage() {
             >
               {isSelected && (
                 <div
-                  className="absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center text-white text-xs"
+                  className="absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center text-primary-foreground text-xs"
                   style={{ backgroundColor: brand?.primaryColor || "#004D4D" }}
                   data-testid={`matchmaker-selected-badge-${m.id}`}
                 >
@@ -163,7 +163,7 @@ export default function MatchmakerSelectionPage() {
                     />
                   )}
                   <div
-                    className="w-14 h-14 rounded-full flex items-center justify-center text-white text-lg font-bold"
+                    className="w-14 h-14 rounded-full flex items-center justify-center text-primary-foreground text-lg font-bold"
                     style={{ backgroundColor: brand?.primaryColor || "#004D4D" }}
                   >
                     {m.name.charAt(0)}

@@ -103,7 +103,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
         )}
         {isHidden && (
           <div className="absolute top-2 left-2 z-10" data-testid={`badge-hidden-${profile.id}`}>
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-heading bg-[hsl(var(--brand-warning))] text-white shadow">
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius)] text-[10px] font-heading bg-[hsl(var(--brand-warning))] text-primary-foreground shadow">
               <EyeOff className="w-3 h-3" />
               HIDDEN
             </span>
@@ -111,7 +111,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
         )}
         {(profile.isPremium || adminControls?.isPremium) && (
           <div className={`absolute ${isHidden ? "top-9" : "top-2"} left-2 z-10`} data-testid={`badge-premium-${profile.id}`}>
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-heading bg-[hsl(var(--brand-warning))] text-white shadow">
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius)] text-[10px] font-heading bg-[hsl(var(--brand-warning))] text-primary-foreground shadow">
               <Crown className="w-3 h-3" />
               PREMIUM
             </span>
@@ -119,7 +119,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
         )}
         {profile.isExperienced && (
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3 pt-8 flex items-end justify-end">
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-heading bg-[hsl(var(--brand-warning))] text-white shadow">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[var(--radius)] text-[10px] font-heading bg-[hsl(var(--brand-warning))] text-primary-foreground shadow">
               <Award className="w-3 h-3" />
               Experienced
             </span>
@@ -164,7 +164,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
 
       <div className="p-3 pt-0 flex gap-2">
         <button
-          className="flex-1 py-2 rounded-lg text-xs font-ui text-primary-foreground bg-primary hover:bg-primary/90 transition-colors"
+          className="flex-1 py-2 rounded-[var(--radius)] text-xs font-ui text-primary-foreground bg-primary hover:bg-primary/90 transition-colors"
           onClick={(e) => { e.stopPropagation(); onNavigate?.(); }}
           data-testid={isMarketplace ? `button-view-profile-${profile.id}` : `btn-view-${type}-${profile.id}`}
         >
@@ -174,7 +174,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
           <>
             {adminControls.onEdit && (
               <button
-                className="py-2 px-3 rounded-lg text-xs font-ui border border-primary/30 text-primary hover:bg-primary/10 transition-colors"
+                className="py-2 px-3 rounded-[var(--radius)] text-xs font-ui border border-primary/30 text-primary hover:bg-primary/10 transition-colors"
                 onClick={(e) => { e.stopPropagation(); adminControls.onEdit!(profile.id); }}
                 data-testid={`btn-edit-${type}-${profile.id}`}
               >
@@ -182,7 +182,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
               </button>
             )}
             <button
-              className={`py-2 px-3 rounded-lg text-xs font-ui border transition-colors ${
+              className={`py-2 px-3 rounded-[var(--radius)] text-xs font-ui border transition-colors ${
                 adminControls.isPremium
                   ? "border-[hsl(var(--brand-warning))]/50 text-[hsl(var(--brand-warning))] bg-[hsl(var(--brand-warning))]/10 hover:bg-[hsl(var(--brand-warning))]/15"
                   : "border-primary/30 text-primary hover:bg-primary/10"
@@ -197,7 +197,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
               <Crown className="w-3.5 h-3.5" />
             </button>
             <button
-              className={`py-2 px-3 rounded-lg text-xs font-ui border transition-colors ${
+              className={`py-2 px-3 rounded-[var(--radius)] text-xs font-ui border transition-colors ${
                 isHidden
                   ? "border-[hsl(var(--brand-warning)/0.3)] text-[hsl(var(--brand-warning))] bg-[hsl(var(--brand-warning)/0.08)] hover:bg-[hsl(var(--brand-warning)/0.12)]"
                   : "border-primary/30 text-primary hover:bg-primary/10"
@@ -213,7 +213,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
             </button>
             {adminControls.onDelete && (
               <button
-                className="py-2 px-3 rounded-lg text-xs font-ui border border-destructive/30 text-destructive hover:bg-destructive/10 transition-colors"
+                className="py-2 px-3 rounded-[var(--radius)] text-xs font-ui border border-destructive/30 text-destructive hover:bg-destructive/10 transition-colors"
                 onClick={(e) => {
                   e.stopPropagation();
                   adminControls.onDelete!(profile.id);

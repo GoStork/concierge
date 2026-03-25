@@ -268,9 +268,9 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
                   <TableCell className="font-ui">
                     <div className="flex items-center gap-2">
                       {member.photoUrl ? (
-                        <img src={getPhotoSrc(member.photoUrl)!} alt="" className="w-7 h-7 rounded-lg object-cover shrink-0" />
+                        <img src={getPhotoSrc(member.photoUrl)!} alt="" className="w-7 h-7 rounded-[var(--radius)] object-cover shrink-0" />
                       ) : (
-                        <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                        <div className="w-7 h-7 rounded-[var(--radius)] bg-primary/10 flex items-center justify-center text-primary shrink-0">
                           <UserCircle className="w-4 h-4" />
                         </div>
                       )}

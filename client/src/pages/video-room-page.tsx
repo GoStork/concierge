@@ -307,7 +307,7 @@ export default function VideoRoomPage() {
     return (
       <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background flex items-center justify-center p-4">
         <div className="w-full max-w-sm">
-          <Card className="rounded-2xl shadow-lg p-8">
+          <Card className="rounded-[var(--container-radius)] shadow-lg p-8">
             <div className="text-center mb-6">
               <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
                 <Video className="w-7 h-7 text-primary" />
@@ -494,7 +494,7 @@ export default function VideoRoomPage() {
       </Dialog>
 
       {callState === "error" && error && (
-        <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-4 m-4">
+        <div className="bg-destructive/10 border border-destructive/30 rounded-[var(--radius)] p-4 m-4">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-5 h-5 text-destructive shrink-0" />
             <p className="text-sm text-destructive" data-testid="text-video-call-error">{error}</p>

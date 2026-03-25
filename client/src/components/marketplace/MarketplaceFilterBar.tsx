@@ -1150,7 +1150,7 @@ function BooleanToggle({ label, filterKey, activeFilters, dispatch }: {
   return (
     <button
       type="button"
-      className={`flex items-center justify-between w-full px-3 py-2.5 rounded-lg border font-ui transition-colors ${
+      className={`flex items-center justify-between w-full px-3 py-2.5 rounded-[var(--radius)] border font-ui transition-colors ${
         isActive
           ? "bg-primary/10 border-primary/30 text-primary"
           : "bg-muted/30 border-border text-muted-foreground hover:bg-muted/50"

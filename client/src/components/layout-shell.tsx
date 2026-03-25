@@ -544,9 +544,9 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
             ) : (
               <>
                 {brandSettings?.logoUrl ? (
-                  <img src={getPhotoSrc(brandSettings.logoUrl) || brandSettings.logoUrl} alt="" className="w-11 h-11 rounded-lg object-contain" data-testid="img-logo-icon" />
+                  <img src={getPhotoSrc(brandSettings.logoUrl) || brandSettings.logoUrl} alt="" className="w-11 h-11 rounded-[var(--radius)] object-contain" data-testid="img-logo-icon" />
                 ) : (
-                  <div className="w-11 h-11 rounded-lg bg-primary flex items-center justify-center text-white shadow-md shadow-primary/20">
+                  <div className="w-11 h-11 rounded-[var(--radius)] bg-primary flex items-center justify-center text-primary-foreground shadow-md shadow-primary/20">
                     <Baby className="w-6 h-6" />
                   </div>
                 )}
@@ -585,7 +585,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                   <div className="relative">
                     <Icon className="w-5 h-5 shrink-0" />
                     {!!item.badge && item.badge > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] rounded-full flex items-center justify-center text-[8px] font-bold text-white px-0.5" style={{ backgroundColor: 'hsl(var(--primary))' }}>
+                      <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] rounded-full flex items-center justify-center text-[8px] font-bold text-primary-foreground px-0.5" style={{ backgroundColor: 'hsl(var(--primary))' }}>
                         {item.badge > 99 ? "99+" : item.badge}
                       </span>
                     )}
@@ -672,7 +672,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                       }}
                     >
                       <div
-                        className="p-1.5 rounded-lg transition-colors duration-200 flex items-center justify-center"
+                        className="p-1.5 rounded-[var(--radius)] transition-colors duration-200 flex items-center justify-center"
                         style={submenuActive ? { backgroundColor: `color-mix(in srgb, var(--bottom-nav-active-fg, hsl(var(--primary))) 10%, transparent)` } : undefined}
                       >
                         <Icon className={iconOnly ? "w-7 h-7 shrink-0" : "w-6 h-6 shrink-0"} />
@@ -726,12 +726,12 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                 }}
               >
                 <div
-                  className="p-1.5 rounded-lg transition-colors duration-200 flex items-center justify-center relative"
+                  className="p-1.5 rounded-[var(--radius)] transition-colors duration-200 flex items-center justify-center relative"
                   style={active ? { backgroundColor: `color-mix(in srgb, var(--bottom-nav-active-fg, hsl(var(--primary))) 10%, transparent)` } : undefined}
                 >
                   <Icon className={iconOnly ? "w-7 h-7 shrink-0" : "w-6 h-6 shrink-0"} />
                   {!!item.badge && item.badge > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-0.5" style={{ backgroundColor: 'hsl(var(--primary))' }}>
+                    <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-bold text-primary-foreground px-0.5" style={{ backgroundColor: 'hsl(var(--primary))' }}>
                       {item.badge > 99 ? "99+" : item.badge}
                     </span>
                   )}
@@ -746,7 +746,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                 <button
                   data-testid="tab-more"
                   aria-label="More navigation options"
-                  className="flex flex-col items-center justify-center flex-1 gap-0.5 text-[11px] font-ui transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-lg"
+                  className="flex flex-col items-center justify-center flex-1 gap-0.5 text-[11px] font-ui transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-[var(--radius)]"
                   style={{
                     color: overflowTabs.some(item => isActive(item.to))
                       ? 'var(--bottom-nav-active-fg, hsl(var(--primary)))'
@@ -754,7 +754,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                   }}
                 >
                   <div
-                    className="p-1.5 rounded-lg transition-colors duration-200"
+                    className="p-1.5 rounded-[var(--radius)] transition-colors duration-200"
                     style={overflowTabs.some(item => isActive(item.to)) ? { backgroundColor: `color-mix(in srgb, var(--bottom-nav-active-fg, hsl(var(--primary))) 10%, transparent)` } : undefined}
                   >
                     <MoreHorizontal className="w-5 h-5" />
@@ -793,8 +793,8 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       </nav>
       </div>
 
-      <main className={`pt-0 md:pt-16 ${location.pathname === '/marketplace' || /^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname) ? 'pb-0' : location.pathname === '/chat' ? 'pb-0' : 'pb-28'} md:pb-0 min-h-screen transition-all duration-300`}>
-        <div className={`${location.pathname === '/chat' ? '' : `max-w-[1800px] mx-auto pt-4 px-4 ${location.pathname === '/marketplace' ? 'pb-0' : 'pb-4'} md:p-6 lg:p-8`} animate-in fade-in slide-in-from-bottom-4 duration-500`}>
+      <main className={`pt-0 md:pt-16 ${location.pathname === '/marketplace' || /^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname) ? 'pb-0' : location.pathname.startsWith('/chat') ? 'pb-0' : 'pb-28'} md:pb-0 min-h-screen transition-all duration-300`}>
+        <div className={`${location.pathname.startsWith('/chat') ? '' : `max-w-[1800px] mx-auto pt-4 px-4 ${location.pathname === '/marketplace' ? 'pb-0' : 'pb-4'} md:p-6 lg:p-8`} animate-in fade-in slide-in-from-bottom-4 duration-500`}>
           {children}
         </div>
       </main>

@@ -223,7 +223,7 @@ export default function AdminUserAddPage() {
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {isProviderMode && teamMembers && teamMembers.length > 0 && (
-          <div className="bg-card rounded-xl border border-border/50 shadow-sm p-6 space-y-4">
+          <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
             <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
               <Users className="w-3.5 h-3.5" /> Team Members
             </h2>
@@ -266,7 +266,7 @@ export default function AdminUserAddPage() {
           </div>
         )}
 
-        <div className="bg-card rounded-xl border border-border/50 shadow-sm p-6 space-y-4">
+        <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
           <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Account Details</h2>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -294,7 +294,7 @@ export default function AdminUserAddPage() {
           </div>
         </div>
 
-        <div className="bg-card rounded-xl border border-border/50 shadow-sm p-6 space-y-4">
+        <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
           <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Security</h2>
 
           <div className="space-y-2">
@@ -317,11 +317,11 @@ export default function AdminUserAddPage() {
         </div>
 
         {isParentAccountMode && (
-          <div className="bg-card rounded-xl border border-border/50 shadow-sm p-6 space-y-4">
+          <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
             <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Role</h2>
             <div className="space-y-2">
               <Label>Account Role</Label>
-              <div className="space-y-2 border rounded-lg p-3">
+              <div className="space-y-2 border rounded-[var(--radius)] p-3">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="radio" name="parentAccountRole" value="INTENDED_PARENT_2" checked={parentAccountRole === "INTENDED_PARENT_2"} onChange={() => setParentAccountRole("INTENDED_PARENT_2")} data-testid="radio-role-ip2" />
                   <div>
@@ -342,11 +342,11 @@ export default function AdminUserAddPage() {
         )}
 
         {isGostorkTeamMode && (
-          <div className="bg-card rounded-xl border border-border/50 shadow-sm p-6 space-y-4">
+          <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
             <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Role</h2>
             <div className="space-y-2">
               <Label>Role</Label>
-              <div className="space-y-2 border rounded-lg p-3">
+              <div className="space-y-2 border rounded-[var(--radius)] p-3">
                 {GOSTORK_ROLES.map(r => (
                   <label key={r.value} className="flex items-center gap-2 cursor-pointer">
                     <Checkbox checked={selectedRoles.includes(r.value)} onCheckedChange={() => toggleRole(r.value)} data-testid={`checkbox-role-${r.value}`} />
@@ -359,12 +359,12 @@ export default function AdminUserAddPage() {
         )}
 
         {isProviderMode && (
-          <div className="bg-card rounded-xl border border-border/50 shadow-sm p-6 space-y-4">
+          <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
             <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Roles & Access</h2>
 
             <div className="space-y-2">
               <Label>Roles</Label>
-              <div className="space-y-2 border rounded-lg p-3">
+              <div className="space-y-2 border rounded-[var(--radius)] p-3">
                 {PROVIDER_ROLES.map(r => (
                   <label key={r.value} className="flex items-center gap-2 cursor-pointer">
                     <Checkbox checked={selectedRoles.includes(r.value)} onCheckedChange={() => toggleRole(r.value)} data-testid={`checkbox-role-${r.value}`} />
@@ -381,7 +381,7 @@ export default function AdminUserAddPage() {
                 <span className="text-sm">All Locations</span>
               </label>
               {providerLocations && providerLocations.length > 0 && (
-                <div className={`space-y-2 border rounded-lg p-3 mt-2 ${allLocations ? "opacity-50" : ""}`}>
+                <div className={`space-y-2 border rounded-[var(--radius)] p-3 mt-2 ${allLocations ? "opacity-50" : ""}`}>
                   {providerLocations.map(loc => (
                     <label key={loc.id} className="flex items-center gap-2 cursor-pointer">
                       <Checkbox checked={allLocations || selectedLocationIds.includes(loc.id)} onCheckedChange={() => { if (!allLocations) toggleLocationId(loc.id); }} disabled={allLocations} data-testid={`checkbox-location-${loc.id}`} />

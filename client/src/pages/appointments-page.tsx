@@ -103,7 +103,7 @@ export default function AppointmentsPage() {
       </div>
 
       {displayBookings.length === 0 ? (
-        <div className="bg-card rounded-xl border border-border/50 shadow-sm p-12 text-center">
+        <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-12 text-center">
           <CalendarDays className="w-10 h-10 mx-auto mb-3 text-muted-foreground/50" />
           <p className="text-muted-foreground">
             {activeTab === "upcoming" ? "No upcoming appointments." : "No past appointments."}
@@ -120,7 +120,7 @@ export default function AppointmentsPage() {
             return (
               <div
                 key={booking.id}
-                className="bg-card rounded-xl border border-border/50 shadow-sm p-5 flex items-start gap-4"
+                className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-5 flex items-start gap-4"
                 data-testid={`appointment-${booking.id}`}
               >
                 <div className="shrink-0">

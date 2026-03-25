@@ -1042,7 +1042,7 @@ function SingleCostsTab({
           <CardContent>
             {displaySheet?.filePath ? (
               <div className="space-y-3">
-                <div className="flex items-center gap-3 p-3 bg-muted rounded-lg" data-testid="file-info">
+                <div className="flex items-center gap-3 p-3 bg-muted rounded-[var(--radius)]" data-testid="file-info">
                   <FileText className="w-8 h-8 text-primary" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate" data-testid="text-filename">
@@ -1115,7 +1115,7 @@ function SingleCostsTab({
               </div>
             ) : (
               <div
-                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                className={`border-2 border-dashed rounded-[var(--radius)] p-8 text-center transition-colors ${
                   uploadMutation.isPending || isParsing
                     ? "border-primary/30 bg-primary/5 cursor-wait"
                     : isDragging
@@ -1193,7 +1193,7 @@ function SingleCostsTab({
             <>
               <Button
                 size="sm"
-                className="bg-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success))]/90 text-white"
+                className="bg-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success))]/90 text-primary-foreground"
                 onClick={() => approveMutation.mutate(displaySheet.id)}
                 disabled={approveMutation.isPending}
                 data-testid="btn-approve-sheet"
@@ -1307,7 +1307,7 @@ function SingleCostsTab({
               <AccordionItem
                 key={category}
                 value={category}
-                className={`border rounded-lg px-4 ${categoryHasChanges ? "border-[hsl(var(--brand-warning))]/30 bg-[hsl(var(--brand-warning))]/5" : ""}`}
+                className={`border rounded-[var(--radius)] px-4 ${categoryHasChanges ? "border-[hsl(var(--brand-warning))]/30 bg-[hsl(var(--brand-warning))]/5" : ""}`}
                 data-testid={`accordion-category-${category.toLowerCase().replace(/\s+/g, "-")}`}
               >
                 <AccordionTrigger className="text-sm font-semibold py-3">
@@ -1347,7 +1347,7 @@ function SingleCostsTab({
                       return (
                         <div
                           key={item._editIdx}
-                          className={`flex flex-col gap-2 p-3 rounded-md border ${
+                          className={`flex flex-col gap-2 p-3 rounded-[var(--radius)] border ${
                             item.isCustom
                               ? "border-l-4 border-l-[hsl(var(--brand-warning))]/60 bg-[hsl(var(--brand-warning))]/5"
                               : isNewItem
@@ -1591,7 +1591,7 @@ function SingleCostsTab({
                       return removedItems.map((ri, idx) => (
                         <div
                           key={`removed-${idx}`}
-                          className="flex items-center gap-2 p-3 rounded-md border border-l-4 border-l-destructive/60 bg-destructive/5 opacity-60"
+                          className="flex items-center gap-2 p-3 rounded-[var(--radius)] border border-l-4 border-l-destructive/60 bg-destructive/5 opacity-60"
                           data-testid={`cost-item-removed-${ri.key}`}
                         >
                           <div className="flex-1 min-w-0">
