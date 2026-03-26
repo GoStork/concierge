@@ -1462,7 +1462,7 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
 ` : "";
 
     // Dynamically analyze chat history to build concrete skip directives
-    const allUserMessages = chatHistory.filter(m => m.role === "user").map(m => (m.content || "").toLowerCase()).join(" ");
+    const allUserMessages = chatHistory.filter(m => m.role === "user").map(m => (m.content || "").toLowerCase()).join(" ") + " " + userMessage.toLowerCase();
     const skipDirectives: string[] = [];
 
     const mentionsEggDonor = /egg\s*donor|need.*egg|donor\s*egg/i.test(allUserMessages);
