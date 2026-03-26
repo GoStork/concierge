@@ -1,12 +1,23 @@
-import { useState } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { deriveChatPalette } from "@/lib/chat-palette";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { ArrowLeft, Headphones, MessageCircle, Send, User, AlertTriangle, Clock, CheckCircle2, Loader2, MapPin, Mail } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Headphones, MessageCircle, User, AlertTriangle, Clock, CheckCircle2, Loader2,
+} from "lucide-react";
+import {
+  timeAgo,
+  ConversationsShell,
+  ChatMessageList,
+  ChatInputBar,
+  ExpertSenderLabel,
+  ChatProfileSidebar,
+  type SessionDetail,
+} from "@/components/chat";
 
 interface SessionSummary {
   id: string;
@@ -27,60 +38,15 @@ interface SessionSummary {
   createdAt: string;
 }
 
-interface SessionMessage {
-  id: string;
-  role: string;
-  content: string;
-  senderType: string;
-  senderName: string | null;
-  createdAt: string;
-}
-
-interface SessionDetail {
-  id: string;
-  userId: string;
-  status: string;
-  humanRequested: boolean;
-  humanJoinedAt: string | null;
-  humanAgentId: string | null;
-  user: {
-    id: string;
-    name: string;
-    email: string;
-    avatarUrl: string | null;
-    city: string | null;
-    state: string | null;
-    parentAccount?: {
-      intendedParentProfile?: {
-        journeyStage: string | null;
-        eggSource: string | null;
-        spermSource: string | null;
-        carrier: string | null;
-        hasEmbryos: boolean | null;
-        embryoCount: number | null;
-      } | null;
-    } | null;
-  };
-  messages: SessionMessage[];
-}
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
 export default function AdminConciergeMonitor() {
   const { user } = useAuth();
   const { data: brand } = useBrandSettings();
   const queryClient = useQueryClient();
   const brandColor = brand?.primaryColor || "#004D4D";
+  const chatPalette = useMemo(() => deriveChatPalette(brandColor), [brandColor]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-  const [replyText, setReplyText] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   const roles: string[] = (user as any)?.roles || [];
   const isAdmin = roles.includes("GOSTORK_ADMIN");
@@ -114,326 +80,232 @@ export default function AdminConciergeMonitor() {
   });
 
   const sendMessageMutation = useMutation({
-    mutationFn: async ({ sessionId, content }: { sessionId: string; content: string }) => {
+    mutationFn: async ({ sessionId, content, uiCardType, uiCardData }: { sessionId: string; content: string; uiCardType?: string; uiCardData?: any }) => {
       const res = await fetch(`/api/admin/concierge-sessions/${sessionId}/message`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, uiCardType, uiCardData }),
       });
       if (!res.ok) throw new Error("Failed to send");
       return res.json();
     },
     onSuccess: () => {
-      setReplyText("");
       queryClient.invalidateQueries({ queryKey: ["/api/admin/concierge-sessions", selectedSessionId] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/concierge-sessions"] });
     },
   });
 
+  // Auto-scroll to bottom on new messages
+  const scrollDone = useRef(false);
+  useEffect(() => {
+    scrollDone.current = false;
+    const scrollToEnd = () => {
+      if (chatEndRef.current) {
+        const container = chatEndRef.current.closest('[data-testid="admin-chat-messages"]');
+        if (container) container.scrollTop = container.scrollHeight;
+      }
+    };
+    scrollToEnd();
+    const t1 = setTimeout(scrollToEnd, 150);
+    const t2 = setTimeout(scrollToEnd, 400);
+    const t3 = setTimeout(() => { scrollToEnd(); scrollDone.current = true; }, 800);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, [sessionDetailQuery.data?.messages?.length, selectedSessionId]);
+
   const sessions = sessionsQuery.data || [];
   const detail = sessionDetailQuery.data;
-  const profile = detail?.user?.parentAccount?.intendedParentProfile;
 
-  const handleSendReply = () => {
-    if (!replyText.trim() || !selectedSessionId) return;
-    sendMessageMutation.mutate({ sessionId: selectedSessionId, content: replyText.trim() });
+  const handleSend = async (text: string, files: File[]) => {
+    if (!selectedSessionId) return;
+    // Upload files first
+    if (files.length > 0) {
+      setUploading(true);
+      try {
+        for (const file of files) {
+          const formData = new FormData();
+          formData.append("file", file);
+          const res = await fetch("/api/chat-upload", { method: "POST", credentials: "include", body: formData });
+          if (!res.ok) throw new Error("Upload failed");
+          const data = await res.json();
+          await sendMessageMutation.mutateAsync({
+            sessionId: selectedSessionId,
+            content: data.originalName ? `Shared a file: ${data.originalName}` : "Shared a file",
+            uiCardType: "attachment",
+            uiCardData: data,
+          });
+        }
+      } catch {
+        alert("Failed to upload file. Please try again.");
+        setUploading(false);
+        return;
+      }
+      setUploading(false);
+    }
+    // Send text message
+    if (text) {
+      sendMessageMutation.mutate({ sessionId: selectedSessionId, content: text });
+    }
   };
 
-  if (selectedSessionId && detail) {
-    return (
-      <div className="flex flex-col h-[calc(100dvh-64px)]" data-testid="concierge-monitor-detail">
-        <div className="flex items-center gap-3 px-4 py-3 border-b bg-background">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0"
-            onClick={() => setSelectedSessionId(null)}
-            data-testid="btn-back-to-sessions"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-          <div className="flex items-center gap-2 flex-1">
-            {detail.user.avatarUrl ? (
-              <img src={getPhotoSrc(detail.user.avatarUrl) || undefined} alt="" className="w-8 h-8 rounded-full object-cover" />
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                <User className="w-4 h-4 text-muted-foreground" />
-              </div>
+  // Build sidebar items - session list
+  const sidebarItems = sessions.length > 0 ? (
+    <div className="divide-y divide-border/20">
+      {sessions.map((s) => (
+        <button
+          key={s.id}
+          className={`w-full flex items-start gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left ${selectedSessionId === s.id ? "bg-muted/70" : ""}`}
+          onClick={() => setSelectedSessionId(s.id)}
+          data-testid={`session-card-${s.id}`}
+        >
+          {s.userAvatar ? (
+            <img src={getPhotoSrc(s.userAvatar) || undefined} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+          ) : (
+            <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+              <User className="w-5 h-5 text-muted-foreground" />
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-sm truncate">{s.userName || "Unknown"}</span>
+              {s.humanRequested && !s.humanJoinedAt && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] text-[10px] font-bold uppercase flex-shrink-0" data-testid={`badge-escalated-${s.id}`}>
+                  <AlertTriangle className="w-2.5 h-2.5" />
+                  Needs Human
+                </span>
+              )}
+              {s.humanJoinedAt && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[10px] font-bold uppercase flex-shrink-0">
+                  <CheckCircle2 className="w-2.5 h-2.5" />
+                  Human Active
+                </span>
+              )}
+              {s.providerJoinedAt && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[10px] font-bold uppercase flex-shrink-0" data-testid={`badge-provider-active-${s.id}`}>
+                  <CheckCircle2 className="w-2.5 h-2.5" />
+                  Provider Active
+                </span>
+              )}
+              {s.providerId && !s.providerJoinedAt && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] text-[10px] font-bold uppercase flex-shrink-0">
+                  Provider Assigned
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">{s.userEmail}</p>
+            {s.providerName && (
+              <p className="text-xs text-[hsl(var(--brand-success))] mt-0.5">Provider: {s.providerName}</p>
             )}
-            <div>
-              <h3 className="font-semibold text-sm">{detail.user.name || "Unknown"}</h3>
-              <p className="text-xs text-muted-foreground">{detail.user.email}</p>
-            </div>
+            {s.lastMessage && (
+              <p className="text-sm text-muted-foreground mt-1 truncate">{s.lastMessage}</p>
+            )}
           </div>
-          {detail.humanRequested && !detail.humanJoinedAt && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] text-xs font-medium" data-testid="badge-awaiting-human">
-              <AlertTriangle className="w-3 h-3" />
-              Awaiting Human
+          <div className="text-right flex-shrink-0">
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Clock className="w-3 h-3" />
+              {timeAgo(s.lastMessageAt)}
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">{s.messageCount} msgs</div>
+          </div>
+        </button>
+      ))}
+    </div>
+  ) : null;
+
+  // Build detail content when a session is selected
+  const detailContent = detail ? (
+    <div className="flex flex-col h-full" data-testid="concierge-monitor-detail">
+      {/* Chat header */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b bg-background shrink-0">
+        <div className="flex items-center gap-2 flex-1">
+          {detail.user.photoUrl ? (
+            <img src={getPhotoSrc(detail.user.photoUrl) || undefined} alt="" className="w-8 h-8 rounded-full object-cover" />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+              <User className="w-4 h-4 text-muted-foreground" />
             </div>
           )}
-          {detail.humanJoinedAt && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium" data-testid="badge-human-joined">
-              <CheckCircle2 className="w-3 h-3" />
-              Human Joined
-            </div>
-          )}
-        </div>
-
-        <div className="flex flex-1 overflow-hidden">
-          <div className="flex-1 flex flex-col">
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" data-testid="concierge-monitor-messages">
-              {detail.messages.map((msg, i) => (
-                <div key={msg.id}>
-                  {msg.role === "assistant" && msg.senderType === "human" && (
-                    <div className="flex items-center gap-1.5 mb-1 ml-1">
-                      <div
-                        className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-primary-foreground"
-                        style={{ backgroundColor: brandColor }}
-                      >
-                        GoStork Expert
-                      </div>
-                      {msg.senderName && (
-                        <span className="text-[11px] text-muted-foreground">{msg.senderName}</span>
-                      )}
-                    </div>
-                  )}
-                  {msg.role === "assistant" && msg.senderType === "provider" && (
-                    <div className="flex items-center gap-1.5 mb-1 ml-1">
-                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-primary-foreground bg-[hsl(var(--brand-success))]">
-                        Provider
-                      </div>
-                      {msg.senderName && (
-                        <span className="text-[11px] text-muted-foreground">{msg.senderName}</span>
-                      )}
-                    </div>
-                  )}
-                  {msg.role === "assistant" && msg.senderType === "system" && (
-                    <div className="flex items-center gap-1.5 mb-1 ml-1">
-                      <div className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--accent))] text-primary-foreground">
-                        Eva
-                      </div>
-                    </div>
-                  )}
-                  <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div
-                      className={`max-w-[75%] rounded-[var(--container-radius)] px-4 py-2.5 text-sm leading-relaxed ${
-                        msg.role === "user"
-                          ? "text-primary-foreground"
-                          : msg.senderType === "human"
-                          ? "text-foreground border-2"
-                          : msg.senderType === "provider"
-                          ? "text-foreground border-2 border-[hsl(var(--brand-success))]/30"
-                          : msg.senderType === "system"
-                          ? "bg-[hsl(var(--accent))]/10 text-[hsl(var(--accent))] border border-[hsl(var(--accent))]/30"
-                          : "bg-muted text-foreground"
-                      }`}
-                      style={
-                        msg.role === "user"
-                          ? { backgroundColor: brandColor }
-                          : msg.senderType === "human"
-                          ? { borderColor: brandColor, backgroundColor: `${brandColor}08` }
-                          : msg.senderType === "provider"
-                          ? { backgroundColor: "#ecfdf508" }
-                          : undefined
-                      }
-                      data-testid={`monitor-msg-${i}`}
-                    >
-                      {msg.content}
-                    </div>
-                  </div>
-                  <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} mt-0.5`}>
-                    <span className="text-[10px] text-muted-foreground">
-                      {msg.role === "user" ? "Parent" : msg.senderType === "human" ? "Human" : msg.senderType === "provider" ? "Provider" : msg.senderType === "system" ? "System" : "AI"} · {timeAgo(msg.createdAt)}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="border-t px-4 py-3 bg-background" data-testid="concierge-monitor-reply">
-              <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
-                <Headphones className="w-3 h-3" />
-                <span>Sending as <strong className="text-foreground">GoStork Expert</strong> - {(user as any)?.name || "Admin"}</span>
-              </div>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Type a message as GoStork Expert..."
-                  value={replyText}
-                  onChange={(e) => setReplyText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendReply();
-                    }
-                  }}
-                  disabled={sendMessageMutation.isPending}
-                  className="flex-1"
-                  data-testid="input-expert-message"
-                />
-                <Button
-                  size="sm"
-                  onClick={handleSendReply}
-                  disabled={!replyText.trim() || sendMessageMutation.isPending}
-                  className="h-10 px-4 text-primary-foreground"
-                  style={{ backgroundColor: brandColor }}
-                  data-testid="btn-send-expert-message"
-                >
-                  {sendMessageMutation.isPending ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4" />
-                  )}
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          <div className="w-72 border-l overflow-y-auto p-4 bg-muted/30 hidden md:block" data-testid="concierge-monitor-profile">
-            <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Parent Profile</h4>
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <User className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm">{detail.user.name || "-"}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Mail className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm truncate">{detail.user.email}</span>
-              </div>
-              {(detail.user.city || detail.user.state) && (
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm">{[detail.user.city, detail.user.state].filter(Boolean).join(", ")}</span>
-                </div>
-              )}
-              {profile && (
-                <>
-                  <div className="border-t pt-3 mt-3">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Journey Details</p>
-                    <div className="space-y-1.5">
-                      {profile.journeyStage && (
-                        <div className="text-sm"><span className="text-muted-foreground">Stage:</span> {profile.journeyStage}</div>
-                      )}
-                      {profile.eggSource && (
-                        <div className="text-sm"><span className="text-muted-foreground">Egg Source:</span> {profile.eggSource}</div>
-                      )}
-                      {profile.spermSource && (
-                        <div className="text-sm"><span className="text-muted-foreground">Sperm Source:</span> {profile.spermSource}</div>
-                      )}
-                      {profile.carrier && (
-                        <div className="text-sm"><span className="text-muted-foreground">Carrier:</span> {profile.carrier}</div>
-                      )}
-                      {profile.hasEmbryos !== null && (
-                        <div className="text-sm"><span className="text-muted-foreground">Embryos:</span> {profile.hasEmbryos ? `Yes (${profile.embryoCount || "??"})` : "No"}</div>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
+          <div>
+            <h3 className="font-semibold text-sm">{detail.user.name || "Unknown"}</h3>
+            <p className="text-xs text-muted-foreground">{detail.user.email}</p>
           </div>
         </div>
+        {detail.humanRequested && !detail.humanJoinedAt && (
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] text-xs font-medium" data-testid="badge-awaiting-human">
+            <AlertTriangle className="w-3 h-3" />
+            Awaiting Human
+          </div>
+        )}
+        {detail.humanJoinedAt && (
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium" data-testid="badge-human-joined">
+            <CheckCircle2 className="w-3 h-3" />
+            Human Joined
+          </div>
+        )}
       </div>
-    );
-  }
+
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Message list - reuses shared component */}
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" data-testid="admin-chat-messages">
+            <ChatMessageList
+              ref={chatEndRef}
+              messages={detail.messages}
+              brandColor={brandColor}
+              chatPalette={chatPalette}
+              borderRadius={brand?.borderRadius ?? 1}
+              viewerRole="admin"
+              isOwnMessage={(msg) => msg.role === "user"}
+              nameLabel={(msg) => {
+                if (msg.role === "user") return null;
+                if (msg.senderType === "human") return msg.senderName || "GoStork Expert";
+                if (msg.senderType === "provider") return msg.senderName || "Provider";
+                if (msg.senderType === "system") return "Eva";
+                return "AI";
+              }}
+              msgTestIdPrefix="monitor-msg"
+            />
+          </div>
+
+          {/* Input bar - reuses shared component */}
+          <ChatInputBar
+            onSend={handleSend}
+            isLoading={sendMessageMutation.isPending}
+            isUploading={uploading}
+            brandColor={brandColor}
+            placeholder="Type a message as GoStork Expert..."
+            senderLabel={<ExpertSenderLabel adminName={(user as any)?.name || "Admin"} />}
+            enableFileUpload
+            testIdPrefix="expert"
+          />
+        </div>
+
+        {/* Profile sidebar - reuses shared component */}
+        <ChatProfileSidebar
+          user={detail.user}
+          brandColor={brandColor}
+          testId="concierge-monitor-profile"
+        />
+      </div>
+    </div>
+  ) : selectedSessionId ? (
+    <div className="flex-1 flex items-center justify-center">
+      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+    </div>
+  ) : null;
 
   return (
-    <div className="space-y-6 p-6 max-w-4xl mx-auto" data-testid="concierge-monitor-page">
-      <div>
-        <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>Concierge Command Center</h1>
-        <p className="text-muted-foreground text-sm mt-1">Monitor active AI conversations and join as a human concierge</p>
-      </div>
-
-      {sessionsQuery.isLoading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : sessions.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <MessageCircle className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-            <p className="text-muted-foreground">No active AI conversations right now</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {sessions.map((s) => (
-            <Card
-              key={s.id}
-              className="cursor-pointer transition-shadow hover:shadow-md"
-              onClick={() => setSelectedSessionId(s.id)}
-              data-testid={`session-card-${s.id}`}
-            >
-              <CardContent className="py-4 px-5">
-                <div className="flex items-start gap-3">
-                  {s.userAvatar ? (
-                    <img src={getPhotoSrc(s.userAvatar) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                      <User className="w-5 h-5 text-muted-foreground" />
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm">{s.userName || "Unknown"}</span>
-                      {s.humanRequested && !s.humanJoinedAt && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] text-[10px] font-bold uppercase" data-testid={`badge-escalated-${s.id}`}>
-                          <AlertTriangle className="w-2.5 h-2.5" />
-                          Needs Human
-                        </span>
-                      )}
-                      {s.humanJoinedAt && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[10px] font-bold uppercase">
-                          <CheckCircle2 className="w-2.5 h-2.5" />
-                          Human Active
-                        </span>
-                      )}
-                      {s.providerJoinedAt && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[10px] font-bold uppercase" data-testid={`badge-provider-active-${s.id}`}>
-                          <CheckCircle2 className="w-2.5 h-2.5" />
-                          Provider Active
-                        </span>
-                      )}
-                      {s.providerId && !s.providerJoinedAt && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] text-[10px] font-bold uppercase">
-                          Provider Assigned
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground">{s.userEmail}</p>
-                    {s.providerName && (
-                      <p className="text-xs text-[hsl(var(--brand-success))] mt-0.5">Provider: {s.providerName}</p>
-                    )}
-                    {s.lastMessage && (
-                      <p className="text-sm text-muted-foreground mt-1 truncate">{s.lastMessage}</p>
-                    )}
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Clock className="w-3 h-3" />
-                      {timeAgo(s.lastMessageAt)}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">{s.messageCount} msgs</div>
-                    <Button
-                      size="sm"
-                      className="mt-2 h-7 text-xs text-primary-foreground"
-                      style={{ backgroundColor: brandColor }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedSessionId(s.id);
-                      }}
-                      data-testid={`btn-join-chat-${s.id}`}
-                    >
-                      <Headphones className="w-3 h-3 mr-1" />
-                      Join Chat
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-    </div>
+    <ConversationsShell
+      hasSelection={!!selectedSessionId}
+      onBack={() => setSelectedSessionId(null)}
+      isLoading={sessionsQuery.isLoading}
+      sidebarItems={sidebarItems}
+      emptyMessage="No active AI conversations right now"
+      detailContent={detailContent}
+      brandColor={brandColor}
+      headerAction={
+        <span className="text-sm font-medium text-muted-foreground">Concierge Monitor</span>
+      }
+    />
   );
 }

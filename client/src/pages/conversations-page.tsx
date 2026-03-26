@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
@@ -11,20 +11,22 @@ import { MessageStatus } from "@/components/ui/message-status";
 import { OnlineIndicator } from "@/components/ui/online-indicator";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import {
-  ArrowLeft, MessageSquare, Send, User, Loader2, FileText, X,
-  MapPin, Mail, CheckCircle2, UserPlus, Shield, ThumbsUp, ThumbsDown,
-  Search, Sparkles, Building2, ChevronDown, MessageCircle, Clock,
-  CalendarDays, Video, Paperclip, Download, ExternalLink, Image as ImageIcon,
-  Crown, Users, CalendarClock, Check, Maximize, Minimize, Trash2,
+  ArrowLeft, MessageSquare, User, Loader2, FileText, X,
+  CheckCircle2, UserPlus, Shield, ThumbsUp, ThumbsDown,
+  Sparkles, Building2, ChevronDown, MessageCircle,
+  CalendarDays, Video, Trash2,
+  // Used by legacy dead code pending removal
+  CalendarClock, Check, Clock, Crown, Download, ExternalLink, Paperclip, Send,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
 import { hasProviderRole } from "@shared/roles";
 import { useAppDispatch } from "@/store";
 import { setHideBottomNav } from "@/store/uiSlice";
 import { deriveChatPalette } from "@/lib/chat-palette";
+import { format } from "date-fns";
 import ConciergeChatPage from "@/pages/concierge-chat-page";
+// Legacy imports for dead code pending removal
 import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-deck-card";
 import {
   mapDatabaseDonorToSwipeProfile,
@@ -36,6 +38,18 @@ import {
   getSurrogateTabs,
   getDonorTabs,
 } from "@/components/marketplace/swipe-mappers";
+import { InlineSuggestTimeForm, getProfileUrlSlug } from "@/components/chat";
+import {
+  timeAgo,
+  truncateMessage,
+  ConversationsShell,
+  InlineVideoOverlay,
+  ChatMessageList,
+  ChatInputBar,
+  WhisperDisclaimer,
+  ChatProfileSidebar,
+  type FilterTab,
+} from "@/components/chat";
 
 interface ChatSession {
   id: string;
@@ -87,136 +101,15 @@ interface ProviderSession {
   pendingQuestions: number;
 }
 
-interface SessionMessage {
-  id: string;
-  role: string;
-  content: string;
-  senderType: string;
-  senderName: string | null;
-  createdAt: string;
-  uiCardType?: string;
-  uiCardData?: any;
-  deliveredAt?: string | null;
-  readAt?: string | null;
-}
+import type { SessionDetail } from "@/components/chat";
 
-interface SessionDetail {
-  id: string;
-  userId: string;
-  status: string;
-  providerId: string | null;
-  providerJoinedAt: string | null;
-  user: {
-    id: string;
-    name: string;
-    email: string;
-    photoUrl: string | null;
-    city: string | null;
-    state: string | null;
-    parentAccount?: {
-      intendedParentProfile?: {
-        journeyStage: string | null;
-        eggSource: string | null;
-        spermSource: string | null;
-        carrier: string | null;
-        hasEmbryos: boolean | null;
-        embryoCount: number | null;
-      } | null;
-    } | null;
-  };
-  title: string | null;
-  messages: SessionMessage[];
-}
+// Sub-components (InlineSuggestTimeForm, InlineBookingNotification, WhisperProfileCard,
+// SpecialMessageCard, InlineVideoOverlay, ConversationsShell, ChatMessageList, ChatInputBar,
+// ChatProfileSidebar) extracted to @/components/chat/
 
-function chatDateLabel(dateStr: string): string {
-  const d = new Date(dateStr);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000);
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return d.toLocaleDateString("en-US", { weekday: "long" });
-  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined });
-}
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "now";
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d`;
-  return new Date(dateStr).toLocaleDateString();
-}
-
-function truncateMessage(msg: string, maxLen = 60): string {
-  const cleaned = msg.replace(/\[\[.*?\]\]/g, "").replace(/\n/g, " ").trim();
-  if (cleaned.length <= maxLen) return cleaned;
-  return cleaned.substring(0, maxLen) + "...";
-}
-
-function getProfileUrlSlug(type: string): string {
-  const t = type.toLowerCase();
-  if (t === "surrogate") return "surrogate";
-  if (t === "egg donor") return "eggdonor";
-  if (t === "sperm donor") return "spermdonor";
-  return "surrogate";
-}
-
-function InlineSuggestTimeForm({ bookingId, onCancel, onSuccess }: { bookingId: string; onCancel: () => void; onSuccess: () => void }) {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const [suggestDate, setSuggestDate] = useState("");
-  const [suggestTime, setSuggestTime] = useState("10:00");
-  const [message, setMessage] = useState("");
-
-  const suggestMutation = useMutation({
-    mutationFn: async () => {
-      if (!suggestDate || !suggestTime) throw new Error("Please select a date and time");
-      await apiRequest("POST", `/api/calendar/bookings/${bookingId}/suggest-time`, {
-        scheduledAt: new Date(`${suggestDate}T${suggestTime}:00`).toISOString(),
-        message: message || undefined,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
-      toast({ title: "New time suggested", description: "The parent has been notified.", variant: "success" as any });
-      onSuccess();
-    },
-    onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    },
-  });
-
-  return (
-    <div className="space-y-2 pt-1">
-      <div className="grid grid-cols-2 gap-2">
-        <Input type="date" value={suggestDate} onChange={(e) => setSuggestDate(e.target.value)} data-testid="input-suggest-date-inline" className="h-8 text-xs" />
-        <Input type="time" value={suggestTime} onChange={(e) => setSuggestTime(e.target.value)} data-testid="input-suggest-time-inline" className="h-8 text-xs" />
-      </div>
-      <textarea
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        placeholder="Add a message (optional)"
-        className="w-full text-xs rounded-[var(--radius)] border border-input bg-background px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
-        rows={2}
-        data-testid="input-suggest-message-inline"
-      />
-      <div className="flex gap-2">
-        <Button size="sm" className="flex-1 h-7 text-xs gap-1" onClick={() => suggestMutation.mutate()} disabled={suggestMutation.isPending || !suggestDate} data-testid="button-send-suggestion-inline">
-          {suggestMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-          Send
-        </Button>
-        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onCancel}>Cancel</Button>
-      </div>
-    </div>
-  );
-}
-
-function InlineBookingNotification({ booking, brandColor, onUpdate }: { booking: any; brandColor: string; onUpdate: () => void }) {
+/* Dead code: InlineBookingNotification, WhisperProfileCard, SpecialMessageCard
+   extracted to @/components/chat/ - these local copies will be removed in a follow-up cleanup */
+function _InlineBookingNotification_DEAD({ booking, brandColor, onUpdate }: { booking: any; brandColor: string; onUpdate: () => void }) {
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -483,7 +376,7 @@ function WhisperProfileCard({ card, brandColor }: { card: any; brandColor: strin
   return null;
 }
 
-function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: { msg: SessionMessage; brandColor: string; viewerRole?: "provider" | "parent"; onOpenInlineVideo?: (bookingId: string) => void }) {
+function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: { msg: any; brandColor: string; viewerRole?: "provider" | "parent"; onOpenInlineVideo?: (bookingId: string) => void }) {
   const data = msg.uiCardData as any;
   if (!data) return null;
 
@@ -581,168 +474,7 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
 
   return null;
 }
-
-function InlineVideoOverlay({ bookingId, onClose }: { bookingId: string; onClose: () => void }) {
-  const overlayRef = useRef<HTMLDivElement>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-
-  useEffect(() => {
-    const handleFsChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-    document.addEventListener("fullscreenchange", handleFsChange);
-    return () => document.removeEventListener("fullscreenchange", handleFsChange);
-  }, []);
-
-  const toggleFullscreen = () => {
-    if (!overlayRef.current) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
-    } else {
-      overlayRef.current.requestFullscreen().catch(() => {});
-    }
-  };
-
-  return (
-    <div
-      ref={overlayRef}
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 9999,
-        background: "hsl(var(--background))",
-      }}
-      data-testid="inline-video-overlay"
-    >
-      <div style={{ position: "absolute", top: 8, right: 8, zIndex: 10001, display: "flex", gap: 4 }}>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 w-8 p-0 rounded-full bg-background/80 hover:bg-background border shadow-sm"
-          onClick={toggleFullscreen}
-          data-testid="button-fullscreen-video"
-        >
-          {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 w-8 p-0 rounded-full bg-background/80 hover:bg-background border shadow-sm"
-          onClick={onClose}
-          data-testid="button-close-inline-video"
-        >
-          <X className="w-4 h-4" />
-        </Button>
-      </div>
-      <iframe
-        src={`/video/${bookingId}`}
-        style={{ width: "100%", height: "100%", border: "none" }}
-        allow="camera *; microphone *; autoplay *; display-capture *; fullscreen *"
-        data-testid="inline-video-iframe"
-      />
-    </div>
-  );
-}
-
-type FilterTab = "all" | "unread" | "agreements";
-
-function ConversationsShell({
-  hasSelection,
-  onBack,
-  isLoading,
-  sidebarItems,
-  emptyMessage,
-  emptyAction,
-  detailContent,
-  brandColor,
-  headerAction,
-}: {
-  hasSelection: boolean;
-  onBack: () => void;
-  isLoading: boolean;
-  sidebarItems: ReactNode;
-  emptyMessage: string;
-  emptyAction?: ReactNode;
-  detailContent: ReactNode;
-  brandColor: string;
-  headerAction?: ReactNode;
-}) {
-  const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
-  const [searchQuery, setSearchQuery] = useState("");
-
-  return (
-    <div className="flex fixed inset-0 md:static md:h-[calc(100dvh-64px)] w-full overflow-hidden" data-testid="conversations-page">
-      <div className={`${hasSelection ? "hidden md:flex" : "flex"} flex-col w-full md:w-80 lg:w-96 border-r bg-background overflow-hidden`}>
-        <div className="shrink-0 bg-background border-b px-4 pt-4 pb-3 space-y-3">
-          <div className="flex items-center justify-between">
-            <h1 className="font-display text-lg font-bold" data-testid="text-inbox-title">Conversations</h1>
-            {headerAction}
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex gap-1.5 flex-shrink-0">
-              {(["all", "unread", "agreements"] as FilterTab[]).map(tab => (
-                <button
-                  key={tab}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                    activeFilter === tab
-                      ? "text-primary-foreground"
-                      : "bg-muted text-muted-foreground hover:bg-muted/80"
-                  }`}
-                  style={activeFilter === tab ? { backgroundColor: brandColor } : undefined}
-                  onClick={() => setActiveFilter(tab)}
-                  data-testid={`filter-${tab}`}
-                >
-                  {tab === "all" ? "All" : tab === "unread" ? "Unread" : "Agreements"}
-                </button>
-              ))}
-            </div>
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 h-8 text-sm"
-                data-testid="input-search-conversations"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : sidebarItems ? (
-            sidebarItems
-          ) : (
-            <div className="flex flex-col items-center justify-center py-16 text-center px-6" data-testid="inbox-empty">
-              <MessageSquare className="w-10 h-10 text-muted-foreground mb-3" />
-              <p className="text-sm text-muted-foreground">{emptyMessage}</p>
-              {emptyAction}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className={`${!hasSelection ? "hidden md:flex" : "flex"} flex-1 flex-col bg-background min-h-0 relative overflow-hidden`}>
-        {!hasSelection ? (
-          <div className="flex-1 flex items-center justify-center text-center px-8">
-            <div>
-              <MessageSquare className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
-              <h3 className="font-display text-lg font-semibold text-muted-foreground mb-1">Select a conversation</h3>
-              <p className="text-sm text-muted-foreground">Choose a conversation from the list to view messages</p>
-            </div>
-          </div>
-        ) : detailContent}
-      </div>
-    </div>
-  );
-}
+/* DEAD_CODE_BLOCK_END */
 
 export default function ConversationsPage() {
   const { user } = useAuth();
@@ -1063,13 +795,15 @@ export default function ConversationsPage() {
     return () => observer.disconnect();
   }, [selectedSessionId]);
 
-  const handleSendReply = async () => {
-    if ((!replyText.trim() && providerStagedFiles.length === 0) || !selectedSessionId) return;
+  const handleSendReply = async (text?: string, files?: File[]) => {
+    const msgText = text ?? replyText.trim();
+    const msgFiles = files ?? providerStagedFiles;
+    if ((!msgText && msgFiles.length === 0) || !selectedSessionId) return;
     // Upload staged files first
-    if (providerStagedFiles.length > 0) {
+    if (msgFiles.length > 0) {
       setProviderUploading(true);
       try {
-        for (const file of providerStagedFiles) {
+        for (const file of msgFiles) {
           const formData = new FormData();
           formData.append("file", file);
           const res = await fetch("/api/chat-upload", { method: "POST", credentials: "include", body: formData });
@@ -1091,8 +825,8 @@ export default function ConversationsPage() {
       setProviderUploading(false);
     }
     // Send text message if any
-    if (replyText.trim()) {
-      sendMessageMutation.mutate({ sessionId: selectedSessionId, content: replyText.trim() });
+    if (msgText) {
+      sendMessageMutation.mutate({ sessionId: selectedSessionId, content: msgText });
     }
   };
 
@@ -1846,210 +1580,43 @@ export default function ConversationsPage() {
         <div className="flex flex-1 min-h-0 overflow-hidden">
           <div className="flex-1 flex flex-col min-h-0">
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" data-testid="provider-chat-messages">
-              {(() => {
-                const allBookings = sessionBookingsQuery.data || [];
-                const hasActive = allBookings.some((b: any) => b.status === "PENDING" || b.status === "CONFIRMED");
-                const visibleBookings = hasActive
-                  ? allBookings.filter((b: any) => b.status !== "CANCELLED" && b.status !== "DECLINED" && b.status !== "RESCHEDULED")
-                  : allBookings.slice(0, 1);
-                const bookingItems: Array<{ type: "booking"; booking: any; createdAt: string }> = visibleBookings.map((b: any) => ({
-                  type: "booking" as const,
-                  booking: b,
-                  createdAt: b.createdAt || b.scheduledAt,
-                }));
-                const msgItems: Array<{ type: "message"; msg: any; createdAt: string }> = detail.messages.map((m: any) => ({
-                  type: "message" as const,
-                  msg: m,
-                  createdAt: m.createdAt,
-                }));
-                const merged = [...msgItems, ...bookingItems].sort(
-                  (a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
-                );
-                return merged.map((item, i) => {
-                  if (item.type === "booking") {
-                    return (
-                      <InlineBookingNotification
-                        key={`booking-${item.booking.id}`}
-                        booking={item.booking}
-                        brandColor={brandColor}
-                        onUpdate={() => sessionBookingsQuery.refetch()}
-                      />
-                    );
-                  }
-                  const msg = item.msg;
-                  const msgIdx = detail.messages.indexOf(msg);
-                  return (
-                <div key={msg.id}>
-                  {msg.createdAt && (() => {
-                    const msgDate = new Date(msg.createdAt).toDateString();
-                    const prevMsgItem = merged.slice(0, i).reverse().find((x) => x.type === "message");
-                    const prevDate = prevMsgItem ? new Date(prevMsgItem.createdAt).toDateString() : null;
-                    if (!prevDate || msgDate !== prevDate) {
-                      return (
-                        <div className="flex items-center justify-center my-3">
-                          <span className="px-3 py-1 text-[11px] font-medium text-muted-foreground bg-muted/60 rounded-full shadow-sm">
-                            {chatDateLabel(msg.createdAt)}
-                          </span>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-                  {(() => {
-                    const isOwnMsg = isProvider
-                      ? msg.senderType === "provider"
-                      : msg.role === "user" && (!msg.senderName || msg.senderName === myDisplayName);
-                    const nameLabel = isOwnMsg
-                      ? (isProvider ? (msg.senderName || "You") : (myDisplayName || "You"))
-                      : msg.senderType === "human"
-                      ? (msg.senderName || "GoStork Expert")
-                      : msg.senderType === "provider"
-                      ? (msg.senderName || "Agency Expert")
-                      : msg.senderType === "system"
-                      ? "GoStork AI Concierge"
-                      : msg.role === "user"
-                      ? (msg.senderName || detail?.user?.name || "Parent")
-                      : "GoStork AI Concierge";
-                    if (isOwnMsg) return null;
-                    return (
-                      <div className="flex justify-start mb-0.5">
-                        <span className="text-[11px] font-medium text-muted-foreground" data-testid={`name-label-provider-${i}`}>
-                          {nameLabel}
-                        </span>
-                      </div>
-                    );
-                  })()}
-                  {msg.uiCardData?.whisperMatchCard && (
-                    <WhisperProfileCard card={msg.uiCardData.whisperMatchCard} brandColor={brandColor} />
-                  )}
-                  {(() => {
-                    const isOwnMessage = isProvider
-                      ? msg.senderType === "provider"
-                      : msg.role === "user" && (!msg.senderName || msg.senderName === myDisplayName);
-                    return (
-                      <>
-                        <div className={`flex ${isOwnMessage ? "justify-end" : "justify-start"}`}>
-                          <div
-                            className={`relative max-w-[75%] px-4 py-2.5 text-base leading-relaxed font-ui ${
-                              isOwnMessage
-                                ? "text-primary-foreground"
-                                : "text-foreground"
-                            }`}
-                            style={{
-                              borderRadius: `${brand?.borderRadius ?? 1}rem`,
-                              ...(isOwnMessage
-                                ? { backgroundColor: brandColor }
-                                : msg.role === "user"
-                                ? { backgroundColor: chatPalette.partnerBg, border: `1px solid ${chatPalette.partnerBorder}` }
-                                : msg.senderType === "provider"
-                                ? { backgroundColor: chatPalette.expertBg, border: `1px solid ${chatPalette.expertBorder}` }
-                                : msg.senderType === "human"
-                                ? { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }
-                                : msg.senderType === "system"
-                                ? { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }
-                                : { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }),
-                            }}
-                            data-testid={`provider-msg-${i}`}
-                          >
-                            <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>
-                            {msg.createdAt && (
-                              <>
-                                <span className={`inline-block ${isOwnMessage ? "w-[4.75rem]" : "w-[3.5rem]"}`} aria-hidden="true">&nbsp;</span>
-                                <span
-                                  className="absolute bottom-1.5 right-3 whitespace-nowrap select-none flex items-center gap-0.5"
-                                  style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55 }}
-                                >
-                                  {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
-                                  {isOwnMessage && (
-                                    <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />
-                                  )}
-                                </span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        {msg.uiCardType && <SpecialMessageCard msg={msg} brandColor={brandColor} viewerRole="provider" onOpenInlineVideo={setInlineVideoBookingId} />}
-                      </>
-                    );
-                  })()}
-                </div>
-                  );
-                });
-              })()}
-              <div ref={chatEndRef} />
+              <ChatMessageList
+                ref={chatEndRef}
+                messages={detail.messages}
+                bookings={sessionBookingsQuery.data}
+                brandColor={brandColor}
+                chatPalette={chatPalette}
+                borderRadius={brand?.borderRadius ?? 1}
+                viewerRole="provider"
+                isOwnMessage={(msg) => msg.senderType === "provider"}
+                nameLabel={(msg) => {
+                  const isOwn = msg.senderType === "provider";
+                  if (isOwn) return null;
+                  if (msg.senderType === "human") return msg.senderName || "GoStork Expert";
+                  if (msg.senderType === "provider") return msg.senderName || "Agency Expert";
+                  if (msg.senderType === "system") return "GoStork AI Concierge";
+                  if (msg.role === "user") return msg.senderName || detail?.user?.name || "Parent";
+                  return "GoStork AI Concierge";
+                }}
+                onOpenInlineVideo={setInlineVideoBookingId}
+                onBookingUpdate={() => sessionBookingsQuery.refetch()}
+                msgTestIdPrefix="provider-msg"
+              />
             </div>
 
             {canReply ? (
-              <div className="border-t px-4 py-3 bg-background shrink-0" data-testid="provider-reply-area">
-                {!hasJoined && (
-                  <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
-                    <Shield className="w-3 h-3" />
-                    <span>Your answer will be relayed to the parent by the AI concierge</span>
-                  </div>
-                )}
-                {providerStagedFiles.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {providerStagedFiles.map((file, i) => (
-                      <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[var(--radius)] border bg-muted/50 text-xs">
-                        <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: brandColor }} />
-                        <span className="truncate max-w-[140px]">{file.name}</span>
-                        <button onClick={() => removeProviderStagedFile(i)} className="ml-0.5 hover:text-destructive">
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="flex items-center gap-2">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    className="hidden"
-                    accept="image/*,application/pdf,.doc,.docx,.txt"
-                    multiple
-                    capture={undefined}
-                    onChange={handleFileSelect}
-                    data-testid="input-provider-file"
-                  />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-10 w-10 p-0 shrink-0 rounded-full"
-                    style={{ color: brandColor }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={providerUploading}
-                    data-testid="btn-provider-attach"
-                  >
-                    {providerUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
-                  </Button>
-                  <Input
-                    placeholder={hasJoined ? "Type a message to the parent..." : "Type your answer..."}
-                    value={replyText}
-                    onChange={(e) => setReplyText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendReply();
-                      }
-                    }}
-                    disabled={sendMessageMutation.isPending || providerUploading}
-                    className="flex-1 !text-base font-ui rounded-full"
-                    data-testid="input-provider-message"
-                  />
-                  <Button
-                    size="sm"
-                    onClick={handleSendReply}
-                    disabled={(!replyText.trim() && providerStagedFiles.length === 0) || sendMessageMutation.isPending || providerUploading}
-                    className="h-10 w-10 p-0 rounded-full text-primary-foreground shrink-0"
-                    style={{ backgroundColor: brandColor }}
-                    data-testid="btn-send-provider-message"
-                  >
-                    {(sendMessageMutation.isPending || providerUploading) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  </Button>
-                </div>
-              </div>
+              <ChatInputBar
+                onSend={(text, files) => {
+                  handleSendReply(text, files);
+                }}
+                isLoading={sendMessageMutation.isPending}
+                isUploading={providerUploading}
+                brandColor={brandColor}
+                placeholder={hasJoined ? "Type a message to the parent..." : "Type your answer..."}
+                senderLabel={!hasJoined ? <WhisperDisclaimer /> : undefined}
+                enableFileUpload
+                testIdPrefix="provider"
+              />
             ) : isConsultationBooked ? (
               <div className="border-t px-4 py-4 bg-muted/30 text-center shrink-0" data-testid="provider-join-prompt">
                 <p className="text-sm text-muted-foreground mb-2">This parent has booked a consultation. Join the group chat to communicate directly.</p>
@@ -2072,8 +1639,8 @@ export default function ConversationsPage() {
             )}
           </div>
 
-          <div className="w-72 border-l overflow-y-auto p-4 bg-muted/30 hidden lg:block" data-testid="provider-sidebar">
-            {!hasJoined && !isConsultationBooked ? (
+          {!hasJoined && !isConsultationBooked ? (
+            <div className="w-72 border-l overflow-y-auto p-4 bg-muted/30 hidden lg:block" data-testid="provider-sidebar">
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
@@ -2095,95 +1662,73 @@ export default function ConversationsPage() {
                   </div>
                 )}
               </div>
-            ) : (
-              <>
-                <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Parent Profile</h4>
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <User className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm">{detail.user.name || "-"}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Mail className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm truncate">{detail.user.email}</span>
-                  </div>
-                  {(detail.user.city || detail.user.state) && (
-                    <div className="flex items-center gap-2">
-                      <MapPin className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm">{[detail.user.city, detail.user.state].filter(Boolean).join(", ")}</span>
-                    </div>
-                  )}
-                  {profile && (
-                    <div className="border-t pt-3 mt-3">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Journey Details</p>
-                      <div className="space-y-1.5">
-                        {profile.journeyStage && <div className="text-sm"><span className="text-muted-foreground">Stage:</span> {profile.journeyStage}</div>}
-                        {profile.eggSource && <div className="text-sm"><span className="text-muted-foreground">Egg Source:</span> {profile.eggSource}</div>}
-                        {profile.spermSource && <div className="text-sm"><span className="text-muted-foreground">Sperm Source:</span> {profile.spermSource}</div>}
-                        {profile.carrier && <div className="text-sm"><span className="text-muted-foreground">Carrier:</span> {profile.carrier}</div>}
-                        {profile.hasEmbryos !== null && <div className="text-sm"><span className="text-muted-foreground">Embryos:</span> {profile.hasEmbryos ? `Yes (${profile.embryoCount || "??"})` : "No"}</div>}
+            </div>
+          ) : (
+            <ChatProfileSidebar
+              user={detail.user}
+              brandColor={brandColor}
+              testId="provider-sidebar"
+              extraSections={
+                <>
+                  {hasJoined && (
+                    <div className="border-t pt-4 mt-4" data-testid="consultation-status-section">
+                      <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Consultation Status</h4>
+                      <div className="space-y-2">
+                        <Button
+                          size="sm"
+                          className="w-full text-primary-foreground gap-1.5 text-xs"
+                          style={{ backgroundColor: "var(--brand-success, #22c55e)" }}
+                          onClick={() => consultationStatusMutation.mutate({ sessionId: selectedSessionId!, status: "READY_FOR_MATCH" })}
+                          disabled={consultationStatusMutation.isPending}
+                          data-testid="btn-ready-for-match"
+                        >
+                          {consultationStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
+                          Completed - Ready for Match
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full gap-1.5 text-xs border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                          onClick={() => consultationStatusMutation.mutate({ sessionId: selectedSessionId!, status: "NOT_A_FIT" })}
+                          disabled={consultationStatusMutation.isPending}
+                          data-testid="btn-not-a-fit"
+                        >
+                          {consultationStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsDown className="w-3 h-3" />}
+                          Completed - Not a Fit
+                        </Button>
                       </div>
                     </div>
                   )}
-                </div>
-                {hasJoined && (
-                  <div className="border-t pt-4 mt-4" data-testid="consultation-status-section">
-                    <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Consultation Status</h4>
-                    <div className="space-y-2">
+                  {hasJoined && (
+                    <div className="border-t pt-4 mt-4" data-testid="agreement-section">
+                      <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Agreement</h4>
                       <Button
                         size="sm"
-                        className="w-full text-primary-foreground gap-1.5 text-xs"
-                        style={{ backgroundColor: "var(--brand-success, #22c55e)" }}
-                        onClick={() => consultationStatusMutation.mutate({ sessionId: selectedSessionId!, status: "READY_FOR_MATCH" })}
-                        disabled={consultationStatusMutation.isPending}
-                        data-testid="btn-ready-for-match"
+                        className="w-full gap-1.5 text-xs"
+                        style={{ backgroundColor: brandColor }}
+                        onClick={() => { if (selectedSessionId) generateAgreementMutation.mutate({ sessionId: selectedSessionId }); }}
+                        disabled={generateAgreementMutation.isPending}
+                        data-testid="btn-generate-agreement"
                       >
-                        {consultationStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
-                        Completed - Ready for Match
+                        {generateAgreementMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+                        Generate & Send Agreement
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full gap-1.5 text-xs border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                        onClick={() => consultationStatusMutation.mutate({ sessionId: selectedSessionId!, status: "NOT_A_FIT" })}
-                        disabled={consultationStatusMutation.isPending}
-                        data-testid="btn-not-a-fit"
-                      >
-                        {consultationStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsDown className="w-3 h-3" />}
-                        Completed - Not a Fit
-                      </Button>
+                      {generateAgreementMutation.isError && (
+                        <p className="text-xs text-destructive mt-1.5" data-testid="text-agreement-error">
+                          {(generateAgreementMutation.error as Error)?.message || "Failed to generate agreement"}
+                        </p>
+                      )}
+                      {generateAgreementMutation.isSuccess && (
+                        <p className="text-xs text-[hsl(var(--brand-success))] mt-1.5" data-testid="text-agreement-success">
+                          Agreement sent successfully
+                        </p>
+                      )}
                     </div>
-                  </div>
-                )}
-                {hasJoined && (
-                  <div className="border-t pt-4 mt-4" data-testid="agreement-section">
-                    <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Agreement</h4>
-                    <Button
-                      size="sm"
-                      className="w-full gap-1.5 text-xs"
-                      style={{ backgroundColor: brandColor }}
-                      onClick={() => { if (selectedSessionId) generateAgreementMutation.mutate({ sessionId: selectedSessionId }); }}
-                      disabled={generateAgreementMutation.isPending}
-                      data-testid="btn-generate-agreement"
-                    >
-                      {generateAgreementMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
-                      Generate & Send Agreement
-                    </Button>
-                    {generateAgreementMutation.isError && (
-                      <p className="text-xs text-destructive mt-1.5" data-testid="text-agreement-error">
-                        {(generateAgreementMutation.error as Error)?.message || "Failed to generate agreement"}
-                      </p>
-                    )}
-                    {generateAgreementMutation.isSuccess && (
-                      <p className="text-xs text-[hsl(var(--brand-success))] mt-1.5" data-testid="text-agreement-success">
-                        Agreement sent successfully
-                      </p>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+                  )}
+                </>
+              }
+            />
+          )}
         </div>
       </div>
     ) : null;

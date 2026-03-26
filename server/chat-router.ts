@@ -297,7 +297,7 @@ chatRouter.get("/api/admin/concierge-sessions/:id", requireAuth, async (req, res
 chatRouter.post("/api/admin/concierge-sessions/:id/message", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
-  const { content } = req.body;
+  const { content, uiCardType, uiCardData } = req.body;
   if (!content || typeof content !== "string" || !content.trim()) {
     return res.status(400).json({ message: "Content is required" });
   }
@@ -319,6 +319,8 @@ chatRouter.post("/api/admin/concierge-sessions/:id/message", requireAuth, async 
         content: content.trim(),
         senderType: "human",
         senderName: user.name || "GoStork Expert",
+        ...(uiCardType ? { uiCardType } : {}),
+        ...(uiCardData ? { uiCardData } : {}),
       },
     });
 
