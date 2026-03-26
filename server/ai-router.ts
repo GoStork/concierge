@@ -1003,7 +1003,7 @@ STEP 5-CLINIC (only if user is looking for a Fertility Clinic - ask ALL of these
     - If age IS already known from USER CONTEXT, skip this question.
     → Map the egg provider's age to an age group: under 35 → "under_35", 35-37 → "35_37", 38-40 → "38_40", over 40 → "over_40"
   → After answer, ask:
-  5-CLINIC-D: "Is this your first time doing IVF, or have you been through it before?" [[QUICK_REPLY:First time|I've done IVF before]]
+  5-CLINIC-D (SKIP if using donor eggs): "Is this your first time doing IVF, or have you been through it before?" [[QUICK_REPLY:First time|I've done IVF before]]. SKIP this question if the parent is using donor eggs - donor egg success rates do not vary by new vs. prior IVF cycles.
   → After answer, ask:
   5-CLINIC-E: "What's the most important thing to you when choosing a clinic?" [[QUICK_REPLY:Success rates|Cost|Location|Volume of births]]
   → After answer, ask:
