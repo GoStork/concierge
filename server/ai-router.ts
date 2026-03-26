@@ -2026,14 +2026,9 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
       }
       finalContent = finalContent.replace(/\[\[HOT_LEAD:.*?\]\]/g, "").trim();
 
-      if (userRecord?.email) {
-        const baseUrl = process.env.APP_URL?.replace(/\/+$/, "")
-          || (process.env.REPLIT_DEPLOYMENT_URL ? `https://${process.env.REPLIT_DEPLOYMENT_URL}` : "")
-          || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "https://app.gostork.com");
-        sendPrepDocEmail(userRecord.email, firstName, baseUrl).catch(e =>
-          console.error(`Prep doc email failed:`, e.message)
-        );
-      }
+      // NOTE: Prep doc email is NOT sent here. The match call prep guide should only
+      // be sent when an actual surrogate match call is scheduled by the provider/agency,
+      // not when the parent first books a consultation with the agency.
     }
 
     // Safety net: if the user explicitly asked for a human, force-trigger HUMAN_NEEDED
