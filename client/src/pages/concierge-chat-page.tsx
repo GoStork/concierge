@@ -2657,7 +2657,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   : msg.senderType === "provider"
                   ? (msg.senderName || "Agency Expert")
                   : msg.senderType === "system"
-                  ? (selectedMatchmaker?.name || "Eva")
+                  ? (msg.senderName === "GoStork" ? "GoStork" : selectedMatchmaker?.name || "Eva")
                   : (selectedMatchmaker?.name || "AI");
                 const alignRight = isOwnMessage || (!isOtherParent && msg.role === "user");
                 return (
