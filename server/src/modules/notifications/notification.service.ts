@@ -1746,8 +1746,14 @@ export class NotificationService implements OnModuleInit {
       return;
     }
 
+    // Normalize to E.164 format - add +1 for US numbers without country code
+    let normalizedTo = to.replace(/[\s\-\(\)]/g, "");
+    if (!normalizedTo.startsWith("+")) {
+      normalizedTo = `+1${normalizedTo}`;
+    }
+
     const url = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`;
-    const params = new URLSearchParams({ To: to, From: twilioFrom, Body: body });
+    const params = new URLSearchParams({ To: normalizedTo, From: twilioFrom, Body: body });
 
     const response = await fetch(url, {
       method: "POST",
