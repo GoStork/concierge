@@ -726,7 +726,7 @@ export class NotificationService implements OnModuleInit {
         { label: "Date", value: dateStr },
         { label: "Time", value: timeStr },
       ],
-      alertBox: { text: "Don't worry — you can book a new meeting at a different time.", type: "warning" },
+      alertBox: { text: "Don't worry - you can book a new meeting at a different time.", type: "warning" },
       buttons: [
         { label: "Book New Meeting", url: rebookLink },
       ],
@@ -1029,7 +1029,7 @@ export class NotificationService implements OnModuleInit {
         type: "EMAIL",
         channel: "recording_ready",
         recipient: providerEmail,
-        subject: `Recording ready: ${meetingSubject} — ${meetingDate}`,
+        subject: `Recording ready: ${meetingSubject} - ${meetingDate}`,
         body: html,
       });
     }
@@ -1042,7 +1042,7 @@ export class NotificationService implements OnModuleInit {
         type: "EMAIL",
         channel: "recording_ready",
         recipient: parentUser.email,
-        subject: `Recording ready: ${meetingSubject} — ${meetingDate}`,
+        subject: `Recording ready: ${meetingSubject} - ${meetingDate}`,
         body: html,
       });
     }
@@ -1055,7 +1055,7 @@ export class NotificationService implements OnModuleInit {
         type: "EMAIL",
         channel: "recording_ready",
         recipient: memberEmail,
-        subject: `Recording ready: ${meetingSubject} — ${meetingDate}`,
+        subject: `Recording ready: ${meetingSubject} - ${meetingDate}`,
         body: html,
       });
     });
@@ -1592,7 +1592,7 @@ export class NotificationService implements OnModuleInit {
     const submitterName = this.escapeHtml(params.submitterName);
     const submitterEmail = this.escapeHtml(params.submitterEmail);
     const reviewUrl = `${getBaseUrl()}/admin/providers/${params.providerId}?tab=costs`;
-    const subject = `Cost Sheet Submitted — ${params.providerName} (v${params.version})`;
+    const subject = `Cost Sheet Submitted - ${params.providerName} (v${params.version})`;
     const html = buildBrandedEmail(brandData, {
       title: "New Cost Sheet Submitted",
       greeting: `<strong>${providerName}</strong> has submitted a cost sheet for review.`,
@@ -1624,7 +1624,7 @@ export class NotificationService implements OnModuleInit {
     const brandData = await this.getBrandData();
     const providerName = this.escapeHtml(params.providerName);
     const viewUrl = `${getBaseUrl()}/account/costs`;
-    const subject = `Cost Sheet Approved — Now Live`;
+    const subject = `Cost Sheet Approved - Now Live`;
     const html = buildBrandedEmail(brandData, {
       title: "Cost Sheet Approved",
       greeting: `Great news! Your cost sheet (v${params.version}) for <strong>${providerName}</strong> has been approved by the admin team.`,
@@ -1658,7 +1658,7 @@ export class NotificationService implements OnModuleInit {
     const providerName = this.escapeHtml(params.providerName);
     const feedback = this.escapeHtml(params.feedback);
     const viewUrl = `${getBaseUrl()}/account/costs`;
-    const subject = `Cost Sheet Rejected — Action Required`;
+    const subject = `Cost Sheet Rejected - Action Required`;
     const html = buildBrandedEmail(brandData, {
       title: "Cost Sheet Rejected",
       greeting: `Your cost sheet (v${params.version}) for <strong>${providerName}</strong> has been rejected by the admin team.`,

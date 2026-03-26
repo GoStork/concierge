@@ -87,6 +87,10 @@ export interface BrandSettings {
   drawerHandleWidth: number;
   sliderValueSize: number;
   sliderThumbSize: number;
+  onboardingClinicImageUrl: string | null;
+  onboardingEggDonorImageUrl: string | null;
+  onboardingSurrogateImageUrl: string | null;
+  onboardingSpermDonorImageUrl: string | null;
   enableAiConcierge?: boolean;
   parentExperienceMode?: string;
   matchmakers?: Matchmaker[];
@@ -165,6 +169,10 @@ export const BRAND_DEFAULTS: BrandSettings = {
   drawerHandleWidth: 60,
   sliderValueSize: 22,
   sliderThumbSize: 24,
+  onboardingClinicImageUrl: null,
+  onboardingEggDonorImageUrl: null,
+  onboardingSurrogateImageUrl: null,
+  onboardingSpermDonorImageUrl: null,
 };
 
 export function hexToHsl(hex: string): string {

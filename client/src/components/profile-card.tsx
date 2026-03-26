@@ -191,7 +191,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
                 e.stopPropagation();
                 adminControls.onTogglePremium(profile.id, !adminControls.isPremium);
               }}
-              title={adminControls.isPremium ? "Premium — click to remove" : "Not premium — click to mark as Premium"}
+              title={adminControls.isPremium ? "Premium - click to remove" : "Not premium - click to mark as Premium"}
               data-testid={`btn-toggle-premium-${type}-${profile.id}`}
             >
               <Crown className="w-3.5 h-3.5" />
@@ -206,7 +206,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
                 e.stopPropagation();
                 adminControls.onToggleVisibility(profile.id, !isHidden);
               }}
-              title={isHidden ? "Hidden from parent search — click to make visible" : "Visible to parents — click to hide from search"}
+              title={isHidden ? "Hidden from parent search - click to make visible" : "Visible to parents - click to hide from search"}
               data-testid={`btn-toggle-visibility-${type}-${profile.id}`}
             >
               {isHidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}

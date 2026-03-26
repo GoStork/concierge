@@ -42,7 +42,7 @@
   --accent-foreground: 0 0% 100%;
   
   /* Backgrounds */
-  --background: 210 20% 96%; /* Light blue-gray — lifts pure-white cards */
+  --background: 210 20% 96%; /* Light blue-gray - lifts pure-white cards */
   --card: 0 0% 100%;
   --card-foreground: 222 47% 11%;
   
@@ -204,7 +204,7 @@ input[type="time"]::-webkit-date-and-time-value {
   background-color: hsl(var(--card));
 }
 
-/* Time content area — no inner scroll, expand naturally */
+/* Time content area - no inner scroll, expand naturally */
 .calendar-wrapper .rbc-time-content {
   border-top: 1px solid hsl(var(--border));
   overflow-y: visible !important;

@@ -22,7 +22,7 @@ export function startNightlySyncScheduler(prisma: PrismaService, storageService?
     timezone: "America/New_York",
   });
 
-  console.log("[nightly-sync] Scheduler started — runs daily at 2:00 AM ET");
+  console.log("[nightly-sync] Scheduler started - runs daily at 2:00 AM ET");
 }
 
 export function stopNightlySyncScheduler() {

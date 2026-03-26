@@ -57,17 +57,17 @@ const SUBMETRIC_LABELS: Record<string, string> = {
 };
 
 function formatPct(val: number | null | undefined): string {
-  if (val === null || val === undefined) return "—";
+  if (val === null || val === undefined) return "-";
   return `${(val * 100).toFixed(1)}%`;
 }
 
 function formatAvg(val: number | null | undefined): string {
-  if (val === null || val === undefined) return "—";
+  if (val === null || val === undefined) return "-";
   return val.toFixed(1);
 }
 
 function formatCount(val: number | null | undefined): string {
-  if (val === null || val === undefined) return "—";
+  if (val === null || val === undefined) return "-";
   return val.toLocaleString();
 }
 
@@ -85,7 +85,7 @@ function Top10Badge() {
 
 function MetricValue({ entry, isAvg }: { entry: MetricEntry | undefined; isAvg?: boolean }) {
   if (!entry || entry.successRate === null) {
-    return <span className="text-muted-foreground">—</span>;
+    return <span className="text-muted-foreground">-</span>;
   }
   return (
     <span className="inline-flex items-center gap-0.5">
@@ -185,7 +185,7 @@ function MetricRow({
 
   if (row.isCount) {
     const firstEntry = Object.values(metricData)[0];
-    const count = firstEntry ? formatCount(firstEntry.cycleCount) : "—";
+    const count = firstEntry ? formatCount(firstEntry.cycleCount) : "-";
     return (
       <tr className="border-t border-border bg-primary/5 dark:bg-primary/10">
         <td className="px-4 py-2 text-xs font-heading text-foreground/80">{row.label} (total)</td>
@@ -250,7 +250,7 @@ function OwnEggsSection({ allMetrics }: { allMetrics: Record<string, MetricEntry
     <Card>
       <CardContent className="pt-5 pb-4 px-5 space-y-6">
         <h3 className="text-lg font-heading" data-testid="section-own-eggs">
-          Cumulative ART Success Rates for Intended Retrievals — Own Eggs
+          Cumulative ART Success Rates for Intended Retrievals - Own Eggs
         </h3>
 
         {hasAllPatients && (
@@ -342,7 +342,7 @@ function DonorEggsSection({ allMetrics }: { allMetrics: Record<string, MetricEnt
     <Card>
       <CardContent className="pt-5 pb-4 px-5 space-y-4">
         <h3 className="text-lg font-heading" data-testid="section-donor-eggs">
-          Noncumulative ART Success Rates for Transfers — Donor Eggs
+          Noncumulative ART Success Rates for Transfers - Donor Eggs
         </h3>
         <div className="border rounded-[var(--radius)] overflow-hidden" data-testid="donor-eggs-table">
           <table className="w-full text-sm table-fixed">

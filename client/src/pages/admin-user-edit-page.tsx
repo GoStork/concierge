@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowLeft, Loader2, RefreshCw, User, UserCircle, Phone, MapPin, Building2, Video, Calendar, Link2, Copy, Check, AlertTriangle, Camera, Trash2, Eye, EyeOff, Mail, Shield, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import LocationAutocomplete from "@/components/location-autocomplete";
+import ImageCropPreview from "@/components/image-crop-preview";
 
 const PROVIDER_ROLES = [
   { value: "PROVIDER_ADMIN", label: "Provider Admin" },
@@ -116,6 +117,7 @@ export default function AdminUserEditPage() {
   const { user: currentUser } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
 
   const currentUserRoles: string[] = (currentUser as any)?.roles || [];
   const isGostorkAdmin = currentUserRoles.includes("GOSTORK_ADMIN");
@@ -262,11 +264,12 @@ export default function AdminUserEditPage() {
     else setLocationIds([...locationIds, locId]);
   }
 
-  async function handlePhotoUpload(file: File) {
+  async function handlePhotoUpload(file: File | Blob) {
     setUploading(true);
+    setCropImageSrc(null);
     try {
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", file, file instanceof File ? file.name : "photo.jpg");
       const uploadRes = await fetch("/api/uploads", { method: "POST", body: formData, credentials: "include" });
       if (!uploadRes.ok) throw new Error("Upload failed");
       const { url } = await uploadRes.json();
@@ -392,10 +395,23 @@ export default function AdminUserEditPage() {
                   data-testid="input-profile-photo"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
-                    if (file) handlePhotoUpload(file);
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = () => setCropImageSrc(reader.result as string);
+                      reader.readAsDataURL(file);
+                    }
                     e.target.value = "";
                   }}
                 />
+                {cropImageSrc && (
+                  <ImageCropPreview
+                    imageSrc={cropImageSrc}
+                    onCropComplete={(blob) => handlePhotoUpload(blob)}
+                    onCancel={() => setCropImageSrc(null)}
+                    aspect={1}
+                    cropShape="round"
+                  />
+                )}
                 <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
                   {uploading ? (
                     <Loader2 className="w-5 h-5 text-white animate-spin" />
@@ -553,14 +569,14 @@ export default function AdminUserEditPage() {
                   <input type="radio" name="parentAccountRole" value="INTENDED_PARENT_2" checked={parentAccountRole === "INTENDED_PARENT_2"} onChange={() => setParentAccountRole("INTENDED_PARENT_2")} data-testid="radio-role-ip2" />
                   <div>
                     <span className="text-sm font-ui">Intended Parent 2</span>
-                    <p className="text-xs text-muted-foreground">Full access — can book, view calendar, and receive all notifications.</p>
+                    <p className="text-xs text-muted-foreground">Full access - can book, view calendar, and receive all notifications.</p>
                   </div>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="radio" name="parentAccountRole" value="VIEWER" checked={parentAccountRole === "VIEWER"} onChange={() => setParentAccountRole("VIEWER")} data-testid="radio-role-viewer" />
                   <div>
                     <span className="text-sm font-ui">Viewer</span>
-                    <p className="text-xs text-muted-foreground">Browse-only — can view marketplace and provider profiles but cannot book.</p>
+                    <p className="text-xs text-muted-foreground">Browse-only - can view marketplace and provider profiles but cannot book.</p>
                   </div>
                 </label>
               </div>

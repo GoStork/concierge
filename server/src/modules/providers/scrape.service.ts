@@ -1109,7 +1109,7 @@ export async function scrapeProviderWebsite(websiteUrl: string): Promise<Scraped
   });
 
   const teamSection = combinedTeamHtml
-    ? `\n\nTEAM MEMBER RAW DATA (contains img tags with src URLs near team member names — use these to find photo URLs):\n---\n${combinedTeamHtml}\n---`
+    ? `\n\nTEAM MEMBER RAW DATA (contains img tags with src URLs near team member names - use these to find photo URLs):\n---\n${combinedTeamHtml}\n---`
     : "";
 
   let jsonLdSection = "";
@@ -1125,7 +1125,7 @@ export async function scrapeProviderWebsite(websiteUrl: string): Promise<Scraped
     if (jsonLdData.teamMembers.length > 0) {
       parts.push(`Team Members:\n${jsonLdData.teamMembers.map(m => `  - ${m.name}${m.title ? ` (${m.title})` : ""}${m.photoUrl ? ` [photo: ${m.photoUrl}]` : ""}`).join("\n")}`);
     }
-    jsonLdSection = `\n\nHIGH-CONFIDENCE STRUCTURED DATA (from JSON-LD — this data is machine-readable and highly reliable, prefer it over scraped text when available):\n---\n${parts.join("\n")}\n---`;
+    jsonLdSection = `\n\nHIGH-CONFIDENCE STRUCTURED DATA (from JSON-LD - this data is machine-readable and highly reliable, prefer it over scraped text when available):\n---\n${parts.join("\n")}\n---`;
   }
 
   let telSection = "";
@@ -1180,21 +1180,21 @@ Important rules:
 - For logoUrl, look for img tags with "logo" in the src, alt, or class. Prefer the icon-only version (just the symbol/mark without text). Convert relative URLs to absolute.
 - For logoWithNameUrl, look for a wider/horizontal logo image that includes the company name as part of the image (often found in the website header or navigation). This is typically a different file from the icon-only logo. If no separate logo+name image exists, set to null.
 - For faviconUrl, look for <link rel="icon">, <link rel="shortcut icon">, or <link rel="apple-touch-icon"> tags in the FAVICONS section. Prefer the largest size available (e.g. 180x180, 192x192). If only /favicon.ico is available, resolve it to the full URL. Prefer PNG over ICO format when both exist.
-- For locations, look for physical addresses EVERYWHERE: in the footer, contact page, individual location pages, anywhere on the site. Providers can be INTERNATIONAL — addresses may not follow US format. For international addresses, use the local street address format for "address", the city name for "city", and the country or region for "state". Examples: Colombian address "Calle 12 No. 39-60, Medellín" → address: "Calle 12 No. 39-60", city: "Medellín", state: "Colombia". If there is an "INDIVIDUAL LOCATION PAGES" section in the data, extract the address and city/state from each location listed there. IMPORTANT: Even if exact street addresses are not available, you MUST still create location entries using just the city and country/state. If the site mentions they have offices/clinics in multiple cities, create a location entry for EACH city with at least the city name filled in. Do NOT leave locations empty when city names are mentioned anywhere in the text. Extract ALL locations — do not skip any.
-- For suggestedServices, classify the provider's PRIMARY business type(s). This is critical — understand the distinction:
-  * "IVF Clinic" = A medical fertility clinic that performs IVF procedures, egg retrievals, embryo transfers. They may ALSO offer egg donation programs, surrogacy support, or egg freezing as part of their clinic services — but that does NOT make them an Egg Donor Agency, Surrogacy Agency, or Egg Bank.
+- For locations, look for physical addresses EVERYWHERE: in the footer, contact page, individual location pages, anywhere on the site. Providers can be INTERNATIONAL - addresses may not follow US format. For international addresses, use the local street address format for "address", the city name for "city", and the country or region for "state". Examples: Colombian address "Calle 12 No. 39-60, Medellín" → address: "Calle 12 No. 39-60", city: "Medellín", state: "Colombia". If there is an "INDIVIDUAL LOCATION PAGES" section in the data, extract the address and city/state from each location listed there. IMPORTANT: Even if exact street addresses are not available, you MUST still create location entries using just the city and country/state. If the site mentions they have offices/clinics in multiple cities, create a location entry for EACH city with at least the city name filled in. Do NOT leave locations empty when city names are mentioned anywhere in the text. Extract ALL locations - do not skip any.
+- For suggestedServices, classify the provider's PRIMARY business type(s). This is critical - understand the distinction:
+  * "IVF Clinic" = A medical fertility clinic that performs IVF procedures, egg retrievals, embryo transfers. They may ALSO offer egg donation programs, surrogacy support, or egg freezing as part of their clinic services - but that does NOT make them an Egg Donor Agency, Surrogacy Agency, or Egg Bank.
   * "Surrogacy Agency" = A dedicated agency whose PRIMARY business is matching intended parents with gestational surrogates and managing the surrogacy journey. NOT an IVF clinic that works with surrogates.
   * "Egg Donor Agency" = A dedicated agency whose PRIMARY business is recruiting, screening, and matching egg donors with intended parents. NOT an IVF clinic that has an egg donor program.
   * "Egg Bank" = A dedicated bank that stores and ships frozen donor eggs. NOT an IVF clinic that offers egg freezing.
   * "Sperm Bank" = A dedicated bank that collects, stores, and distributes donor sperm.
   Most IVF clinics should ONLY be classified as "IVF Clinic" even if they mention egg donation, surrogacy, or egg freezing services.
 - For teamMembers: Extract ALL team members found, including doctors, physicians, medical directors, and other staff. Look carefully at ALL data sources:
-  * The TEAM MEMBER RAW DATA section contains img tags with src URLs near team member names and bios — use these to find photo URLs AND bios.
-  * The INDIVIDUAL DOCTOR/PHYSICIAN PAGES section contains detailed bios from individual doctor pages — use these to populate the "bio" field.
+  * The TEAM MEMBER RAW DATA section contains img tags with src URLs near team member names and bios - use these to find photo URLs AND bios.
+  * The INDIVIDUAL DOCTOR/PHYSICIAN PAGES section contains detailed bios from individual doctor pages - use these to populate the "bio" field.
   * The main text content may mention additional team members.
   * For photoUrl: look in the RAW DATA section for img src URLs near each person's name. The URLs are absolute. Do NOT leave photoUrl as null if there is an image near their name.
   * For bio: use the meta description or text from individual doctor pages. Write a clean 1-2 sentence professional bio. Do NOT leave bio as null if description text is available.
-  * Include ALL doctors/physicians/specialists found — do not limit to a subset.
+  * Include ALL doctors/physicians/specialists found - do not limit to a subset.
   * If the TEAM MEMBER RAW DATA block is empty or missing photos, explicitly scan the main text content for lists of doctors, embryologists, and nurses. Extract them even if no photo URL is available.
 - Return ONLY the JSON object, nothing else.`;
 

@@ -576,7 +576,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/join", requireAuth, async 
     if (session.providerId !== user.providerId) return res.status(403).json({ message: "Forbidden" });
     if (session.providerJoinedAt) return res.json({ message: "Already joined", alreadyJoined: true });
     if (session.status !== "CONSULTATION_BOOKED") {
-      return res.status(400).json({ message: "Cannot join — parent has not booked a consultation yet" });
+      return res.status(400).json({ message: "Cannot join - parent has not booked a consultation yet" });
     }
 
     await prisma.aiChatSession.update({
@@ -652,7 +652,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
     if (uiCardType) messageData.uiCardType = uiCardType;
     if (uiCardData) messageData.uiCardData = uiCardData;
 
-    // Check if the parent (or any shared account member) is online — if so, mark as delivered
+    // Check if the parent (or any shared account member) is online - if so, mark as delivered
     const sessionOwnerForDelivery = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
     const parentUserIds = sessionOwnerForDelivery?.parentAccountId
       ? (await prisma.user.findMany({ where: { parentAccountId: sessionOwnerForDelivery.parentAccountId }, select: { id: true } })).map(u => u.id)
@@ -768,7 +768,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/consultation-status", requ
         data: {
           sessionId: session.id,
           role: "assistant",
-          content: `Thank you for completing the consultation with ${session.provider?.name || "the provider"}. Based on the discussion, this may not be the ideal match. Don't worry — I can help you explore other providers that might be a better fit for your needs.`,
+          content: `Thank you for completing the consultation with ${session.provider?.name || "the provider"}. Based on the discussion, this may not be the ideal match. Don't worry - I can help you explore other providers that might be a better fit for your needs.`,
           senderType: "system",
           senderName: "Eva",
         },
@@ -881,7 +881,7 @@ chatRouter.post("/api/chat-session/:id/message", requireAuth, async (req, res) =
     if (uiCardType) messageData.uiCardType = uiCardType;
     if (uiCardData) messageData.uiCardData = uiCardData;
 
-    // Check if any provider user is online — if so, mark as delivered immediately
+    // Check if any provider user is online - if so, mark as delivered immediately
     if (session.providerId) {
       const providerUsers = await prisma.user.findMany({
         where: { providerId: session.providerId },

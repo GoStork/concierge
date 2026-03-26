@@ -48,7 +48,7 @@ export default function RecordingPage() {
     },
     onSuccess: (result: any) => {
       if (result.found) {
-        toast({ title: "Recording found — processing started", variant: "success" });
+        toast({ title: "Recording found - processing started", variant: "success" });
         queryClient.invalidateQueries({ queryKey: ["/api/video/recordings", bookingId] });
       } else {
         toast({ title: "No recording available", description: result.message || "The recording may have expired on Daily.co.", variant: "destructive" });
@@ -306,7 +306,7 @@ export default function RecordingPage() {
               })}
             </div>
             <p className="text-xs text-muted-foreground text-center mt-4">
-              This page updates automatically — your recording will appear here once processing is complete.
+              This page updates automatically - your recording will appear here once processing is complete.
             </p>
           </div>
         );

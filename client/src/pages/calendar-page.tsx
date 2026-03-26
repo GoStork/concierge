@@ -2945,12 +2945,12 @@ export default function CalendarPage() {
                       {isFree ? (
                         <>
                           <Check className="h-4 w-4" />
-                          <span data-testid="text-availability-status">Available — won't block slots</span>
+                          <span data-testid="text-availability-status">Available - won't block slots</span>
                         </>
                       ) : (
                         <>
                           <X className="h-4 w-4" />
-                          <span data-testid="text-availability-status">Busy — blocks scheduling slots</span>
+                          <span data-testid="text-availability-status">Busy - blocks scheduling slots</span>
                         </>
                       )}
                     </div>
@@ -2988,12 +2988,12 @@ export default function CalendarPage() {
                       {isFree ? (
                         <>
                           <Check className="h-4 w-4" />
-                          <span data-testid="text-availability-status">Available — won't block slots</span>
+                          <span data-testid="text-availability-status">Available - won't block slots</span>
                         </>
                       ) : (
                         <>
                           <X className="h-4 w-4" />
-                          <span data-testid="text-availability-status">Busy — blocks scheduling slots</span>
+                          <span data-testid="text-availability-status">Busy - blocks scheduling slots</span>
                         </>
                       )}
                     </div>

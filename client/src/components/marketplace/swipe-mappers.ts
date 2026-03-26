@@ -290,7 +290,7 @@ function formatCurrency(val: number | null): string | null {
 function boolLabel(val: boolean | null | undefined): string {
   if (val === true) return "Yes";
   if (val === false) return "No";
-  return "—";
+  return "-";
 }
 
 export function getPhotoList(profile: SwipeDeckProfile): string[] {

@@ -1136,7 +1136,7 @@ export function CalendarSettings() {
             <>
               <p className="text-sm text-muted-foreground">
                 {connectingGoogleEmail && (
-                  <span className="font-ui text-foreground">{connectingGoogleEmail} — </span>
+                  <span className="font-ui text-foreground">{connectingGoogleEmail} - </span>
                 )}
                 Select which calendars to connect. Events from selected calendars will block your booking availability.
               </p>
@@ -1219,7 +1219,7 @@ export function CalendarSettings() {
                                 data-testid={`switch-conflict-select-${cal.id}`}
                               />
                               <span className="text-xs text-muted-foreground">Check conflicts</span>
-                              <span className="text-[10px] text-muted-foreground/60">— blocks booking slots</span>
+                              <span className="text-[10px] text-muted-foreground/60">- blocks booking slots</span>
                             </div>
                           )}
                         </div>
@@ -1248,7 +1248,7 @@ export function CalendarSettings() {
             <>
               <p className="text-sm text-muted-foreground">
                 {connectingMicrosoftEmail && (
-                  <span className="font-ui text-foreground">{connectingMicrosoftEmail} — </span>
+                  <span className="font-ui text-foreground">{connectingMicrosoftEmail} - </span>
                 )}
                 Select which calendars to connect. Events from selected calendars will block your booking availability.
               </p>
@@ -1330,7 +1330,7 @@ export function CalendarSettings() {
                                 data-testid={`switch-conflict-select-ms-${cal.id}`}
                               />
                               <span className="text-xs text-muted-foreground">Check conflicts</span>
-                              <span className="text-[10px] text-muted-foreground/60">— blocks booking slots</span>
+                              <span className="text-[10px] text-muted-foreground/60">- blocks booking slots</span>
                             </div>
                           )}
                         </div>
@@ -1359,7 +1359,7 @@ export function CalendarSettings() {
             <>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 {(() => { const P = CALENDAR_PROVIDERS.find((p) => p.id === connectProvider); return P ? <P.icon className="w-5 h-5" style={{ color: P.color }} /> : null; })()}
-                <span className="font-ui">{(() => { const P = CALENDAR_PROVIDERS.find((p) => p.id === connectProvider); return P ? `${P.name} — ${P.desc}` : ""; })()}</span>
+                <span className="font-ui">{(() => { const P = CALENDAR_PROVIDERS.find((p) => p.id === connectProvider); return P ? `${P.name} - ${P.desc}` : ""; })()}</span>
               </div>
               <div className="space-y-2 py-2">
                 <Label>Email address for this calendar</Label>
@@ -1455,7 +1455,7 @@ export function CalendarSettings() {
             <>
               <p className="text-sm text-muted-foreground">
                 {caldavConnectingEmail && (
-                  <span className="font-ui text-foreground">{caldavConnectingEmail} — </span>
+                  <span className="font-ui text-foreground">{caldavConnectingEmail} - </span>
                 )}
                 Select which calendars to connect. Events from selected calendars will block your booking availability.
               </p>
@@ -1530,7 +1530,7 @@ export function CalendarSettings() {
                                 data-testid={`switch-caldav-conflict-${cal.name}`}
                               />
                               <span className="text-xs text-muted-foreground">Check conflicts</span>
-                              <span className="text-[10px] text-muted-foreground/60">— blocks booking slots</span>
+                              <span className="text-[10px] text-muted-foreground/60">- blocks booking slots</span>
                             </div>
                           )}
                         </div>

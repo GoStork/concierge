@@ -17,6 +17,7 @@ import {
   Building2, Loader2, Globe, Phone, Calendar, Plus, MapPin, FileText,
   Check, X, Upload, Pencil, Save, ImageIcon, User, GripVertical, Eye, Settings,
 } from "lucide-react";
+import ImageCropPreview from "@/components/image-crop-preview";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import LocationAutocomplete from "@/components/location-autocomplete";
@@ -135,6 +136,7 @@ export default function CompanyTab() {
   const [teamMembers, setTeamMembers] = useState<MemberData[]>([]);
   const [editingMemberIdx, setEditingMemberIdx] = useState<number | null>(null);
   const [uploadingPhotoIdx, setUploadingPhotoIdx] = useState<number | null>(null);
+  const [cropState, setCropState] = useState<{ src: string; idx: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const [selectedServiceTypeId, setSelectedServiceTypeId] = useState("");
 
@@ -267,11 +269,12 @@ export default function CompanyTab() {
     );
   }
 
-  async function handlePhotoUpload(file: File, idx: number) {
+  async function handlePhotoUpload(file: File | Blob, idx: number) {
+    setCropState(null);
     setUploadingPhotoIdx(idx);
     try {
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", file, file instanceof File ? file.name : "photo.jpg");
       const res = await fetch("/api/uploads", {
         method: "POST",
         body: formData,
@@ -363,6 +366,16 @@ export default function CompanyTab() {
   const readOnly = !isProviderAdmin;
 
   return (
+    <>
+    {cropState && (
+      <ImageCropPreview
+        imageSrc={cropState.src}
+        onCropComplete={(blob) => handlePhotoUpload(blob, cropState.idx)}
+        onCancel={() => setCropState(null)}
+        aspect={1}
+        cropShape="round"
+      />
+    )}
     <form onSubmit={handleSave} className="space-y-8" data-testid="company-form">
       <Card className="p-6 space-y-5">
         <div className="flex items-center justify-between">
@@ -779,7 +792,11 @@ export default function CompanyTab() {
                           input.accept = "image/jpeg,image/png,image/webp,image/gif";
                           input.onchange = (e) => {
                             const file = (e.target as HTMLInputElement).files?.[0];
-                            if (file) handlePhotoUpload(file, idx);
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = () => setCropState({ src: reader.result as string, idx });
+                              reader.readAsDataURL(file);
+                            }
                           };
                           input.click();
                         }}
@@ -840,7 +857,7 @@ export default function CompanyTab() {
                               }}
                               data-testid={`checkbox-member-loc-${idx}-${loc.id}`}
                             />
-                            <span className="text-xs">{loc.city}, {loc.state}{loc.address ? ` — ${loc.address}` : ""}</span>
+                            <span className="text-xs">{loc.city}, {loc.state}{loc.address ? ` - ${loc.address}` : ""}</span>
                           </label>
                         ))}
                       </div>
@@ -933,5 +950,6 @@ export default function CompanyTab() {
         </div>
       )}
     </form>
+    </>
   );
 }

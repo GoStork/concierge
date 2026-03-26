@@ -33,6 +33,7 @@ import {
   CheckCircle,
   AlertCircle,
 } from "lucide-react";
+import ImageCropPreview from "@/components/image-crop-preview";
 
 function SystemSettingsCard() {
   const { toast } = useToast();
@@ -808,6 +809,7 @@ export default function AdminConciergePage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Matchmaker>>({});
+  const [avatarCropSrc, setAvatarCropSrc] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const matchmakersQuery = useQuery<Matchmaker[]>({
@@ -874,9 +876,10 @@ export default function AdminConciergePage() {
     onError: () => toast({ title: "Failed to update status", variant: "destructive" }),
   });
 
-  const handleAvatarUpload = async (file: File, callback: (url: string) => void) => {
+  const handleAvatarUpload = async (file: File | Blob, callback: (url: string) => void) => {
+    setAvatarCropSrc(null);
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("file", file, file instanceof File ? file.name : "avatar.jpg");
     try {
       const res = await fetch("/api/uploads", { method: "POST", body: formData, credentials: "include" });
       if (!res.ok) throw new Error("Upload failed");
@@ -946,7 +949,7 @@ export default function AdminConciergePage() {
                 <img src={getPhotoSrc(editForm.avatarUrl) || undefined} alt={editForm.name || "Avatar"} className="w-10 h-10 rounded-full object-cover border" data-testid="img-matchmaker-avatar-preview" />
               )}
               <label className="cursor-pointer">
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleAvatarUpload(file, (url) => setEditForm({ ...editForm, avatarUrl: url })); }} data-testid="input-matchmaker-avatar-upload" />
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) { const reader = new FileReader(); reader.onload = () => setAvatarCropSrc(reader.result as string); reader.readAsDataURL(file); } e.target.value = ""; }} data-testid="input-matchmaker-avatar-upload" />
                 <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-[var(--radius)] hover:bg-muted transition-colors">
                   <Upload className="w-3.5 h-3.5" />
                   {editForm.avatarUrl ? "Change" : "Upload"}
@@ -957,13 +960,22 @@ export default function AdminConciergePage() {
                   <X className="w-3.5 h-3.5" />
                 </Button>
               )}
+              {avatarCropSrc && (
+                <ImageCropPreview
+                  imageSrc={avatarCropSrc}
+                  onCropComplete={(blob) => handleAvatarUpload(blob, (url) => setEditForm({ ...editForm, avatarUrl: url }))}
+                  onCancel={() => setAvatarCropSrc(null)}
+                  aspect={1}
+                  cropShape="round"
+                />
+              )}
             </div>
           </div>
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Status</Label>
             <div className="flex items-center gap-2 pt-1">
               <Switch checked={editForm.isActive !== false} onCheckedChange={(checked) => setEditForm({ ...editForm, isActive: checked })} data-testid="switch-matchmaker-active" />
-              <span className="text-sm text-muted-foreground">{editForm.isActive !== false ? "Active — visible to parents" : "Inactive — hidden from parents"}</span>
+              <span className="text-sm text-muted-foreground">{editForm.isActive !== false ? "Active - visible to parents" : "Inactive - hidden from parents"}</span>
             </div>
           </div>
         </div>

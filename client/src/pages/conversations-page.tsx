@@ -989,7 +989,7 @@ export default function ConversationsPage() {
       const bookingUrl = `${window.location.origin}/book/${slug}`;
       sendMessageMutation.mutate({
         sessionId: selectedSessionId,
-        content: "I've shared my calendar — pick a time that works for you!",
+        content: "I've shared my calendar - pick a time that works for you!",
         uiCardType: "calendar_share",
         uiCardData: { bookingUrl, slug, memberName: (user as any)?.name },
       });
@@ -1204,7 +1204,7 @@ export default function ConversationsPage() {
   };
 
   if (isParent) {
-    // New parent with no sessions — go straight to matchmaker selection
+    // New parent with no sessions - go straight to matchmaker selection
     if (!parentSessionsQuery.isLoading && parentSessionsQuery.data && parentSessionsQuery.data.length === 0) {
       navigate("/matchmaker-selection", { replace: true });
       return null;
@@ -1631,7 +1631,7 @@ export default function ConversationsPage() {
             );
           }
 
-          // Multiple sessions — collapsible parent group
+          // Multiple sessions - collapsible parent group
           return (
             <Collapsible key={parentUserId} open={isExpanded} onOpenChange={() => toggleParent(parentUserId)}>
               <CollapsibleTrigger className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted/30 transition-colors text-left border-b border-border/20" data-testid={`parent-group-${parentUserId}`}>
@@ -2080,7 +2080,7 @@ export default function ConversationsPage() {
                   <h4 className="font-semibold text-sm" style={{ fontFamily: "var(--font-display)" }}>AI Concierge Q&A</h4>
                 </div>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  Questions from this prospective parent are forwarded here by the AI concierge. Your answers are relayed back — the parent's identity stays private until they schedule a consultation.
+                  Questions from this prospective parent are forwarded here by the AI concierge. Your answers are relayed back - the parent's identity stays private until they schedule a consultation.
                 </p>
                 {selectedSession && selectedSession.pendingQuestions > 0 && (
                   <div className="rounded-[var(--radius)] p-3 bg-[hsl(var(--brand-warning))]/10 border border-[hsl(var(--brand-warning))]/20">
@@ -2101,7 +2101,7 @@ export default function ConversationsPage() {
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <User className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm">{detail.user.name || "—"}</span>
+                    <span className="text-sm">{detail.user.name || "-"}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Mail className="w-4 h-4 text-muted-foreground" />
@@ -2139,7 +2139,7 @@ export default function ConversationsPage() {
                         data-testid="btn-ready-for-match"
                       >
                         {consultationStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
-                        Completed — Ready for Match
+                        Completed - Ready for Match
                       </Button>
                       <Button
                         size="sm"
@@ -2150,7 +2150,7 @@ export default function ConversationsPage() {
                         data-testid="btn-not-a-fit"
                       >
                         {consultationStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsDown className="w-3 h-3" />}
-                        Completed — Not a Fit
+                        Completed - Not a Fit
                       </Button>
                     </div>
                   </div>

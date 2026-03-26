@@ -486,7 +486,7 @@ export default function VideoRoomPage() {
                 htmlFor="remember-consent"
                 className="text-xs text-muted-foreground cursor-pointer select-none leading-tight"
               >
-                Always record my calls — don't ask me again. You can change this in Settings.
+                Always record my calls - don't ask me again. You can change this in Settings.
               </label>
             </div>
           )}

@@ -104,7 +104,7 @@ function DisappearedClinicsSection({ clinics, syncId, navigate }: { clinics: Dis
           <MinusCircle className="w-5 h-5 text-warning" />
           Clinics No Longer in CDC Data
         </h3>
-        <p className="text-sm text-muted-foreground italic">None — all previous clinics are still present.</p>
+        <p className="text-sm text-muted-foreground italic">None - all previous clinics are still present.</p>
       </div>
     );
   }
@@ -358,9 +358,9 @@ export default function CdcSyncReportPage() {
     <AdminReportLayout
       breadcrumbs={[
         { label: "Scrapers", href: "/admin/scrapers" },
-        { label: `CDC Sync — ${job.year}` },
+        { label: `CDC Sync - ${job.year}` },
       ]}
-      title={`CDC Sync Report — ${job.year}`}
+      title={`CDC Sync Report - ${job.year}`}
       subtitle={`Status: ${job.status}`}
     >
       {!isLive && (job.status === "COMPLETED" || job.status === "FAILED") && (
@@ -412,7 +412,7 @@ export default function CdcSyncReportPage() {
         <div className="rounded-[var(--radius)] border border-primary/20 bg-primary/5 p-4 space-y-3" data-testid="cdc-sync-live-banner">
           <div className="flex items-center gap-2">
             <Activity className="w-4 h-4 text-primary animate-pulse" />
-            <span className="text-sm font-heading text-primary">Live — CDC Sync in Progress</span>
+            <span className="text-sm font-heading text-primary">Live - CDC Sync in Progress</span>
             <span className="ml-auto text-xs text-muted-foreground">Auto-refreshing every 5s</span>
           </div>
           <div className="space-y-1.5">
@@ -580,7 +580,7 @@ export default function CdcSyncReportPage() {
                 <Plus className="w-5 h-5 text-success" />
                 New Clinics for This Year
               </h3>
-              <p className="text-sm text-muted-foreground italic">None — all clinics were present in previous years.</p>
+              <p className="text-sm text-muted-foreground italic">None - all clinics were present in previous years.</p>
             </div>
           )}
 

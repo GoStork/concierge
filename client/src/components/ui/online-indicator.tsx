@@ -1,5 +1,5 @@
 /**
- * Green dot overlay for avatars — indicates user is currently online.
+ * Green dot overlay for avatars - indicates user is currently online.
  * Place inside a `relative` container (the avatar wrapper).
  * Sizes: "sm" for ~32px avatars, "md" for ~36-44px avatars, "lg" for larger.
  */

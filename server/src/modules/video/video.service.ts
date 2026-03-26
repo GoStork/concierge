@@ -24,7 +24,7 @@ export class VideoService implements OnModuleInit {
     try {
       const replitDomains = process.env.REPLIT_DOMAINS || process.env.REPLIT_DEV_DOMAIN;
       if (!replitDomains) {
-        this.logger.warn("No REPLIT_DOMAINS set — skipping webhook auto-registration");
+        this.logger.warn("No REPLIT_DOMAINS set - skipping webhook auto-registration");
         return;
       }
 
@@ -61,7 +61,7 @@ export class VideoService implements OnModuleInit {
       } catch (regErr: any) {
         const msg = regErr.message || "";
         if (msg.includes("only 1 webhook") || msg.includes("already")) {
-          this.logger.log(`Daily.co webhook already exists for this domain — skipping`);
+          this.logger.log(`Daily.co webhook already exists for this domain - skipping`);
         } else {
           this.logger.warn(`Daily.co webhook registration failed: ${msg}`);
         }
@@ -187,7 +187,7 @@ export class VideoService implements OnModuleInit {
   ): boolean {
     const secret = process.env.DAILY_WEBHOOK_SECRET;
     if (!secret) {
-      this.logger.warn("DAILY_WEBHOOK_SECRET not set — skipping signature verification");
+      this.logger.warn("DAILY_WEBHOOK_SECRET not set - skipping signature verification");
       return true;
     }
     if (!signature) return false;

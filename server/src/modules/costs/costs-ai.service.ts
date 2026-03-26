@@ -71,7 +71,7 @@ Rules:
 4. Items not matching any known template field should have isCustom=true.
 5. Bundled/included items (no additional cost) should have isIncluded=true, minValue=0, maxValue=0.
 6. BY DEFAULT, all extracted items should have isIncluded=true. Most items in a cost sheet are standard fees that should be included in the total.
-6b. The ONLY items that should have isIncluded=false are those that appear under an explicitly labeled optional/contingency section in the document (e.g. a section titled "Other possible expenses", "Additional/optional costs", "Contingency fees"). These are costs that only apply in certain circumstances (e.g. C-section, multiple birth, complications). Regular line items with variable amounts (like "varies depending on location") are NOT optional — they are standard costs and should have isIncluded=true.
+6b. The ONLY items that should have isIncluded=false are those that appear under an explicitly labeled optional/contingency section in the document (e.g. a section titled "Other possible expenses", "Additional/optional costs", "Contingency fees"). These are costs that only apply in certain circumstances (e.g. C-section, multiple birth, complications). Regular line items with variable amounts (like "varies depending on location") are NOT optional - they are standard costs and should have isIncluded=true.
 7. Any notes or conditions should go in the comment field.
 8. Output items in the same order as the template fields listed above.
 9. CONSOLIDATION RULE: If the document lists multiple line items that map to the SAME template field, you MUST consolidate (sum) them into a single output item. Common examples:

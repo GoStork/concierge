@@ -254,7 +254,7 @@ export default function AdminConciergeMonitor() {
             <div className="border-t px-4 py-3 bg-background" data-testid="concierge-monitor-reply">
               <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
                 <Headphones className="w-3 h-3" />
-                <span>Sending as <strong className="text-foreground">GoStork Expert</strong> — {(user as any)?.name || "Admin"}</span>
+                <span>Sending as <strong className="text-foreground">GoStork Expert</strong> - {(user as any)?.name || "Admin"}</span>
               </div>
               <div className="flex gap-2">
                 <Input
@@ -294,7 +294,7 @@ export default function AdminConciergeMonitor() {
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <User className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm">{detail.user.name || "—"}</span>
+                <span className="text-sm">{detail.user.name || "-"}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Mail className="w-4 h-4 text-muted-foreground" />

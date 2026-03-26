@@ -504,7 +504,7 @@ export default function AdminProviderEditPage() {
                   <div key={idx} className="flex items-center gap-2 text-sm p-1.5 bg-[hsl(var(--brand-success)/0.08)] dark:bg-[hsl(var(--brand-success)/0.15)] rounded">
                     {m.photoUrl && <img src={getPhotoSrc(m.photoUrl)!} alt={m.name} className="w-6 h-6 rounded-full object-cover shrink-0" referrerPolicy="no-referrer" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />}
                     <span className="font-ui truncate">{m.name}</span>
-                    {m.title && <span className="text-muted-foreground truncate">— {m.title}</span>}
+                    {m.title && <span className="text-muted-foreground truncate">- {m.title}</span>}
                   </div>
                 ))}
               </div>
@@ -930,7 +930,7 @@ export default function AdminProviderEditPage() {
                                     }}
                                     data-testid={`checkbox-edit-member-loc-${idx}-${loc.id}`}
                                   />
-                                  <span className="text-xs">{loc.city}, {loc.state}{loc.address ? ` — ${loc.address}` : ""}</span>
+                                  <span className="text-xs">{loc.city}, {loc.state}{loc.address ? ` - ${loc.address}` : ""}</span>
                                 </label>
                               ))}
                             </div>

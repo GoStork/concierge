@@ -1,26 +1,20 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { api } from "@shared/routes";
-import { ChevronLeft, Loader2, Lock, Check, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { ChevronLeft, Loader2, Lock, Check, Eye, EyeOff, AlertCircle, UserRound, Sparkles, DollarSign, CalendarCheck } from "lucide-react";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import LocationAutocomplete from "@/components/location-autocomplete";
 
-const TOTAL_STEPS_AUTHENTICATED = 12;
-const TOTAL_STEPS_UNAUTHENTICATED = 13;
-const ACCOUNT_STEP = 13;
+const TOTAL_STEPS_AUTHENTICATED = 5;
+const TOTAL_STEPS_UNAUTHENTICATED = 6;
+const ACCOUNT_STEP = 6;
+const WELCOME_STEP = 0;
 
 const GOALS = ["Fertility Clinic", "Egg Donor", "Surrogate", "Sperm Donor"];
-const GENDERS = ["I'm a woman", "I'm a man", "I'm non-binary"];
-const ORIENTATIONS = ["Straight", "Gay", "Lesbian", "Bi", "Queer"];
-const RELATIONSHIPS = ["Single", "Partnered", "Married", "Separated/Divorced/Widowed"];
-const SOURCES = ["Google", "Friend", "Social Media", "Fertility Clinic", "Egg Donor Agency", "Surrogacy Agency", "Fertility Lawyer", "Progyny", "Carrot"];
-
-const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
-const currentYear = new Date().getFullYear();
-const YEARS = Array.from({ length: 100 }, (_, i) => currentYear - i);
 
 const COUNTRY_CODES = [
   { code: "+1", label: "US", flag: "🇺🇸" },
@@ -47,23 +41,12 @@ interface OnboardingData {
   goals: string[];
   firstName: string;
   lastName: string;
-  birthMonth: number;
-  birthDay: number;
-  birthYear: number;
-  gender: string;
-  orientation: string;
-  relationship: string;
-  partnerFirstName: string;
-  partnerBirthMonth: number;
-  partnerBirthDay: number;
-  partnerBirthYear: number;
   city: string;
   state: string;
   country: string;
   countryCode: string;
   phone: string;
   otp: string[];
-  source: string;
 }
 
 function PillButton({
@@ -95,82 +78,6 @@ function PillButton({
         <Check className="w-5 h-5 flex-shrink-0 ml-2" />
       )}
     </button>
-  );
-}
-
-function ScrollWheel({
-  items,
-  selectedIndex,
-  onSelect,
-  formatItem,
-  testIdPrefix,
-}: {
-  items: any[];
-  selectedIndex: number;
-  onSelect: (index: number) => void;
-  formatItem?: (item: any) => string;
-  testIdPrefix: string;
-}) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const itemHeight = 44;
-  const visibleCount = 5;
-  const scrolling = useRef(false);
-
-  useEffect(() => {
-    if (containerRef.current && !scrolling.current) {
-      containerRef.current.scrollTop = selectedIndex * itemHeight;
-    }
-  }, [selectedIndex]);
-
-  const handleScroll = useCallback(() => {
-    if (!containerRef.current) return;
-    scrolling.current = true;
-    const scrollTop = containerRef.current.scrollTop;
-    const index = Math.round(scrollTop / itemHeight);
-    const clamped = Math.max(0, Math.min(items.length - 1, index));
-    if (clamped !== selectedIndex) {
-      onSelect(clamped);
-    }
-    clearTimeout((containerRef.current as any)._scrollTimer);
-    (containerRef.current as any)._scrollTimer = setTimeout(() => {
-      scrolling.current = false;
-      if (containerRef.current) {
-        containerRef.current.scrollTo({ top: clamped * itemHeight, behavior: "smooth" });
-      }
-    }, 100);
-  }, [items.length, selectedIndex, onSelect]);
-
-  return (
-    <div className="relative" style={{ height: visibleCount * itemHeight }}>
-      <div
-        className="absolute left-0 right-0 bg-muted rounded-[var(--radius)] pointer-events-none z-0"
-        style={{ top: Math.floor(visibleCount / 2) * itemHeight, height: itemHeight }}
-      />
-      <div
-        ref={containerRef}
-        onScroll={handleScroll}
-        className="absolute inset-0 overflow-y-scroll scrollbar-hide snap-y snap-mandatory"
-        style={{ paddingTop: Math.floor(visibleCount / 2) * itemHeight, paddingBottom: Math.floor(visibleCount / 2) * itemHeight }}
-        data-testid={testIdPrefix}
-      >
-        {items.map((item, i) => {
-          const distance = Math.abs(i - selectedIndex);
-          const opacity = distance === 0 ? 1 : distance === 1 ? 0.5 : 0.25;
-          const scale = distance === 0 ? 1 : distance === 1 ? 0.9 : 0.85;
-          return (
-            <div
-              key={i}
-              className="flex items-center justify-center snap-center cursor-pointer select-none font-medium"
-              style={{ height: itemHeight, opacity, transform: `scale(${scale})`, transition: "all 0.15s" }}
-              onClick={() => onSelect(i)}
-              data-testid={`${testIdPrefix}-item-${i}`}
-            >
-              <span className="text-lg">{formatItem ? formatItem(item) : String(item)}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 
@@ -211,19 +118,27 @@ export default function OnboardingPage() {
   const { user, isLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { data: brand } = useBrandSettings();
   const isRegistration = !user;
-  const firstStep = 1;
-  const [step, setStep] = useState(firstStep);
+  const [step, setStep] = useState(WELCOME_STEP);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [submitting, setSubmitting] = useState(false);
   const [showLoading, setShowLoading] = useState(false);
   const [registrationError, setRegistrationError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isLoading && user && !user.mustCompleteProfile) {
+    if (!isLoading && user && !user.mustCompleteProfile && !showLoading && !submitting) {
       navigate("/dashboard", { replace: true });
     }
-  }, [isLoading, user, navigate]);
+  }, [isLoading, user, navigate, showLoading, submitting]);
+
+  // Authenticated users skip welcome and start at goals
+  useEffect(() => {
+    if (!isLoading && user && user.mustCompleteProfile && step === WELCOME_STEP) {
+      setStep(1);
+    }
+  }, [isLoading, user, step]);
+
   const [otpSending, setOtpSending] = useState(false);
   const [otpError, setOtpError] = useState<string | null>(null);
 
@@ -234,35 +149,17 @@ export default function OnboardingPage() {
     goals: [],
     firstName: "",
     lastName: "",
-    birthMonth: 0,
-    birthDay: 11,
-    birthYear: 30,
-    gender: "",
-    orientation: "",
-    relationship: "",
-    partnerFirstName: "",
-    partnerBirthMonth: 0,
-    partnerBirthDay: 0,
-    partnerBirthYear: 4,
     city: "",
     state: "",
     country: "",
     countryCode: "+1",
     phone: "",
     otp: ["", "", "", "", "", ""],
-    source: "",
   });
 
   const update = (partial: Partial<OnboardingData>) => {
     setRegistrationError(null);
     setData(prev => ({ ...prev, ...partial }));
-  };
-
-  const effectiveStep = (s: number): number => {
-    if (s === 8 && data.relationship !== "Partnered" && data.relationship !== "Married") {
-      return direction === "forward" ? effectiveStep(9) : effectiveStep(7);
-    }
-    return s;
   };
 
   const goNext = () => {
@@ -271,7 +168,6 @@ export default function OnboardingPage() {
       let next = prev + 1;
       const lastStep = isRegistration ? ACCOUNT_STEP : TOTAL_STEPS_AUTHENTICATED;
       if (next > lastStep) return prev;
-      next = effectiveStep(next);
       return next;
     });
   };
@@ -279,11 +175,9 @@ export default function OnboardingPage() {
   const goBack = () => {
     setDirection("back");
     setStep(prev => {
+      const minStep = isRegistration ? WELCOME_STEP : 1;
       let next = prev - 1;
-      if (next < firstStep) return prev;
-      if (next === 8 && data.relationship !== "Partnered" && data.relationship !== "Married") {
-        next = 7;
-      }
+      if (next < minStep) return prev;
       return next;
     });
   };
@@ -292,18 +186,12 @@ export default function OnboardingPage() {
 
   const canContinue = (): boolean => {
     switch (step) {
+      case WELCOME_STEP: return true;
       case 1: return data.goals.length > 0;
-      case 2: return data.firstName.trim().length > 0;
-      case 3: return data.lastName.trim().length > 0;
-      case 4: return true;
-      case 5: return data.gender !== "";
-      case 6: return data.orientation !== "";
-      case 7: return data.relationship !== "";
-      case 8: return data.partnerFirstName.trim().length > 0;
-      case 9: return data.city.trim().length > 0;
-      case 10: return data.phone.trim().length >= 7;
-      case 11: return data.otp.every(d => d !== "");
-      case 12: return data.source !== "";
+      case 2: return data.firstName.trim().length > 0 && data.lastName.trim().length > 0;
+      case 3: return data.city.trim().length > 0;
+      case 4: return data.phone.trim().length >= 7;
+      case 5: return data.otp.every(d => d !== "");
       case ACCOUNT_STEP: return isValidEmail(data.email) && data.password.length >= 6 && data.confirmPassword === data.password;
       default: return false;
     }
@@ -312,8 +200,6 @@ export default function OnboardingPage() {
   const handleSubmit = async () => {
     setShowLoading(true);
     setSubmitting(true);
-
-    const birthDate = new Date(YEARS[data.birthYear], data.birthMonth, DAYS[data.birthDay]);
 
     try {
       if (isRegistration) {
@@ -347,27 +233,18 @@ export default function OnboardingPage() {
       await apiRequest("PUT", "/api/user/onboarding", {
         firstName: data.firstName.trim(),
         lastName: data.lastName.trim(),
-        dateOfBirth: birthDate.toISOString(),
-        gender: data.gender,
-        sexualOrientation: data.orientation,
-        relationshipStatus: data.relationship,
-        partnerFirstName: data.partnerFirstName.trim() || null,
-        partnerAge: data.partnerFirstName ? (() => {
-          const bd = new Date(YEARS[data.partnerBirthYear], data.partnerBirthMonth, DAYS[data.partnerBirthDay]);
-          return Math.floor((Date.now() - bd.getTime()) / 31557600000);
-        })() : null,
         city: data.city.trim(),
         state: data.state.trim(),
         country: data.country.trim() || null,
         mobileNumber: `${data.countryCode} ${data.phone.trim()}`,
-        referralSource: data.source,
         interestedServices: data.goals,
       });
 
       await queryClient.invalidateQueries({ queryKey: ["/api/user"] });
 
       setTimeout(() => {
-        navigate("/matchmaker-selection", { replace: true });
+        const goalsParam = encodeURIComponent(data.goals.join(","));
+        navigate(`/onboarding/ai-intro?goals=${goalsParam}`, { replace: true });
       }, 2000);
     } catch (err: any) {
       setShowLoading(false);
@@ -390,7 +267,9 @@ export default function OnboardingPage() {
   });
 
   const handleContinue = async () => {
-    if (step === ACCOUNT_STEP && isRegistration) {
+    if (step === WELCOME_STEP) {
+      goNext();
+    } else if (step === ACCOUNT_STEP && isRegistration) {
       if (data.password !== data.confirmPassword) {
         setRegistrationError("Passwords do not match.");
         return;
@@ -403,7 +282,7 @@ export default function OnboardingPage() {
       handleSubmit();
     } else if (step === lastStep) {
       handleSubmit();
-    } else if (step === 10) {
+    } else if (step === 4) {
       setOtpSending(true);
       setOtpError(null);
       try {
@@ -425,7 +304,7 @@ export default function OnboardingPage() {
       } finally {
         setOtpSending(false);
       }
-    } else if (step === 11) {
+    } else if (step === 5) {
       const entered = data.otp.join("");
       setOtpSending(true);
       setOtpError(null);
@@ -444,9 +323,12 @@ export default function OnboardingPage() {
     }
   };
 
-  const stepsCompleted = step - firstStep;
-  const totalVisibleSteps = lastStep - firstStep;
-  const progress = totalVisibleSteps > 0 ? ((stepsCompleted) / totalVisibleSteps) * 100 : 0;
+  // Progress bar: steps 1-N (welcome step doesn't count)
+  const stepsCompleted = Math.max(0, step - 1);
+  const totalVisibleSteps = lastStep - 1;
+  const progress = totalVisibleSteps > 0 ? (stepsCompleted / totalVisibleSteps) * 100 : 0;
+
+  const brandName = brand?.siteName || "GoStork";
 
   if (isLoading) {
     return (
@@ -464,7 +346,7 @@ export default function OnboardingPage() {
             Welcome to the family{data.firstName ? `, ${data.firstName}` : ""}.
           </h1>
           <p className="text-muted-foreground text-lg">
-            We've saved your preferences. Now, let's choose a guide to help you start your journey.
+            We've saved your preferences. Now, let's meet your AI concierge.
           </p>
         </div>
         <div className="mt-8 animate-[fadeIn_1.2s_ease-out_forwards] opacity-0">
@@ -480,11 +362,82 @@ export default function OnboardingPage() {
     );
   }
 
+  // Welcome step - full-screen, no progress bar
+  if (step === WELCOME_STEP) {
+    return (
+      <div className="fixed inset-0 bg-background flex flex-col items-center justify-center px-6" data-testid="onboarding-welcome">
+        <div className="max-w-md text-center space-y-6">
+          {/* Brand logo or fallback */}
+          <div className="flex justify-center">
+            {(brand?.logoWithNameUrl || brand?.logoUrl) ? (
+              <img
+                src={getPhotoSrc(brand.logoWithNameUrl || brand.logoUrl!) || undefined}
+                alt={brandName}
+                className="h-14 object-contain"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            ) : (
+              <h2 className="text-2xl font-bold text-primary" style={{ fontFamily: "var(--font-display)" }}>
+                {brandName}
+              </h2>
+            )}
+          </div>
+          <h1
+            className="text-3xl md:text-4xl font-bold leading-tight"
+            style={{ fontFamily: "var(--font-display)" }}
+            data-testid="text-welcome-title"
+          >
+            Building a family is a deeply personal journey.
+          </h1>
+          <p className="text-muted-foreground text-base">
+            We're here to guide you every step of the way.
+          </p>
+
+          {/* How it works steps */}
+          <div className="space-y-4 text-left max-w-xs mx-auto">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <UserRound className="w-5 h-5 text-primary" />
+              </div>
+              <span className="text-foreground font-medium">Share your journey</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <Sparkles className="w-5 h-5 text-primary" />
+              </div>
+              <span className="text-foreground font-medium">AI finds your best matches</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <DollarSign className="w-5 h-5 text-primary" />
+              </div>
+              <span className="text-foreground font-medium">See real costs upfront</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <CalendarCheck className="w-5 h-5 text-primary" />
+              </div>
+              <span className="text-foreground font-medium">Book a free consultation</span>
+            </div>
+          </div>
+
+          <button
+            onClick={() => goNext()}
+            data-testid="btn-welcome-start"
+            className="w-full py-4 rounded-full text-lg font-semibold bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] transition-all duration-200"
+          >
+            Get Started
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 bg-background flex flex-col items-center" data-testid="onboarding-page">
       <div className="w-full max-w-lg flex flex-col flex-1 min-h-0">
       <div className="flex items-center px-4 pt-4 pb-2">
-        {step > firstStep && (
+        {step > (isRegistration ? WELCOME_STEP : 1) && (
           <button
             onClick={goBack}
             className="p-2 -ml-2 rounded-full hover:bg-muted transition-colors"
@@ -515,49 +468,20 @@ export default function OnboardingPage() {
             <StepGoals goals={data.goals} onChange={g => update({ goals: g })} />
           )}
           {step === 2 && (
-            <StepFirstName value={data.firstName} onChange={v => update({ firstName: v })} />
+            <StepName
+              firstName={data.firstName}
+              lastName={data.lastName}
+              onFirstNameChange={v => update({ firstName: v })}
+              onLastNameChange={v => update({ lastName: v })}
+            />
           )}
           {step === 3 && (
-            <StepLastName value={data.lastName} onChange={v => update({ lastName: v })} />
-          )}
-          {step === 4 && (
-            <StepBirthDate
-              month={data.birthMonth}
-              day={data.birthDay}
-              year={data.birthYear}
-              onMonthChange={v => update({ birthMonth: v })}
-              onDayChange={v => update({ birthDay: v })}
-              onYearChange={v => update({ birthYear: v })}
-            />
-          )}
-          {step === 5 && (
-            <StepGender value={data.gender} onChange={v => update({ gender: v })} />
-          )}
-          {step === 6 && (
-            <StepOrientation value={data.orientation} onChange={v => update({ orientation: v })} />
-          )}
-          {step === 7 && (
-            <StepRelationship value={data.relationship} onChange={v => update({ relationship: v })} />
-          )}
-          {step === 8 && (
-            <StepPartner
-              firstName={data.partnerFirstName}
-              birthMonth={data.partnerBirthMonth}
-              birthDay={data.partnerBirthDay}
-              birthYear={data.partnerBirthYear}
-              onFirstNameChange={v => update({ partnerFirstName: v })}
-              onBirthMonthChange={v => update({ partnerBirthMonth: v })}
-              onBirthDayChange={v => update({ partnerBirthDay: v })}
-              onBirthYearChange={v => update({ partnerBirthYear: v })}
-            />
-          )}
-          {step === 9 && (
             <StepLocation
               value={{ address: "", city: data.city, state: data.state, zip: "", country: data.country }}
               onChange={loc => update({ city: loc.city, state: loc.state, country: loc.country })}
             />
           )}
-          {step === 10 && (
+          {step === 4 && (
             <StepPhone
               countryCode={data.countryCode}
               phone={data.phone}
@@ -566,7 +490,7 @@ export default function OnboardingPage() {
               error={otpError}
             />
           )}
-          {step === 11 && (
+          {step === 5 && (
             <StepVerification
               otp={data.otp}
               onChange={v => { update({ otp: v }); setOtpError(null); }}
@@ -578,9 +502,6 @@ export default function OnboardingPage() {
               }}
               error={otpError}
             />
-          )}
-          {step === 12 && (
-            <StepSource value={data.source} onChange={v => update({ source: v })} />
           )}
           {step === ACCOUNT_STEP && isRegistration && (
             <StepAccount
@@ -610,7 +531,7 @@ export default function OnboardingPage() {
           >
             {submitting || otpSending ? (
               <Loader2 className="w-5 h-5 animate-spin mx-auto" />
-            ) : step === 10 ? (
+            ) : step === 4 ? (
               "Verify phone number"
             ) : step === ACCOUNT_STEP ? (
               "Create Account & Finish"
@@ -754,8 +675,9 @@ function StepGoals({ goals, onChange }: { goals: string[]; onChange: (g: string[
         style={{ fontFamily: "var(--font-display)" }}
         data-testid="text-step-title"
       >
-        How can we help you build your family?
+        What are you looking for?
       </h1>
+      <p className="text-muted-foreground mb-8 text-sm -mt-6">Select all that apply</p>
       <div className="space-y-3">
         {GOALS.map(goal => (
           <PillButton
@@ -772,7 +694,17 @@ function StepGoals({ goals, onChange }: { goals: string[]; onChange: (g: string[
   );
 }
 
-function StepFirstName({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function StepName({
+  firstName,
+  lastName,
+  onFirstNameChange,
+  onLastNameChange,
+}: {
+  firstName: string;
+  lastName: string;
+  onFirstNameChange: (v: string) => void;
+  onLastNameChange: (v: string) => void;
+}) {
   return (
     <div>
       <h1
@@ -780,229 +712,27 @@ function StepFirstName({ value, onChange }: { value: string; onChange: (v: strin
         style={{ fontFamily: "var(--font-display)" }}
         data-testid="text-step-title"
       >
-        What's your first name?
+        What's your name?
       </h1>
-      <p className="text-muted-foreground mb-8 text-sm">Your name cannot be changed later</p>
-      <input
-        type="text"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder="First name"
-        autoFocus
-        data-testid="input-first-name"
-        className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
-      />
-    </div>
-  );
-}
-
-function StepLastName({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div>
-      <h1
-        className="text-3xl font-bold mb-8 leading-tight"
-        style={{ fontFamily: "var(--font-display)" }}
-        data-testid="text-step-title"
-      >
-        And your last name?
-      </h1>
-      <input
-        type="text"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder="Last name"
-        autoFocus
-        data-testid="input-last-name"
-        className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
-      />
-    </div>
-  );
-}
-
-function StepBirthDate({
-  month,
-  day,
-  year,
-  onMonthChange,
-  onDayChange,
-  onYearChange,
-}: {
-  month: number;
-  day: number;
-  year: number;
-  onMonthChange: (v: number) => void;
-  onDayChange: (v: number) => void;
-  onYearChange: (v: number) => void;
-}) {
-  return (
-    <div>
-      <h1
-        className="text-3xl font-bold mb-8 leading-tight"
-        style={{ fontFamily: "var(--font-display)" }}
-        data-testid="text-step-title"
-      >
-        What's your birth date?
-      </h1>
-      <div className="grid grid-cols-3 gap-4">
-        <ScrollWheel
-          items={MONTHS}
-          selectedIndex={month}
-          onSelect={onMonthChange}
-          testIdPrefix="scroll-month"
-        />
-        <ScrollWheel
-          items={DAYS}
-          selectedIndex={day}
-          onSelect={onDayChange}
-          testIdPrefix="scroll-day"
-        />
-        <ScrollWheel
-          items={YEARS}
-          selectedIndex={year}
-          onSelect={onYearChange}
-          testIdPrefix="scroll-year"
-        />
-      </div>
-    </div>
-  );
-}
-
-function StepGender({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div>
-      <h1
-        className="text-3xl font-bold mb-8 leading-tight"
-        style={{ fontFamily: "var(--font-display)" }}
-        data-testid="text-step-title"
-      >
-        How do you identify?
-      </h1>
-      <div className="space-y-3">
-        {GENDERS.map(g => (
-          <PillButton
-            key={g}
-            label={g}
-            selected={value === g}
-            onClick={() => onChange(g)}
-            data-testid={`pill-gender-${g.toLowerCase().replace(/['\s]+/g, "-")}`}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function StepOrientation({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div>
-      <h1
-        className="text-3xl font-bold mb-8 leading-tight"
-        style={{ fontFamily: "var(--font-display)" }}
-        data-testid="text-step-title"
-      >
-        What is your sexual orientation?
-      </h1>
-      <div className="space-y-3">
-        {ORIENTATIONS.map(o => (
-          <PillButton
-            key={o}
-            label={o}
-            selected={value === o}
-            onClick={() => onChange(o)}
-            data-testid={`pill-orientation-${o.toLowerCase()}`}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function StepRelationship({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div>
-      <h1
-        className="text-3xl font-bold mb-8 leading-tight"
-        style={{ fontFamily: "var(--font-display)" }}
-        data-testid="text-step-title"
-      >
-        What is your relationship status?
-      </h1>
-      <div className="space-y-3">
-        {RELATIONSHIPS.map(r => (
-          <PillButton
-            key={r}
-            label={r}
-            selected={value === r}
-            onClick={() => onChange(r)}
-            data-testid={`pill-relationship-${r.toLowerCase().replace(/[/\s]+/g, "-")}`}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function StepPartner({
-  firstName,
-  birthMonth,
-  birthDay,
-  birthYear,
-  onFirstNameChange,
-  onBirthMonthChange,
-  onBirthDayChange,
-  onBirthYearChange,
-}: {
-  firstName: string;
-  birthMonth: number;
-  birthDay: number;
-  birthYear: number;
-  onFirstNameChange: (v: string) => void;
-  onBirthMonthChange: (v: number) => void;
-  onBirthDayChange: (v: number) => void;
-  onBirthYearChange: (v: number) => void;
-}) {
-  return (
-    <div>
-      <h1
-        className="text-3xl font-bold mb-8 leading-tight"
-        style={{ fontFamily: "var(--font-display)" }}
-        data-testid="text-step-title"
-      >
-        Tell us about your partner.
-      </h1>
-      <div className="space-y-8">
+      <p className="text-muted-foreground mb-8 text-sm">Please use your real name - providers will see it when you connect</p>
+      <div className="space-y-6">
         <input
           type="text"
           value={firstName}
           onChange={e => onFirstNameChange(e.target.value)}
-          placeholder="Partner's full name"
+          placeholder="First name"
           autoFocus
-          data-testid="input-partner-name"
+          data-testid="input-first-name"
           className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
         />
-        <div>
-          <p className="text-muted-foreground text-sm mb-4">Partner's date of birth</p>
-          <div className="grid grid-cols-3 gap-4">
-            <ScrollWheel
-              items={MONTHS}
-              selectedIndex={birthMonth}
-              onSelect={onBirthMonthChange}
-              testIdPrefix="scroll-partner-month"
-            />
-            <ScrollWheel
-              items={DAYS}
-              selectedIndex={birthDay}
-              onSelect={onBirthDayChange}
-              testIdPrefix="scroll-partner-day"
-            />
-            <ScrollWheel
-              items={YEARS}
-              selectedIndex={birthYear}
-              onSelect={onBirthYearChange}
-              testIdPrefix="scroll-partner-year"
-            />
-          </div>
-        </div>
+        <input
+          type="text"
+          value={lastName}
+          onChange={e => onLastNameChange(e.target.value)}
+          placeholder="Last name"
+          data-testid="input-last-name"
+          className="w-full text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
+        />
       </div>
     </div>
   );
@@ -1112,10 +842,6 @@ function StepPhone({
         </p>
       )}
 
-      <div className="flex items-center gap-2 text-muted-foreground text-sm justify-center">
-        <Lock className="w-4 h-4" />
-        <span>Your number will never be shared with anyone</span>
-      </div>
     </div>
   );
 }
@@ -1186,31 +912,6 @@ function StepVerification({
           </button>
         )}
       </p>
-    </div>
-  );
-}
-
-function StepSource({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div>
-      <h1
-        className="text-3xl font-bold mb-8 leading-tight"
-        style={{ fontFamily: "var(--font-display)" }}
-        data-testid="text-step-title"
-      >
-        How did you hear about GoStork?
-      </h1>
-      <div className="space-y-3">
-        {SOURCES.map(s => (
-          <PillButton
-            key={s}
-            label={s}
-            selected={value === s}
-            onClick={() => onChange(s)}
-            data-testid={`pill-source-${s.toLowerCase().replace(/\s+/g, "-")}`}
-          />
-        ))}
-      </div>
     </div>
   );
 }

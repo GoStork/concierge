@@ -12,7 +12,7 @@ export class StorageService {
   constructor() {
     const keyJson = process.env.GCS_SERVICE_ACCOUNT_KEY;
     if (!keyJson) {
-      this.logger.warn("GCS_SERVICE_ACCOUNT_KEY not set — storage disabled");
+      this.logger.warn("GCS_SERVICE_ACCOUNT_KEY not set - storage disabled");
       this.storage = null as any;
       this.bucketName = "";
       return;
@@ -36,7 +36,7 @@ export class StorageService {
 
   private ensureConfigured(): void {
     if (!this.storage) {
-      throw new Error("Google Cloud Storage is not configured — set GCS_SERVICE_ACCOUNT_KEY and GCS_BUCKET_NAME");
+      throw new Error("Google Cloud Storage is not configured - set GCS_SERVICE_ACCOUNT_KEY and GCS_BUCKET_NAME");
     }
   }
 

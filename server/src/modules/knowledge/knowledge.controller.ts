@@ -39,8 +39,10 @@ export class KnowledgeController {
     @Req() req: Request,
   ) {
     const user = req.user as any;
-    if (!user.providerId) {
-      throw new ForbiddenException("Only providers can upload documents");
+    const roles: string[] = user.roles || [];
+    const isAdmin = roles.includes("GOSTORK_ADMIN");
+    if (!user.providerId && !isAdmin) {
+      throw new ForbiddenException("Only providers or admins can upload documents");
     }
 
     if (!file) {
@@ -55,14 +57,19 @@ export class KnowledgeController {
       );
     }
 
-    const result = await this.knowledgeService.ingestDocument(
-      file.buffer,
-      file.originalname,
-      user.providerId,
-      1,
-    );
+    try {
+      const result = await this.knowledgeService.ingestDocument(
+        file.buffer,
+        file.originalname,
+        user.providerId || null,
+        1,
+      );
 
-    return { success: true, fileName: file.originalname, ...result };
+      return { success: true, fileName: file.originalname, ...result };
+    } catch (err: any) {
+      console.error("Knowledge upload error:", err);
+      throw new BadRequestException(err.message || "Failed to process document");
+    }
   }
 
   @Post("sync-website")
@@ -100,12 +107,14 @@ export class KnowledgeController {
   @ApiOperation({ summary: "List provider's knowledge base documents" })
   async listDocuments(@Req() req: Request) {
     const user = req.user as any;
-    if (!user.providerId) {
-      throw new ForbiddenException("Only providers can view documents");
+    const roles: string[] = user.roles || [];
+    const isAdmin = roles.includes("GOSTORK_ADMIN");
+    if (!user.providerId && !isAdmin) {
+      throw new ForbiddenException("Only providers or admins can view documents");
     }
 
     const docs =
-      await this.knowledgeService.getProviderDocuments(user.providerId);
+      await this.knowledgeService.getProviderDocuments(user.providerId || null);
     return docs;
   }
 
@@ -118,12 +127,14 @@ export class KnowledgeController {
     @Req() req: Request,
   ) {
     const user = req.user as any;
-    if (!user.providerId) {
-      throw new ForbiddenException("Only providers can delete documents");
+    const roles: string[] = user.roles || [];
+    const isAdmin = roles.includes("GOSTORK_ADMIN");
+    if (!user.providerId && !isAdmin) {
+      throw new ForbiddenException("Only providers or admins can delete documents");
     }
 
     const deleted = await this.knowledgeService.deleteProviderDocument(
-      user.providerId,
+      user.providerId || null,
       decodeURIComponent(fileName),
     );
 
@@ -261,12 +272,14 @@ export class KnowledgeController {
   @ApiOperation({ summary: "List pending whisper questions for provider" })
   async listWhispers(@Req() req: Request) {
     const user = req.user as any;
-    if (!user.providerId) {
-      throw new ForbiddenException("Only providers can view whisper questions");
+    const roles: string[] = user.roles || [];
+    const isAdmin = roles.includes("GOSTORK_ADMIN");
+    if (!user.providerId && !isAdmin) {
+      throw new ForbiddenException("Only providers or admins can view whisper questions");
     }
 
     return this.prisma.silentQuery.findMany({
-      where: { providerId: user.providerId },
+      where: user.providerId ? { providerId: user.providerId } : {},
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
@@ -289,8 +302,10 @@ export class KnowledgeController {
     @Req() req: Request,
   ) {
     const user = req.user as any;
-    if (!user.providerId) {
-      throw new ForbiddenException("Only providers can answer whisper questions");
+    const roles: string[] = user.roles || [];
+    const isAdmin = roles.includes("GOSTORK_ADMIN");
+    if (!user.providerId && !isAdmin) {
+      throw new ForbiddenException("Only providers or admins can answer whisper questions");
     }
 
     if (!body.answer || !body.answer.trim()) {
@@ -298,7 +313,10 @@ export class KnowledgeController {
     }
 
     const query = await this.prisma.silentQuery.findUnique({ where: { id } });
-    if (!query || query.providerId !== user.providerId) {
+    if (!query) {
+      throw new ForbiddenException("Question not found");
+    }
+    if (!isAdmin && query.providerId !== user.providerId) {
       throw new ForbiddenException("Question not found or not yours");
     }
 
@@ -317,7 +335,7 @@ export class KnowledgeController {
     try {
       const kbContent = `Q: ${query.questionText}\nA: ${body.answer.trim()}`;
       await this.knowledgeService.ingestText(kbContent, {
-        providerId: user.providerId,
+        providerId: query.providerId,
         sourceTier: 1,
         sourceType: "WHISPER",
         sourceFileName: `whisper-${id}`,
@@ -329,7 +347,7 @@ export class KnowledgeController {
 
     try {
       const provider = await this.prisma.provider.findUnique({
-        where: { id: user.providerId },
+        where: { id: query.providerId },
         select: { name: true },
       });
       await this.prisma.inAppNotification.create({

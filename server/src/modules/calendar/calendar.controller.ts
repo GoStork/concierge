@@ -243,7 +243,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
           payload: {
             sessionId: targetSessionId,
             parentName,
-            message: `${parentName} has scheduled a consultation — click "Join Group Chat" to start chatting directly`,
+            message: `${parentName} has scheduled a consultation - click "Join Group Chat" to start chatting directly`,
           },
         },
       });
@@ -302,7 +302,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
         data: {
           sessionId: conciergeSessionId,
           role: "assistant",
-          content: `Great news! Your consultation with ${provider.name} is all set! I've created a separate chat where you can communicate directly with them — you'll find it in your inbox under "Provider Conversations."\n\nNow, let's continue with ${continueGoal}!`,
+          content: `Great news! Your consultation with ${provider.name} is all set! I've created a separate chat where you can communicate directly with them - you'll find it in your inbox under "Provider Conversations."\n\nNow, let's continue with ${continueGoal}!`,
           senderType: "ai",
         },
       });
@@ -554,7 +554,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     const where: any = {};
 
     if (isAdmin && providerId === "all") {
-      // no user scope filter — show all bookings
+      // no user scope filter - show all bookings
     } else if (isAdmin && providerId) {
       where.providerUser = { providerId };
     } else {
@@ -643,7 +643,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     const where: any = {};
 
     if (isAdmin && providerId === "all") {
-      // no user scope filter — show all bookings
+      // no user scope filter - show all bookings
     } else if (isAdmin && providerId) {
       where.providerUser = { providerId };
     } else {
@@ -3469,7 +3469,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
         this.emitBookingEvent("booking_cancelled", updated);
 
         cancelledCount++;
-        this.logger.log(`Booking ${booking.id} cancelled — event deleted from external calendar`);
+        this.logger.log(`Booking ${booking.id} cancelled - event deleted from external calendar`);
       } catch (err: any) {
         this.logger.warn(`External sync check failed for booking ${booking.id}: ${err.message}`);
       }

@@ -57,7 +57,7 @@ export async function verifyClinicUrl(url: string, clinicName: string): Promise<
   const domainRelevant = domainHasFertilityKeyword(url) || domainContainsClinicNameWords(url, clinicName);
 
   if (domainRelevant) {
-    console.log(`[clinic-enrichment] verifyClinicUrl: "${url}" accepted — domain name matches fertility/clinic keywords`);
+    console.log(`[clinic-enrichment] verifyClinicUrl: "${url}" accepted - domain name matches fertility/clinic keywords`);
   }
 
   try {
@@ -84,7 +84,7 @@ export async function verifyClinicUrl(url: string, clinicName: string): Promise<
 
     if (!response.ok) {
       if (domainRelevant) {
-        console.log(`[clinic-enrichment] verifyClinicUrl: "${url}" HTTP ${response.status} but domain is relevant — accepting`);
+        console.log(`[clinic-enrichment] verifyClinicUrl: "${url}" HTTP ${response.status} but domain is relevant - accepting`);
         return { valid: true, reason: "domain-relevant-despite-http-error" };
       }
       return { valid: false, reason: `HTTP ${response.status}` };
@@ -129,7 +129,7 @@ export async function verifyClinicUrl(url: string, clinicName: string): Promise<
 
     const strippedText = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
     if (strippedText.length < 500) {
-      console.log(`[clinic-enrichment] verifyClinicUrl: "${url}" has minimal content (${strippedText.length} chars) — likely SPA, accepting`);
+      console.log(`[clinic-enrichment] verifyClinicUrl: "${url}" has minimal content (${strippedText.length} chars) - likely SPA, accepting`);
       return { valid: true, reason: "minimal-content-spa" };
     }
 
@@ -138,14 +138,14 @@ export async function verifyClinicUrl(url: string, clinicName: string): Promise<
   } catch (err: any) {
     const errMsg = String(err?.cause?.code || err?.cause?.message || err.message || "");
     if (errMsg.includes("ENOTFOUND") || errMsg.includes("ENODATA") || errMsg.includes("getaddrinfo")) {
-      console.log(`[clinic-enrichment] verifyClinicUrl: DNS resolution failed for "${url}" — domain does not exist`);
+      console.log(`[clinic-enrichment] verifyClinicUrl: DNS resolution failed for "${url}" - domain does not exist`);
       return { valid: false, reason: "dns-resolution-failed" };
     }
     if (domainRelevant) {
-      console.log(`[clinic-enrichment] verifyClinicUrl: fetch error for "${url}": ${err.message} — accepting (domain is relevant)`);
+      console.log(`[clinic-enrichment] verifyClinicUrl: fetch error for "${url}": ${err.message} - accepting (domain is relevant)`);
       return { valid: true, reason: "domain-relevant-despite-fetch-error" };
     }
-    console.log(`[clinic-enrichment] verifyClinicUrl: fetch error for "${url}": ${err.message} — accepting URL (cannot verify from this network)`);
+    console.log(`[clinic-enrichment] verifyClinicUrl: fetch error for "${url}": ${err.message} - accepting URL (cannot verify from this network)`);
     return { valid: true, reason: "fetch-error-accepted" };
   }
 }
@@ -169,7 +169,7 @@ function normalizeName(name: string): string {
     .replace(/,?\s*(LLC|Inc\.?|PC|PA|SC|LTD|LLP|Corporation|Corp\.?|PLLC|dba\b.*)/gi, "")
     .replace(/,?\s*(MD|DO|PhD|FACOG|FACS|MBA|MSc|RN|NP)\b/gi, "")
     .replace(/[.,'"]/g, "")
-    .replace(/[-–—]/g, " ")
+    .replace(/[-–-]/g, " ")
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
@@ -268,7 +268,7 @@ export async function searchSartForClinic(
         if (Array.isArray(data?.Clinics) && data.Clinics.length > 0) {
           clinics = data.Clinics;
           usedTerm = searchTerm;
-          console.log(`[clinic-enrichment] SART search for "${searchTerm}": ${clinics.length} result(s) — [${clinics.slice(0, 3).map((c: any) => c.Name).join(", ")}${clinics.length > 3 ? "..." : ""}]`);
+          console.log(`[clinic-enrichment] SART search for "${searchTerm}": ${clinics.length} result(s) - [${clinics.slice(0, 3).map((c: any) => c.Name).join(", ")}${clinics.length > 3 ? "..." : ""}]`);
           break;
         } else {
           console.log(`[clinic-enrichment] SART search for "${searchTerm}": 0 results`);
@@ -691,14 +691,14 @@ export class ClinicEnrichmentService {
 
     let scraped: Awaited<ReturnType<typeof scrapeProviderWebsite>> | null = null;
     if (websiteUrl) {
-      console.log(`[clinic-enrichment] Found website: ${websiteUrl} — scraping profile...`);
+      console.log(`[clinic-enrichment] Found website: ${websiteUrl} - scraping profile...`);
       try {
         scraped = await scrapeProviderWebsite(websiteUrl);
       } catch (scrapeErr: any) {
-        console.log(`[clinic-enrichment] Scrape failed for "${provider.name}" (${scrapeErr.message}) — saving SART data only`);
+        console.log(`[clinic-enrichment] Scrape failed for "${provider.name}" (${scrapeErr.message}) - saving SART data only`);
       }
     } else {
-      console.log(`[clinic-enrichment] No website for "${provider.name}" — saving SART data only`);
+      console.log(`[clinic-enrichment] No website for "${provider.name}" - saving SART data only`);
     }
 
     const updateData: Record<string, any> = {};
@@ -1017,7 +1017,7 @@ export class ClinicEnrichmentService {
         const missedFromEarlier = allProviders.slice(0, previousProcessed).filter(p => !p.websiteUrl);
         providersToEnrich = [...missedFromEarlier, ...remaining];
         if (missedFromEarlier.length > 0) {
-          console.log(`[clinic-enrichment] Found ${missedFromEarlier.length} previously-processed clinics with no website — will re-enrich them`);
+          console.log(`[clinic-enrichment] Found ${missedFromEarlier.length} previously-processed clinics with no website - will re-enrich them`);
         }
       } else {
         providersToEnrich = allProviders;
@@ -1136,7 +1136,7 @@ export class ClinicEnrichmentService {
       if (finalUpdate.count > 0) {
         console.log(`[clinic-enrichment] Enrichment complete: ${processed} processed, ${errors} errors, ${skipped} skipped`);
       } else {
-        console.log(`[clinic-enrichment] Enrichment loop finished but job was cancelled — skipping COMPLETED update`);
+        console.log(`[clinic-enrichment] Enrichment loop finished but job was cancelled - skipping COMPLETED update`);
       }
     } catch (err: any) {
       console.error(`[clinic-enrichment] Fatal enrichment error:`, err.message);

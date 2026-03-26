@@ -24,7 +24,7 @@ export function profileDataToText(profileData: any): string {
         if (stringVals.length > 0) parts.push(`${prefix}${key}: ${stringVals.join(", ")}`);
       } else if (typeof value === "object" && value !== null) {
         flatten(value, `${key} > `);
-      } else if (value !== null && value !== undefined && value !== "" && value !== "—" && value !== "--") {
+      } else if (value !== null && value !== undefined && value !== "" && value !== "-" && value !== "--") {
         parts.push(`${prefix}${key}: ${value}`);
       }
     }
@@ -333,7 +333,7 @@ async function authenticateAndGetCookies(
     if (authResp.status >= 300 && authResp.status < 400) {
       const location = authResp.headers.get("location") || "";
       if (location.toLowerCase().includes("login")) {
-        console.error(`[donor-sync] Login failed — redirected back to login page`);
+        console.error(`[donor-sync] Login failed - redirected back to login page`);
         return null;
       }
       console.log(`[donor-sync] Login successful (redirect to ${location})`);
@@ -352,7 +352,7 @@ async function authenticateAndGetCookies(
     } else if (authResp.status === 200) {
       const responseText = await authResp.text();
       if (responseText.toLowerCase().includes("sign in") && responseText.toLowerCase().includes("password")) {
-        console.error(`[donor-sync] Login failed — still on login page`);
+        console.error(`[donor-sync] Login failed - still on login page`);
         return null;
       }
       console.log(`[donor-sync] Login successful (200 OK)`);
@@ -613,7 +613,7 @@ function getPromptForType(type: DonorType): string {
  */
 function tryDirectSpermDonorExtraction(html: string, pageUrl: string): any | null {
   const cleanedText = cleanHtml(html);
-  // Check if page has multiple "Donor #" entries — indicates structured sperm donor listing
+  // Check if page has multiple "Donor #" entries - indicates structured sperm donor listing
   const donorIdMatches = cleanedText.match(/Donor\s*#\s*\w+/gi);
   if (!donorIdMatches || donorIdMatches.length < 2) return null;
 
@@ -788,7 +788,7 @@ Return a JSON object:
 }
 
 IMPORTANT RULES:
-- Extract EVERY section and EVERY field-value pair — do not skip any
+- Extract EVERY section and EVERY field-value pair - do not skip any
 - Use the exact section heading text as the key (e.g. "General Characteristics", "Physical Features")
 - Use the exact field label text as the key (e.g. "Age When Donated", "Hair Type", "Blood Type")
 - Use the exact displayed value as the value (e.g. "BROWN", "5'11\\" (180 CM)", "27")
@@ -1735,7 +1735,7 @@ async function tryFetchEdcDonorData(
         }
       }
     } else if (syncType !== "egg-donor") {
-      console.log(`[donor-sync] Skipping EDC dashboard probing — no EDC signatures found in page`);
+      console.log(`[donor-sync] Skipping EDC dashboard probing - no EDC signatures found in page`);
     }
 
     return null;
@@ -2056,7 +2056,7 @@ function decodeHtmlEntities(str: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&emsp;/g, " ")
     .replace(/&nbsp;/g, " ")
-    .replace(/&mdash;/g, "—")
+    .replace(/&mdash;/g, "-")
     .replace(/&ndash;/g, "–")
     .replace(/&rsquo;/g, "'")
     .replace(/&lsquo;/g, "'")
@@ -3108,7 +3108,7 @@ async function parseEdcProfileTab(html: string): Promise<Record<string, any>> {
         const explanation = explanationMatch ? clean(explanationMatch[1]).replace(/^Donor Explanation:\s*/i, "").replace(/^If yes,\s*please explain[^:]*:\s*/i, "") : "";
 
         if (answer) {
-          sectionData[question] = explanation ? `${answer} — ${explanation}` : answer;
+          sectionData[question] = explanation ? `${answer} - ${explanation}` : answer;
         }
       }
     }
@@ -3265,7 +3265,7 @@ async function markStaleProfiles(
 ): Promise<number> {
   console.log(`[profile-sync] Stale detection: ${scrapedExternalIds.size} scraped IDs: [${Array.from(scrapedExternalIds).join(", ")}]`);
   if (scrapedExternalIds.size === 0) {
-    console.log(`[profile-sync] Skipping stale detection — no scraped IDs to compare against`);
+    console.log(`[profile-sync] Skipping stale detection - no scraped IDs to compare against`);
     return 0;
   }
 
@@ -3292,7 +3292,7 @@ async function markStaleProfiles(
   }
   console.log(`[profile-sync] Stale detection: ${existingCount} existing non-INACTIVE non-PDF profiles in DB. All ${allProfiles.length} profiles: [${allProfiles.map(p => `${p.externalId || 'NULL'}(${p.status})`).join(", ")}]`);
   if (existingCount > 0 && scrapedExternalIds.size < existingCount * 0.5) {
-    console.warn(`[profile-sync] Skipping stale detection — scraped only ${scrapedExternalIds.size} profiles but ${existingCount} exist in DB (possible partial scrape)`);
+    console.warn(`[profile-sync] Skipping stale detection - scraped only ${scrapedExternalIds.size} profiles but ${existingCount} exist in DB (possible partial scrape)`);
     return 0;
   }
 
@@ -3388,7 +3388,7 @@ async function runSyncJob(
         job.status = "failed";
         job.errors.push("Login failed. Please verify your username and password are correct.");
         job.completedAt = new Date();
-        console.error(`[donor-sync] Login failed for ${credentials.username} — aborting sync`);
+        console.error(`[donor-sync] Login failed for ${credentials.username} - aborting sync`);
 
         const syncConfigUpdate = {
           lastSyncAt: new Date(),
@@ -3516,7 +3516,7 @@ async function runSyncJob(
               break;
             }
           } catch (err: any) {
-            // Ignore — try next path
+            // Ignore - try next path
           }
         }
       }
@@ -4367,7 +4367,7 @@ export async function runNightlySync(prisma: PrismaService, storageService?: Sto
       allConfigs.push({ providerId: c.providerId, type: "sperm-donor", providerName: c.provider.name });
     }
 
-    console.log(`[nightly-sync] Found ${allConfigs.length} sync configurations — running in parallel`);
+    console.log(`[nightly-sync] Found ${allConfigs.length} sync configurations - running in parallel`);
 
     const syncPromises = allConfigs.map(async (config) => {
       const result: NightlySyncResult = {
@@ -4932,12 +4932,12 @@ Extract ALL information from this surrogate profile. Return a JSON object with t
           "Health & Medical": { "key": "value pairs for medical history, health conditions, medications, surgeries, mental health, etc." },
           "Pregnancy History": { "key": "value pairs for pregnancies, deliveries, c-sections, complications, miscarriages, live births, last delivery year, etc." },
           "Surrogacy Details": { "key": "value pairs for surrogacy preferences, compensation, agreements, prior surrogacy experience, etc." },
-          "Support System": { "key": "value pairs for all questions about who will support the surrogate during the journey — e.g. partner support, family support, childcare assistance, bedrest support, support person, emotional support, counseling, support system during pregnancy, etc. ALSO include any questions about how family, friends, children, employer, or others will REACT to the surrogacy (e.g. 'How do you expect the following people will react to you being a surrogate?' for Family, Friends, Children, Employer, etc.) — these are support system questions. Look for keywords like 'support', 'supportive', 'childcare', 'bedrest', 'who will help', 'caretaker', 'react', 'reaction', 'how will they feel'. Only applicable to surrogates." },
+          "Support System": { "key": "value pairs for all questions about who will support the surrogate during the journey - e.g. partner support, family support, childcare assistance, bedrest support, support person, emotional support, counseling, support system during pregnancy, etc. ALSO include any questions about how family, friends, children, employer, or others will REACT to the surrogacy (e.g. 'How do you expect the following people will react to you being a surrogate?' for Family, Friends, Children, Employer, etc.) - these are support system questions. Look for keywords like 'support', 'supportive', 'childcare', 'bedrest', 'who will help', 'caretaker', 'react', 'reaction', 'how will they feel'. Only applicable to surrogates." },
           "Family & Background": { "key": "value pairs for marital status, children, partner info, family medical history, etc." },
           "Lifestyle": { "key": "value pairs for diet, exercise, smoking, alcohol, drugs, hobbies, etc." },
           "Legal & Insurance": { "key": "value pairs for insurance, legal history, criminal background, etc." },
           "Letter to Intended Parents": "Full text of any personal letter or essay from the surrogate",
-          "Additional Information": "Any 'Additional Information', 'Additional Notes', 'Agency Comments', 'Agency Recommendations', or 'Recommendation Points' section — these are comments written BY THE AGENCY about the surrogate (third-person perspective), NOT written by the surrogate herself. Keep the full text as a single string value under a descriptive key. If no such section exists, omit this."
+          "Additional Information": "Any 'Additional Information', 'Additional Notes', 'Agency Comments', 'Agency Recommendations', or 'Recommendation Points' section - these are comments written BY THE AGENCY about the surrogate (third-person perspective), NOT written by the surrogate herself. Keep the full text as a single string value under a descriptive key. If no such section exists, omit this."
         }
       }
     }
@@ -4948,7 +4948,7 @@ IMPORTANT RULES:
 - Extract EVERY piece of information from the PDF - do not skip any fields, questions, or answers
 - Organize all extracted data into the _sections structure above
 - Create additional sections if the PDF has sections that don't fit the categories above
-- If the PDF has an "Additional Information" section with third-person commentary about the surrogate (e.g. "Her recent match...", "She does not have..."), preserve it as the "Additional Information" section — do NOT merge its content into other sections
+- If the PDF has an "Additional Information" section with third-person commentary about the surrogate (e.g. "Her recent match...", "She does not have..."), preserve it as the "Additional Information" section - do NOT merge its content into other sections
 - For each section, include ALL question/answer pairs exactly as they appear in the PDF
 - Include personal essays, letters, and long-form text responses in full
 - The flat fields (age, bmi, etc.) should also be extracted at the top level for database columns
@@ -5250,7 +5250,7 @@ async function processSinglePdf(
         job.succeeded++;
         if (upsertResult.isNew) job.newProfiles++;
       } catch (upsertErr: any) {
-        job.errors.push(`${fileName}: Upsert failed — ${upsertErr.message}`);
+        job.errors.push(`${fileName}: Upsert failed - ${upsertErr.message}`);
         job.failed++;
       }
     }

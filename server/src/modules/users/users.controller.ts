@@ -272,6 +272,7 @@ export class UsersController {
     if (body.partnerAge !== undefined) updateData.partnerAge = typeof body.partnerAge === "number" ? body.partnerAge : null;
     if (body.city) updateData.city = body.city;
     if (body.state) updateData.state = body.state;
+    if (body.country !== undefined) updateData.country = body.country || null;
     if (body.mobileNumber) updateData.mobileNumber = body.mobileNumber;
     if (body.referralSource) updateData.referralSource = body.referralSource;
 
@@ -436,7 +437,7 @@ export class UsersController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "List all users (GoStork team only)" })
   @ApiResponse({ status: 200, description: "List of users", type: [UserResponseDto] })
-  @ApiResponse({ status: 403, description: "Forbidden — GoStork team only", type: ErrorResponseDto })
+  @ApiResponse({ status: 403, description: "Forbidden - GoStork team only", type: ErrorResponseDto })
   async listUsers(@Req() req: Request) {
     const user = req.user as any;
     const gostorkRoles = ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE", "GOSTORK_DEVELOPER"];
@@ -462,7 +463,7 @@ export class UsersController {
   @ApiOperation({ summary: "Get a single user by ID (GoStork team only)" })
   @ApiParam({ name: "id", type: String })
   @ApiResponse({ status: 200, description: "User data", type: UserResponseDto })
-  @ApiResponse({ status: 403, description: "Forbidden — GoStork team only", type: ErrorResponseDto })
+  @ApiResponse({ status: 403, description: "Forbidden - GoStork team only", type: ErrorResponseDto })
   @ApiResponse({ status: 404, description: "User not found", type: ErrorResponseDto })
   async getUser(@Param("id") id: string, @Req() req: Request) {
     const user = req.user as any;

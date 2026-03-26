@@ -57,7 +57,7 @@ async function createSessionStore(): Promise<session.Store> {
 
   // In production without REDIS_URL, skip Redis entirely to avoid startup delay
   if (!redisUrl && process.env.NODE_ENV === "production") {
-    log("No REDIS_URL configured — using MemoryStore", "redis");
+    log("No REDIS_URL configured - using MemoryStore", "redis");
     return new session.MemoryStore();
   }
 
@@ -84,10 +84,10 @@ async function createSessionStore(): Promise<session.Store> {
       }
     });
     await redisClient.connect();
-    log("Redis connected — using Redis session store", "redis");
+    log("Redis connected - using Redis session store", "redis");
     return new RedisStore({ client: redisClient, prefix: "gostork:sess:" });
   } catch (err: any) {
-    log(`Redis unavailable (${err.message}) — falling back to MemoryStore`, "redis");
+    log(`Redis unavailable (${err.message}) - falling back to MemoryStore`, "redis");
     return new session.MemoryStore();
   }
 }

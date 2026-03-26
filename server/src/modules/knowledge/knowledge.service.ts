@@ -16,7 +16,7 @@ export class KnowledgeService {
     return response.data[0].embedding;
   }
 
-  chunkText(text: string, chunkSize = 500, overlap = 50): string[] {
+  chunkText(text: string, chunkSize = 300, overlap = 50): string[] {
     const words = text.split(/\s+/);
     const chunks: string[] = [];
     let i = 0;
@@ -69,7 +69,7 @@ export class KnowledgeService {
   async ingestDocument(
     fileBuffer: Buffer,
     fileName: string,
-    providerId: string,
+    providerId: string | null,
     sourceTier: number = 1,
   ): Promise<{ chunks: number }> {
     let text = "";
@@ -84,7 +84,9 @@ export class KnowledgeService {
     ) {
       text = fileBuffer.toString("utf-8");
     } else if (fileName.toLowerCase().endsWith(".docx")) {
-      text = fileBuffer.toString("utf-8");
+      const mammoth = await import("mammoth");
+      const result = await mammoth.extractRawText({ buffer: fileBuffer });
+      text = result.value;
     } else {
       text = fileBuffer.toString("utf-8");
     }
@@ -242,24 +244,36 @@ export class KnowledgeService {
     }));
   }
 
-  async getProviderDocuments(providerId: string) {
-    const docs = await this.prisma.$queryRawUnsafe(
-      `SELECT "sourceFileName", "sourceType", "sourceUrl", COUNT(*) as chunk_count, MIN("createdAt") as "createdAt"
-       FROM "KnowledgeChunk"
-       WHERE "providerId" = $1
-       GROUP BY "sourceFileName", "sourceType", "sourceUrl"
-       ORDER BY MIN("createdAt") DESC`,
-      providerId,
-    );
+  async getProviderDocuments(providerId: string | null) {
+    let docs: any[];
+    if (providerId) {
+      docs = await this.prisma.$queryRawUnsafe(
+        `SELECT "sourceFileName", "sourceType", "sourceUrl", COUNT(*)::int as chunk_count, MIN("createdAt") as "createdAt"
+         FROM "KnowledgeChunk"
+         WHERE "providerId" = $1
+         GROUP BY "sourceFileName", "sourceType", "sourceUrl"
+         ORDER BY MIN("createdAt") DESC`,
+        providerId,
+      );
+    } else {
+      // Admin: return system-level documents (no provider)
+      docs = await this.prisma.$queryRawUnsafe(
+        `SELECT "sourceFileName", "sourceType", "sourceUrl", COUNT(*)::int as chunk_count, MIN("createdAt") as "createdAt"
+         FROM "KnowledgeChunk"
+         WHERE "providerId" IS NULL
+         GROUP BY "sourceFileName", "sourceType", "sourceUrl"
+         ORDER BY MIN("createdAt") DESC`,
+      );
+    }
     return docs;
   }
 
   async deleteProviderDocument(
-    providerId: string,
+    providerId: string | null,
     sourceFileName: string,
   ): Promise<number> {
     const result = await this.prisma.knowledgeChunk.deleteMany({
-      where: { providerId, sourceFileName },
+      where: { providerId: providerId ?? null, sourceFileName },
     });
     return result.count;
   }

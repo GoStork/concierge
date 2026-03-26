@@ -256,7 +256,7 @@ export default function AdminUserAddPage() {
                         ) : (
                           <UserCircle className="w-5 h-5 text-muted-foreground shrink-0" />
                         )}
-                        <span>{m.name}{m.title ? ` — ${m.title}` : ""}</span>
+                        <span>{m.name}{m.title ? ` - ${m.title}` : ""}</span>
                       </span>
                     </SelectItem>
                   ))}
@@ -326,14 +326,14 @@ export default function AdminUserAddPage() {
                   <input type="radio" name="parentAccountRole" value="INTENDED_PARENT_2" checked={parentAccountRole === "INTENDED_PARENT_2"} onChange={() => setParentAccountRole("INTENDED_PARENT_2")} data-testid="radio-role-ip2" />
                   <div>
                     <span className="text-sm font-ui">Intended Parent 2</span>
-                    <p className="text-xs text-muted-foreground">Full access — can book, view calendar, and receive all notifications.</p>
+                    <p className="text-xs text-muted-foreground">Full access - can book, view calendar, and receive all notifications.</p>
                   </div>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="radio" name="parentAccountRole" value="VIEWER" checked={parentAccountRole === "VIEWER"} onChange={() => setParentAccountRole("VIEWER")} data-testid="radio-role-viewer" />
                   <div>
                     <span className="text-sm font-ui">Viewer</span>
-                    <p className="text-xs text-muted-foreground">Browse-only — can view marketplace and provider profiles but cannot book.</p>
+                    <p className="text-xs text-muted-foreground">Browse-only - can view marketplace and provider profiles but cannot book.</p>
                   </div>
                 </label>
               </div>

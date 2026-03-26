@@ -364,11 +364,11 @@ export class ProvidersController {
     let bestScore = 0;
 
     const inputWords = new Set(
-      normalizedName.replace(/[.,'"]/g, "").replace(/[-–—]/g, " ").split(/\s+/).filter(w => w.length >= 3)
+      normalizedName.replace(/[.,'"]/g, "").replace(/[-–-]/g, " ").split(/\s+/).filter(w => w.length >= 3)
     );
 
     for (const p of providers) {
-      const pName = p.name.toLowerCase().replace(/[.,'"]/g, "").replace(/[-–—]/g, " ");
+      const pName = p.name.toLowerCase().replace(/[.,'"]/g, "").replace(/[-–-]/g, " ");
       const pWords = new Set(pName.split(/\s+/).filter(w => w.length >= 3));
       let matchingWords = 0;
       for (const w of inputWords) {
@@ -418,7 +418,7 @@ export class ProvidersController {
       const providerName = data.name || "";
       const verifyResult = await verifyClinicUrl(body.url, providerName);
       if (!verifyResult.valid) {
-        console.log(`[provider-scrape] URL verification warning for "${body.url}" (name: "${providerName}", reason: ${verifyResult.reason}) — proceeding anyway (admin-provided)`);
+        console.log(`[provider-scrape] URL verification warning for "${body.url}" (name: "${providerName}", reason: ${verifyResult.reason}) - proceeding anyway (admin-provided)`);
       }
       const firstLocation = data.locations?.[0];
       const city = firstLocation?.city || null;
@@ -450,7 +450,7 @@ export class ProvidersController {
             console.log(`[provider-scrape] No SART match for "${providerName}"`);
           }
         } catch (sartErr: any) {
-          console.log(`[provider-scrape] SART lookup failed for "${providerName}": ${sartErr.message} — returning scraped data only`);
+          console.log(`[provider-scrape] SART lookup failed for "${providerName}": ${sartErr.message} - returning scraped data only`);
         }
       }
 

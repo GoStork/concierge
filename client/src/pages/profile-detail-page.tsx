@@ -982,7 +982,7 @@ export default function DonorProfilePage() {
             tableEntries.push(...extra.tables);
           }
 
-          const deliveryPattern = /^(First|Second|Third|Fourth|Fifth|Sixth|1st|2nd|3rd|4th|5th|6th|\d+(?:st|nd|rd|th))\s+Delivery\s*[-–—:]\s*/i;
+          const deliveryPattern = /^(First|Second|Third|Fourth|Fifth|Sixth|1st|2nd|3rd|4th|5th|6th|\d+(?:st|nd|rd|th))\s+Delivery\s*[-–-:]\s*/i;
           const deliveryFields = fieldEntries2.filter(([k]) => deliveryPattern.test(k));
           if (deliveryFields.length >= 2) {
             const deliveryGroups = new Map<string, Record<string, any>>();
@@ -1004,7 +1004,7 @@ export default function DonorProfilePage() {
             }
           }
 
-          const childPattern = /^(\d+(?:st|nd|rd|th)\s+Child|(?:First|Second|Third|Fourth|Fifth|Sixth|Seventh|Eighth)\s+Child)\s*[-–—:]\s*/i;
+          const childPattern = /^(\d+(?:st|nd|rd|th)\s+Child|(?:First|Second|Third|Fourth|Fifth|Sixth|Seventh|Eighth)\s+Child)\s*[-–-:]\s*/i;
           const plainChildPattern = /^(\d+(?:st|nd|rd|th)\s+Child|(?:First|Second|Third|Fourth|Fifth|Sixth|Seventh|Eighth)\s+Child)$/i;
           const childFields = fieldEntries2.filter(([k]) => childPattern.test(k) || plainChildPattern.test(k));
           if (childFields.length >= 2) {
@@ -1118,7 +1118,7 @@ export default function DonorProfilePage() {
                           <tr key={attr} className="border-b border-border/50 last:border-0">
                             <td className="py-2 pr-2 text-xs font-ui text-foreground">{renameCol(attr)}</td>
                             {rows.map((row, ri) => (
-                              <td key={ri} className="py-2 px-1 text-muted-foreground text-xs">{String(row[attr] ?? "—")}</td>
+                              <td key={ri} className="py-2 px-1 text-muted-foreground text-xs">{String(row[attr] ?? "-")}</td>
                             ))}
                           </tr>
                         ))}

@@ -60,6 +60,7 @@ import {
   Undo2,
   Send,
   Crown,
+  ImageIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, SpermIcon } from "@/components/icons/marketplace-icons";
@@ -489,11 +490,11 @@ function LogoEditor({
       try {
         bounds = detectContentBounds(tempCanvas, useWhiteTrim);
       } catch {
-        onError("Cannot process image — try re-uploading the logo first");
+        onError("Cannot process image - try re-uploading the logo first");
         return;
       }
       if (!bounds) {
-        onError("Could not detect logo content — image may be blank");
+        onError("Could not detect logo content - image may be blank");
         return;
       }
 
@@ -516,7 +517,7 @@ function LogoEditor({
       onAutoFixed(newUrl);
       loadNewImage(newUrl);
     } catch (err) {
-      onError("Failed to process logo — try re-uploading it first");
+      onError("Failed to process logo - try re-uploading it first");
     } finally {
       setAutoFixing(false);
     }
@@ -574,7 +575,7 @@ function LogoEditor({
       }
       onSave(newUrl);
     } catch {
-      onError("Failed to process logo — try re-uploading it first");
+      onError("Failed to process logo - try re-uploading it first");
     } finally {
       setSaving(false);
     }
@@ -1107,7 +1108,7 @@ function TemplateManager({
         <h2 className="font-display text-lg font-semibold">Brand Templates</h2>
       </div>
       <p className="text-sm text-muted-foreground">
-        Save, preview, and switch between brand configurations. Selecting a template previews it — "Save Changes" applies it live and updates the template.
+        Save, preview, and switch between brand configurations. Selecting a template previews it - "Save Changes" applies it live and updates the template.
       </p>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -1690,7 +1691,7 @@ export function BrandSettingsForm({
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <p className="text-sm text-muted-foreground" data-testid="text-brand-title">
-          Manage your platform's visual identity — logo, colors, and typography.
+          Manage your platform's visual identity - logo, colors, and typography.
         </p>
         <div className="flex items-center gap-3">
           <Button
@@ -1770,7 +1771,7 @@ export function BrandSettingsForm({
             <div className="space-y-2">
               <Label className="text-sm font-medium">Logo with Name</Label>
               <p className="text-xs text-muted-foreground">
-                Your primary logo — displayed in the navigation header on desktop. This is typically the full logo including your company name.
+                Your primary logo - displayed in the navigation header on desktop. This is typically the full logo including your company name.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FileDropZone
@@ -1844,6 +1845,50 @@ export function BrandSettingsForm({
 
           <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
             <div className="flex items-center gap-2">
+              <ImageIcon className="w-5 h-5 text-primary" />
+              <h2 className="font-display text-lg font-semibold">Onboarding Images</h2>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              These images appear on the AI concierge intro page during parent onboarding. Upload photos that represent each service type - shown based on what the parent selected.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <FileDropZone
+                label="Fertility Clinic"
+                currentUrl={form.onboardingClinicImageUrl}
+                onUpload={(url) => updateField("onboardingClinicImageUrl", url)}
+                accept="image/png,image/jpeg,image/webp"
+                testId="upload-onboarding-clinic"
+                disabled={formDisabled}
+              />
+              <FileDropZone
+                label="Egg Donor"
+                currentUrl={form.onboardingEggDonorImageUrl}
+                onUpload={(url) => updateField("onboardingEggDonorImageUrl", url)}
+                accept="image/png,image/jpeg,image/webp"
+                testId="upload-onboarding-egg-donor"
+                disabled={formDisabled}
+              />
+              <FileDropZone
+                label="Surrogate"
+                currentUrl={form.onboardingSurrogateImageUrl}
+                onUpload={(url) => updateField("onboardingSurrogateImageUrl", url)}
+                accept="image/png,image/jpeg,image/webp"
+                testId="upload-onboarding-surrogate"
+                disabled={formDisabled}
+              />
+              <FileDropZone
+                label="Sperm Donor"
+                currentUrl={form.onboardingSpermDonorImageUrl}
+                onUpload={(url) => updateField("onboardingSpermDonorImageUrl", url)}
+                accept="image/png,image/jpeg,image/webp"
+                testId="upload-onboarding-sperm-donor"
+                disabled={formDisabled}
+              />
+            </div>
+          </Card>
+
+          <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
+            <div className="flex items-center gap-2">
               <Palette className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold">Color System</h2>
             </div>
@@ -1858,7 +1903,7 @@ export function BrandSettingsForm({
             </div>
 
             <div className="border-t border-border/30 pt-4 space-y-3">
-              <Label className="text-sm font-medium">WCAG Contrast — Primary Color</Label>
+              <Label className="text-sm font-medium">WCAG Contrast - Primary Color</Label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="flex items-center gap-3 p-3 rounded-[var(--radius)] border border-border/40 bg-secondary/30">
                   <div
@@ -1872,7 +1917,7 @@ export function BrandSettingsForm({
                       <WhiteIcon className={`w-4 h-4 ${whiteWcag.color}`} />
                       <span className={`text-sm font-semibold ${whiteWcag.color}`}>{whiteWcag.level}</span>
                     </div>
-                    <span className="text-xs text-muted-foreground">White text — {whiteContrast.toFixed(1)}:1</span>
+                    <span className="text-xs text-muted-foreground">White text - {whiteContrast.toFixed(1)}:1</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 p-3 rounded-[var(--radius)] border border-border/40 bg-secondary/30">
@@ -1887,7 +1932,7 @@ export function BrandSettingsForm({
                       <BlackIcon className={`w-4 h-4 ${blackWcag.color}`} />
                       <span className={`text-sm font-semibold ${blackWcag.color}`}>{blackWcag.level}</span>
                     </div>
-                    <span className="text-xs text-muted-foreground">Black text — {blackContrast.toFixed(1)}:1</span>
+                    <span className="text-xs text-muted-foreground">Black text - {blackContrast.toFixed(1)}:1</span>
                   </div>
                 </div>
               </div>
@@ -2305,11 +2350,11 @@ export function BrandSettingsForm({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="1.125">1.125 — Minor Second</SelectItem>
-                      <SelectItem value="1.2">1.200 — Minor Third</SelectItem>
-                      <SelectItem value="1.25">1.250 — Major Third</SelectItem>
-                      <SelectItem value="1.333">1.333 — Perfect Fourth</SelectItem>
-                      <SelectItem value="1.5">1.500 — Perfect Fifth</SelectItem>
+                      <SelectItem value="1.125">1.125 - Minor Second</SelectItem>
+                      <SelectItem value="1.2">1.200 - Minor Third</SelectItem>
+                      <SelectItem value="1.25">1.250 - Major Third</SelectItem>
+                      <SelectItem value="1.333">1.333 - Perfect Fourth</SelectItem>
+                      <SelectItem value="1.5">1.500 - Perfect Fifth</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -2328,11 +2373,11 @@ export function BrandSettingsForm({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="300">300 — Light</SelectItem>
-                      <SelectItem value="400">400 — Regular</SelectItem>
-                      <SelectItem value="500">500 — Medium</SelectItem>
-                      <SelectItem value="600">600 — Semibold</SelectItem>
-                      <SelectItem value="700">700 — Bold</SelectItem>
+                      <SelectItem value="300">300 - Light</SelectItem>
+                      <SelectItem value="400">400 - Regular</SelectItem>
+                      <SelectItem value="500">500 - Medium</SelectItem>
+                      <SelectItem value="600">600 - Semibold</SelectItem>
+                      <SelectItem value="700">700 - Bold</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -2343,12 +2388,12 @@ export function BrandSettingsForm({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="400">400 — Regular</SelectItem>
-                      <SelectItem value="500">500 — Medium</SelectItem>
-                      <SelectItem value="600">600 — Semibold</SelectItem>
-                      <SelectItem value="700">700 — Bold</SelectItem>
-                      <SelectItem value="800">800 — Extra Bold</SelectItem>
-                      <SelectItem value="900">900 — Black</SelectItem>
+                      <SelectItem value="400">400 - Regular</SelectItem>
+                      <SelectItem value="500">500 - Medium</SelectItem>
+                      <SelectItem value="600">600 - Semibold</SelectItem>
+                      <SelectItem value="700">700 - Bold</SelectItem>
+                      <SelectItem value="800">800 - Extra Bold</SelectItem>
+                      <SelectItem value="900">900 - Black</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -2359,10 +2404,10 @@ export function BrandSettingsForm({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="400">400 — Regular</SelectItem>
-                      <SelectItem value="500">500 — Medium</SelectItem>
-                      <SelectItem value="600">600 — Semibold</SelectItem>
-                      <SelectItem value="700">700 — Bold</SelectItem>
+                      <SelectItem value="400">400 - Regular</SelectItem>
+                      <SelectItem value="500">500 - Medium</SelectItem>
+                      <SelectItem value="600">600 - Semibold</SelectItem>
+                      <SelectItem value="700">700 - Bold</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

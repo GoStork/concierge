@@ -72,7 +72,7 @@ export class ScrapersController {
       });
 
       for (const job of staleJobs) {
-        console.log(`[CDC Sync] Auto-resuming enrichment for job ${job.id} (year ${job.year}) — was at ${job.enrichmentProcessed}/${job.enrichmentTotal}`);
+        console.log(`[CDC Sync] Auto-resuming enrichment for job ${job.id} (year ${job.year}) - was at ${job.enrichmentProcessed}/${job.enrichmentTotal}`);
         this.clinicEnrichmentService.runEnrichment(job.id);
       }
     } catch (err) {
@@ -101,9 +101,9 @@ export class ScrapersController {
 
         for (const config of interrupted) {
           // If the last completed sync was successful and recent, this interrupted run
-          // is just a stuck retry — don't resume it, mark it as ended
+          // is just a stuck retry - don't resume it, mark it as ended
           if (config.syncStatus === "SUCCESS" && config.lastSyncAt && config.lastSyncAt > staleThreshold) {
-            console.log(`[Donor Sync] Skipping auto-resume for "${config.provider?.name || config.providerId}" — last completed sync was successful at ${config.lastSyncAt.toISOString()}, marking interrupted run as ended`);
+            console.log(`[Donor Sync] Skipping auto-resume for "${config.provider?.name || config.providerId}" - last completed sync was successful at ${config.lastSyncAt.toISOString()}, marking interrupted run as ended`);
             await (this.prisma[table] as any).update({
               where: { providerId: config.providerId },
               data: { lastSyncEndedAt: new Date() },

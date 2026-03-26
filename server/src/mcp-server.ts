@@ -142,7 +142,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "get_surrogate_profile",
         description:
-          "Look up a specific surrogate's FULL profile by their ID or external ID (e.g. '19331'). Returns complete pregnancy history (birth weights, delivery types, gestational ages), health details, support system, motivation, letter to intended parents, preferences, and all other profile sections. Use this tool when a parent asks follow-up questions about a specific surrogate's details — DO NOT whisper if this tool can answer the question.",
+          "Look up a specific surrogate's FULL profile by their ID or external ID (e.g. '19331'). Returns complete pregnancy history (birth weights, delivery types, gestational ages), health details, support system, motivation, letter to intended parents, preferences, and all other profile sections. Use this tool when a parent asks follow-up questions about a specific surrogate's details - DO NOT whisper if this tool can answer the question.",
         inputSchema: {
           type: "object",
           properties: {
@@ -160,7 +160,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "get_egg_donor_profile",
         description:
-          "Look up a specific egg donor's FULL profile by their ID or external ID (e.g. 'S19907' or '19722'). Returns complete health history, family medical history, education, physical traits, personality, hobbies, and all other profile sections. Use this tool when a parent asks follow-up questions about a specific egg donor's details — DO NOT whisper if this tool can answer the question.",
+          "Look up a specific egg donor's FULL profile by their ID or external ID (e.g. 'S19907' or '19722'). Returns complete health history, family medical history, education, physical traits, personality, hobbies, and all other profile sections. Use this tool when a parent asks follow-up questions about a specific egg donor's details - DO NOT whisper if this tool can answer the question.",
         inputSchema: {
           type: "object",
           properties: {
@@ -594,7 +594,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
 
       return {
-        content: [{ type: "text", text: `Full profile for ${result.displayName}:\n${JSON.stringify(result, null, 2)}\n\nThis profile contains COMPLETE data including pregnancy history (birth weights, delivery types, gestational ages), health info, support system, and more. Use this data to answer the parent's questions DIRECTLY — do NOT whisper unless the specific answer is truly not in this profile.` }],
+        content: [{ type: "text", text: `Full profile for ${result.displayName}:\n${JSON.stringify(result, null, 2)}\n\nThis profile contains COMPLETE data including pregnancy history (birth weights, delivery types, gestational ages), health info, support system, and more. Use this data to answer the parent's questions DIRECTLY - do NOT whisper unless the specific answer is truly not in this profile.` }],
       };
     }
 
@@ -654,7 +654,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
 
       return {
-        content: [{ type: "text", text: `Full profile for ${result.displayName}:\n${JSON.stringify(result, null, 2)}\n\nThis profile contains COMPLETE data including physical traits, health history, family medical history, education, personality, hobbies, and more. Use this data to answer the parent's questions DIRECTLY — do NOT whisper unless the specific answer is truly not in this profile.` }],
+        content: [{ type: "text", text: `Full profile for ${result.displayName}:\n${JSON.stringify(result, null, 2)}\n\nThis profile contains COMPLETE data including physical traits, health history, family medical history, education, personality, hobbies, and more. Use this data to answer the parent's questions DIRECTLY - do NOT whisper unless the specific answer is truly not in this profile.` }],
       };
     }
 
@@ -850,7 +850,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const hasLocationFilter = !!(city || state);
 
       if (!hasLocationFilter && !clinicName) {
-        // Generic search — use vector search
+        // Generic search - use vector search
         const queryParts: string[] = ["IVF clinic fertility center"];
         if (query) queryParts.push(query);
         const queryText = queryParts.join(", ");
@@ -1000,7 +1000,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (filtered.length > 0) {
           results = filtered;
         } else {
-          minRateNote = `\n\nNOTE: No clinics met the ${minSuccessRate}% minimum success rate threshold for this age group and egg source. The results below are the TOP clinics sorted by success rate. Present the best available options and be transparent about the rates — do NOT say "no clinics found". Instead say something like: "The highest success rates in your area for your profile are around X%. Here's the top clinic..."`;
+          minRateNote = `\n\nNOTE: No clinics met the ${minSuccessRate}% minimum success rate threshold for this age group and egg source. The results below are the TOP clinics sorted by success rate. Present the best available options and be transparent about the rates - do NOT say "no clinics found". Instead say something like: "The highest success rates in your area for your profile are around X%. Here's the top clinic..."`;
         }
       }
 

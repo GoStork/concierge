@@ -21,7 +21,7 @@ export class CdcSyncService {
 
       for (const job of staleJobs) {
         if (job.errorMessage === "Server restarted during sync") {
-          console.log(`[CDC Sync] Skipping auto-resume for job ${job.id} (year ${job.year}) — already failed on previous restart`);
+          console.log(`[CDC Sync] Skipping auto-resume for job ${job.id} (year ${job.year}) - already failed on previous restart`);
           await this.prisma.cdcSyncJob.update({
             where: { id: job.id },
             data: { status: "FAILED", completedAt: new Date() },
@@ -36,14 +36,14 @@ export class CdcSyncService {
         });
 
         const datasetId = await this.getDatasetIdForYear(job.year).catch((err) => {
-          console.error(`[CDC Sync] Cannot resume job ${job.id} — dataset lookup failed:`, err.message);
+          console.error(`[CDC Sync] Cannot resume job ${job.id} - dataset lookup failed:`, err.message);
           return null;
         });
 
         if (!datasetId) {
           await this.prisma.cdcSyncJob.update({
             where: { id: job.id },
-            data: { status: "FAILED", errorMessage: "Failed to resume — dataset not found", completedAt: new Date() },
+            data: { status: "FAILED", errorMessage: "Failed to resume - dataset not found", completedAt: new Date() },
           });
           continue;
         }

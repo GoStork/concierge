@@ -119,7 +119,7 @@ export default function ConciergeSettingsTab() {
         </div>
         <p className="text-sm text-muted-foreground mb-6">
           {isParent
-            ? "Choose the concierge personality that best fits your communication style. Switching will update your existing conversation — the new concierge picks up right where you left off."
+            ? "Choose the concierge personality that best fits your communication style. Switching will update your existing conversation - the new concierge picks up right where you left off."
             : "View the available AI concierge personalities that assist parents on the platform."
           }
         </p>

@@ -243,7 +243,7 @@ function PrepDocCard({ brandColor }: { brandColor: string }) {
           </a>
         </div>
         <p className="text-xs text-muted-foreground italic">
-          Tip: Start warm and personal — this is a relationship-building moment, not just a checklist.
+          Tip: Start warm and personal - this is a relationship-building moment, not just a checklist.
         </p>
       </div>
       <style>{`
@@ -389,7 +389,7 @@ function RescheduleCalendarPicker({
       </div>
       {selectedDate && (
         <div className="space-y-2">
-          <p className="text-xs font-medium">{format(selectedDate, "EEE, MMM d")} — Select a time:</p>
+          <p className="text-xs font-medium">{format(selectedDate, "EEE, MMM d")} - Select a time:</p>
           {slotsLoading ? (
             <div className="flex justify-center py-2"><Loader2 className="w-4 h-4 animate-spin" /></div>
           ) : availability?.slots?.length > 0 ? (
@@ -1249,7 +1249,7 @@ function BookingOverlay({
         <div className="flex items-center gap-2">
           <CalendarCheck className="w-5 h-5" style={{ color: brandColor }} />
           <span className="font-semibold text-sm">
-            {useIframe ? `Book with ${card.providerName}` : `Request Callback — ${card.providerName}`}
+            {useIframe ? `Book with ${card.providerName}` : `Request Callback - ${card.providerName}`}
           </span>
         </div>
         <Button
@@ -2106,7 +2106,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     })();
   }, [existingSessionId, matchmakerId, donorIdParam, sessionLoaded]);
 
-  // Initial scroll — use container scroll, not window scroll
+  // Initial scroll - use container scroll, not window scroll
   useEffect(() => {
     const container = document.querySelector('[data-testid="concierge-messages"]');
     if (container) container.scrollTop = container.scrollHeight;
@@ -2398,10 +2398,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
       if (data.userMessageId) {
         knownMessageIds.current.add(data.userMessageId);
-        // Back-fill the optimistic user message with its real id + deliveredAt
+        // Back-fill the optimistic user message with its real id + deliveredAt + readAt
         setMessages(prev => prev.map(m =>
           m.role === "user" && m.content === userMessage && !m.id
-            ? { ...m, id: data.userMessageId, deliveredAt: data.userMessageDeliveredAt || null }
+            ? { ...m, id: data.userMessageId, deliveredAt: data.userMessageDeliveredAt || null, readAt: data.userMessageReadAt || null }
             : m
         ));
         // Update sidebar delivery status

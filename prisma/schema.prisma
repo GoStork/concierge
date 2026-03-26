@@ -748,6 +748,12 @@ model SiteSettings {
   sliderValueSize            Int?
   sliderThumbSize            Int?
 
+  // Onboarding intro page images (per service type)
+  onboardingClinicImageUrl   String?
+  onboardingEggDonorImageUrl String?
+  onboardingSurrogateImageUrl String?
+  onboardingSpermDonorImageUrl String?
+
   // GoStork AI Concierge Feature Flags
   enableAiConcierge          Boolean  @default(false)
   parentExperienceMode       String   @default("MARKETPLACE_ONLY")
@@ -941,9 +947,18 @@ model IntendedParentProfile {
   needsClinic         Boolean       @default(false)
 
   // Surrogate preferences
-  surrogateTwins      String?
-  surrogateCountries  String?
+  surrogateTwins       String?
+  surrogateCountries   String?
   surrogateTermination String?
+  surrogateAgeRange    String?
+  surrogateExperience  String?
+
+  // Donor preferences (open-ended from AI conversation)
+  donorPreferences     String?
+  spermDonorType       String?
+
+  // IVF history
+  isFirstIvf           Boolean?
 
   // Lead Status
   hotLeadProviderId   String?

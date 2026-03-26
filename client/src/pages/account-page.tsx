@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { useQuery, useMutation } from "@tanstack/react-query";
 import LocationAutocomplete from "@/components/location-autocomplete";
 import MembersTable from "@/components/members-table";
+import ImageCropPreview from "@/components/image-crop-preview";
 import CompanyTab from "@/components/company-tab";
 import ProfileDatabasePanel from "@/components/profile-database-panel";
 import ProviderCostsTab from "@/components/provider-costs-tab";
@@ -42,6 +43,7 @@ function AccountTab() {
   const { user } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -167,11 +169,12 @@ function AccountTab() {
     }
   }
 
-  async function handlePhotoUpload(file: File) {
+  async function handlePhotoUpload(file: File | Blob) {
     setUploading(true);
+    setCropImageSrc(null);
     try {
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", file, file instanceof File ? file.name : "photo.jpg");
       const uploadRes = await fetch("/api/uploads", { method: "POST", body: formData, credentials: "include" });
       if (!uploadRes.ok) throw new Error("Upload failed");
       const { url } = await uploadRes.json();
@@ -207,6 +210,16 @@ function AccountTab() {
   }
 
   return (
+    <>
+    {cropImageSrc && (
+      <ImageCropPreview
+        imageSrc={cropImageSrc}
+        onCropComplete={(blob) => handlePhotoUpload(blob)}
+        onCancel={() => setCropImageSrc(null)}
+        aspect={1}
+        cropShape="round"
+      />
+    )}
     <Card className="p-8">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-lg font-heading">Personal Information</h2>
@@ -235,7 +248,11 @@ function AccountTab() {
               data-testid="input-profile-photo"
               onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (file) handlePhotoUpload(file);
+                if (file) {
+                  const reader = new FileReader();
+                  reader.onload = () => setCropImageSrc(reader.result as string);
+                  reader.readAsDataURL(file);
+                }
                 e.target.value = "";
               }}
             />
@@ -508,7 +525,7 @@ function AccountTab() {
             <>
               <div className="space-y-1">
                 <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Full Name</label>
-                <p className="text-sm font-ui" data-testid="text-account-name">{user.name || '—'}</p>
+                <p className="text-sm font-ui" data-testid="text-account-name">{user.name || '-'}</p>
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Email</label>
@@ -521,48 +538,48 @@ function AccountTab() {
                 <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Mobile Number</label>
                 <div className="flex items-center gap-2">
                   <Phone className="w-3.5 h-3.5 text-muted-foreground" />
-                  <p className="text-sm font-ui" data-testid="text-account-mobile">{mobileNumber || '—'}</p>
+                  <p className="text-sm font-ui" data-testid="text-account-mobile">{mobileNumber || '-'}</p>
                 </div>
               </div>
               {!isProviderUser && (
                 <>
                   <div className="space-y-1">
                     <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Location</label>
-                    <p className="text-sm font-ui" data-testid="text-account-location">{locationDisplay || '—'}</p>
+                    <p className="text-sm font-ui" data-testid="text-account-location">{locationDisplay || '-'}</p>
                   </div>
                   {isParent && (
                     <>
                       <div className="space-y-1">
                         <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Identification</label>
-                        <p className="text-sm font-ui" data-testid="text-account-identification">{userIdentification || '—'}</p>
+                        <p className="text-sm font-ui" data-testid="text-account-identification">{userIdentification || '-'}</p>
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Gender Identity</label>
-                        <p className="text-sm font-ui" data-testid="text-account-gender">{(user as any).gender?.replace("I'm ", "") || '—'}</p>
+                        <p className="text-sm font-ui" data-testid="text-account-gender">{(user as any).gender?.replace("I'm ", "") || '-'}</p>
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Sexual Orientation</label>
-                        <p className="text-sm font-ui" data-testid="text-account-orientation">{(user as any).sexualOrientation || '—'}</p>
+                        <p className="text-sm font-ui" data-testid="text-account-orientation">{(user as any).sexualOrientation || '-'}</p>
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Relationship Status</label>
-                        <p className="text-sm font-ui" data-testid="text-account-relationship">{(user as any).relationshipStatus || '—'}</p>
+                        <p className="text-sm font-ui" data-testid="text-account-relationship">{(user as any).relationshipStatus || '-'}</p>
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Date of Birth</label>
                         <p className="text-sm font-ui" data-testid="text-account-dob">
-                          {(user as any).dateOfBirth ? new Date((user as any).dateOfBirth).toLocaleDateString() : '—'}
+                          {(user as any).dateOfBirth ? new Date((user as any).dateOfBirth).toLocaleDateString() : '-'}
                         </p>
                       </div>
                       {((user as any).relationshipStatus === "Partnered" || (user as any).relationshipStatus === "Married") && (
                         <>
                           <div className="space-y-1">
                             <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Partner's Name</label>
-                            <p className="text-sm font-ui" data-testid="text-account-partner-name">{(user as any).partnerFirstName || '—'}</p>
+                            <p className="text-sm font-ui" data-testid="text-account-partner-name">{(user as any).partnerFirstName || '-'}</p>
                           </div>
                           <div className="space-y-1">
                             <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Partner's Age</label>
-                            <p className="text-sm font-ui" data-testid="text-account-partner-age">{(user as any).partnerAge || '—'}</p>
+                            <p className="text-sm font-ui" data-testid="text-account-partner-age">{(user as any).partnerAge || '-'}</p>
                           </div>
                         </>
                       )}
@@ -575,7 +592,7 @@ function AccountTab() {
                                   {svc}
                                 </span>
                               ))
-                            : <p className="text-sm font-ui">—</p>
+                            : <p className="text-sm font-ui">-</p>
                           }
                         </div>
                       </div>
@@ -608,6 +625,7 @@ function AccountTab() {
         </div>
       </div>
     </Card>
+    </>
   );
 }
 
@@ -775,7 +793,7 @@ function ParentCalendarTab() {
       <Card className="p-6" data-testid="parent-calendar-select">
         <h2 className="text-lg font-heading mb-2">Select Calendars to Connect</h2>
         <p className="text-sm text-muted-foreground mb-4">
-          {connectingEmail && <span className="font-ui text-foreground">{connectingEmail} — </span>}
+          {connectingEmail && <span className="font-ui text-foreground">{connectingEmail} - </span>}
           Select which calendars to use for checking your availability when booking appointments.
         </p>
         {loadingCalendars ? (

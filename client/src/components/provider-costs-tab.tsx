@@ -245,7 +245,7 @@ function DiffValueCell({ label, pendingVal, approvedVal, isCurrency = true }: { 
   return (
     <div className="text-right">
       <span className={`text-sm font-medium tabular-nums ${changed ? "text-[hsl(var(--brand-warning))] font-bold" : ""}`}>
-        {pendingVal != null ? fmt(pendingVal) : "—"}
+        {pendingVal != null ? fmt(pendingVal) : "-"}
       </span>
       {changed && approvedVal != null && (
         <div className="text-xs text-muted-foreground line-through">
@@ -498,7 +498,7 @@ function SingleCostsTab({
     },
     onSuccess: (sheet: any) => {
       invalidateAll();
-      toast({ title: "File uploaded — parsing with AI..." });
+      toast({ title: "File uploaded - parsing with AI..." });
       if (sheet.status === "PARSING") {
         if (pollRef.current) clearInterval(pollRef.current);
         pollRef.current = startPollingForParse(sheet.id, false);
@@ -1385,7 +1385,7 @@ function SingleCostsTab({
                                     <span className="text-sm tabular-nums text-muted-foreground">
                                       {approvedItem.minValue != null
                                         ? (isNumericOnlyField(getBaseKey(item.key)) ? String(approvedItem.minValue) : formatCurrency(approvedItem.minValue))
-                                        : "—"}
+                                        : "-"}
                                     </span>
                                     {approvedItem.maxValue !== approvedItem.minValue && approvedItem.maxValue != null && (
                                       <div className="text-xs text-muted-foreground">
@@ -1403,7 +1403,7 @@ function SingleCostsTab({
                                 ) : itemChanged ? (
                                   <Badge className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/30">Changed</Badge>
                                 ) : (
-                                  <span className="text-xs text-muted-foreground">—</span>
+                                  <span className="text-xs text-muted-foreground">-</span>
                                 )}
                               </div>
                             </div>
@@ -1500,14 +1500,14 @@ function SingleCostsTab({
                                 ) : (
                                   <span className="text-sm font-medium tabular-nums whitespace-nowrap" data-testid={`text-value-${item._editIdx}`}>
                                     {isNumericOnlyField(getBaseKey(item.key))
-                                      ? (item.minValue != null ? String(item.minValue) : "—")
+                                      ? (item.minValue != null ? String(item.minValue) : "-")
                                       : item.minValue != null || item.maxValue != null
                                         ? item.minValue === item.maxValue || item.maxValue == null
                                           ? formatCurrency(item.minValue ?? 0)
                                           : `${formatCurrency(item.minValue ?? 0)} – ${formatCurrency(item.maxValue)}`
                                         : item.isIncluded
                                           ? "Included"
-                                          : "—"
+                                          : "-"
                                     }
                                   </span>
                                 )}
@@ -1598,12 +1598,12 @@ function SingleCostsTab({
                             <span className="text-sm font-medium line-through text-destructive">{ri.key}</span>
                           </div>
                           <div className="w-28 text-right">
-                            <span className="text-sm tabular-nums text-muted-foreground italic">—</span>
+                            <span className="text-sm tabular-nums text-muted-foreground italic">-</span>
                           </div>
                           <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0" />
                           <div className="w-28 text-right">
                             <span className="text-sm tabular-nums text-destructive/70 line-through">
-                              {ri.minValue != null ? formatCurrency(ri.minValue) : "—"}
+                              {ri.minValue != null ? formatCurrency(ri.minValue) : "-"}
                             </span>
                           </div>
                           <div className="w-16 text-center">

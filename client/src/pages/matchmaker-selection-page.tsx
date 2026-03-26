@@ -44,7 +44,7 @@ export default function MatchmakerSelectionPage() {
       setTransitionMatchmaker(selected);
       setTransitioning(true);
       setTimeout(() => {
-        navigate(`/concierge?matchmaker=${selectedId}`);
+        navigate(`/onboarding/ai-ready?matchmaker=${selectedId}`, { replace: true });
       }, 1500);
     }
   };
@@ -122,18 +122,18 @@ export default function MatchmakerSelectionPage() {
             {userName ? `${userName}, choose your AI Concierge` : "Choose Your AI Concierge"}
           </h1>
         </div>
-        <p className="text-muted-foreground text-sm md:text-base max-w-xl mx-auto">
+        <p className="text-foreground text-sm md:text-base max-w-xl mx-auto">
           Your dedicated concierge will help you navigate providers, compare costs, and organize your path to parenthood. Select the profile that best fits your preferred communication style.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="flex flex-wrap justify-center gap-4">
         {matchmakers.map((m) => {
           const isSelected = selectedId === m.id;
           return (
             <Card
               key={m.id}
-              className={`relative cursor-pointer transition-all duration-200 p-5 space-y-3 hover:shadow-md ${
+              className={`relative cursor-pointer transition-all duration-200 p-5 space-y-3 hover:shadow-md w-full sm:w-[280px] ${
                 isSelected
                   ? "ring-2 ring-primary shadow-lg"
                   : "hover:ring-1 hover:ring-primary/30"
@@ -151,19 +151,19 @@ export default function MatchmakerSelectionPage() {
                   ✓
                 </div>
               )}
-              <div className="flex items-center gap-3">
-                <div className="w-14 h-14 rounded-full flex-shrink-0 relative">
+              <div className="flex flex-col items-center text-center gap-3">
+                <div className="w-24 h-24 rounded-full flex-shrink-0 relative">
                   {m.avatarUrl && (
                     <img
                       src={getPhotoSrc(m.avatarUrl) || undefined}
                       alt={m.name}
-                      className="w-14 h-14 rounded-full object-cover border-2 absolute inset-0 z-10"
+                      className="w-24 h-24 rounded-full object-cover border-3 absolute inset-0 z-10"
                       style={{ borderColor: isSelected ? brand?.primaryColor : "transparent" }}
                       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />
                   )}
                   <div
-                    className="w-14 h-14 rounded-full flex items-center justify-center text-primary-foreground text-lg font-bold"
+                    className="w-24 h-24 rounded-full flex items-center justify-center text-primary-foreground text-2xl font-bold"
                     style={{ backgroundColor: brand?.primaryColor || "#004D4D" }}
                   >
                     {m.name.charAt(0)}
@@ -171,15 +171,15 @@ export default function MatchmakerSelectionPage() {
                 </div>
                 <div>
                   <h3
-                    className="font-display font-semibold text-base"
+                    className="font-display font-semibold text-lg"
                     style={{ fontFamily: "var(--font-display)" }}
                   >
                     {m.name}
                   </h3>
-                  <p className="text-xs text-muted-foreground">{m.title}</p>
+                  <p className="text-xs text-primary font-medium">{m.title}</p>
                 </div>
               </div>
-              <p className="text-sm text-muted-foreground leading-relaxed">{m.description}</p>
+              <p className="text-sm text-foreground leading-relaxed text-center">{m.description}</p>
             </Card>
           );
         })}

@@ -171,7 +171,7 @@ export class VideoController {
 
     const room = await this.videoService.createRoom();
 
-    const subject = `Ad-hoc Video Call${session.provider?.name ? ` — ${session.provider.name}` : ""}`;
+    const subject = `Ad-hoc Video Call${session.provider?.name ? ` - ${session.provider.name}` : ""}`;
 
     const booking = await this.calendarController.createBookingInternal({
       providerUserId: providerUserId!,
@@ -195,7 +195,7 @@ export class VideoController {
 
     const senderType = callerActsAsProvider ? "provider" : "parent";
     const messageContent = callerActsAsProvider
-      ? "I've started a video call — join when you're ready!"
+      ? "I've started a video call - join when you're ready!"
       : "I'd like to start a video call!";
 
     await this.prisma.aiChatMessage.create({
@@ -542,7 +542,7 @@ export class VideoController {
         this.logger.error(`Retry recording processing failed: ${err.message}`);
       });
 
-    return { found: true, message: "Recording found — processing started.", recordingId: latest.id };
+    return { found: true, message: "Recording found - processing started.", recordingId: latest.id };
   }
 
   @Post("retry-transcription/:recordingId")
@@ -928,7 +928,7 @@ export class VideoController {
                     orderBy: { createdAt: "desc" },
                   });
                 } else {
-                  this.logger.warn(`Daily.co recording ${latest.id} has no download_url yet — will retry in 30s`);
+                  this.logger.warn(`Daily.co recording ${latest.id} has no download_url yet - will retry in 30s`);
                   cooldown = 30_000;
                 }
               }

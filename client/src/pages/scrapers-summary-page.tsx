@@ -310,7 +310,7 @@ function CdcEnrichmentCell({ job, onTrigger, onRestart, onCancel, compact }: { j
   };
 
   if (job.status !== "COMPLETED") {
-    return compact ? null : <span className="text-muted-foreground text-xs">—</span>;
+    return compact ? null : <span className="text-muted-foreground text-xs">-</span>;
   }
 
   if (!job.enrichmentStatus) {
@@ -492,7 +492,7 @@ function CdcEnrichmentCell({ job, onTrigger, onRestart, onCancel, compact }: { j
     );
   }
 
-  return <span className="text-muted-foreground text-xs">—</span>;
+  return <span className="text-muted-foreground text-xs">-</span>;
 }
 
 function friendlyDeleteError(msg: string): string {
@@ -781,14 +781,14 @@ function CdcSyncSection() {
                       {job.enrichmentTotal > 0 ? (
                         <span>{job.enrichmentProcessed} / {job.enrichmentTotal}</span>
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        <span className="text-muted-foreground">-</span>
                       )}
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                      {job.enrichmentStatus && job.enrichmentStatus !== "PENDING" ? formatDateTime(job.startedAt) : "—"}
+                      {job.enrichmentStatus && job.enrichmentStatus !== "PENDING" ? formatDateTime(job.startedAt) : "-"}
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                      {job.enrichmentStatus === "COMPLETED" ? formatDateTime(job.completedAt) : "—"}
+                      {job.enrichmentStatus === "COMPLETED" ? formatDateTime(job.completedAt) : "-"}
                     </TableCell>
                     <TableCell className="min-w-0 px-2 sm:px-4" data-testid={`cell-enrichment-status-${job.id}`}>
                       <div className="hidden sm:block">

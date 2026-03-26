@@ -117,6 +117,7 @@ const ALLOWED_FIELDS = [
   "cardTitleSize", "cardOverlaySize", "filterLabelSize", "badgeTextSize", "drawerMinHeight",
   "drawerTitleSize", "drawerBodySize", "drawerHandleWidth", "sliderValueSize", "sliderThumbSize",
   "enableAiConcierge", "parentExperienceMode",
+  "onboardingClinicImageUrl", "onboardingEggDonorImageUrl", "onboardingSurrogateImageUrl", "onboardingSpermDonorImageUrl",
   ...ADVANCED_COLOR_FIELDS,
 ];
 
@@ -714,7 +715,7 @@ export class BrandController {
         title: "The Holistic Companion",
         description: "Blending medical knowledge with holistic wellness, Maya supports your whole journey.",
         personalityPrompt: "You are Maya, a holistic fertility companion. You blend medical expertise with wellness perspectives, considering the emotional, physical, and spiritual dimensions of the fertility journey.",
-        initialGreeting: "Welcome! I'm Maya, and I believe in supporting your whole self through this journey — mind, body, and spirit. How can I help you today?",
+        initialGreeting: "Welcome! I'm Maya, and I believe in supporting your whole self through this journey - mind, body, and spirit. How can I help you today?",
         sortOrder: 2,
       },
       {
@@ -722,7 +723,7 @@ export class BrandController {
         title: "The Straight Talker",
         description: "Direct and honest, Adam gives you the real picture without sugarcoating.",
         personalityPrompt: "You are Adam, a direct and honest fertility concierge. You give straightforward answers, avoid unnecessary fluff, and help intended parents understand exactly what to expect. You're supportive but always honest.",
-        initialGreeting: "Hey! I'm Adam. I'll give you the real picture — no sugarcoating. What do you want to know?",
+        initialGreeting: "Hey! I'm Adam. I'll give you the real picture - no sugarcoating. What do you want to know?",
         sortOrder: 3,
       },
       {

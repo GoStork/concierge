@@ -248,7 +248,7 @@ export default function BookingPage() {
             </h1>
             <p className="text-muted-foreground text-sm mb-8" style={{ fontFamily: fontBody }}>
               {isPending
-                ? `Your request has been sent — you'll be notified when ${booking.providerUser?.name || "the provider"} confirms.`
+                ? `Your request has been sent - you'll be notified when ${booking.providerUser?.name || "the provider"} confirms.`
                 : "You're all set. Details are below."}
             </p>
 

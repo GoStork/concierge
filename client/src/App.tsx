@@ -47,6 +47,8 @@ import MatchmakerSelectionPage from "@/pages/matchmaker-selection-page";
 import ConciergeChatPage from "@/pages/concierge-chat-page";
 import ConversationsPage from "@/pages/conversations-page";
 import AdminConciergeMonitor from "@/pages/admin-concierge-monitor";
+import OnboardingAiIntroPage from "@/pages/onboarding-ai-intro-page";
+import OnboardingAiReadyPage from "@/pages/onboarding-ai-ready-page";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -113,6 +115,8 @@ function AppRoutes() {
         <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
         <Route path="/complete-profile" element={<CompleteProfilePage />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
+        <Route path="/onboarding/ai-intro" element={<ProtectedRoute><OnboardingAiIntroPage /></ProtectedRoute>} />
+        <Route path="/onboarding/ai-ready" element={<ProtectedRoute><OnboardingAiReadyPage /></ProtectedRoute>} />
         <Route path="/dashboard" element={<ProtectedRoute><DashboardRoute /></ProtectedRoute>} />
         <Route path="/marketplace" element={<ProtectedRoute><MarketplacePage /></ProtectedRoute>} />
         <Route path="/providers/:id" element={<ProtectedRoute><ProviderProfilePage /></ProtectedRoute>} />

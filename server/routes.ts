@@ -271,7 +271,7 @@ export async function registerRoutes(
     res.json([]);
   });
 
-  // No auto-seeding — data is managed via SQL inserts by the admin
+  // No auto-seeding - data is managed via SQL inserts by the admin
 
   app.use("/api/ai-concierge", aiRouter);
 
@@ -720,7 +720,7 @@ export async function registerRoutes(
           data: {
             sessionId: session.id,
             role: "assistant",
-            content: `Thank you for completing the consultation with ${session.provider?.name || "the provider"}. Based on the discussion, this may not be the ideal match. Don't worry — I can help you explore other providers that might be a better fit for your needs.`,
+            content: `Thank you for completing the consultation with ${session.provider?.name || "the provider"}. Based on the discussion, this may not be the ideal match. Don't worry - I can help you explore other providers that might be a better fit for your needs.`,
             senderType: "system",
             senderName: "Eva",
           },

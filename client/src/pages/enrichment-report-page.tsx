@@ -286,9 +286,9 @@ export default function EnrichmentReportPage() {
     <AdminReportLayout
       breadcrumbs={[
         { label: "Scrapers", href: "/admin/scrapers" },
-        { label: `Enrichment — ${job.year}` },
+        { label: `Enrichment - ${job.year}` },
       ]}
-      title={`Enrichment Report — ${job.year}`}
+      title={`Enrichment Report - ${job.year}`}
       subtitle={`Status: ${job.enrichmentStatus || "Not started"}`}
     >
       {!isLive && (job.enrichmentStatus === "COMPLETED" || job.enrichmentStatus === "FAILED" || !job.enrichmentStatus) && (
@@ -360,7 +360,7 @@ export default function EnrichmentReportPage() {
         <div className="rounded-[var(--radius)] border border-primary/20 bg-primary/5 p-4 space-y-3" data-testid="enrichment-live-banner">
           <div className="flex items-center gap-2">
             <Activity className="w-4 h-4 text-primary animate-pulse" />
-            <span className="text-sm font-heading text-primary">Live — Enrichment in Progress</span>
+            <span className="text-sm font-heading text-primary">Live - Enrichment in Progress</span>
             <span className="ml-auto text-xs text-muted-foreground">Auto-refreshing every 5s</span>
           </div>
           <div className="space-y-1.5">
@@ -571,7 +571,7 @@ export default function EnrichmentReportPage() {
                   <TableRow key={clinic.id} data-testid={`row-missing-${clinic.id}`}>
                     <TableCell className="font-ui text-sm">{clinic.name}</TableCell>
                     <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">
-                      {[clinic.city, clinic.state].filter(Boolean).join(", ") || "—"}
+                      {[clinic.city, clinic.state].filter(Boolean).join(", ") || "-"}
                     </TableCell>
                   </TableRow>
                 ))}

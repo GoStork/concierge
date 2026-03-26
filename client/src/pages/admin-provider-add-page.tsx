@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ArrowLeft, Building2, Loader2, Globe, Phone, Calendar, Sparkles, MapPin, Check, X, Upload, User, AlertCircle, Plus, Pencil } from "lucide-react";
+import ImageCropPreview from "@/components/image-crop-preview";
 import { useToast } from "@/hooks/use-toast";
 import LocationAutocomplete from "@/components/location-autocomplete";
 import { IvfSuccessRatesSection } from "@/components/ivf-success-rates-section";
@@ -71,6 +72,7 @@ export default function AdminProviderAddPage() {
   const [previewTeamMembers, setPreviewTeamMembers] = useState<ScrapedTeamMember[]>([]);
   const [editingMemberIdx, setEditingMemberIdx] = useState<number | null>(null);
   const [uploadingPhotoIdx, setUploadingPhotoIdx] = useState<number | null>(null);
+  const [cropState, setCropState] = useState<{ src: string; idx: number } | null>(null);
 
   const { data: providerTypes } = useQuery<any[]>({
     queryKey: ["/api/provider-types"],
@@ -181,11 +183,12 @@ export default function AdminProviderAddPage() {
     },
   });
 
-  async function handlePhotoUpload(file: File, idx: number) {
+  async function handlePhotoUpload(file: File | Blob, idx: number) {
+    setCropState(null);
     setUploadingPhotoIdx(idx);
     try {
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", file, file instanceof File ? file.name : "photo.jpg");
       const res = await fetch("/api/uploads", { method: "POST", body: formData, credentials: "include" });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ message: "Upload failed" }));
@@ -530,7 +533,7 @@ export default function AdminProviderAddPage() {
                   <div key={idx} className="flex items-center gap-2 text-sm p-1.5 bg-[hsl(var(--brand-success)/0.08)] dark:bg-[hsl(var(--brand-success)/0.15)] rounded">
                     {m.photoUrl && <img src={getPhotoSrc(m.photoUrl)!} alt={m.name} className="w-6 h-6 rounded-full object-cover" referrerPolicy="no-referrer" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />}
                     <span className="font-ui">{m.name}</span>
-                    {m.title && <span className="text-muted-foreground">— {m.title}</span>}
+                    {m.title && <span className="text-muted-foreground">- {m.title}</span>}
                   </div>
                 ))}
               </div>
@@ -610,6 +613,16 @@ export default function AdminProviderAddPage() {
   }
 
   return (
+    <>
+    {cropState && (
+      <ImageCropPreview
+        imageSrc={cropState.src}
+        onCropComplete={(blob) => handlePhotoUpload(blob, cropState.idx)}
+        onCancel={() => setCropState(null)}
+        aspect={1}
+        cropShape="round"
+      />
+    )}
     <div className="space-y-6 w-full">
       <Button variant="ghost" onClick={() => { setAddStep("url"); }} data-testid="link-back-url">
         <ArrowLeft className="w-4 h-4 mr-2" /> Back
@@ -879,7 +892,11 @@ export default function AdminProviderAddPage() {
                               input.accept = "image/jpeg,image/png,image/webp,image/gif";
                               input.onchange = (e) => {
                                 const file = (e.target as HTMLInputElement).files?.[0];
-                                if (file) handlePhotoUpload(file, idx);
+                                if (file) {
+                                  const reader = new FileReader();
+                                  reader.onload = () => setCropState({ src: reader.result as string, idx });
+                                  reader.readAsDataURL(file);
+                                }
                               };
                               input.click();
                             }}
@@ -944,7 +961,7 @@ export default function AdminProviderAddPage() {
                                     }}
                                     data-testid={`checkbox-preview-member-loc-${idx}-${locIdx}`}
                                   />
-                                  <span className="text-xs">{loc.city}, {loc.state}{loc.address ? ` — ${loc.address}` : ""}</span>
+                                  <span className="text-xs">{loc.city}, {loc.state}{loc.address ? ` - ${loc.address}` : ""}</span>
                                 </label>
                               );
                             })}
@@ -1044,7 +1061,7 @@ export default function AdminProviderAddPage() {
               </SelectTrigger>
               <SelectContent>
                 {previewTeamMembers.map((m, idx) => (
-                  <SelectItem key={idx} value={String(idx)}>{m.name}{m.title ? ` — ${m.title}` : ""}</SelectItem>
+                  <SelectItem key={idx} value={String(idx)}>{m.name}{m.title ? ` - ${m.title}` : ""}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -1099,5 +1116,6 @@ export default function AdminProviderAddPage() {
         </Button>
       </div>
     </div>
+    </>
   );
 }

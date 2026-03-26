@@ -1074,7 +1074,7 @@ export default function ProfileDatabasePanel({
             {label} Records ({profiles.length})
             {filteredProfiles.length !== profiles.length && (
               <span className="text-muted-foreground font-normal ml-1">
-                — showing {filteredProfiles.length}
+                - showing {filteredProfiles.length}
               </span>
             )}
           </h4>
