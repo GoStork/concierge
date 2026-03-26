@@ -225,26 +225,27 @@ async function createSessionStore(): Promise<session.Store> {
 
   // Auto-seed concierge prompt sections if DB is empty, and sync updated defaults
   try {
-    const promptCount = await prismaService.conciergePromptSection.count();
+    const db = prismaService.client;
+    const promptCount = await db.conciergePromptSection.count();
     const { getDefaultPromptSections } = await import("./ai-prompt-defaults");
     const sections = getDefaultPromptSections();
     if (promptCount === 0) {
       for (const s of sections) {
-        await prismaService.conciergePromptSection.create({ data: s });
+        await db.conciergePromptSection.create({ data: s });
       }
       log(`Auto-seeded ${sections.length} concierge prompt sections`);
     } else {
       // Sync any sections whose default content has changed
       for (const s of sections) {
-        const existing = await prismaService.conciergePromptSection.findUnique({ where: { key: s.key } });
+        const existing = await db.conciergePromptSection.findUnique({ where: { key: s.key } });
         if (existing && existing.content !== s.content) {
-          await prismaService.conciergePromptSection.update({
+          await db.conciergePromptSection.update({
             where: { key: s.key },
             data: { content: s.content },
           });
           log(`Updated concierge prompt section: ${s.key}`);
         } else if (!existing) {
-          await prismaService.conciergePromptSection.create({ data: s });
+          await db.conciergePromptSection.create({ data: s });
           log(`Added new concierge prompt section: ${s.key}`);
         }
       }
