@@ -1461,7 +1461,16 @@ INTERACTIVE UI COMPONENTS (still available):
 ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIONS ABOUT A PRESENTED MATCH" + biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] : ""}
 ` : "";
 
-    const effectiveLogic = isDonorInquiryMode ? donorInquiryPrompt : biologicalMasterLogic;
+    // Inject mandatory skip rules that apply regardless of DB-stored or default prompts
+    const skipRulesPreamble = `
+MANDATORY RULE - NEVER ASK QUESTIONS ALREADY ANSWERED (HIGHEST PRIORITY):
+Before asking ANY question, check if the parent already provided the answer - either explicitly in a previous message OR implicitly from their situation. If the answer is already known, SKIP the question entirely and move to the next unanswered step. Do NOT announce what you're skipping.
+- If parent said they need an egg donor: they obviously do NOT have embryos yet. SKIP the embryo question.
+- If parent is a gay male couple or single male: eggs MUST come from a donor, they WILL need a surrogate. NEVER ask "will you be working with an egg donor?" or "will you be working with a surrogate?" - these are obvious and redundant. Only ask if they need HELP FINDING one (and only if they haven't already said so).
+- If parent already stated they need a specific service (e.g., "need egg donor and surrogate and clinic"), SKIP all questions about whether they need those services. Go straight to the first unanswered question.
+- If parent mentioned multiple services in one message, save all of them and skip all related questions.
+`;
+    const effectiveLogic = isDonorInquiryMode ? donorInquiryPrompt : (skipRulesPreamble + "\n" + biologicalMasterLogic);
 
     // Collect all previously-presented match card provider IDs to prevent re-suggesting
     const presentedProviderIds = new Set<string>();
