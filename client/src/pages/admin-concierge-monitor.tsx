@@ -142,7 +142,7 @@ export default function AdminConciergeMonitor() {
 
   if (selectedSessionId && detail) {
     return (
-      <div className="flex flex-col h-[calc(100vh-64px)]" data-testid="concierge-monitor-detail">
+      <div className="flex flex-col h-[calc(100dvh-64px)]" data-testid="concierge-monitor-detail">
         <div className="flex items-center gap-3 px-4 py-3 border-b bg-background">
           <Button
             variant="ghost"
