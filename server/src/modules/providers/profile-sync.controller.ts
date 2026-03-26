@@ -441,7 +441,7 @@ export class ProfileSyncController {
         "age", "bmi", "height", "weight", "location", "relationshipStatus",
         "race", "ethnicity", "religion", "education",
         "liveBirths", "miscarriages", "cSections", "occupation", "baseCompensation",
-        "totalCompensationMin", "totalCompensationMax", "agreesToAbortion",
+        "totalCostMin", "totalCostMax", "agreesToAbortion",
         "agreesToTwins", "covidVaccinated", "openToSameSexCouple",
         "agreesToSelectiveReduction", "agreesToInternationalParents", "lastDeliveryYear",
         "photoUrl", "videoUrl", "status", "hiddenFromSearch", "isPremium", "isExperienced", "profileData", "photos",

@@ -64,8 +64,8 @@ export interface SwipeDeckProfile {
   miscarriages: number | null;
   occupation: string | null;
   baseCompensation: number | null;
-  totalCompensationMin: number | null;
-  totalCompensationMax: number | null;
+  totalCostMin: number | null;
+  totalCostMax: number | null;
   isPremium: boolean;
 }
 
@@ -138,8 +138,8 @@ export function mapDatabaseDonorToSwipeProfile(dbDonor: any): SwipeDeckProfile {
     agreesToInternationalParents: null,
     miscarriages: null,
     baseCompensation: null,
-    totalCompensationMin: null,
-    totalCompensationMax: null,
+    totalCostMin: null,
+    totalCostMax: null,
     isPremium: !!dbDonor.isPremium,
   };
 }
@@ -201,8 +201,8 @@ export function mapDatabaseSurrogateToSwipeProfile(dbSurrogate: any): SwipeDeckP
     miscarriages: r.miscarriages,
     occupation: r.occupation,
     baseCompensation: r.resolvedCompensation ?? r.baseCompensation,
-    totalCompensationMin: r.totalCompensationMin,
-    totalCompensationMax: r.totalCompensationMax,
+    totalCostMin: r.totalCostMin,
+    totalCostMax: r.totalCostMax,
     isPremium: !!dbSurrogate.isPremium,
   };
 }
@@ -264,8 +264,8 @@ export function mapDatabaseSpermDonorToSwipeProfile(dbSperm: any): SwipeDeckProf
     agreesToInternationalParents: null,
     miscarriages: null,
     baseCompensation: null,
-    totalCompensationMin: null,
-    totalCompensationMax: null,
+    totalCostMin: null,
+    totalCostMax: null,
     isPremium: !!dbSperm.isPremium,
   };
 }
@@ -487,10 +487,10 @@ export function getSurrogateTabs(profile: SwipeDeckProfile, matchedPrefs: Matche
 
   const costItems: TabItem[] = [];
   if (isNonEmpty(profile.baseCompensation)) costItems.push({ label: `Base Compensation: ${formatCurrency(profile.baseCompensation)}`, value: "", icon: DollarSign });
-  if (profile.totalCompensationMin && profile.totalCompensationMax && Number(profile.totalCompensationMax) !== Number(profile.totalCompensationMin)) {
-    costItems.push({ label: `Total Cost: ${formatCurrency(profile.totalCompensationMin)} – ${formatCurrency(profile.totalCompensationMax)}`, value: "", icon: Wallet });
-  } else if (profile.totalCompensationMin) {
-    costItems.push({ label: `Total Cost: ${formatCurrency(profile.totalCompensationMin)}`, value: "", icon: Wallet });
+  if (profile.totalCostMin && profile.totalCostMax && Number(profile.totalCostMax) !== Number(profile.totalCostMin)) {
+    costItems.push({ label: `Total Cost: ${formatCurrency(profile.totalCostMin)} – ${formatCurrency(profile.totalCostMax)}`, value: "", icon: Wallet });
+  } else if (profile.totalCostMin) {
+    costItems.push({ label: `Total Cost: ${formatCurrency(profile.totalCostMin)}`, value: "", icon: Wallet });
   }
   if (costItems.length > 0) tabs.push({ layoutType: "icon_list", title: "Journey Costs", items: costItems });
 

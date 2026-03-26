@@ -198,8 +198,8 @@ export async function recalcAndPersistTotalCostsForProvider(
           await prisma.surrogate.update({
             where: { id: s.id },
             data: {
-              totalCompensationMin: calculatedTotalCost.min,
-              totalCompensationMax: calculatedTotalCost.max,
+              totalCostMin: calculatedTotalCost.min,
+              totalCostMax: calculatedTotalCost.max,
             },
           });
         }
@@ -247,8 +247,8 @@ export async function recalcAndPersistSingleDonorCost(
     await prisma.surrogate.update({
       where: { id: donorId },
       data: {
-        totalCompensationMin: calculatedTotalCost.min,
-        totalCompensationMax: calculatedTotalCost.max,
+        totalCostMin: calculatedTotalCost.min,
+        totalCostMax: calculatedTotalCost.max,
       },
     });
   } else if (donorType === "sperm-donor") {
@@ -420,7 +420,7 @@ async function enrichDonorsWithCosts(
       return {
         ...donor,
         ...(resolvedCompensation != null ? { resolvedCompensation } : {}),
-        ...(calculatedTotalCost ? { totalCompensationMin: calculatedTotalCost.min, totalCompensationMax: calculatedTotalCost.max, calculatedTotalCost } : {}),
+        ...(calculatedTotalCost ? { totalCostMin: calculatedTotalCost.min, totalCostMax: calculatedTotalCost.max, calculatedTotalCost } : {}),
       };
     });
   }
@@ -498,7 +498,7 @@ export async function enrichDonorsWithPendingCosts(
       return {
         ...donor,
         ...(resolvedCompensation != null ? { resolvedCompensation } : {}),
-        ...(calculatedTotalCost ? { totalCompensationMin: calculatedTotalCost.min, totalCompensationMax: calculatedTotalCost.max, calculatedTotalCost } : {}),
+        ...(calculatedTotalCost ? { totalCostMin: calculatedTotalCost.min, totalCostMax: calculatedTotalCost.max, calculatedTotalCost } : {}),
       };
     });
   }

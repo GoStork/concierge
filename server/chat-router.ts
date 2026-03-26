@@ -797,6 +797,20 @@ chatRouter.post("/api/provider/concierge-sessions/:id/consultation-status", requ
   }
 });
 
+chatRouter.get("/api/admin/calendar-slug", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!user.roles?.includes("GOSTORK_ADMIN")) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const config = await prisma.scheduleConfig.findUnique({
+      where: { userId: user.id },
+      select: { bookingPageSlug: true },
+    });
+    res.json({ slug: config?.bookingPageSlug || null });
+  } catch (e: any) {
+    res.status(500).json({ message: e.message });
+  }
+});
+
 chatRouter.get("/api/provider/calendar-slug", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
@@ -1039,7 +1053,7 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
   try {
     const session = await prisma.aiChatSession.findUnique({
       where: { id: req.params.id },
-      select: { id: true, userId: true, providerId: true },
+      select: { id: true, userId: true, providerId: true, humanAgentId: true },
     });
     if (!session) return res.status(404).json({ message: "Session not found" });
 
@@ -1084,6 +1098,11 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
         providerUserIds = providerUsers.map(u => u.id);
       }
     }
+    // Also include the human agent (admin) who joined the session - they may have shared their own calendar
+    if (session.humanAgentId && !providerUserIds.includes(session.humanAgentId)) {
+      providerUserIds.push(session.humanAgentId);
+    }
+
     if (providerUserIds.length === 0) return res.json([]);
 
     const bookings = await prisma.booking.findMany({

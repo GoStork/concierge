@@ -106,8 +106,8 @@ export interface ResolvedSurrogateFields {
   agreesToInternationalParents: boolean | null;
   resolvedCompensation: number | null;
   baseCompensation: number | null;
-  totalCompensationMin: number | null;
-  totalCompensationMax: number | null;
+  totalCostMin: number | null;
+  totalCostMax: number | null;
   calculatedTotalCost: { min: number; max: number } | null;
 }
 
@@ -150,8 +150,8 @@ export function resolveSurrogateFields(d: any): ResolvedSurrogateFields {
     agreesToInternationalParents: d.agreesToInternationalParents ?? resolveBool(pd["International Parents"]),
     resolvedCompensation: d.resolvedCompensation != null ? Number(d.resolvedCompensation) : null,
     baseCompensation: d.baseCompensation != null ? Number(d.baseCompensation) : null,
-    totalCompensationMin: d.totalCompensationMin != null ? Number(d.totalCompensationMin) : null,
-    totalCompensationMax: d.totalCompensationMax != null ? Number(d.totalCompensationMax) : null,
+    totalCostMin: d.totalCostMin != null ? Number(d.totalCostMin) : null,
+    totalCostMax: d.totalCostMax != null ? Number(d.totalCostMax) : null,
     calculatedTotalCost: d.calculatedTotalCost ?? null,
   };
 }
@@ -351,7 +351,7 @@ export function getProfileDetails(d: any, type: ProfileType): { label: string; v
       { label: "Same Sex Couple", value: B(r.openToSameSexCouple) },
       { label: "International Parents", value: B(r.agreesToInternationalParents) },
       { label: "Base Compensation", value: (r.resolvedCompensation ?? r.baseCompensation) ? `$${(r.resolvedCompensation ?? r.baseCompensation)!.toLocaleString()}` : "-" },
-      { label: "Total Cost", value: r.calculatedTotalCost ? fmtTotalCostRange(r.calculatedTotalCost) : (r.totalCompensationMin ? `$${r.totalCompensationMin.toLocaleString()}${r.totalCompensationMax && r.totalCompensationMax !== r.totalCompensationMin ? ` – $${r.totalCompensationMax.toLocaleString()}` : ""}` : "-") },
+      { label: "Total Cost", value: r.calculatedTotalCost ? fmtTotalCostRange(r.calculatedTotalCost) : (r.totalCostMin ? `$${r.totalCostMin.toLocaleString()}${r.totalCostMax && r.totalCostMax !== r.totalCostMin ? ` – $${r.totalCostMax.toLocaleString()}` : ""}` : "-") },
     );
   } else {
     const r = resolveSpermDonorFields(d);

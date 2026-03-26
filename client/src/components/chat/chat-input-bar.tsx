@@ -1,7 +1,7 @@
 import { useState, useRef, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Loader2, Paperclip, FileText, X, Shield, Headphones } from "lucide-react";
+import { Send, Loader2, Paperclip, FileText, X, Shield, Headphones, CalendarDays, Video } from "lucide-react";
 
 interface ChatInputBarProps {
   onSend: (text: string, files: File[]) => void;
@@ -14,6 +14,8 @@ interface ChatInputBarProps {
   /** External control of uploading state (for file uploads that happen outside this component) */
   isUploading?: boolean;
   testIdPrefix?: string;
+  onCalendarClick?: () => void;
+  onVideoClick?: () => void;
 }
 
 /**
@@ -30,6 +32,8 @@ export function ChatInputBar({
   enableFileUpload = false,
   isUploading = false,
   testIdPrefix = "provider",
+  onCalendarClick,
+  onVideoClick,
 }: ChatInputBarProps) {
   const [text, setText] = useState("");
   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
@@ -100,6 +104,36 @@ export function ChatInputBar({
               {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
             </Button>
           </>
+        )}
+        {onCalendarClick && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-10 w-10 p-0 shrink-0 rounded-full"
+            style={{ color: brandColor }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+            onClick={onCalendarClick}
+            disabled={busy}
+            data-testid={`btn-${testIdPrefix}-calendar`}
+          >
+            <CalendarDays className="w-4 h-4" />
+          </Button>
+        )}
+        {onVideoClick && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-10 w-10 p-0 shrink-0 rounded-full"
+            style={{ color: brandColor }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+            onClick={onVideoClick}
+            disabled={busy}
+            data-testid={`btn-${testIdPrefix}-video`}
+          >
+            <Video className="w-4 h-4" />
+          </Button>
         )}
         <Input
           placeholder={placeholder}

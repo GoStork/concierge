@@ -483,8 +483,8 @@ Extract ALL surrogate profiles visible on this page. For each surrogate, extract
 - age: Integer age
 - bmi: BMI as a number
 - baseCompensation: Base compensation amount as a number (no $ sign)
-- totalCompensationMin: Minimum total compensation as a number (no $ sign)
-- totalCompensationMax: Maximum total compensation as a number (no $ sign)
+- totalCostMin: Minimum total cost as a number (no $ sign)
+- totalCostMax: Maximum total cost as a number (no $ sign)
 - location: City, State, Country
 - agreesToAbortion: true/false/null - whether they agree to abortion/selective reduction
 - agreesToTwins: true/false/null - whether they agree to carry twins
@@ -509,8 +509,8 @@ Return a JSON object with this exact structure:
       "age": number or null,
       "bmi": number or null,
       "baseCompensation": number or null,
-      "totalCompensationMin": number or null,
-      "totalCompensationMax": number or null,
+      "totalCostMin": number or null,
+      "totalCostMax": number or null,
       "location": "string or null",
       "agreesToAbortion": boolean or null,
       "agreesToTwins": boolean or null,
@@ -1287,8 +1287,8 @@ async function upsertSurrogate(
       age: skipIfManual("age", surrogate.age ? parseInt(String(surrogate.age)) || null : undefined, mf),
       bmi: skipIfManual("bmi", surrogate.bmi ? parseFloat(String(surrogate.bmi)) : undefined, mf),
       baseCompensation: skipIfManual("baseCompensation", surrogate.baseCompensation ? parseFloat(String(surrogate.baseCompensation)) : undefined, mf),
-      totalCompensationMin: skipIfManual("totalCompensationMin", surrogate.totalCompensationMin ? parseFloat(String(surrogate.totalCompensationMin)) : undefined, mf),
-      totalCompensationMax: skipIfManual("totalCompensationMax", surrogate.totalCompensationMax ? parseFloat(String(surrogate.totalCompensationMax)) : undefined, mf),
+      totalCostMin: skipIfManual("totalCostMin", surrogate.totalCostMin ? parseFloat(String(surrogate.totalCostMin)) : undefined, mf),
+      totalCostMax: skipIfManual("totalCostMax", surrogate.totalCostMax ? parseFloat(String(surrogate.totalCostMax)) : undefined, mf),
       location: skipIfManual("location", surrogate.location || undefined, mf),
       agreesToAbortion: skipIfManual("agreesToAbortion", surrogate.agreesToAbortion ?? undefined, mf),
       agreesToTwins: skipIfManual("agreesToTwins", surrogate.agreesToTwins ?? undefined, mf),
@@ -1322,8 +1322,8 @@ async function upsertSurrogate(
       age: surrogate.age ? parseInt(String(surrogate.age)) || null : null,
       bmi: surrogate.bmi ? parseFloat(String(surrogate.bmi)) : null,
       baseCompensation: surrogate.baseCompensation ? parseFloat(String(surrogate.baseCompensation)) : null,
-      totalCompensationMin: surrogate.totalCompensationMin ? parseFloat(String(surrogate.totalCompensationMin)) : null,
-      totalCompensationMax: surrogate.totalCompensationMax ? parseFloat(String(surrogate.totalCompensationMax)) : null,
+      totalCostMin: surrogate.totalCostMin ? parseFloat(String(surrogate.totalCostMin)) : null,
+      totalCostMax: surrogate.totalCostMax ? parseFloat(String(surrogate.totalCostMax)) : null,
       location: surrogate.location || null,
       agreesToAbortion: surrogate.agreesToAbortion ?? null,
       agreesToTwins: surrogate.agreesToTwins ?? null,
@@ -4904,8 +4904,8 @@ Extract ALL information from this surrogate profile. Return a JSON object with t
       "age": number or null,
       "bmi": number or null,
       "baseCompensation": number or null,
-      "totalCompensationMin": number or null,
-      "totalCompensationMax": number or null,
+      "totalCostMin": number or null,
+      "totalCostMax": number or null,
       "location": "City, State or null",
       "agreesToAbortion": boolean or null,
       "agreesToTwins": boolean or null,

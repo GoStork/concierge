@@ -872,8 +872,8 @@ function getFieldsForType(type: string): FieldDef[] {
       { field: "openToSameSexCouple", label: "Same Sex Couple", boolean: true },
       { field: "agreesToInternationalParents", label: "International Parents", boolean: true },
       { field: "baseCompensation", label: "Base Compensation", numeric: true, isCompensation: true },
-      { field: "totalCompensationMin", label: "Total Compensation (Min)", numeric: true, isCompensation: true },
-      { field: "totalCompensationMax", label: "Total Compensation (Max)", numeric: true, isCompensation: true },
+      { field: "totalCostMin", label: "Total Cost (Min)", numeric: true, isCompensation: true },
+      { field: "totalCostMax", label: "Total Cost (Max)", numeric: true, isCompensation: true },
     ];
   } else {
     return [

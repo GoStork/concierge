@@ -224,13 +224,15 @@ export default function VideoRoomPage() {
         const isInIframe = window.self !== window.top;
         if (isInIframe) {
           try { window.parent.postMessage({ type: "video-call-ended", bookingId }, "*"); } catch {}
+          setCallState("idle");
+          setConsentStep("dismissed");
           return;
         }
         if (user) {
           navigate("/calendar?tab=meetings", { replace: true });
         } else {
           setCallState("idle");
-          setConsentStep("pending");
+          setConsentStep("dismissed");
           setGuestVerified(false);
         }
       });

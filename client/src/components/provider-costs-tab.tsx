@@ -450,6 +450,7 @@ function SingleCostsTab({
     const poll = setInterval(async () => {
       try {
         const res = await fetch(`/api/costs/sheet/${sheetId}`, { credentials: "include" });
+        if (res.status === 404) { clearInterval(poll); stopParseProgress(false); setIsParsing(false); invalidateAll(); return; }
         if (!res.ok) return;
         const sheet = await res.json();
         if (sheet.status !== "PARSING") {
@@ -522,6 +523,19 @@ function SingleCostsTab({
       setEditItems([...templateItems]);
       setIsEditing(true);
       toast({ title: "Cost sheet reset to default template", variant: "success" });
+    },
+  });
+
+  const cancelUploadMutation = useMutation({
+    mutationFn: async (sheetId: string) => {
+      await apiRequest("DELETE", `/api/costs/${sheetId}/cancel`);
+    },
+    onSuccess: () => {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      stopParseProgress(false);
+      setIsParsing(false);
+      invalidateAll();
+      toast({ title: "Upload cancelled", variant: "success" });
     },
   });
 
@@ -1094,11 +1108,22 @@ function SingleCostsTab({
                 </div>
                 {isParsing && (
                   <div className="px-1" data-testid="parse-progress-container">
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                      <span className="text-xs font-medium text-primary" data-testid="text-parse-stage">
-                        {parseStage || "AI is analyzing your document..."} {parseProgress > 0 ? `${parseProgress}%` : ""}
-                      </span>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1.5">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                        <span className="text-xs font-medium text-primary" data-testid="text-parse-stage">
+                          {parseStage || "AI is analyzing your document..."} {parseProgress > 0 ? `${parseProgress}%` : ""}
+                        </span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+                        disabled={cancelUploadMutation.isPending}
+                        onClick={() => { const s = parsingSheet; if (s) cancelUploadMutation.mutate(s.id); }}
+                      >
+                        <X className="w-3 h-3 mr-1" /> Cancel
+                      </Button>
                     </div>
                     <div className="w-full bg-muted rounded-full h-2 overflow-hidden" data-testid="parse-progress-bar">
                       <div
@@ -1145,11 +1170,22 @@ function SingleCostsTab({
                   </>
                 ) : isParsing ? (
                   <div className="w-full max-w-sm mx-auto" data-testid="parse-progress-container">
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                      <span className="text-xs font-medium text-primary" data-testid="text-parse-stage">
-                        {parseStage || "Starting..."} {parseProgress > 0 ? `${parseProgress}%` : ""}
-                      </span>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1.5">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                        <span className="text-xs font-medium text-primary" data-testid="text-parse-stage">
+                          {parseStage || "Starting..."} {parseProgress > 0 ? `${parseProgress}%` : ""}
+                        </span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+                        disabled={cancelUploadMutation.isPending}
+                        onClick={(e) => { e.stopPropagation(); const s = parsingSheet; if (s) cancelUploadMutation.mutate(s.id); }}
+                      >
+                        <X className="w-3 h-3 mr-1" /> Cancel
+                      </Button>
                     </div>
                     <div className="w-full bg-muted rounded-full h-2 overflow-hidden" data-testid="parse-progress-bar">
                       <div
@@ -1658,6 +1694,49 @@ function SingleCostsTab({
             )}
           </CardContent>
         </Card>
+      )}
+
+      {isAdminView && effectiveEditing && editItems.length > 0 && (
+        <div className="flex gap-2 justify-end flex-wrap items-center" data-testid="admin-edit-actions">
+          {autoSaveStatus === "saving" && (
+            <span className="text-xs text-muted-foreground flex items-center gap-1" data-testid="text-auto-save-status">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Saving draft...
+            </span>
+          )}
+          {autoSaveStatus === "saved" && (
+            <span className="text-xs text-[hsl(var(--brand-success))] flex items-center gap-1" data-testid="text-auto-save-status">
+              <Check className="w-3 h-3" />
+              Draft saved
+            </span>
+          )}
+          <Button
+            variant="outline"
+            onClick={() => {
+              setIsEditing(false);
+              setEditItems([]);
+            }}
+            data-testid="btn-cancel-edit"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              if (displaySheet && displaySheet.status !== "APPROVED") {
+                updateMutation.mutate({ sheetId: displaySheet.id, items: editItems });
+              } else {
+                submitMutation.mutate({ items: editItems, sheetId: undefined });
+              }
+            }}
+            disabled={updateMutation.isPending || submitMutation.isPending}
+            data-testid="btn-admin-save"
+          >
+            {(updateMutation.isPending || submitMutation.isPending) ? (
+              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+            ) : null}
+            Save
+          </Button>
+        </div>
       )}
 
       {!isAdminView && editItems.length > 0 && (

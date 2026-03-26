@@ -17,8 +17,10 @@ import {
   ChatInputBar,
   ExpertSenderLabel,
   ChatProfileSidebar,
+  InlineVideoOverlay,
   type SessionDetail,
 } from "@/components/chat";
+import { useToast } from "@/hooks/use-toast";
 
 interface SessionSummary {
   id: string;
@@ -57,7 +59,9 @@ export default function AdminConciergeMonitor() {
     }
   };
   const [uploading, setUploading] = useState(false);
+  const [inlineVideoBookingId, setInlineVideoBookingId] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
 
   const roles: string[] = (user as any)?.roles || [];
   const isAdmin = roles.includes("GOSTORK_ADMIN");
@@ -88,6 +92,17 @@ export default function AdminConciergeMonitor() {
     },
     enabled: !!selectedSessionId,
     refetchInterval: 5000,
+  });
+
+  const sessionBookingsQuery = useQuery<any[]>({
+    queryKey: ["/api/chat-session/bookings", selectedSessionId],
+    queryFn: async () => {
+      const res = await fetch(`/api/chat-session/${selectedSessionId}/bookings`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!selectedSessionId,
+    refetchInterval: 15000,
   });
 
   const sendMessageMutation = useMutation({
@@ -156,6 +171,61 @@ export default function AdminConciergeMonitor() {
     // Send text message
     if (text) {
       sendMessageMutation.mutate({ sessionId: selectedSessionId, content: text });
+    }
+  };
+
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === "video-call-ended") setInlineVideoBookingId(null);
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
+
+  const handleAdminCalendar = async () => {
+    if (!selectedSessionId) return;
+    try {
+      const res = await fetch("/api/admin/calendar-slug", { credentials: "include" });
+      const { slug } = await res.json();
+      if (!slug) {
+        toast({ title: "Calendar not configured", description: "Set up your booking calendar in Settings first.", variant: "destructive" });
+        return;
+      }
+      const adminName = (user as any)?.name || "GoStork Expert";
+      sendMessageMutation.mutate({
+        sessionId: selectedSessionId,
+        content: "I've shared my calendar - pick a time that works for you!",
+        uiCardType: "rich",
+        uiCardData: {
+          consultationCard: {
+            providerName: "GoStork",
+            providerLogo: null,
+            bookingUrl: `/book/${slug}`,
+            iframeEnabled: true,
+            memberBookingSlug: slug,
+            memberName: adminName,
+          },
+        },
+      });
+    } catch {
+      toast({ title: "Failed to load calendar", variant: "destructive" });
+    }
+  };
+
+  const handleAdminVideo = async () => {
+    if (!selectedSessionId) return;
+    try {
+      const res = await fetch("/api/video/chat-booking", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ sessionId: selectedSessionId }),
+      });
+      if (!res.ok) throw new Error("Failed to create video booking");
+      const { bookingId } = await res.json();
+      setInlineVideoBookingId(bookingId);
+    } catch {
+      toast({ title: "Failed to create video room", variant: "destructive" });
     }
   };
 
@@ -262,6 +332,7 @@ export default function AdminConciergeMonitor() {
             <ChatMessageList
               ref={chatEndRef}
               messages={detail.messages}
+              bookings={sessionBookingsQuery.data}
               brandColor={brandColor}
               chatPalette={chatPalette}
               borderRadius={brand?.borderRadius ?? 1}
@@ -274,11 +345,18 @@ export default function AdminConciergeMonitor() {
                 if (msg.senderType === "system") return "Eva";
                 return "AI";
               }}
+              onBookingUpdate={() => sessionBookingsQuery.refetch()}
               msgTestIdPrefix="monitor-msg"
             />
           </div>
 
           {/* Input bar - reuses shared component */}
+          {inlineVideoBookingId && (
+            <InlineVideoOverlay
+              bookingId={inlineVideoBookingId}
+              onClose={() => setInlineVideoBookingId(null)}
+            />
+          )}
           <ChatInputBar
             onSend={handleSend}
             isLoading={sendMessageMutation.isPending}
@@ -287,6 +365,8 @@ export default function AdminConciergeMonitor() {
             placeholder="Type a message as GoStork Expert..."
             senderLabel={<ExpertSenderLabel adminName={(user as any)?.name || "Admin"} />}
             enableFileUpload
+            onCalendarClick={handleAdminCalendar}
+            onVideoClick={handleAdminVideo}
             testIdPrefix="expert"
           />
         </div>

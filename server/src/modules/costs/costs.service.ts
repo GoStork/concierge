@@ -158,6 +158,22 @@ export class CostsService {
     });
   }
 
+  async cancelUpload(sheetId: string) {
+    const sheet = await this.prisma.providerCostSheet.findUnique({
+      where: { id: sheetId },
+    });
+    if (!sheet) throw new Error("Sheet not found");
+
+    if (sheet.filePath) {
+      try { await this.storage.deleteObject(sheet.filePath); } catch {}
+    }
+
+    await this.prisma.costItem.deleteMany({ where: { providerCostSheetId: sheetId } });
+    await this.prisma.providerCostSheet.delete({ where: { id: sheetId } });
+
+    return { cancelled: true };
+  }
+
   async deleteFile(sheetId: string) {
     const sheet = await this.prisma.providerCostSheet.findUnique({
       where: { id: sheetId },

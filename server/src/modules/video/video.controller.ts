@@ -100,11 +100,13 @@ export class VideoController {
       }
     }
 
-    if (!callerIsSessionParent && !callerIsSessionProvider) {
+    // Admin on a session with no provider acts as host directly
+    const adminAsHost = isAdmin && !session.providerId;
+
+    if (!callerIsSessionParent && !callerIsSessionProvider && !adminAsHost) {
       throw new ForbiddenException("You are not a participant of this chat session");
     }
-
-    const callerActsAsProvider = callerIsSessionProvider && !callerIsSessionParent;
+    const callerActsAsProvider = (callerIsSessionProvider && !callerIsSessionParent) || adminAsHost;
 
     let providerUserId: string | null = null;
     let parentUserId: string | null = null;
@@ -112,9 +114,11 @@ export class VideoController {
     let attendeeEmails: string[] = [];
 
     if (callerActsAsProvider) {
-      if (isAdmin && user.providerId !== session.providerId) {
+      if (adminAsHost) {
+        providerUserId = user.id;
+      } else if (isAdmin && session.providerId && user.providerId !== session.providerId) {
         const actualProviderUser = await this.prisma.user.findFirst({
-          where: { providerId: session.providerId || undefined },
+          where: { providerId: session.providerId },
           orderBy: { createdAt: "asc" },
           select: { id: true },
         });
@@ -193,7 +197,7 @@ export class VideoController {
       ? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}.`
       : nameParts[0] || (callerActsAsProvider ? "Provider" : "Parent");
 
-    const senderType = callerActsAsProvider ? "provider" : "parent";
+    const senderType = adminAsHost ? "human" : (callerActsAsProvider ? "provider" : "parent");
     const messageContent = callerActsAsProvider
       ? "I've started a video call - join when you're ready!"
       : "I'd like to start a video call!";

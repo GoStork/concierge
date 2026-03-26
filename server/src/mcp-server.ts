@@ -371,6 +371,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: "get_cost_ranges",
+        description:
+          "Get the minimum and maximum TOTAL journey cost ranges from our database for a given service type (surrogacy, egg-donor, sperm-donor). Returns aggregate min/max across ALL available profiles. Use this tool when a parent asks a GENERAL cost question like 'how much does surrogacy cost?' or 'what are egg donor prices?' - do NOT show individual match cards for general cost questions.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            serviceType: {
+              type: "string",
+              enum: ["surrogacy", "egg-donor", "sperm-donor"],
+              description: "The service type to get cost ranges for",
+            },
+          },
+          required: ["serviceType"],
+        },
+      },
+      {
         name: "get_expert_guidance_rules",
         description:
           "Internal tool: Get all active expert guidance rules for system prompt enrichment.",
@@ -1180,6 +1196,99 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       });
       return {
         content: [{ type: "text", text: JSON.stringify(users) }],
+      };
+    }
+
+    if (name === "get_cost_ranges") {
+      const { serviceType } = args as any;
+
+      let query = "";
+      let label = "";
+      if (serviceType === "surrogacy") {
+        label = "surrogacy journey";
+        query = `
+          WITH costs AS (
+            SELECT "totalCostMin"::float AS cost_low, "totalCostMax"::float AS cost_high
+            FROM "Surrogate"
+            WHERE "hiddenFromSearch" IS NOT TRUE AND status != 'INACTIVE'
+              AND "totalCostMin" IS NOT NULL
+          ),
+          bounds AS (
+            SELECT
+              percentile_cont(0.10) WITHIN GROUP (ORDER BY cost_low) AS p10,
+              percentile_cont(0.90) WITHIN GROUP (ORDER BY cost_high) AS p90
+            FROM costs
+          )
+          SELECT
+            ROUND(MIN(b.p10)) AS "minTotalCost",
+            ROUND(MAX(b.p90)) AS "maxTotalCost",
+            ROUND(AVG((c.cost_low + c.cost_high) / 2)) AS "avgTotalCost",
+            COUNT(*)::int AS "profileCount"
+          FROM costs c, bounds b
+          WHERE c.cost_low >= b.p10 AND c.cost_high <= b.p90`;
+      } else if (serviceType === "egg-donor") {
+        label = "egg donation";
+        query = `
+          WITH costs AS (
+            SELECT "totalCost"::float AS cost
+            FROM "EggDonor"
+            WHERE "hiddenFromSearch" IS NOT TRUE AND status != 'INACTIVE'
+              AND "totalCost" IS NOT NULL
+          ),
+          bounds AS (
+            SELECT
+              percentile_cont(0.10) WITHIN GROUP (ORDER BY cost) AS p10,
+              percentile_cont(0.90) WITHIN GROUP (ORDER BY cost) AS p90
+            FROM costs
+          )
+          SELECT
+            ROUND(MIN(b.p10)) AS "minTotalCost",
+            ROUND(MAX(b.p90)) AS "maxTotalCost",
+            ROUND(AVG(c.cost)) AS "avgTotalCost",
+            COUNT(*)::int AS "profileCount"
+          FROM costs c, bounds b
+          WHERE c.cost >= b.p10 AND c.cost <= b.p90`;
+      } else if (serviceType === "sperm-donor") {
+        label = "sperm donation";
+        query = `
+          WITH costs AS (
+            SELECT "totalCost"::float AS cost
+            FROM "SpermDonor"
+            WHERE "hiddenFromSearch" IS NOT TRUE AND status != 'INACTIVE'
+              AND "totalCost" IS NOT NULL
+          ),
+          bounds AS (
+            SELECT
+              percentile_cont(0.10) WITHIN GROUP (ORDER BY cost) AS p10,
+              percentile_cont(0.90) WITHIN GROUP (ORDER BY cost) AS p90
+            FROM costs
+          )
+          SELECT
+            ROUND(MIN(b.p10)) AS "minTotalCost",
+            ROUND(MAX(b.p90)) AS "maxTotalCost",
+            ROUND(AVG(c.cost)) AS "avgTotalCost",
+            COUNT(*)::int AS "profileCount"
+          FROM costs c, bounds b
+          WHERE c.cost >= b.p10 AND c.cost <= b.p90`;
+      }
+
+      if (!query) {
+        return { content: [{ type: "text", text: JSON.stringify({ error: "Invalid serviceType" }) }] };
+      }
+
+      const rows: any[] = await prisma.$queryRawUnsafe(query);
+      const row = rows[0] || {};
+      const result = {
+        serviceType,
+        label,
+        minTotalCost: row.minTotalCost != null ? Number(row.minTotalCost) : null,
+        maxTotalCost: row.maxTotalCost != null ? Number(row.maxTotalCost) : null,
+        avgTotalCost: row.avgTotalCost != null ? Number(row.avgTotalCost) : null,
+        profileCount: row.profileCount ?? 0,
+      };
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }],
       };
     }
 

@@ -226,6 +226,15 @@ export class CostsController {
     }
   }
 
+  @Delete(":sheetId/cancel")
+  @UseGuards(SessionOrJwtGuard)
+  async cancelUpload(@Param("sheetId") sheetId: string, @Req() req: Request) {
+    const sheet = await this.costsService.getSheet(sheetId);
+    if (!sheet) throw new HttpException("Sheet not found", HttpStatus.NOT_FOUND);
+    this.assertProviderOrAdmin(req, sheet.providerId);
+    return this.costsService.cancelUpload(sheetId);
+  }
+
   @Delete(":sheetId/file")
   @UseGuards(SessionOrJwtGuard)
   async deleteFile(@Param("sheetId") sheetId: string, @Req() req: Request) {

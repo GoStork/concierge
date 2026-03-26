@@ -517,8 +517,8 @@ model Surrogate {
   age                          Int?
   bmi                          Decimal?
   baseCompensation             Decimal?
-  totalCompensationMin         Decimal?
-  totalCompensationMax         Decimal?
+  totalCostMin                 Decimal?
+  totalCostMax                 Decimal?
   location                     String?
   agreesToAbortion             Boolean?
   agreesToTwins                Boolean?

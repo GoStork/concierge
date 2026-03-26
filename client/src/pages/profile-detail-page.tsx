@@ -372,7 +372,7 @@ function getMandatoryFields(donor: any, type: string): { label: string; value: s
       { label: "Same Sex Couple", value: B(r.openToSameSexCouple) },
       { label: "International Parents", value: B(r.agreesToInternationalParents) },
       { label: "Base Compensation", value: fmtUSD(r.resolvedCompensation ?? r.baseCompensation) },
-      { label: "Total Cost", value: r.calculatedTotalCost ? fmtTotalCost(r.calculatedTotalCost) : (r.totalCompensationMin ? `${fmtUSD(r.totalCompensationMin)}${r.totalCompensationMax && r.totalCompensationMax !== r.totalCompensationMin ? ` – ${fmtUSD(r.totalCompensationMax)}` : ""}` : "-") },
+      { label: "Total Cost", value: r.calculatedTotalCost ? fmtTotalCost(r.calculatedTotalCost) : (r.totalCostMin ? `${fmtUSD(r.totalCostMin)}${r.totalCostMax && r.totalCostMax !== r.totalCostMin ? ` – ${fmtUSD(r.totalCostMax)}` : ""}` : "-") },
     ];
   } else {
     const r = resolveSpermDonorFields(donor);

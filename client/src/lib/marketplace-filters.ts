@@ -64,7 +64,7 @@ export function matchesFilter(donor: any, key: string, values: string[]): boolea
     return comp >= min && comp <= max;
   }
   if (key === "maxCost") {
-    const cost = Number(donor.totalCost || donor.eggLotCost || donor.compensation || donor.totalCompensationMax || 0);
+    const cost = Number(donor.totalCost || donor.eggLotCost || donor.compensation || donor.totalCostMax || 0);
     const [min, max] = values.map(Number);
     return cost >= min && cost <= max;
   }
@@ -176,7 +176,7 @@ export function parseWeight(w: string | null | undefined): number {
 }
 
 export function getDonorCost(d: any): number {
-  return Number(d.totalCost || d.eggLotCost || d.compensation || d.totalCompensationMax || d.baseCompensation || 0);
+  return Number(d.totalCost || d.eggLotCost || d.compensation || d.totalCostMax || d.baseCompensation || 0);
 }
 
 export function sortDonors(donors: any[], sortBy: string): any[] {
