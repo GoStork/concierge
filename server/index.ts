@@ -225,12 +225,12 @@ async function createSessionStore(): Promise<session.Store> {
 
   // Auto-seed concierge prompt sections if DB is empty
   try {
-    const promptCount = await prisma.conciergePromptSection.count();
+    const promptCount = await prismaService.conciergePromptSection.count();
     if (promptCount === 0) {
       const { getDefaultPromptSections } = await import("./ai-prompt-defaults");
       const sections = getDefaultPromptSections();
       for (const s of sections) {
-        await prisma.conciergePromptSection.create({ data: s });
+        await prismaService.conciergePromptSection.create({ data: s });
       }
       log(`Auto-seeded ${sections.length} concierge prompt sections`);
     }
