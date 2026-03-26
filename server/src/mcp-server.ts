@@ -890,7 +890,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         const locationWhere: any = {};
-        if (state) locationWhere.state = { contains: state, mode: "insensitive" };
+        if (state) {
+          // Handle both abbreviations (NY) and full names (New York)
+          const stateAbbrevMap: Record<string, string> = {
+            AL:"Alabama",AK:"Alaska",AZ:"Arizona",AR:"Arkansas",CA:"California",CO:"Colorado",CT:"Connecticut",DE:"Delaware",FL:"Florida",GA:"Georgia",HI:"Hawaii",ID:"Idaho",IL:"Illinois",IN:"Indiana",IA:"Iowa",KS:"Kansas",KY:"Kentucky",LA:"Louisiana",ME:"Maine",MD:"Maryland",MA:"Massachusetts",MI:"Michigan",MN:"Minnesota",MS:"Mississippi",MO:"Missouri",MT:"Montana",NE:"Nebraska",NV:"Nevada",NH:"New Hampshire",NJ:"New Jersey",NM:"New Mexico",NY:"New York",NC:"North Carolina",ND:"North Dakota",OH:"Ohio",OK:"Oklahoma",OR:"Oregon",PA:"Pennsylvania",RI:"Rhode Island",SC:"South Carolina",SD:"South Dakota",TN:"Tennessee",TX:"Texas",UT:"Utah",VT:"Vermont",VA:"Virginia",WA:"Washington",WV:"West Virginia",WI:"Wisconsin",WY:"Wyoming",DC:"District of Columbia"
+          };
+          const stateUpper = state.trim().toUpperCase();
+          const fullName = stateAbbrevMap[stateUpper];
+          if (fullName) {
+            // Abbreviation provided - search for both abbreviation and full name
+            locationWhere.OR = [
+              { state: { contains: stateUpper, mode: "insensitive" } },
+              { state: { contains: fullName, mode: "insensitive" } },
+            ];
+          } else {
+            // Full name or partial - search as-is
+            locationWhere.state = { contains: state, mode: "insensitive" };
+          }
+        }
         if (city) locationWhere.city = { contains: city, mode: "insensitive" };
 
         if (state || city) {
