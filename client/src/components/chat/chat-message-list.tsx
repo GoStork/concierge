@@ -124,7 +124,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                 <>
                   <div className={`flex ${own ? "justify-end" : "justify-start"}`}>
                     <div
-                      className={`relative max-w-[75%] px-4 py-2.5 text-base leading-relaxed font-ui ${
+                      className={`relative max-w-[75%] overflow-hidden px-4 py-2.5 text-base leading-relaxed font-ui ${
                         own
                           ? "text-primary-foreground"
                           : "text-foreground"
@@ -145,7 +145,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                       }}
                       data-testid={`${msgTestIdPrefix}-${i}`}
                     >
-                      <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>
+                      <span style={{ whiteSpace: "pre-wrap", overflowWrap: "break-word", wordBreak: "break-word" }}>{msg.content}</span>
                       {msg.createdAt && (
                         <>
                           <span className={`inline-block ${own ? "w-[4.75rem]" : "w-[3.5rem]"}`} aria-hidden="true">&nbsp;</span>

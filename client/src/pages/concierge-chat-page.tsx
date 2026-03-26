@@ -2754,7 +2754,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       data-testid={`chat-message-${msg.role}-${i}`}
                     >
                       <div
-                        className={`relative max-w-[80%] px-4 py-2.5 text-base leading-relaxed font-ui ${
+                        className={`relative max-w-[80%] overflow-hidden px-4 py-2.5 text-base leading-relaxed font-ui ${
                           isOwnMessage
                             ? "text-primary-foreground chat-bubble-dark"
                             : isOtherParent
@@ -2790,7 +2790,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                               }),
                         }}
                       >
-                        <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>
+                        <span style={{ whiteSpace: "pre-wrap", overflowWrap: "break-word", wordBreak: "break-word" }}>{msg.content}</span>
                         {msg.createdAt && (
                           <>
                             <span className={`inline-block ${alignRight ? "w-[4.75rem]" : "w-[3.5rem]"}`} aria-hidden="true">&nbsp;</span>
