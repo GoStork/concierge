@@ -2150,6 +2150,11 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
     let humanNeeded = false;
     if (finalContent.includes("[[HUMAN_NEEDED]]")) {
       humanNeeded = true;
+      // Override AI response to ensure correct messaging - never offer to "schedule" or "arrange"
+      const parentFirstName = firstName || "there";
+      finalContent = finalContent.replace(/\[\[HUMAN_NEEDED\]\]/g, "").trim();
+      finalContent = `Of course, ${parentFirstName}! I've notified the GoStork concierge team - someone will join our chat shortly to assist you directly.\n\nIn the meantime, would you like to continue with the matching process while we wait?`;
+      finalContent += " [[HUMAN_NEEDED]]";
       try {
         if (currentSessionId) {
           await prisma.aiChatSession.update({
