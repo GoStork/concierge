@@ -223,6 +223,21 @@ async function createSessionStore(): Promise<session.Store> {
     await setupVite(httpServer, app);
   }
 
+  // Auto-seed concierge prompt sections if DB is empty
+  try {
+    const promptCount = await prisma.conciergePromptSection.count();
+    if (promptCount === 0) {
+      const { getDefaultPromptSections } = await import("./ai-prompt-defaults");
+      const sections = getDefaultPromptSections();
+      for (const s of sections) {
+        await prisma.conciergePromptSection.create({ data: s });
+      }
+      log(`Auto-seeded ${sections.length} concierge prompt sections`);
+    }
+  } catch (e: any) {
+    log(`Failed to auto-seed prompts: ${e.message}`);
+  }
+
   appReady = true;
   log("Application fully initialized");
 })();
