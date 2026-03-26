@@ -2,12 +2,46 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { useBrandSettings } from "@/hooks/use-brand-settings";
+import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { api } from "@shared/routes";
-import { ChevronLeft, Loader2, Lock, Check, Eye, EyeOff, AlertCircle, UserRound, Sparkles, DollarSign, CalendarCheck } from "lucide-react";
+import { ChevronLeft, Loader2, Lock, Check, Eye, EyeOff, AlertCircle, UserRound, Sparkles, DollarSign, CalendarCheck, Stethoscope, Heart, Baby, FlaskConical } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import LocationAutocomplete from "@/components/location-autocomplete";
+
+// AI Intro service-to-visual config (inline version of OnboardingAiIntroPage)
+const AI_INTRO_SERVICE_CONFIG: Record<string, { icon: typeof Stethoscope; gradient: string; label: string; imageKey: string; chatText: string; replyText: string }> = {
+  "Fertility Clinic": { icon: Stethoscope, gradient: "from-primary/20 to-primary/5", label: "Top Clinics", imageKey: "onboardingClinicImageUrl", chatText: "I found a great match for you! A top-rated fertility clinic near you", replyText: "Tell me more about the clinic!" },
+  "Egg Donor": { icon: FlaskConical, gradient: "from-pink-100 to-rose-50", label: "Egg Donors", imageKey: "onboardingEggDonorImageUrl", chatText: "I found an amazing egg donor that matches your preferences!", replyText: "She sounds great!" },
+  "Surrogate": { icon: Baby, gradient: "from-amber-100 to-orange-50", label: "Surrogates", imageKey: "onboardingSurrogateImageUrl", chatText: "I found a wonderful surrogate who's a perfect fit for your journey!", replyText: "Tell me more about her!" },
+  "Sperm Donor": { icon: Heart, gradient: "from-blue-100 to-sky-50", label: "Sperm Donors", imageKey: "onboardingSpermDonorImageUrl", chatText: "I found a great sperm donor that matches what you're looking for!", replyText: "Tell me more!" },
+};
+
+function AiIntroServiceCard({ service, imageUrl, style }: { service: string; imageUrl: string | null; style: React.CSSProperties }) {
+  const config = AI_INTRO_SERVICE_CONFIG[service];
+  if (!config) return null;
+  const Icon = config.icon;
+  const resolvedUrl = imageUrl ? (getPhotoSrc(imageUrl) || imageUrl) : null;
+  return (
+    <div className={`absolute w-48 h-60 rounded-2xl border border-border shadow-lg overflow-hidden ${!resolvedUrl ? `bg-gradient-to-br ${config.gradient}` : ""}`} style={style}>
+      {resolvedUrl ? (
+        <>
+          <img src={resolvedUrl} alt={config.label} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent p-3">
+            <span className="text-white text-sm font-semibold">{config.label}</span>
+          </div>
+        </>
+      ) : (
+        <div className="w-full h-full flex flex-col items-center justify-center gap-3">
+          <div className="w-16 h-16 rounded-full bg-background/80 flex items-center justify-center">
+            <Icon className="w-8 h-8 text-primary" />
+          </div>
+          <span className="text-sm font-semibold text-foreground/80">{config.label}</span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const TOTAL_STEPS_AUTHENTICATED = 5;
 const TOTAL_STEPS_UNAUTHENTICATED = 6;
@@ -124,13 +158,14 @@ export default function OnboardingPage() {
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [submitting, setSubmitting] = useState(false);
   const [showLoading, setShowLoading] = useState(false);
+  const [showAiIntro, setShowAiIntro] = useState(false);
   const [registrationError, setRegistrationError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isLoading && user && !user.mustCompleteProfile && !showLoading && !submitting) {
+    if (!isLoading && user && !user.mustCompleteProfile && !showLoading && !submitting && !showAiIntro) {
       navigate("/dashboard", { replace: true });
     }
-  }, [isLoading, user, navigate, showLoading, submitting]);
+  }, [isLoading, user, navigate, showLoading, submitting, showAiIntro]);
 
   // Authenticated users skip welcome and start at goals
   useEffect(() => {
@@ -243,8 +278,8 @@ export default function OnboardingPage() {
       await queryClient.invalidateQueries({ queryKey: ["/api/user"] });
 
       setTimeout(() => {
-        const goalsParam = encodeURIComponent(data.goals.join(","));
-        navigate(`/onboarding/ai-intro?goals=${goalsParam}`, { replace: true });
+        setShowLoading(false);
+        setShowAiIntro(true);
       }, 2000);
     } catch (err: any) {
       setShowLoading(false);
@@ -358,6 +393,67 @@ export default function OnboardingPage() {
             to { opacity: 1; transform: translateY(0); }
           }
         `}</style>
+      </div>
+    );
+  }
+
+  // AI Intro screen - shown after loading, before matchmaker selection
+  if (showAiIntro) {
+    const matchmakers: Matchmaker[] = (brand?.matchmakers || [])
+      .filter((m: Matchmaker) => m.isActive)
+      .sort((a: Matchmaker, b: Matchmaker) => a.sortOrder - b.sortOrder);
+    const concierge = matchmakers[0];
+    const visibleServices = data.goals.filter(g => AI_INTRO_SERVICE_CONFIG[g]).slice(0, 2);
+    if (visibleServices.length === 0) visibleServices.push("Fertility Clinic", "Egg Donor");
+    if (visibleServices.length === 1) {
+      const fallback = Object.keys(AI_INTRO_SERVICE_CONFIG).find(k => !visibleServices.includes(k));
+      if (fallback) visibleServices.push(fallback);
+    }
+    const getImageUrl = (service: string): string | null => {
+      const key = AI_INTRO_SERVICE_CONFIG[service]?.imageKey;
+      if (!key || !brand) return null;
+      return (brand as any)[key] || null;
+    };
+    return (
+      <div className="fixed inset-0 bg-background flex flex-col items-center justify-between py-12 px-6" data-testid="onboarding-ai-intro">
+        <div className="max-w-md w-full flex flex-col items-center flex-1">
+          <h1 className="text-3xl md:text-4xl font-bold leading-tight text-center mb-8" style={{ fontFamily: "var(--font-display)" }} data-testid="text-ai-intro-title">
+            Now let's meet your AI concierge
+          </h1>
+          <div className="relative w-72 h-72 mx-auto mb-6">
+            <AiIntroServiceCard service={visibleServices[1]} imageUrl={getImageUrl(visibleServices[1])} style={{ left: "8px", top: "16px", transform: "rotate(-6deg)", zIndex: 1 }} />
+            <AiIntroServiceCard service={visibleServices[0]} imageUrl={getImageUrl(visibleServices[0])} style={{ right: "8px", top: "0px", transform: "rotate(4deg)", zIndex: 2 }} />
+            <div className="absolute bottom-0 left-0 right-0 z-10 flex items-end gap-2">
+              {concierge?.avatarUrl ? (
+                <img src={getPhotoSrc(concierge.avatarUrl) || undefined} alt={concierge.name} className="w-10 h-10 rounded-full object-cover border-2 border-background flex-shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center flex-shrink-0 border-2 border-background">
+                  <span className="text-primary-foreground text-sm font-bold">AI</span>
+                </div>
+              )}
+              <div className="bg-muted rounded-[var(--radius)] rounded-bl-none px-4 py-3 shadow-sm max-w-[220px]">
+                <p className="text-sm text-foreground">{AI_INTRO_SERVICE_CONFIG[visibleServices[0]]?.chatText || "I found a great match for you!"}</p>
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end w-full max-w-xs mb-8">
+            <div className="bg-primary text-primary-foreground rounded-[var(--radius)] rounded-br-none px-4 py-2.5">
+              <p className="text-sm">{AI_INTRO_SERVICE_CONFIG[visibleServices[0]]?.replyText || "Tell me more!"}</p>
+            </div>
+          </div>
+          <p className="text-center text-muted-foreground text-xs leading-relaxed max-w-sm mx-auto">
+            Our AI is not perfect yet. It can have some glitches.
+          </p>
+        </div>
+        <div className="w-full max-w-md mt-6">
+          <button
+            onClick={() => navigate("/matchmaker-selection", { replace: true })}
+            data-testid="btn-ai-intro-continue"
+            className="w-full py-4 rounded-full text-lg font-semibold bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] transition-all duration-200"
+          >
+            Continue
+          </button>
+        </div>
       </div>
     );
   }
