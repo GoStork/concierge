@@ -2387,55 +2387,50 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
     // ALWAYS override AI values - the AI is unreliable at setting these correctly.
     for (const card of matchCards) {
       if ((card.type || "").toLowerCase() === "clinic") {
-        // Step 1: Determine egg source from profile DB or chat history
+        // Step 1: Determine egg source - check ALL available signals
         let resolvedEggSource = "own_eggs";
 
-        // CRITICAL: Gay male couples and single males MUST use donor eggs - no female partner to provide eggs
         const genderCheck = (userRecord?.gender || "").toLowerCase();
         const orientationCheck = (userRecord?.sexualOrientation || "").toLowerCase();
+        const relationCheck = (userRecord?.relationshipStatus || "").toLowerCase();
         const isMaleParent = genderCheck.includes("man") || genderCheck.includes("male") || genderCheck === "m";
         const isGay = orientationCheck.includes("gay") || orientationCheck.includes("homosexual");
-        const isSingleMale = isMaleParent && (userRecord?.relationshipStatus || "").toLowerCase().includes("single");
+        const isSingleMale = isMaleParent && relationCheck.includes("single");
         const isGayCouple = isMaleParent && isGay;
+        const profileEggSource = (profile?.eggSource || "").toLowerCase();
 
-        if (isGayCouple || isSingleMale) {
-          // Two dads or single male - eggs MUST come from a donor, no female partner to provide eggs
+        // Check all donor signals - ANY of these means donor eggs
+        const isDonor =
+          // Signal 1: Gay male couple or single male - biologically must use donor
+          isGayCouple || isSingleMale ||
+          // Signal 2: Profile eggSource contains "donor"
+          profileEggSource.includes("donor") ||
+          // Signal 3: Profile says they need an egg donor
+          profile?.needsEggDonor === true;
+
+        if (isDonor) {
           resolvedEggSource = "donor";
-        } else if (profile?.eggSource) {
-          resolvedEggSource = profile.eggSource.toLowerCase().includes("donor") ? "donor" : "own_eggs";
+        } else if (profileEggSource && !profileEggSource.includes("donor")) {
+          // Profile explicitly says own/partner eggs
+          resolvedEggSource = "own_eggs";
         } else {
-          // Scan chat history for egg source answers
+          // Scan chat history for egg source answers AND identity clues
           for (let i = chatHistory.length - 1; i >= Math.max(0, chatHistory.length - 30); i--) {
             const c = (chatHistory[i].content || "").toLowerCase();
             if (chatHistory[i].role === "user") {
-              if (/\bdonor eggs?\b|egg donor/i.test(c)) { resolvedEggSource = "donor"; break; }
+              if (/\bdonor eggs?\b|egg donor|\bneed.*egg donor\b/.test(c)) { resolvedEggSource = "donor"; break; }
+              if (/\btwo dads?\b|\bgay\b|\btwo men\b|\bsingle dad\b|\bsingle father\b|\bsingle man\b/.test(c)) { resolvedEggSource = "donor"; break; }
               if (/\bmy (own )?eggs?\b|partner'?s eggs?\b|my eggs/i.test(c)) { resolvedEggSource = "own_eggs"; break; }
             }
-          }
-        }
-
-        // Additional fallback: scan chat history for identity clues if user record fields are empty
-        if (resolvedEggSource === "own_eggs" && !profile?.eggSource && !userRecord?.gender) {
-          for (let i = chatHistory.length - 1; i >= Math.max(0, chatHistory.length - 30); i--) {
-            const c = (chatHistory[i].content || "").toLowerCase();
-            if (chatHistory[i].role === "user") {
-              // Two dads, gay couple, single dad - must be donor eggs
-              if (/\btwo dads?\b|\bgay\b|\btwo men\b|\bsingle dad\b|\bsingle father\b|\bsingle man\b/.test(c)) {
-                resolvedEggSource = "donor";
-                break;
-              }
-            }
-            // Also check AI's inferred context messages
             if (chatHistory[i].role === "assistant") {
-              if (/since you'll need an egg donor|eggs? (?:must|will) come from a donor/i.test(c)) {
-                resolvedEggSource = "donor";
-                break;
+              if (/since you'll need an egg donor|eggs? (?:must|will) come from a donor|you'll be working with an egg donor/i.test(c)) {
+                resolvedEggSource = "donor"; break;
               }
             }
           }
         }
         card.eggSource = resolvedEggSource;
-        console.log(`[CLINIC CARD] eggSource resolution: gender="${userRecord?.gender}", orientation="${userRecord?.sexualOrientation}", relationship="${userRecord?.relationshipStatus}", profileEggSource="${profile?.eggSource}", isGayCouple=${isGayCouple}, isSingleMale=${isSingleMale}, resolved="${resolvedEggSource}"`);
+        console.log(`[CLINIC CARD] eggSource resolution: gender="${userRecord?.gender}", orientation="${userRecord?.sexualOrientation}", profileEggSource="${profile?.eggSource}", needsEggDonor=${profile?.needsEggDonor}, isGayCouple=${isGayCouple}, isSingleMale=${isSingleMale}, resolved="${resolvedEggSource}"`);
 
         // Step 2: Determine egg provider's age from profile/user data or chat history
         let eggProviderAge: number | null = null;
