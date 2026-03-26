@@ -1592,6 +1592,15 @@ When the parent asks a follow-up question about a specific egg donor (eye color,
       });
     }
 
+    // Inject human escalation instructions when user is requesting to talk to a human
+    const humanRequestRegex = /talk to (?:a )?(?:real|human|actual) person|talk to (?:the )?gostork team|speak (?:to|with) (?:a )?human|connect me with (?:a )?(?:human|person|someone)|i want (?:a )?human|i'd like to talk to a real person/i;
+    if (humanRequestRegex.test(userMessage)) {
+      messages.push({
+        role: "system" as const,
+        content: `The parent is requesting to talk to a human. Your response MUST:\n1. Confirm the GoStork concierge team has been notified and someone will join the chat shortly.\n2. Ask if they'd like to continue the matching process while waiting.\nExample: "Of course! I've notified the GoStork concierge team - someone will join our chat shortly to assist you directly. In the meantime, would you like to continue with the matching process while we wait?"\nNEVER use these words: "schedule", "arrange", "set up a call", "connect you with", "consultation". The human is joining THIS chat, not scheduling a separate call.\nYou MUST include [[HUMAN_NEEDED]] in your response.`,
+      });
+    }
+
     // PROACTIVE PROFILE INJECTION: When parent asks a question about a presented profile,
     // fetch the full profile BEFORE sending to AI so it has all data on the first try
     const looksLikeProfileQuestion = /\?|what|how|where|when|who|why|does she|does he|is she|is he|tell me|her\s+|his\s+|husband|wife|partner|name|age|weight|bmi|education|location|health|deliver|pregnan|baby|babies|height|diet|religion|charge|cost|compen|letter|hobby|pet|smoke|drink|tattoo|pierc|eye|hair|blood|ethnic|race|occupation|donat|experience|eggs|medical|family/i.test(userMessage);
@@ -2150,11 +2159,6 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
     let humanNeeded = false;
     if (finalContent.includes("[[HUMAN_NEEDED]]")) {
       humanNeeded = true;
-      // Override AI response to ensure correct messaging - never offer to "schedule" or "arrange"
-      const parentFirstName = firstName || "there";
-      finalContent = finalContent.replace(/\[\[HUMAN_NEEDED\]\]/g, "").trim();
-      finalContent = `Of course, ${parentFirstName}! I've notified the GoStork concierge team - someone will join our chat shortly to assist you directly.\n\nIn the meantime, would you like to continue with the matching process while we wait?`;
-      finalContent += " [[HUMAN_NEEDED]]";
       try {
         if (currentSessionId) {
           await prisma.aiChatSession.update({
