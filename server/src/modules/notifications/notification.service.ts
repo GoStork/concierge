@@ -138,8 +138,8 @@ function buildBrandedEmail(
   };
 
   const detailsHtml = opts.detailRows?.length
-    ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;background:${tintHex(brand.backgroundColor, 0.02)};border-radius:${btnRadius};overflow:hidden;">
-${opts.detailRows.map(r => `<tr><td style="padding:10px 16px;color:${brand.mutedForegroundColor};font-size:14px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};white-space:nowrap;width:160px;min-width:160px;vertical-align:top;">${r.label}</td><td style="padding:10px 16px;color:${brand.foregroundColor};font-size:14px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};font-weight:500;word-break:break-word;">${r.value}</td></tr>`).join("\n")}
+    ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;background:${tintHex(brand.backgroundColor, 0.02)};border-radius:${btnRadius};">
+${opts.detailRows.map(r => `<tr><td width="160" style="padding:10px 16px;color:${brand.mutedForegroundColor};font-size:14px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};white-space:nowrap;vertical-align:top;">${r.label}</td><td style="padding:10px 16px;color:${brand.foregroundColor};font-size:14px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};font-weight:500;word-break:break-word;">${r.value}</td></tr>`).join("\n")}
 </table>` : "";
 
   const alertHtml = opts.alertBox
