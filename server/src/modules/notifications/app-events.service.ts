@@ -5,7 +5,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { trackConnect, trackDisconnect, getConnectedCount } from "../../../online-tracker";
 
 export interface AppEvent {
-  type: "cost_sheet_submitted" | "cost_sheet_approved" | "cost_sheet_rejected" | "cost_sheet_deleted";
+  type: "cost_sheet_submitted" | "cost_sheet_approved" | "cost_sheet_rejected" | "cost_sheet_deleted" | "human_escalation";
   payload: Record<string, any>;
   targetUserIds: string[];
   actorUserId?: string;
@@ -78,6 +78,7 @@ export class AppEventsService {
         "cost_sheet_approved",
         "cost_sheet_rejected",
         "cost_sheet_deleted",
+        "human_escalation",
       ];
 
       const unseen = await this.prisma.inAppNotification.findMany({

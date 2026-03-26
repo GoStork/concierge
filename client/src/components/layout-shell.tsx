@@ -287,6 +287,42 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     }
   }, [toast, dismiss, navigate]);
 
+  const handleHumanEscalationEvent = useCallback((data: any) => {
+    if (data.type !== "human_escalation") return;
+
+    const parentName = data.parentName || "A parent";
+
+    playNotificationChime();
+
+    const { id: toastId } = toast({
+      title: `${parentName} needs human assistance`,
+      description: data.message || "A parent has requested to speak with a human concierge",
+      variant: "warning",
+      action: (
+        <Button
+          size="sm"
+          variant="default"
+          className="gap-1 shrink-0"
+          onClick={() => { dismiss(toastId); navigate("/admin/concierge-monitor"); }}
+          data-testid="button-join-escalation-from-toast"
+        >
+          Join Chat
+        </Button>
+      ),
+      duration: 30000,
+    });
+
+    if ("Notification" in window && Notification.permission === "granted") {
+      try {
+        new Notification(`${parentName} needs human assistance`, {
+          body: data.message || "Parent requesting human concierge",
+          icon: "/favicon.ico",
+          tag: `human-escalation-${data.sessionId}`,
+        });
+      } catch {}
+    }
+  }, [toast, dismiss, navigate]);
+
   useEffect(() => {
     if (!user) return;
     if ("Notification" in window && Notification.permission === "default") {
@@ -307,6 +343,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         handleVideoJoinedEvent(data);
         handleBookingEvent(data);
         handleCostSheetEvent(data);
+        handleHumanEscalationEvent(data);
       } catch {}
     };
 
@@ -326,7 +363,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       es.close();
       sseRef.current = null;
     };
-  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent]);
+  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent]);
 
   const dispatch = useAppDispatch();
   const marketplaceTab = useAppSelector((state) => state.ui.marketplaceTab);
@@ -348,6 +385,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         handleVideoJoinedEvent(data);
         handleBookingEvent(data);
         handleCostSheetEvent(data);
+        handleHumanEscalationEvent(data);
       } catch {}
     };
 
@@ -367,7 +405,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       es.close();
       costsSseRef.current = null;
     };
-  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent]);
+  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent]);
   const isProvider = hasProviderRole(roles);
   const isParent = roles.includes('PARENT');
   const isParentOnly = isParent && !isAdmin && !isProvider;

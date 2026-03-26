@@ -11,6 +11,7 @@ import { AppModule } from "./src/app.module";
 import { SpaFallbackFilter } from "./src/filters/spa-fallback.filter";
 import { PrismaService } from "./src/modules/prisma/prisma.service";
 import { startNightlySyncScheduler } from "./src/modules/providers/nightly-sync.scheduler";
+import { setNestApp } from "./nest-app-ref";
 import { createClient } from "redis";
 import { RedisStore } from "connect-redis";
 import { execSync } from "child_process";
@@ -201,6 +202,7 @@ async function createSessionStore(): Promise<session.Store> {
   SwaggerModule.setup("docs", nestApp, document);
 
   await nestApp.init();
+  setNestApp(nestApp);
 
   const prismaService = nestApp.get(PrismaService);
   startNightlySyncScheduler(prismaService);

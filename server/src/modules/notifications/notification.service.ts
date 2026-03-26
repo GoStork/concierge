@@ -16,7 +16,8 @@ export type NotificationChannel =
   | "recording_ready"
   | "cost_sheet_submitted"
   | "cost_sheet_approved"
-  | "cost_sheet_rejected";
+  | "cost_sheet_rejected"
+  | "human_escalation";
 
 
 const TWILIO_TEMPLATES = {
@@ -1679,6 +1680,83 @@ export class NotificationService implements OnModuleInit {
           body: html,
         });
       }
+    }
+  }
+
+  async sendHumanEscalationNotification(params: {
+    parentName: string;
+    parentEmail: string;
+    parentPhone?: string | null;
+    parentUserId: string;
+    sessionId: string;
+    profileDetails: { label: string; value: string }[];
+  }) {
+    const brandData = await this.getBrandData();
+    const admins = await this.prisma.user.findMany({
+      where: { roles: { has: "GOSTORK_ADMIN" } },
+      select: { id: true, email: true, mobileNumber: true },
+    });
+    const parentName = this.escapeHtml(params.parentName);
+    const chatUrl = `${getBaseUrl()}/admin/concierge-monitor`;
+    const subject = `Human Assistance Requested - ${params.parentName}`;
+    const html = buildBrandedEmail(brandData, {
+      title: "Parent Requesting Human Assistance",
+      greeting: `<strong>${parentName}</strong> has requested to speak with a human concierge.`,
+      body: "Here is everything we know about this parent so far:",
+      detailRows: params.profileDetails.map(d => ({
+        label: this.escapeHtml(d.label),
+        value: this.escapeHtml(d.value),
+      })),
+      alertBox: { text: "Please join the chat as soon as possible to assist this parent.", type: "warning" },
+      buttons: [{ label: "Join Chat Now", url: chatUrl }],
+    });
+
+    for (const admin of admins) {
+      // Send email
+      this.dispatchNotification({
+        userId: admin.id,
+        type: "EMAIL",
+        channel: "human_escalation",
+        recipient: admin.email,
+        subject,
+        body: html,
+      }).catch(e => this.logger.error(`Failed to send escalation email to ${admin.email}: ${e.message}`));
+
+      // Send SMS if admin has a phone number
+      if (admin.mobileNumber) {
+        this.sendRawSms(
+          admin.mobileNumber,
+          `${brandData.companyName} Alert: ${params.parentName} (${params.parentEmail}) is requesting human assistance in the AI concierge. Join the chat: ${chatUrl}`,
+        ).catch(e => this.logger.error(`Failed to send escalation SMS to ${admin.mobileNumber}: ${e.message}`));
+      }
+    }
+  }
+
+  private async sendRawSms(to: string, body: string) {
+    const twilioSid = process.env.TWILIO_ACCOUNT_SID;
+    const twilioToken = process.env.TWILIO_AUTH_TOKEN;
+    const twilioFrom = process.env.TWILIO_PHONE_NUMBER;
+
+    if (!twilioSid || !twilioToken || !twilioFrom) {
+      this.logger.log(`[SMS MOCK] To: ${to}, Body: ${body}`);
+      return;
+    }
+
+    const url = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`;
+    const params = new URLSearchParams({ To: to, From: twilioFrom, Body: body });
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: "Basic " + Buffer.from(`${twilioSid}:${twilioToken}`).toString("base64"),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Twilio error: ${response.status} - ${text}`);
     }
   }
 }

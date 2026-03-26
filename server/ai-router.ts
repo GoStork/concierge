@@ -764,6 +764,8 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
           firstName: true,
           lastName: true,
           name: true,
+          email: true,
+          mobileNumber: true,
           city: true,
           state: true,
           gender: true,
@@ -2057,6 +2059,66 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
               },
             },
           });
+        }
+
+        // Send email + SMS to admins via NotificationService
+        const { getNestApp } = await import("./nest-app-ref");
+        const nestApp = getNestApp();
+        if (nestApp) {
+          const { NotificationService } = await import("./src/modules/notifications/notification.service");
+          const { AppEventsService } = await import("./src/modules/notifications/app-events.service");
+          const notifService = nestApp.get(NotificationService);
+          const appEvents = nestApp.get(AppEventsService);
+
+          // Build profile details for the email
+          const profileDetails: { label: string; value: string }[] = [];
+          if (userRecord?.name) profileDetails.push({ label: "Name", value: userRecord.name });
+          if (userRecord?.email) profileDetails.push({ label: "Email", value: userRecord.email });
+          if (userRecord?.mobileNumber) profileDetails.push({ label: "Phone", value: userRecord.mobileNumber });
+          if (userRecord?.gender) profileDetails.push({ label: "Gender", value: userRecord.gender });
+          if (userRecord?.sexualOrientation) profileDetails.push({ label: "Sexual Orientation", value: userRecord.sexualOrientation });
+          if (userRecord?.relationshipStatus) profileDetails.push({ label: "Relationship Status", value: userRecord.relationshipStatus });
+          if (userRecord?.partnerFirstName) {
+            let partnerInfo = userRecord.partnerFirstName;
+            if (userRecord?.partnerAge) partnerInfo += `, age ${userRecord.partnerAge}`;
+            profileDetails.push({ label: "Partner", value: partnerInfo });
+          }
+          const loc = [userRecord?.city, userRecord?.state].filter(Boolean).join(", ");
+          if (loc) profileDetails.push({ label: "Location", value: loc });
+          if (userRecord?.dateOfBirth) {
+            const age = Math.floor((Date.now() - new Date(userRecord.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+            profileDetails.push({ label: "Age", value: `${age}` });
+          }
+          if (profile?.eggSource) profileDetails.push({ label: "Egg Source", value: profile.eggSource });
+          if (profile?.spermSource) profileDetails.push({ label: "Sperm Source", value: profile.spermSource });
+          if (profile?.carrier) profileDetails.push({ label: "Carrier", value: profile.carrier });
+          if (profile?.hasEmbryos !== undefined) profileDetails.push({ label: "Has Embryos", value: profile.hasEmbryos ? "Yes" : "No" });
+          if (profile?.needsSurrogate) profileDetails.push({ label: "Needs Surrogate", value: "Yes" });
+          if (profile?.needsEggDonor) profileDetails.push({ label: "Needs Egg Donor", value: "Yes" });
+          if (profile?.needsClinic) profileDetails.push({ label: "Needs Clinic", value: "Yes" });
+          if (profile?.journeyStage) profileDetails.push({ label: "Journey Stage", value: profile.journeyStage });
+
+          // Send email + SMS
+          notifService.sendHumanEscalationNotification({
+            parentName: userRecord?.name || firstName,
+            parentEmail: userRecord?.email || "",
+            parentPhone: userRecord?.mobileNumber,
+            parentUserId: userId,
+            sessionId: currentSessionId,
+            profileDetails,
+          }).catch(e => console.error("Human escalation email/SMS failed:", e));
+
+          // Emit real-time SSE event for toast + sound
+          appEvents.emit({
+            type: "human_escalation",
+            payload: {
+              parentName: userRecord?.name || firstName,
+              parentEmail: userRecord?.email || "",
+              sessionId: currentSessionId,
+              message: `${firstName} has requested to speak with a human concierge`,
+            },
+            targetUserIds: admins.map(a => a.id),
+          }).catch(e => console.error("Human escalation SSE emit failed:", e));
         }
       } catch (e) {
         console.error("Failed to process HUMAN_NEEDED:", e);
