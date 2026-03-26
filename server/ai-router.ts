@@ -707,7 +707,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
     const currentSession = await prisma.aiChatSession.findUnique({
       where: { id: currentSessionId },
-      select: { providerJoinedAt: true, providerId: true, status: true },
+      select: { providerJoinedAt: true, providerId: true, status: true, humanRequested: true },
     });
     if (currentSession?.providerJoinedAt && currentSession.status === "PROVIDER_JOINED") {
       let userMsgDeliveredAt: string | null = null;
@@ -1582,8 +1582,19 @@ When the parent asks a follow-up question about a specific egg donor (eye color,
     if (humanRequestRegex.test(userMessage)) {
       messages.push({
         role: "system" as const,
-        content: `The parent is requesting to talk to a human. Your response MUST:\n1. Confirm the GoStork concierge team has been notified and someone will join the chat shortly.\n2. Ask if they'd like to continue the matching process while waiting.\nExample: "Of course! I've notified the GoStork concierge team - someone will join our chat shortly to assist you directly. In the meantime, would you like to continue with the matching process while we wait?"\nNEVER use these words: "schedule", "arrange", "set up a call", "connect you with", "consultation". The human is joining THIS chat, not scheduling a separate call.\nYou MUST include [[HUMAN_NEEDED]] in your response.`,
+        content: `The parent is requesting to talk to a human. Your response MUST:\n1. Confirm the GoStork concierge team has been notified and someone will join the chat shortly.\n2. Ask ONCE if they'd like to continue the matching process while waiting.\nExample: "Of course! I've notified the GoStork concierge team - someone will join our chat shortly to assist you directly. In the meantime, would you like to continue with the matching process while we wait?"\nNEVER use these words: "schedule", "arrange", "set up a call", "connect you with", "consultation". The human is joining THIS chat, not scheduling a separate call.\nYou MUST include [[HUMAN_NEEDED]] in your response.`,
       });
+    }
+
+    // When human has already been requested, respect the parent's choice to wait
+    if (currentSession?.humanRequested && !humanRequestRegex.test(userMessage)) {
+      const wantsToWait = /wait|no|nah|i('ll| will) wait|not now|later|just wait|prefer to wait/i.test(userMessage);
+      if (wantsToWait) {
+        messages.push({
+          role: "system" as const,
+          content: `The parent has asked to wait for the human concierge. RESPECT their choice. Say something brief and warm like "No problem! The team will be with you shortly. I'm here if you need anything in the meantime." Do NOT offer consultations, scheduling, or suggest continuing the matching process. Do NOT push or re-ask. Just be available.`,
+        });
+      }
     }
 
     // Always inject consultation naming rule
