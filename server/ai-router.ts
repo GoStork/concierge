@@ -2479,7 +2479,9 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
         }
 
         if (resolvedEggSource === "donor") {
-          card.ageGroup = "under_35"; // doesn't matter for donor, but set a default
+          // For donor eggs, age group and new patient status are irrelevant
+          delete card.ageGroup;
+          delete card.isNewPatient;
         } else if (eggProviderAge !== null) {
           if (eggProviderAge < 35) card.ageGroup = "under_35";
           else if (eggProviderAge <= 37) card.ageGroup = "35_37";
@@ -2489,25 +2491,27 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
           card.ageGroup = card.ageGroup || "under_35";
         }
 
-        // Step 3: Determine isNewPatient from chat history (ALWAYS scan, never trust AI)
-        let resolvedIsNew: boolean | null = null;
-        for (let i = chatHistory.length - 1; i >= Math.max(0, chatHistory.length - 30); i--) {
-          const c = (chatHistory[i].content || "").toLowerCase();
-          if (chatHistory[i].role === "user") {
-            if (/first.?time|new to ivf|never done|^first$|^new$/i.test(c)) { resolvedIsNew = true; break; }
-            if (/done.*(ivf|before)|i'?ve done|not my first|been through|returning|had prior|prior cycle/i.test(c)) { resolvedIsNew = false; break; }
-          }
-          // Also check AI questions to provide context
-          if (chatHistory[i].role === "assistant" && /first time.*ivf|been through.*before/i.test(c)) {
-            // The next user message after this is the answer - check it
-            if (i + 1 < chatHistory.length && chatHistory[i + 1].role === "user") {
-              const answer = (chatHistory[i + 1].content || "").toLowerCase();
-              if (/first|new|^yes/i.test(answer)) { resolvedIsNew = true; break; }
-              if (/before|done|no|prior|returning/i.test(answer)) { resolvedIsNew = false; break; }
+        // Step 3: Determine isNewPatient from chat history (skip for donor eggs - not relevant)
+        if (resolvedEggSource !== "donor") {
+          let resolvedIsNew: boolean | null = null;
+          for (let i = chatHistory.length - 1; i >= Math.max(0, chatHistory.length - 30); i--) {
+            const c = (chatHistory[i].content || "").toLowerCase();
+            if (chatHistory[i].role === "user") {
+              if (/first.?time|new to ivf|never done|^first$|^new$/i.test(c)) { resolvedIsNew = true; break; }
+              if (/done.*(ivf|before)|i'?ve done|not my first|been through|returning|had prior|prior cycle/i.test(c)) { resolvedIsNew = false; break; }
+            }
+            // Also check AI questions to provide context
+            if (chatHistory[i].role === "assistant" && /first time.*ivf|been through.*before/i.test(c)) {
+              // The next user message after this is the answer - check it
+              if (i + 1 < chatHistory.length && chatHistory[i + 1].role === "user") {
+                const answer = (chatHistory[i + 1].content || "").toLowerCase();
+                if (/first|new|^yes/i.test(answer)) { resolvedIsNew = true; break; }
+                if (/before|done|no|prior|returning/i.test(answer)) { resolvedIsNew = false; break; }
+              }
             }
           }
+          card.isNewPatient = resolvedIsNew ?? false;
         }
-        card.isNewPatient = resolvedIsNew ?? false;
 
         // Step 4: Build the label
         const ageLbl = card.ageGroup === "under_35" ? "Under 35" : card.ageGroup === "35_37" ? "35-37" : card.ageGroup === "38_40" ? "38-40" : "Over 40";
