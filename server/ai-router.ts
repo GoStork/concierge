@@ -1461,21 +1461,68 @@ INTERACTIVE UI COMPONENTS (still available):
 ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIONS ABOUT A PRESENTED MATCH" + biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] : ""}
 ` : "";
 
-    // Inject mandatory skip rules that apply regardless of DB-stored or default prompts
-    const skipRulesPreamble = `
-MANDATORY RULE - NEVER ASK QUESTIONS ALREADY ANSWERED (HIGHEST PRIORITY):
-Before asking ANY question, check if the parent already provided the answer - either explicitly in a previous message OR implicitly from their situation. If the answer is already known, SKIP the question entirely and move to the next unanswered step.
-NEVER tell the parent you are skipping questions. Do NOT say things like "I'll skip those questions" or "Since you already told me X, we can skip that." Just move naturally to the next question as if the skipped ones never existed.
-KEY DISTINCTION - "need" vs "have":
-- "I need an egg donor" = they need HELP FINDING one. SKIP both "will you use a donor?" AND "do you need help finding one?" - both are answered.
-- "I have an egg donor" = they already found one, do NOT need help. SKIP both questions.
-- "I need a surrogate" = they need HELP FINDING one. SKIP both "will you use a surrogate?" AND "do you need help finding one?"
-- "I have a surrogate" = they already found one. SKIP both questions.
-- Same logic applies to clinics, sperm donors, etc.
-BIOLOGICAL INFERENCE:
-- If parent said they need an egg donor: they obviously do NOT have embryos yet. SKIP the embryo question.
-- Gay male couple or single male: eggs MUST come from a donor, they WILL need a surrogate. NEVER ask "will you use an egg donor?" or "will you use a surrogate?" - biologically obvious. Only ask "do you need help finding one?" IF they haven't already said they need one.
-- If parent stated they need multiple services (e.g., "need egg donor and surrogate and clinic"), ALL of those are answered - skip every related question and go to the first truly unanswered step.
+    // Dynamically analyze chat history to build concrete skip directives
+    const allUserMessages = chatHistory.filter(m => m.role === "user").map(m => (m.content || "").toLowerCase()).join(" ");
+    const skipDirectives: string[] = [];
+
+    const mentionsEggDonor = /egg\s*donor|need.*egg|donor\s*egg/i.test(allUserMessages);
+    const hasEggDonor = /have.*egg\s*donor|already.*egg\s*donor|egg\s*donor.*already/i.test(allUserMessages);
+    const mentionsSurrogate = /surrogate|surrogacy|need.*surrogate/i.test(allUserMessages);
+    const hasSurrogate = /have.*surrogate|already.*surrogate|surrogate.*already/i.test(allUserMessages);
+    const mentionsClinic = /ivf\s*clinic|fertility\s*clinic|need.*clinic|clinic/i.test(allUserMessages);
+    const hasClinic = /have.*clinic|already.*clinic|clinic.*already/i.test(allUserMessages);
+    const mentionsSpermDonor = /sperm\s*donor|need.*sperm/i.test(allUserMessages);
+    const hasSpermDonor = /have.*sperm\s*donor|already.*sperm/i.test(allUserMessages);
+    const isGayMale = /gay\s*(couple|man|male|men|dad|father)|two\s*dad|two\s*men|single\s*(man|male|dad|father|guy)/i.test(allUserMessages);
+
+    // Embryo question: skip if they need an egg donor (no embryos yet) or are a gay couple needing donor
+    if (mentionsEggDonor || (isGayMale && !(/have.*embryo|frozen\s*embryo|embryos/i.test(allUserMessages)))) {
+      skipDirectives.push("DO NOT ask about frozen embryos (Step 1) - parent needs an egg donor, so they do not have embryos yet.");
+    }
+    // Egg source: skip for gay males (always donor) or if they already mentioned egg donor
+    if (isGayMale || mentionsEggDonor || hasEggDonor) {
+      skipDirectives.push("DO NOT ask about egg source (Step 2) - already known: using egg donor.");
+    }
+    // Help finding egg donor: skip if they said they NEED one or already HAVE one
+    if (mentionsEggDonor && !hasEggDonor) {
+      skipDirectives.push("DO NOT ask if they need help finding an egg donor (Step 2a) - they said they need one, so yes they need help.");
+    }
+    if (hasEggDonor) {
+      skipDirectives.push("DO NOT ask if they need help finding an egg donor (Step 2a) - they already have one.");
+    }
+    // Carrier: skip for gay males (always surrogate) or if they mentioned surrogate
+    if (isGayMale || mentionsSurrogate || hasSurrogate) {
+      skipDirectives.push("DO NOT ask about carrier/who will carry (Step 4) - already known: using surrogate.");
+    }
+    // Help finding surrogate: skip if they said they NEED one or already HAVE one
+    if (mentionsSurrogate && !hasSurrogate) {
+      skipDirectives.push("DO NOT ask if they need help finding a surrogate (Step 4a) - they said they need one, so yes they need help.");
+    }
+    if (hasSurrogate) {
+      skipDirectives.push("DO NOT ask if they need help finding a surrogate (Step 4a) - they already have one.");
+    }
+    // Clinic
+    if (mentionsClinic && !hasClinic) {
+      skipDirectives.push("DO NOT ask if they need help finding a clinic (Step 5) - they said they need one.");
+    }
+    if (hasClinic) {
+      skipDirectives.push("DO NOT ask if they need help finding a clinic (Step 5) - they already have one.");
+    }
+    // Sperm donor
+    if (mentionsSpermDonor && !hasSpermDonor) {
+      skipDirectives.push("DO NOT ask about sperm source (Step 3) or if they need help finding a sperm donor (Step 3a) - they said they need one.");
+    }
+    if (hasSpermDonor) {
+      skipDirectives.push("DO NOT ask about sperm source (Step 3) or if they need help finding a sperm donor (Step 3a) - they already have one.");
+    }
+
+    const skipRulesPreamble = skipDirectives.length > 0 ? `
+MANDATORY - QUESTIONS YOU MUST NOT ASK (the parent already answered these):
+${skipDirectives.map(d => "- " + d).join("\n")}
+NEVER tell the parent you are skipping questions. Just move naturally to the next unanswered question as if the skipped ones never existed.
+` : `
+MANDATORY RULE - NEVER ASK QUESTIONS ALREADY ANSWERED:
+Before asking ANY question, check if the parent already provided the answer. If yes, skip it silently and move to the next unanswered step. NEVER announce you are skipping.
 `;
     const effectiveLogic = isDonorInquiryMode ? donorInquiryPrompt : (skipRulesPreamble + "\n" + biologicalMasterLogic);
 
