@@ -2110,20 +2110,49 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
           if (profile?.surrogateCountries) profileDetails.push({ label: "Surrogate Countries", value: profile.surrogateCountries });
           if (profile?.isFirstIvf !== undefined) profileDetails.push({ label: "First IVF", value: profile.isFirstIvf ? "Yes" : "No" });
 
-          // Also include a chat summary with the last few Q&A exchanges for context
-          const recentQA: string[] = [];
-          for (let i = 0; i < chatHistory.length - 1 && recentQA.length < 10; i++) {
-            if (chatHistory[i].role === "assistant" && chatHistory[i + 1]?.role === "user") {
-              const q = (chatHistory[i].content || "").replace(/\[\[.*?\]\]/g, "").trim();
-              const a = (chatHistory[i + 1].content || "").trim();
-              if (q && a && q.length < 300 && a.length < 200) {
-                recentQA.push(`Q: ${q.substring(0, 150)}\nA: ${a.substring(0, 100)}`);
+          // Extract concise Q&A pairs from chat as short property-value rows
+          // Map common AI questions to short labels and extract the parent's answer
+          const qaPatterns: { pattern: RegExp; label: string }[] = [
+            { pattern: /on your own.*partner.*couple|who.*going.*journey/i, label: "Family Structure" },
+            { pattern: /two dads.*two moms.*mixed couple|tell me.*about.*partner/i, label: "Couple Type" },
+            { pattern: /frozen embryos/i, label: "Frozen Embryos" },
+            { pattern: /how many embryos/i, label: "Embryo Count" },
+            { pattern: /PGT-?A tested/i, label: "PGT-A Tested" },
+            { pattern: /egg.*source|plan for eggs|own eggs.*donor/i, label: "Egg Source" },
+            { pattern: /need help finding an egg donor/i, label: "Needs Egg Donor" },
+            { pattern: /sperm.*source|plan for sperm|own sperm.*donor/i, label: "Sperm Source" },
+            { pattern: /need help finding a sperm donor/i, label: "Needs Sperm Donor" },
+            { pattern: /who is.*carry|planning to carry|gestational surrogate/i, label: "Carrier" },
+            { pattern: /need help finding a surrogate/i, label: "Needs Surrogate" },
+            { pattern: /need help finding.*clinic|already have.*clinic/i, label: "Needs Clinic" },
+            { pattern: /how old are you/i, label: "Age" },
+            { pattern: /how old is your partner/i, label: "Partner Age" },
+            { pattern: /hoping for twins/i, label: "Wants Twins" },
+            { pattern: /first.*ivf.*journey|first time.*ivf|done ivf before/i, label: "First IVF" },
+            { pattern: /most important.*choosing.*clinic|important.*clinic/i, label: "Clinic Priorities" },
+            { pattern: /countries.*open to.*surrogacy/i, label: "Surrogate Countries" },
+            { pattern: /termination|selective reduction/i, label: "Termination Preference" },
+            { pattern: /eye color/i, label: "Donor Eye Color" },
+            { pattern: /hair color/i, label: "Donor Hair Color" },
+            { pattern: /preferred height/i, label: "Donor Height" },
+            { pattern: /ethnic.*cultural.*educational/i, label: "Donor Background" },
+          ];
+          const seenLabels = new Set<string>();
+          for (let i = 0; i < chatHistory.length - 1; i++) {
+            if (chatHistory[i].role !== "assistant" || chatHistory[i + 1]?.role !== "user") continue;
+            const aiMsg = (chatHistory[i].content || "").replace(/\[\[.*?\]\]/g, "").trim();
+            const userAnswer = (chatHistory[i + 1].content || "").trim();
+            if (!aiMsg || !userAnswer) continue;
+            for (const { pattern, label } of qaPatterns) {
+              if (seenLabels.has(label)) continue;
+              if (pattern.test(aiMsg)) {
+                seenLabels.add(label);
+                // Use short answer only (first 80 chars)
+                profileDetails.push({ label, value: userAnswer.substring(0, 80) });
+                break;
               }
-              i++; // skip the answer message
             }
-          }
-          if (recentQA.length > 0) {
-            profileDetails.push({ label: "Chat Summary", value: recentQA.join("\n\n") });
+            i++; // skip the answer
           }
 
           // Send email + SMS
