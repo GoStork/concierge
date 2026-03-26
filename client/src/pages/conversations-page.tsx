@@ -518,7 +518,7 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
       return (
         <div className="mt-1" data-testid="video-invite-card">
           <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border-2 bg-muted/50 w-full text-left opacity-60" style={{ borderColor: brandColor }}>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground/70 shrink-0" style={{ backgroundColor: brandColor }}>
+            <div className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground/70 shrink-0" style={{ backgroundColor: brandColor }}>
               <Video className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
@@ -543,7 +543,7 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
           style={{ borderColor: brandColor }}
           data-testid="button-video-invite"
         >
-          <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: brandColor }}>
+          <div className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: brandColor }}>
             <Video className="w-5 h-5" />
           </div>
           <div className="flex-1 min-w-0">
@@ -566,7 +566,7 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
           className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border-2 bg-background hover:bg-muted transition-colors"
           style={{ borderColor: brandColor }}
         >
-          <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: brandColor }}>
+          <div className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: brandColor }}>
             <CalendarDays className="w-5 h-5" />
           </div>
           <div className="flex-1 min-w-0">
@@ -1316,11 +1316,11 @@ export default function ConversationsPage() {
               return (
                 <Collapsible key={providerId} open={isExpanded} onOpenChange={() => toggleProvider(providerId)}>
                   <CollapsibleTrigger className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted/30 transition-colors text-left" data-testid={`provider-group-${providerId}`}>
-                    <div className="w-8 h-8 rounded-full flex-shrink-0 relative">
+                    <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
                       {first.providerLogo ? (
-                        <img src={getPhotoSrc(first.providerLogo) || undefined} alt="" className="w-8 h-8 rounded-full object-cover border" />
+                        <img src={getPhotoSrc(first.providerLogo) || undefined} alt="" className="w-12 h-12 rounded-full object-cover border" />
                       ) : (
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center bg-muted text-muted-foreground">
+                        <div className="w-12 h-12 rounded-full flex items-center justify-center bg-muted text-muted-foreground">
                           <Building2 className="w-4 h-4" />
                         </div>
                       )}
@@ -1340,17 +1340,17 @@ export default function ConversationsPage() {
                           onClick={() => handleParentSessionClick(session)}
                           data-testid={`chat-session-provider-${session.id}`}
                         >
-                          <div className="w-8 h-8 rounded-full flex-shrink-0 relative">
+                          <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
                             {photoSrc && (
                               <img
                                 src={photoSrc}
                                 alt={session.title || ""}
-                                className="w-8 h-8 rounded-full object-cover absolute inset-0"
+                                className="w-12 h-12 rounded-full object-cover absolute inset-0"
                                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                               />
                             )}
                             <div
-                              className="w-8 h-8 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
+                              className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
                               style={{ backgroundColor: brandColor }}
                             >
                               {(session.title || "C").charAt(0)}
@@ -1410,16 +1410,16 @@ export default function ConversationsPage() {
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <div className="w-9 h-9 rounded-full flex-shrink-0 relative">
+          <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
             {parentHeaderAvatar ? (
               <img
                 src={parentHeaderAvatar}
                 alt={parentHeaderName}
-                className="w-9 h-9 rounded-full object-cover"
+                className="w-12 h-12 rounded-full object-cover"
               />
             ) : (
               <div
-                className="w-9 h-9 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold"
+                className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold"
                 style={{ backgroundColor: brandColor }}
               >
                 {parentHeaderName.charAt(0)}
@@ -1679,17 +1679,17 @@ export default function ConversationsPage() {
                       onClick={() => setSelectedSessionId(s.id)}
                       data-testid={`provider-session-${s.id}`}
                     >
-                      <div className="w-8 h-8 rounded-full flex-shrink-0 relative">
+                      <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
                         {photoSrc ? (
                           <img
                             src={photoSrc}
                             alt={s.title || ""}
-                            className="w-8 h-8 rounded-full object-cover absolute inset-0"
+                            className="w-12 h-12 rounded-full object-cover absolute inset-0"
                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                           />
                         ) : null}
                         <div
-                          className="w-8 h-8 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
+                          className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
                           style={{ backgroundColor: brandColor }}
                         >
                           {(s.title || "C").charAt(0)}
@@ -1760,11 +1760,11 @@ export default function ConversationsPage() {
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div className="flex items-center gap-2 flex-1">
-            <div className="w-8 h-8 rounded-full flex-shrink-0 relative">
+            <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
               {detail.user.photoUrl ? (
-                <img src={getPhotoSrc(detail.user.photoUrl) || undefined} alt="" className="w-8 h-8 rounded-full object-cover" />
+                <img src={getPhotoSrc(detail.user.photoUrl) || undefined} alt="" className="w-12 h-12 rounded-full object-cover" />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
                   {hasJoined || isConsultationBooked ? (
                     <User className="w-4 h-4 text-muted-foreground" />
                   ) : (

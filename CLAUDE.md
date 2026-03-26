@@ -1,4 +1,4 @@
-# GoStork — Project Context for Claude Code
+# GoStork - Project Context for Claude Code
 
 ## Overview
 
@@ -7,6 +7,8 @@ GoStork is a multi-tenant fertility marketplace connecting Intended Parents with
 ## User Preferences
 
 Always use Claude Sonnet 4.6 for all coding, planning, and debugging tasks in this project. Apply maximum effort to security and multi-tenant logic.
+
+**Never use em dashes:** Never use em dashes or en dashes. Always use a hyphen-minus (-) instead, everywhere - code, UI text, comments, prompts, and all generated content.
 
 **No dialogs/modals/popups:** Always use full pages or inline expandable sections instead of dialogs, modals, or popups. The app is designed with future native mobile apps in mind, where modals don't translate well. Dialogs are only acceptable for simple destructive-action confirmations (e.g., "Are you sure you want to delete?").
 

@@ -2615,6 +2615,9 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
 
     const replySessionId = currentSessionId;
 
+    // Sanitize: replace em-dashes and en-dashes with regular hyphens
+    finalContent = finalContent.replace(/[\u2013\u2014]/g, "-");
+
     const now = new Date();
     const savedAiMessage = await prisma.aiChatMessage.create({
       data: {

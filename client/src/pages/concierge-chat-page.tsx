@@ -652,9 +652,9 @@ export function InlineBookingCalendar({
         <div className="bg-muted/40 rounded-[var(--radius)] p-3 space-y-2.5 border border-border">
           <div className="flex items-center gap-3">
             {providerPhotoSrc ? (
-              <img src={providerPhotoSrc} alt={providerName} className="w-10 h-10 rounded-full object-cover" />
+              <img src={providerPhotoSrc} alt={providerName} className="w-12 h-12 rounded-full object-cover" />
             ) : (
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
                 {providerName.charAt(0)}
               </div>
             )}
@@ -1740,7 +1740,7 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo }: { msg: Cha
     if (!videoBookingId) {
       return (
         <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border-2 bg-muted/50 w-full text-left opacity-60" style={{ borderColor: brandColor }}>
-          <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground/70 shrink-0" style={{ backgroundColor: brandColor }}>
+          <div className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground/70 shrink-0" style={{ backgroundColor: brandColor }}>
             <Video className="w-5 h-5" />
           </div>
           <div className="flex-1 min-w-0">
@@ -1763,7 +1763,7 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo }: { msg: Cha
         style={{ borderColor: brandColor }}
         data-testid="concierge-video-invite"
       >
-        <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: brandColor }}>
+        <div className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: brandColor }}>
           <Video className="w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
@@ -1785,7 +1785,7 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo }: { msg: Cha
         style={{ borderColor: brandColor }}
         data-testid="concierge-calendar-share"
       >
-        <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: brandColor }}>
+        <div className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: brandColor }}>
           <CalendarDays className="w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
@@ -2505,17 +2505,17 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <div className="w-9 h-9 rounded-full flex-shrink-0 relative">
+          <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
             {!providerInChat && selectedMatchmaker?.avatarUrl && (
               <img
                 src={getPhotoSrc(selectedMatchmaker.avatarUrl) || undefined}
                 alt={selectedMatchmaker.name}
-                className="w-9 h-9 rounded-full object-cover border absolute inset-0"
+                className="w-12 h-12 rounded-full object-cover border absolute inset-0"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
             )}
             <div
-              className="w-9 h-9 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold"
+              className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold"
               style={{ backgroundColor: brandColor }}
             >
               {(providerInChat && providerChatName ? providerChatName : (selectedMatchmaker?.name || "?")).charAt(0)}

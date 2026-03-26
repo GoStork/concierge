@@ -1,10 +1,14 @@
+# GoStork - Project Context for Claude Code
+
 ## Overview
 
-GoStork is a multi-tenant fertility marketplace connecting Intended Parents with fertility service Providers (IVF Clinics, Egg Donor Agencies, Surrogacy Agencies, Egg/Sperm Banks, Legal Services). It aims to streamline discovery, comparison, scheduling, and engagement within the fertility industry. Key capabilities include comprehensive provider profiles, enhanced user experience, improved operational efficiency, and AI integration for advanced analytics, cost sheet processing, and sophisticated booking. The vision is to be the leading digital marketplace, simplifying the fertility journey and offering significant market potential.
+GoStork is a multi-tenant fertility marketplace connecting Intended Parents with fertility service Providers (IVF Clinics, Egg Donor Agencies, Surrogacy Agencies, Egg Banks, Sperm Banks, Legal Services). It aims to streamline discovery, comparison, scheduling, and engagement within the fertility industry. Key capabilities include comprehensive provider profiles, enhanced user experience, improved operational efficiency, and AI integration for advanced analytics, cost sheet processing, and sophisticated booking. The vision is to be the leading digital marketplace, simplifying the fertility journey and offering significant market potential.
 
 ## User Preferences
 
 Always use Claude Sonnet 4.6 for all coding, planning, and debugging tasks in this project. Apply maximum effort to security and multi-tenant logic.
+
+**Never use em dashes:** Never use em dashes or en dashes. Always use a hyphen-minus (-) instead, everywhere - code, UI text, comments, prompts, and all generated content.
 
 **No dialogs/modals/popups:** Always use full pages or inline expandable sections instead of dialogs, modals, or popups. The app is designed with future native mobile apps in mind, where modals don't translate well. Dialogs are only acceptable for simple destructive-action confirmations (e.g., "Are you sure you want to delete?").
 
@@ -55,17 +59,17 @@ Always use Claude Sonnet 4.6 for all coding, planning, and debugging tasks in th
 
 ## External Dependencies
 
--   **PostgreSQL (Supabase):** Primary database.
--   **Redis:** Session store.
--   **Google Gemini 2.0 Flash / 2.5 Flash:** AI for scraping, data extraction, and OCR.
--   **SendGrid:** Email notifications.
--   **Twilio:** SMS notifications.
--   **Google Calendar API:** Calendar synchronization.
--   **Microsoft Graph API:** Outlook/Office 365 Calendar synchronization.
--   **CalDAV (via `tsdav` library):** Apple iCloud Calendar synchronization.
--   **Daily.co:** Video conferencing.
--   **Google Cloud Storage:** Recording storage and cost sheet file storage.
--   **Google Speech-to-Text API:** Transcription.
--   **OpenAI:** Embeddings for RAG engine and profile vector search (`text-embedding-3-small`).
--   **Statically served uploads:** For user-uploaded images.
--   **Image Proxy:** For external images.
+- **PostgreSQL (Supabase):** Primary database.
+- **Redis:** Session store.
+- **Google Gemini 2.0 Flash / 2.5 Flash:** AI for scraping, data extraction, and OCR.
+- **SendGrid:** Email notifications.
+- **Twilio:** SMS notifications.
+- **Google Calendar API:** Calendar synchronization.
+- **Microsoft Graph API:** Outlook/Office 365 Calendar synchronization.
+- **CalDAV (via `tsdav` library):** Apple iCloud Calendar synchronization.
+- **Daily.co:** Video conferencing.
+- **Google Cloud Storage:** Recording storage and cost sheet file storage.
+- **Google Speech-to-Text API:** Transcription.
+- **OpenAI:** Embeddings for RAG engine and profile vector search (`text-embedding-3-small`).
+- **Statically served uploads:** For user-uploaded images (`/uploads/` path, `public/uploads/` directory).
+- **Image Proxy:** `/api/uploads/proxy` for fetching external images server-side to avoid CORS issues.
