@@ -2266,7 +2266,7 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
     }
 
     let matchCards: any[] = [];
-    const matchCardRegex = /\[\[MATCH_CARD:(.*?)\]\]/g;
+    const matchCardRegex = /\[\[MATCH_CARD:([\s\S]*?)\]\]/g;
     let mcMatch;
     while ((mcMatch = matchCardRegex.exec(finalContent)) !== null) {
       try {
@@ -2275,15 +2275,17 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
         console.error("Failed to parse MATCH_CARD:", e);
       }
     }
-    finalContent = finalContent.replace(/\[\[MATCH_CARD:.*?\]\]/g, "").trim();
+    finalContent = finalContent.replace(/\[\[MATCH_CARD:[\s\S]*?\]\]/g, "").trim();
 
     if (matchCards.length === 0 && lastSearchToolResults.length > 0) {
-      const matchIntroPattern = /(?:meet|introducing|found|here(?:'s| is)|check (?:out|her|his|their)|i(?:'ve| have) got|special to show|great (?:fit|match)|perfect (?:fit|match)|someone.*really|stands?\s*out)/i;
+      const matchIntroPattern = /(?:meet|introducing|found|here(?:'s| is)|check (?:out|her|his|their)|i(?:'ve| have) (?:got|a)|first up|special to show|great (?:fit|match|option|choice|pick)|perfect (?:fit|match|option|choice)|top (?:option|pick|choice)|someone.*really|stands?\s*out|option for you|recommend|show you)/i;
       if (matchIntroPattern.test(finalContent)) {
         console.log(`[MATCH_CARD FALLBACK] AI introduced a match but forgot [[MATCH_CARD:...]] tag - attempting auto-creation from tool results`);
         const mentionedNameMatch = finalContent.match(/(?:Surrogate|Donor|Clinic)\s*#?(\d+)/i);
         const mentionedFirstName = finalContent.match(/(?:Meet|introducing)\s+(\w+)/i);
-        
+        // Strip markdown bold markers for name matching
+        const plainContent = finalContent.replace(/\*\*/g, "").toLowerCase();
+
         for (const searchResult of lastSearchToolResults) {
           try {
             const resultBody = searchResult.resultText;
@@ -2296,7 +2298,7 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
               const parsed = JSON.parse(resultBody);
               results = Array.isArray(parsed) ? parsed : [];
             }
-            
+
             if (results.length > 0) {
               const toolTypeMap: Record<string, string> = {
                 search_surrogates: "Surrogate",
@@ -2315,6 +2317,14 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
                 const name = mentionedFirstName[1].toLowerCase();
                 const byName = results.find((r: any) => (r.firstName || r.displayName || r.name || "").toLowerCase() === name);
                 if (byName) matched = byName;
+              }
+              // Also try matching by full name mentioned in the AI's message (handles clinics mentioned by name)
+              if (matched === results[0] && results.length > 1) {
+                const byFullName = results.find((r: any) => {
+                  const name = (r.displayName || r.name || "").toLowerCase();
+                  return name.length > 3 && plainContent.includes(name);
+                });
+                if (byFullName) matched = byFullName;
               }
 
               const idField = matched.id || matched.providerId;
