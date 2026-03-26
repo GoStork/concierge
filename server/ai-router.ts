@@ -2273,6 +2273,61 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
             i++; // skip the answer
           }
 
+          // Also scan parent messages directly for info provided proactively (not in Q&A format)
+          const allParentText = chatHistory.filter(m => m.role === "user").map(m => (m.content || "")).join(" ") + " " + userMessage;
+          if (!seenLabels.has("Family Structure")) {
+            const familyMatch = allParentText.match(/gay\s*couple|lesbian\s*couple|straight\s*couple|single\s*(man|woman|mom|dad|male|female)|two\s*(dads|moms)|couple/i);
+            if (familyMatch) {
+              // Build a richer family structure from all parent text
+              const parts: string[] = [];
+              if (/gay\s*(couple|man|male)/i.test(allParentText)) parts.push("gay couple");
+              else if (/lesbian/i.test(allParentText)) parts.push("lesbian couple");
+              else if (/single\s*(man|male|dad|father|guy)/i.test(allParentText)) parts.push("single male");
+              else if (/single\s*(woman|female|mom|mother)/i.test(allParentText)) parts.push("single female");
+              else if (/couple/i.test(allParentText)) parts.push("couple");
+              if (/need.*ivf|ivf\s*clinic/i.test(allParentText)) parts.push("need ivf clinic");
+              if (/need.*surrogate|surrogate/i.test(allParentText)) parts.push("need surrogate");
+              if (/need.*egg\s*donor|egg\s*donor/i.test(allParentText)) parts.push("need egg donor");
+              if (/need.*sperm\s*donor|sperm\s*donor/i.test(allParentText)) parts.push("need sperm donor");
+              if (parts.length > 0) {
+                seenLabels.add("Family Structure");
+                profileDetails.push({ label: "Family Structure", value: parts.join(", ") });
+              }
+            }
+          }
+          if (!seenLabels.has("Age")) {
+            const ageMatch = allParentText.match(/(?:i(?:'m| am)\s+)(\d{2,3})/i);
+            const partnerAgeMatch = allParentText.match(/(?:partner(?:\s+is)?|and)\s+(\d{2,3})/i);
+            if (ageMatch) {
+              const ageStr = partnerAgeMatch ? `${ageMatch[1]} and ${partnerAgeMatch[1]}` : ageMatch[1];
+              seenLabels.add("Age");
+              profileDetails.push({ label: "Age", value: ageStr });
+            } else {
+              // Try "45 and 54" pattern
+              const bothAges = allParentText.match(/(\d{2,3})\s*and\s*(?:my\s*partner\s*(?:is\s*)?)(\d{2,3})/i);
+              if (bothAges) {
+                seenLabels.add("Age");
+                profileDetails.push({ label: "Age", value: `${bothAges[1]} and ${bothAges[2]}` });
+              }
+            }
+          }
+          if (!seenLabels.has("Wants Twins") && /twins|yes.*twins/i.test(allParentText)) {
+            seenLabels.add("Wants Twins");
+            profileDetails.push({ label: "Wants Twins", value: "Yes" });
+          }
+          if (!seenLabels.has("Needs Egg Donor") && /need.*egg\s*donor/i.test(allParentText) && !profile?.needsEggDonor) {
+            seenLabels.add("Needs Egg Donor");
+            profileDetails.push({ label: "Needs Egg Donor", value: "Yes" });
+          }
+          if (!seenLabels.has("Needs Surrogate") && /need.*surrogate/i.test(allParentText) && !profile?.needsSurrogate) {
+            seenLabels.add("Needs Surrogate");
+            profileDetails.push({ label: "Needs Surrogate", value: "Yes" });
+          }
+          if (!seenLabels.has("Needs Clinic") && /need.*clinic|ivf\s*clinic/i.test(allParentText) && !profile?.needsClinic) {
+            seenLabels.add("Needs Clinic");
+            profileDetails.push({ label: "Needs Clinic", value: "Yes" });
+          }
+
           // Send email + SMS
           notifService.sendHumanEscalationNotification({
             parentName: userRecord?.name || firstName,
