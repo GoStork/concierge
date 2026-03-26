@@ -2234,7 +2234,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           ]);
           lastPollTimeRef.current = unseenMsgs[unseenMsgs.length - 1].createdAt;
           if (unseenMsgs.some((m: any) => m.senderType === "human")) setHumanEscalated(true);
-          if (unseenMsgs.some((m: any) => m.senderType === "provider" || m.senderType === "system")) {
+          if (unseenMsgs.some((m: any) => m.senderType === "provider")) {
             setProviderInChat(true);
           }
           // Mark newly polled messages as read since user is actively viewing this chat
@@ -2422,7 +2422,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         setHumanEscalated(true);
       }
       if (data.consultationCard) {
-        setProviderInChat(true);
+        // Show the consultation booking card but do NOT set providerInChat -
+        // the provider hasn't actually joined yet, this is just a booking opportunity
       }
 
       if (data.message.id) knownMessageIds.current.add(data.message.id);
