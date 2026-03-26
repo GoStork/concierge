@@ -1516,6 +1516,7 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       skipDirectives.push("DO NOT ask about sperm source (Step 3) or if they need help finding a sperm donor (Step 3a) - they already have one.");
     }
 
+    console.log(`[SKIP DIRECTIVES] userMessage="${userMessage}", allUserMessages="${allUserMessages.slice(0, 200)}", mentionsClinic=${mentionsClinic}, hasClinic=${hasClinic}, mentionsEggDonor=${mentionsEggDonor}, mentionsSurrogate=${mentionsSurrogate}, isGayMale=${isGayMale}, directives=${JSON.stringify(skipDirectives)}`);
     const skipRulesPreamble = skipDirectives.length > 0 ? `
 MANDATORY - QUESTIONS YOU MUST NOT ASK (the parent already answered these):
 ${skipDirectives.map(d => "- " + d).join("\n")}
