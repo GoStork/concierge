@@ -364,11 +364,11 @@ export class ProvidersController {
     let bestScore = 0;
 
     const inputWords = new Set(
-      normalizedName.replace(/[.,'"]/g, "").replace(/[-–-]/g, " ").split(/\s+/).filter(w => w.length >= 3)
+      normalizedName.replace(/[.,'"]/g, "").replace(/[\-–]/g, " ").split(/\s+/).filter(w => w.length >= 3)
     );
 
     for (const p of providers) {
-      const pName = p.name.toLowerCase().replace(/[.,'"]/g, "").replace(/[-–-]/g, " ");
+      const pName = p.name.toLowerCase().replace(/[.,'"]/g, "").replace(/[\-–]/g, " ");
       const pWords = new Set(pName.split(/\s+/).filter(w => w.length >= 3));
       let matchingWords = 0;
       for (const w of inputWords) {

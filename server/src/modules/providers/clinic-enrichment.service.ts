@@ -169,7 +169,7 @@ function normalizeName(name: string): string {
     .replace(/,?\s*(LLC|Inc\.?|PC|PA|SC|LTD|LLP|Corporation|Corp\.?|PLLC|dba\b.*)/gi, "")
     .replace(/,?\s*(MD|DO|PhD|FACOG|FACS|MBA|MSc|RN|NP)\b/gi, "")
     .replace(/[.,'"]/g, "")
-    .replace(/[-–-]/g, " ")
+    .replace(/[\-–]/g, " ")
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();

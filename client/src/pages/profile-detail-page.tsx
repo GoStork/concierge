@@ -982,7 +982,7 @@ export default function DonorProfilePage() {
             tableEntries.push(...extra.tables);
           }
 
-          const deliveryPattern = /^(First|Second|Third|Fourth|Fifth|Sixth|1st|2nd|3rd|4th|5th|6th|\d+(?:st|nd|rd|th))\s+Delivery\s*[-–-:]\s*/i;
+          const deliveryPattern = /^(First|Second|Third|Fourth|Fifth|Sixth|1st|2nd|3rd|4th|5th|6th|\d+(?:st|nd|rd|th))\s+Delivery\s*[\-–:]\s*/i;
           const deliveryFields = fieldEntries2.filter(([k]) => deliveryPattern.test(k));
           if (deliveryFields.length >= 2) {
             const deliveryGroups = new Map<string, Record<string, any>>();
@@ -1004,7 +1004,7 @@ export default function DonorProfilePage() {
             }
           }
 
-          const childPattern = /^(\d+(?:st|nd|rd|th)\s+Child|(?:First|Second|Third|Fourth|Fifth|Sixth|Seventh|Eighth)\s+Child)\s*[-–-:]\s*/i;
+          const childPattern = /^(\d+(?:st|nd|rd|th)\s+Child|(?:First|Second|Third|Fourth|Fifth|Sixth|Seventh|Eighth)\s+Child)\s*[\-–:]\s*/i;
           const plainChildPattern = /^(\d+(?:st|nd|rd|th)\s+Child|(?:First|Second|Third|Fourth|Fifth|Sixth|Seventh|Eighth)\s+Child)$/i;
           const childFields = fieldEntries2.filter(([k]) => childPattern.test(k) || plainChildPattern.test(k));
           if (childFields.length >= 2) {
