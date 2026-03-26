@@ -2389,7 +2389,19 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
       if ((card.type || "").toLowerCase() === "clinic") {
         // Step 1: Determine egg source from profile DB or chat history
         let resolvedEggSource = "own_eggs";
-        if (profile?.eggSource) {
+
+        // CRITICAL: Gay male couples and single males MUST use donor eggs - no female partner to provide eggs
+        const genderCheck = (userRecord?.gender || "").toLowerCase();
+        const orientationCheck = (userRecord?.sexualOrientation || "").toLowerCase();
+        const isMaleParent = genderCheck.includes("man") || genderCheck.includes("male") || genderCheck === "m";
+        const isGay = orientationCheck.includes("gay") || orientationCheck.includes("homosexual");
+        const isSingleMale = isMaleParent && (userRecord?.relationshipStatus || "").toLowerCase().includes("single");
+        const isGayCouple = isMaleParent && isGay;
+
+        if (isGayCouple || isSingleMale) {
+          // Two dads or single male - eggs MUST come from a donor, no question needed
+          resolvedEggSource = "donor";
+        } else if (profile?.eggSource) {
           resolvedEggSource = profile.eggSource.toLowerCase().includes("donor") ? "donor" : "own_eggs";
         } else {
           // Scan chat history for egg source answers
@@ -2408,13 +2420,11 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
         if (resolvedEggSource !== "donor") {
           // Check if partner's eggs → use partner's age
           const esSaved = (profile?.eggSource || "").toLowerCase();
-          const genderLower = (userRecord?.gender || "").toLowerCase();
-          const isMale = genderLower.includes("man") || genderLower.includes("male") || genderLower === "m";
 
           // Determine if eggs come from the partner (not the logged-in parent)
           // This is true when: profile says "partner", OR male parent using "own eggs" (must be partner's),
           // OR chat history shows "partner's eggs" / "my partner's eggs"
-          let isPartnerEggs = esSaved.includes("partner") || (isMale && resolvedEggSource === "own_eggs");
+          let isPartnerEggs = esSaved.includes("partner") || (isMaleParent && resolvedEggSource === "own_eggs");
 
           // Also scan chat history for "partner's eggs" answers
           if (!isPartnerEggs) {
