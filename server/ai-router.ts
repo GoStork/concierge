@@ -2400,21 +2400,27 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
           const esSaved = (profile?.eggSource || "").toLowerCase();
           const genderLower = (userRecord?.gender || "").toLowerCase();
           const isMale = genderLower.includes("man") || genderLower.includes("male") || genderLower === "m";
-          const isPartnerEggs = esSaved.includes("partner") ||
-            (isMale && resolvedEggSource === "own_eggs");
 
-          if (isPartnerEggs && userRecord?.partnerAge) {
-            eggProviderAge = Number(userRecord.partnerAge);
-          } else if (!isPartnerEggs && userRecord?.dateOfBirth) {
-            eggProviderAge = Math.floor((Date.now() - new Date(userRecord.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+          // Determine if eggs come from the partner (not the logged-in parent)
+          // This is true when: profile says "partner", OR male parent using "own eggs" (must be partner's),
+          // OR chat history shows "partner's eggs" / "my partner's eggs"
+          let isPartnerEggs = esSaved.includes("partner") || (isMale && resolvedEggSource === "own_eggs");
+
+          // Also scan chat history for "partner's eggs" answers
+          if (!isPartnerEggs) {
+            for (let i = chatHistory.length - 1; i >= Math.max(0, chatHistory.length - 30); i--) {
+              if (chatHistory[i].role !== "user") continue;
+              const c = (chatHistory[i].content || "").toLowerCase();
+              if (/partner'?s?\s*eggs?/i.test(c)) { isPartnerEggs = true; break; }
+            }
           }
 
-          // If still no age from DB, scan chat history for age answers
-          // Look for the AI asking about age, then grab the user's answer
-          if (eggProviderAge === null) {
+          // FIRST try chat history scan (most reliable - ages were just discussed)
+          // Look for the AI asking about the egg provider's age, then grab the user's answer
+          {
             const ageQuestionPatterns = isPartnerEggs
-              ? [/how old is your partner/i, /partner.*age/i, /age.*partner/i]
-              : [/how old are you/i, /your age/i];
+              ? [/how old is your partner/i, /partner.*age/i, /age.*partner/i, /partner.*old/i]
+              : [/how old are you/i, /your age/i, /old are you/i];
             for (let i = 0; i < chatHistory.length - 1; i++) {
               if (chatHistory[i].role !== "assistant") continue;
               const aiMsg = chatHistory[i].content || "";
@@ -2426,6 +2432,15 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
                   if (age >= 18 && age <= 55) { eggProviderAge = age; break; }
                 }
               }
+            }
+          }
+
+          // Fallback to DB values if chat scan found nothing
+          if (eggProviderAge === null) {
+            if (isPartnerEggs && userRecord?.partnerAge) {
+              eggProviderAge = Number(userRecord.partnerAge);
+            } else if (!isPartnerEggs && userRecord?.dateOfBirth) {
+              eggProviderAge = Math.floor((Date.now() - new Date(userRecord.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
             }
           }
 
