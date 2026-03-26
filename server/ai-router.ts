@@ -2038,7 +2038,7 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
 
     // Safety net: if the user explicitly asked for a human, force-trigger HUMAN_NEEDED
     // even if the AI forgot to include the tag
-    const userMsg = (message || "").toLowerCase();
+    const userMsg = (userMessage || "").toLowerCase();
     const humanRequestPatterns = /talk to (?:a )?(?:real|human|actual) person|talk to (?:the )?gostork team|speak (?:to|with) (?:a )?human|connect me with (?:a )?(?:human|person|someone)|i want (?:a )?human|i'd like to talk to a real person/i;
     if (humanRequestPatterns.test(userMsg) && !finalContent.includes("[[HUMAN_NEEDED]]")) {
       console.log(`[HUMAN_NEEDED SAFETY NET] User requested human but AI forgot the tag - forcing it`);
@@ -2072,13 +2072,16 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
         }
 
         // Send email + SMS to admins via NotificationService
+        try {
         const { getNestApp } = await import("./nest-app-ref");
         const nestApp = getNestApp();
         if (nestApp) {
           const { NotificationService } = await import("./src/modules/notifications/notification.service");
           const { AppEventsService } = await import("./src/modules/notifications/app-events.service");
-          const notifService = nestApp.get(NotificationService);
-          const appEvents = nestApp.get(AppEventsService);
+          let notifService: any = null;
+          let appEvents: any = null;
+          try { notifService = nestApp.get(NotificationService); } catch (e) { console.error("Failed to get NotificationService:", e); }
+          try { appEvents = nestApp.get(AppEventsService); } catch (e) { console.error("Failed to get AppEventsService:", e); }
 
           // Build profile details for the email
           const profileDetails: { label: string; value: string }[] = [];
@@ -2129,6 +2132,9 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
             },
             targetUserIds: admins.map(a => a.id),
           }).catch(e => console.error("Human escalation SSE emit failed:", e));
+        }
+        } catch (notifErr) {
+          console.error("Human escalation notification sending failed:", notifErr);
         }
       } catch (e) {
         console.error("Failed to process HUMAN_NEEDED:", e);
