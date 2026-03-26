@@ -868,6 +868,7 @@ export default function ConversationsPage() {
   };
 
   // Send read receipt when opening a session + optimistically clear unread count
+  const prevSessionRef = useRef<string | null>(null);
   useEffect(() => {
     const sid = isProvider ? selectedSessionId : selectedParentSession?.id;
     if (sid) {
@@ -879,6 +880,14 @@ export default function ConversationsPage() {
         old?.map(s => s.id === sid ? { ...s, unreadCount: 0 } : s)
       );
       fetch(`/api/chat-sessions/${sid}/read`, { method: "POST", credentials: "include" }).catch(() => {});
+      prevSessionRef.current = sid;
+    } else if (prevSessionRef.current) {
+      // User left a chat - send final read receipt and refresh session list
+      const prevSid = prevSessionRef.current;
+      prevSessionRef.current = null;
+      fetch(`/api/chat-sessions/${prevSid}/read`, { method: "POST", credentials: "include" })
+        .then(() => queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] }))
+        .catch(() => {});
     }
   }, [isProvider, selectedSessionId, selectedParentSession?.id, queryClient]);
 
