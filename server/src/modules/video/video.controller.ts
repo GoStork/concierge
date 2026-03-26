@@ -693,17 +693,25 @@ export class VideoController {
 
     if (!roomName) return { ok: true };
 
+    // Try to find provider user by their persistent Daily room URL
     const providerUser = await this.prisma.user.findFirst({
-      where: {
-        dailyRoomUrl: { contains: roomName },
-      },
+      where: { dailyRoomUrl: { contains: roomName } },
       select: { id: true },
     });
 
-    if (!providerUser) return { ok: true };
+    // Fallback: find booking directly by meetingUrl (for ad-hoc calls from admins/providers)
+    const findBookingByRoom = () => this.prisma.booking.findFirst({
+      where: {
+        meetingUrl: { contains: roomName },
+        status: "CONFIRMED",
+      },
+      orderBy: { scheduledAt: "desc" },
+    });
 
     if (eventType === "meeting.started") {
-      const activeBooking = await this.findActiveBooking(providerUser.id);
+      const activeBooking = providerUser
+        ? await this.findActiveBooking(providerUser.id)
+        : await findBookingByRoom();
       if (activeBooking) {
         await this.prisma.booking.update({
           where: { id: activeBooking.id },
@@ -711,7 +719,9 @@ export class VideoController {
         });
       }
     } else if (eventType === "meeting.ended") {
-      const activeBooking = await this.findActiveBooking(providerUser.id);
+      const activeBooking = providerUser
+        ? await this.findActiveBooking(providerUser.id)
+        : await findBookingByRoom();
       if (activeBooking) {
         await this.prisma.booking.update({
           where: { id: activeBooking.id },
@@ -733,15 +743,30 @@ export class VideoController {
         return { ok: true };
       }
 
-      const booking = await this.prisma.booking.findFirst({
-        where: {
-          providerUserId: providerUser.id,
-          status: "CONFIRMED",
-          consentGiven: true,
-          actualStartedAt: { not: null },
-        },
-        orderBy: { actualStartedAt: "desc" },
-      });
+      // Find booking by provider user first, then fall back to room URL match
+      let booking = providerUser
+        ? await this.prisma.booking.findFirst({
+            where: {
+              providerUserId: providerUser.id,
+              status: "CONFIRMED",
+              consentGiven: true,
+              actualStartedAt: { not: null },
+            },
+            orderBy: { actualStartedAt: "desc" },
+          })
+        : null;
+
+      if (!booking) {
+        booking = await this.prisma.booking.findFirst({
+          where: {
+            meetingUrl: { contains: roomName },
+            status: "CONFIRMED",
+            consentGiven: true,
+            actualStartedAt: { not: null },
+          },
+          orderBy: { actualStartedAt: "desc" },
+        });
+      }
 
       if (booking) {
         const existingRecording = await this.prisma.recording.findFirst({
@@ -764,7 +789,7 @@ export class VideoController {
           });
       } else {
         this.logger.warn(
-          `No matching booking found for provider ${providerUser.id} room ${roomName}`,
+          `No matching booking found for room ${roomName}`
         );
       }
     }
