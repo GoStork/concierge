@@ -1584,7 +1584,7 @@ When the parent asks a follow-up question about a specific egg donor (eye color,
 
       messages.push({
         role: "system" as const,
-        content: `IMPORTANT - These BIOLOGICAL BASELINE questions (Phase 2, Steps 1-5) have ALREADY been answered. Do NOT ask them again:\n${skipDirectives.map(d => "- " + d).join("\n")}\nDo not mention or acknowledge that you are skipping anything.\n\nYou MUST still ask the Phase 3 DEEP-DIVE questions for each service and follow the full curation flow (summary + [[CURATION]] tag). What you still need to cover:\n${stillNeeded.map(s => "- " + s).join("\n")}\n\nProceed to the first unanswered deep-dive question now.`,
+        content: `SKIP THESE Phase 2 baseline questions (already answered):\n${skipDirectives.map(d => "- " + d).join("\n")}\nDo not mention skipping.\n\nIMPORTANT RULES THAT STILL APPLY:\n- Ask ONE question per message. Never combine multiple questions.\n- Do NOT show any [[MATCH_CARD]] until AFTER the curation flow (summary + [[CURATION]] + parent confirms + "ready").\n- Follow the Phase 3 deep-dive questions normally, one at a time.\n\nWhat to cover next:\n${stillNeeded.map(s => "- " + s).join("\n")}`,
       });
     }
 
