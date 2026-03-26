@@ -255,7 +255,7 @@ export default function AdminConciergeMonitor() {
               chatPalette={chatPalette}
               borderRadius={brand?.borderRadius ?? 1}
               viewerRole="admin"
-              isOwnMessage={(msg) => msg.role === "user"}
+              isOwnMessage={(msg) => msg.senderType === "human"}
               nameLabel={(msg) => {
                 if (msg.role === "user") return null;
                 if (msg.senderType === "human") return msg.senderName || "GoStork Expert";

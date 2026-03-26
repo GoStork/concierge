@@ -305,10 +305,23 @@ chatRouter.post("/api/admin/concierge-sessions/:id/message", requireAuth, async 
     const session = await prisma.aiChatSession.findUnique({ where: { id: req.params.id } });
     if (!session) return res.status(404).json({ message: "Session not found" });
 
-    if (!session.humanJoinedAt) {
+    const isFirstJoin = !session.humanJoinedAt;
+    if (isFirstJoin) {
       await prisma.aiChatSession.update({
         where: { id: session.id },
         data: { humanJoinedAt: new Date(), humanAgentId: user.id, status: "HUMAN_JOINED" },
+      });
+
+      // Create a system message introducing the expert to the parent
+      const expertName = user.name || "GoStork Expert";
+      await prisma.aiChatMessage.create({
+        data: {
+          sessionId: session.id,
+          role: "assistant",
+          content: `${expertName} from the GoStork team has joined your chat! They're here to help you personally. Feel free to ask them anything.`,
+          senderType: "system",
+          senderName: "GoStork",
+        },
       });
     }
 
