@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { getPhotoSrc } from "@/lib/profile-utils";
@@ -44,7 +45,17 @@ export default function AdminConciergeMonitor() {
   const queryClient = useQueryClient();
   const brandColor = brand?.primaryColor || "#004D4D";
   const chatPalette = useMemo(() => deriveChatPalette(brandColor), [brandColor]);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sessionIdFromUrl = searchParams.get("sessionId");
+  const [selectedSessionId, _setSelectedSessionId] = useState<string | null>(sessionIdFromUrl);
+  const setSelectedSessionId = (id: string | null) => {
+    _setSelectedSessionId(id);
+    if (id) {
+      setSearchParams({ sessionId: id }, { replace: true });
+    } else {
+      setSearchParams({}, { replace: true });
+    }
+  };
   const [uploading, setUploading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 

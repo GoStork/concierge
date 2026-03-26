@@ -1701,7 +1701,7 @@ export class NotificationService implements OnModuleInit {
       select: { id: true, email: true, mobileNumber: true },
     });
     const parentName = this.escapeHtml(params.parentName);
-    const chatUrl = `${getBaseUrl()}/admin/concierge-monitor`;
+    const chatUrl = `${getBaseUrl()}/admin/concierge-monitor?sessionId=${params.sessionId}`;
     const subject = `Human Assistance Requested - ${params.parentName}`;
     const html = buildBrandedEmail(brandData, {
       title: "Parent Requesting Human Assistance",
