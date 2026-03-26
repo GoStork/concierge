@@ -1604,7 +1604,7 @@ The parent's message was: "${userMessage}"`,
     });
 
     let responseMessage = response.choices[0].message;
-    let lastSearchToolResults: { toolName: string; resultText: string }[] = [];
+    let lastSearchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] = [];
 
     while (
       responseMessage.tool_calls &&
@@ -1634,7 +1634,7 @@ The parent's message was: "${userMessage}"`,
 
         const searchTools = ["search_surrogates", "search_egg_donors", "search_sperm_donors", "search_clinics"];
         if (searchTools.includes(toolCall.function.name)) {
-          lastSearchToolResults.push({ toolName: toolCall.function.name, resultText });
+          lastSearchToolResults.push({ toolName: toolCall.function.name, resultText, toolArgs });
         }
       }
 
@@ -2399,8 +2399,14 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
         const isGayCouple = isMaleParent && isGay;
         const profileEggSource = (profile?.eggSource || "").toLowerCase();
 
+        // Signal 0 (strongest): Check what the AI actually passed to search_clinics
+        const clinicSearchArgs = lastSearchToolResults.find(r => r.toolName === "search_clinics")?.toolArgs;
+        const aiCalledWithDonor = clinicSearchArgs?.eggSource === "donor";
+
         // Check all donor signals - ANY of these means donor eggs
         const isDonor =
+          // Signal 0: AI explicitly called search_clinics with eggSource="donor"
+          aiCalledWithDonor ||
           // Signal 1: Gay male couple or single male - biologically must use donor
           isGayCouple || isSingleMale ||
           // Signal 2: Profile eggSource contains "donor"
@@ -2430,7 +2436,7 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
           }
         }
         card.eggSource = resolvedEggSource;
-        console.log(`[CLINIC CARD] eggSource resolution: gender="${userRecord?.gender}", orientation="${userRecord?.sexualOrientation}", profileEggSource="${profile?.eggSource}", needsEggDonor=${profile?.needsEggDonor}, isGayCouple=${isGayCouple}, isSingleMale=${isSingleMale}, resolved="${resolvedEggSource}"`);
+        console.log(`[CLINIC CARD] eggSource resolution: aiCalledWithDonor=${aiCalledWithDonor}, gender="${userRecord?.gender}", orientation="${userRecord?.sexualOrientation}", profileEggSource="${profile?.eggSource}", needsEggDonor=${profile?.needsEggDonor}, isGayCouple=${isGayCouple}, isSingleMale=${isSingleMale}, resolved="${resolvedEggSource}"`);
 
         // Step 2: Determine egg provider's age from profile/user data or chat history
         let eggProviderAge: number | null = null;
