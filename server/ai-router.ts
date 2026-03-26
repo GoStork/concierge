@@ -1567,9 +1567,24 @@ When the parent asks a follow-up question about a specific egg donor (eye color,
 
     // Inject skip directives as a final system message for maximum AI compliance
     if (skipDirectives.length > 0) {
+      // Build a list of what IS still needed
+      const stillNeeded: string[] = [];
+      if (isGayMale && !mentionsSpermDonor && !hasSpermDonor) {
+        stillNeeded.push("Sperm source (Step 3) - gay couples use their own sperm, but ask if they need a sperm donor or will use their own");
+      }
+      if (mentionsClinic && !hasClinic) {
+        stillNeeded.push("IVF Clinic deep-dive questions (Phase 3 Match Cycle A): age, partner age, twins preference, clinic priorities - then curation + match cards");
+      }
+      if (mentionsEggDonor && !hasEggDonor) {
+        stillNeeded.push("Egg Donor deep-dive questions (Phase 3 Match Cycle B): donor preferences - then curation + match cards");
+      }
+      if (mentionsSurrogate && !hasSurrogate) {
+        stillNeeded.push("Surrogate deep-dive questions (Phase 3 Match Cycle D): country, twins, termination preferences - then curation + match cards");
+      }
+
       messages.push({
         role: "system" as const,
-        content: `CRITICAL REMINDER - The parent has ALREADY answered these questions. You MUST NOT ask them:\n${skipDirectives.map(d => "- " + d).join("\n")}\nInstead, skip directly to the first question NOT listed above. Do not mention skipping.`,
+        content: `IMPORTANT - These BIOLOGICAL BASELINE questions (Phase 2, Steps 1-5) have ALREADY been answered. Do NOT ask them again:\n${skipDirectives.map(d => "- " + d).join("\n")}\nDo not mention or acknowledge that you are skipping anything.\n\nYou MUST still ask the Phase 3 DEEP-DIVE questions for each service and follow the full curation flow (summary + [[CURATION]] tag). What you still need to cover:\n${stillNeeded.map(s => "- " + s).join("\n")}\n\nProceed to the first unanswered deep-dive question now.`,
       });
     }
 
