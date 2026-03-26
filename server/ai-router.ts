@@ -2399,7 +2399,7 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
         const isGayCouple = isMaleParent && isGay;
 
         if (isGayCouple || isSingleMale) {
-          // Two dads or single male - eggs MUST come from a donor, no question needed
+          // Two dads or single male - eggs MUST come from a donor, no female partner to provide eggs
           resolvedEggSource = "donor";
         } else if (profile?.eggSource) {
           resolvedEggSource = profile.eggSource.toLowerCase().includes("donor") ? "donor" : "own_eggs";
@@ -2413,7 +2413,29 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
             }
           }
         }
+
+        // Additional fallback: scan chat history for identity clues if user record fields are empty
+        if (resolvedEggSource === "own_eggs" && !profile?.eggSource && !userRecord?.gender) {
+          for (let i = chatHistory.length - 1; i >= Math.max(0, chatHistory.length - 30); i--) {
+            const c = (chatHistory[i].content || "").toLowerCase();
+            if (chatHistory[i].role === "user") {
+              // Two dads, gay couple, single dad - must be donor eggs
+              if (/\btwo dads?\b|\bgay\b|\btwo men\b|\bsingle dad\b|\bsingle father\b|\bsingle man\b/.test(c)) {
+                resolvedEggSource = "donor";
+                break;
+              }
+            }
+            // Also check AI's inferred context messages
+            if (chatHistory[i].role === "assistant") {
+              if (/since you'll need an egg donor|eggs? (?:must|will) come from a donor/i.test(c)) {
+                resolvedEggSource = "donor";
+                break;
+              }
+            }
+          }
+        }
         card.eggSource = resolvedEggSource;
+        console.log(`[CLINIC CARD] eggSource resolution: gender="${userRecord?.gender}", orientation="${userRecord?.sexualOrientation}", relationship="${userRecord?.relationshipStatus}", profileEggSource="${profile?.eggSource}", isGayCouple=${isGayCouple}, isSingleMale=${isSingleMale}, resolved="${resolvedEggSource}"`);
 
         // Step 2: Determine egg provider's age from profile/user data or chat history
         let eggProviderAge: number | null = null;
