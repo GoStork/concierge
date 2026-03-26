@@ -115,8 +115,8 @@ function AppRoutes() {
         <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
         <Route path="/complete-profile" element={<CompleteProfilePage />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
-        <Route path="/onboarding/ai-intro" element={<ProtectedRoute><OnboardingAiIntroPage /></ProtectedRoute>} />
-        <Route path="/onboarding/ai-ready" element={<ProtectedRoute><OnboardingAiReadyPage /></ProtectedRoute>} />
+        <Route path="/onboarding/ai-intro" element={<OnboardingGuard><OnboardingAiIntroPage /></OnboardingGuard>} />
+        <Route path="/onboarding/ai-ready" element={<OnboardingGuard><OnboardingAiReadyPage /></OnboardingGuard>} />
         <Route path="/dashboard" element={<ProtectedRoute><DashboardRoute /></ProtectedRoute>} />
         <Route path="/marketplace" element={<ProtectedRoute><MarketplacePage /></ProtectedRoute>} />
         <Route path="/providers/:id" element={<ProtectedRoute><ProviderProfilePage /></ProtectedRoute>} />
@@ -148,7 +148,7 @@ function AppRoutes() {
         <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
         <Route path="/calendar/new-appointment" element={<ProtectedRoute><ParentNewAppointmentPage /></ProtectedRoute>} />
         <Route path="/appointments" element={<Navigate to="/calendar" replace />} />
-        <Route path="/matchmaker-selection" element={<ProtectedRoute><MatchmakerSelectionPage /></ProtectedRoute>} />
+        <Route path="/matchmaker-selection" element={<OnboardingGuard><MatchmakerSelectionPage /></OnboardingGuard>} />
         <Route path="/concierge" element={<ProtectedRoute><ConciergeChatPage /></ProtectedRoute>} />
         <Route path="/chat" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
         <Route path="/chat/concierge" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />

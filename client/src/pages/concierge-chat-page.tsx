@@ -1827,7 +1827,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [multiSelectChoices, setMultiSelectChoices] = useState<Set<string>>(new Set());
   const [sessionId, setSessionId] = useState<string | null>(existingSessionId);
   const [showCuration, setShowCuration] = useState(false);
+  const showCurationRef = useRef(false);
   const [pendingCurationMessage, setPendingCurationMessage] = useState<ChatMessage | null>(null);
+  const curationAwaitingRef = useRef(false);
   const [humanEscalated, setHumanEscalated] = useState(false);
   const [bookingCard, setBookingCard] = useState<ConsultationCardData | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
@@ -2349,7 +2351,22 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const sendMessage = async (text: string) => {
     const hasFiles = stagedFiles.length > 0;
     if (!text.trim() && !hasFiles) return;
-    if (sending || sendingRef.current || showCuration) return;
+    if (sending || sendingRef.current || showCurationRef.current) return;
+
+    // If curation is awaiting parent confirmation, show their message and start animation
+    if (curationAwaitingRef.current) {
+      const now = new Date().toISOString();
+      setMessages((prev) => {
+        const updated = prev.map((m, i) =>
+          i === prev.length - 1 && m.quickReplies ? { ...m, quickReplies: undefined } : m
+        );
+        return [...updated, { role: "user" as const, content: text.trim(), createdAt: now }];
+      });
+      setInput("");
+      curationAwaitingRef.current = false;
+      setTimeout(() => { showCurationRef.current = true; setShowCuration(true); }, 800);
+      return;
+    }
 
     // Upload staged files first (if any)
     if (hasFiles) {
@@ -2447,7 +2464,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       if (data.showCuration) {
         setMessages((prev) => [...prev, newMessage]);
         setPendingCurationMessage(newMessage);
-        setTimeout(() => setShowCuration(true), 2000);
+        curationAwaitingRef.current = true;
       } else {
         setMessages((prev) => [...prev, newMessage]);
       }
@@ -2472,13 +2489,61 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     sendMessage("I'd like to talk to a real person on the GoStork team");
   };
 
-  const handleCurationComplete = useCallback(() => {
+  const handleCurationComplete = useCallback(async () => {
+    showCurationRef.current = false;
     setShowCuration(false);
-    if (pendingCurationMessage) {
-      setPendingCurationMessage(null);
-      sendMessage("ready");
+    if (!pendingCurationMessage) return;
+    setPendingCurationMessage(null);
+
+    // Send "ready" silently (not visible in chat) to trigger match search
+    setSending(true);
+    sendingRef.current = true;
+    try {
+      const res = await fetch("/api/ai-concierge/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          message: "ready",
+          sessionId,
+          matchmakerId: effectiveMatchmakerId,
+        }),
+      });
+      if (!res.ok) throw new Error("Chat request failed");
+      const data = await res.json();
+      if (data.sessionId && data.sessionId !== sessionId) {
+        setSessionId(data.sessionId);
+        queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
+      }
+      if (data.skipAiResponse) return;
+      if (data.humanNeeded) setHumanEscalated(true);
+      if (data.message?.id) knownMessageIds.current.add(data.message.id);
+      const newMessage: ChatMessage = {
+        role: "assistant",
+        content: data.message.content,
+        id: data.message.id,
+        quickReplies: data.quickReplies,
+        multiSelect: data.multiSelect,
+        matchCards: data.matchCards,
+        prepDoc: data.prepDoc,
+        consultationCard: data.consultationCard,
+        senderType: data.message.senderType,
+        senderName: data.message.senderName,
+        deliveredAt: data.message.deliveredAt,
+        readAt: data.message.readAt,
+        createdAt: data.message.createdAt || new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, newMessage]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "I'm sorry, I'm having trouble connecting right now. Please try again.", createdAt: new Date().toISOString() },
+      ]);
+    } finally {
+      setSending(false);
+      sendingRef.current = false;
     }
-  }, [pendingCurationMessage]);
+  }, [pendingCurationMessage, sessionId, effectiveMatchmakerId]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
