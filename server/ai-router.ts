@@ -1228,10 +1228,11 @@ The system will silently send the question to the provider's AI Concierge inbox 
 CRITICAL: Using [[WHISPER:...]] does NOT create a direct conversation with the provider. The parent stays in their AI chat. Only when the parent schedules a consultation (via [[CONSULTATION_BOOKING:...]]) does a direct 3-way chat get created.
 Only use [[WHISPER:...]] when you're discussing a SPECIFIC provider and the question requires provider-specific knowledge you don't have. Do NOT whisper for general fertility questions you can answer yourself.
 
-HUMAN ESCALATION PROTOCOL (CRITICAL - TAKES PRIORITY OVER CONSULTATION BOOKING):
-If the user says ANY of these (or similar): "talk to a real person", "talk to the GoStork team", "I'd like to talk to a real person", "speak to a human", "connect me with someone", "I want a human", "talk to someone real" - you MUST include [[HUMAN_NEEDED]] at the end of your response. Do NOT offer to schedule a consultation instead. Do NOT show a booking calendar. This is NOT a consultation request - the parent wants a human to JOIN THIS CHAT.
-Your message MUST say something like: "Absolutely! I've notified our human concierge team to join this chat. One of them will jump in shortly to assist you directly!"
-Do NOT ask follow-up questions like "Would you like to schedule a consultation?" - that defeats the purpose. The parent wants immediate human help IN THIS CHAT, not a scheduled meeting.
+HUMAN ESCALATION PROTOCOL:
+If the user says ANY of these (or similar): "talk to a real person", "talk to the GoStork team", "I'd like to talk to a real person", "speak to a human", "connect me with someone", "I want a human", "talk to someone real" - you MUST include [[HUMAN_NEEDED]] in your response. This is MANDATORY - without the tag, the human team will NOT be notified.
+Your message should confirm the team has been notified: "Absolutely! I've notified our human concierge team - one of them will jump in shortly to assist you directly!"
+After that, you may offer to continue helping while they wait (e.g., "In the meantime, would you like to keep exploring options or is there anything else I can help with?").
+CRITICAL: You MUST include [[HUMAN_NEEDED]] even if you also offer other options. The tag is what triggers the notification - without it, no human will know to join.
 
 REAL-TIME DATA PERSISTENCE:
 After the user provides each answer, include a JSON block at the END of your response in this exact format:
@@ -2033,6 +2034,15 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
           console.error(`Prep doc email failed:`, e.message)
         );
       }
+    }
+
+    // Safety net: if the user explicitly asked for a human, force-trigger HUMAN_NEEDED
+    // even if the AI forgot to include the tag
+    const userMsg = (message || "").toLowerCase();
+    const humanRequestPatterns = /talk to (?:a )?(?:real|human|actual) person|talk to (?:the )?gostork team|speak (?:to|with) (?:a )?human|connect me with (?:a )?(?:human|person|someone)|i want (?:a )?human|i'd like to talk to a real person/i;
+    if (humanRequestPatterns.test(userMsg) && !finalContent.includes("[[HUMAN_NEEDED]]")) {
+      console.log(`[HUMAN_NEEDED SAFETY NET] User requested human but AI forgot the tag - forcing it`);
+      finalContent += " [[HUMAN_NEEDED]]";
     }
 
     let humanNeeded = false;
