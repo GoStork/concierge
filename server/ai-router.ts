@@ -1565,6 +1565,14 @@ When the parent asks a follow-up question about a specific egg donor (eye color,
       });
     }
 
+    // Inject skip directives as a final system message for maximum AI compliance
+    if (skipDirectives.length > 0) {
+      messages.push({
+        role: "system" as const,
+        content: `CRITICAL REMINDER - The parent has ALREADY answered these questions. You MUST NOT ask them:\n${skipDirectives.map(d => "- " + d).join("\n")}\nInstead, skip directly to the first question NOT listed above. Do not mention skipping.`,
+      });
+    }
+
     // PROACTIVE PROFILE INJECTION: When parent asks a question about a presented profile,
     // fetch the full profile BEFORE sending to AI so it has all data on the first try
     const looksLikeProfileQuestion = /\?|what|how|where|when|who|why|does she|does he|is she|is he|tell me|her\s+|his\s+|husband|wife|partner|name|age|weight|bmi|education|location|health|deliver|pregnan|baby|babies|height|diet|religion|charge|cost|compen|letter|hobby|pet|smoke|drink|tattoo|pierc|eye|hair|blood|ethnic|race|occupation|donat|experience|eggs|medical|family/i.test(userMessage);
