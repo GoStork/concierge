@@ -1464,11 +1464,18 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // Inject mandatory skip rules that apply regardless of DB-stored or default prompts
     const skipRulesPreamble = `
 MANDATORY RULE - NEVER ASK QUESTIONS ALREADY ANSWERED (HIGHEST PRIORITY):
-Before asking ANY question, check if the parent already provided the answer - either explicitly in a previous message OR implicitly from their situation. If the answer is already known, SKIP the question entirely and move to the next unanswered step. Do NOT announce what you're skipping.
+Before asking ANY question, check if the parent already provided the answer - either explicitly in a previous message OR implicitly from their situation. If the answer is already known, SKIP the question entirely and move to the next unanswered step.
+NEVER tell the parent you are skipping questions. Do NOT say things like "I'll skip those questions" or "Since you already told me X, we can skip that." Just move naturally to the next question as if the skipped ones never existed.
+KEY DISTINCTION - "need" vs "have":
+- "I need an egg donor" = they need HELP FINDING one. SKIP both "will you use a donor?" AND "do you need help finding one?" - both are answered.
+- "I have an egg donor" = they already found one, do NOT need help. SKIP both questions.
+- "I need a surrogate" = they need HELP FINDING one. SKIP both "will you use a surrogate?" AND "do you need help finding one?"
+- "I have a surrogate" = they already found one. SKIP both questions.
+- Same logic applies to clinics, sperm donors, etc.
+BIOLOGICAL INFERENCE:
 - If parent said they need an egg donor: they obviously do NOT have embryos yet. SKIP the embryo question.
-- If parent is a gay male couple or single male: eggs MUST come from a donor, they WILL need a surrogate. NEVER ask "will you be working with an egg donor?" or "will you be working with a surrogate?" - these are obvious and redundant. Only ask if they need HELP FINDING one (and only if they haven't already said so).
-- If parent already stated they need a specific service (e.g., "need egg donor and surrogate and clinic"), SKIP all questions about whether they need those services. Go straight to the first unanswered question.
-- If parent mentioned multiple services in one message, save all of them and skip all related questions.
+- Gay male couple or single male: eggs MUST come from a donor, they WILL need a surrogate. NEVER ask "will you use an egg donor?" or "will you use a surrogate?" - biologically obvious. Only ask "do you need help finding one?" IF they haven't already said they need one.
+- If parent stated they need multiple services (e.g., "need egg donor and surrogate and clinic"), ALL of those are answered - skip every related question and go to the first truly unanswered step.
 `;
     const effectiveLogic = isDonorInquiryMode ? donorInquiryPrompt : (skipRulesPreamble + "\n" + biologicalMasterLogic);
 
