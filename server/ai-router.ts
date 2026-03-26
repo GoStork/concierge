@@ -1508,6 +1508,10 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     if (hasClinic) {
       skipDirectives.push("DO NOT ask if they need help finding a clinic (Step 5) - they already have one.");
     }
+    // First IVF question: skip if using donor eggs (success rates don't vary by new vs prior IVF for donor eggs)
+    if (mentionsEggDonor || hasEggDonor || isGayMale) {
+      skipDirectives.push("DO NOT ask if this is their first IVF journey (Match Cycle A, question A4) - they are using donor eggs, so this question is irrelevant for clinic matching.");
+    }
     // Sperm donor
     if (mentionsSpermDonor && !hasSpermDonor) {
       skipDirectives.push("DO NOT ask about sperm source (Step 3) or if they need help finding a sperm donor (Step 3a) - they said they need one.");
