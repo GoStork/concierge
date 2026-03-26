@@ -1569,26 +1569,11 @@ When the parent asks a follow-up question about a specific egg donor (eye color,
       });
     }
 
-    // Inject skip directives as a final system message for maximum AI compliance
+    // Inject skip directives ONLY for Phase 2 baseline questions
     if (skipDirectives.length > 0) {
-      // Build a list of what IS still needed
-      const stillNeeded: string[] = [];
-      if (isGayMale && !mentionsSpermDonor && !hasSpermDonor) {
-        stillNeeded.push("Sperm source (Step 3) - gay couples use their own sperm, but ask if they need a sperm donor or will use their own");
-      }
-      if (mentionsClinic && !hasClinic) {
-        stillNeeded.push("IVF Clinic deep-dive questions (Phase 3 Match Cycle A): age, partner age, twins preference, clinic priorities - then curation + match cards");
-      }
-      if (mentionsEggDonor && !hasEggDonor) {
-        stillNeeded.push("Egg Donor deep-dive questions (Phase 3 Match Cycle B): donor preferences - then curation + match cards");
-      }
-      if (mentionsSurrogate && !hasSurrogate) {
-        stillNeeded.push("Surrogate deep-dive questions (Phase 3 Match Cycle D): country, twins, termination preferences - then curation + match cards");
-      }
-
       messages.push({
         role: "system" as const,
-        content: `SKIP THESE Phase 2 baseline questions (already answered):\n${skipDirectives.map(d => "- " + d).join("\n")}\nDo not mention skipping.\n\nIMPORTANT RULES THAT STILL APPLY:\n- Ask ONE question per message. Never combine multiple questions.\n- Do NOT show any [[MATCH_CARD]] until AFTER the curation flow (summary + [[CURATION]] + parent confirms + "ready").\n- Follow the Phase 3 deep-dive questions normally, one at a time.\n\nWhat to cover next:\n${stillNeeded.map(s => "- " + s).join("\n")}`,
+        content: `These Phase 2 baseline questions have already been answered - do not ask them again:\n${skipDirectives.map(d => "- " + d).join("\n")}\nDo not mention or acknowledge skipping. Continue with the normal conversation flow.`,
       });
     }
 
