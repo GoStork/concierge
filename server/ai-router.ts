@@ -1586,6 +1586,12 @@ When the parent asks a follow-up question about a specific egg donor (eye color,
       });
     }
 
+    // Always inject consultation naming rule
+    messages.push({
+      role: "system" as const,
+      content: `When offering to schedule a consultation or call, you MUST always name the specific provider/clinic/agency. NEVER say vague phrases like "one of our experts" or "a professional". Always say the specific name, e.g., "Would you like to schedule a free consultation with San Diego Fertility Center?" If multiple providers were presented, name the most recently discussed one.`,
+    });
+
     // PROACTIVE PROFILE INJECTION: When parent asks a question about a presented profile,
     // fetch the full profile BEFORE sending to AI so it has all data on the first try
     const looksLikeProfileQuestion = /\?|what|how|where|when|who|why|does she|does he|is she|is he|tell me|her\s+|his\s+|husband|wife|partner|name|age|weight|bmi|education|location|health|deliver|pregnan|baby|babies|height|diet|religion|charge|cost|compen|letter|hobby|pet|smoke|drink|tattoo|pierc|eye|hair|blood|ethnic|race|occupation|donat|experience|eggs|medical|family/i.test(userMessage);
