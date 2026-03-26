@@ -246,7 +246,13 @@ export class NotificationService implements OnModuleInit {
         defaults.errorColor = s.errorColor || defaults.errorColor;
         defaults.companyName = s.companyName || defaults.companyName;
         const rawLogo = s.logoWithNameUrl || s.logoUrl || "";
-        defaults.logoUrl = rawLogo && rawLogo.startsWith("/") ? `${getBaseUrl()}${rawLogo}` : rawLogo;
+        // For email images, always use a publicly accessible URL (not localhost)
+        // Prefer APP_URL or Replit deployment URL for image hosting
+        const imageBaseUrl = process.env.APP_URL?.replace(/\/+$/, "")
+          || (process.env.REPLIT_DEPLOYMENT_URL ? `https://${process.env.REPLIT_DEPLOYMENT_URL}` : "")
+          || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "")
+          || getBaseUrl();
+        defaults.logoUrl = rawLogo && rawLogo.startsWith("/") ? `${imageBaseUrl}${rawLogo}` : rawLogo;
         defaults.primaryForegroundColor = s.primaryForegroundColor || defaults.primaryForegroundColor;
         defaults.foregroundColor = s.foregroundColor || defaults.foregroundColor;
         defaults.mutedForegroundColor = s.mutedForegroundColor || defaults.mutedForegroundColor;
