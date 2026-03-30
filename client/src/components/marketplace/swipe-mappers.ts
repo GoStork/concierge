@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { getPhotoSrc, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields } from "@/lib/profile-utils";
-import { parseHeightToInches } from "@/lib/marketplace-filters";
+import { parseHeightToInches, resolveEthnicityTerms } from "@/lib/marketplace-filters";
 
 export type LayoutType = "matched_bubbles" | "icon_list" | "standard_bubbles";
 
@@ -349,9 +349,31 @@ export function getMatchedPreferences(profile: SwipeDeckProfile, prefs: UserPref
     baseCompensation: (v) => `${fmtCurrency(v)} Base Comp.`,
   };
 
+  const wmEth = (haystack: string, needle: string) => {
+    const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|[^a-z])${escaped}($|[^a-z])`).test(haystack);
+  };
+
   const seenKeys = new Set<string>();
   for (const pref of prefs) {
     if (seenKeys.has(pref.key)) continue;
+
+    // Race/ethnicity: check race field first, ethnicity as fallback, display the actual matched value
+    if (typeof pref.value === "string" && (pref.key === "race" || pref.key === "ethnicity")) {
+      const raceVal = String(profile.race || "").toLowerCase();
+      const ethVal = String(profile.ethnicity || "").toLowerCase();
+      const terms = resolveEthnicityTerms(pref.value as string);
+      const matchedViaRace = terms.some(t => wmEth(raceVal, t));
+      const matchedViaEthnicity = !matchedViaRace && terms.some(t => wmEth(ethVal, t));
+      if (matchedViaRace || matchedViaEthnicity) {
+        seenKeys.add(pref.key);
+        // Display the donor's actual value from the matched field
+        const displayVal = matchedViaRace ? (profile.race || pref.value) : (profile.ethnicity || pref.value);
+        matched.push({ key: pref.key, displayLabel: String(displayVal) });
+      }
+      continue;
+    }
+
     const val = attrMap[pref.key];
     if (val == null) continue;
     let isMatch = false;

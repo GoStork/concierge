@@ -267,7 +267,7 @@ ${logoUrl ? `<img src="${logoUrl}" alt="${companyName}" style="max-height:40px;m
   }
 }
 
-async function sendWhisperEmail(providerEmail: string, providerName: string, questionText: string, baseUrl: string) {
+async function sendWhisperEmail(providerEmail: string, providerName: string, questionText: string, baseUrl: string, sessionId: string) {
   const sendgridKey = process.env.SENDGRID_API_KEY;
   if (!sendgridKey) {
     console.log(`[WHISPER EMAIL MOCK] To: ${providerEmail}, Provider: ${providerName}, Question: ${questionText}`);
@@ -286,7 +286,7 @@ async function sendWhisperEmail(providerEmail: string, providerName: string, que
     }
   } catch {}
 
-  const dashboardLink = `${baseUrl}/account/knowledge`;
+  const chatLink = `${baseUrl}/chat/${sessionId}`;
   const html = `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
@@ -308,9 +308,9 @@ ${logoUrl ? `<img src="${logoUrl}" alt="${companyName}" style="max-height:40px;m
 </div>
 <p style="color:#333;font-size:15px;line-height:1.6;margin:0 0 24px;">Once you answer, our AI will learn it for the future so parents always get accurate information about your clinic.</p>
 <table cellpadding="0" cellspacing="0" style="margin:0 auto 24px;"><tr><td style="background-color:${brandColor};border-radius:8px;padding:14px 32px;">
-<a href="${dashboardLink}" style="color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;display:inline-block;">Answer This Question</a>
+<a href="${chatLink}" style="color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;display:inline-block;">Open This Conversation</a>
 </td></tr></table>
-<p style="color:#999;font-size:12px;line-height:1.5;margin:24px 0 0;padding-top:16px;border-top:1px solid #eee;">This question was asked anonymously - no parent contact information is shared. You can answer directly from your ${companyName} dashboard.</p>
+<p style="color:#999;font-size:12px;line-height:1.5;margin:24px 0 0;padding-top:16px;border-top:1px solid #eee;">This question was asked anonymously - no parent contact information is shared. You can reply directly from your ${companyName} inbox.</p>
 </td></tr>
 </table>
 </td></tr>
@@ -339,6 +339,44 @@ ${logoUrl ? `<img src="${logoUrl}" alt="${companyName}" style="max-height:40px;m
     }
   } catch (e: any) {
     console.error(`SendGrid whisper email error: ${e.message}`);
+  }
+}
+
+async function sendWhisperSms(phone: string, questionText: string, chatLink: string) {
+  const twilioSid = process.env.TWILIO_ACCOUNT_SID;
+  const twilioToken = process.env.TWILIO_AUTH_TOKEN;
+  const twilioFrom = process.env.TWILIO_PHONE_NUMBER;
+
+  if (!twilioSid || !twilioToken || !twilioFrom) {
+    console.log(`[WHISPER SMS MOCK] To: ${phone}, Question: ${questionText.slice(0, 60)}, Link: ${chatLink}`);
+    return;
+  }
+
+  let companyName = "GoStork";
+  try {
+    const settings = await prisma.siteSettings.findFirst();
+    if (settings) companyName = (settings as any).companyName || companyName;
+  } catch {}
+
+  const preview = questionText.length > 100 ? questionText.slice(0, 100) + "..." : questionText;
+  const body = `[${companyName}] New question from a prospective parent: "${preview}"\n\nReply here: ${chatLink}`;
+  try {
+    const url = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`;
+    const params = new URLSearchParams({ To: phone, From: twilioFrom, Body: body });
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${twilioSid}:${twilioToken}`).toString("base64")}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      console.error(`Twilio whisper SMS failed: ${res.status} - ${text}`);
+    }
+  } catch (e: any) {
+    console.error(`Twilio whisper SMS error: ${e.message}`);
   }
 }
 
@@ -695,6 +733,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       ? `${parentNameParts[0]} ${parentNameParts[parentNameParts.length - 1][0]}.`
       : parentNameParts[0] || "Parent";
 
+    const attachmentData = req.body.attachmentData || null;
     const savedUserMsg = await prisma.aiChatMessage.create({
       data: {
         sessionId: currentSessionId,
@@ -702,6 +741,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         content: req.body.message,
         senderType: "parent",
         senderName: parentDisplayName,
+        ...(attachmentData ? { uiCardType: "attachment", uiCardData: attachmentData } : {}),
       },
     });
 
@@ -1282,6 +1322,7 @@ BEFORE whispering, ALWAYS try the get_surrogate_profile tool first (pass the sur
 Only when the user asks a question about a provider's operations, policies, or details that you TRULY cannot find in the profile data, KNOWLEDGE BASE CONTEXT, or via your database tools, you MUST include the [[WHISPER:PROVIDER_ID]] tag in your response.
 Format: Include [[WHISPER:provider-uuid-here]] at the END of your response text. The PROVIDER_ID is the ownerProviderId from the most recent MATCH_CARD. This tag is REQUIRED - without it, the question is NEVER sent to the provider.
 Your message should say: "That's a great question! I don't have that specific detail yet, but I've just sent a message to the agency. I'll get back to you as soon as they reply!" [[WHISPER:provider-uuid-here]]
+NEVER ask the parent "Would you like me to contact the agency?" or "Shall I ask them?" - just send the whisper immediately when you don't know the answer. Asking for confirmation causes the parent's "yes" reply to be forwarded as the question instead of the real question.
 NEVER say you'll "check" or "look into it" without including the [[WHISPER:...]] tag - that would be lying to the parent since nothing actually happens without the tag.
 The system will silently send the question to the provider's AI Concierge inbox (the parent's identity is NOT revealed to the provider). When the provider answers, you'll receive it as a PROVIDER WHISPER ANSWER in your context - present it naturally.
 CRITICAL: Using [[WHISPER:...]] does NOT create a direct conversation with the provider. The parent stays in their AI chat. Only when the parent schedules a consultation (via [[CONSULTATION_BOOKING:...]]) does a direct 3-way chat get created.
@@ -1369,13 +1410,21 @@ If a piece of information is NOT explicitly present in any of the above sources,
 - Any detail about the surrogate/donor that wasn't in the tool results
 
 WHEN YOU DON'T HAVE THE ANSWER (MANDATORY):
-When a parent asks a specific question and the answer is NOT in your available data:
-1. Say: "Great question! I'll check with her agency on that and get back to you with the answer."
-2. Also offer: "In the meantime, would you like to schedule a free consultation to speak with them directly?"
-3. Use [[WHISPER:ownerProviderId]] to send the question to the agency.
-4. NEVER fabricate an answer. NEVER make general claims. NEVER guess. Just whisper it.
+When a parent asks a specific question and the answer is NOT in your available data, you MUST:
+1. Say something warm like: "I don't have that detail right now, but I've just asked her agency - I'll share their answer as soon as I hear back!"
+2. Include [[WHISPER:ownerProviderId]] in your response - this is what actually sends the question. Without it, nothing happens.
+3. Offer alternatives inline with QUICK_REPLY buttons: [[QUICK_REPLY:Schedule a call with the agency|Show me more donors]]
+4. NEVER just say "the profile doesn't disclose that" and stop there - that is unhelpful. Always whisper AND offer next steps.
+5. NEVER fabricate an answer. NEVER make general claims. NEVER guess.
+
+FORBIDDEN response pattern - NEVER do this:
+"The profile does not disclose [X]. Would you like to schedule a consultation?" ← WRONG - no whisper sent, no alternatives
+
+CORRECT response pattern:
+"I don't have that detail in her profile right now, but I've just sent a message to her agency to ask! I'll get back to you as soon as they reply. In the meantime, would you like to schedule a free call with the agency or see more donor options?" [[QUICK_REPLY:Schedule a call|Show more donors]] [[WHISPER:ownerProviderId]]
 
 Examples of questions you should WHISPER (not guess):
+- "What's her mom's name?" → WHISPER (personal family detail, never in profile)
 - "What's her husband's name?" → WHISPER (unless name is in profile data)
 - "Does she have diabetes?" → Check profile health section first, if not there → WHISPER
 - "What religion is she?" → Check profile first, if not there → WHISPER
@@ -1409,7 +1458,7 @@ IMPORTANT RULES:
     const [guidanceRules, answeredWhispers, knowledgeResults] = await Promise.all([
       getExpertGuidanceRules(),
       prisma.silentQuery.findMany({
-        where: { parentUserId: userId, sessionId: currentSessionId, status: "ANSWERED" },
+        where: { parentUserId: userId, sessionId: currentSessionId, status: "ANSWERED" }, // RELAYED whispers are excluded - already injected directly
         select: { questionText: true, answerText: true, providerId: true },
         orderBy: { updatedAt: "desc" },
         take: 5,
@@ -1935,6 +1984,19 @@ The parent's message was: "${userMessage}"`,
       /there\s*was\s*(?:an?\s*)?(?:issue|problem|error)\s*(?:accessing|retrieving|fetching|getting)/i,
       /couldn'?t\s*(?:retrieve|access|fetch|get)\s*(?:her|his|their|the)\s*(?:full\s*)?(?:profile|data|details|information)/i,
       /(?:having|had)\s*(?:trouble|difficulty|issues?)\s*(?:accessing|retrieving|fetching|getting)/i,
+      // Privacy refusals & "not in profile" - treat same as access failure; escalate to agency whisper
+      /(?:can'?t|cannot|don'?t|unable to)\s*(?:share|provide|disclose|reveal|give)\s*(?:personal|private|sensitive|that)/i,
+      /(?:for\s*)?privacy\s*reasons/i,
+      /(?:not\s*)?(?:allowed|able)\s*to\s*(?:share|provide|disclose|reveal)\s*(?:personal|private|that)/i,
+      /this\s*(?:type\s*of\s*)?(?:information\s*(?:is|isn'?t)|detail)\s*(?:is\s*)?(?:not|unavailable|private|confidential)/i,
+      /(?:that'?s?\s*)?(?:not\s*)?(?:public|available)\s*(?:information|data)/i,
+      /don'?t\s*have\s*(?:access\s*to\s*)?(?:that|this|her|his|their)\s*(?:information|detail|data)/i,
+      /(?:that\s*)?information\s*(?:isn'?t|is\s*not)\s*(?:available|accessible|in\s*(?:the|her|his)\s*profile)/i,
+      // "Profile doesn't include/contain/have" phrasing
+      /profile\s*(?:for\s*\w+\s*#?\d+\s*)?(?:doesn'?t|does\s*not)\s*(?:include|contain|have)\s*/i,
+      /(?:doesn'?t|does\s*not|not)\s*(?:include|contain|list|have)\s*(?:personal|private|that|this|her|his|their|the\s*\w+'?s?)\s*(?:information|details?|name|data)/i,
+      /not\s*(?:something\s*)?(?:included|available|listed|found|part\s*of)\s*(?:in\s*)?(?:her|his|their|the)\s*(?:profile|data|information)/i,
+      /(?:that'?s?\s*)?(?:personal|private)\s*(?:information|details?)\s*(?:like|such as)/i,
     ];
     const hasAccessFailure = accessFailurePatterns.some((p) => p.test(finalContent));
     if (hasAccessFailure && currentSessionId && mcpClient) {
@@ -2083,6 +2145,13 @@ The parent's message was: "${userMessage}"`,
       /don't hesitate to/i,
       /i'm here (?:for you|whenever|if you)/i,
       /whenever you're ready/i,
+      // Promises to search/retrieve without actually doing it
+      /one moment while i/i,
+      /give me (?:a moment|one moment|just a moment)/i,
+      /(?:let me|i'll) (?:search|look|find|line up|pull up|check|get) (?:some |the |a few )?(?:strong |great |good |perfect )?(?:matches|options|results|profiles)/i,
+      /i'll have (?:those|that|some|a few) (?:for you|ready)/i,
+      /stand by while/i,
+      /bear with me/i,
     ];
     const hasDeadEnd = deadEndPatterns.some((p) => p.test(finalContent));
     if (hasDeadEnd && !isSkipAction) {
@@ -2090,12 +2159,12 @@ The parent's message was: "${userMessage}"`,
       try {
         messages.push({
           role: "user",
-          content: `SYSTEM OVERRIDE: Your last response ended with a passive, open-ended phrase that kills momentum. REWRITE your response but END with ONE of these active next steps instead:
-1. Offer a free consultation: "It's completely free - want me to set that up?" with [[QUICK_REPLY:Yes, schedule a free consultation|Show me more options]]
-2. Show the next matching profile by calling the search tools and presenting a [[MATCH_CARD:...]]
-3. Ask a SPECIFIC preference question like "What matters most to you - location, experience, or personality?"
+          content: `SYSTEM OVERRIDE: Your last response ended with a passive or unfulfilled promise (like "one moment", "let me find", "I'll line up matches") without actually doing it. You MUST act NOW - do NOT say you will do something, just DO it:
+1. If the parent gave search criteria (ethnicity, eye color, etc.) - call the search tools RIGHT NOW and present a [[MATCH_CARD:...]]
+2. If you need more info before searching - ask ONE specific question like "Do you have a preference on education level?" with quick replies
+3. If you already found a match - offer the consultation: [[QUICK_REPLY:Yes, schedule a free consultation|Show me more options]]
 
-NEVER end with "feel free to reach out", "let me know your next steps", "is there anything else", or similar passive phrases. Always take the lead.`,
+NEVER promise to search without actually calling the search tool. NEVER end without either a [[MATCH_CARD]], a direct question, or a [[QUICK_REPLY]].`,
         });
         const retryResponse = await openai.chat.completions.create({
           model: "gpt-4o",
@@ -2535,7 +2604,22 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
       const whisperProviderId = whisperMatch[1].trim();
       try {
         if (whisperProviderId && userId && currentSessionId) {
-          const questionText = userMessage || finalContent.replace(/\[\[WHISPER:.*?\]\]/g, "").trim().slice(0, 500);
+          // If the user's message is a short affirmative ("yes", "sure", etc.), the actual question
+          // is earlier in the conversation history - find the last real parent question
+          const SHORT_AFFIRMATIVES = /^(yes|yeah|yep|sure|ok|okay|please|go ahead|do it|yup|absolutely|sounds good|great|perfect|yes please)[\s!.]*$/i;
+          let questionText: string;
+          if (userMessage && SHORT_AFFIRMATIVES.test(userMessage.trim())) {
+            // Walk back through messages to find the last user question (before the current "yes")
+            const parentMessages = messages.filter((m: any) => m.role === "user");
+            const prevQuestion = parentMessages.length >= 2
+              ? parentMessages[parentMessages.length - 2]?.content
+              : null;
+            questionText = (typeof prevQuestion === "string" ? prevQuestion : null)
+              || userMessage
+              || finalContent.replace(/\[\[WHISPER:.*?\]\]/g, "").trim().slice(0, 500);
+          } else {
+            questionText = userMessage || finalContent.replace(/\[\[WHISPER:.*?\]\]/g, "").trim().slice(0, 500);
+          }
           const providerResult = await mcpClient!.callTool({
             name: "resolve_provider",
             arguments: { providerId: whisperProviderId },
@@ -2605,11 +2689,29 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
             const baseUrl = process.env.APP_URL?.replace(/\/+$/, "")
               || (process.env.REPLIT_DEPLOYMENT_URL ? `https://${process.env.REPLIT_DEPLOYMENT_URL}` : "")
               || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "https://app.gostork.com");
-            const emailRecipients = providerUsers.filter(pu => pu.email).map(pu => pu.email!);
+            const chatLink = `${baseUrl}/chat/${currentSessionId}`;
+            const emailRecipients = providerUsers.filter((pu: any) => pu.email).map((pu: any) => pu.email!);
             for (const recipientEmail of emailRecipients) {
-              sendWhisperEmail(recipientEmail, providerName, questionText, baseUrl).catch(e =>
+              sendWhisperEmail(recipientEmail, providerName, questionText, baseUrl, currentSessionId).catch(e =>
                 console.error(`Whisper email failed for ${recipientEmail}:`, e.message)
               );
+            }
+
+            // SMS: fetch mobile numbers for provider users and send text notification
+            const providerUserIds = providerUsers.map((pu: any) => pu.id).filter(Boolean);
+            if (providerUserIds.length > 0) {
+              prisma.user.findMany({
+                where: { id: { in: providerUserIds }, mobileNumber: { not: null } },
+                select: { mobileNumber: true },
+              }).then(usersWithPhone => {
+                for (const u of usersWithPhone) {
+                  if (u.mobileNumber) {
+                    sendWhisperSms(u.mobileNumber, questionText, chatLink).catch(e =>
+                      console.error(`Whisper SMS failed:`, e.message)
+                    );
+                  }
+                }
+              }).catch(e => console.error("Failed to fetch provider phones for whisper SMS:", e.message));
             }
           }
         }
@@ -2754,6 +2856,131 @@ NEVER end with "feel free to reach out", "let me know your next steps", "is ther
       } catch (e) {
         console.error("Match card resolution via MCP failed:", e);
         card.photo = null;
+      }
+    }
+
+    // Auto-populate reasons from search filters when the AI left reasons empty.
+    for (const card of matchCards) {
+      if (!card.reasons || card.reasons.length === 0) {
+        const cardTypeLower = (card.type || "").toLowerCase();
+        const searchToolName = cardTypeLower === "egg donor" ? "search_egg_donors"
+          : cardTypeLower === "sperm donor" ? "search_sperm_donors"
+          : cardTypeLower === "surrogate" ? "search_surrogates"
+          : cardTypeLower === "clinic" ? "search_clinics" : null;
+
+        if (searchToolName) {
+          const searchResult = lastSearchToolResults.find(r => r.toolName === searchToolName);
+          if (searchResult) {
+            const args = searchResult.toolArgs || {};
+            const autoReasons: string[] = [];
+
+            if (cardTypeLower === "egg donor" || cardTypeLower === "sperm donor") {
+              // Find actual donor data from search results to validate reasons against real profile
+              let donorData: any = null;
+              try {
+                const rb = searchResult.resultText;
+                const js = rb.indexOf("["); const je = rb.lastIndexOf("]");
+                if (js !== -1 && je !== -1) {
+                  const results = JSON.parse(rb.substring(js, je + 1));
+                  donorData = results.find((r: any) => String(r.id) === String(card.providerId) || String(r.externalId) === String(card.providerId));
+                }
+              } catch {}
+              const matchesField = (fieldVal: string, term: string) => {
+                const esc = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                return new RegExp(`(^|[^a-z])${esc}($|[^a-z])`).test(fieldVal.toLowerCase());
+              };
+              if (args.eyeColor) {
+                if (!donorData || matchesField(donorData.eyeColor || "", args.eyeColor)) autoReasons.push(`${args.eyeColor} eyes`);
+              }
+              if (args.hairColor) {
+                if (!donorData || matchesField(donorData.hairColor || "", args.hairColor)) autoReasons.push(`${args.hairColor} hair`);
+              }
+              if (args.ethnicity) {
+                // Validate ethnicity against actual race AND ethnicity fields - prevent "Asian" matching "Caucasian"
+                if (!donorData || matchesField(donorData.race || "", args.ethnicity) || matchesField(donorData.ethnicity || "", args.ethnicity)) {
+                  autoReasons.push(`${args.ethnicity} ethnicity`);
+                } else {
+                  console.warn(`[MATCH_CARD] Skipping invalid ethnicity reason "${args.ethnicity}" - donor race="${donorData.race}" ethnicity="${donorData.ethnicity}"`);
+                }
+              }
+              if (args.education) {
+                if (!donorData || matchesField(donorData.education || "", args.education)) autoReasons.push(`${args.education} education`);
+              }
+              if (args.maxAge) {
+                if (!donorData || (donorData.age != null && Number(donorData.age) <= Number(args.maxAge))) autoReasons.push(`Under ${args.maxAge} years old`);
+              }
+            } else if (cardTypeLower === "surrogate") {
+              try {
+                const resultBody = searchResult.resultText;
+                const jsonStart = resultBody.indexOf("[");
+                const jsonEnd = resultBody.lastIndexOf("]");
+                if (jsonStart !== -1 && jsonEnd !== -1) {
+                  const results = JSON.parse(resultBody.substring(jsonStart, jsonEnd + 1));
+                  const matched = results.find((r: any) => String(r.id) === String(card.providerId));
+                  if (matched) {
+                    if (matched.agreesToTwins) autoReasons.push("Open to twins");
+                    if (matched.agreesToAbortion || matched.agreesToSelectiveReduction) autoReasons.push("Pro-choice");
+                    if (matched.isExperienced) autoReasons.push("Previous surrogacy experience");
+                    if (matched.openToSameSexCouple) autoReasons.push("Open to same-sex couples");
+                    if (matched.liveBirths) autoReasons.push(`Mom of ${matched.liveBirths}`);
+                  }
+                }
+              } catch {}
+            } else if (cardTypeLower === "clinic") {
+              if (args.eggSource === "donor") autoReasons.push("Specializes in donor egg IVF");
+              if (args.location) autoReasons.push(`Located in ${args.location}`);
+            }
+
+            if (autoReasons.length > 0) {
+              card.reasons = autoReasons.slice(0, 4);
+              console.log(`[MATCH_CARD] Auto-populated ${card.reasons.length} reasons for ${card.name || card.type}`);
+            }
+          }
+        }
+      }
+    }
+
+    // Validate AI-generated ethnicity/race reasons against actual donor data to prevent hallucinations
+    // (e.g., AI saying "Asian ethnicity" for a Caucasian donor).
+    for (const card of matchCards) {
+      const cardTypeLower2 = (card.type || "").toLowerCase();
+      if ((cardTypeLower2 === "egg donor" || cardTypeLower2 === "sperm donor") && card.reasons?.length > 0) {
+        const searchToolName2 = cardTypeLower2 === "egg donor" ? "search_egg_donors" : "search_sperm_donors";
+        const searchResult2 = lastSearchToolResults.find((r: any) => r.toolName === searchToolName2);
+        if (searchResult2) {
+          try {
+            const rb = searchResult2.resultText;
+            const js = rb.indexOf("["); const je = rb.lastIndexOf("]");
+            if (js !== -1 && je !== -1) {
+              const results = JSON.parse(rb.substring(js, je + 1));
+              const donorData = results.find((r: any) => String(r.id) === String(card.providerId) || String(r.externalId) === String(card.providerId));
+              if (donorData) {
+                const donorRace = (donorData.race || "").toLowerCase();
+                const donorEthnicity = (donorData.ethnicity || "").toLowerCase();
+                const matchesEth = (term: string) => {
+                  const esc = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                  const re = new RegExp(`(^|[^a-z])${esc}($|[^a-z])`);
+                  return re.test(donorRace) || re.test(donorEthnicity);
+                };
+                const before = card.reasons.length;
+                card.reasons = card.reasons.filter((reason: string) => {
+                  const rl = reason.toLowerCase();
+                  if (rl.includes("ethnicity") || rl.includes("race") || rl.endsWith(" background")) {
+                    const term = rl.replace(/\s*(ethnicity|race|background)\s*/g, "").trim();
+                    if (term && !matchesEth(term)) {
+                      console.warn(`[MATCH_CARD] Removing hallucinated reason "${reason}" - donor race="${donorData.race}" ethnicity="${donorData.ethnicity}"`);
+                      return false;
+                    }
+                  }
+                  return true;
+                });
+                if (card.reasons.length < before) {
+                  console.log(`[MATCH_CARD] Validated reasons: removed ${before - card.reasons.length} invalid ethnicity reason(s) for ${card.name}`);
+                }
+              }
+            }
+          } catch {}
+        }
       }
     }
 

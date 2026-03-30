@@ -1378,13 +1378,6 @@ function getProfileUrlSlug(type: string): string {
   return "surrogate";
 }
 
-function getProfileEndpoint(type: string): string {
-  const t = type.toLowerCase();
-  if (t === "surrogate") return "surrogates";
-  if (t === "egg donor") return "egg-donors";
-  if (t === "sperm donor") return "sperm-donors";
-  return "surrogates";
-}
 
 function buildMatchTabs(profile: any, cardType: string, reasons: string[]): TabSection[] {
   const t = cardType.toLowerCase();
@@ -1557,16 +1550,16 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
   const isClinic = card.type.toLowerCase() === "clinic";
 
   useEffect(() => {
-    if (!card.ownerProviderId || isClinic) return;
+    if (isClinic) return;
     const fetchProfile = async () => {
       try {
-        const endpoint = getProfileEndpoint(card.type);
-        const res = await fetch(`/api/providers/${card.ownerProviderId}/${endpoint}/${card.providerId}`, { credentials: "include" });
+        const typeSlug = card.type.toLowerCase().replace(" ", "-");
+        const res = await fetch(`/api/marketplace/profile/${typeSlug}/${card.providerId}`, { credentials: "include" });
         if (res.ok) setProfile(await res.json());
       } catch {}
     };
     fetchProfile();
-  }, [card.ownerProviderId, card.providerId, card.type, isClinic]);
+  }, [card.providerId, card.type, isClinic]);
 
   if (isClinic) {
     return <ClinicMatchCard card={card} brandColor={brandColor} onAction={onAction} onViewProfile={onViewProfile} />;
@@ -1574,7 +1567,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
 
   if (!profile && !card.photo) {
     return (
-      <div className="min-w-[320px] max-w-[420px] w-full aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center">
+      <div className="w-full aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -1594,7 +1587,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
 
     return (
       <div
-        className="min-w-[320px] max-w-[420px] w-full aspect-[3/4] animate-[slideUp_0.4s_ease-out_forwards]"
+        className="w-full aspect-[3/4] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]"
         data-testid={`match-card-${card.providerId}`}
       >
         <SwipeDeckCard
@@ -1609,7 +1602,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
           chatMode
           onPass={() => onAction(`I'm not interested in ${card.name || title}. Show me another option.`)}
           onSave={() => onAction(`I like ${card.name || title}! Save as favorite. ❤️`)}
-          onViewFullProfile={() => onViewProfile(card)}
+          onViewFullProfile={() => onViewProfile({ ...card, ownerProviderId: card.ownerProviderId || profile?.providerId })}
         />
       </div>
     );
@@ -1617,9 +1610,9 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
 
   return (
     <div
-      className="min-w-[320px] max-w-[420px] w-full aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted cursor-pointer relative"
+      className="w-full aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted cursor-pointer relative"
       data-testid={`match-card-${card.providerId}`}
-      onClick={() => onViewProfile(card)}
+      onClick={() => onViewProfile({ ...card, ownerProviderId: card.ownerProviderId || profile?.providerId })}
     >
       {card.photo ? (
         <img src={getPhotoSrc(card.photo) || undefined} alt={card.name} className="w-full h-full object-cover" />
@@ -1841,6 +1834,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const parentFileInputRef = useRef<HTMLInputElement>(null);
   const [parentUploading, setParentUploading] = useState(false);
   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
+  // Ref so uploadAndSendFiles can access the current matchmaker ID without TDZ issues
+  const effectiveMatchmakerIdRef = useRef<string | null>(null);
 
   const { data: sessionBookings } = useQuery<any[]>({
     queryKey: ["/api/chat-session", sessionId, "bookings"],
@@ -1936,56 +1931,132 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const handleParentFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
+    // Snapshot to array BEFORE clearing value - Safari/Chrome invalidate FileList on value reset
+    const fileArray = Array.from(files);
     e.target.value = "";
-    setStagedFiles(prev => [...prev, ...Array.from(files)]);
+    setStagedFiles(prev => [...prev, ...fileArray]);
   }, []);
 
   const removeStagedFile = useCallback((index: number) => {
     setStagedFiles(prev => prev.filter((_, i) => i !== index));
   }, []);
 
-  const uploadAndSendFiles = useCallback(async (messageText: string) => {
-    if (!sessionId) return;
+  const uploadAndSendFiles = useCallback(async (filesToUpload: File[], messageText: string) => {
+    if (filesToUpload.length === 0) return;
+    setStagedFiles([]);
     setParentUploading(true);
+    setSending(true);
+    sendingRef.current = true;
+
+    const now = new Date().toISOString();
+    const tempId = `temp-${Date.now()}`;
+
     try {
-      // Upload each file and send as a message
-      for (const file of stagedFiles) {
+      // Step 1: Upload all files
+      const uploadedFiles: Array<{ originalName: string; url: string; mimeType: string; size: number }> = [];
+      for (const file of filesToUpload) {
         const formData = new FormData();
         formData.append("file", file);
         const uploadRes = await fetch("/api/chat-upload", { method: "POST", credentials: "include", body: formData });
-        if (!uploadRes.ok) throw new Error("Upload failed");
-        const uploadData = await uploadRes.json();
-        await fetch(`/api/chat-session/${sessionId}/message`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            content: uploadData.originalName ? `Shared a file: ${uploadData.originalName}` : "Shared a file",
-            uiCardType: "attachment",
-            uiCardData: uploadData,
-          }),
-        });
-      }
-      setStagedFiles([]);
-      // Optimistic sidebar update for last file
-      if (sessionId) {
-        const lastName = stagedFiles[stagedFiles.length - 1]?.name || "file";
-        queryClient.setQueryData<any[]>(["/api/my/chat-sessions"], (old) =>
-          old?.map(s => s.id === sessionId ? { ...s, lastMessage: `Shared a file: ${lastName}`, lastMessageAt: new Date().toISOString(), lastMessageRole: "user" } : s)
-        );
+        if (!uploadRes.ok) {
+          const errData = await uploadRes.json().catch(() => ({}));
+          throw new Error(errData.message || `Upload failed (${uploadRes.status})`);
+        }
+        uploadedFiles.push(await uploadRes.json());
       }
 
-      // Send text message via the AI chat if there's text
-      if (messageText.trim()) {
-        return true; // signal caller to send the text message
+      const firstFile = uploadedFiles[0];
+      const extraFiles = uploadedFiles.slice(1);
+      const fileNames = uploadedFiles.map(f => f.originalName).join(", ");
+      const displayText = messageText.trim() || `Shared a file: ${firstFile.originalName}`;
+      const aiText = messageText.trim()
+        ? `${messageText.trim()} [Attached file: ${fileNames}]`
+        : `I've shared a file with you: ${fileNames}. Please acknowledge it.`;
+
+      // Step 2: Show optimistic message with file card immediately
+      setMessages(prev => [...prev, {
+        role: "user" as const,
+        content: displayText,
+        createdAt: now,
+        id: tempId,
+        uiCardType: "attachment" as const,
+        uiCardData: firstFile,
+      }]);
+
+      // Step 3: Call AI with attachmentData - it saves ONE unified user message (text + attachment)
+      const aiRes = await fetch("/api/ai-concierge/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          message: aiText,
+          sessionId,
+          matchmakerId: effectiveMatchmakerIdRef.current,
+          attachmentData: firstFile,
+        }),
+      });
+
+      if (!aiRes.ok) {
+        setMessages(prev => prev.filter(m => m.id !== tempId));
+        const errData = await aiRes.json().catch(() => ({}));
+        throw new Error(errData.error || `AI request failed (${aiRes.status})`);
       }
-    } catch {
-      alert("Failed to upload file. Please try again.");
+
+      const aiData = await aiRes.json();
+
+      // Step 4: Update session ID if new session was created
+      if (aiData.sessionId && aiData.sessionId !== sessionId) {
+        setSessionId(aiData.sessionId);
+        queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
+      }
+
+      // Remove optimistic - real user message was saved by AI endpoint
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+
+      // Show AI response
+      if (aiData.message?.content) {
+        const aiMsgId = aiData.message.id;
+        setMessages(prev => {
+          if (aiMsgId && prev.some(m => m.id === aiMsgId)) return prev;
+          return [...prev, {
+            role: "assistant" as const,
+            content: aiData.message.content,
+            createdAt: aiData.message.createdAt || now,
+            id: aiMsgId,
+            quickReplies: aiData.quickReplies,
+            matchCards: aiData.matchCards,
+            senderType: aiData.message.senderType,
+            senderName: aiData.message.senderName,
+          }];
+        });
+        if (aiData.message.id) knownMessageIds.current.add(aiData.message.id);
+      }
+
+      // Save additional files as separate attachment messages (fire-and-forget)
+      const resolvedSessionId = aiData.sessionId || sessionId;
+      if (resolvedSessionId && extraFiles.length > 0) {
+        for (const extraFile of extraFiles) {
+          fetch(`/api/chat-session/${resolvedSessionId}/message`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({
+              content: `Shared a file: ${extraFile.originalName}`,
+              uiCardType: "attachment",
+              uiCardData: extraFile,
+            }),
+          }).catch(() => {});
+        }
+      }
+    } catch (e: any) {
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+      alert(e.message || "Failed to upload file. Please try again.");
     } finally {
       setParentUploading(false);
+      setSending(false);
+      sendingRef.current = false;
     }
-    return false;
-  }, [sessionId, stagedFiles]);
+  }, [sessionId]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
@@ -1997,6 +2068,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [resolvedMatchmakerId, setResolvedMatchmakerId] = useState<string | null>(null);
   const effectiveMatchmakerId = matchmakerId || resolvedMatchmakerId
     || (donorIdParam && matchmakers.find(m => m.isActive)?.id) || null;
+  effectiveMatchmakerIdRef.current = effectiveMatchmakerId;
   const selectedMatchmaker = matchmakers.find((m) => m.id === effectiveMatchmakerId);
   const brandColor = brand?.primaryColor || "#004D4D";
   const chatPalette = useMemo(() => deriveChatPalette(brandColor), [brandColor]);
@@ -2368,11 +2440,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       return;
     }
 
-    // Upload staged files first (if any)
+    // Upload staged files + call AI (handles both file-only and file+text cases)
     if (hasFiles) {
-      const shouldContinue = await uploadAndSendFiles(text);
-      if (!text.trim()) return; // files-only, no AI chat needed
-      if (!shouldContinue) return;
+      const filesToUpload = [...stagedFiles]; // capture before state clears
+      setInput("");
+      uploadAndSendFiles(filesToUpload, text); // fire-and-forget; manages its own state
+      return;
     }
 
     if (!text.trim()) return;
@@ -2729,7 +2802,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   <>
                     {!alignRight && msg.matchCards && msg.matchCards.length > 0 && (
                       <div className="flex justify-start mb-2 ml-0">
-                        <div className="space-y-3 min-w-[320px] max-w-[420px]">
+                        <div className="space-y-3 w-[320px] sm:w-[380px]">
                           {msg.matchCards.map((card, ci) => (
                             <MatchCardComponent
                               key={ci}

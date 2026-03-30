@@ -799,32 +799,53 @@ export default function ConversationsPage() {
     const msgText = text ?? replyText.trim();
     const msgFiles = files ?? providerStagedFiles;
     if ((!msgText && msgFiles.length === 0) || !selectedSessionId) return;
-    // Upload staged files first
+
     if (msgFiles.length > 0) {
       setProviderUploading(true);
       try {
+        // Upload all files
+        const uploadedFiles: Array<{ originalName: string; url: string; mimeType: string; size: number }> = [];
         for (const file of msgFiles) {
           const formData = new FormData();
           formData.append("file", file);
           const res = await fetch("/api/chat-upload", { method: "POST", credentials: "include", body: formData });
-          if (!res.ok) throw new Error("Upload failed");
-          const data = await res.json();
-          await sendMessageMutation.mutateAsync({
-            sessionId: selectedSessionId,
-            content: data.originalName ? `Shared a file: ${data.originalName}` : "Shared a file",
-            uiCardType: "attachment",
-            uiCardData: data,
-          });
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw Object.assign(new Error(errData.message || `Upload failed (${res.status})`), { isUploadError: true });
+          }
+          uploadedFiles.push(await res.json());
         }
         setProviderStagedFiles([]);
-      } catch {
-        alert("Failed to upload file. Please try again.");
+
+        // Send first file merged with text as ONE message
+        const firstFile = uploadedFiles[0];
+        const content = msgText || `Shared a file: ${firstFile.originalName}`;
+        await sendMessageMutation.mutateAsync({
+          sessionId: selectedSessionId,
+          content,
+          uiCardType: "attachment",
+          uiCardData: firstFile,
+        });
+
+        // Additional files as separate attachment messages (no extra text)
+        for (let i = 1; i < uploadedFiles.length; i++) {
+          await sendMessageMutation.mutateAsync({
+            sessionId: selectedSessionId,
+            content: `Shared a file: ${uploadedFiles[i].originalName}`,
+            uiCardType: "attachment",
+            uiCardData: uploadedFiles[i],
+          });
+        }
+      } catch (e: any) {
+        alert(e?.message || "Failed to send. Please try again.");
         setProviderUploading(false);
         return;
       }
       setProviderUploading(false);
+      return;
     }
-    // Send text message if any
+
+    // Text-only message
     if (msgText) {
       sendMessageMutation.mutate({ sessionId: selectedSessionId, content: msgText });
     }
@@ -954,9 +975,9 @@ export default function ConversationsPage() {
     }
     const allSessions = parentSessionsQuery.data || [];
     const isProviderThread = (s: ChatSession) =>
-      (s.providerJoinedAt && s.providerName) ||
+      s.providerJoinedAt != null ||
       s.status === "CONSULTATION_BOOKED" ||
-      (s.providerId && s.providerName);
+      s.status === "PROVIDER_JOINED";
     const allEvaConversations = allSessions.filter(s => !isProviderThread(s));
     const sortedEva = [...allEvaConversations].sort((a, b) =>
       new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()
@@ -1274,6 +1295,17 @@ export default function ConversationsPage() {
       if (!parentGroups[key]) parentGroups[key] = [];
       parentGroups[key].push(s);
     });
+
+    // Once a parent has a PROVIDER_JOINED session, hide the anonymous whisper session (no subjectProfileId)
+    // so the provider only sees the actual donor/surrogate sessions in the folder
+    for (const userId of Object.keys(parentGroups)) {
+      const group = parentGroups[userId];
+      const hasJoined = group.some(s => s.status === "PROVIDER_JOINED");
+      if (hasJoined) {
+        const withProfile = group.filter(s => s.subjectProfileId);
+        if (withProfile.length > 0) parentGroups[userId] = withProfile;
+      }
+    }
 
     // Sort groups: most recent first
     const sortedGroupEntries = Object.entries(parentGroups).sort((a, b) => {

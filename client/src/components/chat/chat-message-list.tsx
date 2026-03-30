@@ -120,8 +120,18 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
 
             {/* Message bubble + special card */}
             {(() => {
+              // For attachment messages, strip auto-generated placeholder text so only the card shows
+              const isAttachmentMsg = msg.uiCardType === "attachment";
+              const displayContent = isAttachmentMsg
+                ? (msg.content || "")
+                    .replace(/\s*\[Attached file:[^\]]*\]/gi, "") // strip [Attached file: ...] suffix
+                    .replace(/^(Shared a file:|I've shared a file with you:)[^\n]*/i, "") // strip placeholder lines
+                    .trim()
+                : msg.content;
+              const showBubble = !isAttachmentMsg || displayContent.length > 0;
               return (
                 <>
+                  {showBubble && (
                   <div className={`flex ${own ? "justify-end" : "justify-start"}`}>
                     <div
                       className={`relative max-w-[75%] overflow-hidden px-4 py-2.5 text-base leading-relaxed font-ui ${
@@ -145,7 +155,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                       }}
                       data-testid={`${msgTestIdPrefix}-${i}`}
                     >
-                      <span style={{ whiteSpace: "pre-wrap", overflowWrap: "break-word", wordBreak: "break-word" }}>{msg.content}</span>
+                      <span style={{ whiteSpace: "pre-wrap", overflowWrap: "break-word", wordBreak: "break-word" }}>{displayContent}</span>
                       {msg.createdAt && (
                         <>
                           <span className={`inline-block ${own ? "w-[4.75rem]" : "w-[3.5rem]"}`} aria-hidden="true">&nbsp;</span>
@@ -162,13 +172,22 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                       )}
                     </div>
                   </div>
+                  )}
                   {msg.uiCardType && (
-                    <SpecialMessageCard
-                      msg={msg}
-                      brandColor={brandColor}
-                      viewerRole={viewerRole}
-                      onOpenInlineVideo={onOpenInlineVideo}
-                    />
+                    <div className={`flex flex-col ${own ? "items-end" : "items-start"}`}>
+                      <SpecialMessageCard
+                        msg={msg}
+                        brandColor={brandColor}
+                        viewerRole={viewerRole}
+                        onOpenInlineVideo={onOpenInlineVideo}
+                      />
+                      {!showBubble && msg.createdAt && (
+                        <span className="flex items-center gap-0.5 mt-0.5 px-1" style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55 }}>
+                          {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                          {own && <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </>
               );

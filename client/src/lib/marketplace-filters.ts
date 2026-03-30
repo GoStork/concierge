@@ -1,3 +1,24 @@
+const ETHNICITY_SYNONYMS: Record<string, string[]> = {
+  "white": ["white", "caucasian"],
+  "caucasian": ["caucasian", "white"],
+  "black": ["black", "african american", "african"],
+  "african american": ["african american", "black", "african"],
+  "african": ["african", "black", "african american"],
+  "hispanic": ["hispanic", "latino", "latina"],
+  "latino": ["latino", "latina", "hispanic"],
+  "latina": ["latina", "latino", "hispanic"],
+  "middle eastern": ["middle eastern", "arab", "arabic"],
+  "arab": ["arab", "arabic", "middle eastern"],
+  "mixed": ["mixed", "biracial", "multiracial"],
+  "biracial": ["biracial", "mixed", "multiracial"],
+  "multiracial": ["multiracial", "mixed", "biracial"],
+};
+
+export function resolveEthnicityTerms(val: string): string[] {
+  const lower = val.toLowerCase().trim();
+  return ETHNICITY_SYNONYMS[lower] || [lower];
+}
+
 function extractCountryFromLocation(location: string | null | undefined): string | null {
   if (!location) return null;
   const loc = location.trim();
@@ -118,7 +139,28 @@ export function matchesFilter(donor: any, key: string, values: string[]): boolea
     return ldy >= Number(values[0]);
   }
 
-  const comboKeys = new Set(["ethnicity", "eyeColor", "hairColor", "race", "education"]);
+  if (key === "ethnicity" || key === "race") {
+    // Always check race first (race is the primary field), then ethnicity as fallback
+    const raceVal = (donor.race || "").toString().toLowerCase();
+    const ethVal = (donor.ethnicity || "").toString().toLowerCase();
+    const wordMatch = (haystack: string, needle: string) => {
+      const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`(^|[^a-z])${escaped}($|[^a-z])`).test(haystack);
+    };
+    return values.some((v) => {
+      if (v.includes(" + ")) {
+        const parts = v.split(" + ").map(p => p.trim());
+        return parts.every(p => {
+          const terms = resolveEthnicityTerms(p);
+          return terms.some(t => wordMatch(raceVal, t) || wordMatch(ethVal, t));
+        });
+      }
+      const terms = resolveEthnicityTerms(v);
+      return terms.some(t => wordMatch(raceVal, t) || wordMatch(ethVal, t));
+    });
+  }
+
+  const comboKeys = new Set(["eyeColor", "hairColor", "education"]);
   if (comboKeys.has(key)) {
     const fieldVal = (donor[key] || "").toString().toLowerCase();
     return values.some((v) => {
@@ -154,7 +196,7 @@ export function matchesInternationalRequirement(donor: any, userCountry: string 
 
 export function omniSearch(donor: any, query: string): boolean {
   if (!query) return true;
-  const q = query.toLowerCase();
+  const q = query.toLowerCase().trim();
   const searchableFields = [
     donor.firstName, donor.lastName, donor.location, donor.ethnicity, donor.race,
     donor.education, donor.occupation, donor.religion, donor.externalId,
@@ -163,7 +205,19 @@ export function omniSearch(donor: any, query: string): boolean {
     donor.provider?.name,
     ...(Array.isArray(donor.interests) ? donor.interests : []),
   ];
-  return searchableFields.some((field) => field && String(field).toLowerCase().includes(q));
+  if (searchableFields.some((field) => field && String(field).toLowerCase().includes(q))) return true;
+  // Check ethnicity/race synonyms so "White" matches "Caucasian" donors and vice versa
+  const synonyms = resolveEthnicityTerms(q);
+  if (synonyms.length > 1) {
+    const ethnicity = (donor.ethnicity || "").toLowerCase();
+    const race = (donor.race || "").toLowerCase();
+    const wordMatch = (haystack: string, needle: string) => {
+      const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`(^|[^a-z])${escaped}($|[^a-z])`).test(haystack);
+    };
+    if (synonyms.some(t => wordMatch(ethnicity, t) || wordMatch(race, t))) return true;
+  }
+  return false;
 }
 
 export function parseHeightToInches(h: string | null | undefined): number {

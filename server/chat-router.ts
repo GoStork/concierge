@@ -1,10 +1,28 @@
 import { Router, Request, Response } from "express";
+import multer from "multer";
 import { prisma } from "./db";
 import { generateAgreement } from "./pandadoc-service";
 import { StorageService } from "./src/modules/storage/storage.service";
 import { isUserOnline, getOnlineUserIds } from "./online-tracker";
 
 const storageService = new StorageService();
+
+const ALLOWED_MIME_PREFIXES = ["image/", "application/pdf", "application/msword", "application/vnd.openxmlformats", "text/plain"];
+const BLOCKED_EXTENSIONS = [".html", ".htm", ".svg", ".js", ".mjs", ".jsx", ".ts", ".tsx", ".xml", ".xhtml", ".php", ".sh", ".bat", ".cmd", ".exe"];
+const chatUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 16 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!ALLOWED_MIME_PREFIXES.some(p => file.mimetype.startsWith(p))) {
+      return cb(new Error(`File type ${file.mimetype} not allowed`));
+    }
+    const ext = ("." + file.originalname.split(".").pop()).toLowerCase();
+    if (BLOCKED_EXTENSIONS.includes(ext)) {
+      return cb(new Error(`File extension ${ext} not allowed`));
+    }
+    cb(null, true);
+  },
+});
 
 const PROVIDER_ROLES = ["PROVIDER_ADMIN", "SURROGACY_COORDINATOR", "EGG_DONOR_COORDINATOR", "SPERM_DONOR_COORDINATOR", "IVF_CLINIC_COORDINATOR", "DOCTOR", "BILLING_MANAGER"];
 
@@ -657,6 +675,81 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
       ? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}.`
       : nameParts[0] || provider?.name || "Agency Expert";
 
+    // Check for pending whispers FIRST - if this is a whisper answer (not a joined 3-way session),
+    // the provider's message should be intercepted silently so the AI can relay it naturally.
+    // Only in a PROVIDER_JOINED session should provider messages appear directly in the parent chat.
+    const pendingWhispers = await prisma.silentQuery.findMany({
+      where: { sessionId: session.id, providerId: user.providerId, status: "PENDING" },
+      orderBy: { createdAt: "asc" },
+      take: 1,
+    });
+
+    if (pendingWhispers.length > 0 && !isJoined) {
+      const whisper = pendingWhispers[0];
+      // Silently record the answer - do NOT create a visible provider message in the parent's chat
+      await prisma.silentQuery.update({
+        where: { id: whisper.id },
+        data: { status: "ANSWERED", answerText: content.trim() },
+      });
+
+      // Show the provider their answer + a confirmation so they can see what was sent
+      await prisma.aiChatMessage.create({
+        data: {
+          sessionId: session.id,
+          role: "assistant",
+          content: `You answered: "${content.trim()}"\n\nThis has been relayed to the parent by the AI concierge. Thank you!`,
+          senderType: "system",
+          senderName: "System",
+        },
+      });
+
+      // Look up the matchmaker name for Eva's relay message
+      let matchmakerName = "Eva";
+      if ((session as any).matchmakerId) {
+        const mm = await prisma.matchmaker.findUnique({ where: { id: (session as any).matchmakerId }, select: { name: true } }).catch(() => null);
+        if (mm?.name) matchmakerName = mm.name;
+      }
+
+      // Proactively relay the answer to the parent - inject an AI message directly so the parent
+      // gets the answer immediately without needing to send another message
+      const relayContent = `I heard back from the agency! The answer to your question is: "${content.trim()}"\n\nDoes that help? Do you have any other questions, or would you like to schedule a free consultation call?`;
+      await prisma.aiChatMessage.create({
+        data: {
+          sessionId: session.id,
+          role: "assistant",
+          content: relayContent,
+          senderType: "assistant",
+          senderName: matchmakerName,
+        },
+      });
+
+      // Mark the SilentQuery as RELAYED so the AI router doesn't relay it again on the next parent message
+      await prisma.silentQuery.update({
+        where: { id: whisper.id },
+        data: { status: "RELAYED" },
+      });
+
+      // Notify the parent that they have a new message from Eva
+      const sessionOwnerForNotify = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
+      const notifyUserIds = sessionOwnerForNotify?.parentAccountId
+        ? (await prisma.user.findMany({ where: { parentAccountId: sessionOwnerForNotify.parentAccountId }, select: { id: true } })).map(u => u.id)
+        : [session.userId];
+      for (const notifyId of notifyUserIds) {
+        await prisma.inAppNotification.create({
+          data: {
+            userId: notifyId,
+            eventType: "WHISPER_ANSWERED",
+            payload: {
+              sessionId: session.id,
+              message: `${matchmakerName} has an update for you from the agency.`,
+            },
+          },
+        });
+      }
+
+      return res.json({ success: true, whisperAnswered: true });
+    }
+
     const messageData: any = {
       sessionId: session.id,
       role: "assistant",
@@ -677,18 +770,6 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
     }
 
     const message = await prisma.aiChatMessage.create({ data: messageData });
-
-    const pendingWhispers = await prisma.silentQuery.findMany({
-      where: { sessionId: session.id, providerId: user.providerId, status: "PENDING" },
-      orderBy: { createdAt: "asc" },
-      take: 1,
-    });
-    if (pendingWhispers.length > 0) {
-      await prisma.silentQuery.updateMany({
-        where: { id: { in: pendingWhispers.map(w => w.id) } },
-        data: { status: "ANSWERED", answerText: content.trim() },
-      });
-    }
 
     if (isJoined) {
       const sessionOwner = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
@@ -930,80 +1011,83 @@ chatRouter.post("/api/chat-session/:id/message", requireAuth, async (req, res) =
   }
 });
 
-chatRouter.post("/api/chat-upload", requireAuth, async (req, res) => {
-  const fs = await import("fs");
-  const path = await import("path");
-  const crypto = await import("crypto");
-  const UPLOADS_DIR = path.resolve(process.cwd(), "public/uploads");
-  const MAX_FILE_SIZE = 16 * 1024 * 1024;
-  const ALLOWED_MIME_PREFIXES = ["image/", "application/pdf", "application/msword", "application/vnd.openxmlformats", "text/plain"];
-  const BLOCKED_EXTENSIONS = [".html", ".htm", ".svg", ".js", ".mjs", ".jsx", ".ts", ".tsx", ".xml", ".xhtml", ".php", ".sh", ".bat", ".cmd", ".exe"];
-  const SAFE_EXT_MAP: Record<string, string> = { "application/pdf": ".pdf", "application/msword": ".doc", "text/plain": ".txt" };
-
-  if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-
-  const contentType = req.headers["content-type"] || "";
-  if (!contentType.includes("multipart/form-data")) {
-    return res.status(400).json({ message: "Content-Type must be multipart/form-data" });
-  }
-
-  const boundaryMatch = contentType.match(/boundary=(.+)/);
-  if (!boundaryMatch) return res.status(400).json({ message: "Missing boundary" });
-
-  const chunks: Buffer[] = [];
-  let totalSize = 0;
-
-  req.on("data", (chunk: Buffer) => {
-    totalSize += chunk.length;
-    if (totalSize <= MAX_FILE_SIZE) chunks.push(chunk);
-  });
-
-  req.on("end", async () => {
-    if (totalSize > MAX_FILE_SIZE) return res.status(413).json({ message: "File too large (max 16MB)" });
-
-    const body = Buffer.concat(chunks);
-    const boundary = boundaryMatch![1];
-    const parts = body.toString("binary").split(`--${boundary}`);
-
-    for (const part of parts) {
-      if (part.includes("Content-Disposition") && part.includes("filename=")) {
-        const filenameMatch = part.match(/filename="([^"]+)"/);
-        const contentTypeMatch = part.match(/Content-Type:\s*(.+)/i);
-        const filename = filenameMatch?.[1] || "file";
-        const mimeType = contentTypeMatch?.[1]?.trim() || "application/octet-stream";
-
-        const allowed = ALLOWED_MIME_PREFIXES.some(p => mimeType.startsWith(p));
-        if (!allowed) return res.status(400).json({ message: `File type ${mimeType} not allowed` });
-
-        const headerEnd = part.indexOf("\r\n\r\n");
-        if (headerEnd === -1) continue;
-        const fileData = Buffer.from(part.slice(headerEnd + 4, part.lastIndexOf("\r\n")), "binary");
-
-        const rawExt = path.extname(filename).toLowerCase();
-        if (BLOCKED_EXTENSIONS.includes(rawExt)) return res.status(400).json({ message: `File extension ${rawExt} not allowed` });
-        const ext = SAFE_EXT_MAP[mimeType] || (mimeType.startsWith("image/") ? rawExt || ".bin" : rawExt || ".bin");
-        const hash = crypto.createHash("md5").update(fileData).digest("hex");
-        const storedName = `${hash}${ext}`;
-
-        let url: string;
-        if (storageService.isConfigured()) {
-          url = await storageService.uploadBufferPublic(fileData, `uploads/${storedName}`, mimeType);
-        } else {
-          fs.writeFileSync(path.join(UPLOADS_DIR, storedName), fileData);
-          url = `/uploads/${storedName}`;
-        }
-
-        return res.json({
-          url,
-          originalName: filename,
-          mimeType,
-          size: fileData.length,
-        });
-      }
+chatRouter.post("/api/chat-upload", requireAuth, (req, res, next) => {
+  chatUpload.single("file")(req, res, async (err) => {
+    if (err instanceof multer.MulterError) {
+      return res.status(413).json({ message: err.code === "LIMIT_FILE_SIZE" ? "File too large (max 16MB)" : err.message });
     }
+    if (err) {
+      return res.status(400).json({ message: err.message || "Upload error" });
+    }
+    const file = (req as any).file;
+    if (!file) return res.status(400).json({ message: "No file uploaded" });
 
-    res.status(400).json({ message: "No file found in upload" });
+    try {
+      const path = await import("path");
+      const crypto = await import("crypto");
+      const fs = await import("fs");
+      const SAFE_EXT_MAP: Record<string, string> = { "application/pdf": ".pdf", "application/msword": ".doc", "text/plain": ".txt" };
+      const UPLOADS_DIR = path.resolve(process.cwd(), "public/uploads");
+
+      const rawExt = path.extname(file.originalname).toLowerCase();
+      const ext = SAFE_EXT_MAP[file.mimetype] || (file.mimetype.startsWith("image/") ? rawExt || ".bin" : rawExt || ".bin");
+      const hash = crypto.createHash("md5").update(file.buffer).digest("hex");
+      const storedName = `${hash}${ext}`;
+
+      let url: string;
+      if (storageService.isConfigured()) {
+        url = await storageService.uploadBufferPublic(file.buffer, `uploads/${storedName}`, file.mimetype);
+      } else {
+        if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+        fs.writeFileSync(path.join(UPLOADS_DIR, storedName), file.buffer);
+        url = `/uploads/${storedName}`;
+      }
+
+      return res.json({
+        url,
+        originalName: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
   });
+});
+
+// Public endpoint to fetch a single donor/surrogate profile by type and ID (used by match cards in AI concierge)
+chatRouter.get("/api/marketplace/profile/:type/:id", requireAuth, async (req, res) => {
+  const { type, id } = req.params;
+  const t = (type || "").toLowerCase();
+  try {
+    if (t === "egg-donor" || t === "egg donor") {
+      const donor = await prisma.eggDonor.findUnique({
+        where: { id },
+        include: { provider: { select: { id: true, name: true, logoUrl: true } } },
+      });
+      if (!donor) return res.status(404).json({ message: "Not found" });
+      return res.json(donor);
+    }
+    if (t === "sperm-donor" || t === "sperm donor") {
+      const donor = await prisma.spermDonor.findUnique({
+        where: { id },
+        include: { provider: { select: { id: true, name: true, logoUrl: true } } },
+      });
+      if (!donor) return res.status(404).json({ message: "Not found" });
+      return res.json(donor);
+    }
+    if (t === "surrogate") {
+      const surrogate = await prisma.surrogate.findUnique({
+        where: { id },
+        include: { provider: { select: { id: true, name: true, logoUrl: true } } },
+      });
+      if (!surrogate) return res.status(404).json({ message: "Not found" });
+      return res.json(surrogate);
+    }
+    return res.status(400).json({ message: "Unsupported type" });
+  } catch (e: any) {
+    res.status(500).json({ message: e.message });
+  }
 });
 
 chatRouter.post("/api/agreements/generate", requireAuth, async (req, res) => {

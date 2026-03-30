@@ -49,8 +49,10 @@ export function ChatInputBar({
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
+    // Snapshot to array BEFORE clearing value - Safari/Chrome invalidate FileList on value reset
+    const fileArray = Array.from(files);
     e.target.value = "";
-    setStagedFiles((prev) => [...prev, ...Array.from(files)]);
+    setStagedFiles((prev) => [...prev, ...fileArray]);
   };
 
   const removeStagedFile = (index: number) => {

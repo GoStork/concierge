@@ -18,9 +18,13 @@ Always use Claude Sonnet 4.6 for all coding, planning, and debugging tasks in th
 
 **Preserve tab/view state on navigation:** All tab state in pages must be stored in URL search params (via `useSearchParams` with `{ replace: true }`), Redux, or sub-routes — never in local `useState`. This ensures the browser back button always returns users to the exact tab they were on. Every back button must navigate to the correct page AND tab. Use `navigate(-1)` when the source page varies, or explicit URLs with `?tab=` params when the destination is fixed.
 
+**AI concierge must always use `[[MATCH_CARD]]` when recommending a donor/surrogate — never plain text:** The AI concierge must NEVER recommend or describe a specific donor or surrogate profile using only plain text. Every profile recommendation MUST be accompanied by a `[[MATCH_CARD:DONOR_ID]]` or `[[MATCH_CARD:SURROGATE_ID]]` structured tag so the interactive card renders inline in the chat. Plain-text-only recommendations (e.g., "Donor #1234 is 29 years old...") without a rendered card are forbidden. Add this rule to the AI prompt in `ai-prompt-defaults.ts` AND push it to the DB immediately via Supabase MCP.
+
 **All emails must use `buildBrandedEmail()` — no SendGrid templates:** Every email notification must use the `buildBrandedEmail()` function from `server/src/modules/notifications/email-builder.ts`, which renders brand colors, logo, fonts, and button styles from the Brand Settings page. The `SENDGRID_TEMPLATES` constant has been fully removed — no email should ever use `templateId`/`templateData`. SMS notifications must use Twilio Content Templates (`contentSid` + `contentVars` via `dispatchSmsTemplate`). Never hardcode HTML email bodies or send raw plain-text SMS.
 
 ## System Architecture
+
+**Marketplace Matched Preferences - CRITICAL:** Every active filter that a donor/surrogate satisfies MUST appear in the "Matched X Preferences" tab on their card. The matching logic in `getMatchedPreferences` (swipe-mappers.ts) must mirror `matchesFilter` (marketplace-filters.ts) exactly - including ethnicity/race synonym resolution (e.g., "White" filter matches "Caucasian" donors). Whenever a new filter is added to `matchesFilter`, add the same logic to `getMatchedPreferences` and `attrMap`. Never leave a filter out of Matched Preferences.
 
 **UI/UX Decisions:**
 - Prioritizes full pages; dialogs for destructive actions only.

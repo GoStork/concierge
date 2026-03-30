@@ -505,7 +505,11 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   });
   const totalUnread = useMemo(() => {
     const parentUnread = (chatSessions || []).reduce((sum, s) => sum + (s.unreadCount || 0), 0);
-    const providerUnread = (providerChatSessions || []).reduce((sum, s) => sum + (s.unreadCount || 0), 0);
+    // For providers: count both regular unread messages AND pending whisper questions
+    const providerUnread = (providerChatSessions || []).reduce(
+      (sum, s) => sum + (s.unreadCount || 0) + (s.pendingQuestions || 0),
+      0,
+    );
     return parentUnread + providerUnread;
   }, [chatSessions, providerChatSessions]);
 

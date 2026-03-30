@@ -15,6 +15,16 @@ const prisma = new PrismaClient({ adapter });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const cleanExternalId = (eid: string | null | undefined) => eid ? eid.replace(/^[a-zA-Z]+-/, "") : null;
 
+function parseHeightToInches(h: string | null | undefined): number {
+  if (!h) return 0;
+  const match = h.match(/(\d+)[''′]?\s*(\d+)?/);
+  if (match) return Number(match[1]) * 12 + (Number(match[2]) || 0);
+  const cmMatch = h.match(/([\d.]+)\s*cm/i);
+  if (cmMatch) return Number(cmMatch[1]) / 2.54;
+  return 0;
+}
+
+
 async function generateSearchEmbedding(text: string): Promise<number[] | null> {
   if (!text || !process.env.OPENAI_API_KEY) return null;
   try {
@@ -29,6 +39,27 @@ async function generateSearchEmbedding(text: string): Promise<number[] | null> {
 }
 
 const ALLOWED_TABLES = new Set(["EggDonor", "Surrogate", "SpermDonor", "Provider"]);
+
+const ETHNICITY_SYNONYMS: Record<string, string[]> = {
+  "white": ["white", "caucasian"],
+  "caucasian": ["caucasian", "white"],
+  "black": ["black", "african american", "african"],
+  "african american": ["african american", "black", "african"],
+  "african": ["african", "black", "african american"],
+  "hispanic": ["hispanic", "latino", "latina"],
+  "latino": ["latino", "latina", "hispanic"],
+  "latina": ["latina", "latino", "hispanic"],
+  "middle eastern": ["middle eastern", "arab", "arabic"],
+  "arab": ["arab", "arabic", "middle eastern"],
+  "mixed": ["mixed", "biracial", "multiracial"],
+  "biracial": ["biracial", "mixed", "multiracial"],
+  "multiracial": ["multiracial", "mixed", "biracial"],
+};
+
+function resolveEthnicityTerms(val: string): string[] {
+  const lower = val.toLowerCase().trim();
+  return ETHNICITY_SYNONYMS[lower] || [lower];
+}
 
 async function vectorSearch(
   table: string,
@@ -60,6 +91,59 @@ async function vectorSearch(
   } catch (e) {
     return null;
   }
+}
+
+// Filter-first, rank-second: run vector search scoped to a pre-filtered set of IDs.
+// Guarantees zero false negatives - only ranks within the exact attribute-matched pool.
+async function vectorSearchByIds(
+  table: string,
+  ids: string[],
+  queryText: string,
+  limit: number,
+  selectColumns: string,
+): Promise<any[] | null> {
+  if (!ALLOWED_TABLES.has(table) || ids.length === 0) return null;
+  const embedding = await generateSearchEmbedding(queryText);
+  if (!embedding) return null;
+  const vectorStr = `[${embedding.join(",")}]`;
+  try {
+    const results: any[] = await prisma.$queryRawUnsafe(
+      `SELECT ${selectColumns}, 1 - ("profileEmbedding" <=> $1::vector) as similarity
+       FROM "${table}"
+       WHERE id = ANY($2::uuid[]) AND "profileEmbedding" IS NOT NULL
+       ORDER BY "profileEmbedding" <=> $1::vector
+       LIMIT $3`,
+      vectorStr,
+      ids,
+      limit,
+    );
+    return results.length > 0 ? results : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function buildEthnicityWhere(ethnicityTerms: string[]): any {
+  return { AND: [{ OR: ethnicityTerms.flatMap(t => [
+    { ethnicity: { contains: t, mode: "insensitive" } },
+    { race: { contains: t, mode: "insensitive" } },
+  ]) }] };
+}
+
+// Word-boundary match: prevents "Asian" from matching "Caucasian"
+function wordBoundaryMatch(haystack: string, needle: string): boolean {
+  if (!haystack || !needle) return false;
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z])${escaped}($|[^a-z])`).test(haystack.toLowerCase());
+}
+
+function ethnicityPostFilter(candidates: any[], ethnicityTerms: string[]): any[] {
+  if (!ethnicityTerms.length) return candidates;
+  return candidates.filter(d => {
+    const raceVal = (d.race || "").toLowerCase();
+    const ethVal = (d.ethnicity || "").toLowerCase();
+    return ethnicityTerms.some(t => wordBoundaryMatch(raceVal, t) || wordBoundaryMatch(ethVal, t));
+  });
 }
 
 const server = new Server(
@@ -95,13 +179,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "search_surrogates",
         description:
-          "Search the database for available surrogates using semantic vector search across ALL profile data. Returns real surrogate profiles with their IDs, photos, and attributes. Use the 'query' parameter to search by ANY profile attribute (insurance, health history, pregnancy details, education, personality, etc.). Use the returned IDs in MATCH_CARDs with type 'Surrogate'.",
+          "Search the database for available surrogates. Attribute filters (location, booleans, compensation, ethnicity) use exact database matching - zero false negatives. The optional 'query' parameter adds semantic ranking within the matched pool for soft attributes like personality, insurance, or health history. Use the returned IDs in MATCH_CARDs with type 'Surrogate'.",
         inputSchema: {
           type: "object",
           properties: {
             query: {
               type: "string",
-              description: "Free-text search query matched against the surrogate's FULL profile via semantic vector search. Use this for ANY attribute: insurance type, health conditions, pregnancy history, delivery types, education, occupation, personality traits, motivation, support system, dietary preferences, etc. Examples: 'has medical insurance', 'vaginal delivery history', 'nurse or healthcare worker', 'vegetarian', 'experienced with twins'",
+              description: "Optional semantic ranking query for soft attributes not covered by other filters (e.g. 'has medical insurance', 'vaginal delivery history', 'nurse or healthcare worker', 'vegetarian'). Applied AFTER hard filters to rank results by relevance.",
             },
             agreesToTwins: {
               type: "boolean",
@@ -126,6 +210,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             maxCompensation: {
               type: "number",
               description: "Maximum base compensation in USD",
+            },
+            ethnicity: {
+              type: "string",
+              description: "Filter by ethnicity or race (e.g. 'Hispanic', 'Caucasian', 'Asian', 'Black', 'White'). Checked against both ethnicity and race fields with synonym resolution.",
             },
             limit: {
               type: "number",
@@ -178,25 +266,29 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "search_egg_donors",
         description:
-          "Search the database for available egg donors using semantic vector search across ALL profile data. Returns real donor profiles with their IDs, photos, and attributes. Use the 'query' parameter to search by ANY profile attribute. Use the returned IDs in MATCH_CARDs with type 'Egg Donor'.",
+          "Search the database for available egg donors. Attribute filters (ethnicity, eyeColor, hairColor, height, age, education) use exact database matching - zero false negatives. The optional 'query' parameter adds semantic ranking within the matched pool for soft attributes like personality or hobbies. Use the returned IDs in MATCH_CARDs with type 'Egg Donor'.",
         inputSchema: {
           type: "object",
           properties: {
             query: {
               type: "string",
-              description: "Free-text search query matched against the donor's FULL profile via semantic vector search. Use this for ANY attribute: health history, education details, hobbies, personality, family medical history, etc.",
+              description: "Optional semantic ranking query for soft attributes not covered by other filters (e.g. 'athletic and artistic', 'loves animals', 'warm personality'). Applied AFTER hard filters to rank results by relevance.",
             },
             eyeColor: {
               type: "string",
-              description: "Filter by eye color (e.g. 'Brown', 'Blue', 'Green')",
+              description: "Filter by eye color (e.g. 'Brown', 'Blue', 'Green', 'Light Blue', 'Hazel')",
             },
             hairColor: {
               type: "string",
-              description: "Filter by hair color (e.g. 'Black', 'Brown', 'Blonde')",
+              description: "Filter by hair color (e.g. 'Black', 'Brown', 'Blonde', 'Dark Brown')",
             },
             ethnicity: {
               type: "string",
-              description: "Filter by ethnicity (e.g. 'Caucasian', 'Hispanic', 'Asian')",
+              description: "Filter by ethnicity or race (e.g. 'Caucasian', 'Hispanic', 'Asian', 'Black', 'White'). Checked against both ethnicity and race fields with synonym resolution (White = Caucasian).",
+            },
+            minHeightInches: {
+              type: "number",
+              description: "Minimum height in inches. Examples: 53=4'5\", 60=5'0\", 63=5'3\", 65=5'5\", 66=5'6\", 72=6'0\".",
             },
             maxAge: {
               type: "number",
@@ -204,7 +296,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             education: {
               type: "string",
-              description: "Filter by education level",
+              description: "Filter by education level (e.g. 'Bachelor', 'Master', 'College', 'Graduate')",
+            },
+            isExperienced: {
+              type: "boolean",
+              description: "Filter for donors who have donated before (experienced donors only)",
+            },
+            donationType: {
+              type: "string",
+              description: "Filter by donation type (e.g. 'Fresh', 'Frozen')",
             },
             limit: {
               type: "number",
@@ -221,13 +321,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "search_sperm_donors",
         description:
-          "Search the database for available sperm donors using semantic vector search across ALL profile data. Returns real donor profiles with their IDs, photos, and attributes. Use the 'query' parameter to search by ANY profile attribute. Use the returned IDs in MATCH_CARDs with type 'Sperm Donor'.",
+          "Search the database for available sperm donors. Attribute filters use exact database matching - zero false negatives. The optional 'query' parameter adds semantic ranking within the matched pool for soft attributes like personality or hobbies. Use the returned IDs in MATCH_CARDs with type 'Sperm Donor'.",
         inputSchema: {
           type: "object",
           properties: {
             query: {
               type: "string",
-              description: "Free-text search query matched against the donor's FULL profile via semantic vector search. Use this for ANY attribute: health history, education, hobbies, personality, family medical history, athletic background, etc.",
+              description: "Optional semantic ranking query for soft attributes (e.g. 'athletic', 'artistic', 'medical background'). Applied AFTER hard filters to rank results by relevance.",
             },
             eyeColor: {
               type: "string",
@@ -239,7 +339,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             ethnicity: {
               type: "string",
-              description: "Filter by ethnicity (e.g. 'Caucasian', 'Hispanic', 'Asian')",
+              description: "Filter by ethnicity or race (e.g. 'Caucasian', 'Hispanic', 'Asian', 'Black', 'White'). Checked against both ethnicity and race fields.",
+            },
+            minHeightInches: {
+              type: "number",
+              description: "Minimum height in inches. Examples: 60=5'0\", 63=5'3\", 65=5'5\", 66=5'6\", 72=6'0\". Use when parent specifies a minimum height.",
             },
             maxAge: {
               type: "number",
@@ -251,7 +355,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             height: {
               type: "string",
-              description: "Filter by height",
+              description: "Filter by exact height string (use minHeightInches for minimum height ranges)",
             },
             limit: {
               type: "number",
@@ -430,77 +534,50 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_surrogates") {
-      const { query, agreesToTwins, agreesToAbortion, openToSameSexCouple, isExperienced, location, maxCompensation, limit: rawLimit, excludeIds } = args as any;
+      const { query, agreesToTwins, agreesToAbortion, openToSameSexCouple, isExperienced, location, maxCompensation, ethnicity, limit: rawLimit, excludeIds } = args as any;
       const take = Math.min(rawLimit || 3, 5);
       const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
+      const ethnicityTerms = ethnicity ? resolveEthnicityTerms(ethnicity) : [];
 
-      const queryParts: string[] = ["surrogate carrier"];
-      if (query) queryParts.push(query);
-      if (agreesToTwins) queryParts.push("open to twins");
-      if (agreesToAbortion !== undefined) queryParts.push(agreesToAbortion ? "pro-choice" : "pro-life");
-      if (openToSameSexCouple) queryParts.push("open to same-sex couples LGBTQ friendly");
-      if (isExperienced) queryParts.push("experienced surrogate previous pregnancies");
-      if (location) queryParts.push(`located in ${location}`);
-      const queryText = queryParts.join(", ");
+      const surrogateSelect = {
+        id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
+        baseCompensation: true, agreesToTwins: true, agreesToAbortion: true,
+        agreesToSelectiveReduction: true, openToSameSexCouple: true,
+        isExperienced: true, ethnicity: true, race: true, liveBirths: true,
+        photoUrl: true, religion: true,
+      };
+      const surrogateSelectCols = `id, "providerId", "firstName", "externalId", age, location, "baseCompensation", "agreesToTwins", "agreesToAbortion", "agreesToSelectiveReduction", "openToSameSexCouple", "isExperienced", ethnicity, race, "liveBirths", "photoUrl", religion`;
 
-      const vectorResults = await vectorSearch(
-        "Surrogate", queryText, take * 3,
-        `"hiddenFromSearch" IS NOT TRUE AND status != 'INACTIVE'`,
-        `id, "providerId", "firstName", "externalId", age, location, "baseCompensation", "agreesToTwins", "agreesToAbortion", "agreesToSelectiveReduction", "openToSameSexCouple", "isExperienced", ethnicity, race, "liveBirths", "photoUrl", religion`,
-      );
+      // Phase 1: exact Prisma filter — zero false negatives
+      const where: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
+      if (excludeSet.size > 0) where.id = { notIn: Array.from(excludeSet) };
+      if (agreesToTwins !== undefined) where.agreesToTwins = agreesToTwins;
+      if (agreesToAbortion !== undefined) where.agreesToAbortion = agreesToAbortion;
+      if (openToSameSexCouple !== undefined) where.openToSameSexCouple = openToSameSexCouple;
+      if (isExperienced !== undefined) where.isExperienced = isExperienced;
+      if (location) where.location = { contains: location, mode: "insensitive" };
+      if (maxCompensation) where.baseCompensation = { lte: maxCompensation };
+      if (ethnicity) Object.assign(where, buildEthnicityWhere(ethnicityTerms));
+
+      let candidates: any[] = await prisma.surrogate.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take: take * 8,
+        select: surrogateSelect,
+      });
+      // Word-boundary post-filter: removes false positives like "Caucasian" matching "asian"
+      if (ethnicityTerms.length > 0) candidates = ethnicityPostFilter(candidates, ethnicityTerms);
 
       let surrogates: any[];
-      if (vectorResults && vectorResults.length > 0) {
-        let filtered = vectorResults.filter((s: any) => {
-          if (excludeSet.has(s.id)) return false;
-          if (agreesToTwins !== undefined && s.agreesToTwins !== agreesToTwins) return false;
-          if (agreesToAbortion !== undefined && s.agreesToAbortion !== agreesToAbortion) return false;
-          if (openToSameSexCouple !== undefined && s.openToSameSexCouple !== openToSameSexCouple) return false;
-          if (isExperienced !== undefined && s.isExperienced !== isExperienced) return false;
-          if (maxCompensation && s.baseCompensation && Number(s.baseCompensation) > maxCompensation) return false;
-          if (location && s.location && !s.location.toLowerCase().includes(location.toLowerCase())) return false;
-          return true;
-        });
-        surrogates = filtered.length > 0 ? filtered.slice(0, take) : vectorResults.filter((s: any) => !excludeSet.has(s.id)).slice(0, take);
+      if (candidates.length === 0) {
+        surrogates = [];
+      } else if (!query) {
+        surrogates = candidates.slice(0, take);
       } else {
-        const where: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
-        if (excludeSet.size > 0) where.id = { notIn: Array.from(excludeSet) };
-        if (agreesToTwins !== undefined) where.agreesToTwins = agreesToTwins;
-        if (agreesToAbortion !== undefined) where.agreesToAbortion = agreesToAbortion;
-        if (openToSameSexCouple !== undefined) where.openToSameSexCouple = openToSameSexCouple;
-        if (isExperienced !== undefined) where.isExperienced = isExperienced;
-        if (location) where.location = { contains: location, mode: "insensitive" };
-        if (maxCompensation) where.baseCompensation = { lte: maxCompensation };
-
-        surrogates = await prisma.surrogate.findMany({
-          where,
-          orderBy: { createdAt: "desc" },
-          take,
-          select: {
-            id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
-            baseCompensation: true, agreesToTwins: true, agreesToAbortion: true,
-            agreesToSelectiveReduction: true, openToSameSexCouple: true,
-            isExperienced: true, ethnicity: true, race: true, liveBirths: true,
-            photoUrl: true, religion: true,
-          },
-        });
-
-        if (surrogates.length === 0) {
-          const fallbackWhere: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
-          if (excludeSet.size > 0) fallbackWhere.id = { notIn: Array.from(excludeSet) };
-          surrogates = await prisma.surrogate.findMany({
-            where: fallbackWhere,
-            orderBy: { createdAt: "desc" },
-            take,
-            select: {
-              id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
-              baseCompensation: true, agreesToTwins: true, agreesToAbortion: true,
-              agreesToSelectiveReduction: true, openToSameSexCouple: true,
-              isExperienced: true, ethnicity: true, race: true, liveBirths: true,
-              photoUrl: true, religion: true,
-            },
-          });
-        }
+        // Phase 2: rank exact-match pool by semantic similarity
+        const queryText = ["surrogate carrier", query].join(", ");
+        const ranked = await vectorSearchByIds("Surrogate", candidates.map((s: any) => s.id), queryText, take, surrogateSelectCols);
+        surrogates = ranked ?? candidates.slice(0, take);
       }
 
       const surrogateIds = surrogates.map((s: any) => s.id);
@@ -675,75 +752,59 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_egg_donors") {
-      const { query, eyeColor, hairColor, ethnicity, maxAge, education, limit: rawLimit, excludeIds } = args as any;
+      const { query, eyeColor, hairColor, ethnicity, minHeightInches, maxAge, education, isExperienced, donationType, limit: rawLimit, excludeIds } = args as any;
       const take = Math.min(rawLimit || 3, 5);
       const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
+      const ethnicityTerms = ethnicity ? resolveEthnicityTerms(ethnicity) : [];
 
-      const queryParts: string[] = ["egg donor"];
-      if (query) queryParts.push(query);
-      if (eyeColor) queryParts.push(`${eyeColor} eyes`);
-      if (hairColor) queryParts.push(`${hairColor} hair`);
-      if (ethnicity) queryParts.push(`${ethnicity} ethnicity`);
-      if (education) queryParts.push(`${education} education`);
-      if (maxAge) queryParts.push(`under ${maxAge} years old`);
-      const queryText = queryParts.join(", ");
+      const eggDonorSelect = {
+        id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
+        eyeColor: true, hairColor: true, height: true, weight: true,
+        ethnicity: true, race: true, education: true,
+        donorCompensation: true, eggLotCost: true, totalCost: true,
+        isExperienced: true, photoUrl: true, numberOfEggs: true,
+      };
+      const eggDonorSelectCols = `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, "donorCompensation", "eggLotCost", "totalCost", "isExperienced", "photoUrl", "numberOfEggs"`;
 
-      const vectorResults = await vectorSearch(
-        "EggDonor", queryText, take * 3,
-        `"hiddenFromSearch" IS NOT TRUE AND status != 'INACTIVE'`,
-        `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, "donorCompensation", "eggLotCost", "totalCost", "isExperienced", "photoUrl", "numberOfEggs"`,
-      );
+      // Phase 1: exact Prisma filter — zero false negatives
+      const where: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
+      if (excludeSet.size > 0) where.id = { notIn: Array.from(excludeSet) };
+      if (eyeColor) where.eyeColor = { contains: eyeColor, mode: "insensitive" };
+      if (hairColor) where.hairColor = { contains: hairColor, mode: "insensitive" };
+      if (ethnicity) Object.assign(where, buildEthnicityWhere(ethnicityTerms));
+      if (maxAge) where.age = { lte: maxAge };
+      if (education) where.education = { contains: education, mode: "insensitive" };
+      if (isExperienced) where.isExperienced = true;
+      if (donationType) where.donationTypes = { contains: donationType, mode: "insensitive" };
+
+      // Fetch extra to allow height post-filtering (height is a string field, can't filter in SQL easily)
+      let candidates: any[] = await prisma.eggDonor.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take: minHeightInches ? 60 : take * 4,
+        select: eggDonorSelect,
+      });
+      if (minHeightInches) {
+        candidates = candidates.filter((d: any) => {
+          const inches = parseHeightToInches(d.height);
+          return inches === 0 || inches >= minHeightInches;
+        });
+      }
+      // Word-boundary post-filter: removes false positives like "Caucasian" matching "asian"
+      if (ethnicityTerms.length > 0) candidates = ethnicityPostFilter(candidates, ethnicityTerms);
+      candidates = candidates.slice(0, Math.max(take * 4, 20));
 
       let donors: any[];
-      if (vectorResults && vectorResults.length > 0) {
-        let filtered = vectorResults.filter((d: any) => {
-          if (excludeSet.has(d.id)) return false;
-          if (eyeColor && d.eyeColor && !d.eyeColor.toLowerCase().includes(eyeColor.toLowerCase())) return false;
-          if (hairColor && d.hairColor && !d.hairColor.toLowerCase().includes(hairColor.toLowerCase())) return false;
-          if (ethnicity && d.ethnicity && !d.ethnicity.toLowerCase().includes(ethnicity.toLowerCase())) return false;
-          if (maxAge && d.age && d.age > maxAge) return false;
-          if (education && d.education && !d.education.toLowerCase().includes(education.toLowerCase())) return false;
-          return true;
-        });
-        donors = filtered.length > 0 ? filtered.slice(0, take) : vectorResults.filter((d: any) => !excludeSet.has(d.id)).slice(0, take);
+      if (candidates.length === 0) {
+        donors = [];
+      } else if (!query) {
+        // No semantic query — return Prisma results directly
+        donors = candidates.slice(0, take);
       } else {
-        const where: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
-        if (excludeSet.size > 0) where.id = { notIn: Array.from(excludeSet) };
-        if (eyeColor) where.eyeColor = { contains: eyeColor, mode: "insensitive" };
-        if (hairColor) where.hairColor = { contains: hairColor, mode: "insensitive" };
-        if (ethnicity) where.ethnicity = { contains: ethnicity, mode: "insensitive" };
-        if (maxAge) where.age = { lte: maxAge };
-        if (education) where.education = { contains: education, mode: "insensitive" };
-
-        donors = await prisma.eggDonor.findMany({
-          where,
-          orderBy: { createdAt: "desc" },
-          take,
-          select: {
-            id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
-            eyeColor: true, hairColor: true, height: true, weight: true,
-            ethnicity: true, race: true, education: true,
-            donorCompensation: true, eggLotCost: true, totalCost: true,
-            isExperienced: true, photoUrl: true, numberOfEggs: true,
-          },
-        });
-
-        if (donors.length === 0) {
-          const fallbackWhere: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
-          if (excludeSet.size > 0) fallbackWhere.id = { notIn: Array.from(excludeSet) };
-          donors = await prisma.eggDonor.findMany({
-            where: fallbackWhere,
-            orderBy: { createdAt: "desc" },
-            take,
-            select: {
-              id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
-              eyeColor: true, hairColor: true, height: true, weight: true,
-              ethnicity: true, race: true, education: true,
-              donorCompensation: true, eggLotCost: true, totalCost: true,
-              isExperienced: true, photoUrl: true, numberOfEggs: true,
-            },
-          });
-        }
+        // Phase 2: rank the exact-match pool by semantic similarity
+        const queryText = ["egg donor", query].join(", ");
+        const ranked = await vectorSearchByIds("EggDonor", candidates.map((d: any) => d.id), queryText, take, eggDonorSelectCols);
+        donors = ranked ?? candidates.slice(0, take);
       }
 
       const results = donors.map((d: any) => ({
@@ -757,75 +818,54 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_sperm_donors") {
-      const { query, eyeColor, hairColor, ethnicity, maxAge, education, height, limit: rawLimit, excludeIds } = args as any;
+      const { query, eyeColor, hairColor, ethnicity, minHeightInches, maxAge, education, height, limit: rawLimit, excludeIds } = args as any;
       const take = Math.min(rawLimit || 3, 5);
       const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
+      const ethnicityTerms = ethnicity ? resolveEthnicityTerms(ethnicity) : [];
 
-      const queryParts: string[] = ["sperm donor"];
-      if (query) queryParts.push(query);
-      if (eyeColor) queryParts.push(`${eyeColor} eyes`);
-      if (hairColor) queryParts.push(`${hairColor} hair`);
-      if (ethnicity) queryParts.push(`${ethnicity} ethnicity`);
-      if (education) queryParts.push(`${education} education`);
-      if (height) queryParts.push(`${height} tall`);
-      if (maxAge) queryParts.push(`under ${maxAge} years old`);
-      const queryText = queryParts.join(", ");
+      const spermDonorSelect = {
+        id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
+        eyeColor: true, hairColor: true, height: true, weight: true,
+        ethnicity: true, race: true, education: true,
+        compensation: true, isExperienced: true, photoUrl: true,
+      };
+      const spermDonorSelectCols = `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, compensation, "isExperienced", "photoUrl"`;
 
-      const vectorResults = await vectorSearch(
-        "SpermDonor", queryText, take * 3,
-        `"hiddenFromSearch" IS NOT TRUE AND status != 'INACTIVE'`,
-        `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, compensation, "isExperienced", "photoUrl"`,
-      );
+      // Phase 1: exact Prisma filter — zero false negatives
+      const where: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
+      if (excludeSet.size > 0) where.id = { notIn: Array.from(excludeSet) };
+      if (eyeColor) where.eyeColor = { contains: eyeColor, mode: "insensitive" };
+      if (hairColor) where.hairColor = { contains: hairColor, mode: "insensitive" };
+      if (ethnicity) Object.assign(where, buildEthnicityWhere(ethnicityTerms));
+      if (maxAge) where.age = { lte: maxAge };
+      if (education) where.education = { contains: education, mode: "insensitive" };
+      if (height) where.height = { contains: height, mode: "insensitive" };
+
+      let candidates: any[] = await prisma.spermDonor.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take: minHeightInches ? 60 : take * 4,
+        select: spermDonorSelect,
+      });
+      if (minHeightInches) {
+        candidates = candidates.filter((d: any) => {
+          const inches = parseHeightToInches(d.height);
+          return inches === 0 || inches >= minHeightInches;
+        });
+      }
+      // Word-boundary post-filter: removes false positives like "Caucasian" matching "asian"
+      if (ethnicityTerms.length > 0) candidates = ethnicityPostFilter(candidates, ethnicityTerms);
+      candidates = candidates.slice(0, Math.max(take * 4, 20));
 
       let donors: any[];
-      if (vectorResults && vectorResults.length > 0) {
-        let filtered = vectorResults.filter((d: any) => {
-          if (excludeSet.has(d.id)) return false;
-          if (eyeColor && d.eyeColor && !d.eyeColor.toLowerCase().includes(eyeColor.toLowerCase())) return false;
-          if (hairColor && d.hairColor && !d.hairColor.toLowerCase().includes(hairColor.toLowerCase())) return false;
-          if (ethnicity && d.ethnicity && !d.ethnicity.toLowerCase().includes(ethnicity.toLowerCase())) return false;
-          if (maxAge && d.age && d.age > maxAge) return false;
-          if (education && d.education && !d.education.toLowerCase().includes(education.toLowerCase())) return false;
-          return true;
-        });
-        donors = filtered.length > 0 ? filtered.slice(0, take) : vectorResults.filter((d: any) => !excludeSet.has(d.id)).slice(0, take);
+      if (candidates.length === 0) {
+        donors = [];
+      } else if (!query) {
+        donors = candidates.slice(0, take);
       } else {
-        const where: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
-        if (excludeSet.size > 0) where.id = { notIn: Array.from(excludeSet) };
-        if (eyeColor) where.eyeColor = { contains: eyeColor, mode: "insensitive" };
-        if (hairColor) where.hairColor = { contains: hairColor, mode: "insensitive" };
-        if (ethnicity) where.ethnicity = { contains: ethnicity, mode: "insensitive" };
-        if (maxAge) where.age = { lte: maxAge };
-        if (education) where.education = { contains: education, mode: "insensitive" };
-        if (height) where.height = { contains: height, mode: "insensitive" };
-
-        donors = await prisma.spermDonor.findMany({
-          where,
-          orderBy: { createdAt: "desc" },
-          take,
-          select: {
-            id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
-            eyeColor: true, hairColor: true, height: true, weight: true,
-            ethnicity: true, race: true, education: true,
-            compensation: true, isExperienced: true, photoUrl: true,
-          },
-        });
-
-        if (donors.length === 0) {
-          const fallbackWhere: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
-          if (excludeSet.size > 0) fallbackWhere.id = { notIn: Array.from(excludeSet) };
-          donors = await prisma.spermDonor.findMany({
-            where: fallbackWhere,
-            orderBy: { createdAt: "desc" },
-            take,
-            select: {
-              id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
-              eyeColor: true, hairColor: true, height: true, weight: true,
-              ethnicity: true, race: true, education: true,
-              compensation: true, isExperienced: true, photoUrl: true,
-            },
-          });
-        }
+        const queryText = ["sperm donor", query].join(", ");
+        const ranked = await vectorSearchByIds("SpermDonor", candidates.map((d: any) => d.id), queryText, take, spermDonorSelectCols);
+        donors = ranked ?? candidates.slice(0, take);
       }
 
       const results = donors.map((d: any) => ({
@@ -835,7 +875,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       if (results.length === 0) {
         return {
-          content: [{ type: "text", text: "No sperm donors currently available in the database. Inform the parent that GoStork is actively building its sperm donor network and suggest they check back soon, or offer to connect them with a sperm bank partner." }],
+          content: [{ type: "text", text: "No sperm donors currently available matching those criteria. Inform the parent that GoStork is actively building its sperm donor network and suggest they check back soon, or offer to broaden the search." }],
         };
       }
 
