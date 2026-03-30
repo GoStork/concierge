@@ -844,6 +844,8 @@ function skipIfManual(field: string, value: any, manualFields: string[]): any {
 
 const VALID_IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|heic|svg|bmp|tiff?|avif)/i;
 const TRUSTED_S3_BLOB_HOSTS = /tfc-jms\.s3\.amazonaws\.com|s3\.[a-z0-9-]+\.amazonaws\.com/i;
+// EDC/JMS sites serve photos via dynamic endpoints without file extensions
+const DYNAMIC_PHOTO_PATHS = /DonorPhoto|donorphoto|Photo\/Get|photo\/get|PhotoHandler|photohandler|DonorImage|donorimage|\/Photo\?|\/Image\?/i;
 
 function isValidImageUrl(url: string): boolean {
   if (!url || typeof url !== "string") return false;
@@ -852,8 +854,13 @@ function isValidImageUrl(url: string): boolean {
     if (parsed.pathname.endsWith(".blob") && TRUSTED_S3_BLOB_HOSTS.test(parsed.hostname)) {
       return true;
     }
+    if (DYNAMIC_PHOTO_PATHS.test(parsed.pathname + parsed.search)) {
+      return true;
+    }
     return VALID_IMAGE_EXTENSIONS.test(parsed.pathname);
   } catch {
+    // For relative URLs, check both patterns
+    if (DYNAMIC_PHOTO_PATHS.test(url)) return true;
     return VALID_IMAGE_EXTENSIONS.test(url);
   }
 }
@@ -3006,14 +3013,33 @@ function parseEdcProfilePage(html: string): Record<string, any> {
   }
 
   const photoUrls: string[] = [];
+  // Try multiple patterns for the photo gallery section (may be in td, div, or span multiple elements)
   const photoSection = html.match(
     /id="DonorPhotoGallery"[^>]*>([\s\S]*?)<\/td>/i,
+  ) || html.match(
+    /id="DonorPhotoGallery"[^>]*>([\s\S]*?)<\/div>/i,
+  ) || html.match(
+    /DonorPhotoGallery[\s\S]*?(<img[\s\S]*?)(?:<\/(?:td|div|section)>)/i,
   );
   if (photoSection) {
     const imgRegex = /src="([^"]+)"/g;
     let imgMatch;
     while ((imgMatch = imgRegex.exec(photoSection[1])) !== null) {
-      photoUrls.push(imgMatch[1]);
+      const url = imgMatch[1].replace(/&amp;/g, "&");
+      if (!url.includes("logo") && !url.includes("favicon") && !photoUrls.includes(url)) {
+        photoUrls.push(url);
+      }
+    }
+  }
+  // Also look for photo images in the broader page (donor photos often have distinctive patterns)
+  if (photoUrls.length <= 1) {
+    const donorImgRegex = /<img[^>]*src="([^"]*(?:DonorPhoto|donorphoto|Photo\/Get|photo\/get|PhotoHandler|photohandler|DonorImage|donorimage)[^"]*)"[^>]*>/gi;
+    let dm;
+    while ((dm = donorImgRegex.exec(html)) !== null) {
+      const url = dm[1].replace(/&amp;/g, "&");
+      if (!photoUrls.includes(url)) {
+        photoUrls.push(url);
+      }
     }
   }
   if (photoUrls.length > 0) {
@@ -3185,6 +3211,55 @@ async function fetchEdcDonorProfile(
         }
       } catch (err: any) {
         console.error(`[donor-sync] Failed to fetch profile tab for donor ${hDonorId}: ${err.message}`);
+      }
+
+      // Fetch the Photos tab (separate AJAX partial view)
+      if (!overviewData["All Photos"] || (overviewData["All Photos"] as string[]).length <= 1) {
+        const photoTabEndpoints = [
+          `${origin}/Recipient/_DonorPhotoGalleryHTML?DonorId=${hDonorId}`,
+          `${origin}/Recipient/_DonorPhotosHTML?DonorId=${hDonorId}`,
+        ];
+        for (const photoTabUrl of photoTabEndpoints) {
+          try {
+            const photoTabHtml = await fetchHtml(photoTabUrl, cookies, 15000);
+            if (photoTabHtml && photoTabHtml.length > 100 && !photoTabHtml.includes('type="password"')) {
+              const tabPhotos: string[] = [];
+              const imgRegex = /src="([^"]+\.(?:jpg|jpeg|png|webp|gif)[^"]*)"/gi;
+              let pm;
+              while ((pm = imgRegex.exec(photoTabHtml)) !== null) {
+                const photoUrl = pm[1].replace(/&amp;/g, "&");
+                if (!photoUrl.includes("logo") && !photoUrl.includes("favicon") && !photoUrl.includes("icon") && !tabPhotos.includes(photoUrl)) {
+                  tabPhotos.push(photoUrl);
+                }
+              }
+              // Also match images without standard extensions (EDC may use query-string based image serving)
+              const allImgRegex = /<img[^>]*src="([^"]+)"[^>]*>/gi;
+              while ((pm = allImgRegex.exec(photoTabHtml)) !== null) {
+                const photoUrl = pm[1].replace(/&amp;/g, "&");
+                if (!photoUrl.includes("logo") && !photoUrl.includes("favicon") && !photoUrl.includes("icon")
+                    && !photoUrl.includes(".css") && !photoUrl.includes(".js") && !tabPhotos.includes(photoUrl)) {
+                  tabPhotos.push(photoUrl);
+                }
+              }
+              if (tabPhotos.length > 0) {
+                // Resolve relative URLs to absolute
+                const resolvedPhotos = tabPhotos.map(p => {
+                  try { return new URL(p, origin).href; } catch { return p; }
+                });
+                console.log(`[donor-sync] EDC Photos tab: found ${resolvedPhotos.length} photos for donor ${hDonorId}`);
+                const existingPhotos = (overviewData["All Photos"] as string[]) || [];
+                const mergedPhotos = [...existingPhotos];
+                for (const p of resolvedPhotos) {
+                  if (!mergedPhotos.includes(p)) mergedPhotos.push(p);
+                }
+                overviewData["All Photos"] = mergedPhotos;
+                break; // Found photos, no need to try other endpoints
+              }
+            }
+          } catch (err: any) {
+            // Try next endpoint
+          }
+        }
       }
     }
 
