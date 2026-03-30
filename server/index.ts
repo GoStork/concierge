@@ -225,35 +225,24 @@ async function createSessionStore(): Promise<session.Store> {
     await setupVite(httpServer, app);
   }
 
-  // Auto-seed concierge prompt sections if DB is empty, and sync updated defaults
+  // Auto-seed concierge prompt sections on first run, and add any new sections added in code.
+  // Existing DB sections are NEVER overwritten - admin edits in the UI are preserved across restarts.
   try {
     const db = prismaService.client;
-    const promptCount = await db.conciergePromptSection.count();
     const { getDefaultPromptSections } = await import("./ai-prompt-defaults");
     const sections = getDefaultPromptSections();
-    if (promptCount === 0) {
-      for (const s of sections) {
+    let seeded = 0;
+    for (const s of sections) {
+      const existing = await db.conciergePromptSection.findUnique({ where: { key: s.key } });
+      if (!existing) {
         await db.conciergePromptSection.create({ data: s });
-      }
-      log(`Auto-seeded ${sections.length} concierge prompt sections`);
-    } else {
-      // Sync any sections whose default content has changed
-      for (const s of sections) {
-        const existing = await db.conciergePromptSection.findUnique({ where: { key: s.key } });
-        if (existing && existing.content !== s.content) {
-          await db.conciergePromptSection.update({
-            where: { key: s.key },
-            data: { content: s.content },
-          });
-          log(`Updated concierge prompt section: ${s.key}`);
-        } else if (!existing) {
-          await db.conciergePromptSection.create({ data: s });
-          log(`Added new concierge prompt section: ${s.key}`);
-        }
+        seeded++;
+        log(`Seeded new concierge prompt section: ${s.key}`);
       }
     }
+    if (seeded > 0) log(`Seeded ${seeded} new concierge prompt section(s)`);
   } catch (e: any) {
-    log(`Failed to auto-seed prompts: ${e.message}`);
+    log(`Failed to seed prompts: ${e.message}`);
   }
 
   appReady = true;

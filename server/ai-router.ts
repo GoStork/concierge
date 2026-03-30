@@ -835,7 +835,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         parts.push(partnerInfo + ".");
       }
       parts.push(`Location: ${location}.`);
-      parts.push(`Registered interest in: ${service} (but you MUST still ask them in STEP 5 what services they actually need help finding - do NOT assume from registration).`);
+      parts.push(`Registered interest in: ${service}. Use this to skip Phase 2 biological baseline questions already answered by their service registration (e.g., if they registered for Egg Donor, skip embryo/egg-source/egg-donor-help questions). You MUST still ask in STEP 5 which services they need help finding - do NOT skip STEP 5 based on registration alone.`);
       if (userRecord.dateOfBirth) {
         const age = Math.floor((Date.now() - new Date(userRecord.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
         parts.push(`Age: ${age}.`);
@@ -994,8 +994,9 @@ STEP 5: "Now that I have a clear picture of your family-building journey - do yo
 
 STEP 5 - SERVICE DEEP DIVES (ask deep dive questions for each service that applies, in this order):
   - Ask STEP 5-CLINIC if: the user said they need help finding a clinic in STEP 5 above.
-  - Ask STEP 5-DONOR if: the user said they need help finding a donor in STEP 2a or 3a.
-  - Ask STEP 5-SURROGATE if: the user said they need help finding a surrogate in STEP 4a.
+  - Ask STEP 5-DONOR (egg donor) if: (a) the user said they need help finding an egg donor in STEP 2a, OR (b) the skip directives confirmed the user needs an egg donor (because they said so in chat or registered for it and Step 2a was skipped - treat this as confirmed YES), OR (c) the user confirmed donor eggs in STEP 2 and does NOT already have embryos.
+  - Ask STEP 5-DONOR (sperm donor) if: the user said they need help finding a sperm donor in STEP 3a, OR the skip directives confirmed they need one (because they said so or registered for it and Step 3a was skipped - treat this as confirmed YES).
+  - Ask STEP 5-SURROGATE if: (a) the user said they need help finding a surrogate in STEP 4a, OR (b) the skip directives confirmed the user needs a surrogate (because they said so in chat or registered for it and Step 4a was skipped - treat this as confirmed YES), OR (c) the user is a gay male or single male (who always needs a surrogate).
 
 STEP 5-CLINIC (only if user is looking for a Fertility Clinic - ask ALL of these in order, one per message):
   IMPORTANT: Clinic success rates vary dramatically based on the EGG PROVIDER's age and egg source (own eggs vs donor eggs). You MUST collect this information BEFORE searching for clinics. Without it, you cannot provide accurate, personalized success rate data.
@@ -1519,31 +1520,54 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     const hasSpermDonor = /have.*sperm\s*donor|already.*sperm/i.test(allUserMessages);
     const isGayMale = /gay\s*(couple|man|male|men|dad|father)|two\s*dad|two\s*men|single\s*(man|male|dad|father|guy)/i.test(allUserMessages);
 
+    // Also check profile-registered services - fire skip directives from the very first message
+    // even before the user mentions these services in chat
+    const profileServices: string[] = profile?.interestedServices || [];
+    const profileNeedsEggDonor = profileServices.includes("Egg Donor");
+    const profileNeedsSurrogate = profileServices.includes("Surrogate");
+    const profileNeedsSpermDonor = profileServices.includes("Sperm Donor");
+
+    // Combined signals (chat OR profile)
+    const needsEggDonor = mentionsEggDonor || profileNeedsEggDonor;
+    const alreadyHasEggDonor = hasEggDonor;
+    const needsSurrogate = mentionsSurrogate || profileNeedsSurrogate;
+    const alreadyHasSurrogate = hasSurrogate;
+    const needsSpermDonor = mentionsSpermDonor || profileNeedsSpermDonor;
+    const alreadyHasSpermDonor = hasSpermDonor;
+
     // Embryo question: skip if they need an egg donor (no embryos yet) or are a gay couple needing donor
-    if (mentionsEggDonor || (isGayMale && !(/have.*embryo|frozen\s*embryo|embryos/i.test(allUserMessages)))) {
+    if (needsEggDonor || (isGayMale && !(/have.*embryo|frozen\s*embryo|embryos/i.test(allUserMessages)))) {
       skipDirectives.push("DO NOT ask about frozen embryos (Step 1) - parent needs an egg donor, so they do not have embryos yet.");
     }
-    // Egg source: skip for gay males (always donor) or if they already mentioned egg donor
-    if (isGayMale || mentionsEggDonor || hasEggDonor) {
+    // Egg source: skip for gay males (always donor) or if they need/have an egg donor
+    if (isGayMale || needsEggDonor || alreadyHasEggDonor) {
       skipDirectives.push("DO NOT ask about egg source (Step 2) - already known: using egg donor.");
     }
-    // Help finding egg donor: skip if they said they NEED one or already HAVE one
-    if (mentionsEggDonor && !hasEggDonor) {
-      skipDirectives.push("DO NOT ask if they need help finding an egg donor (Step 2a) - they said they need one, so yes they need help.");
+    // Help finding egg donor: skip if they need one or already have one - and explicitly activate Match Cycle B
+    if (needsEggDonor && !alreadyHasEggDonor) {
+      skipDirectives.push(
+        "DO NOT ask if they need help finding an egg donor (Step 2a) - they already indicated they need an egg donor. " +
+        "Treat this as confirmed: they DO need help finding an egg donor. " +
+        "When you reach Phase 3, you MUST run Match Cycle B (Egg Donor) - ask the egg donor preference question and present egg donor matches."
+      );
     }
-    if (hasEggDonor) {
-      skipDirectives.push("DO NOT ask if they need help finding an egg donor (Step 2a) - they already have one.");
+    if (alreadyHasEggDonor) {
+      skipDirectives.push("DO NOT ask if they need help finding an egg donor (Step 2a) - they already have one. Skip Match Cycle B entirely.");
     }
-    // Carrier: skip for gay males (always surrogate) or if they mentioned surrogate
-    if (isGayMale || mentionsSurrogate || hasSurrogate) {
+    // Carrier: skip for gay males (always surrogate) or if they need/have a surrogate
+    if (isGayMale || needsSurrogate || alreadyHasSurrogate) {
       skipDirectives.push("DO NOT ask about carrier/who will carry (Step 4) - already known: using surrogate.");
     }
-    // Help finding surrogate: skip if they said they NEED one or already HAVE one
-    if (mentionsSurrogate && !hasSurrogate) {
-      skipDirectives.push("DO NOT ask if they need help finding a surrogate (Step 4a) - they said they need one, so yes they need help.");
+    // Help finding surrogate: skip if they need one or already have one - and explicitly activate Match Cycle D
+    if (needsSurrogate && !alreadyHasSurrogate) {
+      skipDirectives.push(
+        "DO NOT ask if they need help finding a surrogate (Step 4a) - they already indicated they need a surrogate. " +
+        "Treat this as confirmed: they DO need help finding a surrogate. " +
+        "When you reach Phase 3, you MUST run Match Cycle D (Surrogate) - ask twins/country/termination questions and present surrogate matches."
+      );
     }
-    if (hasSurrogate) {
-      skipDirectives.push("DO NOT ask if they need help finding a surrogate (Step 4a) - they already have one.");
+    if (alreadyHasSurrogate) {
+      skipDirectives.push("DO NOT ask if they need help finding a surrogate (Step 4a) - they already have one. Skip Match Cycle D entirely.");
     }
     // Clinic
     if (mentionsClinic && !hasClinic) {
@@ -1553,18 +1577,29 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       skipDirectives.push("DO NOT ask if they need help finding a clinic (Step 5) - they already have one.");
     }
     // First IVF question: skip if using donor eggs (success rates don't vary by new vs prior IVF for donor eggs)
-    if (mentionsEggDonor || hasEggDonor || isGayMale) {
-      skipDirectives.push("DO NOT ask if this is their first IVF journey (Match Cycle A, question A4) - they are using donor eggs, so this question is irrelevant for clinic matching.");
+    if (needsEggDonor || alreadyHasEggDonor || isGayMale) {
+      skipDirectives.push("DO NOT ask if this is their first IVF journey (A4 in Match Cycle A / Step 5-CLINIC-D) - they are using donor eggs, so this question is irrelevant for clinic matching.");
     }
-    // Sperm donor
-    if (mentionsSpermDonor && !hasSpermDonor) {
-      skipDirectives.push("DO NOT ask about sperm source (Step 3) or if they need help finding a sperm donor (Step 3a) - they said they need one.");
+    // Age question: skip if using donor eggs (donor egg success rates don't vary by recipient age)
+    if (needsEggDonor || alreadyHasEggDonor || isGayMale) {
+      skipDirectives.push(
+        "DO NOT ask for the parent's age or their partner's age for clinic matching (A1 and A2 in Match Cycle A / Step 5-CLINIC-C) - the parent is using donor eggs. " +
+        "Donor egg success rates do not vary by the recipient's age. Skip both age questions and go directly to A3 (twins) then A5 (priorities)."
+      );
     }
-    if (hasSpermDonor) {
-      skipDirectives.push("DO NOT ask about sperm source (Step 3) or if they need help finding a sperm donor (Step 3a) - they already have one.");
+    // Sperm donor: skip source/help questions and explicitly activate Match Cycle C
+    if (needsSpermDonor && !alreadyHasSpermDonor) {
+      skipDirectives.push(
+        "DO NOT ask about sperm source (Step 3) or if they need help finding a sperm donor (Step 3a) - they already indicated they need a sperm donor. " +
+        "Treat this as confirmed: they DO need help finding a sperm donor. " +
+        "When you reach Phase 3, you MUST run Match Cycle C (Sperm Donor) - ask the ID release and sperm donor preference questions and present sperm donor matches."
+      );
+    }
+    if (alreadyHasSpermDonor) {
+      skipDirectives.push("DO NOT ask about sperm source (Step 3) or if they need help finding a sperm donor (Step 3a) - they already have one. Skip Match Cycle C entirely.");
     }
 
-    console.log(`[SKIP DIRECTIVES] userMessage="${userMessage}", allUserMessages="${allUserMessages.slice(0, 200)}", mentionsClinic=${mentionsClinic}, hasClinic=${hasClinic}, mentionsEggDonor=${mentionsEggDonor}, mentionsSurrogate=${mentionsSurrogate}, isGayMale=${isGayMale}, directives=${JSON.stringify(skipDirectives)}`);
+    console.log(`[SKIP DIRECTIVES] userMessage="${userMessage}", mentionsClinic=${mentionsClinic}, hasClinic=${hasClinic}, mentionsEggDonor=${mentionsEggDonor}, profileNeedsEggDonor=${profileNeedsEggDonor}, needsEggDonor=${needsEggDonor}, mentionsSurrogate=${mentionsSurrogate}, profileNeedsSurrogate=${profileNeedsSurrogate}, mentionsSpermDonor=${mentionsSpermDonor}, profileNeedsSpermDonor=${profileNeedsSpermDonor}, isGayMale=${isGayMale}, directives=${JSON.stringify(skipDirectives)}`);
     const skipRulesPreamble = skipDirectives.length > 0 ? `
 MANDATORY - QUESTIONS YOU MUST NOT ASK (the parent already answered these):
 ${skipDirectives.map(d => "- " + d).join("\n")}
