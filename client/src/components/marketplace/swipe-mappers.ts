@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { getPhotoSrc, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields } from "@/lib/profile-utils";
+import { parseHeightToInches } from "@/lib/marketplace-filters";
 
 export type LayoutType = "matched_bubbles" | "icon_list" | "standard_bubbles";
 
@@ -319,7 +320,7 @@ export function getMatchedPreferences(profile: SwipeDeckProfile, prefs: UserPref
     education: profile.education,
     hairColor: profile.hairColor,
     eyeColor: profile.eyeColor,
-    height: profile.height,
+    height: parseHeightToInches(profile.height) || null,
     bmi: profile.bmi,
     covidVaccinated: profile.covidVaccinated,
     eggType: profile.eggType,
@@ -339,7 +340,7 @@ export function getMatchedPreferences(profile: SwipeDeckProfile, prefs: UserPref
     education: (v) => String(v),
     hairColor: (v) => `${v} Hair`,
     eyeColor: (v) => `${v} Eyes`,
-    height: (v) => String(v),
+    height: (v) => { const ft = Math.floor(Number(v) / 12); const inches = Number(v) % 12; return `Height ${ft}'${inches}"`; },
     bmi: (v) => `BMI ${Math.round(Number(v))}`,
     covidVaccinated: (v) => v ? "COVID Vaccinated" : "Not COVID Vaccinated",
     eggType: (v) => String(v),
@@ -413,7 +414,7 @@ export function getDonorTabs(profile: SwipeDeckProfile, matchedPrefs: MatchedPre
   if (overviewItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Overview", items: overviewItems });
 
   const physicalItems: TabItem[] = [];
-  if (!matchedKeys.has("height") && V(profile.height)) physicalItems.push({ label: V(profile.height)!, value: "", icon: Ruler });
+  if (!matchedKeys.has("height") && V(profile.height)) physicalItems.push({ label: `Height ${V(profile.height)}`, value: "", icon: Ruler });
   if (!matchedKeys.has("weight") && V(profile.weight)) physicalItems.push({ label: V(profile.weight)!, value: "", icon: Scale });
   if (!matchedKeys.has("hairColor") && V(profile.hairColor)) physicalItems.push({ label: `${V(profile.hairColor)} Hair`, value: "" });
   if (!matchedKeys.has("eyeColor") && V(profile.eyeColor)) physicalItems.push({ label: `${V(profile.eyeColor)} Eyes`, value: "" });

@@ -433,7 +433,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange }: {
   }, [filtered?.length, onFilteredCountChange]);
 
   const userPrefs = useMemo(() => {
-    const RANGE_KEYS = new Set(["age", "bmi", "donorCompensation", "maxCost", "baseCompensation", "maxLiveBirths", "maxCSections", "maxMiscarriages", "maxAbortions", "lastDeliveryYear"]);
+    const RANGE_KEYS = new Set(["age", "bmi", "height", "donorCompensation", "maxCost", "baseCompensation", "maxLiveBirths", "maxCSections", "maxMiscarriages", "maxAbortions", "lastDeliveryYear"]);
     const prefs: { key: string; value: string | number | boolean; rangeMin?: number; rangeMax?: number }[] = [];
     for (const [key, vals] of Object.entries(activeFilters)) {
       if (!vals || vals.length === 0) continue;

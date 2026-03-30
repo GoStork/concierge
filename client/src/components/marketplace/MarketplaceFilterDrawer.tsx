@@ -81,6 +81,12 @@ function MultiSelectBubbles({
   );
 }
 
+function formatHeightInches(inches: number): string {
+  const ft = Math.floor(inches / 12);
+  const remaining = inches % 12;
+  return `${ft}'${remaining}"`;
+}
+
 function RangeFilter({
   label,
   filterKey,
@@ -90,6 +96,7 @@ function RangeFilter({
   unit,
   activeFilters,
   dispatch,
+  formatValue,
 }: {
   label: string;
   filterKey: string;
@@ -99,17 +106,19 @@ function RangeFilter({
   unit: string;
   activeFilters: Record<string, string[]>;
   dispatch: ReturnType<typeof useAppDispatch>;
+  formatValue?: (v: number) => string;
 }) {
   const current = activeFilters[filterKey];
   const currentMin = current?.[0] ? Number(current[0]) : min;
   const currentMax = current?.[1] ? Number(current[1]) : max;
+  const fmtVal = formatValue || ((v: number) => unit === "$" ? `$${v.toLocaleString()}` : String(v));
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <Label className="font-ui text-muted-foreground" style={{ fontSize: 'var(--badge-text-size, 13px)' }}>{label}</Label>
         <span className="text-muted-foreground" style={{ fontSize: 'var(--badge-text-size, 13px)' }}>
-          {unit === "$" ? `$${currentMin.toLocaleString()} – $${currentMax.toLocaleString()}` : `${currentMin} – ${currentMax}`}
+          {fmtVal(currentMin)} - {fmtVal(currentMax)}
         </span>
       </div>
       <Slider
@@ -228,6 +237,17 @@ export function MarketplaceFilterDrawer({ open, onClose, providerType, initialTa
                       testIdPrefix="filter-hair"
                     />
                   </FilterSection>
+                  <RangeFilter
+                    label="Height"
+                    filterKey="height"
+                    min={48}
+                    max={84}
+                    step={1}
+                    unit=""
+                    activeFilters={activeFilters}
+                    dispatch={dispatch}
+                    formatValue={formatHeightInches}
+                  />
                 </>
               )}
               {isSurrogate && (

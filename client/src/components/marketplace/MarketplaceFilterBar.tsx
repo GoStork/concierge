@@ -79,7 +79,13 @@ const IVF_HISTORY_OPTIONS = [
   { value: "false", label: "Had prior cycles" },
 ];
 
-const RANGE_FILTER_KEYS = new Set(["age", "bmi", "maxCost", "baseCompensation", "donorCompensation", "maxLiveBirths", "maxCSections", "maxMiscarriages", "maxAbortions", "lastDeliveryYear"]);
+const RANGE_FILTER_KEYS = new Set(["age", "bmi", "height", "maxCost", "baseCompensation", "donorCompensation", "maxLiveBirths", "maxCSections", "maxMiscarriages", "maxAbortions", "lastDeliveryYear"]);
+
+function formatHeightInches(inches: number): string {
+  const ft = Math.floor(inches / 12);
+  const remaining = inches % 12;
+  return `${ft}'${remaining}"`;
+}
 
 const RACE_OPTIONS = ["Asian", "Black", "Hispanic", "White", "Mixed", "Other"];
 const EYE_COLOR_OPTIONS = ["Brown", "Blue", "Green", "Hazel", "Gray", "Amber"];
@@ -124,6 +130,7 @@ const FILTER_DISPLAY_NAMES: Record<string, string> = {
   maxCSections: "Max C-Sections",
   maxMiscarriages: "Max Miscarriages",
   maxAbortions: "Max Abortions",
+  height: "Height",
   lastDeliveryYear: "Last Delivery",
   eggType: "Egg Type",
   location: "Location",
@@ -143,8 +150,12 @@ function formatFilterPills(filters: Record<string, string[]>): { key: string; la
       }
     } else if (RANGE_FILTER_KEYS.has(key)) {
       const [min, max] = vals;
-      const prefix = key === "maxCost" || key === "baseCompensation" || key === "donorCompensation" ? "$" : "";
-      pills.push({ key, label: `${displayName}: ${prefix}${min}–${prefix}${max}` });
+      if (key === "height") {
+        pills.push({ key, label: `${displayName}: ${formatHeightInches(Number(min))}–${formatHeightInches(Number(max))}` });
+      } else {
+        const prefix = key === "maxCost" || key === "baseCompensation" || key === "donorCompensation" ? "$" : "";
+        pills.push({ key, label: `${displayName}: ${prefix}${min}–${prefix}${max}` });
+      }
     } else if (vals.length === 1 && vals[0] === "true") {
       pills.push({ key, label: displayName });
     } else {
@@ -626,7 +637,7 @@ function MobileEducationDrawer({ activeFilters, dispatch, btnStyle, dark }: {
   );
 }
 
-function RangePopover({ label, filterKey, min, max, step, unit, activeFilters, dispatch }: {
+function RangePopover({ label, filterKey, min, max, step, unit, activeFilters, dispatch, formatValue }: {
   label: string;
   filterKey: string;
   min: number;
@@ -635,6 +646,7 @@ function RangePopover({ label, filterKey, min, max, step, unit, activeFilters, d
   unit: string;
   activeFilters: Record<string, string[]>;
   dispatch: any;
+  formatValue?: (v: number) => string;
 }) {
   const current = activeFilters[filterKey];
   const hasValue = current && current.length === 2;
@@ -642,7 +654,7 @@ function RangePopover({ label, filterKey, min, max, step, unit, activeFilters, d
   const currentMax = hasValue ? Number(current[1]) : max;
   const isActive = hasValue && (currentMin !== min || currentMax !== max);
 
-  const formatVal = (v: number) => unit === "$" ? `$${v.toLocaleString()}` : String(v);
+  const formatVal = formatValue || ((v: number) => unit === "$" ? `$${v.toLocaleString()}` : String(v));
 
   return (
     <Popover>
@@ -772,7 +784,7 @@ function ToggleFilterButton({ label, filterKey, activeFilters, dispatch }: {
   );
 }
 
-function ThumbAnchoredRange({ filterKey, min, max, step, unit, currentMin, currentMax, onValueChange }: {
+function ThumbAnchoredRange({ filterKey, min, max, step, unit, currentMin, currentMax, onValueChange, formatValue }: {
   filterKey: string;
   min: number;
   max: number;
@@ -781,10 +793,11 @@ function ThumbAnchoredRange({ filterKey, min, max, step, unit, currentMin, curre
   currentMin: number;
   currentMax: number;
   onValueChange: (vals: number[]) => void;
+  formatValue?: (v: number) => string;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [trackWidth, setTrackWidth] = useState(0);
-  const formatVal = (v: number) => unit === "$" ? `$${v.toLocaleString()}` : String(v);
+  const formatVal = formatValue || ((v: number) => unit === "$" ? `$${v.toLocaleString()}` : String(v));
 
   const measureTrack = useCallback(() => {
     if (trackRef.current) {
@@ -854,7 +867,7 @@ function ThumbAnchoredRange({ filterKey, min, max, step, unit, currentMin, curre
   );
 }
 
-function DrawerRangeSlider({ label, filterKey, min, max, step, unit, activeFilters, dispatch }: {
+function DrawerRangeSlider({ label, filterKey, min, max, step, unit, activeFilters, dispatch, formatValue }: {
   label: string;
   filterKey: string;
   min: number;
@@ -863,6 +876,7 @@ function DrawerRangeSlider({ label, filterKey, min, max, step, unit, activeFilte
   unit: string;
   activeFilters: Record<string, string[]>;
   dispatch: any;
+  formatValue?: (v: number) => string;
 }) {
   const current = activeFilters[filterKey];
   const hasValue = current && current.length === 2;
@@ -884,6 +898,7 @@ function DrawerRangeSlider({ label, filterKey, min, max, step, unit, activeFilte
         onValueChange={(vals) => {
           dispatch(setFilter({ key: filterKey, values: [String(vals[0]), String(vals[1])] }));
         }}
+        formatValue={formatValue}
       />
       {isActive && (
         <Button
@@ -901,7 +916,7 @@ function DrawerRangeSlider({ label, filterKey, min, max, step, unit, activeFilte
   );
 }
 
-function MobileRangeDrawer({ label, filterKey, min, max, step, unit, activeFilters, dispatch, btnStyle, dark }: {
+function MobileRangeDrawer({ label, filterKey, min, max, step, unit, activeFilters, dispatch, btnStyle, dark, formatValue }: {
   label: string;
   filterKey: string;
   min: number;
@@ -912,6 +927,7 @@ function MobileRangeDrawer({ label, filterKey, min, max, step, unit, activeFilte
   dispatch: any;
   btnStyle?: React.CSSProperties;
   dark?: boolean;
+  formatValue?: (v: number) => string;
 }) {
   const [open, setOpen] = useState(false);
   const current = activeFilters[filterKey];
@@ -947,6 +963,7 @@ function MobileRangeDrawer({ label, filterKey, min, max, step, unit, activeFilte
             onValueChange={(vals) => {
               dispatch(setFilter({ key: filterKey, values: [String(vals[0]), String(vals[1])] }));
             }}
+            formatValue={formatValue}
           />
           {isActive && (
             <Button
@@ -1432,6 +1449,7 @@ export function MarketplaceFilterBar({
         <>
           <MobileCustomTagDrawer label="Eye Color" filterKey="eyeColor" options={EYE_COLOR_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-eye" btnStyle={obs} dark={darkLabels} />
           <MobileCustomTagDrawer label="Hair Color" filterKey="hairColor" options={HAIR_COLOR_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-hair" btnStyle={obs} dark={darkLabels} />
+          <MobileRangeDrawer label="Height" filterKey="height" min={48} max={84} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} formatValue={formatHeightInches} />
         </>
       )}
 
@@ -1624,6 +1642,7 @@ export function MarketplaceFilterBar({
         <>
           <CustomTagPopover label="Eye Color" filterKey="eyeColor" options={EYE_COLOR_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-eye" />
           <CustomTagPopover label="Hair Color" filterKey="hairColor" options={HAIR_COLOR_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-hair" />
+          <RangePopover label="Height" filterKey="height" min={48} max={84} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} formatValue={formatHeightInches} />
         </>
       )}
 

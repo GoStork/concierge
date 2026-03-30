@@ -58,6 +58,12 @@ export function matchesFilter(donor: any, key: string, values: string[]): boolea
     const [min, max] = values.map(Number);
     return bmi >= min && bmi <= max;
   }
+  if (key === "height") {
+    const inches = parseHeightToInches(donor.height);
+    if (inches === 0) return true;
+    const [min, max] = values.map(Number);
+    return inches >= min && inches <= max;
+  }
   if (key === "donorCompensation") {
     const comp = Number(donor.donorCompensation || 0);
     const [min, max] = values.map(Number);
