@@ -909,6 +909,7 @@ async function persistSinglePhoto(
   url: string,
   providerId: string,
   storageService: StorageService | null,
+  cookies?: string,
 ): Promise<string> {
   if (!url || isAlreadyPersisted(url)) return url;
 
@@ -934,13 +935,18 @@ async function persistSinglePhoto(
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
+    const fetchHeaders: Record<string, string> = { ...DEFAULT_HEADERS, Accept: "image/*" };
+    if (cookies) fetchHeaders["Cookie"] = cookies;
     const resp = await fetch(url, {
-      headers: { ...DEFAULT_HEADERS, Accept: "image/*" },
+      headers: fetchHeaders,
       signal: controller.signal,
       redirect: "follow",
     });
     clearTimeout(timeout);
-    if (!resp.ok) return url;
+    if (!resp.ok) {
+      console.warn(`[photo-persist] HTTP ${resp.status} fetching photo: ${url.slice(0, 120)}`);
+      return url;
+    }
     const buffer = Buffer.from(await resp.arrayBuffer());
     if (buffer.length < 500 || buffer.length > 20 * 1024 * 1024) return url;
     const ct = guessContentType(buffer);
@@ -971,22 +977,23 @@ async function persistPhotoUrls(
   entity: any,
   providerId: string,
   storageService: StorageService | null,
+  cookies?: string,
 ): Promise<void> {
   if (!storageService?.isConfigured()) return;
   if (entity.photoUrl && !isAlreadyPersisted(entity.photoUrl)) {
-    entity.photoUrl = await persistSinglePhoto(entity.photoUrl, providerId, storageService);
+    entity.photoUrl = await persistSinglePhoto(entity.photoUrl, providerId, storageService, cookies);
   }
   if (Array.isArray(entity.photos)) {
     for (let i = 0; i < entity.photos.length; i++) {
       if (!isAlreadyPersisted(entity.photos[i])) {
-        entity.photos[i] = await persistSinglePhoto(entity.photos[i], providerId, storageService);
+        entity.photos[i] = await persistSinglePhoto(entity.photos[i], providerId, storageService, cookies);
       }
     }
   }
   if (entity.additionalPhotos && Array.isArray(entity.additionalPhotos)) {
     for (let i = 0; i < entity.additionalPhotos.length; i++) {
       if (!isAlreadyPersisted(entity.additionalPhotos[i])) {
-        entity.additionalPhotos[i] = await persistSinglePhoto(entity.additionalPhotos[i], providerId, storageService);
+        entity.additionalPhotos[i] = await persistSinglePhoto(entity.additionalPhotos[i], providerId, storageService, cookies);
       }
     }
   }
@@ -996,7 +1003,7 @@ async function persistPhotoUrls(
       if (Array.isArray(pd[key])) {
         for (let i = 0; i < pd[key].length; i++) {
           if (typeof pd[key][i] === "string" && !isAlreadyPersisted(pd[key][i])) {
-            pd[key][i] = await persistSinglePhoto(pd[key][i], providerId, storageService);
+            pd[key][i] = await persistSinglePhoto(pd[key][i], providerId, storageService, cookies);
           }
         }
       }
@@ -1102,8 +1109,9 @@ async function upsertEggDonor(
   providerId: string,
   donor: any,
   storageService?: StorageService | null,
+  cookies?: string,
 ): Promise<{ isNew: boolean }> {
-  await persistPhotoUrls(donor, providerId, storageService || null);
+  await persistPhotoUrls(donor, providerId, storageService || null, cookies);
   const extId = donor.externalId || `auto-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
   const existing = await prisma.eggDonor.findUnique({
@@ -1258,8 +1266,9 @@ async function upsertSurrogate(
   providerId: string,
   surrogate: any,
   storageService?: StorageService | null,
+  cookies?: string,
 ): Promise<{ isNew: boolean }> {
-  await persistPhotoUrls(surrogate, providerId, storageService || null);
+  await persistPhotoUrls(surrogate, providerId, storageService || null, cookies);
   const extId = surrogate.externalId || `auto-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
   const existing = await prisma.surrogate.findUnique({
@@ -1363,8 +1372,9 @@ async function upsertSpermDonor(
   providerId: string,
   donor: any,
   storageService?: StorageService | null,
+  cookies?: string,
 ): Promise<{ isNew: boolean }> {
-  await persistPhotoUrls(donor, providerId, storageService || null);
+  await persistPhotoUrls(donor, providerId, storageService || null, cookies);
   const extId = donor.externalId || `auto-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
   const existing = await prisma.spermDonor.findUnique({
@@ -1978,7 +1988,11 @@ function parseOrchidJmsCards(html: string, origin: string): any[] {
       const caseId = match[1];
       const card = match[2];
 
-      const imgMatch = card.match(/<img[^>]*src="([^"]*)"[^>]*class="card-image"/);
+      // Match card image regardless of attribute order (src before or after class)
+      const imgMatch = card.match(/<img[^>]*class="card-image"[^>]*src="([^"]*)"/) ||
+                        card.match(/<img[^>]*src="([^"]*)"[^>]*class="card-image"/) ||
+                        card.match(/<img[^>]*class="card-image"[^>]*data-img-src="([^"]*)"/) ||
+                        card.match(/data-img-src="([^"]*)"[^>]*class="card-image"/);
       const photoUrl = imgMatch ? imgMatch[1].replace(/&amp;/g, "&") : null;
 
       const profileUrlMatch = card.match(/href="([^"]*\/profile\/[^/]+\/(\d+))"/);
@@ -2399,17 +2413,41 @@ async function fetchOrchidJmsProfile(
 
     let m;
     const photos: string[] = [];
-    const lazyImgRegex = /data-img-src="([^"]*tfc-jms\.s3[^"]*)"/g;
+    const seenPhotoUrls = new Set<string>();
+    // Match lazy-loaded images from any S3 bucket (not just tfc-jms)
+    const lazyImgRegex = /data-img-src="([^"]*s3[^"]*amazonaws\.com[^"]*)"/g;
     while ((m = lazyImgRegex.exec(html)) !== null) {
       const url = m[1].replace(/&amp;/g, "&");
-      if (!url.includes("logo") && !url.includes("favicon")) {
+      if (!url.includes("logo") && !url.includes("favicon") && !seenPhotoUrls.has(url)) {
+        seenPhotoUrls.add(url);
         photos.push(url);
       }
     }
-    const directImgRegex = /<img[^>]*src="([^"]*tfc-jms\.s3[^"]*)"[^>]*>/g;
+    // Match direct img tags from any S3 bucket
+    const directImgRegex = /<img[^>]*src="([^"]*s3[^"]*amazonaws\.com[^"]*)"[^>]*>/g;
     while ((m = directImgRegex.exec(html)) !== null) {
       const url = m[1].replace(/&amp;/g, "&");
-      if (!url.includes("logo") && !url.includes("favicon") && !photos.includes(url)) photos.push(url);
+      if (!url.includes("logo") && !url.includes("favicon") && !seenPhotoUrls.has(url)) {
+        seenPhotoUrls.add(url);
+        photos.push(url);
+      }
+    }
+    // Also match images from the same o-jms.com origin (some sites serve images directly)
+    const originImgRegex = /(?:data-img-src|src)="([^"]*\.(?:jpg|jpeg|png|webp|gif)[^"]*)"/gi;
+    while ((m = originImgRegex.exec(html)) !== null) {
+      const rawUrl = m[1].replace(/&amp;/g, "&");
+      if (!rawUrl.includes("logo") && !rawUrl.includes("favicon") && !rawUrl.includes("icon") && !seenPhotoUrls.has(rawUrl)) {
+        // Only include URLs that look like profile/donor photos (contain profile paths or image dimensions)
+        try {
+          const resolved = new URL(rawUrl, profileUrl).href;
+          if (!seenPhotoUrls.has(resolved) && isValidImageUrl(resolved)) {
+            seenPhotoUrls.add(resolved);
+            photos.push(resolved);
+          }
+        } catch {
+          // skip malformed URLs
+        }
+      }
     }
     if (photos.length > 0) {
       profile["Photos"] = photos;
@@ -3788,10 +3826,10 @@ async function runSyncJob(
           }
           try {
             const result = job.type === "surrogate"
-              ? await upsertSurrogate(prisma, job.providerId, item, storageService)
+              ? await upsertSurrogate(prisma, job.providerId, item, storageService, sessionCookies)
               : job.type === "sperm-donor"
-              ? await upsertSpermDonor(prisma, job.providerId, item, storageService)
-              : await upsertEggDonor(prisma, job.providerId, item, storageService);
+              ? await upsertSpermDonor(prisma, job.providerId, item, storageService, sessionCookies)
+              : await upsertEggDonor(prisma, job.providerId, item, storageService, sessionCookies);
             job.succeeded++;
             if (result.isNew) job.newProfiles++;
           } catch (err: any) {
@@ -3965,10 +4003,10 @@ async function runSyncJob(
           }
           try {
             const result = job.type === "surrogate"
-              ? await upsertSurrogate(prisma, job.providerId, item, storageService)
+              ? await upsertSurrogate(prisma, job.providerId, item, storageService, sessionCookies)
               : job.type === "sperm-donor"
-              ? await upsertSpermDonor(prisma, job.providerId, item, storageService)
-              : await upsertEggDonor(prisma, job.providerId, item, storageService);
+              ? await upsertSpermDonor(prisma, job.providerId, item, storageService, sessionCookies)
+              : await upsertEggDonor(prisma, job.providerId, item, storageService, sessionCookies);
             job.succeeded++;
             if (result.isNew) job.newProfiles++;
           } catch (err: any) {
@@ -4193,17 +4231,17 @@ async function runSyncJob(
           let isNew = false;
           switch (job.type) {
             case "egg-donor": {
-              const r = await upsertEggDonor(prisma, job.providerId, item, storageService);
+              const r = await upsertEggDonor(prisma, job.providerId, item, storageService, sessionCookies);
               isNew = r.isNew;
               break;
             }
             case "surrogate": {
-              const r = await upsertSurrogate(prisma, job.providerId, item, storageService);
+              const r = await upsertSurrogate(prisma, job.providerId, item, storageService, sessionCookies);
               isNew = r.isNew;
               break;
             }
             case "sperm-donor": {
-              const r = await upsertSpermDonor(prisma, job.providerId, item, storageService);
+              const r = await upsertSpermDonor(prisma, job.providerId, item, storageService, sessionCookies);
               isNew = r.isNew;
               break;
             }
