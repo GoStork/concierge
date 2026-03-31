@@ -158,6 +158,30 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
     }));
+
+    // Enrich profilePhotoUrl for sessions that have a subject profile but no stored photo
+    const needPhoto = result.filter(s => !s.profilePhotoUrl && s.subjectProfileId && s.subjectType);
+    if (needPhoto.length > 0) {
+      const eggIds = needPhoto.filter(s => s.subjectType!.toLowerCase().includes("egg")).map(s => s.subjectProfileId!);
+      const surrogateIds = needPhoto.filter(s => s.subjectType!.toLowerCase().includes("surrogate")).map(s => s.subjectProfileId!);
+      const spermIds = needPhoto.filter(s => s.subjectType!.toLowerCase().includes("sperm")).map(s => s.subjectProfileId!);
+      const [eggDonors, surrogates, spermDonors] = await Promise.all([
+        eggIds.length ? prisma.eggDonor.findMany({ where: { id: { in: eggIds } }, select: { id: true, photos: true, photoUrl: true } }) : [],
+        surrogateIds.length ? prisma.surrogate.findMany({ where: { id: { in: surrogateIds } }, select: { id: true, photos: true, photoUrl: true } }) : [],
+        spermIds.length ? prisma.spermDonor.findMany({ where: { id: { in: spermIds } }, select: { id: true, photos: true, photoUrl: true } }) : [],
+      ]);
+      const photoMap: Record<string, string> = {};
+      for (const p of [...eggDonors, ...surrogates, ...spermDonors]) {
+        const photo = (p.photos && p.photos.length > 0) ? p.photos[0] : p.photoUrl;
+        if (photo) photoMap[p.id] = photo;
+      }
+      for (const s of result) {
+        if (!s.profilePhotoUrl && s.subjectProfileId && photoMap[s.subjectProfileId]) {
+          s.profilePhotoUrl = photoMap[s.subjectProfileId];
+        }
+      }
+    }
+
     res.json(result);
   } catch (e) {
     console.error("My chat sessions error:", e);
@@ -618,6 +642,18 @@ chatRouter.post("/api/provider/concierge-sessions/:id/join", requireAuth, async 
     });
 
     const providerName = session.provider?.name || user.name || "Your matched provider";
+    const profileCardData = (session as any).subjectProfileId && (session as any).subjectType
+      ? {
+          whisperMatchCard: {
+            type: (session as any).subjectType,
+            ownerProviderId: session.providerId,
+            providerId: (session as any).subjectProfileId,
+            reasons: [],
+            photo: (session as any).profilePhotoUrl || undefined,
+            name: session.title || undefined,
+          },
+        }
+      : undefined;
     await prisma.aiChatMessage.create({
       data: {
         sessionId: session.id,
@@ -625,6 +661,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/join", requireAuth, async 
         content: `Exciting news! ${providerName} has joined our conversation. They can now answer your questions directly here.`,
         senderType: "system",
         senderName: "Eva",
+        ...(profileCardData ? { uiCardData: profileCardData } : {}),
       },
     });
 

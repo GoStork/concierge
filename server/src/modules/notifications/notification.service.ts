@@ -41,10 +41,10 @@ const TWILIO_TEMPLATES = {
 };
 
 function getBaseUrl(): string {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
   if (process.env.REPLIT_DEPLOYMENT_URL) return `https://${process.env.REPLIT_DEPLOYMENT_URL}`;
   if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
   if (process.env.REPL_SLUG) return `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
   if (process.env.NODE_ENV === "development") {
     const port = process.env.PORT || 5001;
     return `http://localhost:${port}`;
@@ -1361,7 +1361,7 @@ export class NotificationService implements OnModuleInit {
               "1": getFirstName(isProvider ? booking.providerUser?.name : attendeeName),
               "2": otherPartyName,
               "3": reminderLabel,
-              "4": booking.meetingUrl || `${base}/booking/${booking.publicToken}`,
+              "4": booking.meetingUrl || `${base}/room/${booking.id}`,
             },
           );
         }

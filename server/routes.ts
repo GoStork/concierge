@@ -436,7 +436,7 @@ export async function registerRoutes(
   app.post("/api/consultation/request-callback", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const { providerId, providerName, name, email, message } = req.body;
+      const { providerId, providerName, name, email, message, aiSessionId } = req.body;
       if (!providerId || !name || !email) {
         return res.status(400).json({ message: "Missing required fields" });
       }
@@ -485,6 +485,71 @@ export async function registerRoutes(
         await prisma.intendedParentProfile.update({
           where: { parentAccountId },
           data: { journeyStage: "Consultation Requested" },
+        }).catch(() => {});
+      }
+
+      // Send a follow-up AI message in the parent's chat session
+      let conciergeSessionId = aiSessionId;
+      if (!conciergeSessionId && parentAccountId) {
+        const parentUser = await prisma.user.findFirst({
+          where: { parentAccountId },
+          select: { id: true },
+        }).catch(() => null);
+        if (parentUser) {
+          const session = await prisma.aiChatSession.findFirst({
+            where: { userId: parentUser.id, sessionType: "PARENT", providerId: null },
+            orderBy: { updatedAt: "desc" },
+          }).catch(() => null);
+          conciergeSessionId = session?.id;
+        }
+      }
+
+      if (conciergeSessionId) {
+        const profile = parentAccountId
+          ? await prisma.intendedParentProfile.findUnique({
+              where: { parentAccountId },
+              select: { needsEggDonor: true, needsSurrogate: true, needsClinic: true, interestedServices: true },
+            }).catch(() => null)
+          : null;
+
+        const nextGoals: string[] = [];
+        if (profile?.needsEggDonor) nextGoals.push("finding the right egg donor");
+        if (profile?.needsSurrogate) nextGoals.push("finding the right surrogate");
+        if (profile?.needsClinic) nextGoals.push("finding the right fertility clinic");
+
+        if (nextGoals.length === 0 && profile?.interestedServices?.length) {
+          const svcGoalMap: Record<string, string> = {
+            "Surrogacy Agency": "finding the right surrogate",
+            "Egg Donor Agency": "finding the right egg donor",
+            "Egg Bank": "finding the right egg donor",
+            "Sperm Bank": "finding the right sperm donor",
+            "IVF Clinic": "finding the right fertility clinic",
+          };
+          for (const svc of profile.interestedServices) {
+            const goal = svcGoalMap[svc];
+            if (goal && !nextGoals.includes(goal)) nextGoals.push(goal);
+          }
+        }
+
+        let continueText: string;
+        if (nextGoals.length === 0) {
+          continueText = "Let me know if there's anything else I can help you with on your journey!";
+        } else if (nextGoals.length === 1) {
+          continueText = `Now let's keep going - I'll help you with ${nextGoals[0]}!`;
+        } else {
+          const last = nextGoals[nextGoals.length - 1];
+          const rest = nextGoals.slice(0, -1);
+          continueText = `Now let's keep going - I'll help you with ${rest.join(", ")} and ${last}!`;
+        }
+
+        const providerDisplayName = provider?.name || providerName || "the provider";
+        await prisma.aiChatMessage.create({
+          data: {
+            sessionId: conciergeSessionId,
+            role: "assistant",
+            content: `Your callback request has been sent to ${providerDisplayName}! They'll reach out to you shortly to schedule your consultation.\n\n${continueText}`,
+            senderType: "ai",
+          },
         }).catch(() => {});
       }
 

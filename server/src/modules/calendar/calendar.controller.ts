@@ -273,36 +273,51 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     // Send confirmation message back to the AI concierge chat
     if (body.aiSessionId) {
       const conciergeSessionId = body.aiSessionId;
-      // Determine what the parent was looking for to offer continuing the search
-      const conciergeSession = await this.prisma.aiChatSession.findUnique({
-        where: { id: conciergeSessionId },
-        select: { matchmakerId: true },
-      });
-      let matchmakerName = "your AI concierge";
-      if (conciergeSession?.matchmakerId) {
-        const mm = await this.prisma.matchmaker.findUnique({
-          where: { id: conciergeSession.matchmakerId },
-          select: { name: true },
-        });
-        if (mm?.name) matchmakerName = mm.name;
+
+      // Build next-step goals from the parent's profile flags
+      const parentProfile = parentAccount?.parentAccountId
+        ? await this.prisma.intendedParentProfile.findUnique({
+            where: { parentAccountId: parentAccount.parentAccountId },
+            select: { needsEggDonor: true, needsSurrogate: true, needsClinic: true, interestedServices: true },
+          }).catch(() => null)
+        : null;
+
+      const nextGoals: string[] = [];
+      if (parentProfile?.needsEggDonor) nextGoals.push("finding the right egg donor");
+      if (parentProfile?.needsSurrogate) nextGoals.push("finding the right surrogate");
+      if (parentProfile?.needsClinic) nextGoals.push("finding the right fertility clinic");
+
+      if (nextGoals.length === 0 && parentProfile?.interestedServices?.length) {
+        const svcGoalMap: Record<string, string> = {
+          "Surrogacy Agency": "finding the right surrogate",
+          "Egg Donor Agency": "finding the right egg donor",
+          "Egg Bank": "finding the right egg donor",
+          "Sperm Bank": "finding the right sperm donor",
+          "IVF Clinic": "finding the right fertility clinic",
+          "Legal Services": "finding the right legal support",
+        };
+        for (const svc of parentProfile.interestedServices) {
+          const goal = svcGoalMap[svc];
+          if (goal && !nextGoals.includes(goal)) nextGoals.push(goal);
+        }
       }
-      // Determine what the parent is searching for based on provider type
-      const providerTypeName = provider.services?.[0]?.providerType?.name || "";
-      const serviceGoalMap: Record<string, string> = {
-        "Surrogacy Agency": "finding you the perfect surrogate",
-        "Egg Donor Agency": "finding you the perfect egg donor",
-        "Egg Bank": "finding you the perfect egg donor",
-        "Sperm Bank": "finding you the perfect sperm donor",
-        "IVF Clinic": "finding you the right fertility clinic",
-        "Legal Services": "finding you the right legal support",
-      };
-      const continueGoal = serviceGoalMap[providerTypeName] || "your fertility journey";
+
+      let continueText: string;
+      if (nextGoals.length === 0) {
+        continueText = "Let me know if there's anything else I can help you with on your journey!";
+      } else if (nextGoals.length === 1) {
+        continueText = `Now let's keep going - I'll help you with ${nextGoals[0]}!`;
+      } else {
+        const last = nextGoals[nextGoals.length - 1];
+        const rest = nextGoals.slice(0, -1);
+        continueText = `Now let's keep going - I'll help you with ${rest.join(", ")} and ${last}!`;
+      }
 
       await this.prisma.aiChatMessage.create({
         data: {
           sessionId: conciergeSessionId,
           role: "assistant",
-          content: `Great news! Your consultation with ${provider.name} is all set! I've created a separate chat where you can communicate directly with them - you'll find it in your inbox under "Provider Conversations."\n\nNow, let's continue with ${continueGoal}!`,
+          content: `Great news! Your consultation with ${provider.name} is all set! I've created a separate chat where you can communicate directly with them - you'll find it in your inbox under "Provider Conversations."\n\n${continueText}`,
           senderType: "ai",
         },
       });

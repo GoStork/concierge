@@ -12,9 +12,8 @@ import { SpaFallbackFilter } from "./src/filters/spa-fallback.filter";
 import { PrismaService } from "./src/modules/prisma/prisma.service";
 import { startNightlySyncScheduler } from "./src/modules/providers/nightly-sync.scheduler";
 import { setNestApp } from "./nest-app-ref";
-import { createClient } from "redis";
-import { RedisStore } from "connect-redis";
-import { execSync } from "child_process";
+import pgSession from "connect-pg-simple";
+import { pool } from "./db";
 import path from "path";
 import { aiRouter } from "./ai-router";
 import { chatRouter } from "./chat-router";
@@ -35,69 +34,7 @@ export function log(message: string, source = "nestjs") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
-function ensureLocalRedis() {
-  if (process.env.REDIS_URL) return;
-  try {
-    const result = execSync("redis-cli ping", { timeout: 2000, stdio: ["pipe", "pipe", "pipe"] }).toString().trim();
-    if (result === "PONG") return;
-  } catch {
-    // not running
-  }
-  try {
-    execSync("which redis-server", { timeout: 2000, stdio: ["pipe", "pipe", "pipe"] });
-    log("Starting local Redis server...", "redis");
-    execSync("redis-server --daemonize yes --port 6379 --bind 127.0.0.1 --save '' --appendonly no", { timeout: 5000, stdio: ["pipe", "pipe", "pipe"] });
-    log("Local Redis server started", "redis");
-  } catch {
-    log("redis-server not found, skipping local auto-start", "redis");
-  }
-}
-
-async function createSessionStore(): Promise<session.Store> {
-  const redisUrl = process.env.REDIS_URL;
-
-  // In production without REDIS_URL, skip Redis entirely to avoid startup delay
-  if (!redisUrl && process.env.NODE_ENV === "production") {
-    log("No REDIS_URL configured - using MemoryStore", "redis");
-    return new session.MemoryStore();
-  }
-
-  const url = redisUrl || "redis://127.0.0.1:6379";
-  try {
-    const redisClient = createClient({
-      url,
-      socket: {
-        connectTimeout: 5000,
-        reconnectStrategy: (retries: number) => {
-          if (retries % 20 === 0) {
-            log(`Redis reconnect attempt ${retries}, retrying...`, "redis");
-            if (!redisUrl) {
-              try { ensureLocalRedis(); } catch {}
-            }
-          }
-          return Math.min(retries * 200, 5000);
-        },
-      },
-    });
-    redisClient.on("error", (err: Error) => {
-      if (!err.message.includes("connect ECONNREFUSED")) {
-        log(`Redis error: ${err.message}`, "redis");
-      }
-    });
-    await redisClient.connect();
-    log("Redis connected - using Redis session store", "redis");
-    return new RedisStore({ client: redisClient, prefix: "gostork:sess:" });
-  } catch (err: any) {
-    log(`Redis unavailable (${err.message}) - falling back to MemoryStore`, "redis");
-    return new session.MemoryStore();
-  }
-}
-
 (async () => {
-  if (process.env.NODE_ENV !== "production") {
-    ensureLocalRedis();
-  }
-
   const app = express();
   const httpServer = createServer(app);
 
@@ -130,13 +67,11 @@ async function createSessionStore(): Promise<session.Store> {
   const uploadsPath = path.resolve(process.cwd(), "public/uploads");
   app.use("/uploads", express.static(uploadsPath));
 
-  const sessionStore = await createSessionStore();
-
   const sessionMiddleware = session({
     secret: process.env.SESSION_SECRET || "r3pl1t_s3cr3t_k3y_g0st0rk",
     resave: false,
     saveUninitialized: false,
-    store: sessionStore,
+    store: new (pgSession(session))({ pool, createTableIfMissing: true }),
     cookie: {
       secure: process.env.NODE_ENV === "production",
       maxAge: 1000 * 60 * 60 * 24 * 7,

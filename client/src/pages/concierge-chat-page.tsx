@@ -1192,12 +1192,14 @@ function BookingOverlay({
   userEmail,
   userName,
   onClose,
+  onCallbackSubmitted,
 }: {
   card: ConsultationCardData;
   brandColor: string;
   userEmail: string;
   userName: string;
   onClose: () => void;
+  onCallbackSubmitted?: () => void;
 }) {
   const [callbackName, setCallbackName] = useState(userName);
   const [callbackEmail, setCallbackEmail] = useState(userEmail);
@@ -1225,6 +1227,7 @@ function BookingOverlay({
           name: callbackName,
           email: callbackEmail,
           message: callbackMessage,
+          aiSessionId: card.aiSessionId,
         }),
       });
       if (!res.ok) {
@@ -1233,6 +1236,7 @@ function BookingOverlay({
         return;
       }
       setSubmitted(true);
+      onCallbackSubmitted?.();
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -3102,6 +3106,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           userEmail={(user as any)?.email || ""}
           userName={(user as any)?.name || ""}
           onClose={() => setBookingCard(null)}
+          onCallbackSubmitted={() => {
+            if (sessionId) loadMessagesForSession(sessionId);
+          }}
         />
       )}
       {inlineVideoBookingId && (

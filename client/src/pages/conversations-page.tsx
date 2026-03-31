@@ -1196,7 +1196,7 @@ export default function ConversationsPage() {
               {parentHeaderName}
             </h2>
             {selectedParentSession!.title && selectedParentSession!.providerId && (
-              <p className="text-[11px] font-ui text-muted-foreground truncate" data-testid="parent-chat-subject-label">
+              <p className="text-[13px] font-ui text-muted-foreground truncate" data-testid="parent-chat-subject-label">
                 Subject: {selectedParentSession!.title}
               </p>
             )}
@@ -1552,7 +1552,7 @@ export default function ConversationsPage() {
             <div className="min-w-0">
               <h3 className="font-semibold text-sm font-ui">{detail.user.name || "Prospective Parent"}</h3>
               {detail.title ? (
-                <p className="text-[11px] font-ui text-muted-foreground truncate" data-testid="provider-subject-label">
+                <p className="text-[13px] font-ui text-muted-foreground truncate" data-testid="provider-subject-label">
                   Subject: {detail.title}
                 </p>
               ) : !hasJoined && !isConsultationBooked ? (
