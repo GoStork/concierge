@@ -182,6 +182,41 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       }
     }
 
+    // Fallback: sessions with no subjectProfileId but title like "Donor #1234" or "Surrogate #1234"
+    const titleNeedPhoto = result.filter(s => !s.profilePhotoUrl && !s.subjectProfileId);
+    if (titleNeedPhoto.length > 0) {
+      const eggTitleSessions = titleNeedPhoto.filter(s => /donor\s*#?\s*(\d+)/i.test(s.title || ""));
+      const surrogateTitleSessions = titleNeedPhoto.filter(s => /surrogate\s*#?\s*(\d+)/i.test(s.title || ""));
+      const spermTitleSessions = titleNeedPhoto.filter(s => /sperm\s*#?\s*(\d+)/i.test(s.title || ""));
+      const extractExternalId = (title: string, pattern: RegExp) => (title.match(pattern) || [])[1] || null;
+      const eggExternalIds = eggTitleSessions.map(s => extractExternalId(s.title || "", /donor\s*#?\s*(\d+)/i)).filter(Boolean) as string[];
+      const surrogateExternalIds = surrogateTitleSessions.map(s => extractExternalId(s.title || "", /surrogate\s*#?\s*(\d+)/i)).filter(Boolean) as string[];
+      const spermExternalIds = spermTitleSessions.map(s => extractExternalId(s.title || "", /sperm\s*#?\s*(\d+)/i)).filter(Boolean) as string[];
+      const [eggByExt, surrogateByExt, spermByExt] = await Promise.all([
+        eggExternalIds.length ? prisma.eggDonor.findMany({ where: { externalId: { in: eggExternalIds } }, select: { id: true, externalId: true, photos: true, photoUrl: true } }) : [],
+        surrogateExternalIds.length ? prisma.surrogate.findMany({ where: { externalId: { in: surrogateExternalIds } }, select: { id: true, externalId: true, photos: true, photoUrl: true } }) : [],
+        spermExternalIds.length ? prisma.spermDonor.findMany({ where: { externalId: { in: spermExternalIds } }, select: { id: true, externalId: true, photos: true, photoUrl: true } }) : [],
+      ]);
+      const extPhotoMap: Record<string, { uuid: string; photo: string }> = {};
+      for (const p of [...eggByExt, ...surrogateByExt, ...spermByExt]) {
+        if (!p.externalId) continue;
+        const photo = (p.photos && p.photos.length > 0) ? p.photos[0] : p.photoUrl;
+        if (photo) extPhotoMap[p.externalId] = { uuid: p.id, photo };
+      }
+      for (const s of result) {
+        if (s.profilePhotoUrl || s.subjectProfileId) continue;
+        const title = s.title || "";
+        const eggMatch = title.match(/donor\s*#?\s*(\d+)/i);
+        const surrogateMatch = title.match(/surrogate\s*#?\s*(\d+)/i);
+        const spermMatch = title.match(/sperm\s*#?\s*(\d+)/i);
+        const extId = (eggMatch || surrogateMatch || spermMatch)?.[1];
+        if (extId && extPhotoMap[extId]) {
+          s.profilePhotoUrl = extPhotoMap[extId].photo;
+          s.subjectProfileId = extPhotoMap[extId].uuid;
+        }
+      }
+    }
+
     res.json(result);
   } catch (e) {
     console.error("My chat sessions error:", e);
@@ -538,6 +573,38 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       if (b.pendingQuestions > 0 && a.pendingQuestions === 0) return 1;
       return 0;
     });
+
+    // Fallback: sessions with no subjectProfileId but title like "Donor #1234" or "Surrogate #1234"
+    const titleNeedPhoto = result.filter(s => !s.profilePhotoUrl && !s.subjectProfileId);
+    if (titleNeedPhoto.length > 0) {
+      const eggTitleSessions = titleNeedPhoto.filter(s => /donor\s*#?\s*(\d+)/i.test(s.title || ""));
+      const surrogateTitleSessions = titleNeedPhoto.filter(s => /surrogate\s*#?\s*(\d+)/i.test(s.title || ""));
+      const spermTitleSessions = titleNeedPhoto.filter(s => /sperm\s*#?\s*(\d+)/i.test(s.title || ""));
+      const extractExtId = (title: string, pattern: RegExp) => (title.match(pattern) || [])[1] || null;
+      const eggExtIds = eggTitleSessions.map(s => extractExtId(s.title || "", /donor\s*#?\s*(\d+)/i)).filter(Boolean) as string[];
+      const surrogateExtIds = surrogateTitleSessions.map(s => extractExtId(s.title || "", /surrogate\s*#?\s*(\d+)/i)).filter(Boolean) as string[];
+      const spermExtIds = spermTitleSessions.map(s => extractExtId(s.title || "", /sperm\s*#?\s*(\d+)/i)).filter(Boolean) as string[];
+      const [eggByExt, surrogateByExt, spermByExt] = await Promise.all([
+        eggExtIds.length ? prisma.eggDonor.findMany({ where: { externalId: { in: eggExtIds } }, select: { id: true, externalId: true, photos: true, photoUrl: true } }) : [],
+        surrogateExtIds.length ? prisma.surrogate.findMany({ where: { externalId: { in: surrogateExtIds } }, select: { id: true, externalId: true, photos: true, photoUrl: true } }) : [],
+        spermExtIds.length ? prisma.spermDonor.findMany({ where: { externalId: { in: spermExtIds } }, select: { id: true, externalId: true, photos: true, photoUrl: true } }) : [],
+      ]);
+      const extPhotoMap: Record<string, string> = {};
+      for (const p of [...eggByExt, ...surrogateByExt, ...spermByExt]) {
+        if (!p.externalId) continue;
+        const photo = (p.photos && p.photos.length > 0) ? p.photos[0] : p.photoUrl;
+        if (photo) extPhotoMap[p.externalId] = photo;
+      }
+      for (const s of result) {
+        if (s.profilePhotoUrl || s.subjectProfileId) continue;
+        const title = s.title || "";
+        const match = title.match(/(?:donor|surrogate|sperm)\s*#?\s*(\d+)/i);
+        if (match?.[1] && extPhotoMap[match[1]]) {
+          s.profilePhotoUrl = extPhotoMap[match[1]];
+        }
+      }
+    }
+
     res.json(result);
   } catch (e: any) {
     console.error("Provider concierge sessions error:", e);

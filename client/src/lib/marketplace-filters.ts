@@ -1,3 +1,47 @@
+const STATE_ABBREV_MAP: Record<string, string> = {
+  AL:"Alabama",AK:"Alaska",AZ:"Arizona",AR:"Arkansas",CA:"California",CO:"Colorado",
+  CT:"Connecticut",DE:"Delaware",FL:"Florida",GA:"Georgia",HI:"Hawaii",ID:"Idaho",
+  IL:"Illinois",IN:"Indiana",IA:"Iowa",KS:"Kansas",KY:"Kentucky",LA:"Louisiana",
+  ME:"Maine",MD:"Maryland",MA:"Massachusetts",MI:"Michigan",MN:"Minnesota",
+  MS:"Mississippi",MO:"Missouri",MT:"Montana",NE:"Nebraska",NV:"Nevada",
+  NH:"New Hampshire",NJ:"New Jersey",NM:"New Mexico",NY:"New York",
+  NC:"North Carolina",ND:"North Dakota",OH:"Ohio",OK:"Oklahoma",OR:"Oregon",
+  PA:"Pennsylvania",RI:"Rhode Island",SC:"South Carolina",SD:"South Dakota",
+  TN:"Tennessee",TX:"Texas",UT:"Utah",VT:"Vermont",VA:"Virginia",WA:"Washington",
+  WV:"West Virginia",WI:"Wisconsin",WY:"Wyoming",DC:"District of Columbia",
+};
+const STATE_FULL_TO_ABBREV: Record<string, string> = Object.fromEntries(
+  Object.entries(STATE_ABBREV_MAP).map(([k, v]) => [v.toLowerCase(), k])
+);
+const LOCATION_SYNONYMS: Record<string, string[]> = {
+  "united states": ["united states","usa","us","u.s.","u.s.a.","united states of america","america"],
+  "mexico":        ["mexico","méxico"],
+  "colombia":      ["colombia"],
+  "taiwan":        ["taiwan","taiwan (r.o.c.)","台灣"],
+  "canada":        ["canada"],
+  "united kingdom":["united kingdom","uk","great britain","england","scotland","wales"],
+  "cyprus":        ["cyprus"],
+  "israel":        ["israel"],
+  "australia":     ["australia"],
+  "germany":       ["germany","deutschland"],
+  "spain":         ["spain","españa"],
+  "greece":        ["greece"],
+  "ukraine":       ["ukraine"],
+  "czech republic":["czech republic","czechia"],
+};
+function resolveLocationTerms(input: string): string[] {
+  if (!input) return [];
+  const trimmed = input.trim();
+  const lower = trimmed.toLowerCase();
+  for (const synonyms of Object.values(LOCATION_SYNONYMS)) {
+    if (synonyms.includes(lower)) return synonyms;
+  }
+  const upper = trimmed.toUpperCase();
+  if (STATE_ABBREV_MAP[upper]) return [upper, STATE_ABBREV_MAP[upper]];
+  if (STATE_FULL_TO_ABBREV[lower]) return [trimmed, STATE_FULL_TO_ABBREV[lower]];
+  return [trimmed];
+}
+
 const ETHNICITY_SYNONYMS: Record<string, string[]> = {
   "white": ["white", "caucasian"],
   "caucasian": ["caucasian", "white"],
@@ -62,6 +106,30 @@ function countriesMatch(c1: string | null | undefined, c2: string | null | undef
     return n;
   };
   return normalize(c1) === normalize(c2);
+}
+
+function extractFromSections(profileData: any, fieldName: string): string | null {
+  if (!profileData) return null;
+  const sections = profileData?._sections;
+  if (!sections || typeof sections !== "object") return null;
+  for (const section of Object.values(sections)) {
+    if (typeof section === "object" && section && !Array.isArray(section) && (section as any)[fieldName]) {
+      return String((section as any)[fieldName]);
+    }
+  }
+  return null;
+}
+
+function resolveLocationValue(donor: any): string {
+  if (donor.location) return donor.location;
+  const pd = donor.profileData || {};
+  return (
+    pd["Location"] ||
+    pd["Place of Birth"] ||
+    extractFromSections(pd, "Location") ||
+    extractFromSections(pd, "Place of Birth") ||
+    ""
+  );
 }
 
 export function matchesFilter(donor: any, key: string, values: string[]): boolean {
@@ -139,6 +207,15 @@ export function matchesFilter(donor: any, key: string, values: string[]): boolea
     return ldy >= Number(values[0]);
   }
 
+  if (key === "location") {
+    const locationVal = resolveLocationValue(donor).toLowerCase();
+    if (!locationVal) return false;
+    return values.some(v => {
+      const terms = resolveLocationTerms(v);
+      return terms.some(t => locationVal.includes(t.toLowerCase()));
+    });
+  }
+
   if (key === "ethnicity" || key === "race") {
     // Always check race first (race is the primary field), then ethnicity as fallback
     const raceVal = (donor.race || "").toString().toLowerCase();
@@ -198,7 +275,7 @@ export function omniSearch(donor: any, query: string): boolean {
   if (!query) return true;
   const q = query.toLowerCase().trim();
   const searchableFields = [
-    donor.firstName, donor.lastName, donor.location, donor.ethnicity, donor.race,
+    donor.firstName, donor.lastName, resolveLocationValue(donor), donor.ethnicity, donor.race,
     donor.education, donor.occupation, donor.religion, donor.externalId,
     donor.bloodType, donor.eyeColor, donor.hairColor, donor.relationshipStatus,
     donor.donorType, donor.eggType,

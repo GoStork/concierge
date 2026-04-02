@@ -1,4 +1,4 @@
-import { forwardRef, type ReactNode } from "react";
+import { forwardRef, type ReactNode, Fragment } from "react";
 import { MessageStatus } from "@/components/ui/message-status";
 import { chatDateLabel } from "./chat-utils";
 import { WhisperProfileCard } from "./whisper-profile-card";
@@ -22,6 +22,23 @@ interface ChatMessageListProps {
   onBookingUpdate?: () => void;
   /** Test-ID prefix for message bubbles (default: "provider-msg") */
   msgTestIdPrefix?: string;
+}
+
+/** Renders a chat message with **bold** and line break support. */
+function renderMessageContent(text: string): ReactNode {
+  return text.split("\n").map((line, li) => {
+    const parts = line.split(/(\*\*[^*]+\*\*)/g);
+    return (
+      <Fragment key={li}>
+        {li > 0 && <br />}
+        {parts.map((part, pi) =>
+          part.startsWith("**") && part.endsWith("**")
+            ? <strong key={pi}>{part.slice(2, -2)}</strong>
+            : <Fragment key={pi}>{part}</Fragment>
+        )}
+      </Fragment>
+    );
+  });
 }
 
 /**
@@ -155,7 +172,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                       }}
                       data-testid={`${msgTestIdPrefix}-${i}`}
                     >
-                      <span style={{ whiteSpace: "pre-wrap", overflowWrap: "break-word", wordBreak: "break-word" }}>{displayContent}</span>
+                      <span style={{ overflowWrap: "break-word", wordBreak: "break-word" }}>{renderMessageContent(displayContent)}</span>
                       {msg.createdAt && (
                         <>
                           <span className={`inline-block ${own ? "w-[4.75rem]" : "w-[3.5rem]"}`} aria-hidden="true">&nbsp;</span>

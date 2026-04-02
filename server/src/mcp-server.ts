@@ -130,6 +130,79 @@ function buildEthnicityWhere(ethnicityTerms: string[]): any {
   ]) }] };
 }
 
+// Shared location resolution - maps any input to all synonymous search terms.
+// "TX" → ["TX","Texas"], "Texas" → ["Texas","TX"], "USA" → ["usa","united states",...]
+// City or unknown input → [input] (search as-is)
+const STATE_ABBREV_MAP: Record<string, string> = {
+  AL:"Alabama",AK:"Alaska",AZ:"Arizona",AR:"Arkansas",CA:"California",CO:"Colorado",
+  CT:"Connecticut",DE:"Delaware",FL:"Florida",GA:"Georgia",HI:"Hawaii",ID:"Idaho",
+  IL:"Illinois",IN:"Indiana",IA:"Iowa",KS:"Kansas",KY:"Kentucky",LA:"Louisiana",
+  ME:"Maine",MD:"Maryland",MA:"Massachusetts",MI:"Michigan",MN:"Minnesota",
+  MS:"Mississippi",MO:"Missouri",MT:"Montana",NE:"Nebraska",NV:"Nevada",
+  NH:"New Hampshire",NJ:"New Jersey",NM:"New Mexico",NY:"New York",
+  NC:"North Carolina",ND:"North Dakota",OH:"Ohio",OK:"Oklahoma",OR:"Oregon",
+  PA:"Pennsylvania",RI:"Rhode Island",SC:"South Carolina",SD:"South Dakota",
+  TN:"Tennessee",TX:"Texas",UT:"Utah",VT:"Vermont",VA:"Virginia",WA:"Washington",
+  WV:"West Virginia",WI:"Wisconsin",WY:"Wyoming",DC:"District of Columbia",
+};
+const STATE_FULL_TO_ABBREV: Record<string, string> = Object.fromEntries(
+  Object.entries(STATE_ABBREV_MAP).map(([k, v]) => [v.toLowerCase(), k])
+);
+const LOCATION_SYNONYMS: Record<string, string[]> = {
+  "united states": ["united states","usa","us","u.s.","u.s.a.","united states of america","america"],
+  "mexico":        ["mexico","méxico"],
+  "colombia":      ["colombia"],
+  "taiwan":        ["taiwan","taiwan (r.o.c.)","台灣"],
+  "canada":        ["canada"],
+  "united kingdom":["united kingdom","uk","great britain","england","scotland","wales"],
+  "cyprus":        ["cyprus"],
+  "israel":        ["israel"],
+  "australia":     ["australia"],
+  "germany":       ["germany","deutschland"],
+  "spain":         ["spain","españa"],
+  "greece":        ["greece"],
+  "ukraine":       ["ukraine"],
+  "czech republic":["czech republic","czechia"],
+};
+function resolveLocationTerms(location: string): string[] {
+  if (!location) return [];
+  const trimmed = location.trim();
+  const lower = trimmed.toLowerCase();
+  for (const synonyms of Object.values(LOCATION_SYNONYMS)) {
+    if (synonyms.includes(lower)) return synonyms;
+  }
+  const upper = trimmed.toUpperCase();
+  if (STATE_ABBREV_MAP[upper]) return [upper, STATE_ABBREV_MAP[upper]];
+  if (STATE_FULL_TO_ABBREV[lower]) return [trimmed, STATE_FULL_TO_ABBREV[lower]];
+  return [trimmed];
+}
+const USA_SYNONYMS = new Set(["united states","usa","us","u.s.","u.s.a.","united states of america","america"]);
+// Build Prisma OR clause for a flat `location` text field (surrogates, egg donors, sperm donors)
+function buildLocationWhere(location: string): any {
+  const terms = resolveLocationTerms(location);
+  if (!terms.length) return {};
+  // Special case: USA query - surrogate/donor locations store "City, State" not "USA".
+  // Match any record whose location contains a US state name or abbreviation.
+  if (terms.some(t => USA_SYNONYMS.has(t.toLowerCase()))) {
+    const stateTerms = [
+      ...Object.keys(STATE_ABBREV_MAP),   // "TX", "CA", etc.
+      ...Object.values(STATE_ABBREV_MAP),  // "Texas", "California", etc.
+    ];
+    return { OR: stateTerms.map(s => ({ location: { contains: s, mode: "insensitive" } })) };
+  }
+  if (terms.length === 1) return { location: { contains: terms[0], mode: "insensitive" } };
+  return { OR: terms.map(t => ({ location: { contains: t, mode: "insensitive" } })) };
+}
+// Build Prisma OR clause for ProviderLocation table (clinics - separate city + state columns)
+function buildClinicLocationWhere(location: string): any {
+  const terms = resolveLocationTerms(location);
+  if (!terms.length) return {};
+  return { some: { OR: terms.flatMap(t => [
+    { state: { contains: t, mode: "insensitive" } },
+    { city:  { contains: t, mode: "insensitive" } },
+  ]) } };
+}
+
 // Word-boundary match: prevents "Asian" from matching "Caucasian"
 function wordBoundaryMatch(haystack: string, needle: string): boolean {
   if (!haystack || !needle) return false;
@@ -179,7 +252,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "search_surrogates",
         description:
-          "Search the database for available surrogates. Attribute filters (location, booleans, compensation, ethnicity) use exact database matching - zero false negatives. The optional 'query' parameter adds semantic ranking within the matched pool for soft attributes like personality, insurance, or health history. Use the returned IDs in MATCH_CARDs with type 'Surrogate'.",
+          "Search the database for available surrogates. Attribute filters (booleans, compensation, ethnicity, age) use exact database matching - zero false negatives. The optional 'query' parameter adds semantic ranking within the matched pool for soft attributes like personality, insurance, or health history. Use the returned IDs in MATCH_CARDs with type 'Surrogate'. DO NOT pass any location or country parameter - surrogates are matched by agency network, not by location.",
         inputSchema: {
           type: "object",
           properties: {
@@ -205,7 +278,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             location: {
               type: "string",
-              description: "Filter by location (state abbreviation or city name)",
+              description: "Filter by surrogate location - accepts state abbreviation ('TX'), state full name ('Texas'), or country ('USA', 'Colombia', 'Mexico'). For USA: matches any surrogate whose location contains a US state name. For specific state: matches that state. Do NOT pass this unless the parent explicitly requested a specific country or state.",
+            },
+            maxAge: {
+              type: "number",
+              description: "Maximum surrogate age (inclusive). Use when parent requests a surrogate 'not older than X' or 'under X years old'.",
+            },
+            minAge: {
+              type: "number",
+              description: "Minimum surrogate age (inclusive). Use when parent requests a surrogate 'at least X years old'.",
             },
             maxCompensation: {
               type: "number",
@@ -214,6 +295,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             ethnicity: {
               type: "string",
               description: "Filter by ethnicity or race (e.g. 'Hispanic', 'Caucasian', 'Asian', 'Black', 'White'). Checked against both ethnicity and race fields with synonym resolution.",
+            },
+            maxBmi: {
+              type: "number",
+              description: "Maximum surrogate BMI (inclusive). Use when parent requests a surrogate with a BMI under X or no higher than X. After applying advisory, use the parent's confirmed final preference.",
+            },
+            maxCsections: {
+              type: "number",
+              description: "Maximum number of c-sections (inclusive). Clinics cap approval at 2. Use after advisory when parent specifies a c-section preference.",
+            },
+            maxMiscarriages: {
+              type: "number",
+              description: "Maximum number of miscarriages (inclusive). Use only if the parent insists on this filter after the advisory explains miscarriages are not a disqualifier.",
             },
             limit: {
               type: "number",
@@ -306,6 +399,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "string",
               description: "Filter by donation type (e.g. 'Fresh', 'Frozen')",
             },
+            location: {
+              type: "string",
+              description: "Filter by location - accepts country ('USA', 'Taiwan', 'Canada'), state abbreviation ('CA'), state full name ('California'), or city. Smart synonym resolution handles variants (USA = United States, TX = Texas, etc.).",
+            },
             limit: {
               type: "number",
               description: "Number of results to return (default 3, max 5)",
@@ -357,6 +454,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "string",
               description: "Filter by exact height string (use minHeightInches for minimum height ranges)",
             },
+            location: {
+              type: "string",
+              description: "Filter by location - accepts country, state abbreviation, state full name, or city. Smart synonym resolution handles variants (USA = United States, TX = Texas, etc.).",
+            },
             limit: {
               type: "number",
               description: "Number of results to return (default 3, max 5)",
@@ -380,9 +481,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "string",
               description: "Free-text search query matched against the clinic's FULL profile via semantic vector search. Use this for ANY attribute: specializations, success rates, specific services, team expertise, insurance acceptance, treatment types, etc.",
             },
+            location: {
+              type: "string",
+              description: "Unified location filter - accepts state abbreviation ('TX'), state full name ('Texas'), country ('Colombia', 'Mexico', 'Taiwan'), or city name ('Los Angeles'). Preferred over state/city for non-US locations. Smart synonym resolution handles all variants.",
+            },
             state: {
               type: "string",
-              description: "Filter by state (e.g. 'CA', 'NY', 'TX', 'AZ')",
+              description: "Filter by US state abbreviation or name (e.g. 'CA', 'NY', 'Texas'). Use location param instead for non-US countries.",
             },
             city: {
               type: "string",
@@ -534,7 +639,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_surrogates") {
-      const { query, agreesToTwins, agreesToAbortion, openToSameSexCouple, isExperienced, location, maxCompensation, ethnicity, limit: rawLimit, excludeIds } = args as any;
+      const { query, agreesToTwins, agreesToAbortion, openToSameSexCouple, isExperienced, location, maxCompensation, maxAge, minAge, ethnicity, maxBmi, maxCsections, maxMiscarriages, limit: rawLimit, excludeIds } = args as any;
       const take = Math.min(rawLimit || 3, 5);
       const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
       const ethnicityTerms = ethnicity ? resolveEthnicityTerms(ethnicity) : [];
@@ -555,9 +660,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (agreesToAbortion !== undefined) where.agreesToAbortion = agreesToAbortion;
       if (openToSameSexCouple !== undefined) where.openToSameSexCouple = openToSameSexCouple;
       if (isExperienced !== undefined) where.isExperienced = isExperienced;
-      if (location) where.location = { contains: location, mode: "insensitive" };
+      if (location) Object.assign(where, buildLocationWhere(location));
       if (maxCompensation) where.baseCompensation = { lte: maxCompensation };
+      if (maxAge != null || minAge != null) {
+        where.age = {};
+        if (maxAge != null) where.age.lte = Number(maxAge);
+        if (minAge != null) where.age.gte = Number(minAge);
+      }
       if (ethnicity) Object.assign(where, buildEthnicityWhere(ethnicityTerms));
+      if (maxBmi != null) where.bmi = { lte: Number(maxBmi) };
+      if (maxCsections != null) where.cSections = { lte: Number(maxCsections) };
+      if (maxMiscarriages != null) where.miscarriages = { lte: Number(maxMiscarriages) };
 
       let candidates: any[] = await prisma.surrogate.findMany({
         where,
@@ -619,8 +732,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
         }
 
+        const { photoUrl: _photoUrl, ...sRest } = s;
         return {
-          ...s,
+          ...sRest,
           displayName: s.firstName || (cleanExternalId(s.externalId) ? `Surrogate #${cleanExternalId(s.externalId)}` : `Surrogate #${s.id.slice(-4)}`),
           baseCompensation: s.baseCompensation ? Number(s.baseCompensation) : null,
           ...(Object.keys(profileHighlights).length > 0 ? { profileHighlights } : {}),
@@ -752,7 +866,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_egg_donors") {
-      const { query, eyeColor, hairColor, ethnicity, minHeightInches, maxAge, education, isExperienced, donationType, limit: rawLimit, excludeIds } = args as any;
+      const { query, eyeColor, hairColor, ethnicity, minHeightInches, maxAge, education, isExperienced, donationType, location, limit: rawLimit, excludeIds } = args as any;
       const take = Math.min(rawLimit || 3, 5);
       const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
       const ethnicityTerms = ethnicity ? resolveEthnicityTerms(ethnicity) : [];
@@ -776,6 +890,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (education) where.education = { contains: education, mode: "insensitive" };
       if (isExperienced) where.isExperienced = true;
       if (donationType) where.donationTypes = { contains: donationType, mode: "insensitive" };
+      if (location) Object.assign(where, buildLocationWhere(location));
 
       // Fetch extra to allow height post-filtering (height is a string field, can't filter in SQL easily)
       let candidates: any[] = await prisma.eggDonor.findMany({
@@ -807,10 +922,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         donors = ranked ?? candidates.slice(0, take);
       }
 
-      const results = donors.map((d: any) => ({
-        ...d,
-        displayName: d.firstName || (cleanExternalId(d.externalId) ? `Donor #${cleanExternalId(d.externalId)}` : `Donor #${d.id.slice(-4)}`),
-      }));
+      const results = donors.map((d: any) => {
+        const { photoUrl: _p, ...dRest } = d;
+        return { ...dRest, displayName: d.firstName || (cleanExternalId(d.externalId) ? `Donor #${cleanExternalId(d.externalId)}` : `Donor #${d.id.slice(-4)}`) };
+      });
 
       return {
         content: [{ type: "text", text: `Found ${results.length} egg donors:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Egg Donor" in your MATCH_CARDs. Use the "displayName" as the name.` }],
@@ -818,7 +933,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_sperm_donors") {
-      const { query, eyeColor, hairColor, ethnicity, minHeightInches, maxAge, education, height, limit: rawLimit, excludeIds } = args as any;
+      const { query, eyeColor, hairColor, ethnicity, minHeightInches, maxAge, education, height, location, limit: rawLimit, excludeIds } = args as any;
       const take = Math.min(rawLimit || 3, 5);
       const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
       const ethnicityTerms = ethnicity ? resolveEthnicityTerms(ethnicity) : [];
@@ -840,6 +955,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (maxAge) where.age = { lte: maxAge };
       if (education) where.education = { contains: education, mode: "insensitive" };
       if (height) where.height = { contains: height, mode: "insensitive" };
+      if (location) Object.assign(where, buildLocationWhere(location));
 
       let candidates: any[] = await prisma.spermDonor.findMany({
         where,
@@ -868,10 +984,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         donors = ranked ?? candidates.slice(0, take);
       }
 
-      const results = donors.map((d: any) => ({
-        ...d,
-        displayName: d.firstName || (cleanExternalId(d.externalId) ? `Donor #${cleanExternalId(d.externalId)}` : `Donor #${d.id.slice(-4)}`),
-      }));
+      const results = donors.map((d: any) => {
+        const { photoUrl: _p, ...dRest } = d;
+        return { ...dRest, displayName: d.firstName || (cleanExternalId(d.externalId) ? `Donor #${cleanExternalId(d.externalId)}` : `Donor #${d.id.slice(-4)}`) };
+      });
 
       if (results.length === 0) {
         return {
@@ -885,7 +1001,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_clinics") {
-      const { query, state, city, name: clinicName, limit: rawLimit, minSuccessRate, excludeIds, ageGroup, eggSource, isNewPatient } = args as any;
+      const { query, location: clinicLocation, state, city, name: clinicName, limit: rawLimit, minSuccessRate, excludeIds, ageGroup, eggSource, isNewPatient } = args as any;
       const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
       const targetAgeGroup = ageGroup || "under_35";
       const targetEggSource = eggSource || "own_eggs";
@@ -903,7 +1019,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       let clinics: any[];
 
       // When location is specified, use direct DB query (vector search doesn't know about ProviderLocation)
-      const hasLocationFilter = !!(city || state);
+      const hasLocationFilter = !!(clinicLocation || city || state);
 
       if (!hasLocationFilter && !clinicName) {
         // Generic search - use vector search
@@ -945,29 +1061,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
         }
 
-        const locationWhere: any = {};
-        if (state) {
-          // Handle both abbreviations (NY) and full names (New York)
-          const stateAbbrevMap: Record<string, string> = {
-            AL:"Alabama",AK:"Alaska",AZ:"Arizona",AR:"Arkansas",CA:"California",CO:"Colorado",CT:"Connecticut",DE:"Delaware",FL:"Florida",GA:"Georgia",HI:"Hawaii",ID:"Idaho",IL:"Illinois",IN:"Indiana",IA:"Iowa",KS:"Kansas",KY:"Kentucky",LA:"Louisiana",ME:"Maine",MD:"Maryland",MA:"Massachusetts",MI:"Michigan",MN:"Minnesota",MS:"Mississippi",MO:"Missouri",MT:"Montana",NE:"Nebraska",NV:"Nevada",NH:"New Hampshire",NJ:"New Jersey",NM:"New Mexico",NY:"New York",NC:"North Carolina",ND:"North Dakota",OH:"Ohio",OK:"Oklahoma",OR:"Oregon",PA:"Pennsylvania",RI:"Rhode Island",SC:"South Carolina",SD:"South Dakota",TN:"Tennessee",TX:"Texas",UT:"Utah",VT:"Vermont",VA:"Virginia",WA:"Washington",WV:"West Virginia",WI:"Wisconsin",WY:"Wyoming",DC:"District of Columbia"
-          };
-          const stateUpper = state.trim().toUpperCase();
-          const fullName = stateAbbrevMap[stateUpper];
-          if (fullName) {
-            // Abbreviation provided - search for both abbreviation and full name
-            locationWhere.OR = [
-              { state: { contains: stateUpper, mode: "insensitive" } },
-              { state: { contains: fullName, mode: "insensitive" } },
-            ];
-          } else {
-            // Full name or partial - search as-is
-            locationWhere.state = { contains: state, mode: "insensitive" };
-          }
-        }
-        if (city) locationWhere.city = { contains: city, mode: "insensitive" };
-
-        if (state || city) {
-          providerWhere.locations = { some: locationWhere };
+        // unified location param takes priority; fall back to separate state/city
+        if (clinicLocation) {
+          providerWhere.locations = buildClinicLocationWhere(clinicLocation);
+        } else if (state || city) {
+          const terms = state ? resolveLocationTerms(state) : [];
+          const stateConditions = terms.flatMap(t => [
+            { state: { contains: t, mode: "insensitive" as const } },
+          ]);
+          const cityCondition = city ? [{ city: { contains: city, mode: "insensitive" as const } }] : [];
+          providerWhere.locations = { some: { OR: [...stateConditions, ...cityCondition] } };
         }
 
         clinics = await prisma.provider.findMany({

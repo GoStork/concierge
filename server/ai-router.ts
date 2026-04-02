@@ -267,7 +267,7 @@ ${logoUrl ? `<img src="${logoUrl}" alt="${companyName}" style="max-height:40px;m
   }
 }
 
-async function sendWhisperEmail(providerEmail: string, providerName: string, questionText: string, baseUrl: string, sessionId: string) {
+async function sendWhisperEmail(providerEmail: string, providerName: string, questionText: string, baseUrl: string, sessionId: string, overrideChatLink?: string) {
   const sendgridKey = process.env.SENDGRID_API_KEY;
   if (!sendgridKey) {
     console.log(`[WHISPER EMAIL MOCK] To: ${providerEmail}, Provider: ${providerName}, Question: ${questionText}`);
@@ -286,7 +286,7 @@ async function sendWhisperEmail(providerEmail: string, providerName: string, que
     }
   } catch {}
 
-  const chatLink = `${baseUrl}/chat/${sessionId}`;
+  const chatLink = overrideChatLink || `${baseUrl}/chat/${sessionId}`;
   const html = `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
@@ -493,7 +493,7 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       const data = m.uiCardData as any;
       if (data?.whisperQuestionId) return false;
       if (m.uiCardType === "provider_only") return false;
-      if (m.senderType === "system" && !session.providerId) return false;
+      if (m.senderType === "system") return false;
       return true;
     });
 
@@ -1705,6 +1705,133 @@ When the parent asks a follow-up question about a specific egg donor (eye color,
       });
     }
 
+    // -------------------------------------------------------------------------
+    // SURROGATE ADVISORY - server-side enforcement for all 7 advisory triggers.
+    // Fires whenever the parent's message triggers a clinical advisory topic,
+    // regardless of where in the conversation we are.
+    // -------------------------------------------------------------------------
+    const hasSurrogateMatchCardShown = chatHistory.some((msg: any) => {
+      const cards = (msg?.uiCardData as any)?.matchCards || [];
+      return cards.some((c: any) => c?.type === "Surrogate");
+    });
+
+    // Helper: check if a specific advisory was already given this session
+    const advisoryGiven = (marker: string) => chatHistory.some((msg: any) =>
+      msg.role === "assistant" && typeof msg.content === "string" && msg.content.includes(marker)
+    );
+
+    const umLower = userMessage.toLowerCase();
+    const surrogateAdvisories: string[] = [];
+
+    if (needsSurrogate) {
+      // --- 1. AGE: maxAge < 36 ---
+      const ageMaxMatch = userMessage.match(
+        /(?:not\s+older\s+than|no\s+older\s+than|young\w*\s+than|under\s+(?:age\s+)?|at\s+most\s+(?:age\s+)?|max(?:imum)?\s*(?:age\s*)?|no\s+more\s+than\s+|below\s+(?:age\s+)?|less\s+than\s+(?:age\s+)?|age(?:d)?\s+(?:of\s+)?)(\d+)/i
+      ) || (userMessage.match(/\b(2\d|3[0-5])\b/) ? userMessage.match(/\b(2\d|3[0-5])\b/) : null);
+      const requestedMaxAge = ageMaxMatch ? parseInt(ageMaxMatch[1]) : null;
+      if (requestedMaxAge !== null && requestedMaxAge < 36 && !advisoryGiven("clinics approve surrogates between ages 20 and 38")) {
+        surrogateAdvisories.push(`AGE ADVISORY: The parent wants a surrogate not older than ${requestedMaxAge}.
+Tell them: "I completely understand wanting a younger surrogate! Just so you know, clinics approve surrogates between ages 20 and 38 - surrogates aged ${requestedMaxAge + 1} to 38 are fully clinic-eligible and often more experienced. Limiting to ${requestedMaxAge} may significantly reduce your options. Would you like me to search up to 38, or would you prefer to stick with ${requestedMaxAge}?" [[QUICK_REPLY:Search up to 38|Stick with ${requestedMaxAge}]]`);
+      }
+
+      // --- 2. BMI ---
+      const bmiMatch = userMessage.match(/bmi\s*(?:of\s*|under\s*|below\s*|less\s+than\s*|max(?:imum)?\s*)?(\d+(?:\.\d+)?)/i)
+        || userMessage.match(/(?:bmi|body\s*mass)\D{0,15}(\d+(?:\.\d+)?)/i);
+      const requestedMaxBmi = bmiMatch ? parseFloat(bmiMatch[1]) : null;
+      if (requestedMaxBmi !== null && !advisoryGiven("clinic maximum BMI")) {
+        let bmiAdvisory = "";
+        if (requestedMaxBmi >= 32) {
+          bmiAdvisory = `BMI ADVISORY: The parent wants a surrogate with BMI ${requestedMaxBmi}. Remind them: "Clinics approve surrogates with a BMI under 32, so requiring BMI under ${requestedMaxBmi} would include surrogates clinics won't approve. The effective max is 31. Would you like me to search with BMI under 31?" [[QUICK_REPLY:Yes, BMI under 31|Keep my preference]]`;
+        } else if (requestedMaxBmi < 30) {
+          bmiAdvisory = `BMI ADVISORY: The parent wants BMI under ${requestedMaxBmi}. Suggest: "That is a strict BMI filter. A BMI under 30 keeps you well within clinic limits while significantly expanding your options. Would you like to open it up to BMI under 30?" [[QUICK_REPLY:Yes, open to BMI under 30|Keep BMI under ${requestedMaxBmi}]]`;
+        }
+        if (bmiAdvisory) surrogateAdvisories.push(bmiAdvisory);
+      }
+
+      // --- 3. NUMBER OF PREGNANCIES ---
+      const pregnancyMatch = userMessage.match(/(?:(?:max(?:imum)?|no\s+more\s+than|less\s+than|under|fewer\s+than|at\s+most)\s+)?(\d+)\s*(?:pregnanc(?:y|ies)|times\s+pregnant)/i)
+        || userMessage.match(/pregnanc(?:y|ies)\D{0,10}(\d+)/i);
+      const requestedMaxPregnancies = pregnancyMatch ? parseInt(pregnancyMatch[1]) : null;
+      if (requestedMaxPregnancies !== null && requestedMaxPregnancies < 4 && !advisoryGiven("clinics approve surrogates who have had up to 5 pregnancies")) {
+        surrogateAdvisories.push(`PREGNANCIES ADVISORY: The parent wants no more than ${requestedMaxPregnancies} pregnancies. Tell them: "Clinics actually approve surrogates who have had up to 5 pregnancies total. Limiting to ${requestedMaxPregnancies} would significantly reduce your options. Would you like to open it up to 4 pregnancies?" [[QUICK_REPLY:Yes, up to 4 pregnancies|Keep my preference]]`);
+      }
+
+      // --- 4. C-SECTIONS ---
+      const cSectionMatch = userMessage.match(/(?:more\s+than|over|above|up\s+to|accept(?:ing)?|open\s+to|ok\s+with|okay\s+with)\s+(\d+)\s*c.?section/i)
+        || userMessage.match(/(\d+)\s*(?:or\s+more\s+)?c.?section/i);
+      const requestedMaxCSections = cSectionMatch ? parseInt(cSectionMatch[1]) : null;
+      if (requestedMaxCSections !== null && requestedMaxCSections > 2 && !advisoryGiven("clinics cap approval at a maximum of 2 c-sections")) {
+        surrogateAdvisories.push(`C-SECTIONS ADVISORY: The parent mentioned accepting ${requestedMaxCSections} c-sections. Tell them: "Just so you know, clinics cap surrogate approval at a maximum of 2 c-sections. A surrogate with more than 2 would not be cleared by a clinic, so I will limit the search to surrogates with 2 or fewer c-sections."`);
+      }
+
+      // --- 5. DELIVERIES (wanting very few) ---
+      const deliveryMatch = userMessage.match(/(?:(?:max(?:imum)?|no\s+more\s+than|less\s+than|under|fewer\s+than|at\s+most)\s+)?(\d+)\s*(?:successful\s+)?(?:deliver(?:y|ies)|birth(?:s)?|live\s+birth(?:s)?)/i);
+      const requestedMaxDeliveries = deliveryMatch ? parseInt(deliveryMatch[1]) : null;
+      if (requestedMaxDeliveries !== null && requestedMaxDeliveries < 2 && !advisoryGiven("at least one successful delivery")) {
+        surrogateAdvisories.push(`DELIVERIES ADVISORY: The parent wants a surrogate with no more than ${requestedMaxDeliveries} deliveries. Tell them: "For surrogacy, clinics actually require that a surrogate has had at least one successful delivery - it proves she can carry to term. Most experienced surrogates have had 1-3 deliveries, which is a positive sign. Limiting to ${requestedMaxDeliveries} would significantly reduce your options. Would you like me to search for surrogates with 1-3 deliveries?" [[QUICK_REPLY:Yes, 1-3 deliveries|Keep my preference]]`);
+      }
+
+      // --- 6. MISCARRIAGES (wanting to exclude them) ---
+      const wantsNoMiscarriages = /no\s+miscarriage|without\s+miscarriage|never\s+(?:had\s+a\s+)?miscarriage|zero\s+miscarriage|0\s+miscarriage|hasn.t.*miscarr|no\s+history\s+of\s+miscarr/i.test(umLower);
+      if (wantsNoMiscarriages && !advisoryGiven("prior miscarriage followed by a successful birth is not a disqualifier")) {
+        surrogateAdvisories.push(`MISCARRIAGE ADVISORY: The parent wants to exclude surrogates with miscarriages. Tell them: "I completely understand the concern! However, clinics actually allow miscarriages in a surrogate's history as long as there was a healthy pregnancy and delivery afterward. A prior miscarriage followed by a successful birth is not a disqualifier - in fact, it shows the surrogate can carry to term. Excluding them would significantly reduce your options. Would you like to keep options open?" [[QUICK_REPLY:Keep options open|Still exclude miscarriages]]`);
+      }
+
+      // --- 7. ABORTIONS (wanting to exclude them) ---
+      const wantsNoAbortions = /no\s+abort(?:ion)?|without\s+abort(?:ion)?|never\s+(?:had\s+an?\s+)?abort(?:ion)?|zero\s+abort(?:ion)?|0\s+abort(?:ion)?|no\s+history\s+of\s+abort|no\s+termination|pro.life\s+surrogate\s+only/i.test(umLower);
+      if (wantsNoAbortions && !advisoryGiven("termination history is a personal")) {
+        surrogateAdvisories.push(`ABORTIONS ADVISORY: The parent wants to exclude surrogates with abortion or termination history. Tell them: "I understand this matters to you. In surrogacy, what is most important is whether the surrogate is willing to make termination decisions with you if medically necessary during this journey - that is what the 'pro-choice' vs 'pro-life' preference covers. A surrogate's past personal history does not affect her commitment to your preferences for this journey. Would you like me to search for pro-life surrogates - those who have indicated they would not terminate even if medically recommended?" [[QUICK_REPLY:Yes, pro-life surrogates|No, any surrogate is fine]]`);
+      }
+
+      // --- 9. AGENCY LOCATION ---
+      const wantsAgencyLocation = /agency\s+(?:in|near|from|based\s+in|located\s+in)|(?:in|near|from)\s+\w+\s+agency/i.test(umLower);
+      if (wantsAgencyLocation && !advisoryGiven("agency's location is not relevant to the surrogacy process")) {
+        surrogateAdvisories.push(`AGENCY LOCATION ADVISORY: The parent is filtering by agency location. Tell them: "The agency's location actually does not affect your journey - what matters is where your surrogate lives, since that determines the legal jurisdiction. Agencies recruit surrogates from across the country regardless of where their office is. Filtering by agency location would unnecessarily limit your matches. Would you like me to focus on the surrogate's location instead?" [[QUICK_REPLY:Yes, focus on surrogate location|I still want a local agency]]`);
+      }
+
+      // --- 10. SURROGATE LOCATION / PROXIMITY ---
+      const wantsSurrogateNearby = /surrogate\s+(?:near|close\s+to|in|from|local|nearby)|(?:near|close\s+to|local)\s+surrogate|surrogate\s+in\s+(?:my\s+)?(?:state|city|area|town)|same\s+(?:state|city|area)\s+as\s+(?:me|us)|within\s+\d+\s+(?:miles|km)/i.test(umLower);
+      if (wantsSurrogateNearby && !advisoryGiven("vast majority of surrogacy journeys are remote")) {
+        surrogateAdvisories.push(`SURROGATE PROXIMITY ADVISORY: The parent wants a surrogate near them. Tell them: "Great question! The good news is that most surrogacy journeys are fully remote - your surrogate does not need to live near you. You will have video calls, can join doctor appointments virtually, and when the baby is born you simply fly to wherever she is, be there for the delivery, and bring your baby home. Focusing on proximity would significantly limit your options. May I search nationwide for the best match?" [[QUICK_REPLY:Yes, search nationwide|I still prefer local]]`);
+      }
+    }
+
+    if (surrogateAdvisories.length > 0) {
+      console.log(`[SURROGATE ADVISORY] Injecting ${surrogateAdvisories.length} advisories: ${surrogateAdvisories.map(a => a.split('\n')[0]).join(' | ')}`);
+      messages.push({
+        role: "system" as const,
+        content: `SURROGATE ADVISORY REQUIRED - DO NOT SEARCH OR ASK MATCHING QUESTIONS THIS TURN:
+The parent's message triggers the following clinical advisory guidance. You MUST deliver this advisory now before doing anything else. Do NOT call search_surrogates. Do NOT ask D1/D2/D3 questions. Do NOT show [[MATCH_CARD]].
+
+${surrogateAdvisories.join("\n\n")}
+
+After the parent responds to the advisory, then continue with any unanswered matching questions and proceed normally.`,
+      });
+    }
+
+    // Advisory confirmation handler: parent confirms age after the advisory
+    const advisorySearchUpToMatch = userMessage.match(/^search up to\s+(\d+)$/i);
+    const advisoryStickWithMatch = userMessage.match(/^stick with\s+(\d+)$/i);
+    if (needsSurrogate && (advisorySearchUpToMatch || advisoryStickWithMatch)) {
+      const confirmedMaxAge = advisorySearchUpToMatch
+        ? parseInt(advisorySearchUpToMatch[1])
+        : parseInt(advisoryStickWithMatch![1]);
+      console.log(`[SURROGATE ADVISORY CONFIRMED] maxAge=${confirmedMaxAge}, matchCardShown=${hasSurrogateMatchCardShown}`);
+      if (hasSurrogateMatchCardShown) {
+        messages.push({
+          role: "system" as const,
+          content: `SURROGATE ADVISORY CONFIRMED (mid-conversation): The parent chose maxAge: ${confirmedMaxAge}.
+Call search_surrogates immediately with maxAge: ${confirmedMaxAge}. Do NOT send [[CURATION]]. Do NOT ask any more questions. Show the first result as a [[MATCH_CARD]].`,
+        });
+      } else {
+        messages.push({
+          role: "system" as const,
+          content: `SURROGATE ADVISORY CONFIRMED (early conversation): The parent chose maxAge: ${confirmedMaxAge}. Save this preference.
+Now continue with any surrogate matching questions not yet answered: D1 (countries), D2 (termination if USA), D3 (twins). Then send [[CURATION]] and search with maxAge: ${confirmedMaxAge}.`,
+        });
+      }
+    }
+
     // Inject human escalation instructions when user is requesting to talk to a human
     const humanRequestRegex = /talk to (?:a )?(?:real|human|actual) person|talk to (?:the )?gostork team|speak (?:to|with) (?:a )?human|connect me with (?:a )?(?:human|person|someone)|i want (?:a )?human|i'd like to talk to a real person/i;
     if (humanRequestRegex.test(userMessage)) {
@@ -1730,6 +1857,24 @@ When the parent asks a follow-up question about a specific egg donor (eye color,
       role: "system" as const,
       content: `When offering to schedule a consultation or call, you MUST always name the specific provider/clinic/agency. NEVER say vague phrases like "one of our experts" or "a professional". Always say the specific name, e.g., "Would you like to schedule a free consultation with San Diego Fertility Center?" If multiple providers were presented, name the most recently discussed one.`,
     });
+
+    // "Show more" enforcement: when parent asks to see more surrogates/donors after already
+    // seeing a match card, force the AI to call the search tool again and use [[MATCH_CARD]].
+    // Prevents the AI from listing profiles as plain text from memory.
+    const isShowMoreRequest = /^(show\s+me\s+more|show\s+more|see\s+more|yes[,.]?\s*(show|let'?s\s+see\s+more|more\s+please|i'?d\s+like\s+more)|more\s+(surrogates?|donors?|options?|profiles?)|next\s+(surrogate|donor|option|profile)|another\s+(surrogate|donor|option)|let'?s\s+(see\s+more|continue)|keep\s+going|yes[.!]?\s*$)/i.test(userMessage.trim());
+    if (isShowMoreRequest && hasSurrogateMatchCardShown && presentedProviderIds.size > 0) {
+      const excludeList = JSON.stringify(Array.from(presentedProviderIds));
+      messages.push({
+        role: "system" as const,
+        content: `SHOW MORE - MANDATORY INSTRUCTIONS:
+The parent wants to see more surrogate profiles. You MUST:
+1. Call search_surrogates with excludeIds: ${excludeList} to get a NEW profile they haven't seen.
+2. Present EXACTLY ONE result using [[MATCH_CARD]]. Never list multiple profiles as text.
+3. Do NOT describe profiles in plain text. The [[MATCH_CARD]] tag is the ONLY way to present a profile.
+4. After the card, ask: "Want to see more surrogates, or are we all set?" [[QUICK_REPLY:Show me more|We're all set]]
+Use the same filters from the current search (maxAge, agreesToAbortion, agreesToTwins, etc.) plus the excludeIds.`,
+      });
+    }
 
     // PROACTIVE PROFILE INJECTION: When parent asks a question about a presented profile,
     // fetch the full profile BEFORE sending to AI so it has all data on the first try
@@ -1839,10 +1984,19 @@ The parent's message was: "${userMessage}"`,
       }
     }
 
-    // Skip tools only during early Q&A steps (before any curation/matching has happened)
+    // Skip tools only during early Q&A steps (before any curation/matching has happened).
+    // Also enable tools when match cycle intake questions have been asked (D1 surrogate country,
+    // B1 egg donor prefs, C1 sperm donor ID release, A1 clinic age) so the AI can search
+    // even if it mistakenly skips the [[CURATION]] step.
     const hasEnteredMatchingPhase = messages.some(m => {
       const c = typeof m.content === "string" ? m.content : "";
-      return c.includes("[[CURATION]]") || c === "ready" || c.includes("MATCH_CARD") || c.includes("[[CONSULTATION_BOOKING");
+      return c.includes("[[CURATION]]")
+        || c === "ready"
+        || c.includes("MATCH_CARD")
+        || c.includes("[[CONSULTATION_BOOKING")
+        || c.includes("[[MULTI_SELECT:USA|Mexico|Colombia]]")  // surrogate D1 asked
+        || c.includes("Pro-choice surrogate")                  // surrogate D2 answered
+        || c.includes("Pro-life surrogate");                   // surrogate D2 answered
     });
     const needsTools = hasEnteredMatchingPhase || shouldTriggerScheduling || isDonorInquiryMode;
 
@@ -2689,10 +2843,17 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             const baseUrl = process.env.APP_URL?.replace(/\/+$/, "")
               || (process.env.REPLIT_DEPLOYMENT_URL ? `https://${process.env.REPLIT_DEPLOYMENT_URL}` : "")
               || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "https://app.gostork.com");
-            const chatLink = `${baseUrl}/chat/${currentSessionId}`;
+            const whisperSession = await prisma.aiChatSession.findUnique({
+              where: { id: currentSessionId },
+              select: { userId: true, subjectProfileId: true },
+            });
+            const whisperPath = whisperSession
+              ? `/chat/${whisperSession.userId}/${whisperSession.subjectProfileId || currentSessionId}`
+              : `/chat/${currentSessionId}`;
+            const chatLink = `${baseUrl}${whisperPath}`;
             const emailRecipients = providerUsers.filter((pu: any) => pu.email).map((pu: any) => pu.email!);
             for (const recipientEmail of emailRecipients) {
-              sendWhisperEmail(recipientEmail, providerName, questionText, baseUrl, currentSessionId).catch(e =>
+              sendWhisperEmail(recipientEmail, providerName, questionText, baseUrl, currentSessionId, chatLink).catch(e =>
                 console.error(`Whisper email failed for ${recipientEmail}:`, e.message)
               );
             }
@@ -2856,6 +3017,41 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       } catch (e) {
         console.error("Match card resolution via MCP failed:", e);
         card.photo = null;
+      }
+    }
+
+    // For surrogate cards: always recompute reasons from actual search filters + surrogate data,
+    // ignoring AI-generated reasons which tend to include profile highlights the parent never asked for.
+    for (const card of matchCards) {
+      const cardTypeForSurrogate = (card.type || "").toLowerCase();
+      if (cardTypeForSurrogate === "surrogate") {
+        const searchResult = lastSearchToolResults.find(r => r.toolName === "search_surrogates");
+        if (searchResult) {
+          const args = searchResult.toolArgs || {};
+          const computedReasons: string[] = [];
+          try {
+            const rb = searchResult.resultText;
+            const js = rb.indexOf("["); const je = rb.lastIndexOf("]");
+            if (js !== -1 && je !== -1) {
+              const results = JSON.parse(rb.substring(js, je + 1));
+              const matched = results.find((r: any) => String(r.id) === String(card.providerId));
+              if (matched) {
+                // Only add reasons for filters the parent ACTUALLY applied
+                if (args.agreesToAbortion === true && (matched.agreesToAbortion || matched.agreesToSelectiveReduction)) computedReasons.push("Pro-choice");
+                if (args.agreesToAbortion === false && matched.agreesToAbortion === false) computedReasons.push("Pro-life");
+                if (args.agreesToTwins === true && matched.agreesToTwins) computedReasons.push("Open to twins");
+                if (args.openToSameSexCouple === true && matched.openToSameSexCouple) computedReasons.push("Open to same-sex couples");
+                if (args.isExperienced === true && matched.isExperienced) computedReasons.push("Experienced surrogate");
+                if (args.maxAge != null && matched.age != null && Number(matched.age) <= Number(args.maxAge)) computedReasons.push(`Age ${matched.age}`);
+                // Always include live births as a factual attribute (not a preference match)
+                if (matched.liveBirths) computedReasons.push(`Mom of ${matched.liveBirths}`);
+              }
+            }
+          } catch {}
+          if (computedReasons.length > 0) {
+            card.reasons = computedReasons.slice(0, 4);
+          }
+        }
       }
     }
 
@@ -3231,6 +3427,8 @@ NEVER promise to search without actually calling the search tool. NEVER end with
                 const mc = await findLatestMatchCard(currentSessionId);
                 if (mc?.name) profileLabel = mc.name;
                 if (mc?.photo || mc?.photoUrl) profilePhotoUrl = mc.photo || mc.photoUrl;
+                if (mc?.providerId) subjectProfileId = mc.providerId;
+                if (mc?.type) subjectType = mc.type;
               }
             } catch (e) {
               console.error("[CONSULTATION] Error finding match card for profile label:", e);

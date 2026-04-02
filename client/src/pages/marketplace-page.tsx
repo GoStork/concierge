@@ -15,7 +15,7 @@ import { Search, Loader2, Calendar, User, MapPin, Award, Heart, Clock, Info, X, 
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { matchesFilter, matchesSameSexCoupleRequirement, matchesInternationalRequirement, omniSearch, sortDonors } from "@/lib/marketplace-filters";
 import { useAppSelector, useAppDispatch } from "@/store";
-import { setMarketplaceSearchQuery, setMarketplaceTab, toggleFavoriteDonor, passDonor, undoPassDonor, loadDonorPreferences, setShowFavoritesOnly, setShowSkippedOnly, setShowExperiencedOnly } from "@/store/uiSlice";
+import { setMarketplaceSearchQuery, setMarketplaceTab, toggleFavoriteDonor, passDonor, undoPassDonor, loadDonorPreferences, setShowFavoritesOnly, setShowSkippedOnly, setShowExperiencedOnly, setFilter } from "@/store/uiSlice";
 import { MarketplaceFilterBar } from "@/components/marketplace/MarketplaceFilterBar";
 import { Tabs as UnderlineTabs, TabsList as UnderlineTabsList, TabsTrigger as UnderlineTabsTrigger } from "@/components/ui/underline-tabs";
 import { SwipeDeckCard } from "@/components/marketplace/swipe-deck-card";
@@ -809,6 +809,19 @@ export default function MarketplacePage() {
   }, [setSearchParams]);
 
   const setIvfLocation = (v: string) => updateParam("location", v);
+  const eggLocation = searchParams.get("eggLocation") || "";
+  const surrogateLocation = searchParams.get("surrogateLocation") || "";
+  const spermLocation = searchParams.get("spermLocation") || "";
+  const setEggLocation = (v: string) => updateParam("eggLocation", v);
+  const setSurrogateLocation = (v: string) => updateParam("surrogateLocation", v);
+  const setSpermLocation = (v: string) => updateParam("spermLocation", v);
+  const donorLocation =
+    activeTab === "egg-donors" ? eggLocation :
+    activeTab === "surrogates" ? surrogateLocation :
+    activeTab === "sperm-donors" ? spermLocation : "";
+  useEffect(() => {
+    dispatch(setFilter({ key: "location", values: donorLocation ? [donorLocation] : [] }));
+  }, [donorLocation, dispatch]);
   // Debounce search input to avoid excessive URL updates and API calls
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const [localSearch, setLocalSearch] = useState(ivfSearch);
@@ -983,7 +996,14 @@ export default function MarketplacePage() {
                 ivfSortBy: sortBy,
                 onIvfSortByChange: setSortBy,
                 hasIvfLocation: !!ivfLocation,
-              } : {})}
+              } : {
+                location: donorLocation,
+                onLocationChange:
+                  activeTab === "egg-donors" ? setEggLocation :
+                  activeTab === "surrogates" ? setSurrogateLocation :
+                  setSpermLocation,
+                hasLocation: !!donorLocation,
+              })}
             />
           </div>
         )}

@@ -31,6 +31,9 @@ interface MarketplaceFilterBarProps {
   ivfSortBy?: string;
   onIvfSortByChange?: (value: string) => void;
   hasIvfLocation?: boolean;
+  location?: string;
+  onLocationChange?: (value: string) => void;
+  hasLocation?: boolean;
   hideFavorites?: boolean;
   inlineMode?: boolean;
   overlayStyle?: boolean;
@@ -1255,6 +1258,9 @@ export function MarketplaceFilterBar({
   ivfSortBy,
   onIvfSortByChange,
   hasIvfLocation,
+  location,
+  onLocationChange,
+  hasLocation,
   hideFavorites,
   inlineMode,
   overlayStyle,
@@ -1440,6 +1446,36 @@ export function MarketplaceFilterBar({
       )}
 
       {isIvf && ivfMobileFilterButtons}
+
+      {!isIvf && (
+        <Drawer open={locationDrawerOpen} onOpenChange={setLocationDrawerOpen}>
+          <DrawerTrigger asChild>
+            <button
+              className={tinderLabel(!!hasLocation, darkLabels)}
+              style={TINDER_LABEL_STYLE}
+              data-testid="filter-btn-location"
+            >
+              Location
+            </button>
+          </DrawerTrigger>
+          <DrawerContent>
+            <DrawerHeader><DrawerTitle>Location</DrawerTitle></DrawerHeader>
+            <div className="p-4">
+              <div className="relative">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="City, state, or country"
+                  value={location || ""}
+                  onChange={(e) => onLocationChange?.(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") setLocationDrawerOpen(false); }}
+                  data-testid="input-location-mobile"
+                />
+              </div>
+            </div>
+          </DrawerContent>
+        </Drawer>
+      )}
 
       {!isIvf && (
         <MobileRangeDrawer label="Age" filterKey="age" min={18} max={45} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} />
@@ -1633,6 +1669,44 @@ export function MarketplaceFilterBar({
       )}
 
       {isIvf && ivfDesktopFilterButtons}
+
+      {!isIvf && (
+        <Popover open={locationPopoverOpen} onOpenChange={setLocationPopoverOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant={hasLocation ? "default" : "outline"}
+              size="sm"
+              className="shrink-0 h-9 font-ui rounded-full gap-1 px-3.5"
+              style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+              data-testid="filter-btn-location"
+            >
+              <MapPin className="w-3 h-3" />
+              {location || "Location"}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-3" align="start">
+            <div className="space-y-2">
+              <span className="font-ui" style={{ fontSize: 'var(--filter-label-size, 18px)' }}>Location</span>
+              <div className="relative">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="City, state, or country"
+                  value={location || ""}
+                  onChange={(e) => onLocationChange?.(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") setLocationPopoverOpen(false); }}
+                  data-testid="input-location-desktop"
+                />
+              </div>
+              {location && (
+                <Button variant="ghost" size="sm" className="h-auto py-0.5" style={{ fontSize: 'calc(var(--drawer-body-size, 16px) * 0.75)' }} onClick={() => { onLocationChange?.(""); setLocationPopoverOpen(false); }} data-testid="clear-location">
+                  Clear
+                </Button>
+              )}
+            </div>
+          </PopoverContent>
+        </Popover>
+      )}
 
       {!isIvf && (
         <RangePopover label="Age" filterKey="age" min={18} max={45} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} />

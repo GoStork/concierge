@@ -198,7 +198,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       targetSessionId = existingSession.id;
       await this.prisma.aiChatSession.update({
         where: { id: existingSession.id },
-        data: { status: "CONSULTATION_BOOKED", profilePhotoUrl: body.profilePhotoUrl || undefined, updatedAt: new Date() },
+        data: { status: "CONSULTATION_BOOKED", profilePhotoUrl: body.profilePhotoUrl || undefined, subjectProfileId: body.subjectProfileId || undefined, subjectType: body.subjectType || undefined, updatedAt: new Date() },
       });
       this.logger.log(`[CONSULTATION] Reusing session ${targetSessionId} for provider ${consultProviderId}`);
     } else {

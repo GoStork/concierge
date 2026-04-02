@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -2184,6 +2184,16 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     })();
   }, [existingSessionId, matchmakerId, donorIdParam, sessionLoaded]);
 
+  // Persist the resolved session ID into the URL so page refresh reloads the same session.
+  // This runs in a separate effect that only fires after sessionLoaded=true, so the
+  // session-loading effect above will bail immediately (sessionLoaded guard) on the
+  // re-render caused by navigate, preventing double-loads or duplicate greetings.
+  useEffect(() => {
+    if (isInline || !sessionId || !sessionLoaded) return;
+    if (searchParams.get("session") === sessionId) return;
+    navigate(`?session=${sessionId}`, { replace: true });
+  }, [sessionId, sessionLoaded, isInline]);
+
   // Initial scroll - use container scroll, not window scroll
   useEffect(() => {
     const container = document.querySelector('[data-testid="concierge-messages"]');
@@ -2867,7 +2877,21 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                               }),
                         }}
                       >
-                        <span style={{ whiteSpace: "pre-wrap", overflowWrap: "break-word", wordBreak: "break-word" }}>{msg.content}</span>
+                        <span style={{ overflowWrap: "break-word", wordBreak: "break-word" }}>
+                          {msg.content.split("\n").map((line, li) => {
+                            const parts = line.split(/(\*\*[^*]+\*\*)/g);
+                            return (
+                              <Fragment key={li}>
+                                {li > 0 && <br />}
+                                {parts.map((part, pi) =>
+                                  part.startsWith("**") && part.endsWith("**")
+                                    ? <strong key={pi}>{part.slice(2, -2)}</strong>
+                                    : <Fragment key={pi}>{part}</Fragment>
+                                )}
+                              </Fragment>
+                            );
+                          })}
+                        </span>
                         {msg.createdAt && (
                           <>
                             <span className={`inline-block ${alignRight ? "w-[4.75rem]" : "w-[3.5rem]"}`} aria-hidden="true">&nbsp;</span>

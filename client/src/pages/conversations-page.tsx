@@ -540,7 +540,7 @@ export default function ConversationsPage() {
     if (!session) return "/chat";
     // AI concierge sessions (no providerId for parents)
     if ("matchmakerId" in session && session.matchmakerId && !session.providerId) {
-      return "/chat/concierge";
+      return `/chat/concierge?session=${session.id}`;
     }
     // Provider chat sessions - use providerId + subjectProfileId
     const entityId = isProvider ? (session as ProviderSession).userId : (session as ChatSession).providerId;
@@ -1104,21 +1104,22 @@ export default function ConversationsPage() {
                           onClick={() => handleParentSessionClick(session)}
                           data-testid={`chat-session-provider-${session.id}`}
                         >
-                          <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
-                            {photoSrc && (
+                          <div className="w-12 h-12 rounded-full flex-shrink-0 relative overflow-hidden">
+                            {photoSrc ? (
                               <img
                                 src={photoSrc}
                                 alt={session.title || ""}
-                                className="w-12 h-12 rounded-full object-cover absolute inset-0"
-                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                className="w-12 h-12 rounded-full object-cover"
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling && ((e.target as HTMLImageElement).nextElementSibling as HTMLElement)?.style && ((e.target as HTMLImageElement).nextElementSibling as HTMLElement).style.setProperty('display', 'flex'); }}
                               />
+                            ) : (
+                              <div
+                                className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
+                                style={{ backgroundColor: brandColor }}
+                              >
+                                {(session.title || "C").charAt(0)}
+                              </div>
                             )}
-                            <div
-                              className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
-                              style={{ backgroundColor: brandColor }}
-                            >
-                              {(session.title || "C").charAt(0)}
-                            </div>
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-2">
@@ -1174,35 +1175,56 @@ export default function ConversationsPage() {
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
-            {parentHeaderAvatar ? (
-              <img
-                src={parentHeaderAvatar}
-                alt={parentHeaderName}
-                className="w-12 h-12 rounded-full object-cover"
-              />
-            ) : (
-              <div
-                className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold"
-                style={{ backgroundColor: brandColor }}
-              >
-                {parentHeaderName.charAt(0)}
+          {/* Subject photo + ID (left side, only for provider sessions with a subject) */}
+          {selectedParentSession!.providerId && selectedParentSession!.title ? (
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-muted">
+                {selectedParentSession!.profilePhotoUrl ? (
+                  <img src={getPhotoSrc(selectedParentSession!.profilePhotoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                    <User className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                )}
               </div>
-            )}
-            {selectedParentSession?.providerId && onlineStatuses[selectedParentSession.providerId] && <OnlineIndicator size="md" />}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>
-              {parentHeaderName}
-            </h2>
-            {selectedParentSession!.title && selectedParentSession!.providerId && (
-              <p className="text-[13px] font-ui text-muted-foreground truncate" data-testid="parent-chat-subject-label">
-                Subject: {selectedParentSession!.title}
-              </p>
-            )}
-          </div>
+              <span className="font-semibold text-sm font-ui truncate" data-testid="parent-chat-subject-label">{selectedParentSession!.title}</span>
+            </div>
+          ) : (
+            /* Concierge or no-subject: show the standard avatar */
+            <div className="w-10 h-10 rounded-full flex-shrink-0 relative">
+              {parentHeaderAvatar ? (
+                <img src={parentHeaderAvatar} alt={parentHeaderName} className="w-10 h-10 rounded-full object-cover" />
+              ) : (
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold" style={{ backgroundColor: brandColor }}>
+                  {parentHeaderName.charAt(0)}
+                </div>
+              )}
+            </div>
+          )}
+          {/* Separator */}
+          {selectedParentSession!.providerId && selectedParentSession!.title && (
+            <span className="text-muted-foreground text-base font-medium flex-shrink-0 px-1" aria-hidden>x</span>
+          )}
+          {/* Provider logo + name (right side) OR concierge name */}
+          {selectedParentSession!.providerId && selectedParentSession!.title ? (
+            <div className="flex items-center gap-2 min-w-0">
+              {parentHeaderAvatar ? (
+                <img src={parentHeaderAvatar} alt={parentHeaderName} className="w-10 h-10 rounded-full object-contain flex-shrink-0 border border-border bg-white" />
+              ) : (
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold flex-shrink-0" style={{ backgroundColor: brandColor }}>
+                  {parentHeaderName.charAt(0)}
+                </div>
+              )}
+              {selectedParentSession!.providerId && onlineStatuses[selectedParentSession!.providerId] && <OnlineIndicator size="md" />}
+              <span className="font-semibold text-sm font-ui truncate">{parentHeaderName}</span>
+            </div>
+          ) : (
+            <div className="flex-1 min-w-0">
+              <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>{parentHeaderName}</h2>
+            </div>
+          )}
           {selectedParentSession!.providerId && (
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-1 shrink-0 ml-auto">
             <Button
               variant="ghost"
               size="sm"
@@ -1454,21 +1476,22 @@ export default function ConversationsPage() {
                       onClick={() => setSelectedSessionId(s.id)}
                       data-testid={`provider-session-${s.id}`}
                     >
-                      <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
+                      <div className="w-12 h-12 rounded-full flex-shrink-0 relative overflow-hidden">
                         {photoSrc ? (
                           <img
                             src={photoSrc}
                             alt={s.title || ""}
-                            className="w-12 h-12 rounded-full object-cover absolute inset-0"
+                            className="w-12 h-12 rounded-full object-cover"
                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                           />
-                        ) : null}
-                        <div
-                          className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
-                          style={{ backgroundColor: brandColor }}
-                        >
-                          {(s.title || "C").charAt(0)}
-                        </div>
+                        ) : (
+                          <div
+                            className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
+                            style={{ backgroundColor: brandColor }}
+                          >
+                            {(s.title || "C").charAt(0)}
+                          </div>
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
@@ -1534,31 +1557,47 @@ export default function ConversationsPage() {
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <div className="flex items-center gap-2 flex-1">
-            <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
-              {detail.user.photoUrl ? (
-                <img src={getPhotoSrc(detail.user.photoUrl) || undefined} alt="" className="w-12 h-12 rounded-full object-cover" />
-              ) : (
-                <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
-                  {hasJoined || isConsultationBooked ? (
-                    <User className="w-4 h-4 text-muted-foreground" />
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            {/* Parent photo + name */}
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-10 h-10 rounded-full flex-shrink-0 relative">
+                {detail.user.photoUrl ? (
+                  <img src={getPhotoSrc(detail.user.photoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                    {hasJoined || isConsultationBooked ? (
+                      <User className="w-4 h-4 text-muted-foreground" />
+                    ) : (
+                      <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
+                    )}
+                  </div>
+                )}
+                {onlineStatuses[detail.user.id] && <OnlineIndicator size="sm" />}
+              </div>
+              <span className="font-semibold text-sm font-ui truncate">{detail.user.name || "Prospective Parent"}</span>
+            </div>
+            {/* Separator */}
+            {(detail.title || selectedSession?.profilePhotoUrl) && (
+              <span className="text-muted-foreground text-base font-medium flex-shrink-0 px-1" aria-hidden>x</span>
+            )}
+            {/* Subject photo + ID */}
+            {(detail.title || selectedSession?.profilePhotoUrl) && (
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-muted">
+                  {selectedSession?.profilePhotoUrl ? (
+                    <img src={getPhotoSrc(selectedSession.profilePhotoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
                   ) : (
-                    <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
+                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                      <User className="w-4 h-4 text-muted-foreground" />
+                    </div>
                   )}
                 </div>
-              )}
-              {onlineStatuses[detail.user.id] && <OnlineIndicator size="sm" />}
-            </div>
-            <div className="min-w-0">
-              <h3 className="font-semibold text-sm font-ui">{detail.user.name || "Prospective Parent"}</h3>
-              {detail.title ? (
-                <p className="text-[13px] font-ui text-muted-foreground truncate" data-testid="provider-subject-label">
-                  Subject: {detail.title}
-                </p>
-              ) : !hasJoined && !isConsultationBooked ? (
-                <p className="text-[11px] text-muted-foreground">Anonymous Q&A via AI Concierge</p>
-              ) : null}
-            </div>
+                <span className="font-semibold text-sm font-ui truncate" data-testid="provider-subject-label">{detail.title}</span>
+              </div>
+            )}
+            {!detail.title && !hasJoined && !isConsultationBooked && (
+              <p className="text-[11px] text-muted-foreground">Anonymous Q&A via AI Concierge</p>
+            )}
           </div>
           <div className="flex items-center gap-1 shrink-0">
             <Button
