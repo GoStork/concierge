@@ -3105,6 +3105,17 @@ NEVER promise to search without actually calling the search tool. NEVER end with
               if (args.maxAge) {
                 if (!donorData || (donorData.age != null && Number(donorData.age) <= Number(args.maxAge))) autoReasons.push(`Under ${args.maxAge} years old`);
               }
+              if (args.minAge) {
+                if (!donorData || (donorData.age != null && Number(donorData.age) >= Number(args.minAge))) autoReasons.push(`${args.minAge}+ years old`);
+              }
+              if (args.minHeightInches) {
+                // Convert inches to feet/inches display, e.g. 67 -> "5'7\""
+                const totalInches = Number(args.minHeightInches);
+                const feet = Math.floor(totalInches / 12);
+                const inches = totalInches % 12;
+                const heightLabel = inches > 0 ? `${feet}'${inches}" and above` : `${feet}' and above`;
+                autoReasons.push(heightLabel);
+              }
             } else if (cardTypeLower === "surrogate") {
               try {
                 const resultBody = searchResult.resultText;
