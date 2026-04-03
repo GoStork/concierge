@@ -1235,8 +1235,8 @@ function BookingOverlay({
         setError(data.message || "Something went wrong. Please try again.");
         return;
       }
-      setSubmitted(true);
       onCallbackSubmitted?.();
+      onClose();
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -3131,7 +3131,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           userName={(user as any)?.name || ""}
           onClose={() => setBookingCard(null)}
           onCallbackSubmitted={() => {
-            if (sessionId) loadMessagesForSession(sessionId);
+            // Small delay to let server write the injected AI message before reloading
+            setTimeout(() => {
+              if (sessionId) loadMessagesForSession(sessionId);
+            }, 800);
           }}
         />
       )}

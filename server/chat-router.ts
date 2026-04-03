@@ -488,6 +488,20 @@ chatRouter.post("/api/consultation/request-callback", requireAuth, async (req, r
       }).catch(() => {});
     }
 
+    // Inject AI confirmation message into chat so parent sees it inline
+    const { aiSessionId } = req.body;
+    if (aiSessionId) {
+      const confirmationText = `✅ Your consultation request has been sent to ${escapeHtml(providerName || provider?.name || "the clinic")}! They'll reach out to you shortly to schedule your call.\n\nNow, let's keep the momentum going!`;
+      await prisma.aiChatMessage.create({
+        data: {
+          sessionId: aiSessionId,
+          role: "assistant",
+          content: confirmationText,
+          uiCardData: {},
+        },
+      }).catch(() => {});
+    }
+
     res.json({ success: true });
   } catch (e: any) {
     console.error("Consultation callback error:", e);
