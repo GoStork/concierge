@@ -3131,9 +3131,25 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           userName={(user as any)?.name || ""}
           onClose={() => setBookingCard(null)}
           onCallbackSubmitted={() => {
-            // Small delay to let server write the injected AI message before reloading
-            setTimeout(() => {
-              if (sessionId) loadMessagesForSession(sessionId);
+            // Reload messages to show confirmation, then trigger AI to continue with next cycle
+            setTimeout(async () => {
+              if (sessionId) {
+                await loadMessagesForSession(sessionId);
+                // Send a hidden trigger so the AI continues with the next pending match cycle
+                fetch("/api/ai-concierge/chat", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  credentials: "include",
+                  body: JSON.stringify({
+                    message: "consultation_callback_submitted",
+                    sessionId,
+                    matchmakerId: effectiveMatchmakerIdRef.current,
+                    isSystemTrigger: true,
+                  }),
+                }).then(r => r.ok ? r.json() : null).then(data => {
+                  if (data && sessionId) loadMessagesForSession(sessionId);
+                }).catch(() => {});
+              }
             }, 800);
           }}
         />

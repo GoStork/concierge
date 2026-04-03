@@ -734,7 +734,10 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       : parentNameParts[0] || "Parent";
 
     const attachmentData = req.body.attachmentData || null;
-    const savedUserMsg = await prisma.aiChatMessage.create({
+    const isSystemTrigger = req.body.isSystemTrigger === true && req.body.message === "consultation_callback_submitted";
+
+    // For system triggers, don't save a user message - just inject context and let AI respond
+    const savedUserMsg = isSystemTrigger ? null : await prisma.aiChatMessage.create({
       data: {
         sessionId: currentSessionId,
         role: "user",
@@ -1982,6 +1985,14 @@ The parent's message was: "${userMessage}"`,
       } catch (e) {
         console.error("[SCHEDULING-INTENT] Error finding match card:", e);
       }
+    }
+
+    // System trigger: consultation callback submitted - tell AI to transition to next cycle
+    if (isSystemTrigger) {
+      messages.push({
+        role: "user",
+        content: `SYSTEM: The parent just submitted a callback consultation request and it was confirmed. The consultation for this cycle is now complete. DO NOT mention the callback again or summarize what just happened - the confirmation message was already shown. Your ONLY job now is to immediately start the next pending match cycle from the checklist. Ask the very first question of the next cycle (ONE question only). Be warm and excited. Example: "Wonderful - your request is in! 🎉 Now let's find you the perfect egg donor. **What matters most to you in an egg donor?**" or "Now that your clinic is sorted, let's find your surrogate! **Are you going on this journey solo, or with a partner?**" - adapt to whatever the next service in the checklist is.`,
+      });
     }
 
     // Skip tools only during early Q&A steps (before any curation/matching has happened).
