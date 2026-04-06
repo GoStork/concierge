@@ -17,10 +17,13 @@ import {
   Building2, Loader2, Globe, Phone, Calendar, Plus, MapPin, FileText,
   Check, X, Upload, Pencil, Save, ImageIcon, User, GripVertical, Eye, Settings,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import ImageCropPreview from "@/components/image-crop-preview";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import LocationAutocomplete from "@/components/location-autocomplete";
+import { CountryAutocompleteInput } from "@/components/ui/country-autocomplete-input";
 import {
   DndContext,
   closestCenter,
@@ -140,6 +143,36 @@ export default function CompanyTab() {
   const [saving, setSaving] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  // IVF Parents Matching Requirements
+  const [ivfTwinsAllowed, setIvfTwinsAllowed] = useState(false);
+  const [ivfTransferFromOtherClinics, setIvfTransferFromOtherClinics] = useState(false);
+  const [ivfMaxAgeIp1, setIvfMaxAgeIp1] = useState("");
+  const [ivfMaxAgeIp2, setIvfMaxAgeIp2] = useState("");
+  const [ivfBiologicalConnection, setIvfBiologicalConnection] = useState("");
+  const [ivfAcceptingPatients, setIvfAcceptingPatients] = useState<string[]>([]);
+  const [ivfEggDonorType, setIvfEggDonorType] = useState("");
+  // IVF Surrogate Matching Requirements
+  const [ivfSurrogateAgeRange, setIvfSurrogateAgeRange] = useState<[number, number]>([18, 45]);
+  const [ivfSurrogateBmiRange, setIvfSurrogateBmiRange] = useState<[number, number]>([18, 35]);
+  const [ivfSurrogateMaxDeliveries, setIvfSurrogateMaxDeliveries] = useState("");
+  const [ivfSurrogateMaxCSections, setIvfSurrogateMaxCSections] = useState("");
+  const [ivfSurrogateMaxMiscarriages, setIvfSurrogateMaxMiscarriages] = useState("");
+  const [ivfSurrogateMaxAbortions, setIvfSurrogateMaxAbortions] = useState("");
+  const [ivfSurrogateMaxYearsFromLastPregnancy, setIvfSurrogateMaxYearsFromLastPregnancy] = useState("");
+  const [ivfSurrogateMonthsPostVaginal, setIvfSurrogateMonthsPostVaginal] = useState("");
+  const [ivfSurrogateCovidVaccination, setIvfSurrogateCovidVaccination] = useState(false);
+  const [ivfSurrogateGdDiet, setIvfSurrogateGdDiet] = useState(false);
+  const [ivfSurrogateGdMedication, setIvfSurrogateGdMedication] = useState(false);
+  const [ivfSurrogateHighBloodPressure, setIvfSurrogateHighBloodPressure] = useState(false);
+  const [ivfSurrogatePlacentaPrevia, setIvfSurrogatePlacentaPrevia] = useState(false);
+  const [ivfSurrogatePreeclampsia, setIvfSurrogatePreeclampsia] = useState(false);
+  const [ivfSurrogateMentalHealthHistory, setIvfSurrogateMentalHealthHistory] = useState("");
+  // Surrogacy Agency Matching Requirements
+  const [surrogacyCitizensNotAllowed, setSurrogacyCitizensNotAllowed] = useState<string[]>([]);
+  const [surrogacyTwinsAllowed, setSurrogacyTwinsAllowed] = useState(false);
+  const [surrogacyStayAfterBirthMonths, setSurrogacyStayAfterBirthMonths] = useState("");
+  const [surrogacyBirthCertificateListing, setSurrogacyBirthCertificateListing] = useState<string[]>([]);
+  const [surrogacySurrogateRemovableFromCert, setSurrogacySurrogateRemovableFromCert] = useState(false);
   const isInitializingRef = useRef(false);
   const [selectedServiceTypeId, setSelectedServiceTypeId] = useState("");
 
@@ -245,6 +278,36 @@ export default function CompanyTab() {
           locationIds: m.locations?.map((ml: any) => ml.locationId) || [],
         }))
       );
+      // IVF Parents Matching Requirements
+      setIvfTwinsAllowed(provider.ivfTwinsAllowed ?? false);
+      setIvfTransferFromOtherClinics(provider.ivfTransferFromOtherClinics ?? false);
+      setIvfMaxAgeIp1(provider.ivfMaxAgeIp1 != null ? String(provider.ivfMaxAgeIp1) : "");
+      setIvfMaxAgeIp2(provider.ivfMaxAgeIp2 != null ? String(provider.ivfMaxAgeIp2) : "");
+      setIvfBiologicalConnection(provider.ivfBiologicalConnection || "");
+      setIvfAcceptingPatients(provider.ivfAcceptingPatients || []);
+      setIvfEggDonorType(provider.ivfEggDonorType || "");
+      // IVF Surrogate Matching Requirements
+      setIvfSurrogateAgeRange([provider.ivfSurrogateMinAge ?? 18, provider.ivfSurrogateMaxAge ?? 45]);
+      setIvfSurrogateBmiRange([provider.ivfSurrogateMinBmi ?? 18, provider.ivfSurrogateMaxBmi ?? 35]);
+      setIvfSurrogateMaxDeliveries(provider.ivfSurrogateMaxDeliveries != null ? String(provider.ivfSurrogateMaxDeliveries) : "");
+      setIvfSurrogateMaxCSections(provider.ivfSurrogateMaxCSections != null ? String(provider.ivfSurrogateMaxCSections) : "");
+      setIvfSurrogateMaxMiscarriages(provider.ivfSurrogateMaxMiscarriages != null ? String(provider.ivfSurrogateMaxMiscarriages) : "");
+      setIvfSurrogateMaxAbortions(provider.ivfSurrogateMaxAbortions != null ? String(provider.ivfSurrogateMaxAbortions) : "");
+      setIvfSurrogateMaxYearsFromLastPregnancy(provider.ivfSurrogateMaxYearsFromLastPregnancy != null ? String(provider.ivfSurrogateMaxYearsFromLastPregnancy) : "");
+      setIvfSurrogateMonthsPostVaginal(provider.ivfSurrogateMonthsPostVaginal != null ? String(provider.ivfSurrogateMonthsPostVaginal) : "");
+      setIvfSurrogateCovidVaccination(provider.ivfSurrogateCovidVaccination ?? false);
+      setIvfSurrogateGdDiet(provider.ivfSurrogateGdDiet ?? false);
+      setIvfSurrogateGdMedication(provider.ivfSurrogateGdMedication ?? false);
+      setIvfSurrogateHighBloodPressure(provider.ivfSurrogateHighBloodPressure ?? false);
+      setIvfSurrogatePlacentaPrevia(provider.ivfSurrogatePlacentaPrevia ?? false);
+      setIvfSurrogatePreeclampsia(provider.ivfSurrogatePreeclampsia ?? false);
+      setIvfSurrogateMentalHealthHistory(provider.ivfSurrogateMentalHealthHistory || "");
+      // Surrogacy Agency Matching Requirements
+      setSurrogacyCitizensNotAllowed(provider.surrogacyCitizensNotAllowed || []);
+      setSurrogacyTwinsAllowed(provider.surrogacyTwinsAllowed ?? false);
+      setSurrogacyStayAfterBirthMonths(provider.surrogacyStayAfterBirthMonths != null ? String(provider.surrogacyStayAfterBirthMonths) : "");
+      setSurrogacyBirthCertificateListing(Array.isArray(provider.surrogacyBirthCertificateListing) ? provider.surrogacyBirthCertificateListing : (provider.surrogacyBirthCertificateListing ? [provider.surrogacyBirthCertificateListing as string] : []));
+      setSurrogacySurrogateRemovableFromCert(provider.surrogacySurrogateRemovableFromCert === true);
       setInitialized(true);
     }
   }, [provider, initialized]);
@@ -254,7 +317,7 @@ export default function CompanyTab() {
     if (isInitializingRef.current) { isInitializingRef.current = false; setIsDirty(false); return; }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, name, about, logoUrl, websiteUrl, phone, yearFounded, consultationBookingUrl, consultationIframeEnabled, pandaDocTemplateId, locations, teamMembers]);
+  }, [initialized, name, about, logoUrl, websiteUrl, phone, yearFounded, consultationBookingUrl, consultationIframeEnabled, pandaDocTemplateId, locations, teamMembers, ivfTwinsAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateMaxDeliveries, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
 
   if ((!isProvider && !isGostorkAdmin) || !providerId) {
     return (
@@ -323,6 +386,38 @@ export default function CompanyTab() {
         consultationBookingUrl: consultationBookingUrl || null,
         consultationIframeEnabled,
         pandaDocTemplateId: pandaDocTemplateId || null,
+        // IVF Parents Matching Requirements
+        ivfTwinsAllowed,
+        ivfTransferFromOtherClinics,
+        ivfMaxAgeIp1: ivfMaxAgeIp1 ? parseInt(ivfMaxAgeIp1) : null,
+        ivfMaxAgeIp2: ivfMaxAgeIp2 ? parseInt(ivfMaxAgeIp2) : null,
+        ivfBiologicalConnection: ivfBiologicalConnection || null,
+        ivfAcceptingPatients: ivfAcceptingPatients.length > 0 ? ivfAcceptingPatients : null,
+        ivfEggDonorType: ivfEggDonorType || null,
+        // IVF Surrogate Matching Requirements
+        ivfSurrogateMinAge: ivfSurrogateAgeRange[0],
+        ivfSurrogateMaxAge: ivfSurrogateAgeRange[1],
+        ivfSurrogateMinBmi: ivfSurrogateBmiRange[0],
+        ivfSurrogateMaxBmi: ivfSurrogateBmiRange[1],
+        ivfSurrogateMaxDeliveries: ivfSurrogateMaxDeliveries ? parseInt(ivfSurrogateMaxDeliveries) : null,
+        ivfSurrogateMaxCSections: ivfSurrogateMaxCSections ? parseInt(ivfSurrogateMaxCSections) : null,
+        ivfSurrogateMaxMiscarriages: ivfSurrogateMaxMiscarriages ? parseInt(ivfSurrogateMaxMiscarriages) : null,
+        ivfSurrogateMaxAbortions: ivfSurrogateMaxAbortions ? parseInt(ivfSurrogateMaxAbortions) : null,
+        ivfSurrogateMaxYearsFromLastPregnancy: ivfSurrogateMaxYearsFromLastPregnancy ? parseInt(ivfSurrogateMaxYearsFromLastPregnancy) : null,
+        ivfSurrogateMonthsPostVaginal: ivfSurrogateMonthsPostVaginal ? parseInt(ivfSurrogateMonthsPostVaginal) : null,
+        ivfSurrogateCovidVaccination,
+        ivfSurrogateGdDiet,
+        ivfSurrogateGdMedication,
+        ivfSurrogateHighBloodPressure,
+        ivfSurrogatePlacentaPrevia,
+        ivfSurrogatePreeclampsia,
+        ivfSurrogateMentalHealthHistory: ivfSurrogateMentalHealthHistory || null,
+        // Surrogacy Agency Matching Requirements
+        surrogacyCitizensNotAllowed: surrogacyCitizensNotAllowed.length > 0 ? surrogacyCitizensNotAllowed : null,
+        surrogacyTwinsAllowed,
+        surrogacyStayAfterBirthMonths: surrogacyStayAfterBirthMonths ? parseInt(surrogacyStayAfterBirthMonths) : null,
+        surrogacyBirthCertificateListing: surrogacyBirthCertificateListing.length > 0 ? surrogacyBirthCertificateListing : null,
+        surrogacySurrogateRemovableFromCert,
       });
 
       const errors: string[] = [];
@@ -378,6 +473,10 @@ export default function CompanyTab() {
   }
 
   const readOnly = !isProviderAdmin;
+  const svcNames = (services || []).map((s: any) => s.providerType?.name?.toLowerCase() || "");
+  const isIvfClinic = svcNames.some((n: string) => n.includes("ivf") || n.includes("in vitro"));
+  const isSurrogacyAgency = svcNames.some((n: string) => n.includes("surrogacy"));
+  const ivfOffersEggDonors = svcNames.some((n: string) => n.includes("egg donor") || n.includes("egg bank"));
 
   return (
     <>
@@ -703,6 +802,236 @@ export default function CompanyTab() {
           <p className="text-sm text-muted-foreground py-2">No services registered yet.</p>
         )}
       </Card>
+
+      {(isIvfClinic || isSurrogacyAgency) && (
+        <Card className="p-6 space-y-6">
+          <h2 className="text-lg font-heading flex items-center gap-2">
+            <Check className="w-5 h-5 text-primary" /> Parents Matching Requirements
+          </h2>
+
+          {isIvfClinic && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <Checkbox id="ivf-twins" checked={ivfTwinsAllowed} onCheckedChange={(v) => setIvfTwinsAllowed(!!v)} disabled={readOnly} />
+                <label htmlFor="ivf-twins" className="text-sm cursor-pointer">Twins allowed</label>
+              </div>
+              <div className="flex items-center gap-3">
+                <Checkbox id="ivf-transfer" checked={ivfTransferFromOtherClinics} onCheckedChange={(v) => setIvfTransferFromOtherClinics(!!v)} disabled={readOnly} />
+                <label htmlFor="ivf-transfer" className="text-sm cursor-pointer">Transferring embryos from other clinics allowed</label>
+              </div>
+              <div className="flex gap-8">
+                <div className="space-y-2">
+                  <Label>Max Age of IP 1</Label>
+                  <Input type="number" min={18} max={80} value={ivfMaxAgeIp1} onChange={e => setIvfMaxAgeIp1(e.target.value)} placeholder="e.g. 50" disabled={readOnly} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Max Age of IP 2</Label>
+                  <Input type="number" min={18} max={80} value={ivfMaxAgeIp2} onChange={e => setIvfMaxAgeIp2(e.target.value)} placeholder="e.g. 55" disabled={readOnly} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Biological connection to embryos</Label>
+                <Select value={ivfBiologicalConnection} onValueChange={setIvfBiologicalConnection} disabled={readOnly}>
+                  <SelectTrigger className="w-auto min-w-[220px]">
+                    <SelectValue placeholder="Select..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No connection required</SelectItem>
+                    <SelectItem value="at_least_one">At least one biological parent</SelectItem>
+                    <SelectItem value="at_least_two">At least two biological parents</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Accepting patients that are</Label>
+                <div className="flex flex-col gap-2">
+                  {[
+                    { value: "single_woman", label: "Single woman" },
+                    { value: "single_man", label: "Single man" },
+                    { value: "gay_couple", label: "Gay couple" },
+                    { value: "straight_couple", label: "Straight couple" },
+                    { value: "straight_married_couple", label: "Straight married couple" },
+                  ].map(opt => (
+                    <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={ivfAcceptingPatients.includes(opt.value)}
+                        disabled={readOnly}
+                        onCheckedChange={(v) => {
+                          if (v) setIvfAcceptingPatients([...ivfAcceptingPatients, opt.value]);
+                          else setIvfAcceptingPatients(ivfAcceptingPatients.filter(x => x !== opt.value));
+                        }}
+                      />
+                      <span className="text-sm">{opt.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              {ivfOffersEggDonors && (
+                <div className="space-y-2">
+                  <Label>Egg donor type</Label>
+                  <Select value={ivfEggDonorType} onValueChange={setIvfEggDonorType} disabled={readOnly}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="anonymous">Anonymous</SelectItem>
+                      <SelectItem value="known">Known</SelectItem>
+                      <SelectItem value="both">Both</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          )}
+
+          {isSurrogacyAgency && (
+            <div className="space-y-4">
+              {isIvfClinic && <div className="border-t border-border pt-4" />}
+              <div className="space-y-2">
+                <Label>Citizens not allowed (countries)</Label>
+                <div className="max-w-xs">
+                  <CountryAutocompleteInput
+                    value={surrogacyCitizensNotAllowed}
+                    onChange={readOnly ? () => {} : setSurrogacyCitizensNotAllowed}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Checkbox id="surrogacy-twins" checked={surrogacyTwinsAllowed} onCheckedChange={(v) => setSurrogacyTwinsAllowed(!!v)} disabled={readOnly} />
+                <label htmlFor="surrogacy-twins" className="text-sm cursor-pointer">Twins allowed</label>
+              </div>
+              <div className="flex items-center gap-3">
+                <Checkbox id="surrogacy-removable-cert" checked={surrogacySurrogateRemovableFromCert} onCheckedChange={(v) => setSurrogacySurrogateRemovableFromCert(!!v)} disabled={readOnly} />
+                <label htmlFor="surrogacy-removable-cert" className="text-sm cursor-pointer">Surrogate can be removed from birth certificate?</label>
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="text-sm">How long do IPs need to stay after baby is born (months)</label>
+                <Input type="number" min={0} max={24} value={surrogacyStayAfterBirthMonths} onChange={e => setSurrogacyStayAfterBirthMonths(e.target.value)} placeholder="e.g. 2" className="w-24" disabled={readOnly} />
+              </div>
+              <div className="space-y-2">
+                <Label>Who is listed on the birth certificate?</Label>
+                <div className="space-y-2">
+                  {[
+                    { value: "surrogate", label: "Surrogate" },
+                    { value: "biological_father", label: "Biological father" },
+                    { value: "biological_mother", label: "Biological mother" },
+                    { value: "both_biological_parents", label: "Both biological parents" },
+                  ].map(({ value, label }) => {
+                    const isBothSelected = surrogacyBirthCertificateListing.includes("both_biological_parents");
+                    const isDisabled = readOnly || (isBothSelected && (value === "biological_father" || value === "biological_mother"));
+                    return (
+                      <div key={value} className="flex items-center gap-3">
+                        <Checkbox
+                          id={`birth-cert-${value}`}
+                          checked={surrogacyBirthCertificateListing.includes(value)}
+                          disabled={isDisabled}
+                          onCheckedChange={(checked) => {
+                            if (value === "both_biological_parents") {
+                              setSurrogacyBirthCertificateListing(checked
+                                ? [...surrogacyBirthCertificateListing.filter(v => v !== "biological_father" && v !== "biological_mother"), "both_biological_parents"]
+                                : surrogacyBirthCertificateListing.filter(v => v !== "both_biological_parents")
+                              );
+                            } else {
+                              setSurrogacyBirthCertificateListing(checked
+                                ? [...surrogacyBirthCertificateListing, value]
+                                : surrogacyBirthCertificateListing.filter(v => v !== value)
+                              );
+                            }
+                          }}
+                        />
+                        <label htmlFor={`birth-cert-${value}`} className={`text-sm cursor-pointer${isDisabled ? " text-muted-foreground opacity-50" : ""}`}>{label}</label>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {isIvfClinic && (
+        <Card className="p-6 space-y-6">
+          <h2 className="text-lg font-heading flex items-center gap-2">
+            <Check className="w-5 h-5 text-primary" /> Surrogate Matching Requirements
+          </h2>
+          <div className="space-y-2">
+            <Label>Age Range of Surrogate: <span className="text-primary font-ui">{ivfSurrogateAgeRange[0]} - {ivfSurrogateAgeRange[1]} years</span></Label>
+            <Slider
+              min={18} max={45} step={1}
+              value={ivfSurrogateAgeRange}
+              onValueChange={(v) => { if (!readOnly) setIvfSurrogateAgeRange(v as [number, number]); }}
+              className="max-w-sm"
+              disabled={readOnly}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>BMI Range of Surrogate: <span className="text-primary font-ui">{ivfSurrogateBmiRange[0]} - {ivfSurrogateBmiRange[1]}</span></Label>
+            <Slider
+              min={18} max={35} step={0.5}
+              value={ivfSurrogateBmiRange}
+              onValueChange={(v) => { if (!readOnly) setIvfSurrogateBmiRange(v as [number, number]); }}
+              className="max-w-sm"
+              disabled={readOnly}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4 max-w-sm">
+            <div className="space-y-2">
+              <Label>Max Deliveries</Label>
+              <Input type="number" min={0} value={ivfSurrogateMaxDeliveries} onChange={e => setIvfSurrogateMaxDeliveries(e.target.value)} placeholder="e.g. 5" disabled={readOnly} />
+            </div>
+            <div className="space-y-2">
+              <Label>Max C-Sections</Label>
+              <Input type="number" min={0} value={ivfSurrogateMaxCSections} onChange={e => setIvfSurrogateMaxCSections(e.target.value)} placeholder="e.g. 3" disabled={readOnly} />
+            </div>
+            <div className="space-y-2">
+              <Label>Max Miscarriages</Label>
+              <Input type="number" min={0} value={ivfSurrogateMaxMiscarriages} onChange={e => setIvfSurrogateMaxMiscarriages(e.target.value)} placeholder="e.g. 2" disabled={readOnly} />
+            </div>
+            <div className="space-y-2">
+              <Label>Max Abortions</Label>
+              <Input type="number" min={0} value={ivfSurrogateMaxAbortions} onChange={e => setIvfSurrogateMaxAbortions(e.target.value)} placeholder="e.g. 2" disabled={readOnly} />
+            </div>
+            <div className="space-y-2">
+              <Label>Max Years from Last Pregnancy</Label>
+              <Input type="number" min={0} value={ivfSurrogateMaxYearsFromLastPregnancy} onChange={e => setIvfSurrogateMaxYearsFromLastPregnancy(e.target.value)} placeholder="e.g. 5" disabled={readOnly} />
+            </div>
+            <div className="space-y-2">
+              <Label>Months Post Vaginal Delivery</Label>
+              <Input type="number" min={0} value={ivfSurrogateMonthsPostVaginal} onChange={e => setIvfSurrogateMonthsPostVaginal(e.target.value)} placeholder="e.g. 6" disabled={readOnly} />
+            </div>
+          </div>
+          <div className="space-y-3">
+            <p className="text-sm font-ui text-muted-foreground">Accepted Surrogate Medical History</p>
+            {[
+              { label: "Covid Vaccination Required", value: ivfSurrogateCovidVaccination, set: setIvfSurrogateCovidVaccination },
+              { label: "Gestational Diabetes (controlled by diet)", value: ivfSurrogateGdDiet, set: setIvfSurrogateGdDiet },
+              { label: "Gestational Diabetes (controlled with medication)", value: ivfSurrogateGdMedication, set: setIvfSurrogateGdMedication },
+              { label: "High Blood Pressure / Gestational Hypertension", value: ivfSurrogateHighBloodPressure, set: setIvfSurrogateHighBloodPressure },
+              { label: "Placenta Previa", value: ivfSurrogatePlacentaPrevia, set: setIvfSurrogatePlacentaPrevia },
+              { label: "Preeclampsia in Most Recent Pregnancy", value: ivfSurrogatePreeclampsia, set: setIvfSurrogatePreeclampsia },
+            ].map(({ label, value, set }) => (
+              <div key={label} className="flex items-center justify-between max-w-sm">
+                <span className="text-sm">{label}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground w-6">{value ? "Yes" : "No"}</span>
+                  <Switch checked={value} onCheckedChange={set} disabled={readOnly} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="space-y-2">
+            <Label>Mental Health History Notes</Label>
+            <Textarea
+              value={ivfSurrogateMentalHealthHistory}
+              onChange={e => setIvfSurrogateMentalHealthHistory(e.target.value)}
+              placeholder="Describe mental health history requirements or notes..."
+              rows={4}
+              disabled={readOnly}
+            />
+          </div>
+        </Card>
+      )}
 
       <Card className="p-6 space-y-4">
         <div className="flex items-center justify-between">
