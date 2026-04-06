@@ -68,6 +68,7 @@ export default function AdminUserAddPage() {
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [mobileNumber, setMobileNumber] = useState("");
@@ -131,7 +132,11 @@ export default function AdminUserAddPage() {
       navigate(-1);
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      if (err.message.toLowerCase().includes("email already in use")) {
+        setEmailError("This email is already in use. Please use a different email.");
+      } else {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+      }
     },
   });
 
@@ -276,7 +281,8 @@ export default function AdminUserAddPage() {
             </div>
             <div className="space-y-2">
               <Label>Email</Label>
-              <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="e.g. jane@example.com" required data-testid="input-staff-email" />
+              <Input type="email" value={email} onChange={e => { setEmail(e.target.value); setEmailError(null); }} placeholder="e.g. jane@example.com" required data-testid="input-staff-email" className={emailError ? "border-destructive" : ""} />
+              {emailError && <p className="text-xs text-destructive">{emailError}</p>}
             </div>
           </div>
 
@@ -394,6 +400,9 @@ export default function AdminUserAddPage() {
           </div>
         )}
 
+        {emailError && (
+          <p className="text-sm text-destructive text-right">Please fix the errors above before submitting.</p>
+        )}
         <div className="flex items-center justify-end gap-3 pt-2">
           <Button type="button" variant="outline" onClick={() => navigate(-1)} data-testid="button-cancel">Cancel</Button>
           <Button type="submit" disabled={createMutation.isPending} data-testid="button-create-user">

@@ -24,7 +24,7 @@ export class VideoService implements OnModuleInit {
     try {
       const replitDomains = process.env.REPLIT_DOMAINS || process.env.REPLIT_DEV_DOMAIN;
       if (!replitDomains) {
-        this.logger.warn("No REPLIT_DOMAINS set - skipping webhook auto-registration");
+        this.logger.debug("No REPLIT_DOMAINS set - skipping webhook auto-registration");
         return;
       }
 

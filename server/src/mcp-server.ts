@@ -260,6 +260,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "string",
               description: "Optional semantic ranking query for soft attributes not covered by other filters (e.g. 'has medical insurance', 'vaginal delivery history', 'nurse or healthcare worker', 'vegetarian'). Applied AFTER hard filters to rank results by relevance.",
             },
+            parentCountry: {
+              type: "string",
+              description: "The parent's country of citizenship/nationality (e.g. 'Italy', 'Germany', 'France'). Used to filter out surrogacy agencies that do not serve citizens from that country. Pass this from the parent's profile country field whenever available.",
+            },
             agreesToTwins: {
               type: "boolean",
               description: "Filter for surrogates who agree to carry twins",
@@ -307,6 +311,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             maxMiscarriages: {
               type: "number",
               description: "Maximum number of miscarriages (inclusive). Use only if the parent insists on this filter after the advisory explains miscarriages are not a disqualifier.",
+            },
+            openToInternationalParents: {
+              type: "boolean",
+              description: "Pass true if the parent is from a country other than the USA (i.e. they are international intended parents). Surrogates who have not indicated openness to international parents will be excluded. Determine from the parent's profile 'country' field - if it is not US/USA/United States, pass true.",
             },
             limit: {
               type: "number",
@@ -515,6 +523,27 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "boolean",
               description: "Whether the parent is a first-time IVF patient (true) or has done IVF before (false). When true, shows new-patient-specific success rates.",
             },
+            wantsTwins: {
+              type: "boolean",
+              description: "Pass true if the parent said they are hoping for twins (from question A3). Clinics with ivfTwinsAllowed=false will be excluded.",
+            },
+            wantsEmbryoTransfer: {
+              type: "boolean",
+              description: "Pass true if the parent wants to transfer embryos from another clinic. Clinics that do not allow transfers from other clinics will be excluded.",
+            },
+            parentAge1: {
+              type: "number",
+              description: "Age of the first intended parent (IP1). Used to filter out clinics whose maximum age for IP1 is lower than this value.",
+            },
+            parentAge2: {
+              type: "number",
+              description: "Age of the second intended parent (IP2), if applicable. Used to filter out clinics whose maximum age for IP2 is lower than this value.",
+            },
+            patientType: {
+              type: "string",
+              enum: ["single_woman", "single_man", "gay_couple", "straight_couple", "straight_married_couple"],
+              description: "Family type of the intended parents inferred from the conversation. Clinics that do not list this patient type in their accepted patients will be excluded.",
+            },
             limit: {
               type: "number",
               description: "Number of results to return (default 5, max 10)",
@@ -639,7 +668,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_surrogates") {
-      const { query, agreesToTwins, agreesToAbortion, openToSameSexCouple, isExperienced, location, maxCompensation, maxAge, minAge, ethnicity, maxBmi, maxCsections, maxMiscarriages, limit: rawLimit, excludeIds } = args as any;
+      const { query, parentCountry, agreesToTwins, agreesToAbortion, openToSameSexCouple, openToInternationalParents, isExperienced, location, maxCompensation, maxAge, minAge, ethnicity, maxBmi, maxCsections, maxMiscarriages, limit: rawLimit, excludeIds } = args as any;
       const take = Math.min(rawLimit || 3, 5);
       const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
       const ethnicityTerms = ethnicity ? resolveEthnicityTerms(ethnicity) : [];
@@ -648,10 +677,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
         baseCompensation: true, agreesToTwins: true, agreesToAbortion: true,
         agreesToSelectiveReduction: true, openToSameSexCouple: true,
+        agreesToInternationalParents: true,
         isExperienced: true, ethnicity: true, race: true, liveBirths: true,
         photoUrl: true, religion: true,
       };
-      const surrogateSelectCols = `id, "providerId", "firstName", "externalId", age, location, "baseCompensation", "agreesToTwins", "agreesToAbortion", "agreesToSelectiveReduction", "openToSameSexCouple", "isExperienced", ethnicity, race, "liveBirths", "photoUrl", religion`;
+      const surrogateSelectCols = `id, "providerId", "firstName", "externalId", age, location, "baseCompensation", "agreesToTwins", "agreesToAbortion", "agreesToSelectiveReduction", "openToSameSexCouple", "agreesToInternationalParents", "isExperienced", ethnicity, race, "liveBirths", "photoUrl", religion`;
 
       // Phase 1: exact Prisma filter — zero false negatives
       const where: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
@@ -659,6 +689,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (agreesToTwins !== undefined) where.agreesToTwins = agreesToTwins;
       if (agreesToAbortion !== undefined) where.agreesToAbortion = agreesToAbortion;
       if (openToSameSexCouple !== undefined) where.openToSameSexCouple = openToSameSexCouple;
+      // International parents: only filter when explicitly required (parent is international)
+      // We filter for agreesToInternationalParents = true OR agreesToInternationalParents = null (not set = no restriction)
+      if (openToInternationalParents === true) {
+        where.OR = [
+          { agreesToInternationalParents: true },
+          { agreesToInternationalParents: null },
+        ];
+      }
       if (isExperienced !== undefined) where.isExperienced = isExperienced;
       if (location) Object.assign(where, buildLocationWhere(location));
       if (maxCompensation) where.baseCompensation = { lte: maxCompensation };
@@ -691,6 +729,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const queryText = ["surrogate carrier", query].join(", ");
         const ranked = await vectorSearchByIds("Surrogate", candidates.map((s: any) => s.id), queryText, take, surrogateSelectCols);
         surrogates = ranked ?? candidates.slice(0, take);
+      }
+
+      // Agency-level matching requirements: filter surrogates from agencies that exclude the parent
+      if (parentCountry || agreesToTwins !== undefined) {
+        const providerIds = [...new Set(surrogates.map((s: any) => s.providerId).filter(Boolean))];
+        if (providerIds.length > 0) {
+          const agencies = await prisma.provider.findMany({
+            where: { id: { in: providerIds } },
+            select: {
+              id: true,
+              surrogacyCitizensNotAllowed: true,
+              surrogacyTwinsAllowed: true,
+            },
+          });
+          const agencyMap = new Map(agencies.map((a: any) => [a.id, a]));
+          surrogates = surrogates.filter((s: any) => {
+            const agency = agencyMap.get(s.providerId);
+            if (!agency) return true;
+            // Citizens not allowed: if the agency explicitly excludes the parent's country, skip it
+            if (parentCountry && Array.isArray(agency.surrogacyCitizensNotAllowed) && agency.surrogacyCitizensNotAllowed.length > 0) {
+              const notAllowedLower = (agency.surrogacyCitizensNotAllowed as string[]).map((c: string) => c.toLowerCase());
+              if (notAllowedLower.includes(parentCountry.toLowerCase())) return false;
+            }
+            // Twins: if parent wants twins and agency does not allow it, skip it
+            if (agreesToTwins === true && agency.surrogacyTwinsAllowed === false) return false;
+            return true;
+          });
+        }
       }
 
       const surrogateIds = surrogates.map((s: any) => s.id);
@@ -1001,7 +1067,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_clinics") {
-      const { query, location: clinicLocation, state, city, name: clinicName, limit: rawLimit, minSuccessRate, excludeIds, ageGroup, eggSource, isNewPatient } = args as any;
+      const { query, location: clinicLocation, state, city, name: clinicName, limit: rawLimit, minSuccessRate, excludeIds, ageGroup, eggSource, isNewPatient, wantsTwins, wantsEmbryoTransfer, parentAge1, parentAge2, patientType } = args as any;
       const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
       const targetAgeGroup = ageGroup || "under_35";
       const targetEggSource = eggSource || "own_eggs";
@@ -1014,6 +1080,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           where: { metricCode: { in: ["pct_new_patients_live_birth_after_1_retrieval", "pct_intended_retrievals_live_births", "pct_transfers_live_births_donor"] } },
           select: { successRate: true, nationalAverage: true, ageGroup: true, isNewPatient: true, metricCode: true, top10pct: true, cycleCount: true, profileType: true },
         },
+        ivfTwinsAllowed: true,
+        ivfTransferFromOtherClinics: true,
+        ivfMaxAgeIp1: true,
+        ivfMaxAgeIp2: true,
+        ivfAcceptingPatients: true,
       };
 
       let clinics: any[];
@@ -1095,6 +1166,39 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           });
         }
       }
+
+      // Apply matching requirement filters
+      const excludedByRequirements: string[] = [];
+      clinics = clinics.filter((c: any) => {
+        // Twins: if parent wants twins and clinic does not allow it, exclude
+        if (wantsTwins === true && c.ivfTwinsAllowed === false) {
+          excludedByRequirements.push(`${c.name} (does not allow twins)`);
+          return false;
+        }
+        // Embryo transfer: if parent wants to transfer embryos from another clinic and clinic doesn't allow it, exclude
+        if (wantsEmbryoTransfer === true && c.ivfTransferFromOtherClinics === false) {
+          excludedByRequirements.push(`${c.name} (does not accept embryo transfers from other clinics)`);
+          return false;
+        }
+        // IP1 max age: if clinic has a max age for IP1 and parent exceeds it, exclude
+        if (parentAge1 != null && c.ivfMaxAgeIp1 != null && parentAge1 > c.ivfMaxAgeIp1) {
+          excludedByRequirements.push(`${c.name} (max age for IP1 is ${c.ivfMaxAgeIp1})`);
+          return false;
+        }
+        // IP2 max age: if clinic has a max age for IP2 and parent exceeds it, exclude
+        if (parentAge2 != null && c.ivfMaxAgeIp2 != null && parentAge2 > c.ivfMaxAgeIp2) {
+          excludedByRequirements.push(`${c.name} (max age for IP2 is ${c.ivfMaxAgeIp2})`);
+          return false;
+        }
+        // Patient type: if clinic has a restricted accepting list and parent type is not in it, exclude
+        if (patientType && Array.isArray(c.ivfAcceptingPatients) && c.ivfAcceptingPatients.length > 0) {
+          if (!c.ivfAcceptingPatients.includes(patientType)) {
+            excludedByRequirements.push(`${c.name} (does not serve ${patientType.replace(/_/g, " ")} patients)`);
+            return false;
+          }
+        }
+        return true;
+      });
 
       // Build rich results with locations, doctors, and success rates
       let results = clinics.map((c: any) => {
@@ -1183,8 +1287,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       results = results.slice(0, take);
 
       const ageLabel = targetAgeGroup === "under_35" ? "Under 35" : targetAgeGroup === "35_37" ? "35-37" : targetAgeGroup === "38_40" ? "38-40" : "Over 40";
+      const excludedNote = excludedByRequirements.length > 0
+        ? `\n\nNOTE: The following clinics were excluded because they do not meet the parent's requirements: ${excludedByRequirements.join("; ")}.`
+        : "";
       return {
-        content: [{ type: "text", text: `Found ${results.length} IVF clinics (success rates shown for: ${targetEggSource === "donor" ? "donor eggs" : `own eggs, age group ${ageLabel}`}${isNewPatient ? ", first-time IVF" : ""}):\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Clinic" in your MATCH_CARDs. Present ONE clinic at a time. Use the "successRateLabel" to tell the parent which metric the rate represents (e.g., "For patients in your age group (${ageLabel}) using ${targetEggSource === "donor" ? "donor eggs" : "their own eggs"}, this clinic has a X% live birth rate"). Use the locations, doctors, and successRatesByAge to write a personalized blurb.${minRateNote}` }],
+        content: [{ type: "text", text: `Found ${results.length} IVF clinics (success rates shown for: ${targetEggSource === "donor" ? "donor eggs" : `own eggs, age group ${ageLabel}`}${isNewPatient ? ", first-time IVF" : ""}):\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Clinic" in your MATCH_CARDs. Present ONE clinic at a time. Use the "successRateLabel" to tell the parent which metric the rate represents (e.g., "For patients in your age group (${ageLabel}) using ${targetEggSource === "donor" ? "donor eggs" : "their own eggs"}, this clinic has a X% live birth rate"). Use the locations, doctors, and successRatesByAge to write a personalized blurb.${minRateNote}${excludedNote}` }],
       };
     }
 

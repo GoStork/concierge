@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,7 +51,14 @@ import {
   Copy,
   ArrowRight,
   ArrowUpDown,
+  ChevronDown,
+  ChevronUp,
+  Pencil,
+  Globe,
 } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { SingleCountryAutocompleteInput } from "@/components/ui/country-autocomplete-input";
+import { getCountryFlag } from "@/lib/country-flag";
 
 interface CostItemData {
   id?: string;
@@ -78,14 +86,22 @@ interface CostTemplate {
   subType?: string | null;
 }
 
+const NUMERIC_ONLY_FIELDS = new Set([
+  "Number of Eggs in Egg Lot",
+  "Number of Egg Retrievals Included",
+  "Number of Sperm Collections Included",
+  "Number of Transfers Included",
+]);
+
 function isNumericOnlyField(fieldName: string): boolean {
-  return fieldName === "Number of Eggs in Egg Lot";
+  return NUMERIC_ONLY_FIELDS.has(fieldName);
 }
 
 interface CostSheet {
   id: string;
   providerId: string;
   parentClientId: string | null;
+  programId: string | null;
   fileUrl: string | null;
   filePath: string | null;
   originalFileName: string | null;
@@ -95,6 +111,16 @@ interface CostSheet {
   createdAt: string;
   updatedAt: string;
   items: CostItemData[];
+}
+
+interface CostProgram {
+  id: string;
+  providerId: string;
+  providerTypeId: string | null;
+  subType: string | null;
+  name: string;
+  country: string;
+  createdAt: string;
 }
 
 interface ServiceInfo {
@@ -109,6 +135,8 @@ interface SingleCostsTabProps {
   isAdminView: boolean;
   parentId?: string;
   subType?: string;
+  programId?: string;
+  programSubType?: string | null;
 }
 
 interface ProviderCostsTabProps {
@@ -263,12 +291,14 @@ function SingleCostsTab({
   isAdminView,
   parentId,
   subType,
+  programId,
+  programSubType,
 }: SingleCostsTabProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingFileRef = useRef<File | null>(null);
   const [editItems, setEditItems] = useState<CostItemData[]>([]);
-  const [isEditing, setIsEditing] = useState(!isAdminView);
+  const [isEditing, setIsEditing] = useState(!isAdminView || !!programId);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectFeedback, setRejectFeedback] = useState("");
   const [rejectSheetId, setRejectSheetId] = useState("");
@@ -279,32 +309,39 @@ function SingleCostsTab({
   const [isDragging, setIsDragging] = useState(false);
   const [accordionValue, setAccordionValue] = useState<string[]>([]);
 
-  const subTypeParam = subType ? `?subType=${encodeURIComponent(subType)}` : "";
+  // When inside an IVF program, use programSubType (ivf_cycle / shipping_embryos) for the template query.
+  // For egg donation programs the existing subType prop (fresh/frozen) is used as-is.
+  const effectiveSubType = programSubType !== undefined ? (programSubType ?? undefined) : subType;
+  const subTypeParam = effectiveSubType ? `?subType=${encodeURIComponent(effectiveSubType)}` : "";
   const templatesQuery = useQuery<{ providerTypeId: string; templates: Record<string, CostTemplate[]> }>({
-    queryKey: ["/api/costs/templates", providerType, subType || "default"],
+    queryKey: ["/api/costs/templates", providerType, effectiveSubType || "default"],
     queryFn: () => fetch(`/api/costs/templates/${encodeURIComponent(providerType)}${subTypeParam}`).then((r) => r.json()),
     enabled: !!providerType,
   });
 
   const sheetsParams = new URLSearchParams();
-  if (providerTypeId) sheetsParams.set("providerTypeId", providerTypeId);
-  if (subType) sheetsParams.set("subType", subType);
+  if (programId) {
+    sheetsParams.set("programId", programId);
+  } else {
+    if (providerTypeId) sheetsParams.set("providerTypeId", providerTypeId);
+    if (subType) sheetsParams.set("subType", subType);
+  }
   const sheetsQueryString = sheetsParams.toString() ? `?${sheetsParams.toString()}` : "";
   const sheetsQuery = useQuery<CostSheet[]>({
-    queryKey: ["/api/costs/provider", providerId, "sheets", providerTypeId || "all", subType || "default"],
+    queryKey: ["/api/costs/provider", providerId, "sheets", providerTypeId || "all", subType || "default", programId || "none"],
     queryFn: () => fetch(`/api/costs/provider/${providerId}${sheetsQueryString}`).then((r) => r.json()),
     enabled: !!providerId,
   });
 
   const approvedQuery = useQuery<CostSheet | null>({
-    queryKey: ["/api/costs/provider", providerId, "approved", providerTypeId || "all", subType || "default"],
+    queryKey: ["/api/costs/provider", providerId, "approved", providerTypeId || "all", subType || "default", programId || "none"],
     queryFn: () => fetch(`/api/costs/provider/${providerId}/approved${sheetsQueryString}`).then((r) => r.json()),
     enabled: !!providerId,
   });
 
   const invalidateAll = () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "sheets", providerTypeId || "all", subType || "default"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "approved", providerTypeId || "all", subType || "default"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "sheets", providerTypeId || "all", subType || "default", programId || "none"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "approved", providerTypeId || "all", subType || "default", programId || "none"] });
   };
 
   const startParseProgress = useCallback(() => {
@@ -493,6 +530,7 @@ function SingleCostsTab({
       formData.append("providerType", providerType);
       if (providerTypeId) formData.append("providerTypeId", providerTypeId);
       if (subType) formData.append("subType", subType);
+      if (programId) formData.append("programId", programId);
       const res = await fetch("/api/costs/upload", { method: "POST", body: formData, credentials: "include" });
       if (!res.ok) throw new Error((await res.json()).message);
       return res.json();
@@ -547,6 +585,7 @@ function SingleCostsTab({
         sheetId: data.sheetId,
         providerTypeId,
         subType,
+        programId,
       });
     },
     onSuccess: () => {
@@ -594,6 +633,7 @@ function SingleCostsTab({
 
   const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSavePendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const saveDraftMutation = useMutation({
     mutationFn: async (items: CostItemData[]) => {
@@ -603,6 +643,7 @@ function SingleCostsTab({
         sheetId: latestMaster?.status === "APPROVED" ? undefined : latestMaster?.id,
         providerTypeId,
         subType,
+        programId,
       });
     },
     onSuccess: () => {
@@ -626,9 +667,13 @@ function SingleCostsTab({
     if (!isEditing) return;
     const items = editItemsRef.current;
     if (!items || items.length === 0) return;
-    setAutoSaveStatus("saving");
-    saveDraftMutation.mutate(items);
-  }, [isEditing, saveDraftMutation]);
+    if (autoSavePendingTimerRef.current) clearTimeout(autoSavePendingTimerRef.current);
+    autoSavePendingTimerRef.current = setTimeout(() => {
+      autoSavePendingTimerRef.current = null;
+      setAutoSaveStatus("saving");
+      saveDraftMutationRef.current.mutate(editItemsRef.current);
+    }, 500);
+  }, [isEditing]);
 
   const createQuoteMutation = useMutation({
     mutationFn: async () => {
@@ -858,7 +903,7 @@ function SingleCostsTab({
   }, [parsingSheet?.id]);
 
   useEffect(() => {
-    if (isAdminView || parentId) return;
+    if ((isAdminView && !programId) || parentId) return;
     if (sheetsQuery.isLoading || templatesQuery.isLoading) return;
     if (isEditing && editItems.length > 0) return;
 
@@ -876,7 +921,7 @@ function SingleCostsTab({
     });
 
     const filterBySubType = (items: CostItemData[]): CostItemData[] => {
-      if (!subType) return items;
+      if (!effectiveSubType) return items;
       const templateCategories = new Set(templateItems.map((t) => t.category));
       return items.filter((item) => templateCategories.has(item.category) || item.isCustom || item._isVariant);
     };
@@ -897,7 +942,7 @@ function SingleCostsTab({
       setEditItems([...templateItems]);
       setIsEditing(true);
     }
-  }, [sheetsQuery.isLoading, templatesQuery.isLoading, draftSheet?.id, pendingSheet?.id, latestMaster?.id, latestMaster?.status, templateItems.length, isAdminView, parentId]);
+  }, [sheetsQuery.isLoading, templatesQuery.isLoading, draftSheet?.id, pendingSheet?.id, latestMaster?.id, latestMaster?.status, templateItems.length, isAdminView, parentId, programId]);
 
   const mergedDisplayItems = useMemo((): CostItemData[] => {
     const sheetItems = displaySheet?.items || [];
@@ -916,20 +961,20 @@ function SingleCostsTab({
       }));
       if (templateItems.length > 0) {
         const merged = mergeSheetWithTemplate(mapped, templateItems);
-        if (subType) {
+        if (effectiveSubType) {
           const templateCategories = new Set(templateItems.map((t) => t.category));
           return merged.filter((item) => templateCategories.has(item.category) || item.isCustom || item._isVariant);
         }
         return merged;
       }
-      if (subType) {
+      if (effectiveSubType) {
         const templateCategories = new Set(templateItems.map((t) => t.category));
         return mapped.filter((item: CostItemData) => templateCategories.has(item.category) || item.isCustom || item._isVariant);
       }
       return mapped;
     }
     return templateItems;
-  }, [displaySheet, templateItems, subType]);
+  }, [displaySheet, templateItems, effectiveSubType]);
 
   const effectiveEditing = isAdminView ? isEditing : (isEditing || editItems.length > 0);
   const displayItems = effectiveEditing && editItems.length > 0 ? editItems : mergedDisplayItems;
@@ -1674,9 +1719,9 @@ function SingleCostsTab({
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold">Estimated Total</span>
               <span className="text-lg font-bold tabular-nums" data-testid="text-total-cost">
-                {totals.minTotal === totals.maxTotal
-                  ? formatCurrency(totals.minTotal)
-                  : `${formatCurrency(totals.minTotal)} – ${formatCurrency(totals.maxTotal)}`}
+                {totals.minTotal > 0 && totals.minTotal !== totals.maxTotal
+                  ? `${formatCurrency(totals.minTotal)} – ${formatCurrency(totals.maxTotal)}`
+                  : formatCurrency(totals.maxTotal || totals.minTotal)}
               </span>
             </div>
             {showDiffView && approvedSheet && (
@@ -1697,15 +1742,15 @@ function SingleCostsTab({
       )}
 
       {isAdminView && effectiveEditing && editItems.length > 0 && (
-        <div className="flex gap-2 justify-end flex-wrap items-center" data-testid="admin-edit-actions">
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t flex gap-2 justify-end items-center" data-testid="admin-edit-actions">
           {autoSaveStatus === "saving" && (
-            <span className="text-xs text-muted-foreground flex items-center gap-1" data-testid="text-auto-save-status">
+            <span className="text-xs text-muted-foreground flex items-center gap-1 mr-auto" data-testid="text-auto-save-status">
               <Loader2 className="w-3 h-3 animate-spin" />
               Saving draft...
             </span>
           )}
           {autoSaveStatus === "saved" && (
-            <span className="text-xs text-[hsl(var(--brand-success))] flex items-center gap-1" data-testid="text-auto-save-status">
+            <span className="text-xs text-[hsl(var(--brand-success))] flex items-center gap-1 mr-auto" data-testid="text-auto-save-status">
               <Check className="w-3 h-3" />
               Draft saved
             </span>
@@ -1722,6 +1767,7 @@ function SingleCostsTab({
           </Button>
           <Button
             onClick={() => {
+              if (autoSavePendingTimerRef.current) { clearTimeout(autoSavePendingTimerRef.current); autoSavePendingTimerRef.current = null; }
               if (displaySheet && displaySheet.status !== "APPROVED") {
                 updateMutation.mutate({ sheetId: displaySheet.id, items: editItems });
               } else {
@@ -1740,27 +1786,32 @@ function SingleCostsTab({
       )}
 
       {!isAdminView && editItems.length > 0 && (
-        <div className="flex gap-2 justify-end flex-wrap items-center" data-testid="edit-actions">
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t flex gap-2 justify-end items-center" data-testid="edit-actions">
           {autoSaveStatus === "saving" && (
-            <span className="text-xs text-muted-foreground flex items-center gap-1" data-testid="text-auto-save-status">
+            <span className="text-xs text-muted-foreground flex items-center gap-1 mr-auto" data-testid="text-auto-save-status">
               <Loader2 className="w-3 h-3 animate-spin" />
               Saving draft...
             </span>
           )}
           {autoSaveStatus === "saved" && (
-            <span className="text-xs text-[hsl(var(--brand-success))] flex items-center gap-1" data-testid="text-auto-save-status">
+            <span className="text-xs text-[hsl(var(--brand-success))] flex items-center gap-1 mr-auto" data-testid="text-auto-save-status">
               <Check className="w-3 h-3" />
               Draft saved
             </span>
           )}
-
+          {missingMandatory.length > 0 && (
+            <p className="text-xs text-destructive self-center mr-2" data-testid="text-missing-mandatory">
+              Missing: {missingMandatory.join(", ")}
+            </p>
+          )}
           <Button
-            onClick={() =>
+            onClick={() => {
+              if (autoSavePendingTimerRef.current) { clearTimeout(autoSavePendingTimerRef.current); autoSavePendingTimerRef.current = null; }
               submitMutation.mutate({
                 items: editItems,
                 sheetId: displaySheet?.status === "APPROVED" ? undefined : displaySheet?.id,
-              })
-            }
+              });
+            }}
             disabled={submitMutation.isPending || missingMandatory.length > 0}
             data-testid="btn-submit-for-approval"
           >
@@ -1769,12 +1820,6 @@ function SingleCostsTab({
             ) : null}
             Submit for Approval
           </Button>
-
-          {missingMandatory.length > 0 && (
-            <p className="text-xs text-destructive self-center" data-testid="text-missing-mandatory">
-              Missing: {missingMandatory.join(", ")}
-            </p>
-          )}
         </div>
       )}
 
@@ -1828,6 +1873,363 @@ function getServiceLabel(name: string): string {
   return SERVICE_LABELS[name] || name;
 }
 
+function ProgramTotalBadge({ providerId, programId, isAdminView }: { providerId: string; programId: string; isAdminView?: boolean }) {
+  const approvedQuery = useQuery<CostSheet | null>({
+    queryKey: ["/api/costs/provider", providerId, "approved", "none", "none", programId],
+    queryFn: () =>
+      fetch(`/api/costs/provider/${providerId}/approved?programId=${programId}`).then((r) => r.json()),
+  });
+
+  const allSheetsQuery = useQuery<CostSheet[]>({
+    queryKey: ["/api/costs/provider", providerId, "sheets", "none", "default", programId],
+    queryFn: () =>
+      fetch(`/api/costs/provider/${providerId}?programId=${programId}`).then((r) => r.json()),
+    enabled: !!isAdminView,
+  });
+
+  let sheet: CostSheet | null | undefined = approvedQuery.data;
+  if (isAdminView && !sheet?.items?.length) {
+    const sheets = allSheetsQuery.data;
+    if (sheets?.length) {
+      sheet = sheets[sheets.length - 1];
+    }
+  }
+
+  if (!sheet?.items?.length) return null;
+
+  const totals = calculateTotalCost(sheet.items);
+  if (!totals.maxTotal && !totals.minTotal) return null;
+
+  const display =
+    totals.minTotal > 0 && totals.minTotal !== totals.maxTotal
+      ? `${formatCurrency(totals.minTotal)} - ${formatCurrency(totals.maxTotal)}`
+      : formatCurrency(totals.maxTotal || totals.minTotal);
+
+  return <span className="text-sm font-semibold tabular-nums">{display}</span>;
+}
+
+function ProgramsView({
+  providerType,
+  providerTypeId,
+  providerId,
+  isAdminView,
+  parentId,
+  subType,
+}: {
+  providerType: string;
+  providerTypeId?: string;
+  providerId: string;
+  isAdminView: boolean;
+  parentId?: string;
+  subType?: string;
+}) {
+  const { toast } = useToast();
+  const [expandedProgramId, setExpandedProgramId] = useState<string | null>(null);
+  const [isAddingProgram, setIsAddingProgram] = useState(false);
+  const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
+  const [formName, setFormName] = useState("");
+  const [formCountry, setFormCountry] = useState("");
+
+  const programsQueryKey = ["/api/costs/programs", providerId, providerTypeId || "all", subType || "none"];
+  const programsQuery = useQuery<CostProgram[]>({
+    queryKey: programsQueryKey,
+    queryFn: () => {
+      const params = new URLSearchParams({ providerId });
+      if (providerTypeId) params.set("providerTypeId", providerTypeId);
+      if (subType) params.set("subType", subType);
+      return fetch(`/api/costs/programs?${params.toString()}`, { credentials: "include" }).then((r) => r.json());
+    },
+    enabled: !!providerId,
+  });
+
+  const invalidatePrograms = () => queryClient.invalidateQueries({ queryKey: programsQueryKey });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: { name: string; country: string }) => {
+      const res = await apiRequest("POST", "/api/costs/programs", { providerId, providerTypeId, subType, ...data });
+      return res.json() as Promise<CostProgram>;
+    },
+    onSuccess: (newProgram: CostProgram) => {
+      invalidatePrograms();
+      setIsAddingProgram(false);
+      setFormName("");
+      setFormCountry("");
+      setExpandedProgramId(newProgram.id);
+      toast({ title: "Program created", variant: "success" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to create program", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, name, country }: { id: string; name: string; country: string }) =>
+      apiRequest("PATCH", `/api/costs/programs/${id}`, { name, country }),
+    onSuccess: () => {
+      invalidatePrograms();
+      setEditingProgramId(null);
+      toast({ title: "Program updated", variant: "success" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to update program", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/costs/programs/${id}`),
+    onSuccess: () => {
+      invalidatePrograms();
+      toast({ title: "Program deleted", variant: "success" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to delete program", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const updateSubTypeMutation = useMutation({
+    mutationFn: ({ id, subType }: { id: string; subType: string }) =>
+      apiRequest("PATCH", `/api/costs/programs/${id}`, { subType }),
+    onSuccess: () => invalidatePrograms(),
+    onError: (err: any) => {
+      toast({ title: "Failed to update program type", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const isIvfType = providerType.toLowerCase().includes("ivf");
+
+  const programs = Array.isArray(programsQuery.data) ? programsQuery.data : [];
+
+  function startEdit(program: CostProgram) {
+    setEditingProgramId(program.id);
+    setFormName(program.name);
+    setFormCountry(program.country);
+  }
+
+  function cancelEdit() {
+    setEditingProgramId(null);
+    setFormName("");
+    setFormCountry("");
+  }
+
+  function startAdd() {
+    setIsAddingProgram(true);
+    setFormName("");
+    setFormCountry("");
+    setEditingProgramId(null);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          {programs.length === 0 ? "No programs yet" : `${programs.length} program${programs.length !== 1 ? "s" : ""}`}
+        </p>
+        {isAdminView && !isAddingProgram && (
+          <Button size="sm" variant="outline" onClick={startAdd}>
+            <Plus className="w-4 h-4 mr-1" />
+            Add Program
+          </Button>
+        )}
+      </div>
+
+      {isAddingProgram && (
+        <div className="border rounded-[var(--container-radius)] p-4 space-y-3 bg-muted/20">
+          <p className="text-sm font-medium">New Program</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Program Name</Label>
+              <Input
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                placeholder="e.g. Standard Package"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Country</Label>
+              <SingleCountryAutocompleteInput
+                value={formCountry}
+                onChange={setFormCountry}
+                placeholder="Select country..."
+              />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              disabled={!formName.trim() || !formCountry.trim() || createMutation.isPending}
+              onClick={() => createMutation.mutate({ name: formName.trim(), country: formCountry.trim() })}
+            >
+              {createMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Check className="w-4 h-4 mr-1" />}
+              Save
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setIsAddingProgram(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {programsQuery.isLoading && (
+        <div className="space-y-3">
+          {[1, 2].map((i) => <div key={i} className="h-14 rounded-[var(--container-radius)] bg-muted animate-pulse" />)}
+        </div>
+      )}
+
+      {programs.map((program) => {
+        const isExpanded = expandedProgramId === program.id;
+        const isEditing = editingProgramId === program.id;
+
+        return (
+          <div key={program.id} className="border rounded-[var(--container-radius)] overflow-hidden">
+            <div className="flex items-center gap-3 px-4 py-3 bg-muted/20">
+              {isEditing ? (
+                <>
+                  <div className="flex-1 grid grid-cols-2 gap-3">
+                    <Input
+                      value={formName}
+                      onChange={(e) => setFormName(e.target.value)}
+                      placeholder="Program name"
+                      className="h-8 text-sm"
+                    />
+                    <SingleCountryAutocompleteInput
+                      value={formCountry}
+                      onChange={setFormCountry}
+                      placeholder="Country"
+                    />
+                  </div>
+                  <Button
+                    size="sm"
+                    disabled={!formName.trim() || !formCountry.trim() || updateMutation.isPending}
+                    onClick={() => updateMutation.mutate({ id: program.id, name: formName.trim(), country: formCountry.trim() })}
+                  >
+                    {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={cancelEdit}>
+                    <X className="w-4 h-4" />
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <div className="flex-1 flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm">{program.name}</span>
+                    <Badge variant="outline" className="text-xs flex items-center gap-1">
+                      {getCountryFlag(program.country)
+                        ? <span>{getCountryFlag(program.country)}</span>
+                        : <Globe className="w-3 h-3" />}
+                      {program.country}
+                    </Badge>
+                    <ProgramTotalBadge providerId={providerId} programId={program.id} isAdminView={isAdminView} />
+                  </div>
+                  {isAdminView && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0"
+                        onClick={() => startEdit(program)}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0">
+                            <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Program</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will permanently delete "{program.name}" and all its cost data. This cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              onClick={() => {
+                                if (expandedProgramId === program.id) setExpandedProgramId(null);
+                                deleteMutation.mutate(program.id);
+                              }}
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0"
+                    onClick={() => setExpandedProgramId(isExpanded ? null : program.id)}
+                  >
+                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </Button>
+                </>
+              )}
+            </div>
+
+            {isExpanded && (
+              <div className="border-t">
+                {isIvfType && (
+                  <div className="px-4 pt-3 pb-1">
+                    <div className="inline-flex gap-0.5 p-1 bg-muted rounded-[var(--radius)]">
+                      {([{ value: "ivf_cycle", label: "IVF Cycle" }, { value: "shipping_embryos", label: "Shipping Embryos" }] as const).map((opt) => {
+                        const active = (program.subType ?? "ivf_cycle") === opt.value;
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            className={cn(
+                              "px-3 py-1 text-sm rounded-[var(--radius)] transition-colors",
+                              active
+                                ? "bg-background text-foreground shadow-sm font-medium"
+                                : "text-muted-foreground hover:text-foreground"
+                            )}
+                            onClick={() => {
+                              if (!active) updateSubTypeMutation.mutate({ id: program.id, subType: opt.value });
+                            }}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                <div className="p-4">
+                  <SingleCostsTab
+                    providerType={providerType}
+                    providerTypeId={providerTypeId}
+                    providerId={providerId}
+                    isAdminView={isAdminView}
+                    parentId={parentId}
+                    subType={subType}
+                    programId={program.id}
+                    programSubType={isIvfType ? (program.subType ?? "ivf_cycle") : undefined}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {programs.length === 0 && !programsQuery.isLoading && !isAddingProgram && (
+        <div className="text-center py-8 border rounded-[var(--container-radius)] text-muted-foreground">
+          <Globe className="w-8 h-8 mx-auto mb-2 opacity-40" />
+          <p className="text-sm">No programs created yet.</p>
+          {isAdminView && (
+            <p className="text-xs mt-1">Click "Add Program" to create the first program.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function isEggDonationType(name: string): boolean {
   const lower = name.toLowerCase();
   return lower.includes("egg donor") || lower === "egg donation";
@@ -1875,24 +2277,24 @@ function EggDonationSubTabs({
         </label>
       </div>
       {activeSubTab === "fresh" && (
-          <SingleCostsTab
-            providerType={providerType}
-            providerTypeId={providerTypeId}
-            providerId={providerId}
-            isAdminView={isAdminView}
-            parentId={parentId}
-            subType="fresh"
-          />
+        <ProgramsView
+          providerType={providerType}
+          providerTypeId={providerTypeId}
+          providerId={providerId}
+          isAdminView={isAdminView}
+          parentId={parentId}
+          subType="fresh"
+        />
       )}
       {activeSubTab === "frozen" && (
-          <SingleCostsTab
-            providerType={providerType}
-            providerTypeId={providerTypeId}
-            providerId={providerId}
-            isAdminView={isAdminView}
-            parentId={parentId}
-            subType="frozen"
-          />
+        <ProgramsView
+          providerType={providerType}
+          providerTypeId={providerTypeId}
+          providerId={providerId}
+          isAdminView={isAdminView}
+          parentId={parentId}
+          subType="frozen"
+        />
       )}
     </div>
   );
@@ -1931,7 +2333,7 @@ export default function ProviderCostsTab({
     }
 
     return (
-      <SingleCostsTab
+      <ProgramsView
         providerType={svcName}
         providerTypeId={svcTypeId}
         providerId={providerId}
@@ -1967,7 +2369,7 @@ export default function ProviderCostsTab({
                 parentId={parentId}
               />
             ) : (
-              <SingleCostsTab
+              <ProgramsView
                 providerType={svc.providerTypeName}
                 providerTypeId={svc.providerTypeId}
                 providerId={providerId}

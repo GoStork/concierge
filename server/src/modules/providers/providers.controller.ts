@@ -48,6 +48,19 @@ import {
 import { ErrorResponseDto } from "../../dto/auth.dto";
 import { scrapeProviderWebsite } from "./scrape.service";
 import { searchSartForClinic, mergeTeamMembers, verifyClinicUrl } from "./clinic-enrichment.service";
+import { Prisma } from "@prisma/client";
+
+const JSON_NULLABLE_FIELDS = ["ivfAcceptingPatients", "surrogacyCitizensNotAllowed", "surrogacyBirthCertificateListing"] as const;
+
+function coerceJsonNullFields(input: Record<string, any>): Record<string, any> {
+  const result = { ...input };
+  for (const field of JSON_NULLABLE_FIELDS) {
+    if (field in result && result[field] === null) {
+      result[field] = Prisma.JsonNull;
+    }
+  }
+  return result;
+}
 
 const US_STATES: Record<string, string> = {
   AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California",
@@ -416,42 +429,42 @@ export class ProvidersController {
       const data = await scrapeProviderWebsite(body.url);
 
       const providerName = data.name || "";
-      const verifyResult = await verifyClinicUrl(body.url, providerName);
-      if (!verifyResult.valid) {
-        console.log(`[provider-scrape] URL verification warning for "${body.url}" (name: "${providerName}", reason: ${verifyResult.reason}) - proceeding anyway (admin-provided)`);
-      }
       const firstLocation = data.locations?.[0];
       const city = firstLocation?.city || null;
       const state = firstLocation?.state || null;
 
-      if (providerName) {
-        try {
-          console.log(`[provider-scrape] Looking up SART data for "${providerName}" (${city}, ${state})...`);
-          const sartResult = await searchSartForClinic(providerName, city, state);
+      // Run verification and SART enrichment in parallel to save time
+      const [verifyResult, sartResult] = await Promise.all([
+        verifyClinicUrl(body.url, providerName).catch(() => ({ valid: true, reason: "fetch-error-accepted" })),
+        providerName
+          ? searchSartForClinic(providerName, city, state).catch((sartErr: any) => {
+              console.log(`[provider-scrape] SART lookup failed for "${providerName}": ${sartErr.message} - returning scraped data only`);
+              return null;
+            })
+          : Promise.resolve(null),
+      ]);
 
-          if (sartResult) {
-            if (sartResult.members.length > 0) {
-              data.teamMembers = mergeTeamMembers(
-                sartResult.members,
-                data.teamMembers || [],
-                providerName,
-              );
-            }
+      if (!verifyResult.valid) {
+        console.log(`[provider-scrape] URL verification warning for "${body.url}" (name: "${providerName}", reason: ${verifyResult.reason}) - proceeding anyway (admin-provided)`);
+      }
 
-            if (!data.phone && sartResult.phone) {
-              data.phone = sartResult.phone;
-            }
-            if (!data.email && sartResult.email) {
-              data.email = sartResult.email;
-            }
-
-            console.log(`[provider-scrape] SART enrichment complete for "${providerName}": ${sartResult.members.length} SART members found, final team: ${data.teamMembers?.length || 0}`);
-          } else {
-            console.log(`[provider-scrape] No SART match for "${providerName}"`);
-          }
-        } catch (sartErr: any) {
-          console.log(`[provider-scrape] SART lookup failed for "${providerName}": ${sartErr.message} - returning scraped data only`);
+      if (sartResult) {
+        if (sartResult.members.length > 0) {
+          data.teamMembers = mergeTeamMembers(
+            sartResult.members,
+            data.teamMembers || [],
+            providerName,
+          );
         }
+        if (!data.phone && sartResult.phone) {
+          data.phone = sartResult.phone;
+        }
+        if (!data.email && sartResult.email) {
+          data.email = sartResult.email;
+        }
+        console.log(`[provider-scrape] SART enrichment complete for "${providerName}": ${sartResult.members.length} SART members found, final team: ${data.teamMembers?.length || 0}`);
+      } else if (providerName) {
+        console.log(`[provider-scrape] No SART match for "${providerName}"`);
       }
 
       return { ...data, urlVerified: verifyResult.valid };
@@ -507,7 +520,7 @@ export class ProvidersController {
     }
     try {
       const input = insertProviderSchema.parse(body);
-      const provider = await this.prisma.provider.create({ data: input });
+      const provider = await this.prisma.provider.create({ data: coerceJsonNullFields(input) as any });
       updateProfileEmbedding(this.prisma, "Provider", provider.id, null).catch(() => {});
       return provider;
     } catch (err) {
@@ -543,7 +556,7 @@ export class ProvidersController {
       const input = insertProviderSchema.partial().parse(body);
       const provider = await this.prisma.provider.update({
         where: { id },
-        data: input,
+        data: coerceJsonNullFields(input) as any,
       });
       if (input.about !== undefined || input.name !== undefined) {
         updateProfileEmbedding(this.prisma, "Provider", id, null).catch(() => {});
@@ -576,6 +589,15 @@ export class ProvidersController {
     }
     await this.prisma.client.$transaction(async (tx: any) => {
       await tx.userLocation.deleteMany({ where: { user: { providerId: id } } });
+      // Delete all records that reference provider staff users before deleting the users themselves
+      await tx.notification.deleteMany({ where: { user: { providerId: id } } });
+      await tx.availabilityOverride.deleteMany({ where: { user: { providerId: id } } });
+      await tx.calendarBlock.deleteMany({ where: { user: { providerId: id } } });
+      await tx.calendarConnection.deleteMany({ where: { user: { providerId: id } } });
+      await tx.eventFreeOverride.deleteMany({ where: { user: { providerId: id } } });
+      await tx.scheduleConfig.deleteMany({ where: { user: { providerId: id } } });
+      await tx.recording.deleteMany({ where: { booking: { providerUser: { providerId: id } } } });
+      await tx.booking.deleteMany({ where: { providerUser: { providerId: id } } });
       await tx.user.deleteMany({ where: { providerId: id } });
       await tx.providerService.deleteMany({ where: { providerId: id } });
       await tx.costItem.deleteMany({ where: { sheet: { providerId: id } } });
@@ -593,6 +615,7 @@ export class ProvidersController {
         await tx.surrogateScreening.deleteMany({ where: { surrogacyProfileId: surrogacyProfile.id } });
         await tx.surrogacyAgencyProfile.delete({ where: { id: surrogacyProfile.id } });
       }
+      await tx.aiChatSession.updateMany({ where: { providerId: id }, data: { providerId: null } });
       await tx.ivfSuccessRate.deleteMany({ where: { providerId: id } });
       await tx.providerBrandSettings.deleteMany({ where: { providerId: id } });
       await tx.providerLocation.deleteMany({ where: { providerId: id } });

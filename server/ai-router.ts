@@ -2011,6 +2011,39 @@ The parent's message was: "${userMessage}"`,
     });
     const needsTools = hasEnteredMatchingPhase || shouldTriggerScheduling || isDonorInquiryMode;
 
+    // Detect if the AI just asked B1 (egg donor preferences) and the user is now answering it.
+    // In this case, the ONLY valid next action is [[CURATION]] - not a search, not a text list.
+    const conversationMessages = messages.filter(m => m.role === "user" || m.role === "assistant");
+    const lastAiMsg = [...conversationMessages].reverse().find(m => m.role === "assistant");
+    const lastAiContent = typeof lastAiMsg?.content === "string" ? lastAiMsg.content : "";
+    const justAnsweredB1 = /what matters most.*egg donor|egg donor.*preferences|looking for.*egg donor|specific preferences.*egg donor|qualities.*egg donor/i.test(lastAiContent);
+    const curationAlreadySentAfterB1 = conversationMessages.slice(conversationMessages.indexOf(lastAiMsg!) + 1).some(
+      m => m.role === "assistant" && typeof m.content === "string" && m.content.includes("[[CURATION]]")
+    );
+    if (justAnsweredB1 && !curationAlreadySentAfterB1) {
+      messages.push({
+        role: "system" as const,
+        content: `MANDATORY NEXT ACTION - NO EXCEPTIONS:
+The parent just answered the egg donor preference question (B1). Your ONLY valid next response is a [[CURATION]] summary message.
+- Do NOT call any search tools (search_egg_donors or any other tool).
+- Do NOT list any donors - not as text, not as numbers, not in any format.
+- Do NOT show any [[MATCH_CARD]].
+- ONLY send: a warm 1-2 sentence summary of their preferences, ending with "Ready to see your matches?" and [[CURATION]] at the very end.
+Example: "Here's what I have: you're looking for an egg donor with [preferences]. Shall I find your perfect matches now? [[CURATION]]"
+After you send this, wait for the parent to reply. The system will then auto-send "ready" and ONLY THEN can you call search_egg_donors and show ONE [[MATCH_CARD]].`,
+      });
+    }
+
+    // Final enforcement injection - always appended last so model reads it immediately before generating.
+    // Rules near end of context are followed more reliably than rules buried in a long system prompt.
+    messages.push({
+      role: "system" as const,
+      content: `ABSOLUTE OUTPUT RULES (enforced every response):
+1. MATCH_CARD MANDATORY: Whenever you mention, describe, or recommend a specific donor, surrogate, or clinic - you MUST use [[MATCH_CARD:{...}]]. Plain-text-only profile descriptions (e.g., "Donor #5596 - Age 20, Brown hair...") are STRICTLY FORBIDDEN.
+2. ONE PROFILE PER MESSAGE: Never list multiple profiles in one message. ONE [[MATCH_CARD]] only, then stop and wait.
+3. CURATION BEFORE SEARCH: After collecting preferences (B1 for egg donors, D1-D3 for surrogates), you MUST send [[CURATION]] first. Only call search tools AFTER receiving "ready".`,
+    });
+
     let response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages,

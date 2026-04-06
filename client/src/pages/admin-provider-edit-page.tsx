@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowLeft, Building2, Loader2, Pencil, Globe, Phone, Calendar, Sparkles, MapPin, Check, X, Upload, User, Plus, GripVertical, Eye, Palette, DollarSign } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import LocationAutocomplete from "@/components/location-autocomplete";
+import { CountryAutocompleteInput } from "@/components/ui/country-autocomplete-input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import MembersTable from "@/components/members-table";
 import ProfileDatabasePanel from "@/components/profile-database-panel";
@@ -179,9 +180,26 @@ export default function AdminProviderEditPage() {
   const [editScrapedData, setEditScrapedData] = useState<ScrapedData | null>(null);
   const [editMergeSelections, setEditMergeSelections] = useState<Record<string, "keep" | "scraped">>({});
   const [initialized, setInitialized] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const isInitializingRef = useRef(false);
+  // IVF matching requirements
+  const [ivfTwinsAllowed, setIvfTwinsAllowed] = useState(false);
+  const [ivfTransferFromOtherClinics, setIvfTransferFromOtherClinics] = useState(false);
+  const [ivfMaxAgeIp1, setIvfMaxAgeIp1] = useState("");
+  const [ivfMaxAgeIp2, setIvfMaxAgeIp2] = useState("");
+  const [ivfBiologicalConnection, setIvfBiologicalConnection] = useState("");
+  const [ivfAcceptingPatients, setIvfAcceptingPatients] = useState<string[]>([]);
+  const [ivfEggDonorType, setIvfEggDonorType] = useState("");
+  // Surrogacy matching requirements
+  const [surrogacyCitizensNotAllowed, setSurrogacyCitizensNotAllowed] = useState<string[]>([]);
+  const [surrogacyTwinsAllowed, setSurrogacyTwinsAllowed] = useState(false);
+  const [surrogacyStayAfterBirthMonths, setSurrogacyStayAfterBirthMonths] = useState("");
+  const [surrogacyBirthCertificateListing, setSurrogacyBirthCertificateListing] = useState<string[]>([]);
+  const [surrogacySurrogateRemovableFromCert, setSurrogacySurrogateRemovableFromCert] = useState(false);
 
   useEffect(() => {
     if (provider && !initialized) {
+      isInitializingRef.current = true;
       setEditName(provider.name);
       setEditAbout(provider.about || "");
       setEditWebsite(provider.websiteUrl || "");
@@ -200,9 +218,51 @@ export default function AdminProviderEditPage() {
         locationHints: d.locations?.map((l: any) => l.location?.city ? `${l.location.city}, ${l.location.state}` : "").filter(Boolean) || [],
         locationIds: d.locations?.map((l: any) => l.locationId) || [],
       })) || []);
+      // IVF matching requirements
+      setIvfTwinsAllowed(provider.ivfTwinsAllowed ?? false);
+      setIvfTransferFromOtherClinics(provider.ivfTransferFromOtherClinics ?? false);
+      setIvfMaxAgeIp1(provider.ivfMaxAgeIp1 != null ? String(provider.ivfMaxAgeIp1) : "");
+      setIvfMaxAgeIp2(provider.ivfMaxAgeIp2 != null ? String(provider.ivfMaxAgeIp2) : "");
+      setIvfBiologicalConnection(provider.ivfBiologicalConnection || "");
+      setIvfAcceptingPatients(provider.ivfAcceptingPatients || []);
+      setIvfEggDonorType(provider.ivfEggDonorType || "");
+      // Surrogacy matching requirements
+      setSurrogacyCitizensNotAllowed(provider.surrogacyCitizensNotAllowed || []);
+      setSurrogacyTwinsAllowed(provider.surrogacyTwinsAllowed ?? false);
+      setSurrogacyStayAfterBirthMonths(provider.surrogacyStayAfterBirthMonths != null ? String(provider.surrogacyStayAfterBirthMonths) : "");
+      setSurrogacyBirthCertificateListing(Array.isArray(provider.surrogacyBirthCertificateListing) ? provider.surrogacyBirthCertificateListing : (provider.surrogacyBirthCertificateListing ? [provider.surrogacyBirthCertificateListing as string] : []));
+      setSurrogacySurrogateRemovableFromCert(provider.surrogacySurrogateRemovableFromCert === true);
+      // Apply US surrogacy defaults if the provider is a US-based surrogacy agency and has never been configured
+      const US_STATES = new Set(["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC"]);
+      const providerIsSurrogacyAgency = provider.services?.some((svc: any) => svc.providerType?.name?.toLowerCase().includes("surrogacy"));
+      const providerIsUSBased = provider.locations?.some((loc: any) => {
+        const s = (loc.state || "").trim().toUpperCase();
+        const c = (loc.country || "").trim().toLowerCase();
+        return US_STATES.has(s) || c === "us" || c === "usa" || c === "united states";
+      });
+      if (providerIsSurrogacyAgency && providerIsUSBased && provider.surrogacySurrogateRemovableFromCert == null) {
+        setSurrogacyTwinsAllowed(true);
+        setSurrogacySurrogateRemovableFromCert(true);
+        setSurrogacyStayAfterBirthMonths("0");
+        setSurrogacyBirthCertificateListing(["both_biological_parents"]);
+      }
       setInitialized(true);
     }
   }, [provider, initialized]);
+
+  useEffect(() => {
+    if (!initialized) {
+      setIsDirty(false);
+      return;
+    }
+    if (isInitializingRef.current) {
+      isInitializingRef.current = false;
+      setIsDirty(false);
+      return;
+    }
+    setIsDirty(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialized, editName, editAbout, editWebsite, editEmail, editPhone, editYearFounded, editLogoUrl, editLocations, editTeamMembers, ivfTwinsAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
 
   const editScrapeMutation = useMutation({
     mutationFn: async (url: string) => {
@@ -257,6 +317,18 @@ export default function AdminProviderEditPage() {
       phone: editPhone || null,
       yearFounded: editYearFounded ? parseInt(editYearFounded) : null,
       logoUrl: editLogoUrl || null,
+      ivfTwinsAllowed,
+      ivfTransferFromOtherClinics,
+      ivfMaxAgeIp1: ivfMaxAgeIp1 ? parseInt(ivfMaxAgeIp1) : null,
+      ivfMaxAgeIp2: ivfMaxAgeIp2 ? parseInt(ivfMaxAgeIp2) : null,
+      ivfBiologicalConnection: ivfBiologicalConnection || null,
+      ivfAcceptingPatients: ivfAcceptingPatients.length > 0 ? ivfAcceptingPatients : null,
+      ivfEggDonorType: ivfEggDonorType || null,
+      surrogacyCitizensNotAllowed: surrogacyCitizensNotAllowed.length > 0 ? surrogacyCitizensNotAllowed : null,
+      surrogacyTwinsAllowed,
+      surrogacyStayAfterBirthMonths: surrogacyStayAfterBirthMonths ? parseInt(surrogacyStayAfterBirthMonths) : null,
+      surrogacyBirthCertificateListing: surrogacyBirthCertificateListing.length > 0 ? surrogacyBirthCertificateListing : null,
+      surrogacySurrogateRemovableFromCert: surrogacySurrogateRemovableFromCert,
     };
 
     try {
@@ -267,39 +339,43 @@ export default function AdminProviderEditPage() {
       const existingLocIds = new Set((provider.locations || []).map((l: any) => l.id));
       const currentLocIds = new Set(editLocations.filter(l => l.id).map(l => l.id));
 
+      const locPromises: Promise<void>[] = [];
       for (const loc of provider.locations || []) {
         if (!currentLocIds.has(loc.id)) {
-          try { await apiRequest("DELETE", `/api/providers/${provider.id}/locations/${loc.id}`); } catch (e: any) { errors.push(`Delete location: ${e.message}`); }
+          locPromises.push(apiRequest("DELETE", `/api/providers/${provider.id}/locations/${loc.id}`).catch((e: any) => { errors.push(`Delete location: ${e.message}`); }));
         }
       }
       for (let i = 0; i < editLocations.length; i++) {
         const loc = editLocations[i];
         if (loc.id && existingLocIds.has(loc.id)) {
-          try { await apiRequest("PUT", `/api/providers/${provider.id}/locations/${loc.id}`, { address: loc.address, city: loc.city, state: loc.state, zip: loc.zip, sortOrder: i }); } catch (e: any) { errors.push(`Update location: ${e.message}`); }
+          locPromises.push(apiRequest("PUT", `/api/providers/${provider.id}/locations/${loc.id}`, { address: loc.address, city: loc.city, state: loc.state, zip: loc.zip, sortOrder: i }).catch((e: any) => { errors.push(`Update location: ${e.message}`); }));
         } else if (!loc.id || !existingLocIds.has(loc.id)) {
-          try { await apiRequest("POST", `/api/providers/${provider.id}/locations`, { address: loc.address || null, city: loc.city || null, state: loc.state || null, zip: loc.zip || null, sortOrder: i }); } catch (e: any) { errors.push(`Add location: ${e.message}`); }
+          locPromises.push(apiRequest("POST", `/api/providers/${provider.id}/locations`, { address: loc.address || null, city: loc.city || null, state: loc.state || null, zip: loc.zip || null, sortOrder: i }).catch((e: any) => { errors.push(`Add location: ${e.message}`); }));
         }
       }
 
       const existingMemberIds = new Set((provider.members || []).map((d: any) => d.id));
       const currentMemberIds = new Set(editTeamMembers.filter((m: any) => m.id).map((m: any) => m.id));
 
+      const memberPromises: Promise<void>[] = [];
       for (const doc of provider.members || []) {
         if (!currentMemberIds.has(doc.id)) {
-          try { await apiRequest("DELETE", `/api/providers/${provider.id}/members/${doc.id}`); } catch (e: any) { errors.push(`Delete member: ${e.message}`); }
+          memberPromises.push(apiRequest("DELETE", `/api/providers/${provider.id}/members/${doc.id}`).catch((e: any) => { errors.push(`Delete member: ${e.message}`); }));
         }
       }
       for (let i = 0; i < editTeamMembers.length; i++) {
         const m = editTeamMembers[i] as any;
         if (m.id && existingMemberIds.has(m.id)) {
-          try { await apiRequest("PUT", `/api/providers/${provider.id}/members/${m.id}`, { name: m.name, title: m.title || null, bio: m.bio || null, photoUrl: m.photoUrl || null, isMedicalDirector: m.isMedicalDirector || false, sortOrder: i, locationIds: m.locationIds || [] }); } catch (e: any) { errors.push(`Update member "${m.name}": ${e.message}`); }
+          memberPromises.push(apiRequest("PUT", `/api/providers/${provider.id}/members/${m.id}`, { name: m.name, title: m.title || null, bio: m.bio || null, photoUrl: m.photoUrl || null, isMedicalDirector: m.isMedicalDirector || false, sortOrder: i, locationIds: m.locationIds || [] }).catch((e: any) => { errors.push(`Update member "${m.name}": ${e.message}`); }));
         } else if (!m.id || !existingMemberIds.has(m.id)) {
-          try { await apiRequest("POST", `/api/providers/${provider.id}/members`, { name: m.name, title: m.title || null, bio: m.bio || null, photoUrl: m.photoUrl || null, isMedicalDirector: m.isMedicalDirector || false, sortOrder: i, locationIds: m.locationIds || [] }); } catch (e: any) { errors.push(`Add member "${m.name}": ${e.message}`); }
+          memberPromises.push(apiRequest("POST", `/api/providers/${provider.id}/members`, { name: m.name, title: m.title || null, bio: m.bio || null, photoUrl: m.photoUrl || null, isMedicalDirector: m.isMedicalDirector || false, sortOrder: i, locationIds: m.locationIds || [] }).catch((e: any) => { errors.push(`Add member "${m.name}": ${e.message}`); }));
         }
       }
 
+      await Promise.all([...locPromises, ...memberPromises]);
+
+      await queryClient.refetchQueries({ queryKey: ["/api/providers", id] });
       queryClient.invalidateQueries({ queryKey: [api.providers.list.path] });
-      queryClient.invalidateQueries({ queryKey: ["/api/providers", id] });
       setInitialized(false);
       if (errors.length > 0) {
         toast({ title: "Provider updated with errors", description: errors.join("; "), variant: "destructive" });
@@ -511,7 +587,7 @@ export default function AdminProviderEditPage() {
             </div>
           )}
         </div>
-        <div className="flex gap-2 justify-end sticky bottom-0 bg-background py-4 border-t">
+        <div className="flex gap-2 justify-end fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t">
           <Button variant="outline" onClick={() => { setEditScrapedData(null); setEditMergeSelections({}); }} data-testid="btn-edit-merge-dismiss">
             Cancel
           </Button>
@@ -528,6 +604,9 @@ export default function AdminProviderEditPage() {
   const showEggDonors = svcNames.some((n: string) => n.includes("egg donor") || n.includes("egg bank"));
   const showSurrogates = svcNames.some((n: string) => n.includes("surrogacy"));
   const showSpermDonors = svcNames.some((n: string) => n.includes("sperm"));
+  const isIvfClinic = svcNames.some((n: string) => n.includes("ivf") || n.includes("in vitro"));
+  const isSurrogacyAgency = showSurrogates;
+  const ivfOffersEggDonors = showEggDonors;
   const tabTriggerClass = "flex-1 h-full text-sm font-ui rounded-[var(--radius)] data-[state=active]:bg-background dark:data-[state=active]:bg-foreground/90 data-[state=active]:shadow data-[state=active]:text-primary data-[state=inactive]:text-muted-foreground dark:data-[state=inactive]:text-muted-foreground";
 
 
@@ -772,6 +851,155 @@ export default function AdminProviderEditPage() {
               })()}
             </Card>
 
+            {(isIvfClinic || isSurrogacyAgency) && (
+              <Card className="p-6 space-y-6">
+                <h3 className="text-lg font-heading flex items-center gap-2">
+                  <Check className="w-5 h-5 text-primary" /> Matching Requirements
+                </h3>
+
+                {isIvfClinic && (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <Checkbox id="ivf-twins" checked={ivfTwinsAllowed} onCheckedChange={(v) => setIvfTwinsAllowed(!!v)} data-testid="checkbox-ivf-twins" />
+                      <label htmlFor="ivf-twins" className="text-sm cursor-pointer">Twins allowed</label>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Checkbox id="ivf-transfer" checked={ivfTransferFromOtherClinics} onCheckedChange={(v) => setIvfTransferFromOtherClinics(!!v)} data-testid="checkbox-ivf-transfer" />
+                      <label htmlFor="ivf-transfer" className="text-sm cursor-pointer">Transferring embryos from other clinics allowed</label>
+                    </div>
+                    <div className="flex gap-8">
+                      <div className="space-y-2">
+                        <Label>Max Age of IP 1</Label>
+                        <Input type="number" min={18} max={80} value={ivfMaxAgeIp1} onChange={e => setIvfMaxAgeIp1(e.target.value)} placeholder="e.g. 50" data-testid="input-ivf-max-age-ip1" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Max Age of IP 2</Label>
+                        <Input type="number" min={18} max={80} value={ivfMaxAgeIp2} onChange={e => setIvfMaxAgeIp2(e.target.value)} placeholder="e.g. 55" data-testid="input-ivf-max-age-ip2" />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Biological connection to embryos</Label>
+                      <Select value={ivfBiologicalConnection} onValueChange={setIvfBiologicalConnection}>
+                        <SelectTrigger data-testid="select-ivf-bio-connection" className="w-auto min-w-[220px]">
+                          <SelectValue placeholder="Select..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No connection required</SelectItem>
+                          <SelectItem value="at_least_one">At least one biological parent</SelectItem>
+                          <SelectItem value="at_least_two">At least two biological parents</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Accepting patients that are</Label>
+                      <div className="flex flex-col gap-2">
+                        {[
+                          { value: "single_woman", label: "Single woman" },
+                          { value: "single_man", label: "Single man" },
+                          { value: "gay_couple", label: "Gay couple" },
+                          { value: "straight_couple", label: "Straight couple" },
+                          { value: "straight_married_couple", label: "Straight married couple" },
+                        ].map(opt => (
+                          <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
+                            <Checkbox
+                              checked={ivfAcceptingPatients.includes(opt.value)}
+                              onCheckedChange={(v) => {
+                                if (v) setIvfAcceptingPatients([...ivfAcceptingPatients, opt.value]);
+                                else setIvfAcceptingPatients(ivfAcceptingPatients.filter(x => x !== opt.value));
+                              }}
+                              data-testid={`checkbox-ivf-accepting-${opt.value}`}
+                            />
+                            <span className="text-sm">{opt.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    {ivfOffersEggDonors && (
+                      <div className="space-y-2">
+                        <Label>Egg donor type</Label>
+                        <Select value={ivfEggDonorType} onValueChange={setIvfEggDonorType}>
+                          <SelectTrigger data-testid="select-ivf-egg-donor-type">
+                            <SelectValue placeholder="Select..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="anonymous">Anonymous</SelectItem>
+                            <SelectItem value="known">Known</SelectItem>
+                            <SelectItem value="both">Both</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {isSurrogacyAgency && (
+                  <div className="space-y-4">
+                    {isIvfClinic && <div className="border-t border-border pt-4" />}
+                    <div className="space-y-2">
+                      <Label>Citizens not allowed (countries)</Label>
+                      <div className="max-w-xs">
+                        <CountryAutocompleteInput
+                          value={surrogacyCitizensNotAllowed}
+                          onChange={setSurrogacyCitizensNotAllowed}
+                          data-testid="input-surrogacy-citizens-country"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Checkbox id="surrogacy-twins" checked={surrogacyTwinsAllowed} onCheckedChange={(v) => setSurrogacyTwinsAllowed(!!v)} data-testid="checkbox-surrogacy-twins" />
+                      <label htmlFor="surrogacy-twins" className="text-sm cursor-pointer">Twins allowed</label>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Checkbox id="surrogacy-removable-cert" checked={surrogacySurrogateRemovableFromCert} onCheckedChange={(v) => setSurrogacySurrogateRemovableFromCert(!!v)} data-testid="checkbox-surrogacy-removable-cert" />
+                      <label htmlFor="surrogacy-removable-cert" className="text-sm cursor-pointer">Surrogate can be removed from birth certificate?</label>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm">How long do IPs need to stay after baby is born (months)</label>
+                      <Input type="number" min={0} max={24} value={surrogacyStayAfterBirthMonths} onChange={e => setSurrogacyStayAfterBirthMonths(e.target.value)} placeholder="e.g. 2" className="w-24" data-testid="input-surrogacy-stay-months" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Who is listed on the birth certificate?</Label>
+                      <div className="space-y-2">
+                        {[
+                          { value: "surrogate", label: "Surrogate" },
+                          { value: "biological_father", label: "Biological father" },
+                          { value: "biological_mother", label: "Biological mother" },
+                          { value: "both_biological_parents", label: "Both biological parents" },
+                        ].map(({ value, label }) => {
+                          const isBothSelected = surrogacyBirthCertificateListing.includes("both_biological_parents");
+                          const isDisabled = isBothSelected && (value === "biological_father" || value === "biological_mother");
+                          return (
+                            <div key={value} className="flex items-center gap-3">
+                              <Checkbox
+                                id={`birth-cert-${value}`}
+                                checked={surrogacyBirthCertificateListing.includes(value)}
+                                disabled={isDisabled}
+                                onCheckedChange={(checked) => {
+                                  if (value === "both_biological_parents") {
+                                    setSurrogacyBirthCertificateListing(checked
+                                      ? [...surrogacyBirthCertificateListing.filter(v => v !== "biological_father" && v !== "biological_mother"), "both_biological_parents"]
+                                      : surrogacyBirthCertificateListing.filter(v => v !== "both_biological_parents")
+                                    );
+                                  } else {
+                                    setSurrogacyBirthCertificateListing(checked
+                                      ? [...surrogacyBirthCertificateListing, value]
+                                      : surrogacyBirthCertificateListing.filter(v => v !== value)
+                                    );
+                                  }
+                                }}
+                              />
+                              <label htmlFor={`birth-cert-${value}`} className={`text-sm cursor-pointer${isDisabled ? " text-muted-foreground opacity-50" : ""}`}>{label}</label>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                  </div>
+                )}
+              </Card>
+            )}
+
             <Card className="p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-heading flex items-center gap-2">
@@ -1014,12 +1242,12 @@ export default function AdminProviderEditPage() {
               </DndContext>
             </Card>
 
-            <div className="flex gap-2 justify-end sticky bottom-0 bg-background py-4 border-t">
-              <Button type="button" variant="outline" onClick={() => navigate("/admin/providers")} data-testid="button-cancel-edit">Cancel</Button>
-              <Button type="submit" data-testid="button-save-edit">
-                Save
-              </Button>
-            </div>
+            {isDirty && (
+              <div className="flex gap-2 justify-end fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t">
+                <Button type="button" variant="outline" onClick={() => navigate("/admin/providers")} data-testid="button-cancel-edit">Cancel</Button>
+                <Button type="submit" data-testid="button-save-edit">Save</Button>
+              </div>
+            )}
           </form>
         </TabsContent>
 

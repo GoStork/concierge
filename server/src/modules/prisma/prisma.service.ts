@@ -75,6 +75,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.costTemplate;
   }
 
+  get costProgram() {
+    return prisma.costProgram;
+  }
+
   get providerCostSheet() {
     return prisma.providerCostSheet;
   }

@@ -1101,12 +1101,58 @@ function ConsultationBookingCard({
   brandColor,
   onSchedule,
   existingBooking,
+  userEmail,
+  userName,
+  onCallbackSubmitted,
 }: {
   card: ConsultationCardData;
   brandColor: string;
   onSchedule: (card: ConsultationCardData) => void;
   existingBooking?: any;
+  userEmail?: string;
+  userName?: string;
+  onCallbackSubmitted?: () => void;
 }) {
+  const [callbackExpanded, setCallbackExpanded] = useState(false);
+  const [callbackName, setCallbackName] = useState(userName || "");
+  const [callbackEmail, setCallbackEmail] = useState(userEmail || "");
+  const [callbackMessage, setCallbackMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [callbackError, setCallbackError] = useState("");
+
+  async function handleCallbackSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setCallbackError("");
+    try {
+      const res = await fetch("/api/consultation/request-callback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          providerId: card.providerId,
+          providerName: card.providerName,
+          name: callbackName,
+          email: callbackEmail,
+          message: callbackMessage,
+          aiSessionId: card.aiSessionId,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ message: "Request failed" }));
+        setCallbackError(data.message || "Something went wrong. Please try again.");
+        return;
+      }
+      setSubmitted(true);
+      onCallbackSubmitted?.();
+    } catch {
+      setCallbackError("Network error. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   if (card.memberBookingSlug) {
     return (
       <div
@@ -1172,15 +1218,94 @@ function ConsultationBookingCard({
         <p className="text-sm text-muted-foreground mb-4">
           Take the next step in your journey. Schedule a consultation to discuss your options directly with {card.providerName}.
         </p>
-        <Button
-          className="w-full gap-2 text-primary-foreground"
-          style={{ backgroundColor: brandColor, borderRadius: "var(--radius, 0.5rem)" }}
-          onClick={() => onSchedule(card)}
-          data-testid="btn-schedule-consultation"
-        >
-          <CalendarCheck className="w-4 h-4" />
-          Schedule Consultation
-        </Button>
+        {card.bookingUrl ? (
+          <Button
+            className="w-full gap-2 text-primary-foreground"
+            style={{ backgroundColor: brandColor, borderRadius: "var(--radius, 0.5rem)" }}
+            onClick={() => onSchedule(card)}
+            data-testid="btn-schedule-consultation"
+          >
+            <CalendarCheck className="w-4 h-4" />
+            Schedule Consultation
+          </Button>
+        ) : submitted ? (
+          <div className="flex flex-col items-center gap-2 py-2 text-center">
+            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: `${brandColor}15` }}>
+              <CalendarCheck className="w-5 h-5" style={{ color: brandColor }} />
+            </div>
+            <p className="text-sm font-medium">Request Sent!</p>
+            <p className="text-xs text-muted-foreground">
+              {card.providerName} will reach out to schedule your consultation.
+            </p>
+          </div>
+        ) : callbackExpanded ? (
+          <form onSubmit={handleCallbackSubmit} className="space-y-3 mt-1">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Your Name</Label>
+              <Input
+                value={callbackName}
+                onChange={e => setCallbackName(e.target.value)}
+                required
+                data-testid="input-callback-name"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Email</Label>
+              <Input
+                type="email"
+                value={callbackEmail}
+                onChange={e => setCallbackEmail(e.target.value)}
+                required
+                data-testid="input-callback-email"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Message (optional)</Label>
+              <Textarea
+                value={callbackMessage}
+                onChange={e => setCallbackMessage(e.target.value)}
+                placeholder="Tell them a bit about what you're looking for..."
+                rows={3}
+                data-testid="input-callback-message"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => setCallbackExpanded(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                className="flex-1 text-primary-foreground gap-1.5"
+                style={{ backgroundColor: brandColor, borderRadius: "var(--radius, 0.5rem)" }}
+                disabled={submitting}
+                data-testid="btn-submit-callback"
+              >
+                {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                {submitting ? "Sending..." : "Request Callback"}
+              </Button>
+            </div>
+            {callbackError && (
+              <p className="text-xs text-destructive text-center">{callbackError}</p>
+            )}
+          </form>
+        ) : (
+          <Button
+            className="w-full gap-2 text-primary-foreground"
+            style={{ backgroundColor: brandColor, borderRadius: "var(--radius, 0.5rem)" }}
+            onClick={() => setCallbackExpanded(true)}
+            data-testid="btn-schedule-consultation"
+          >
+            <CalendarCheck className="w-4 h-4" />
+            Schedule Consultation
+          </Button>
+        )}
       </div>
     </Card>
   );
@@ -2930,6 +3055,28 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   <ConsultationBookingCard
                     card={msg.consultationCard}
                     brandColor={brandColor}
+                    userEmail={(user as any)?.email || ""}
+                    userName={(user as any)?.name || ""}
+                    onCallbackSubmitted={() => {
+                      setTimeout(async () => {
+                        if (sessionId) {
+                          await loadMessagesForSession(sessionId);
+                          fetch("/api/ai-concierge/chat", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            credentials: "include",
+                            body: JSON.stringify({
+                              message: "consultation_callback_submitted",
+                              sessionId,
+                              matchmakerId: effectiveMatchmakerIdRef.current,
+                              isSystemTrigger: true,
+                            }),
+                          }).then(r => r.ok ? r.json() : null).then(data => {
+                            if (data && sessionId) loadMessagesForSession(sessionId);
+                          }).catch(() => {});
+                        }
+                      }, 800);
+                    }}
                     onSchedule={(c) => setBookingCard(c)}
                     existingBooking={(() => {
                       if (!sessionBookings) return undefined;

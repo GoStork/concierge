@@ -116,10 +116,21 @@ export type CostTemplate = {
   sortOrder: number;
 };
 
+export type CostProgram = {
+  id: string;
+  providerId: string;
+  providerTypeId: string | null;
+  subType: string | null;
+  name: string;
+  country: string;
+  createdAt: string;
+};
+
 export type ProviderCostSheet = {
   id: string;
   providerId: string;
   parentClientId: string | null;
+  programId: string | null;
   fileUrl: string | null;
   filePath: string | null;
   originalFileName: string | null;
@@ -255,6 +266,20 @@ export const insertProviderSchema = z.object({
   consultationBookingUrl: z.string().url().nullable().optional().or(z.literal("").transform(() => null)),
   consultationIframeEnabled: z.boolean().optional(),
   pandaDocTemplateId: z.string().nullable().optional(),
+  // IVF Clinic matching requirements
+  ivfTwinsAllowed: z.boolean().optional(),
+  ivfTransferFromOtherClinics: z.boolean().optional(),
+  ivfMaxAgeIp1: z.number().int().nullable().optional(),
+  ivfMaxAgeIp2: z.number().int().nullable().optional(),
+  ivfBiologicalConnection: z.string().nullable().optional(),
+  ivfAcceptingPatients: z.array(z.string()).nullable().optional(),
+  ivfEggDonorType: z.string().nullable().optional(),
+  // Surrogacy Agency matching requirements
+  surrogacyCitizensNotAllowed: z.array(z.string()).nullable().optional(),
+  surrogacyTwinsAllowed: z.boolean().optional(),
+  surrogacyStayAfterBirthMonths: z.number().int().nullable().optional(),
+  surrogacyBirthCertificateListing: z.array(z.string()).nullable().optional(),
+  surrogacySurrogateRemovableFromCert: z.boolean().nullable().optional(),
 });
 
 export const insertProviderTypeSchema = z.object({

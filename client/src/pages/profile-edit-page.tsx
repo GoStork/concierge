@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
@@ -149,6 +149,8 @@ export default function DonorEditPage() {
   const [originalProfileDetails, setOriginalProfileDetails] = useState<Record<string, [string, string][]> | null>(null);
   const [photos, setPhotos] = useState<string[] | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const formDataSnapshotRef = useRef<string | null>(null);
 
   const manualFields = useMemo(() => new Set(donor?.manuallyEditedFields || []), [donor]);
 
@@ -207,9 +209,21 @@ export default function DonorEditPage() {
       }
     }
     setPhotos(photoList);
+    formDataSnapshotRef.current = null;
+    setIsDirty(false);
   }, [donor, formData, type]);
 
   if (donor && !formData) initForm();
+
+  useEffect(() => {
+    if (formData === null) { setIsDirty(false); return; }
+    if (formDataSnapshotRef.current === null) {
+      formDataSnapshotRef.current = JSON.stringify({ formData, photos });
+      setIsDirty(false);
+      return;
+    }
+    setIsDirty(JSON.stringify({ formData, photos }) !== formDataSnapshotRef.current);
+  }, [formData, photos]);
 
   const updateField = (field: string, value: string | boolean) => {
     setFormData((prev) => prev ? { ...prev, [field]: value } : prev);
@@ -322,6 +336,8 @@ export default function DonorEditPage() {
       }
       queryClient.invalidateQueries({ queryKey: [`/api/providers/${providerId}/${endpoint}`, donorId] });
       toast({ title: "Donor profile updated", description: "Changes saved successfully.", variant: "success" });
+      formDataSnapshotRef.current = JSON.stringify({ formData, photos });
+      setIsDirty(false);
       navigate(`/admin/providers/${providerId}/${typeToUrlSlug(type || "egg-donor")}/${donorId}`);
     },
     onError: (err: Error) => {
@@ -385,14 +401,6 @@ export default function DonorEditPage() {
           data-testid="link-back-profile"
         >
           <ArrowLeft className="w-4 h-4 mr-2" /> Back to Profile
-        </Button>
-        <Button
-          onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending}
-          data-testid="button-save-donor"
-        >
-          {saveMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-          Save Changes
         </Button>
       </div>
 
@@ -702,23 +710,25 @@ export default function DonorEditPage() {
             </p>
           )}
 
-          <div className="flex justify-end gap-3 pt-4">
-            <Button
-              variant="outline"
-              onClick={() => navigate(`/admin/providers/${providerId}/${typeToUrlSlug(type || "egg-donor")}/${donorId}`)}
-              data-testid="button-cancel"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending}
-              data-testid="button-save-donor-bottom"
-            >
-              {saveMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-              Save Changes
-            </Button>
-          </div>
+          {isDirty && (
+            <div className="flex gap-2 justify-end fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => navigate(`/admin/providers/${providerId}/${typeToUrlSlug(type || "egg-donor")}/${donorId}`)}
+                data-testid="button-cancel"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => saveMutation.mutate()}
+                disabled={saveMutation.isPending}
+                data-testid="button-save-donor-bottom"
+              >
+                {saveMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                Save Changes
+              </Button>
+            </div>
+          )}
         </>
       )}
     </div>

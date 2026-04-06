@@ -43,8 +43,10 @@ function AccountTab() {
   const { user } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isInitializingRef = useRef(false);
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editName, setEditName] = useState("");
@@ -92,6 +94,7 @@ function AccountTab() {
   const profileLoading = isParent && parentProfileQuery.isLoading;
 
   function startEditing() {
+    isInitializingRef.current = true;
     setEditName(user!.name || "");
     setEditMobile(mobileNumber || "");
     setEditPassword("");
@@ -159,6 +162,7 @@ function AccountTab() {
         queryClient.invalidateQueries({ queryKey: ["/api/providers", (user as any).providerId, "users"] });
       }
       toast({ title: "Profile updated", variant: "success" });
+      setIsDirty(false);
       setEditing(false);
       setEditPassword("");
       setConfirmPassword("");
@@ -208,6 +212,13 @@ function AccountTab() {
       setUploading(false);
     }
   }
+
+  useEffect(() => {
+    if (!editing) { setIsDirty(false); return; }
+    if (isInitializingRef.current) { isInitializingRef.current = false; setIsDirty(false); return; }
+    setIsDirty(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, editName, editMobile, editPassword, confirmPassword, editLocation, editIdentification, editGender, editOrientation, editRelationship, editDateOfBirth, editPartnerName, editPartnerAge, editServices]);
 
   return (
     <>
@@ -511,15 +522,17 @@ function AccountTab() {
                   </div>
                 </div>
               )}
-              <div className="md:col-span-2 flex gap-3 pt-2">
-                <Button onClick={handleSave} disabled={saving || !editName.trim()} data-testid="button-save-profile">
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
-                  Save
-                </Button>
-                <Button variant="outline" onClick={cancelEditing} disabled={saving} data-testid="button-cancel-edit">
-                  Cancel
-                </Button>
-              </div>
+              {isDirty && (
+                <div className="flex gap-2 justify-end fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t">
+                  <Button variant="outline" onClick={cancelEditing} disabled={saving} data-testid="button-cancel-edit">
+                    Cancel
+                  </Button>
+                  <Button onClick={handleSave} disabled={saving || !editName.trim()} data-testid="button-save-profile">
+                    {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
+                    Save
+                  </Button>
+                </div>
+              )}
             </>
           ) : (
             <>

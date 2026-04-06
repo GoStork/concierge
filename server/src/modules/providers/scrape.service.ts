@@ -351,7 +351,7 @@ function findSubpageUrls(html: string, baseUrl: string): string[] {
   }
 
   const unique = [...new Set(candidates)];
-  return unique.slice(0, 60);
+  return unique.slice(0, 20);
 }
 
 function findLocationSubpageUrls(html: string, baseUrl: string): string[] {
@@ -360,11 +360,15 @@ function findLocationSubpageUrls(html: string, baseUrl: string): string[] {
   const candidates: string[] = [];
   const locationPatterns = /\/(?:locations?|sedes?|offices?|centers?|clinics?|centres?|sucursales?)\//i;
 
+  // Skip SEO landing page patterns like /surrogacy-in-california, /ivf-in-texas, etc.
+  const seoStatePattern = /\/(?:surrogacy|ivf|fertility|egg-donation?|sperm|clinic|treatment|donor)[-_](?:in|by|for)[-_][a-z]/i;
+
   let match;
   while ((match = linkRegex.exec(html)) !== null) {
     const href = match[1];
     if (!locationPatterns.test(href)) continue;
     if (/\?state=/.test(href)) continue;
+    if (seoStatePattern.test(href)) continue;
 
     try {
       const resolved = new URL(href, baseUrl);
@@ -375,7 +379,7 @@ function findLocationSubpageUrls(html: string, baseUrl: string): string[] {
   }
 
   const unique = [...new Set(candidates)];
-  return unique.slice(0, 50);
+  return unique.slice(0, 8);
 }
 
 function findDoctorSubpageUrls(html: string, baseUrl: string): string[] {
@@ -752,9 +756,9 @@ export async function scrapeProviderWebsite(websiteUrl: string): Promise<Scraped
   const locationCityMap = new Map<string, string>();
   let scrapedLocationPages: Array<{ url: string; locationName: string; address: string; html: string }> = [];
   if (locationSubpageUrls.length > 0) {
-    const locFetches = locationSubpageUrls.slice(0, 50).map(async (url) => {
+    const locFetches = locationSubpageUrls.slice(0, 8).map(async (url) => {
       try {
-        const fetched = await fetchHtml(url);
+        const fetched = await fetchHtml(url, 15000);
         const html = fetched.html;
         const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
         const locationName = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, "").replace(/\|.*$/, "").trim() : url.split("/").pop()?.replace(/-/g, " ") || "";
@@ -1558,6 +1562,7 @@ Important rules:
     about: parsed.about || null,
     logoUrl: parsed.logoUrl || null,
     logoWithNameUrl: parsed.logoWithNameUrl || null,
+    faviconUrl: parsed.faviconUrl || null,
     email: parsed.email || null,
     phone: finalPhone,
     yearFounded,

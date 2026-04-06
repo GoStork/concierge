@@ -125,6 +125,8 @@ export default function AdminUserEditPage() {
   const providerIdFromUrl = searchParams.get("provider");
   const isParentAccountMode = searchParams.get("parentAccount") === "true";
 
+  const [isDirty, setIsDirty] = useState(false);
+  const isInitializingRef = useRef(false);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -187,6 +189,7 @@ export default function AdminUserEditPage() {
 
   useEffect(() => {
     if (userData) {
+      isInitializingRef.current = true;
       setName(userData.name || "");
       setEmail(userData.email);
       setMobileNumber(userData.mobileNumber || "");
@@ -208,6 +211,13 @@ export default function AdminUserEditPage() {
       setEditing(true);
     }
   }, [userData]);
+
+  useEffect(() => {
+    if (!editing) { setIsDirty(false); return; }
+    if (isInitializingRef.current) { isInitializingRef.current = false; setIsDirty(false); return; }
+    setIsDirty(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, name, email, password, confirmPassword, mobileNumber, identification, roles, parentAccountRole, personalLocation, allLocations, locationIds, localPhotoUrl]);
 
   const updateMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -244,6 +254,7 @@ export default function AdminUserEditPage() {
         queryClient.invalidateQueries({ queryKey: [api.auth.me.path] });
       }
       toast({ title: isParentAccountMode ? "Member updated" : "User updated", variant: "success" });
+      setIsDirty(false);
       navigate(-1);
     },
     onError: (err: Error) => {
@@ -684,13 +695,15 @@ export default function AdminUserEditPage() {
             <CalendarLinkSection slug={userData.scheduleConfig.bookingPageSlug} />
           )}
 
-          <div className="flex gap-3 pt-6">
-            <Button type="submit" disabled={updateMutation.isPending || !name.trim()} data-testid="button-save-edit">
-              {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
-              Save
-            </Button>
-            <Button type="button" variant="outline" onClick={() => navigate(-1)} data-testid="button-cancel">Cancel</Button>
-          </div>
+          {isDirty && (
+            <div className="flex gap-2 justify-end fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t">
+              <Button type="button" variant="outline" onClick={() => navigate(-1)} data-testid="button-cancel">Cancel</Button>
+              <Button type="submit" disabled={updateMutation.isPending || !name.trim()} data-testid="button-save-edit">
+                {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
+                Save
+              </Button>
+            </div>
+          )}
         </form>
       </Card>
     </div>

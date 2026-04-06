@@ -202,6 +202,7 @@ export class CostsController {
       const providerTypeId = parsed.fields.providerTypeId;
       const subType = parsed.fields.subType;
       const providerType = parsed.fields.providerType;
+      const programId = parsed.fields.programId;
       const { sheet, buffer, contentType } = await this.costsService.uploadFile(
         providerId,
         parsed.data,
@@ -209,6 +210,7 @@ export class CostsController {
         parsed.contentType,
         providerTypeId,
         subType,
+        programId,
       );
 
       if (providerType) {
@@ -291,10 +293,11 @@ export class CostsController {
     @Query("status") status: string,
     @Query("providerTypeId") providerTypeId: string,
     @Query("subType") subType: string,
+    @Query("programId") programId: string,
     @Req() req: Request,
   ) {
     this.assertProviderOrAdmin(req, providerId);
-    return this.costsService.getProviderSheets(providerId, status || undefined, providerTypeId || undefined, subType || undefined);
+    return this.costsService.getProviderSheets(providerId, status || undefined, providerTypeId || undefined, subType || undefined, programId || undefined);
   }
 
   @Get("provider/:providerId/approved")
@@ -303,10 +306,11 @@ export class CostsController {
     @Param("providerId") providerId: string,
     @Query("providerTypeId") providerTypeId: string,
     @Query("subType") subType: string,
+    @Query("programId") programId: string,
     @Req() req: Request,
   ) {
     this.assertProviderOrAdmin(req, providerId);
-    return this.costsService.getApprovedMasterSheet(providerId, providerTypeId || undefined, subType || undefined);
+    return this.costsService.getApprovedMasterSheet(providerId, providerTypeId || undefined, subType || undefined, programId || undefined);
   }
 
   @Get("sheet/:sheetId")
@@ -321,7 +325,7 @@ export class CostsController {
   @Post("submit")
   @UseGuards(SessionOrJwtGuard)
   async submitSheet(
-    @Body() body: { providerId: string; items: any[]; sheetId?: string; providerTypeId?: string; subType?: string },
+    @Body() body: { providerId: string; items: any[]; sheetId?: string; providerTypeId?: string; subType?: string; programId?: string },
     @Req() req: Request,
   ) {
     if (!body.providerId) throw new HttpException("providerId required", HttpStatus.BAD_REQUEST);
@@ -335,7 +339,7 @@ export class CostsController {
       }
     }
 
-    const result = await this.costsService.submitCostSheet(body.providerId, body.items || [], body.sheetId, body.providerTypeId, body.subType);
+    const result = await this.costsService.submitCostSheet(body.providerId, body.items || [], body.sheetId, body.providerTypeId, body.subType, body.programId);
 
     const user = this.getUserFromRequest(req);
     const provider = await this.prisma.provider.findUnique({ where: { id: body.providerId } });
@@ -458,11 +462,11 @@ export class CostsController {
   @Post("save-draft")
   @UseGuards(SessionOrJwtGuard)
   async saveDraft(
-    @Body() body: { providerId: string; items: any[]; sheetId?: string; providerTypeId?: string; subType?: string },
+    @Body() body: { providerId: string; items: any[]; sheetId?: string; providerTypeId?: string; subType?: string; programId?: string },
     @Req() req: Request,
   ) {
     this.assertProviderOrAdmin(req, body.providerId);
-    return this.costsService.saveDraft(body.providerId, body.items || [], body.sheetId, body.providerTypeId, body.subType);
+    return this.costsService.saveDraft(body.providerId, body.items || [], body.sheetId, body.providerTypeId, body.subType, body.programId);
   }
 
   @Post("custom-quote/:providerId/:parentId")
@@ -474,6 +478,59 @@ export class CostsController {
   ) {
     this.assertProviderOrAdmin(req, providerId);
     return this.costsService.createCustomQuote(providerId, parentId);
+  }
+
+  @Get("programs")
+  @UseGuards(SessionOrJwtGuard)
+  async getPrograms(
+    @Query("providerId") providerId: string,
+    @Query("providerTypeId") providerTypeId: string,
+    @Query("subType") subType: string,
+    @Req() req: Request,
+  ) {
+    if (!providerId) throw new HttpException("providerId required", HttpStatus.BAD_REQUEST);
+    this.assertProviderOrAdmin(req, providerId);
+    return this.costsService.getPrograms(providerId, providerTypeId || undefined, subType || undefined);
+  }
+
+  @Post("programs")
+  @UseGuards(SessionOrJwtGuard)
+  async createProgram(
+    @Body() body: { providerId: string; providerTypeId?: string; subType?: string; name: string; country: string },
+    @Req() req: Request,
+  ) {
+    if (!body.providerId || !body.name || !body.country) {
+      throw new HttpException("providerId, name, and country are required", HttpStatus.BAD_REQUEST);
+    }
+    this.assertProviderOrAdmin(req, body.providerId);
+    return this.costsService.createProgram(body.providerId, body.providerTypeId || null, body.subType || null, body.name, body.country);
+  }
+
+  @Patch("programs/:programId")
+  @UseGuards(SessionOrJwtGuard)
+  async updateProgram(
+    @Param("programId") programId: string,
+    @Body() body: { name?: string; country?: string; subType?: string },
+    @Req() req: Request,
+  ) {
+    const existing = await this.prisma.costProgram.findUnique({ where: { id: programId } });
+    if (!existing) throw new HttpException("Program not found", HttpStatus.NOT_FOUND);
+    this.assertProviderOrAdmin(req, existing.providerId);
+    return this.costsService.updateProgram(
+      programId,
+      body.name ?? existing.name,
+      body.country ?? existing.country,
+      body.subType,
+    );
+  }
+
+  @Delete("programs/:programId")
+  @UseGuards(SessionOrJwtGuard)
+  async deleteProgram(@Param("programId") programId: string, @Req() req: Request) {
+    const existing = await this.prisma.costProgram.findUnique({ where: { id: programId } });
+    if (!existing) throw new HttpException("Program not found", HttpStatus.NOT_FOUND);
+    this.assertProviderOrAdmin(req, existing.providerId);
+    return this.costsService.deleteProgram(programId);
   }
 
   @Post("send-quote/:sheetId")

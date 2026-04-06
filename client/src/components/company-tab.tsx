@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useProvider } from "@/hooks/use-providers";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
@@ -138,6 +138,9 @@ export default function CompanyTab() {
   const [uploadingPhotoIdx, setUploadingPhotoIdx] = useState<number | null>(null);
   const [cropState, setCropState] = useState<{ src: string; idx: number } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const isInitializingRef = useRef(false);
   const [selectedServiceTypeId, setSelectedServiceTypeId] = useState("");
 
   const { data: services } = useQuery<any[]>({
@@ -209,7 +212,8 @@ export default function CompanyTab() {
   }
 
   useEffect(() => {
-    if (provider) {
+    if (provider && !initialized) {
+      isInitializingRef.current = true;
       setName(provider.name || "");
       setAbout(provider.about || "");
       setLogoUrl(provider.logoUrl || "");
@@ -241,8 +245,16 @@ export default function CompanyTab() {
           locationIds: m.locations?.map((ml: any) => ml.locationId) || [],
         }))
       );
+      setInitialized(true);
     }
-  }, [provider]);
+  }, [provider, initialized]);
+
+  useEffect(() => {
+    if (!initialized) { setIsDirty(false); return; }
+    if (isInitializingRef.current) { isInitializingRef.current = false; setIsDirty(false); return; }
+    setIsDirty(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialized, name, about, logoUrl, websiteUrl, phone, yearFounded, consultationBookingUrl, consultationIframeEnabled, pandaDocTemplateId, locations, teamMembers]);
 
   if ((!isProvider && !isGostorkAdmin) || !providerId) {
     return (
@@ -351,6 +363,8 @@ export default function CompanyTab() {
 
       queryClient.invalidateQueries({ queryKey: [api.providers.get.path, provider.id] });
       queryClient.invalidateQueries({ queryKey: [api.providers.list.path] });
+      setInitialized(false);
+      setIsDirty(false);
       if (errors.length > 0) {
         toast({ title: "Saved with errors", description: errors.join("; "), variant: "destructive" });
       } else {
@@ -938,13 +952,14 @@ export default function CompanyTab() {
         </DndContext>
       </Card>
 
-      {!readOnly && (
-        <div className="flex justify-end">
-          <Button type="submit" disabled={saving} className="px-8" data-testid="btn-save-company">
+      {!readOnly && isDirty && (
+        <div className="flex gap-2 justify-end fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t">
+          <Button type="button" variant="outline" disabled={saving} onClick={() => setInitialized(false)}>Cancel</Button>
+          <Button type="submit" disabled={saving} data-testid="btn-save-company">
             {saving ? (
               <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...</>
             ) : (
-              <><Save className="w-4 h-4 mr-2" /> Save</>
+              <>Save</>
             )}
           </Button>
         </div>

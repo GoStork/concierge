@@ -24,11 +24,26 @@ model Provider {
   consultationBookingUrl       String?
   consultationIframeEnabled    Boolean                 @default(false)
   pandaDocTemplateId           String?
+  // IVF Clinic matching requirements
+  ivfTwinsAllowed              Boolean                 @default(false)
+  ivfTransferFromOtherClinics  Boolean                 @default(false)
+  ivfMaxAgeIp1                 Int?
+  ivfMaxAgeIp2                 Int?
+  ivfBiologicalConnection      String?
+  ivfAcceptingPatients         Json?
+  ivfEggDonorType              String?
+  // Surrogacy Agency matching requirements
+  surrogacyCitizensNotAllowed          Json?
+  surrogacyTwinsAllowed                Boolean                 @default(false)
+  surrogacyStayAfterBirthMonths        Int?
+  surrogacyBirthCertificateListing     Json?
+  surrogacySurrogateRemovableFromCert  Boolean?
   eggDonors            EggDonor[]
   agreements           Agreement[]
   eggDonorSyncConfig   EggDonorSyncConfig?
   brandSettings        ProviderBrandSettings?
   costSheets           ProviderCostSheet[]
+  costPrograms         CostProgram[]
   locations            ProviderLocation[]
   members              ProviderMember[]
   services             ProviderService[]
@@ -283,12 +298,25 @@ model CostTemplate {
   costItems          CostItem[]
 }
 
+model CostProgram {
+  id             String              @id @default(uuid())
+  providerId     String
+  providerTypeId String?
+  subType        String?
+  name           String
+  country        String
+  createdAt      DateTime            @default(now())
+  costSheets     ProviderCostSheet[]
+  provider       Provider            @relation(fields: [providerId], references: [id])
+}
+
 model ProviderCostSheet {
   id               String        @id @default(uuid())
   providerId       String
   providerTypeId   String?
   parentClientId   String?
   subType          String?
+  programId        String?
   fileUrl          String?
   filePath         String?
   originalFileName String?
@@ -301,6 +329,7 @@ model ProviderCostSheet {
   provider         Provider      @relation(fields: [providerId], references: [id])
   providerType     ProviderType? @relation(fields: [providerTypeId], references: [id])
   parentClient     User?         @relation("CostSheetQuotes", fields: [parentClientId], references: [id])
+  program          CostProgram?  @relation(fields: [programId], references: [id], onDelete: Cascade)
 }
 
 model CostItem {

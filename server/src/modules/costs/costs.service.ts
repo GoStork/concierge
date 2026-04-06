@@ -48,8 +48,9 @@ export class CostsService {
     if (!providerType) return [];
 
     const where: any = { providerTypeId: providerType.id };
-    if (subType === "fresh" || !subType) {
-      where.OR = [{ subType: null }, { subType: "fresh" }];
+    // "fresh", "ivf_cycle", or no subType: return base items (subType null) + subType-specific additions
+    if (!subType || subType === "fresh" || subType === "ivf_cycle") {
+      where.OR = [{ subType: null }, { subType: subType === "ivf_cycle" ? "ivf_cycle" : "fresh" }];
     } else {
       where.subType = subType;
     }
@@ -74,6 +75,7 @@ export class CostsService {
     contentType: string,
     providerTypeId?: string,
     subType?: string,
+    programId?: string,
   ) {
     const uniqueId = crypto.randomUUID();
     const gcsPath = `cost-sheets/${providerId}/${uniqueId}-${filename}`;
@@ -85,6 +87,7 @@ export class CostsService {
         providerId,
         providerTypeId: providerTypeId || null,
         subType: subType || null,
+        programId: programId || null,
         filePath: gcsPath,
         originalFileName: filename,
         status: "PARSING",
@@ -229,11 +232,15 @@ export class CostsService {
     return { url };
   }
 
-  async getProviderSheets(providerId: string, status?: string, providerTypeId?: string, subType?: string) {
+  async getProviderSheets(providerId: string, status?: string, providerTypeId?: string, subType?: string, programId?: string) {
     const where: any = { providerId };
     if (status) where.status = status;
-    if (providerTypeId) where.providerTypeId = providerTypeId;
-    this.applySubTypeFilter(where, subType);
+    if (programId) {
+      where.programId = programId;
+    } else {
+      if (providerTypeId) where.providerTypeId = providerTypeId;
+      this.applySubTypeFilter(where, subType);
+    }
 
     return this.prisma.providerCostSheet.findMany({
       where,
@@ -242,14 +249,18 @@ export class CostsService {
     });
   }
 
-  async getApprovedMasterSheet(providerId: string, providerTypeId?: string, subType?: string) {
+  async getApprovedMasterSheet(providerId: string, providerTypeId?: string, subType?: string, programId?: string) {
     const where: any = {
       providerId,
       parentClientId: null,
       status: "APPROVED",
     };
-    if (providerTypeId) where.providerTypeId = providerTypeId;
-    this.applySubTypeFilter(where, subType);
+    if (programId) {
+      where.programId = programId;
+    } else {
+      if (providerTypeId) where.providerTypeId = providerTypeId;
+      this.applySubTypeFilter(where, subType);
+    }
 
     return this.prisma.providerCostSheet.findFirst({
       where,
@@ -280,10 +291,15 @@ export class CostsService {
     sheetId?: string,
     providerTypeId?: string,
     subType?: string,
+    programId?: string,
   ) {
     const versionWhere: any = { providerId, parentClientId: null };
-    if (providerTypeId) versionWhere.providerTypeId = providerTypeId;
-    this.applySubTypeFilter(versionWhere, subType);
+    if (programId) {
+      versionWhere.programId = programId;
+    } else {
+      if (providerTypeId) versionWhere.providerTypeId = providerTypeId;
+      this.applySubTypeFilter(versionWhere, subType);
+    }
     const maxVersion = await this.prisma.providerCostSheet.aggregate({
       where: versionWhere,
       _max: { version: true },
@@ -292,6 +308,15 @@ export class CostsService {
 
     let sheet: any;
     let useSheetId = sheetId;
+    if (!useSheetId && programId) {
+      const programSheet = await this.prisma.providerCostSheet.findFirst({
+        where: { providerId, programId, status: { notIn: ["ARCHIVED"] } },
+        orderBy: { version: "desc" },
+      });
+      if (programSheet && programSheet.status !== "APPROVED") {
+        useSheetId = programSheet.id;
+      }
+    }
     if (useSheetId) {
       const existingSheet = await this.prisma.providerCostSheet.findUnique({ where: { id: useSheetId } });
       if (existingSheet && (existingSheet.status === "APPROVED" || existingSheet.status === "ARCHIVED")) {
@@ -312,6 +337,7 @@ export class CostsService {
           providerId,
           providerTypeId: providerTypeId || null,
           subType: subType || null,
+          programId: programId || null,
           status: "PENDING",
           version: nextVersion,
         },
@@ -351,8 +377,12 @@ export class CostsService {
       status: "APPROVED",
       id: { not: sheetId },
     };
-    if (sheet.providerTypeId) archiveWhere.providerTypeId = sheet.providerTypeId;
-    this.applySubTypeFilter(archiveWhere, sheet.subType || undefined);
+    if (sheet.programId) {
+      archiveWhere.programId = sheet.programId;
+    } else {
+      if (sheet.providerTypeId) archiveWhere.providerTypeId = sheet.providerTypeId;
+      this.applySubTypeFilter(archiveWhere, sheet.subType || undefined);
+    }
 
     await this.prisma.providerCostSheet.updateMany({
       where: archiveWhere,
@@ -411,6 +441,7 @@ export class CostsService {
     sheetId?: string,
     providerTypeId?: string,
     subType?: string,
+    programId?: string,
   ) {
     if (sheetId) {
       const existing = await this.prisma.providerCostSheet.findUnique({ where: { id: sheetId } });
@@ -426,8 +457,12 @@ export class CostsService {
     }
 
     const findWhere: any = { providerId, parentClientId: null, status: { in: ["DRAFT", "PENDING"] } };
-    if (providerTypeId) findWhere.providerTypeId = providerTypeId;
-    this.applySubTypeFilter(findWhere, subType);
+    if (programId) {
+      findWhere.programId = programId;
+    } else {
+      if (providerTypeId) findWhere.providerTypeId = providerTypeId;
+      this.applySubTypeFilter(findWhere, subType);
+    }
 
     const existing = await this.prisma.providerCostSheet.findFirst({
       where: findWhere,
@@ -439,7 +474,7 @@ export class CostsService {
     }
 
     const sheet = await this.prisma.providerCostSheet.create({
-      data: { providerId, providerTypeId: providerTypeId || null, subType: subType || null, status: "DRAFT", version: 1 },
+      data: { providerId, providerTypeId: providerTypeId || null, subType: subType || null, programId: programId || null, status: "DRAFT", version: 1 },
     });
 
     return this.updateSheetItems(sheet.id, items);
@@ -528,6 +563,48 @@ export class CostsService {
       data: { status: "SENT_TO_PARENT" },
       include: { items: true },
     });
+  }
+
+  async getPrograms(providerId: string, providerTypeId?: string, subType?: string) {
+    const where: any = { providerId };
+    if (providerTypeId) where.providerTypeId = providerTypeId;
+    if (subType) where.subType = subType;
+    return this.prisma.costProgram.findMany({
+      where,
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  async createProgram(providerId: string, providerTypeId: string | null, subType: string | null, name: string, country: string) {
+    return this.prisma.costProgram.create({
+      data: {
+        providerId,
+        providerTypeId: providerTypeId || null,
+        subType: subType || null,
+        name,
+        country,
+      },
+    });
+  }
+
+  async updateProgram(programId: string, name: string, country: string, subType?: string) {
+    return this.prisma.costProgram.update({
+      where: { id: programId },
+      data: { name, country, ...(subType !== undefined ? { subType } : {}) },
+    });
+  }
+
+  async deleteProgram(programId: string) {
+    const sheets = await this.prisma.providerCostSheet.findMany({ where: { programId } });
+    for (const sheet of sheets) {
+      if (sheet.filePath) {
+        try { await this.storage.deleteObject(sheet.filePath); } catch {}
+      }
+      await this.prisma.costItem.deleteMany({ where: { providerCostSheetId: sheet.id } });
+    }
+    await this.prisma.providerCostSheet.deleteMany({ where: { programId } });
+    await this.prisma.costProgram.delete({ where: { id: programId } });
+    return { deleted: true };
   }
 
   async ensureFrozenEggTemplates() {

@@ -6,11 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeft, Globe, Phone, MapPin, Calendar, Building2, User, CheckCircle2, XCircle,
-  Loader2,
+  Loader2, Check,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { IvfSuccessRatesSection } from "@/components/ivf-success-rates-section";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { getCountryFlag } from "@/lib/country-flag";
 
 function SectionHeader({ title }: { title: string }) {
   return (
@@ -161,6 +162,169 @@ export default function ProviderProfilePage() {
       {provider.ivfSuccessRates && provider.ivfSuccessRates.length > 0 && (
         <IvfSuccessRatesSection rates={provider.ivfSuccessRates} filterContext={filterContext} />
       )}
+
+      {(() => {
+        const svcNames = (provider.services || []).map((s: any) => s.providerType?.name?.toLowerCase() || "");
+        const isIvfClinic = svcNames.some((n: string) => n.includes("ivf") || n.includes("in vitro"));
+        const isSurrogacyAgency = svcNames.some((n: string) => n.includes("surrogacy"));
+        const ivfOffersEggDonors = svcNames.some((n: string) => n.includes("egg donor") || n.includes("egg bank"));
+
+        const bioConnectionLabel: Record<string, string> = {
+          none: "No connection required",
+          at_least_one: "At least one biological parent",
+          at_least_two: "At least two biological parents",
+        };
+        const birthCertLabel: Record<string, string> = {
+          surrogate: "Surrogate",
+          biological_father: "Biological father",
+          biological_mother: "Biological mother",
+          both_biological_parents: "Both biological parents",
+        };
+        const patientLabels: Record<string, string> = {
+          single_woman: "Single woman",
+          single_man: "Single man",
+          gay_couple: "Gay couple",
+          straight_couple: "Straight couple",
+          straight_married_couple: "Straight married couple",
+        };
+        const eggDonorTypeLabel: Record<string, string> = {
+          anonymous: "Anonymous",
+          known: "Known",
+          both: "Both",
+        };
+
+        const hasIvfData = isIvfClinic && (
+          provider.ivfTwinsAllowed ||
+          provider.ivfTransferFromOtherClinics ||
+          provider.ivfMaxAgeIp1 != null ||
+          provider.ivfMaxAgeIp2 != null ||
+          provider.ivfBiologicalConnection ||
+          (provider.ivfAcceptingPatients && provider.ivfAcceptingPatients.length > 0) ||
+          provider.ivfEggDonorType
+        );
+        const hasSurrogacyData = isSurrogacyAgency && (
+          (provider.surrogacyCitizensNotAllowed && provider.surrogacyCitizensNotAllowed.length > 0) ||
+          provider.surrogacyTwinsAllowed ||
+          provider.surrogacyStayAfterBirthMonths != null ||
+          (Array.isArray(provider.surrogacyBirthCertificateListing) && provider.surrogacyBirthCertificateListing.length > 0) ||
+          provider.surrogacySurrogateRemovableFromCert != null
+        );
+
+        if (!hasIvfData && !hasSurrogacyData) return null;
+
+        return (
+          <Card className="overflow-hidden" data-testid="section-matching-requirements">
+            <SectionHeader title="Matching Requirements" />
+            <div className="p-6 space-y-6">
+              {hasIvfData && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    {[
+                      { label: "Twins allowed", value: provider.ivfTwinsAllowed },
+                      { label: "Transferring embryos from other clinics allowed", value: provider.ivfTransferFromOtherClinics },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="flex items-center gap-2">
+                        {value ? (
+                          <CheckCircle2 className="w-4 h-4 text-[hsl(var(--brand-success))] shrink-0" />
+                        ) : (
+                          <XCircle className="w-4 h-4 text-muted-foreground/40 shrink-0" />
+                        )}
+                        <span className="text-sm text-foreground">{label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {(provider.ivfMaxAgeIp1 != null || provider.ivfMaxAgeIp2 != null) && (
+                    <div className="flex gap-8">
+                      {provider.ivfMaxAgeIp1 != null && (
+                        <div>
+                          <p className="text-xs font-ui text-foreground">Max Age of IP 1</p>
+                          <p className="text-sm text-muted-foreground">{provider.ivfMaxAgeIp1}</p>
+                        </div>
+                      )}
+                      {provider.ivfMaxAgeIp2 != null && (
+                        <div>
+                          <p className="text-xs font-ui text-foreground">Max Age of IP 2</p>
+                          <p className="text-sm text-muted-foreground">{provider.ivfMaxAgeIp2}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {provider.ivfBiologicalConnection && (
+                    <div>
+                      <p className="text-xs font-ui text-foreground">Biological connection to embryos</p>
+                      <p className="text-sm text-muted-foreground">{bioConnectionLabel[provider.ivfBiologicalConnection] || provider.ivfBiologicalConnection}</p>
+                    </div>
+                  )}
+                  {provider.ivfAcceptingPatients && provider.ivfAcceptingPatients.length > 0 && (
+                    <div>
+                      <p className="text-xs font-ui text-foreground mb-2">Accepting patients that are</p>
+                      <div className="flex flex-col gap-2">
+                        {provider.ivfAcceptingPatients.map((p: string) => (
+                          <div key={p} className="flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-[hsl(var(--brand-success))] shrink-0" />
+                            <span className="text-sm text-foreground">{patientLabels[p] || p}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {ivfOffersEggDonors && provider.ivfEggDonorType && (
+                    <div>
+                      <p className="text-xs font-ui text-foreground">Egg donor type</p>
+                      <p className="text-sm text-muted-foreground">{eggDonorTypeLabel[provider.ivfEggDonorType] || provider.ivfEggDonorType}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {hasSurrogacyData && (
+                <div className="space-y-4">
+                  {hasIvfData && <div className="border-t border-border" />}
+                  {provider.surrogacyCitizensNotAllowed && provider.surrogacyCitizensNotAllowed.length > 0 && (
+                    <div>
+                      <p className="text-xs font-ui text-foreground mb-2">Citizens not allowed</p>
+                      <div className="flex flex-wrap gap-2">
+                        {provider.surrogacyCitizensNotAllowed.map((c: string) => (
+                          <Badge key={c} variant="outline" className="text-xs flex items-center gap-1">
+                            {getCountryFlag(c) && <span>{getCountryFlag(c)}</span>}
+                            {c}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    {provider.surrogacyTwinsAllowed ? (
+                      <CheckCircle2 className="w-4 h-4 text-[hsl(var(--brand-success))] shrink-0" />
+                    ) : (
+                      <XCircle className="w-4 h-4 text-muted-foreground/40 shrink-0" />
+                    )}
+                    <span className="text-sm text-foreground">Twins allowed</span>
+                  </div>
+                  {provider.surrogacyStayAfterBirthMonths != null && (
+                    <div>
+                      <p className="text-xs font-ui text-foreground">IPs must stay after birth (months)</p>
+                      <p className="text-sm text-muted-foreground">{provider.surrogacyStayAfterBirthMonths}</p>
+                    </div>
+                  )}
+                  {Array.isArray(provider.surrogacyBirthCertificateListing) && provider.surrogacyBirthCertificateListing.length > 0 && (
+                    <div>
+                      <p className="text-xs font-ui text-foreground">Listed on birth certificate</p>
+                      <p className="text-sm text-muted-foreground">{provider.surrogacyBirthCertificateListing.map((v: string) => birthCertLabel[v] || v).join(", ")}</p>
+                    </div>
+                  )}
+                  {provider.surrogacySurrogateRemovableFromCert != null && (
+                    <div>
+                      <p className="text-xs font-ui text-foreground">Surrogate removable from birth certificate</p>
+                      <p className="text-sm text-muted-foreground">{provider.surrogacySurrogateRemovableFromCert ? "Yes" : "No"}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </Card>
+        );
+      })()}
 
       {provider.locations && provider.locations.length > 0 && (
         <Card className="overflow-hidden" data-testid="section-locations">
