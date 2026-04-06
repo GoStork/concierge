@@ -1119,7 +1119,7 @@ export default function AdminProviderEditPage() {
                   ))}
                 </div>
                 <div className="space-y-2">
-                  <Label>Mental Health History Notes</Label>
+                  <Label>Health History Notes</Label>
                   <Textarea
                     value={ivfSurrogateMentalHealthHistory}
                     onChange={e => setIvfSurrogateMentalHealthHistory(e.target.value)}

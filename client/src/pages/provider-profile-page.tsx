@@ -400,7 +400,7 @@ export default function ProviderProfilePage() {
               ))}
               {provider.ivfSurrogateMentalHealthHistory && (
                 <div>
-                  <p className="text-xs font-ui text-foreground mb-1">Mental Health History Notes</p>
+                  <p className="text-xs font-ui text-foreground mb-1">Health History Notes</p>
                   <p className="text-sm text-muted-foreground whitespace-pre-wrap">{provider.ivfSurrogateMentalHealthHistory}</p>
                 </div>
               )}
