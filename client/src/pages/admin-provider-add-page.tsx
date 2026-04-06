@@ -17,6 +17,8 @@ import LocationAutocomplete from "@/components/location-autocomplete";
 import { CountryAutocompleteInput } from "@/components/ui/country-autocomplete-input";
 import { IvfSuccessRatesSection } from "@/components/ivf-success-rates-section";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 
 type ScrapedTeamMember = {
   name: string;
@@ -88,6 +90,22 @@ export default function AdminProviderAddPage() {
   const [surrogacyStayAfterBirthMonths, setSurrogacyStayAfterBirthMonths] = useState("");
   const [surrogacyBirthCertificateListing, setSurrogacyBirthCertificateListing] = useState<string[]>([]);
   const [surrogacySurrogateRemovableFromCert, setSurrogacySurrogateRemovableFromCert] = useState(false);
+  // IVF Clinic surrogate matching requirements
+  const [ivfSurrogateAgeRange, setIvfSurrogateAgeRange] = useState<[number, number]>([18, 45]);
+  const [ivfSurrogateBmiRange, setIvfSurrogateBmiRange] = useState<[number, number]>([18, 35]);
+  const [ivfSurrogateMaxDeliveries, setIvfSurrogateMaxDeliveries] = useState("");
+  const [ivfSurrogateMaxCSections, setIvfSurrogateMaxCSections] = useState("");
+  const [ivfSurrogateMaxMiscarriages, setIvfSurrogateMaxMiscarriages] = useState("");
+  const [ivfSurrogateMaxAbortions, setIvfSurrogateMaxAbortions] = useState("");
+  const [ivfSurrogateMaxYearsFromLastPregnancy, setIvfSurrogateMaxYearsFromLastPregnancy] = useState("");
+  const [ivfSurrogateMonthsPostVaginal, setIvfSurrogateMonthsPostVaginal] = useState("");
+  const [ivfSurrogateCovidVaccination, setIvfSurrogateCovidVaccination] = useState(false);
+  const [ivfSurrogateGdDiet, setIvfSurrogateGdDiet] = useState(false);
+  const [ivfSurrogateGdMedication, setIvfSurrogateGdMedication] = useState(false);
+  const [ivfSurrogateHighBloodPressure, setIvfSurrogateHighBloodPressure] = useState(false);
+  const [ivfSurrogatePlacentaPrevia, setIvfSurrogatePlacentaPrevia] = useState(false);
+  const [ivfSurrogatePreeclampsia, setIvfSurrogatePreeclampsia] = useState(false);
+  const [ivfSurrogateMentalHealthHistory, setIvfSurrogateMentalHealthHistory] = useState("");
 
   const { data: providerTypes } = useQuery<any[]>({
     queryKey: ["/api/provider-types"],
@@ -294,6 +312,23 @@ export default function AdminProviderAddPage() {
       surrogacyStayAfterBirthMonths: surrogacyStayAfterBirthMonths ? parseInt(surrogacyStayAfterBirthMonths) : null,
       surrogacyBirthCertificateListing: surrogacyBirthCertificateListing.length > 0 ? surrogacyBirthCertificateListing : null,
       surrogacySurrogateRemovableFromCert: surrogacySurrogateRemovableFromCert,
+      ivfSurrogateMinAge: ivfSurrogateAgeRange[0],
+      ivfSurrogateMaxAge: ivfSurrogateAgeRange[1],
+      ivfSurrogateMinBmi: ivfSurrogateBmiRange[0],
+      ivfSurrogateMaxBmi: ivfSurrogateBmiRange[1],
+      ivfSurrogateMaxDeliveries: ivfSurrogateMaxDeliveries ? parseInt(ivfSurrogateMaxDeliveries) : null,
+      ivfSurrogateMaxCSections: ivfSurrogateMaxCSections ? parseInt(ivfSurrogateMaxCSections) : null,
+      ivfSurrogateMaxMiscarriages: ivfSurrogateMaxMiscarriages ? parseInt(ivfSurrogateMaxMiscarriages) : null,
+      ivfSurrogateMaxAbortions: ivfSurrogateMaxAbortions ? parseInt(ivfSurrogateMaxAbortions) : null,
+      ivfSurrogateMaxYearsFromLastPregnancy: ivfSurrogateMaxYearsFromLastPregnancy ? parseInt(ivfSurrogateMaxYearsFromLastPregnancy) : null,
+      ivfSurrogateMonthsPostVaginal: ivfSurrogateMonthsPostVaginal ? parseInt(ivfSurrogateMonthsPostVaginal) : null,
+      ivfSurrogateCovidVaccination,
+      ivfSurrogateGdDiet,
+      ivfSurrogateGdMedication,
+      ivfSurrogateHighBloodPressure,
+      ivfSurrogatePlacentaPrevia,
+      ivfSurrogatePreeclampsia,
+      ivfSurrogateMentalHealthHistory: ivfSurrogateMentalHealthHistory || null,
     };
 
     try {
@@ -854,7 +889,7 @@ export default function AdminProviderAddPage() {
         {(isIvfClinic || isSurrogacyAgency) && (
           <div className="bg-card rounded-[var(--radius)] border border-border/40 p-6 space-y-6">
             <h3 className="text-lg font-heading flex items-center gap-2">
-              <Check className="w-5 h-5 text-primary" /> Matching Requirements
+              <Check className="w-5 h-5 text-primary" /> Parents Matching Requirements
             </h3>
 
             {isIvfClinic && (
@@ -998,6 +1033,86 @@ export default function AdminProviderAddPage() {
 
               </div>
             )}
+          </div>
+        )}
+
+        {isIvfClinic && (
+          <div className="bg-card rounded-[var(--radius)] border border-border/40 p-6 space-y-6">
+            <h3 className="text-lg font-heading flex items-center gap-2">
+              <Check className="w-5 h-5 text-primary" /> Surrogate Matching Requirements
+            </h3>
+            <div className="space-y-2">
+              <Label>Age Range of Surrogate: <span className="text-primary font-ui">{ivfSurrogateAgeRange[0]} - {ivfSurrogateAgeRange[1]} years</span></Label>
+              <Slider
+                min={18} max={45} step={1}
+                value={ivfSurrogateAgeRange}
+                onValueChange={(v) => setIvfSurrogateAgeRange(v as [number, number])}
+                className="max-w-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>BMI Range of Surrogate: <span className="text-primary font-ui">{ivfSurrogateBmiRange[0]} - {ivfSurrogateBmiRange[1]}</span></Label>
+              <Slider
+                min={18} max={35} step={0.5}
+                value={ivfSurrogateBmiRange}
+                onValueChange={(v) => setIvfSurrogateBmiRange(v as [number, number])}
+                className="max-w-sm"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4 max-w-sm">
+              <div className="space-y-2">
+                <Label>Max Deliveries</Label>
+                <Input type="number" min={0} value={ivfSurrogateMaxDeliveries} onChange={e => setIvfSurrogateMaxDeliveries(e.target.value)} placeholder="e.g. 5" />
+              </div>
+              <div className="space-y-2">
+                <Label>Max C-Sections</Label>
+                <Input type="number" min={0} value={ivfSurrogateMaxCSections} onChange={e => setIvfSurrogateMaxCSections(e.target.value)} placeholder="e.g. 3" />
+              </div>
+              <div className="space-y-2">
+                <Label>Max Miscarriages</Label>
+                <Input type="number" min={0} value={ivfSurrogateMaxMiscarriages} onChange={e => setIvfSurrogateMaxMiscarriages(e.target.value)} placeholder="e.g. 2" />
+              </div>
+              <div className="space-y-2">
+                <Label>Max Abortions</Label>
+                <Input type="number" min={0} value={ivfSurrogateMaxAbortions} onChange={e => setIvfSurrogateMaxAbortions(e.target.value)} placeholder="e.g. 2" />
+              </div>
+              <div className="space-y-2">
+                <Label>Max Years from Last Pregnancy</Label>
+                <Input type="number" min={0} value={ivfSurrogateMaxYearsFromLastPregnancy} onChange={e => setIvfSurrogateMaxYearsFromLastPregnancy(e.target.value)} placeholder="e.g. 5" />
+              </div>
+              <div className="space-y-2">
+                <Label>Months Post Vaginal Delivery</Label>
+                <Input type="number" min={0} value={ivfSurrogateMonthsPostVaginal} onChange={e => setIvfSurrogateMonthsPostVaginal(e.target.value)} placeholder="e.g. 6" />
+              </div>
+            </div>
+            <div className="space-y-3">
+              <p className="text-sm font-ui text-muted-foreground">Accepted Surrogate Medical History</p>
+              {[
+                { label: "Covid Vaccination Required", value: ivfSurrogateCovidVaccination, set: setIvfSurrogateCovidVaccination },
+                { label: "Gestational Diabetes (controlled by diet)", value: ivfSurrogateGdDiet, set: setIvfSurrogateGdDiet },
+                { label: "Gestational Diabetes (controlled with medication)", value: ivfSurrogateGdMedication, set: setIvfSurrogateGdMedication },
+                { label: "High Blood Pressure / Gestational Hypertension", value: ivfSurrogateHighBloodPressure, set: setIvfSurrogateHighBloodPressure },
+                { label: "Placenta Previa", value: ivfSurrogatePlacentaPrevia, set: setIvfSurrogatePlacentaPrevia },
+                { label: "Preeclampsia in Most Recent Pregnancy", value: ivfSurrogatePreeclampsia, set: setIvfSurrogatePreeclampsia },
+              ].map(({ label, value, set }) => (
+                <div key={label} className="flex items-center justify-between max-w-sm">
+                  <span className="text-sm">{label}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-6">{value ? "Yes" : "No"}</span>
+                    <Switch checked={value} onCheckedChange={set} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="space-y-2">
+              <Label>Mental Health History Notes</Label>
+              <Textarea
+                value={ivfSurrogateMentalHealthHistory}
+                onChange={e => setIvfSurrogateMentalHealthHistory(e.target.value)}
+                placeholder="Describe mental health history requirements or notes..."
+                rows={4}
+              />
+            </div>
           </div>
         )}
 

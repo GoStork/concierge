@@ -214,7 +214,7 @@ export default function ProviderProfilePage() {
 
         return (
           <Card className="overflow-hidden" data-testid="section-matching-requirements">
-            <SectionHeader title="Matching Requirements" />
+            <SectionHeader title="Parents Matching Requirements" />
             <div className="p-6 space-y-6">
               {hasIvfData && (
                 <div className="space-y-4">
@@ -319,6 +319,89 @@ export default function ProviderProfilePage() {
                       <p className="text-sm text-muted-foreground">{provider.surrogacySurrogateRemovableFromCert ? "Yes" : "No"}</p>
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+          </Card>
+        );
+      })()}
+
+      {(() => {
+        const svcNames = (provider.services || []).map((s: any) => s.providerType?.name?.toLowerCase() || "");
+        const isIvfClinic = svcNames.some((n: string) => n.includes("ivf") || n.includes("in vitro"));
+        if (!isIvfClinic) return null;
+
+        const hasData =
+          provider.ivfSurrogateMinAge != null ||
+          provider.ivfSurrogateMaxAge != null ||
+          provider.ivfSurrogateMinBmi != null ||
+          provider.ivfSurrogateMaxBmi != null ||
+          provider.ivfSurrogateMaxDeliveries != null ||
+          provider.ivfSurrogateMaxCSections != null ||
+          provider.ivfSurrogateMaxMiscarriages != null ||
+          provider.ivfSurrogateMaxAbortions != null ||
+          provider.ivfSurrogateMaxYearsFromLastPregnancy != null ||
+          provider.ivfSurrogateMonthsPostVaginal != null ||
+          provider.ivfSurrogateCovidVaccination != null ||
+          provider.ivfSurrogateGdDiet != null ||
+          provider.ivfSurrogateGdMedication != null ||
+          provider.ivfSurrogateHighBloodPressure != null ||
+          provider.ivfSurrogatePlacentaPrevia != null ||
+          provider.ivfSurrogatePreeclampsia != null ||
+          provider.ivfSurrogateMentalHealthHistory;
+
+        if (!hasData) return null;
+
+        return (
+          <Card className="overflow-hidden" data-testid="section-surrogate-matching-requirements">
+            <SectionHeader title="Surrogate Matching Requirements" />
+            <div className="p-6 space-y-4">
+              {(provider.ivfSurrogateMinAge != null || provider.ivfSurrogateMaxAge != null) && (
+                <div>
+                  <p className="text-xs font-ui text-foreground">Age Range of Surrogate</p>
+                  <p className="text-sm text-muted-foreground">{provider.ivfSurrogateMinAge ?? 18} - {provider.ivfSurrogateMaxAge ?? 45} years</p>
+                </div>
+              )}
+              {(provider.ivfSurrogateMinBmi != null || provider.ivfSurrogateMaxBmi != null) && (
+                <div>
+                  <p className="text-xs font-ui text-foreground">BMI Range of Surrogate</p>
+                  <p className="text-sm text-muted-foreground">{provider.ivfSurrogateMinBmi ?? 18} - {provider.ivfSurrogateMaxBmi ?? 35}</p>
+                </div>
+              )}
+              {[
+                { label: "Max Number of Deliveries", value: provider.ivfSurrogateMaxDeliveries },
+                { label: "Max Number of C-Sections", value: provider.ivfSurrogateMaxCSections },
+                { label: "Max Number of Miscarriages", value: provider.ivfSurrogateMaxMiscarriages },
+                { label: "Max Number of Abortions", value: provider.ivfSurrogateMaxAbortions },
+                { label: "Max Years from Last Pregnancy", value: provider.ivfSurrogateMaxYearsFromLastPregnancy },
+                { label: "Months Post Vaginal Delivery", value: provider.ivfSurrogateMonthsPostVaginal },
+              ].filter(({ value }) => value != null).map(({ label, value }) => (
+                <div key={label}>
+                  <p className="text-xs font-ui text-foreground">{label}</p>
+                  <p className="text-sm text-muted-foreground">{value}</p>
+                </div>
+              ))}
+              {[
+                { label: "Covid Vaccination Required", value: provider.ivfSurrogateCovidVaccination },
+                { label: "Gestational Diabetes (controlled by diet)", value: provider.ivfSurrogateGdDiet },
+                { label: "Gestational Diabetes (controlled with medication)", value: provider.ivfSurrogateGdMedication },
+                { label: "High Blood Pressure / Gestational Hypertension", value: provider.ivfSurrogateHighBloodPressure },
+                { label: "Placenta Previa", value: provider.ivfSurrogatePlacentaPrevia },
+                { label: "Preeclampsia in Most Recent Pregnancy", value: provider.ivfSurrogatePreeclampsia },
+              ].filter(({ value }) => value != null).map(({ label, value }) => (
+                <div key={label} className="flex items-center gap-2">
+                  {value ? (
+                    <CheckCircle2 className="w-4 h-4 text-[hsl(var(--brand-success))] shrink-0" />
+                  ) : (
+                    <XCircle className="w-4 h-4 text-muted-foreground/40 shrink-0" />
+                  )}
+                  <span className="text-sm text-foreground">{label}</span>
+                </div>
+              ))}
+              {provider.ivfSurrogateMentalHealthHistory && (
+                <div>
+                  <p className="text-xs font-ui text-foreground mb-1">Mental Health History Notes</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{provider.ivfSurrogateMentalHealthHistory}</p>
                 </div>
               )}
             </div>

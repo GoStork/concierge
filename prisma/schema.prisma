@@ -32,6 +32,24 @@ model Provider {
   ivfBiologicalConnection      String?
   ivfAcceptingPatients         Json?
   ivfEggDonorType              String?
+  // IVF Clinic surrogate matching requirements
+  ivfSurrogateMinAge                    Int?
+  ivfSurrogateMaxAge                    Int?
+  ivfSurrogateMinBmi                    Float?
+  ivfSurrogateMaxBmi                    Float?
+  ivfSurrogateMaxDeliveries             Int?
+  ivfSurrogateMaxCSections              Int?
+  ivfSurrogateMaxMiscarriages           Int?
+  ivfSurrogateMaxAbortions              Int?
+  ivfSurrogateMaxYearsFromLastPregnancy Int?
+  ivfSurrogateMonthsPostVaginal         Int?
+  ivfSurrogateCovidVaccination          Boolean?
+  ivfSurrogateGdDiet                    Boolean?
+  ivfSurrogateGdMedication              Boolean?
+  ivfSurrogateHighBloodPressure         Boolean?
+  ivfSurrogatePlacentaPrevia            Boolean?
+  ivfSurrogatePreeclampsia              Boolean?
+  ivfSurrogateMentalHealthHistory       String?
   // Surrogacy Agency matching requirements
   surrogacyCitizensNotAllowed          Json?
   surrogacyTwinsAllowed                Boolean                 @default(false)
