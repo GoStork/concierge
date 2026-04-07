@@ -67,6 +67,7 @@ interface ChatMessage {
   matchCards?: MatchCard[];
   prepDoc?: boolean;
   consultationCard?: ConsultationCardData;
+  agreementCard?: { agreementId: string; status: string; viewUrl: string | null };
   senderType?: string;
   senderName?: string;
   uiCardType?: string;
@@ -252,6 +253,41 @@ function PrepDocCard({ brandColor }: { brandColor: string }) {
           to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
+    </Card>
+  );
+}
+
+function AgreementSignCard({ card, brandColor }: { card: { agreementId: string; status: string; viewUrl: string | null }; brandColor: string }) {
+  return (
+    <Card
+      className="overflow-hidden max-w-sm animate-[slideUp_0.4s_ease-out_forwards]"
+      style={{ borderRadius: "var(--container-radius, 0.5rem)" }}
+    >
+      <div className="p-1.5" style={{ backgroundColor: brandColor }}>
+        <div className="flex items-center gap-2 px-3 py-1.5">
+          <FileText className="w-4 h-4 text-primary-foreground" />
+          <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">Agreement Ready to Sign</span>
+        </div>
+      </div>
+      <div className="p-4 space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Your agency agreement is ready. Review it carefully and sign electronically to move forward.
+        </p>
+        {card.viewUrl ? (
+          <a
+            href={card.viewUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 w-full py-2 px-4 rounded-[var(--radius)] text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+            style={{ backgroundColor: brandColor }}
+          >
+            <ExternalLink className="w-4 h-4" />
+            Review &amp; Sign Agreement
+          </a>
+        ) : (
+          <p className="text-xs text-muted-foreground italic">Check your email for the signing link.</p>
+        )}
+      </div>
     </Card>
   );
 }
@@ -2222,6 +2258,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             matchCards: extras.matchCards,
             prepDoc: extras.prepDoc,
             consultationCard: extras.consultationCard,
+            agreementCard: extras.agreementCard,
             uiCardType: m.uiCardType,
             uiCardData: m.uiCardData,
             deliveredAt: m.deliveredAt,
@@ -2435,6 +2472,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 matchCards: extras.matchCards,
                 prepDoc: extras.prepDoc,
                 consultationCard: extras.consultationCard,
+                agreementCard: extras.agreementCard,
                 quickReplies: extras.quickReplies,
                 multiSelect: extras.multiSelect,
                 uiCardType: m.uiCardType,
@@ -2666,6 +2704,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         matchCards: data.matchCards,
         prepDoc: data.prepDoc,
         consultationCard: data.consultationCard,
+        agreementCard: data.agreementCard,
         senderType: data.message.senderType,
         senderName: data.message.senderName,
         deliveredAt: data.message.deliveredAt,
@@ -2739,6 +2778,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         matchCards: data.matchCards,
         prepDoc: data.prepDoc,
         consultationCard: data.consultationCard,
+        agreementCard: data.agreementCard,
         senderType: data.message.senderType,
         senderName: data.message.senderName,
         deliveredAt: data.message.deliveredAt,
@@ -3040,6 +3080,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               {msg.prepDoc && (
                 <div className="flex justify-start mt-3 ml-0">
                   <PrepDocCard brandColor={brandColor} />
+                </div>
+              )}
+
+              {msg.agreementCard && (
+                <div className="flex justify-start mt-3 ml-0">
+                  <AgreementSignCard card={msg.agreementCard} brandColor={brandColor} />
                 </div>
               )}
 

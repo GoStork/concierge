@@ -1235,11 +1235,51 @@ chatRouter.post("/api/agreements/generate", requireAuth, async (req, res) => {
       data: {
         sessionId: session.id,
         role: "assistant",
-        content: "The provider has generated the official agreement. It is being prepared for your signature. You'll receive it shortly via email.",
+        content: "The provider has generated the official agreement. Please review and sign it using the button below. You'll also receive it via email.",
         senderType: "system",
         senderName: "Eva",
+        uiCardType: "agreement",
+        uiCardData: {
+          agreementCard: {
+            agreementId: agreement.id,
+            status: agreement.status,
+            viewUrl: (agreement as any).pandaDocViewUrl || null,
+          },
+        },
       },
     });
+
+    // Send email + SMS to parent via NotificationService
+    try {
+      const { getNestApp } = await import("./nest-app-ref");
+      const nestApp = getNestApp();
+      if (nestApp) {
+        const { NotificationService } = await import("./src/modules/notifications/notification.service");
+        const notifService = nestApp.get(NotificationService);
+        const parentUser = await prisma.user.findUnique({
+          where: { id: session.userId },
+          select: { name: true, email: true, mobileNumber: true },
+        });
+        const providerRecord = await prisma.provider.findUnique({
+          where: { id: user.providerId },
+          select: { name: true },
+        });
+        if (parentUser?.email) {
+          await notifService.sendAgreementReadyNotification({
+            parentUserId: session.userId,
+            parentName: parentUser.name || parentUser.email,
+            parentEmail: parentUser.email,
+            parentPhone: parentUser.mobileNumber || null,
+            providerName: providerRecord?.name || "Your Agency",
+            providerId: user.providerId,
+            signingUrl: (agreement as any).pandaDocViewUrl || null,
+            sessionId: session.id,
+          });
+        }
+      }
+    } catch (notifErr: any) {
+      console.error("[Agreement] Notification send failed:", notifErr?.message);
+    }
 
     res.json({ success: true, agreementId: agreement.id, status: agreement.status });
   } catch (e: any) {

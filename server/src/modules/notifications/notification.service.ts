@@ -17,7 +17,8 @@ export type NotificationChannel =
   | "cost_sheet_submitted"
   | "cost_sheet_approved"
   | "cost_sheet_rejected"
-  | "human_escalation";
+  | "human_escalation"
+  | "agreement_ready";
 
 
 const TWILIO_TEMPLATES = {
@@ -38,6 +39,7 @@ const TWILIO_TEMPLATES = {
   VIDEO_WAITING_PARENT: "HX5ebdfae8412e2b22814ab321e1eb34c7",
   VIDEO_WAITING_PROVIDER: "HX7a0d4fa0fca197607ea546e80eb5750b",
   MEMBER_INVITATION: "HXe69876a807739e3d399e2f5f33ed8f0a",
+  AGREEMENT_READY_PARENT: "HXfcae315df1af6c9ca650ee7908ee8574",
 };
 
 function getBaseUrl(): string {
@@ -1738,6 +1740,72 @@ export class NotificationService implements OnModuleInit {
           admin.mobileNumber,
           `${brandData.companyName} Alert: ${params.parentName} (${params.parentEmail}) is requesting human assistance in the AI concierge. Join the chat: ${chatUrl}`,
         ).catch(e => this.logger.error(`Failed to send escalation SMS to ${admin.mobileNumber}: ${e.message}`));
+      }
+    }
+  }
+
+  async sendAgreementReadyNotification(params: {
+    parentUserId: string;
+    parentName: string;
+    parentEmail: string;
+    parentPhone?: string | null;
+    providerName: string;
+    providerId: string;
+    signingUrl: string | null;
+    sessionId: string;
+  }) {
+    const brandData = await this.getBrandData();
+    const firstName = getFirstName(params.parentName) || "there";
+    const providerName = this.escapeHtml(params.providerName);
+    // URL format: /chat/{providerId}/{sessionId} - takes user directly to this provider session
+    const chatUrl = `${getBaseUrl()}/chat/${params.providerId}/${params.sessionId}`;
+    const subject = `Your Agreement from ${params.providerName} is Ready to Sign`;
+
+    const html = buildBrandedEmail(brandData, {
+      title: "Your Agreement is Ready",
+      greeting: `Hi ${firstName},`,
+      body: `<strong>${providerName}</strong> has prepared an official agreement for you. Please review it carefully and sign electronically to move forward in your journey.`,
+      alertBox: { text: "This agreement requires your signature before proceeding.", type: "info" },
+      buttons: params.signingUrl
+        ? [
+            { label: "Review & Sign Agreement", url: params.signingUrl },
+            { label: "View in Chat", url: chatUrl },
+          ]
+        : [{ label: "View in Chat", url: chatUrl }],
+      footer: "If you have any questions about this agreement, please reach out through your GoStork chat.",
+    });
+
+    // Email
+    this.dispatchNotification({
+      userId: params.parentUserId,
+      type: "EMAIL",
+      channel: "agreement_ready",
+      recipient: params.parentEmail,
+      subject,
+      body: html,
+    }).catch(e => this.logger.error(`Failed to send agreement email to ${params.parentEmail}: ${e.message}`));
+
+    // SMS
+    if (params.parentPhone) {
+      const smsContentSid = TWILIO_TEMPLATES.AGREEMENT_READY_PARENT;
+      if (smsContentSid && !smsContentSid.includes("PLACEHOLDER")) {
+        this.dispatchSmsTemplate({
+          userId: params.parentUserId,
+          channel: "agreement_ready",
+          recipient: params.parentPhone,
+          contentSid: smsContentSid,
+          contentVars: {
+            "1": firstName,
+            "2": params.providerName,
+            "3": params.signingUrl || chatUrl,
+          },
+        }).catch(e => this.logger.error(`Failed to send agreement SMS: ${e.message}`));
+      } else {
+        // Fallback raw SMS until template is created
+        this.sendRawSms(
+          params.parentPhone,
+          `Hi ${firstName}, your agreement from ${params.providerName} is ready to sign. Review it here: ${params.signingUrl || chatUrl}`,
+        ).catch(e => this.logger.error(`Failed to send agreement SMS (raw): ${e.message}`));
       }
     }
   }

@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import {
-  Building2, Loader2, Globe, Phone, Calendar, Plus, MapPin, FileText,
+  Building2, Loader2, Globe, Phone, Calendar, Plus, MapPin,
   Check, X, Upload, Pencil, Save, ImageIcon, User, GripVertical, Eye, Settings,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
@@ -134,7 +134,6 @@ export default function CompanyTab() {
   const [yearFounded, setYearFounded] = useState("");
   const [consultationBookingUrl, setConsultationBookingUrl] = useState("");
   const [consultationIframeEnabled, setConsultationIframeEnabled] = useState(false);
-  const [pandaDocTemplateId, setPandaDocTemplateId] = useState("");
   const [locations, setLocations] = useState<LocationData[]>([]);
   const [teamMembers, setTeamMembers] = useState<MemberData[]>([]);
   const [editingMemberIdx, setEditingMemberIdx] = useState<number | null>(null);
@@ -255,7 +254,6 @@ export default function CompanyTab() {
       setYearFounded(provider.yearFounded ? String(provider.yearFounded) : "");
       setConsultationBookingUrl(provider.consultationBookingUrl || "");
       setConsultationIframeEnabled(provider.consultationIframeEnabled || false);
-      setPandaDocTemplateId(provider.pandaDocTemplateId || "");
       setLocations(
         (provider.locations || []).map((l: any) => ({
           id: l.id,
@@ -317,7 +315,7 @@ export default function CompanyTab() {
     if (isInitializingRef.current) { isInitializingRef.current = false; setIsDirty(false); return; }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, name, about, logoUrl, websiteUrl, phone, yearFounded, consultationBookingUrl, consultationIframeEnabled, pandaDocTemplateId, locations, teamMembers, ivfTwinsAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateMaxDeliveries, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
+  }, [initialized, name, about, logoUrl, websiteUrl, phone, yearFounded, consultationBookingUrl, consultationIframeEnabled, locations, teamMembers, ivfTwinsAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateMaxDeliveries, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
 
   if ((!isProvider && !isGostorkAdmin) || !providerId) {
     return (
@@ -385,7 +383,6 @@ export default function CompanyTab() {
         logoUrl: logoUrl || null,
         consultationBookingUrl: consultationBookingUrl || null,
         consultationIframeEnabled,
-        pandaDocTemplateId: pandaDocTemplateId || null,
         // IVF Parents Matching Requirements
         ivfTwinsAllowed,
         ivfTransferFromOtherClinics,
@@ -666,28 +663,6 @@ export default function CompanyTab() {
           <Label htmlFor="consultation-iframe" className="text-sm cursor-pointer">
             Enable in-app booking (load scheduling page within GoStork)
           </Label>
-        </div>
-      </Card>
-
-      <Card className="p-6 space-y-4">
-        <h2 className="text-lg font-heading flex items-center gap-2">
-          <FileText className="w-5 h-5 text-primary" /> Document & Agreements
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Connect your PandaDoc template to automatically generate and send agreements to parents after consultations.
-        </p>
-        <div className="space-y-2">
-          <Label>PandaDoc Template ID</Label>
-          <Input
-            value={pandaDocTemplateId}
-            onChange={e => setPandaDocTemplateId(e.target.value)}
-            placeholder="e.g. abc123XYZ..."
-            disabled={readOnly}
-            data-testid="input-pandadoc-template-id"
-          />
-          <p className="text-xs text-muted-foreground">
-            Find this in your PandaDoc account under Templates. The template will be used when generating agreements for parents.
-          </p>
         </div>
       </Card>
 

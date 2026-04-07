@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Link, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { User, Building2, Users, Calendar, Camera, Loader2, Eye, EyeOff, Phone, Mail, Shield, CalendarPlus, AlertTriangle, Check, Pencil, Plus, Trash2, Palette, Egg, Baby, FlaskConical, DollarSign, LogOut, Sparkles, Brain, RefreshCw } from "lucide-react";
+import { User, Building2, Users, Calendar, Camera, Loader2, Eye, EyeOff, Phone, Mail, Shield, CalendarPlus, AlertTriangle, Check, Pencil, Plus, Trash2, Palette, Egg, Baby, FlaskConical, DollarSign, LogOut, Sparkles, Brain, RefreshCw, FileText } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -21,6 +21,7 @@ import BrandSettingsTab, { BrandSettingsForm } from "@/pages/admin-brand-setting
 import AdminConciergePage from "@/pages/admin-concierge-page";
 import ProviderKnowledgeTab from "@/components/provider-knowledge-tab";
 import ConciergeSettingsTab from "@/components/concierge-settings-tab";
+import DocumentsTab from "@/components/documents-tab";
 import ScrapersSummaryPage from "@/pages/scrapers-summary-page";
 import { hasProviderRole, isParentAccountAdmin } from "@shared/roles";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -30,6 +31,7 @@ import { useToast } from "@/hooks/use-toast";
 const allTabs = [
   { to: '/account', label: 'My Account', icon: User, end: true, roles: null },
   { to: '/account/company', label: 'Company', icon: Building2, roles: 'provider' as const },
+  { to: '/account/documents', label: 'Documents', icon: FileText, roles: 'provider' as const },
   { to: '/account/team', label: 'Team', icon: Users, roles: 'provider' as const },
   { to: '/account/members', label: 'Members', icon: Users, roles: 'parent' as const },
   { to: '/account/calendar', label: 'Calendar', icon: Calendar, roles: null },
@@ -55,7 +57,6 @@ function AccountTab() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [editLocation, setEditLocation] = useState({ address: "", city: "", state: "", zip: "", country: "" });
-  const [editIdentification, setEditIdentification] = useState("");
   const [editGender, setEditGender] = useState("");
   const [editOrientation, setEditOrientation] = useState("");
   const [editRelationship, setEditRelationship] = useState("");
@@ -86,7 +87,6 @@ function AccountTab() {
   const userCity = (user as any).city as string | null;
   const userState = (user as any).state as string | null;
   const userCountry = (user as any).country as string | null;
-  const userIdentification = (user as any).identification as string | null;
   const locationDisplay = [userCity, userState].filter(Boolean).join(", ") || null;
 
   const photoSrc = getPhotoSrc(photoUrl);
@@ -100,7 +100,6 @@ function AccountTab() {
     setEditPassword("");
     setConfirmPassword("");
     setEditLocation({ address: "", city: userCity || "", state: userState || "", zip: "", country: userCountry || "" });
-    setEditIdentification(userIdentification || "");
     setEditGender((user as any).gender || "");
     setEditOrientation((user as any).sexualOrientation || "");
     setEditRelationship((user as any).relationshipStatus || "");
@@ -141,7 +140,6 @@ function AccountTab() {
         payload.state = editLocation.state || null;
         payload.country = editLocation.country || null;
         if (isParent) {
-          payload.identification = editIdentification || null;
           payload.gender = editGender || null;
           payload.sexualOrientation = editOrientation || null;
           payload.relationshipStatus = editRelationship || null;
@@ -218,7 +216,7 @@ function AccountTab() {
     if (isInitializingRef.current) { isInitializingRef.current = false; setIsDirty(false); return; }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, editName, editMobile, editPassword, confirmPassword, editLocation, editIdentification, editGender, editOrientation, editRelationship, editDateOfBirth, editPartnerName, editPartnerAge, editServices]);
+  }, [editing, editName, editMobile, editPassword, confirmPassword, editLocation, editGender, editOrientation, editRelationship, editDateOfBirth, editPartnerName, editPartnerAge, editServices]);
 
   return (
     <>
@@ -343,21 +341,6 @@ function AccountTab() {
                   </div>
                   {isParent && (
                     <>
-                      <div className="space-y-2">
-                        <Label>Identification</Label>
-                        <Select value={editIdentification} onValueChange={setEditIdentification}>
-                          <SelectTrigger data-testid="select-identification">
-                            <SelectValue placeholder="Select identification" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Straight">Straight</SelectItem>
-                            <SelectItem value="Gay">Gay</SelectItem>
-                            <SelectItem value="Lesbian">Lesbian</SelectItem>
-                            <SelectItem value="Bi">Bi</SelectItem>
-                            <SelectItem value="Queer">Queer</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
                       <div className="space-y-2">
                         <Label>Gender Identity</Label>
                         <Select value={editGender} onValueChange={setEditGender}>
@@ -562,10 +545,6 @@ function AccountTab() {
                   </div>
                   {isParent && (
                     <>
-                      <div className="space-y-1">
-                        <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Identification</label>
-                        <p className="text-sm font-ui" data-testid="text-account-identification">{userIdentification || '-'}</p>
-                      </div>
                       <div className="space-y-1">
                         <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Gender Identity</label>
                         <p className="text-sm font-ui" data-testid="text-account-gender">{(user as any).gender?.replace("I'm ", "") || '-'}</p>
@@ -1119,6 +1098,7 @@ export default function AccountPage() {
       <Routes>
         <Route index element={<AccountTab />} />
         <Route path="company" element={<CompanyTab />} />
+        <Route path="documents" element={<DocumentsTab />} />
         <Route path="team" element={<TeamTab />} />
         <Route path="members" element={<ParentMembersTab />} />
         <Route path="calendar" element={isParentOnly ? <ParentCalendarTab /> : <CalendarTab />} />

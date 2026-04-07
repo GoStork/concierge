@@ -6,6 +6,7 @@ import { ProviderLocationsController } from "./provider-locations.controller";
 import { MembersController } from "./members.controller";
 import { ProfileSyncController } from "./profile-sync.controller";
 import { ScrapersController } from "./scrapers.controller";
+import { DocumentsController } from "./documents.controller";
 import { StorageModule } from "../storage/storage.module";
 
 @Module({
@@ -18,6 +19,7 @@ import { StorageModule } from "../storage/storage.module";
     MembersController,
     ProfileSyncController,
     ScrapersController,
+    DocumentsController,
   ],
 })
 export class ProvidersModule {}

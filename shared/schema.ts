@@ -55,7 +55,6 @@ export type User = {
   city?: string | null;
   state?: string | null;
   country?: string | null;
-  identification?: string | null;
   assignedLocations?: (UserLocation & { location?: ProviderLocation })[];
 };
 
@@ -265,7 +264,7 @@ export const insertProviderSchema = z.object({
   yearFounded: z.number().int().nullable().optional(),
   consultationBookingUrl: z.string().url().nullable().optional().or(z.literal("").transform(() => null)),
   consultationIframeEnabled: z.boolean().optional(),
-  pandaDocTemplateId: z.string().nullable().optional(),
+  agreementTemplateUrl: z.string().nullable().optional(),
   // IVF Clinic matching requirements
   ivfTwinsAllowed: z.boolean().optional(),
   ivfTransferFromOtherClinics: z.boolean().optional(),

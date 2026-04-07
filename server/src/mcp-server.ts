@@ -633,6 +633,37 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {},
         },
       },
+      {
+        name: "search_surrogacy_agencies",
+        description:
+          "Search the database for surrogacy agencies. Use this when the parent asks about agencies - not individual surrogates. Supports filtering by where the agency is located, which parent nationalities the agency accepts, and whether twins are allowed.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            agencyLocation: {
+              type: "string",
+              description: "Where the agency is physically based. Accepts a US state abbreviation ('CA'), full state name ('California'), country name ('Colombia', 'Ukraine'), or 'USA' for all US-based agencies.",
+            },
+            servesParentFromCountry: {
+              type: "string",
+              description: "The parent's country of citizenship (e.g. 'Italy', 'Germany'). Excludes agencies that have this country in their surrogacyCitizensNotAllowed list.",
+            },
+            twinsAllowed: {
+              type: "boolean",
+              description: "If true, only return agencies where surrogacyTwinsAllowed is true.",
+            },
+            limit: {
+              type: "number",
+              description: "Number of agencies to return (default 5, max 10).",
+            },
+            excludeIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "Array of provider IDs to exclude (already shown to parent).",
+            },
+          },
+        },
+      },
     ],
   };
 });
@@ -1549,6 +1580,96 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       });
       return {
         content: [{ type: "text", text: JSON.stringify(rules) }],
+      };
+    }
+
+    if (name === "search_surrogacy_agencies") {
+      const { agencyLocation, servesParentFromCountry, twinsAllowed, limit: rawLimit, excludeIds } = args as any;
+      const take = Math.min(rawLimit || 5, 10);
+      const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
+
+      const where: any = {
+        services: {
+          some: {
+            providerType: { name: "Surrogacy Agency" },
+            status: "APPROVED",
+          },
+        },
+      };
+
+      if (agencyLocation) {
+        const locationClause = buildClinicLocationWhere(agencyLocation);
+        if (locationClause && Object.keys(locationClause).length) {
+          // buildClinicLocationWhere returns { some: { OR: [...] } } - use directly for locations relation
+          where.locations = locationClause;
+        }
+      }
+
+      if (twinsAllowed === true) {
+        where.surrogacyTwinsAllowed = true;
+      }
+
+      const agencies = await prisma.provider.findMany({
+        where,
+        take: take * 3,
+        select: {
+          id: true,
+          name: true,
+          logoUrl: true,
+          surrogacyTwinsAllowed: true,
+          surrogacyCitizensNotAllowed: true,
+          locations: {
+            orderBy: { sortOrder: "asc" },
+            select: { city: true, state: true },
+          },
+          surrogacyProfile: {
+            select: {
+              numberOfBabiesBorn: true,
+              timeToMatch: true,
+              familiesPerCoordinator: true,
+              screening: {
+                select: {
+                  criminalBackgroundCheck: true,
+                  homeVisits: true,
+                  financialsReview: true,
+                  socialWorkerScreening: true,
+                  medicalRecordsReview: true,
+                  surrogateInsuranceReview: true,
+                  psychologicalScreening: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      let filtered = agencies.filter(a => !excludeSet.has(a.id));
+
+      if (servesParentFromCountry) {
+        const countryLower = servesParentFromCountry.trim().toLowerCase();
+        filtered = filtered.filter(a => {
+          const notAllowed = Array.isArray(a.surrogacyCitizensNotAllowed)
+            ? (a.surrogacyCitizensNotAllowed as string[]).map(c => c.toLowerCase())
+            : [];
+          return !notAllowed.includes(countryLower);
+        });
+      }
+
+      const results = filtered.slice(0, take).map(a => ({
+        id: a.id,
+        name: a.name,
+        logoUrl: a.logoUrl,
+        locations: a.locations,
+        surrogacyTwinsAllowed: a.surrogacyTwinsAllowed,
+        surrogacyCitizensNotAllowed: a.surrogacyCitizensNotAllowed,
+        numberOfBabiesBorn: a.surrogacyProfile?.numberOfBabiesBorn ?? null,
+        timeToMatch: a.surrogacyProfile?.timeToMatch ?? null,
+        familiesPerCoordinator: a.surrogacyProfile?.familiesPerCoordinator ?? null,
+        screening: a.surrogacyProfile?.screening ?? null,
+      }));
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(results) }],
       };
     }
 

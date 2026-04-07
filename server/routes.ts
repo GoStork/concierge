@@ -839,5 +839,149 @@ export async function registerRoutes(
     }
   });
 
+  // List all agreements for the authenticated provider
+  app.get("/api/agreements", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+
+    try {
+      const agreements = await prisma.agreement.findMany({
+        where: { providerId: user.providerId },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          status: true,
+          documentType: true,
+          pandaDocViewUrl: true,
+          signedAt: true,
+          rejectedAt: true,
+          createdAt: true,
+          parentUser: {
+            select: { name: true, firstName: true, lastName: true, email: true },
+          },
+        },
+      });
+
+      const formatted = agreements.map(a => ({
+        id: a.id,
+        status: a.status,
+        documentType: a.documentType,
+        pandaDocViewUrl: a.pandaDocViewUrl,
+        signedAt: a.signedAt,
+        rejectedAt: a.rejectedAt,
+        createdAt: a.createdAt,
+        parentName: a.parentUser.name || `${a.parentUser.firstName || ""} ${a.parentUser.lastName || ""}`.trim() || a.parentUser.email,
+        parentEmail: a.parentUser.email,
+      }));
+
+      res.json(formatted);
+    } catch (e: any) {
+      console.error("List agreements error:", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // PandaDoc webhook - receives signature events (document completed/rejected/expired)
+  app.post("/api/webhooks/pandadoc", async (req, res) => {
+    try {
+      // Validate HMAC signature if secret is configured
+      const webhookSecret = process.env.PANDADOC_WEBHOOK_SECRET;
+      if (webhookSecret) {
+        const crypto = await import("crypto");
+        const signature = req.headers["x-pandadoc-signature"] as string;
+        if (!signature) {
+          return res.status(401).json({ message: "Missing signature" });
+        }
+        const rawBody = JSON.stringify(req.body);
+        const expected = crypto.createHmac("sha256", webhookSecret).update(rawBody).digest("hex");
+        if (signature !== expected) {
+          return res.status(401).json({ message: "Invalid signature" });
+        }
+      }
+
+      const events = Array.isArray(req.body) ? req.body : [req.body];
+
+      for (const event of events) {
+        const eventType = event?.event;
+        const documentId = event?.data?.id;
+        if (!documentId) continue;
+
+        const agreement = await prisma.agreement.findUnique({
+          where: { pandaDocDocumentId: documentId },
+          include: {
+            provider: { select: { id: true, name: true, email: true } },
+            parentUser: { select: { id: true, name: true, firstName: true, lastName: true, email: true } },
+          },
+        });
+        if (!agreement) continue;
+
+        if (eventType === "document_state_changed") {
+          const newState = event?.data?.status;
+
+          if (newState === "document.completed") {
+            await prisma.agreement.update({
+              where: { id: agreement.id },
+              data: { status: "SIGNED", signedAt: new Date() },
+            });
+
+            // Notify provider via in-app notification
+            const providerUser = await prisma.user.findFirst({
+              where: { providerId: agreement.providerId },
+              select: { id: true },
+            });
+            if (providerUser) {
+              const parentName = agreement.parentUser.name || `${agreement.parentUser.firstName || ""} ${agreement.parentUser.lastName || ""}`.trim() || agreement.parentUser.email;
+              await prisma.inAppNotification.create({
+                data: {
+                  userId: providerUser.id,
+                  eventType: "AGREEMENT_SIGNED",
+                  payload: {
+                    agreementId: agreement.id,
+                    message: `${parentName} has signed the agreement`,
+                  },
+                },
+              });
+            }
+
+            // Email provider
+            const sendgridKey = process.env.SENDGRID_API_KEY;
+            if (sendgridKey && agreement.provider.email) {
+              const parentName = agreement.parentUser.name || `${agreement.parentUser.firstName || ""} ${agreement.parentUser.lastName || ""}`.trim() || "a parent";
+              const fromEmail = process.env.SENDGRID_FROM_EMAIL || "noreply@gostork.com";
+              await fetch("https://api.sendgrid.com/v3/mail/send", {
+                method: "POST",
+                headers: { Authorization: `Bearer ${sendgridKey}`, "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  personalizations: [{ to: [{ email: agreement.provider.email }] }],
+                  from: { email: fromEmail, name: "GoStork" },
+                  subject: `Agreement signed by ${parentName}`,
+                  content: [{
+                    type: "text/html",
+                    value: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h2>Agreement Signed</h2><p>${parentName} has signed the agreement. You can view it in your <a href="https://app.gostork.com/account/documents">GoStork Documents</a> tab.</p></div>`,
+                  }],
+                }),
+              }).catch(() => {});
+            }
+          } else if (newState === "document.rejected") {
+            await prisma.agreement.update({
+              where: { id: agreement.id },
+              data: { status: "REJECTED", rejectedAt: new Date() },
+            });
+          } else if (newState === "document.expired") {
+            await prisma.agreement.update({
+              where: { id: agreement.id },
+              data: { status: "EXPIRED" },
+            });
+          }
+        }
+      }
+
+      res.json({ received: true });
+    } catch (e: any) {
+      console.error("PandaDoc webhook error:", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   return httpServer;
 }

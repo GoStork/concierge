@@ -23,7 +23,7 @@ model Provider {
   brandingEnabled              Boolean                 @default(false)
   consultationBookingUrl       String?
   consultationIframeEnabled    Boolean                 @default(false)
-  pandaDocTemplateId           String?
+  agreementTemplateUrl         String?
   // IVF Clinic matching requirements
   ivfTwinsAllowed              Boolean                 @default(false)
   ivfTransferFromOtherClinics  Boolean                 @default(false)
@@ -202,7 +202,12 @@ model User {
   city                  String?
   country               String?
   state                 String?
-  identification        String?
+  address               String?
+  zip                   String?
+  ssn                   String?
+  passport              String?
+  passportCountryOfIssue String?
+  nationality           String?
   availabilityOverrides AvailabilityOverride[]
   bookingsAsParent      Booking[]              @relation("ParentBookings")
   bookingsAsProvider    Booking[]              @relation("ProviderBookings")
@@ -1115,8 +1120,11 @@ model Agreement {
   parentUserId        String
   sessionId           String
   pandaDocDocumentId  String?       @unique
+  pandaDocViewUrl     String?
   status              String        @default("DRAFT")
   documentType        String        @default("Agency Agreement")
+  signedAt            DateTime?
+  rejectedAt          DateTime?
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 

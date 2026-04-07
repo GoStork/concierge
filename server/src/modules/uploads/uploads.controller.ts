@@ -28,13 +28,19 @@ import { StorageService } from "../storage/storage.service";
 
 const UPLOADS_DIR = path.resolve(process.cwd(), "public/uploads");
 const MAX_FILE_SIZE = 16 * 1024 * 1024;
-const ALLOWED_TYPES = [
+const ALLOWED_IMAGE_TYPES = [
   "image/jpeg",
   "image/png",
   "image/webp",
   "image/gif",
   "image/svg+xml",
 ];
+const ALLOWED_DOCUMENT_TYPES = [
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+];
+const ALLOWED_TYPES = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_DOCUMENT_TYPES];
 
 @ApiTags("Uploads")
 @Controller("api/uploads")
@@ -114,9 +120,7 @@ export class UploadsController {
 
           let fileData = parsed.data;
           if (
-            ["image/jpeg", "image/png", "image/webp"].includes(
-              parsed.contentType,
-            )
+            ["image/jpeg", "image/png", "image/webp"].includes(parsed.contentType)
           ) {
             try {
               const sharp = require("sharp");
@@ -488,10 +492,13 @@ function getExtension(contentType: string, filename: string): string {
     "image/webp": ".webp",
     "image/gif": ".gif",
     "image/svg+xml": ".svg",
+    "application/pdf": ".pdf",
+    "application/msword": ".doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
   };
   if (map[contentType]) return map[contentType];
   const match = filename.match(/\.\w+$/);
-  return match ? match[0] : ".jpg";
+  return match ? match[0] : ".bin";
 }
 
 function parseMultipart(

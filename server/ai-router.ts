@@ -493,7 +493,8 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       const data = m.uiCardData as any;
       if (data?.whisperQuestionId) return false;
       if (m.uiCardType === "provider_only") return false;
-      if (m.senderType === "system") return false;
+      // System messages are hidden from parents except agreement notifications which are parent-facing
+      if (m.senderType === "system" && m.uiCardType !== "agreement") return false;
       return true;
     });
 
@@ -541,7 +542,7 @@ aiRouter.get("/my-session", async (req: Request, res: Response) => {
     const filteredMessages = messages.filter((m: any) => {
       const data = m.uiCardData as any;
       if (data?.whisperQuestionId) return false;
-      if (m.senderType === "system") return false;
+      if (m.senderType === "system" && m.uiCardType !== "agreement") return false;
       return true;
     });
     res.json({

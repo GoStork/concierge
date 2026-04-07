@@ -28,6 +28,7 @@ import { hasProviderRole, PROVIDER_ROLES, PARENT_ACCOUNT_ROLES, isParentAccountA
 import { z } from "zod";
 import { CreateUserDto, UserResponseDto } from "../../dto/user.dto";
 import { ErrorResponseDto } from "../../dto/auth.dto";
+import { encryptNullable, decryptNullable } from "../../lib/encrypt";
 
 const ROLES_NEEDING_VIDEO_ROOM = [
   "GOSTORK_ADMIN",
@@ -330,7 +331,12 @@ export class UsersController {
     if (body.city !== undefined) updateData.city = body.city || null;
     if (body.state !== undefined) updateData.state = body.state || null;
     if (body.country !== undefined) updateData.country = body.country || null;
-    if (body.identification !== undefined) updateData.identification = body.identification || null;
+    if (body.address !== undefined) updateData.address = body.address || null;
+    if (body.zip !== undefined) updateData.zip = body.zip || null;
+    if (body.ssn !== undefined) updateData.ssn = encryptNullable(body.ssn);
+    if (body.passport !== undefined) updateData.passport = encryptNullable(body.passport);
+    if (body.passportCountryOfIssue !== undefined) updateData.passportCountryOfIssue = body.passportCountryOfIssue || null;
+    if (body.nationality !== undefined) updateData.nationality = body.nationality || null;
     if (body.gender !== undefined) {
       const validGenders = ["I'm a woman", "I'm a man", "I'm non-binary"];
       if (body.gender && !validGenders.includes(body.gender)) throw new BadRequestException("Invalid gender");
@@ -446,7 +452,7 @@ export class UsersController {
     }
     const users = await this.prisma.user.findMany({
       select: {
-        id: true, email: true, name: true, photoUrl: true, mobileNumber: true, city: true, state: true, country: true, identification: true, roles: true, providerId: true, allLocations: true, createdAt: true, dailyRoomUrl: true, calendarLink: true,
+        id: true, email: true, name: true, photoUrl: true, mobileNumber: true, city: true, state: true, country: true, roles: true, providerId: true, allLocations: true, createdAt: true, dailyRoomUrl: true, calendarLink: true,
         provider: { select: { id: true, name: true } },
         assignedLocations: { include: { location: true } },
         calendarConnections: { select: { id: true, provider: true, email: true, label: true, tokenValid: true, connected: true }, orderBy: { createdAt: "desc" } },
@@ -474,7 +480,7 @@ export class UsersController {
     const target = await this.prisma.user.findUnique({
       where: { id },
       select: {
-        id: true, email: true, name: true, photoUrl: true, mobileNumber: true, city: true, state: true, country: true, identification: true, roles: true,
+        id: true, email: true, name: true, photoUrl: true, mobileNumber: true, city: true, state: true, country: true, roles: true,
         providerId: true, allLocations: true, createdAt: true, dailyRoomUrl: true, calendarLink: true, parentAccountRole: true,
         provider: { select: { id: true, name: true } },
         assignedLocations: { include: { location: true } },
@@ -641,7 +647,6 @@ export class UsersController {
     if (body.city !== undefined) updateData.city = body.city || null;
     if (body.state !== undefined) updateData.state = body.state || null;
     if (body.country !== undefined) updateData.country = body.country || null;
-    if (body.identification !== undefined) updateData.identification = body.identification || null;
     if (Array.isArray(body.roles)) updateData.roles = body.roles;
     if (body.providerId !== undefined) updateData.providerId = body.providerId || null;
     if (body.allLocations !== undefined) updateData.allLocations = body.allLocations;
@@ -1098,7 +1103,7 @@ export class UsersController {
       where: { parentAccountId: currentUser.parentAccountId },
       select: {
         id: true, email: true, name: true, photoUrl: true, mobileNumber: true,
-        city: true, state: true, country: true, identification: true,
+        city: true, state: true, country: true,
         parentAccountRole: true, createdAt: true, isDisabled: true,
       },
       orderBy: { createdAt: "asc" },
@@ -1195,7 +1200,7 @@ export class UsersController {
   @ApiParam({ name: "userId", type: String })
   async updateParentAccountMember(
     @Param("userId") userId: string,
-    @Body() body: { name?: string; email?: string; mobileNumber?: string; password?: string; city?: string; state?: string; country?: string; identification?: string; photoUrl?: string | null },
+    @Body() body: { name?: string; email?: string; mobileNumber?: string; password?: string; city?: string; state?: string; country?: string; photoUrl?: string | null },
     @Req() req: Request,
   ) {
     const user = req.user as any;
@@ -1213,7 +1218,6 @@ export class UsersController {
     if (body.city !== undefined) data.city = body.city || null;
     if (body.state !== undefined) data.state = body.state || null;
     if (body.country !== undefined) data.country = body.country || null;
-    if (body.identification !== undefined) data.identification = body.identification || null;
     if (body.photoUrl !== undefined) data.photoUrl = body.photoUrl || null;
     if (body.email !== undefined) {
       const email = body.email.toLowerCase().trim();
@@ -1234,7 +1238,7 @@ export class UsersController {
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data,
-      select: { id: true, email: true, name: true, mobileNumber: true, photoUrl: true, city: true, state: true, country: true, identification: true, parentAccountRole: true },
+      select: { id: true, email: true, name: true, mobileNumber: true, photoUrl: true, city: true, state: true, country: true, parentAccountRole: true },
     });
     return updated;
   }
