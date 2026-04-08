@@ -23,7 +23,7 @@ import {
   buildStatusLabel,
   getPhotoList,
 } from "@/components/marketplace/swipe-mappers";
-import { Loader2, Send, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize } from "lucide-react";
+import { Loader2, Send, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine } from "lucide-react";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -258,6 +258,7 @@ function PrepDocCard({ brandColor }: { brandColor: string }) {
 }
 
 function AgreementSignCard({ card, brandColor }: { card: { agreementId: string; status: string; viewUrl: string | null }; brandColor: string }) {
+  const navigate = useNavigate();
   return (
     <Card
       className="overflow-hidden max-w-sm animate-[slideUp_0.4s_ease-out_forwards]"
@@ -273,17 +274,15 @@ function AgreementSignCard({ card, brandColor }: { card: { agreementId: string; 
         <p className="text-sm text-muted-foreground">
           Your agency agreement is ready. Review it carefully and sign electronically to move forward.
         </p>
-        {card.viewUrl ? (
-          <a
-            href={card.viewUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+        {card.agreementId ? (
+          <button
+            onClick={() => navigate(`/agreements/${card.agreementId}`)}
             className="flex items-center justify-center gap-2 w-full py-2 px-4 rounded-[var(--radius)] text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
             style={{ backgroundColor: brandColor }}
           >
-            <ExternalLink className="w-4 h-4" />
+            <PenLine className="w-4 h-4" />
             Review &amp; Sign Agreement
-          </a>
+          </button>
         ) : (
           <p className="text-xs text-muted-foreground italic">Check your email for the signing link.</p>
         )}

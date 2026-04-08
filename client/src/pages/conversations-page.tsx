@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -481,6 +481,7 @@ export default function ConversationsPage() {
   const { data: brand } = useBrandSettings();
   const navigate = useNavigate();
   const { entityId: urlEntityId, subjectId: urlSubjectId } = useParams<{ entityId?: string; subjectId?: string }>();
+  const [searchParams] = useSearchParams();
   const isConciergeUrl = window.location.pathname === "/chat/concierge";
   const queryClient = useQueryClient();
   const dispatch = useAppDispatch();
@@ -538,9 +539,17 @@ export default function ConversationsPage() {
   // Helper: build chat URL from session data
   const buildChatUrl = (session: ChatSession | ProviderSession | null): string => {
     if (!session) return "/chat";
-    // AI concierge sessions (no providerId for parents)
-    if ("matchmakerId" in session && session.matchmakerId && !session.providerId) {
-      return `/chat/concierge?session=${session.id}`;
+    // AI concierge sessions - use the same "isProviderThread" logic as the sidebar:
+    // a session is a concierge-only session if it has a matchmakerId and has NOT yet
+    // had the provider join (providerJoinedAt null, status not CONSULTATION_BOOKED/PROVIDER_JOINED).
+    // Note: providerId may be set on concierge sessions (for whisper/silent passthrough) but
+    // that alone does NOT make it a provider thread.
+    if ("matchmakerId" in session && session.matchmakerId) {
+      const cs = session as ChatSession;
+      const isProviderThread = !!cs.providerJoinedAt || cs.status === "CONSULTATION_BOOKED" || cs.status === "PROVIDER_JOINED";
+      if (!isProviderThread) {
+        return `/chat/concierge?session=${session.id}`;
+      }
     }
     // Provider chat sessions - use providerId + subjectProfileId
     const entityId = isProvider ? (session as ProviderSession).userId : (session as ChatSession).providerId;
@@ -553,6 +562,7 @@ export default function ConversationsPage() {
   const [selectedSessionId, _setSelectedSessionId] = useState<string | null>(null);
   const setSelectedSessionId = (id: string | null, session?: ChatSession | ProviderSession | null) => {
     _setSelectedSessionId(id);
+    generateAgreementMutation.reset();
     navigate(session ? buildChatUrl(session) : "/chat", { replace: true });
   };
   const [searchQuery, setSearchQuery] = useState("");
@@ -677,7 +687,7 @@ export default function ConversationsPage() {
 
   const generateAgreementMutation = useMutation({
     mutationFn: async ({ sessionId }: { sessionId: string }) => {
-      const res = await fetch("/api/agreements/generate", {
+      const res = await fetch("/api/agreements/generate-from-template", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -854,9 +864,15 @@ export default function ConversationsPage() {
   const parentSessions: ChatSession[] = parentSessionsQuery.data || [];
   // Resolve selected parent session from URL params
   const selectedParentSession = useMemo(() => {
+    const isConciergeSession = (s: ChatSession) =>
+      !!s.matchmakerId && !s.providerJoinedAt && s.status !== "CONSULTATION_BOOKED" && s.status !== "PROVIDER_JOINED";
     if (isConciergeUrl) {
-      // Find the AI concierge session (no providerId)
-      return parentSessions.find(s => s.matchmakerId && !s.providerId) || null;
+      const sessionId = searchParams.get("session");
+      if (sessionId) {
+        return parentSessions.find(s => s.id === sessionId && isConciergeSession(s)) || null;
+      }
+      // Fallback: most recent concierge session
+      return parentSessions.find(s => isConciergeSession(s)) || null;
     }
     if (urlEntityId && urlSubjectId) {
       // Match by providerId + subjectProfileId first, fallback to session id
@@ -865,7 +881,7 @@ export default function ConversationsPage() {
         || null;
     }
     return null;
-  }, [parentSessions, isConciergeUrl, urlEntityId, urlSubjectId]);
+  }, [parentSessions, isConciergeUrl, urlEntityId, urlSubjectId, searchParams]);
   const setSelectedParentSession = (session: ChatSession | null) => {
     navigate(session ? buildChatUrl(session) : "/chat", { replace: true });
   };

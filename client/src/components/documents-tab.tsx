@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useProvider } from "@/hooks/use-providers";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Upload, FileText, Download, ExternalLink, RefreshCw, Copy, Check, Trash2 } from "lucide-react";
+import { Upload, FileText, Download, ExternalLink, RefreshCw, Copy, Check, Trash2, PenLine } from "lucide-react";
 
 interface Agreement {
   id: string;
@@ -93,6 +93,11 @@ const TOKENS = [
   { token: "{{PROVIDER_NAME}}", description: "Your agency name" },
   { token: "{{PROVIDER_EMAIL}}", description: "Your agency email" },
   { token: "{{DATE}}", description: "Today's date" },
+  { token: "{{SIGNATURE_1}}", description: "Signature field for client 1 - place where they should sign" },
+  { token: "{{SIGNATURE_2}}", description: "Signature field for client 2 - place where they should sign" },
+  { token: "{{INITIALS_1}}", description: "Initials field for client 1" },
+  { token: "{{INITIALS_2}}", description: "Initials field for client 2" },
+  { token: "{{PROVIDER_SIGNATURE}}", description: "Signature field for the provider/agency" },
 ];
 
 function TokenChip({ token }: { token: string }) {
@@ -125,6 +130,12 @@ export default function DocumentsTab() {
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [editorEToken, setEditorEToken] = useState<string | null>(null);
+  const [editorTemplateId, setEditorTemplateId] = useState<string | null>(null);
+  const [loadingEditor, setLoadingEditor] = useState(false);
+  const editorInstanceRef = useRef<any>(null);
+  const editorContainerRef = useRef<HTMLDivElement>(null);
+  const editorContainerId = "pandadoc-template-editor-container";
 
   const { data: agreements = [], isLoading: agreementsLoading, refetch } = useQuery<Agreement[]>({
     queryKey: ["/api/agreements"],
@@ -146,7 +157,7 @@ export default function DocumentsTab() {
       if (!uploadRes.ok) throw new Error("Upload failed");
       const { url } = await uploadRes.json();
 
-      await apiRequest("PUT", `/api/providers/${providerId}`, { agreementTemplateUrl: url });
+      await apiRequest("PUT", `/api/providers/${providerId}`, { agreementTemplateUrl: url, agreementTemplateOriginalName: file.name, pandaDocTemplateId: null });
       queryClient.invalidateQueries({ queryKey: ['/api/providers/:id', providerId] });
 
       toast({ title: "Agreement template uploaded", description: "Your document has been saved." });
@@ -184,13 +195,78 @@ export default function DocumentsTab() {
   async function deleteTemplate() {
     setDeleting(true);
     try {
-      await apiRequest("PUT", `/api/providers/${providerId}`, { agreementTemplateUrl: null });
+      await apiRequest("PUT", `/api/providers/${providerId}`, { agreementTemplateUrl: null, agreementTemplateOriginalName: null, pandaDocTemplateId: null });
       queryClient.invalidateQueries({ queryKey: ['/api/providers/:id', providerId] });
       toast({ title: "Template removed" });
     } catch (err: any) {
       toast({ title: "Failed to remove template", description: err.message, variant: "destructive" });
     } finally {
       setDeleting(false);
+    }
+  }
+
+  // Mount PandaDoc editor SDK when eToken is set
+  useEffect(() => {
+    if (!editorEToken) return;
+    let destroyed = false;
+    (async () => {
+      try {
+        const { Editor } = await import("pandadoc-editor");
+        // Small delay to ensure the container div is painted in DOM
+        await new Promise(r => setTimeout(r, 100));
+        if (destroyed) return;
+        const el = editorContainerRef.current ?? document.getElementById(editorContainerId);
+        if (!el) {
+          toast({ title: "Failed to open editor", description: "Editor container not found", variant: "destructive" });
+          return;
+        }
+        const editor = new Editor(editorContainerId, { token: editorEToken, debugMode: true }, { region: "com" });
+        editorInstanceRef.current = editor;
+        await editor.open();
+      } catch (err: any) {
+        if (!destroyed) {
+          console.error("[PandaDoc Editor]", err);
+          toast({ title: "Failed to open editor", description: err.message || String(err), variant: "destructive" });
+        }
+      }
+    })();
+    return () => {
+      destroyed = true;
+      if (editorInstanceRef.current) {
+        editorInstanceRef.current.destroy();
+        editorInstanceRef.current = null;
+      }
+    };
+  }, [editorEToken]);
+
+  async function openFieldEditor() {
+    // Pre-populate templateId from provider data so the fallback link is available immediately
+    const existingTemplateId = (provider as any)?.pandaDocTemplateId;
+    if (existingTemplateId) setEditorTemplateId(existingTemplateId);
+
+    // Destroy any existing editor instance
+    if (editorInstanceRef.current) {
+      editorInstanceRef.current.destroy();
+      editorInstanceRef.current = null;
+    }
+    setEditorEToken(null);
+    setLoadingEditor(true);
+    try {
+      const syncRes = await fetch("/api/agreements/sync-template", { method: "POST", credentials: "include" });
+      const syncData = await syncRes.json().catch(() => ({}));
+      if (syncData.templateId) setEditorTemplateId(syncData.templateId);
+
+      const res = await fetch("/api/agreements/template-editor-session", { credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Failed to open editor" }));
+        throw new Error(err.message);
+      }
+      const { eToken } = await res.json();
+      setEditorEToken(eToken);
+    } catch (err: any) {
+      toast({ title: "Failed to open editor", description: err.message, variant: "destructive" });
+    } finally {
+      setLoadingEditor(false);
     }
   }
 
@@ -204,7 +280,9 @@ export default function DocumentsTab() {
   }
 
   const templateUrl = (provider as any)?.agreementTemplateUrl || null;
-  const templateFilename = templateUrl ? decodeURIComponent(templateUrl.split("/").pop()?.split("?")[0] || "agreement-template") : null;
+  const pandaDocTemplateId = (provider as any)?.pandaDocTemplateId || null;
+  const templateFilename = (provider as any)?.agreementTemplateOriginalName
+    || (templateUrl ? decodeURIComponent(templateUrl.split("/").pop()?.split("?")[0] || "agreement-template") : null);
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
@@ -294,7 +372,71 @@ export default function DocumentsTab() {
         />
       </Card>
 
-      {/* Section B - Preview */}
+      {/* Section B - Configure Signature Fields */}
+      {templateUrl && (
+        <Card className="p-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <PenLine className="w-5 h-5 text-primary" />
+            <h2 className="text-lg font-heading">Configure Signature Fields</h2>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Sync your template to PandaDoc, then use the embedded editor to drag and drop signature and initials fields to the correct positions. This is a one-time setup per template.
+          </p>
+
+          <div className="flex items-center gap-3">
+            {pandaDocTemplateId ? (
+              <span className="flex items-center gap-1.5 text-sm text-[hsl(var(--brand-success))]">
+                <Check className="w-4 h-4" />
+                Fields configured
+              </span>
+            ) : (
+              <span className="text-sm text-muted-foreground">Not yet synced to PandaDoc</span>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={loadingEditor}
+              onClick={openFieldEditor}
+            >
+              {loadingEditor ? (
+                <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Syncing...</>
+              ) : pandaDocTemplateId ? (
+                <><PenLine className="w-4 h-4 mr-2" />Edit Signature Fields</>
+              ) : (
+                <><PenLine className="w-4 h-4 mr-2" />Sync &amp; Open Field Editor</>
+              )}
+            </Button>
+          </div>
+
+          {editorEToken && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-muted-foreground">Drag signature, initials, and date fields onto the document, then close when done.</p>
+                {editorTemplateId && (
+                  <a
+                    href={`https://app.pandadoc.com/a/#/templates/${editorTemplateId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-primary underline underline-offset-2 shrink-0 ml-4"
+                  >
+                    Edit in PandaDoc (sandbox fallback)
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Editor container always in DOM so the SDK can find it by ID even if provider data re-fetches */}
+      <div
+        ref={editorContainerRef}
+        id={editorContainerId}
+        className="w-full rounded-[var(--radius)] border"
+        style={{ display: editorEToken ? "block" : "none", height: "750px", minHeight: "750px" }}
+      />
+
+      {/* Section D - Preview */}
       {templateUrl && (
         <Card className="p-6 space-y-4">
           <div className="flex items-center justify-between">
@@ -308,7 +450,7 @@ export default function DocumentsTab() {
 
           {isPdf(templateUrl) || isWord(templateUrl) ? (
             <iframe
-              src="/api/documents/preview"
+              src={`/api/documents/preview?v=${encodeURIComponent(templateUrl)}`}
               className="w-full h-[600px] rounded-[var(--radius)] border bg-[#e8e8e8]"
               title="Agreement Preview"
             />
@@ -321,7 +463,7 @@ export default function DocumentsTab() {
         </Card>
       )}
 
-      {/* Section C - Sent Agreements */}
+      {/* Section E - Sent Agreements */}
       <Card className="p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

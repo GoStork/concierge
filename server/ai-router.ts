@@ -527,7 +527,7 @@ aiRouter.get("/my-session", async (req: Request, res: Response) => {
       ? (await prisma.user.findMany({ where: { parentAccountId: user.parentAccountId }, select: { id: true } })).map((u: any) => u.id)
       : [userId];
     const session = await prisma.aiChatSession.findFirst({
-      where: { userId: { in: accountUserIds }, providerId: null },
+      where: { userId: { in: accountUserIds }, providerJoinedAt: null, status: { notIn: ["CONSULTATION_BOOKED", "PROVIDER_JOINED"] } },
       orderBy: { updatedAt: "desc" },
       select: { id: true, matchmakerId: true, title: true, provider: { select: { name: true } } },
     });
@@ -572,7 +572,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       : [userId];
 
     const existing = await prisma.aiChatSession.findFirst({
-      where: { userId: { in: accountUserIds }, providerId: null },
+      where: { userId: { in: accountUserIds }, providerJoinedAt: null, status: { notIn: ["CONSULTATION_BOOKED", "PROVIDER_JOINED"] } },
       orderBy: { updatedAt: "desc" },
       select: { id: true },
     });
@@ -708,7 +708,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         ? (await prisma.user.findMany({ where: { parentAccountId: currentUser.parentAccountId }, select: { id: true } })).map(u => u.id)
         : [userId];
       const existingSession = await prisma.aiChatSession.findFirst({
-        where: { userId: { in: accountUserIds }, providerId: null },
+        where: { userId: { in: accountUserIds }, providerJoinedAt: null, status: { notIn: ["CONSULTATION_BOOKED", "PROVIDER_JOINED"] } },
         orderBy: { updatedAt: "desc" },
       });
       if (existingSession) {

@@ -73,7 +73,7 @@ export class DocumentsController {
         // Stream the PDF directly so the iframe can render it natively
         const { buffer, contentType } = await this.fetchTemplateBuffer(fileUrl);
         res.setHeader("Content-Type", contentType);
-        res.setHeader("Cache-Control", "private, max-age=300");
+        res.setHeader("Cache-Control", "no-cache");
         res.send(buffer);
         return;
       }
@@ -103,7 +103,7 @@ export class DocumentsController {
       );
 
       res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.setHeader("Cache-Control", "private, max-age=300");
+      res.setHeader("Cache-Control", "no-cache");
       res.send(`<!DOCTYPE html>
 <html>
 <head>

@@ -7,7 +7,7 @@ import { setupAuth, requireAuth, requireRole } from "./auth";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { prisma } from "./db";
-import { generateAgreement } from "./pandadoc-service";
+import { generateAgreement, syncTemplateToPandaDoc, createTemplateEditingSession, generateAgreementFromTemplate, getAgreementSigningSession } from "./pandadoc-service";
 
 function escapeHtml(str: string): string {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
@@ -877,6 +877,85 @@ export async function registerRoutes(
       res.json(formatted);
     } catch (e: any) {
       console.error("List agreements error:", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Sync provider's Word/PDF template to PandaDoc as a reusable template
+  app.post("/api/agreements/sync-template", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+    try {
+      const templateId = await syncTemplateToPandaDoc(user.providerId);
+      res.json({ templateId });
+    } catch (e: any) {
+      console.error("Sync template error:", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Get PandaDoc embedded template editor session URL
+  app.get("/api/agreements/template-editor-session", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+    try {
+      const editorUrl = await createTemplateEditingSession(user.providerId);
+      res.json({ editorUrl });
+    } catch (e: any) {
+      console.error("Template editor session error:", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Generate agreement from PandaDoc template (new template-based flow)
+  app.post("/api/agreements/generate-from-template", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+
+    const { sessionId } = req.body;
+    if (!sessionId || typeof sessionId !== "string") {
+      return res.status(400).json({ message: "sessionId is required" });
+    }
+
+    try {
+      const session = await prisma.aiChatSession.findUnique({
+        where: { id: sessionId },
+        select: { id: true, userId: true, providerId: true },
+      });
+      if (!session) return res.status(404).json({ message: "Session not found" });
+      if (session.providerId !== user.providerId) return res.status(403).json({ message: "Not authorized for this session" });
+
+      const agreement = await generateAgreementFromTemplate({
+        providerId: user.providerId,
+        parentUserId: session.userId,
+        sessionId: session.id,
+      });
+
+      await prisma.aiChatMessage.create({
+        data: {
+          sessionId: session.id,
+          role: "assistant",
+          content: "The provider has generated the official agreement. Please review and sign it using the button in your chat.",
+          senderType: "system",
+          senderName: "Eva",
+        },
+      });
+
+      res.json({ success: true, agreementId: agreement.id, status: agreement.status });
+    } catch (e: any) {
+      console.error("Agreement from template error:", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Get a fresh signing session URL for a specific agreement (parent access)
+  app.get("/api/agreements/:id/signing-session", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    try {
+      const signingUrl = await getAgreementSigningSession(req.params.id, user.id);
+      res.json({ signingUrl });
+    } catch (e: any) {
+      console.error("Signing session error:", e);
       res.status(500).json({ message: e.message });
     }
   });

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import multer from "multer";
 import { prisma } from "./db";
-import { generateAgreement } from "./pandadoc-service";
+import { generateAgreement, syncTemplateToPandaDoc, createTemplateEditingSession, generateAgreementFromTemplate, getAgreementSigningSession } from "./pandadoc-service";
 import { StorageService } from "./src/modules/storage/storage.service";
 import { isUserOnline, getOnlineUserIds } from "./online-tracker";
 
@@ -1467,3 +1467,246 @@ chatRouter.put("/api/admin/concierge-prompts/:id", requireAuth, async (req, res)
     res.status(500).json({ message: e.message });
   }
 });
+
+// --- Agreement routes ---
+
+chatRouter.post("/api/agreements/generate", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  const { sessionId } = req.body;
+  if (!sessionId || typeof sessionId !== "string") {
+    return res.status(400).json({ message: "sessionId is required" });
+  }
+  try {
+    const session = await prisma.aiChatSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, userId: true, providerId: true },
+    });
+    if (!session) return res.status(404).json({ message: "Session not found" });
+    if (session.providerId !== user.providerId) return res.status(403).json({ message: "Not authorized for this session" });
+
+    const agreement = await generateAgreement({
+      providerId: user.providerId,
+      parentUserId: session.userId,
+      sessionId: session.id,
+    });
+
+    await prisma.aiChatMessage.create({
+      data: {
+        sessionId: session.id,
+        role: "assistant",
+        content: "The provider has generated the official agreement. It is being prepared for your signature. You'll receive it shortly via email.",
+        senderType: "system",
+        senderName: "Eva",
+      },
+    });
+
+    res.json({ success: true, agreementId: agreement?.id, status: agreement?.status });
+  } catch (e: any) {
+    console.error("Agreement generation error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+chatRouter.get("/api/agreements", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const agreements = await prisma.agreement.findMany({
+      where: { providerId: user.providerId },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        status: true,
+        documentType: true,
+        pandaDocViewUrl: true,
+        signedAt: true,
+        rejectedAt: true,
+        createdAt: true,
+        parentUser: {
+          select: { name: true, firstName: true, lastName: true, email: true },
+        },
+      },
+    });
+    const formatted = agreements.map(a => ({
+      id: a.id,
+      status: a.status,
+      documentType: a.documentType,
+      pandaDocViewUrl: a.pandaDocViewUrl,
+      signedAt: a.signedAt,
+      rejectedAt: a.rejectedAt,
+      createdAt: a.createdAt,
+      parentName: a.parentUser.name || `${a.parentUser.firstName || ""} ${a.parentUser.lastName || ""}`.trim() || a.parentUser.email,
+      parentEmail: a.parentUser.email,
+    }));
+    res.json(formatted);
+  } catch (e: any) {
+    console.error("List agreements error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// Sync provider's Word/PDF template to PandaDoc as a reusable template
+chatRouter.post("/api/agreements/sync-template", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const templateId = await syncTemplateToPandaDoc(user.providerId);
+    res.json({ templateId });
+  } catch (e: any) {
+    console.error("Sync template error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// Get PandaDoc embedded template editor session URL
+chatRouter.get("/api/agreements/template-editor-session", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const eToken = await createTemplateEditingSession(user.providerId, user.email);
+    res.json({ eToken });
+  } catch (e: any) {
+    console.error("Template editor session error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// Generate agreement from PandaDoc template (new template-based flow)
+chatRouter.post("/api/agreements/generate-from-template", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  const { sessionId } = req.body;
+  if (!sessionId || typeof sessionId !== "string") {
+    return res.status(400).json({ message: "sessionId is required" });
+  }
+  try {
+    const session = await prisma.aiChatSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, userId: true, providerId: true },
+    });
+    if (!session) return res.status(404).json({ message: "Session not found" });
+    if (session.providerId !== user.providerId) return res.status(403).json({ message: "Not authorized for this session" });
+
+    const agreement = await generateAgreementFromTemplate({
+      providerId: user.providerId,
+      parentUserId: session.userId,
+      sessionId: session.id,
+    });
+
+    await prisma.aiChatMessage.create({
+      data: {
+        sessionId: session.id,
+        role: "assistant",
+        content: "The provider has generated the official agreement. Please review and sign it using the button below. You'll also receive it via email.",
+        senderType: "system",
+        senderName: "Eva",
+        uiCardType: "agreement",
+        uiCardData: {
+          agreementCard: {
+            agreementId: agreement.id,
+            status: agreement.status,
+            viewUrl: (agreement as any).pandaDocViewUrl || null,
+          },
+        },
+      },
+    });
+
+    // Send email + SMS notification to parent
+    try {
+      const { getNestApp } = await import("./nest-app-ref");
+      const nestApp = getNestApp();
+      if (nestApp) {
+        const { NotificationService } = await import("./src/modules/notifications/notification.service");
+        const notifService = nestApp.get(NotificationService);
+        const parentUser = await prisma.user.findUnique({
+          where: { id: session.userId },
+          select: { name: true, email: true, mobileNumber: true },
+        });
+        const providerRecord = await prisma.provider.findUnique({
+          where: { id: user.providerId },
+          select: { name: true },
+        });
+        if (parentUser?.email) {
+          await notifService.sendAgreementReadyNotification({
+            parentUserId: session.userId,
+            parentName: parentUser.name || parentUser.email,
+            parentEmail: parentUser.email,
+            parentPhone: parentUser.mobileNumber || null,
+            providerName: providerRecord?.name || "Your Agency",
+            providerId: user.providerId,
+            signingUrl: (agreement as any).pandaDocViewUrl || null,
+            sessionId: session.id,
+          });
+        }
+      }
+    } catch (notifErr: any) {
+      console.error("[Agreement] Notification send failed:", notifErr?.message);
+    }
+
+    res.json({ success: true, agreementId: agreement.id, status: agreement.status });
+  } catch (e: any) {
+    console.error("Agreement from template error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// Get a fresh signing session URL for a specific agreement (parent or provider access)
+chatRouter.get("/api/agreements/:id/signing-session", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  try {
+    const signingUrl = await getAgreementSigningSession(req.params.id, user.id);
+    res.json({ signingUrl });
+  } catch (e: any) {
+    console.error("Signing session error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
+  try {
+    const webhookSecret = process.env.PANDADOC_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      const crypto = await import("crypto");
+      const signature = req.headers["x-pandadoc-signature"] as string;
+      if (!signature) return res.status(401).json({ message: "Missing signature" });
+      const rawBody = JSON.stringify(req.body);
+      const expected = crypto.createHmac("sha256", webhookSecret).update(rawBody).digest("hex");
+      if (signature !== expected) return res.status(401).json({ message: "Invalid signature" });
+    }
+    const events = Array.isArray(req.body) ? req.body : [req.body];
+    for (const event of events) {
+      const eventType = event?.event;
+      const documentId = event?.data?.id;
+      if (!documentId) continue;
+      const agreement = await prisma.agreement.findUnique({
+        where: { pandaDocDocumentId: documentId },
+        include: {
+          provider: { select: { id: true, name: true, email: true } },
+          parentUser: { select: { id: true, name: true, firstName: true, lastName: true, email: true } },
+        },
+      });
+      if (!agreement) continue;
+      if (eventType === "document_state_changed") {
+        const newState = event?.data?.status;
+        if (newState === "document.completed") {
+          await prisma.agreement.update({ where: { id: agreement.id }, data: { status: "SIGNED", signedAt: new Date() } });
+          const providerUser = await prisma.user.findFirst({ where: { providerId: agreement.providerId }, select: { id: true } });
+          if (providerUser) {
+            const parentName = agreement.parentUser.name || `${agreement.parentUser.firstName || ""} ${agreement.parentUser.lastName || ""}`.trim() || agreement.parentUser.email;
+            await prisma.inAppNotification.create({ data: { userId: providerUser.id, eventType: "AGREEMENT_SIGNED", payload: { agreementId: agreement.id, message: `${parentName} has signed the agreement` } } });
+          }
+        } else if (newState === "document.rejected") {
+          await prisma.agreement.update({ where: { id: agreement.id }, data: { status: "REJECTED", rejectedAt: new Date() } });
+        } else if (newState === "document.expired") {
+          await prisma.agreement.update({ where: { id: agreement.id }, data: { status: "EXPIRED" } });
+        }
+      }
+    }
+    res.json({ received: true });
+  } catch (e: any) {
+    console.error("PandaDoc webhook error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+

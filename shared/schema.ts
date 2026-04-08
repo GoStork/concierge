@@ -265,6 +265,7 @@ export const insertProviderSchema = z.object({
   consultationBookingUrl: z.string().url().nullable().optional().or(z.literal("").transform(() => null)),
   consultationIframeEnabled: z.boolean().optional(),
   agreementTemplateUrl: z.string().nullable().optional(),
+  agreementTemplateOriginalName: z.string().nullable().optional(),
   // IVF Clinic matching requirements
   ivfTwinsAllowed: z.boolean().optional(),
   ivfTransferFromOtherClinics: z.boolean().optional(),

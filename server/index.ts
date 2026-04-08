@@ -103,7 +103,9 @@ export function log(message: string, source = "nestjs") {
     res.on("finish", () => {
       const duration = Date.now() - start;
       const quietPaths = ["/api/calendar/bookings/imminent", "/api/brand/settings", "/api/user", "/api/uploads/gcs", "/api/uploads/proxy"];
-      if (path.startsWith("/api") && !quietPaths.includes(path)) {
+      const isError = res.statusCode >= 400;
+      const isSlow = duration > 2000;
+      if (path.startsWith("/api") && !quietPaths.includes(path) && (isError || isSlow)) {
         let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
         if (capturedJsonResponse) {
           const json = JSON.stringify(capturedJsonResponse);

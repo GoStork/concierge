@@ -493,7 +493,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     enabled: !!user,
     refetchInterval: 30000,
   });
-  const { data: providerChatSessions } = useQuery<{ unreadCount: number }[]>({
+  const { data: providerChatSessions } = useQuery<{ unreadCount: number; pendingQuestions?: number; status?: string }[]>({
     queryKey: ["/api/provider/concierge-sessions"],
     queryFn: async () => {
       const res = await fetch("/api/provider/concierge-sessions", { credentials: "include" });
@@ -505,11 +505,13 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   });
   const totalUnread = useMemo(() => {
     const parentUnread = (chatSessions || []).reduce((sum, s) => sum + (s.unreadCount || 0), 0);
-    // For providers: count both regular unread messages AND pending whisper questions
-    const providerUnread = (providerChatSessions || []).reduce(
-      (sum, s) => sum + (s.unreadCount || 0) + (s.pendingQuestions || 0),
-      0,
-    );
+    // For providers: count unread messages, plus pending whisper questions only for pre-join sessions.
+    // PROVIDER_JOINED sessions show "Joined" in the sidebar (never "pending"), so counting
+    // pendingQuestions there would create a ghost badge the provider can never clear.
+    const providerUnread = (providerChatSessions || []).reduce((sum, s) => {
+      const pending = s.status === "PROVIDER_JOINED" ? 0 : (s.pendingQuestions || 0);
+      return sum + (s.unreadCount || 0) + pending;
+    }, 0);
     return parentUnread + providerUnread;
   }, [chatSessions, providerChatSessions]);
 

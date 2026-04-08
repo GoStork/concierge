@@ -47,23 +47,57 @@ async function prepareFilledDocument(
   const isDocx = contentType.includes("wordprocessingml") || filename.endsWith(".docx") || filename.endsWith(".doc");
   const isPdf = contentType.includes("pdf") || filename.endsWith(".pdf");
 
+  console.log(`[DOCX] isDocx=${isDocx}, isPdf=${isPdf}, contentType=${contentType}, filename=${filename}`);
   if (isDocx) {
     // Replace {{TOKEN}} in Word XML directly - avoids PandaDoc reserved keyword conflicts
     const zip = await JSZip.loadAsync(buffer);
+    console.log(`[DOCX] ZIP files: ${Object.keys(zip.files).join(", ")}`);
     const xmlFiles = ["word/document.xml", "word/header1.xml", "word/header2.xml", "word/footer1.xml", "word/footer2.xml"];
     for (const xmlFile of xmlFiles) {
       if (zip.files[xmlFile]) {
         let content = await zip.files[xmlFile].async("string");
-        for (const [name, value] of Object.entries(tokens)) {
-          // Replace {{TOKEN}} - also handle cases where Word splits the token across XML runs
-          // First, collapse split tokens by removing XML tags between {{ and }}
-          content = content.replace(/\{\{([^}]*)\}\}/g, (match: string, inner: string) => {
-            // Strip any XML tags inside the token (Word sometimes splits runs)
-            const cleanInner = inner.replace(/<[^>]+>/g, "");
-            return `{{${cleanInner}}}`;
-          });
-          content = content.split(`{{${name}}}`).join(value || "");
-        }
+
+        // Word splits tokens across XML runs in unpredictable ways.
+        // e.g. {{CLIENT1_NAME}} may appear as <w:t>{</w:t><w:t>{CLIENT1</w:t><w:t>_NAME}}</w:t>
+        // Fix: for each paragraph, extract plain text, replace tokens, rebuild with a single run.
+        content = content.replace(/<w:p[ >][\s\S]*?<\/w:p>/g, (para: string) => {
+          // Extract all text from <w:t> elements in this paragraph
+          const plainText = (para.match(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g) || [])
+            .map((t: string) => t.replace(/<[^>]+>/g, ""))
+            .join("");
+
+          // Only process paragraphs that contain tokens
+          if (!plainText.includes("{{")) return para;
+
+          console.log(`[DOCX] Found token paragraph, plainText: "${plainText.substring(0, 200)}"`);
+
+          // Replace tokens in plain text
+          let replaced = plainText;
+          for (const [name, value] of Object.entries(tokens)) {
+            replaced = replaced.split(`{{${name}}}`).join(value || "");
+          }
+
+          console.log(`[DOCX] After replacement: "${replaced.substring(0, 200)}"`);
+
+          // If nothing changed, return original paragraph
+          if (replaced === plainText) {
+            console.log(`[DOCX] WARNING: No tokens replaced in paragraph: "${plainText.substring(0, 200)}"`);
+            return para;
+          }
+
+          // Preserve paragraph properties (<w:pPr>...</w:pPr>) and rebuild with single run
+          const pPrMatch = para.match(/<w:pPr>[\s\S]*?<\/w:pPr>/);
+          const pPr = pPrMatch ? pPrMatch[0] : "";
+          // Extract run properties from first run for font/style preservation
+          const rPrMatch = para.match(/<w:rPr>[\s\S]*?<\/w:rPr>/);
+          const rPr = rPrMatch ? rPrMatch[0] : "";
+          const escapedText = replaced
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+          return `<w:p><w:pPr>${pPr ? pPr.replace(/<\/?w:pPr>/g, "") : ""}</w:pPr><w:r>${rPr}<w:t xml:space="preserve">${escapedText}</w:t></w:r></w:p>`;
+        });
+
         zip.file(xmlFile, content);
       }
     }
@@ -115,12 +149,12 @@ async function fetchDocumentViewUrl(apiKey: string, documentId: string, recipien
         "Authorization": `API-Key ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ recipient: recipientEmail, lifetime: 86400 }),
+      body: JSON.stringify({ recipient: recipientEmail, lifetime: 86400, type: "SIGNER" }),
     });
     if (res.ok) {
       const data = await res.json();
       console.log("[PandaDoc] Session created:", JSON.stringify(data));
-      return data.id ? `https://app.pandadoc.com/s/${data.id}` : null;
+      return data.id ? `https://app.pandadoc.com/s/${data.id}?embedded=1` : null;
     } else {
       const errBody = await res.text();
       console.error("[PandaDoc] Session create failed:", res.status, errBody);
@@ -232,6 +266,13 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
       PROVIDER_NAME: provider.name,
       PROVIDER_EMAIL: provider.email || "",
       DATE: today,
+      // Anchor strings replaced into the document; the fields config below tells PandaDoc
+      // to overlay interactive widgets wherever these strings appear.
+      SIGNATURE_1: "___SIGN1___",
+      SIGNATURE_2: "___SIGN2___",
+      INITIALS_1: "___INI1___",
+      INITIALS_2: "___INI2___",
+      PROVIDER_SIGNATURE: "___SIGN3___",
     };
 
     // Download the template and pre-fill all {{TOKEN}} placeholders in the document XML.
@@ -245,21 +286,55 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
     const docMeta = {
       name: `${provider.name} - Agency Agreement - ${parentName}`,
       recipients: [
+        // Client 1 - always present
         {
-          email: parentEmail,
-          first_name: parentUser.firstName || parentName.split(" ")[0] || "",
-          last_name: parentUser.lastName || parentName.split(" ").slice(1).join(" ") || "",
-          role: "Signer",
+          email: parent1Email,
+          first_name: parent1.firstName || p1.name.split(" ")[0] || "",
+          last_name: parent1.lastName || p1.name.split(" ").slice(1).join(" ") || "",
+          role: "signer1",
           signing_order: 1,
         },
-        {
+        // Client 2 - only if second parent exists in the account
+        // Sandbox restricts to org domain; production allows external emails
+        ...(parent2 && p2.email && (process.env.NODE_ENV === "production" || process.env.PANDADOC_PRODUCTION === "true") ? [{
+          email: p2.email,
+          first_name: parent2.firstName || p2.name.split(" ")[0] || "",
+          last_name: parent2.lastName || p2.name.split(" ").slice(1).join(" ") || "",
+          role: "signer2",
+          signing_order: 2,
+        }] : []),
+        // Provider countersigns last - sandbox restricts to org domain only
+        ...(process.env.NODE_ENV === "production" || process.env.PANDADOC_PRODUCTION === "true" ? [{
           email: provider.email,
           first_name: provider.name.split(" ")[0] || provider.name,
           last_name: provider.name.split(" ").slice(1).join(" ") || "",
-          role: "Provider",
-          signing_order: 2,
-        },
+          role: "signer3",
+          signing_order: parent2 && p2.email ? 3 : 2,
+        }] : []),
       ],
+      fields: {
+        // PandaDoc finds each anchor string in the rendered document and overlays the widget.
+        // Role names must be lowercase and match recipient role strings exactly.
+        signature_1:  { role: "signer1", type: "signature", anchor: { text: "___SIGN1___", occurrence: 1 } },
+        signature_2:  { role: "signer2", type: "signature", anchor: { text: "___SIGN2___", occurrence: 1 } },
+        signature_3:  { role: "signer3", type: "signature", anchor: { text: "___SIGN3___", occurrence: 1 } },
+        initials_1_1: { role: "signer1", type: "initials",  anchor: { text: "___INI1___",  occurrence: 1 } },
+        initials_1_2: { role: "signer1", type: "initials",  anchor: { text: "___INI1___",  occurrence: 2 } },
+        initials_1_3: { role: "signer1", type: "initials",  anchor: { text: "___INI1___",  occurrence: 3 } },
+        initials_1_4: { role: "signer1", type: "initials",  anchor: { text: "___INI1___",  occurrence: 4 } },
+        initials_1_5: { role: "signer1", type: "initials",  anchor: { text: "___INI1___",  occurrence: 5 } },
+        initials_1_6: { role: "signer1", type: "initials",  anchor: { text: "___INI1___",  occurrence: 6 } },
+        initials_1_7: { role: "signer1", type: "initials",  anchor: { text: "___INI1___",  occurrence: 7 } },
+        initials_1_8: { role: "signer1", type: "initials",  anchor: { text: "___INI1___",  occurrence: 8 } },
+        initials_2_1: { role: "signer2", type: "initials",  anchor: { text: "___INI2___",  occurrence: 1 } },
+        initials_2_2: { role: "signer2", type: "initials",  anchor: { text: "___INI2___",  occurrence: 2 } },
+        initials_2_3: { role: "signer2", type: "initials",  anchor: { text: "___INI2___",  occurrence: 3 } },
+        initials_2_4: { role: "signer2", type: "initials",  anchor: { text: "___INI2___",  occurrence: 4 } },
+        initials_2_5: { role: "signer2", type: "initials",  anchor: { text: "___INI2___",  occurrence: 5 } },
+        initials_2_6: { role: "signer2", type: "initials",  anchor: { text: "___INI2___",  occurrence: 6 } },
+        initials_2_7: { role: "signer2", type: "initials",  anchor: { text: "___INI2___",  occurrence: 7 } },
+        initials_2_8: { role: "signer2", type: "initials",  anchor: { text: "___INI2___",  occurrence: 8 } },
+      },
       metadata: {
         gostork_provider_id: providerId,
         gostork_parent_user_id: parentUserId,
@@ -287,6 +362,7 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
     }
 
     const pandaDocResult = await createResponse.json();
+    console.log("[PandaDoc] Document created:", JSON.stringify({ id: pandaDocResult.id, status: pandaDocResult.status, recipients: pandaDocResult.recipients?.map((r: any) => r.email) }));
     const pandaDocDocumentId = pandaDocResult.id;
 
     await prisma.agreement.update({
@@ -294,8 +370,19 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
       data: { pandaDocDocumentId },
     });
 
+    // Diagnostic: log what fields PandaDoc detected in the creation response
+    console.log("[PandaDoc] Creation fields:", JSON.stringify(pandaDocResult.fields ?? "none"));
+    console.log("[PandaDoc] Full creation response keys:", Object.keys(pandaDocResult).join(", "));
+
     // Wait for document to reach draft status
     const isReady = await waitForDocumentStatus(apiKey, pandaDocDocumentId, "document.draft");
+
+    // Diagnostic: fetch document details and fields after reaching draft
+    const detailRes = await fetch(`https://api.pandadoc.com/public/v1/documents/${pandaDocDocumentId}/fields`, {
+      headers: { "Authorization": `API-Key ${apiKey}` },
+    });
+    const detailBody = await detailRes.text();
+    console.log("[PandaDoc] Fields endpoint response:", detailRes.status, detailBody.substring(0, 500));
 
     if (!isReady) {
       console.warn("[PandaDoc] Document did not reach draft state, marking as CREATED");
@@ -306,8 +393,9 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
       return await prisma.agreement.findUnique({ where: { id: agreement.id } });
     }
 
-    // Send the document - requires PandaDoc workspace to allow external recipients
-    // (Settings > Security > allow sending outside organization)
+    // Send the document with silent:true - suppresses PandaDoc's own email, just moves status to sent.
+    // GoStork delivers the signing link via our own branded email + chat card.
+    // silent:true bypasses the sandbox org-domain email restriction.
     const sendResponse = await fetch(`https://api.pandadoc.com/public/v1/documents/${pandaDocDocumentId}/send`, {
       method: "POST",
       headers: {
@@ -348,4 +436,390 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
     }).catch(() => {});
     throw error;
   }
+}
+
+// ---- New PandaDoc template-based functions ----
+
+/**
+ * Upload provider's Word/PDF template to PandaDoc as a reusable template.
+ * Stores the resulting template UUID on provider.pandaDocTemplateId.
+ */
+export async function syncTemplateToPandaDoc(providerId: string): Promise<string> {
+  const provider = await prisma.provider.findUnique({
+    where: { id: providerId },
+    select: { id: true, name: true, agreementTemplateUrl: true, pandaDocTemplateId: true },
+  });
+  if (!provider) throw new Error("Provider not found");
+  if (!provider.agreementTemplateUrl) throw new Error("Provider has not uploaded an agreement template");
+
+  const apiKey = process.env.PANDADOC_API_KEY;
+  if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
+
+  // If a template already exists for this file, reuse it - do NOT re-upload and wipe fields
+  if (provider.pandaDocTemplateId) {
+    console.log(`[PandaDoc] Reusing existing template: ${provider.pandaDocTemplateId}`);
+    return provider.pandaDocTemplateId;
+  }
+
+  // Download the file (no token replacement - raw upload for template editor)
+  const fileUrl = provider.agreementTemplateUrl;
+  let buffer: Buffer;
+  let contentType: string;
+  const filename = decodeURIComponent(fileUrl.split("/").pop()?.split("?")[0] || "agreement-template");
+
+  const gcsMatch = fileUrl.match(/storage\.googleapis\.com\/([^/]+)\/(.+)/);
+  if (gcsMatch) {
+    const keyJson = process.env.GCS_SERVICE_ACCOUNT_KEY;
+    if (!keyJson) throw new Error("GCS_SERVICE_ACCOUNT_KEY not configured");
+    const credentials = JSON.parse(keyJson);
+    const { Storage } = await import("@google-cloud/storage");
+    const storage = new Storage({ credentials });
+    const file = storage.bucket(gcsMatch[1]).file(gcsMatch[2]);
+    const [meta] = await file.getMetadata();
+    const [contents] = await file.download();
+    buffer = contents;
+    contentType = (meta.contentType as string) || "application/octet-stream";
+  } else if (fileUrl.startsWith("/uploads/")) {
+    const localPath = path.join(process.cwd(), "public", fileUrl);
+    buffer = fs.readFileSync(localPath);
+    contentType = filename.endsWith(".pdf") ? "application/pdf"
+      : filename.endsWith(".docx") ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      : "application/msword";
+  } else {
+    const resp = await fetch(fileUrl);
+    if (!resp.ok) throw new Error(`Failed to fetch template file: ${resp.status}`);
+    buffer = Buffer.from(await resp.arrayBuffer());
+    contentType = resp.headers.get("content-type") || "application/octet-stream";
+  }
+
+  // Upload to PandaDoc as a template
+  const formData = new FormData();
+  formData.append("data", JSON.stringify({ name: `${provider.name} Agreement Template` }));
+  formData.append("file", new Blob([buffer], { type: contentType }), filename);
+
+  const createRes = await fetch("https://api.pandadoc.com/public/v1/templates", {
+    method: "POST",
+    headers: { "Authorization": `API-Key ${apiKey}` },
+    body: formData,
+  });
+
+  if (!createRes.ok) {
+    const errBody = await createRes.text();
+    throw new Error(`PandaDoc template upload failed: ${createRes.status} - ${errBody}`);
+  }
+
+  const created = await createRes.json();
+  const templateId: string = created.uuid || created.id;
+  if (!templateId) throw new Error("PandaDoc did not return a template ID");
+
+  console.log(`[PandaDoc] Template created: ${templateId}, polling for active status...`);
+
+  // Poll until template.active
+  for (let i = 0; i < 15; i++) {
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    const pollRes = await fetch(`https://api.pandadoc.com/public/v1/templates/${templateId}`, {
+      headers: { "Authorization": `API-Key ${apiKey}` },
+    });
+    if (pollRes.ok) {
+      const tmpl = await pollRes.json();
+      console.log(`[PandaDoc] Template poll ${i + 1}/15: status=${tmpl.status}`);
+      if (tmpl.status === "template.active" || tmpl.status === "template.PROCESSED") break;
+    }
+  }
+
+  await prisma.provider.update({
+    where: { id: providerId },
+    data: { pandaDocTemplateId: templateId },
+  });
+
+  return templateId;
+}
+
+/**
+ * Create an embedded editing session for the provider's PandaDoc template.
+ * Returns the embed URL for the inline iframe editor.
+ */
+export async function createTemplateEditingSession(providerId: string, userEmail: string): Promise<string> {
+  const provider = await prisma.provider.findUnique({
+    where: { id: providerId },
+    select: { pandaDocTemplateId: true },
+  });
+  if (!provider) throw new Error("Provider not found");
+  if (!provider.pandaDocTemplateId) throw new Error("Provider template not synced to PandaDoc yet");
+
+  const apiKey = process.env.PANDADOC_API_KEY;
+  if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
+
+  const res = await fetch(`https://api.pandadoc.com/public/v1/templates/${provider.pandaDocTemplateId}/editing-sessions`, {
+    method: "POST",
+    headers: {
+      "Authorization": `API-Key ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email: userEmail }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`PandaDoc editing session failed: ${res.status} - ${errBody}`);
+  }
+
+  const data = await res.json();
+  console.log("[PandaDoc] Editing session response:", JSON.stringify(data));
+  const eToken: string = data.id;
+  if (!eToken) throw new Error("PandaDoc did not return an editing session token");
+
+  return eToken;
+}
+
+/**
+ * Generate an agreement from the provider's PandaDoc template (template-based flow).
+ * Tokens are passed as PandaDoc token variables instead of pre-filled XML.
+ */
+export async function generateAgreementFromTemplate({ providerId, parentUserId, sessionId }: GenerateAgreementParams) {
+  const [provider, parentUser, session] = await Promise.all([
+    prisma.provider.findUnique({
+      where: { id: providerId },
+      select: { id: true, name: true, email: true, agreementTemplateUrl: true, pandaDocTemplateId: true },
+    }),
+    prisma.user.findUnique({
+      where: { id: parentUserId },
+      select: { id: true, name: true, email: true, firstName: true, lastName: true, parentAccountId: true, dateOfBirth: true, address: true, city: true, state: true, zip: true, ssn: true, passport: true, passportCountryOfIssue: true, nationality: true },
+    }),
+    prisma.aiChatSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, providerId: true },
+    }),
+  ]);
+
+  if (!provider) throw new Error("Provider not found");
+  if (!parentUser) throw new Error("Parent user not found");
+  if (!session) throw new Error("Chat session not found");
+  if (session.providerId !== providerId) throw new Error("Provider/session mismatch");
+  if (!provider.pandaDocTemplateId) throw new Error("Provider has not configured a PandaDoc template. Please sync the template first from the Documents tab.");
+
+  const existingAgreement = await prisma.agreement.findFirst({
+    where: { sessionId, providerId, status: { in: ["DRAFT", "SENT"] } },
+  });
+  if (existingAgreement) throw new Error("An agreement has already been generated for this session");
+
+  const apiKey = process.env.PANDADOC_API_KEY;
+  if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
+
+  const accountMembers = parentUser.parentAccountId
+    ? await prisma.user.findMany({
+        where: { parentAccountId: parentUser.parentAccountId },
+        select: { id: true, name: true, email: true, firstName: true, lastName: true, dateOfBirth: true, address: true, city: true, state: true, zip: true, ssn: true, passport: true, passportCountryOfIssue: true, nationality: true },
+        orderBy: { createdAt: "asc" },
+      })
+    : [parentUser];
+
+  const parent1 = accountMembers[0] || parentUser;
+  const parent2 = accountMembers[1] || null;
+
+  function formatMember(m: typeof parent1 | null) {
+    if (!m) return { name: "", email: "", dob: "", address: "", ssn: "", passport: "", passportCountryOfIssue: "", nationality: "" };
+    const name = m.name || `${m.firstName || ""} ${m.lastName || ""}`.trim() || "Intended Parent";
+    const dob = m.dateOfBirth ? new Date(m.dateOfBirth).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "";
+    const addressParts = [m.address, m.city, m.state, m.zip].filter(Boolean);
+    const address = addressParts.join(", ");
+    const ssn = decryptNullable(m.ssn);
+    const passport = decryptNullable(m.passport);
+    const passportCountryOfIssue = m.passportCountryOfIssue || "";
+    const nationality = m.nationality || "";
+    return { name, email: m.email || "", dob, address, ssn, passport, passportCountryOfIssue, nationality };
+  }
+
+  const p1 = formatMember(parent1);
+  const p2 = formatMember(parent2);
+
+  const parent1Name = p1.name;
+  const parent1Email = p1.email;
+
+  const agreement = await prisma.agreement.create({
+    data: {
+      providerId,
+      parentUserId,
+      sessionId,
+      status: "DRAFT",
+      documentType: "Agency Agreement",
+    },
+  });
+
+  try {
+    const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+
+    const docBody = {
+      template_uuid: provider.pandaDocTemplateId,
+      name: `${provider.name} - Agency Agreement - ${parent1Name}`,
+      // Roles are only included if they match roles defined in the template
+      // (i.e. after the provider has placed fields in the template editor).
+      // Fetch template roles first and only assign matching ones.
+      recipients: await (async () => {
+        // Check what roles exist in the template
+        const tmplRes = await fetch(`https://api.pandadoc.com/public/v1/templates/${provider.pandaDocTemplateId}/roles`, {
+          headers: { "Authorization": `API-Key ${apiKey}` },
+        });
+        const templateRoles: string[] = tmplRes.ok
+          ? ((await tmplRes.json()).results || []).map((r: any) => r.name as string)
+          : [];
+        console.log("[PandaDoc] Template roles:", templateRoles);
+
+        const recipients: any[] = [
+          {
+            email: parent1Email,
+            first_name: parent1.firstName || p1.name.split(" ")[0] || "",
+            last_name: parent1.lastName || p1.name.split(" ").slice(1).join(" ") || "",
+            ...(templateRoles.includes("signer1") ? { role: "signer1" } : {}),
+          },
+        ];
+        if (parent2 && p2.email) {
+          recipients.push({
+            email: p2.email,
+            first_name: parent2.firstName || p2.name.split(" ")[0] || "",
+            last_name: parent2.lastName || p2.name.split(" ").slice(1).join(" ") || "",
+            ...(templateRoles.includes("signer2") ? { role: "signer2" } : {}),
+          });
+        }
+        if (provider.email && templateRoles.includes("signer3")) {
+          recipients.push({
+            email: provider.email,
+            first_name: provider.name.split(" ")[0] || provider.name,
+            last_name: provider.name.split(" ").slice(1).join(" ") || "",
+            role: "signer3",
+          });
+        }
+        return recipients;
+      })(),
+      tokens: [
+        { name: "CLIENT1_NAME", value: p1.name },
+        { name: "CLIENT1_EMAIL", value: p1.email },
+        { name: "CLIENT1_DOB", value: p1.dob },
+        { name: "CLIENT1_ADDRESS", value: p1.address },
+        { name: "CLIENT1_SSN", value: p1.ssn },
+        { name: "CLIENT1_PASSPORT", value: p1.passport },
+        { name: "CLIENT1_PASSPORT_COUNTRY", value: p1.passportCountryOfIssue },
+        { name: "CLIENT1_NATIONALITY", value: p1.nationality },
+        { name: "CLIENT2_NAME", value: p2.name },
+        { name: "CLIENT2_EMAIL", value: p2.email },
+        { name: "CLIENT2_DOB", value: p2.dob },
+        { name: "CLIENT2_ADDRESS", value: p2.address },
+        { name: "CLIENT2_SSN", value: p2.ssn },
+        { name: "CLIENT2_PASSPORT", value: p2.passport },
+        { name: "CLIENT2_PASSPORT_COUNTRY", value: p2.passportCountryOfIssue },
+        { name: "CLIENT2_NATIONALITY", value: p2.nationality },
+        { name: "PROVIDER_NAME", value: provider.name },
+        { name: "PROVIDER_EMAIL", value: provider.email || "" },
+        { name: "DATE", value: today },
+      ],
+      metadata: {
+        gostork_provider_id: providerId,
+        gostork_parent_user_id: parentUserId,
+        gostork_session_id: sessionId,
+        gostork_agreement_id: agreement.id,
+      },
+      tags: ["gostork"],
+    };
+
+    const createResponse = await fetch("https://api.pandadoc.com/public/v1/documents", {
+      method: "POST",
+      headers: {
+        "Authorization": `API-Key ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(docBody),
+    });
+
+    if (!createResponse.ok) {
+      const errorBody = await createResponse.text();
+      console.error("[PandaDoc] Template document creation failed:", createResponse.status, errorBody);
+      throw new Error(`PandaDoc API error: ${createResponse.status} - ${errorBody}`);
+    }
+
+    const pandaDocResult = await createResponse.json();
+    console.log("[PandaDoc] Template document created:", JSON.stringify({ id: pandaDocResult.id, status: pandaDocResult.status }));
+    const pandaDocDocumentId = pandaDocResult.id;
+
+    await prisma.agreement.update({
+      where: { id: agreement.id },
+      data: { pandaDocDocumentId },
+    });
+
+    const isReady = await waitForDocumentStatus(apiKey, pandaDocDocumentId, "document.draft");
+
+    if (!isReady) {
+      console.warn("[PandaDoc] Template document did not reach draft state");
+      await prisma.agreement.update({
+        where: { id: agreement.id },
+        data: { status: "CREATED" },
+      });
+      return await prisma.agreement.findUnique({ where: { id: agreement.id } });
+    }
+
+    const sendResponse = await fetch(`https://api.pandadoc.com/public/v1/documents/${pandaDocDocumentId}/send`, {
+      method: "POST",
+      headers: {
+        "Authorization": `API-Key ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: `Hi ${parent1Name}, please review and sign your agreement with ${provider.name}. Once you sign, ${provider.name} will countersign to complete the agreement. If you have any questions, reach out through your GoStork chat.`,
+        silent: true,
+      }),
+    });
+
+    if (!sendResponse.ok) {
+      const errorBody = await sendResponse.text();
+      console.error("[PandaDoc] Template document send failed:", sendResponse.status, errorBody);
+      await prisma.agreement.update({
+        where: { id: agreement.id },
+        data: { status: "CREATED" },
+      });
+      return await prisma.agreement.findUnique({ where: { id: agreement.id } });
+    }
+
+    const pandaDocViewUrl = await fetchDocumentViewUrl(apiKey, pandaDocDocumentId, parent1Email);
+    console.log(`[PandaDoc] Template signing session URL: ${pandaDocViewUrl}`);
+
+    await prisma.agreement.update({
+      where: { id: agreement.id },
+      data: { status: "SENT", ...(pandaDocViewUrl ? { pandaDocViewUrl } : {}) },
+    });
+
+    return await prisma.agreement.findUnique({ where: { id: agreement.id } });
+  } catch (error) {
+    await prisma.agreement.update({
+      where: { id: agreement.id },
+      data: { status: "ERROR" },
+    }).catch(() => {});
+    throw error;
+  }
+}
+
+/**
+ * Get a fresh signing session URL for an existing agreement.
+ * Verifies the requesting user is the parent on the agreement.
+ */
+export async function getAgreementSigningSession(agreementId: string, userId: string): Promise<string> {
+  const agreement = await prisma.agreement.findUnique({
+    where: { id: agreementId },
+    select: { id: true, parentUserId: true, pandaDocDocumentId: true, pandaDocViewUrl: true },
+  });
+  if (!agreement) throw new Error("Agreement not found");
+  if (agreement.parentUserId !== userId) throw new Error("Not authorized to access this agreement");
+  if (!agreement.pandaDocDocumentId) throw new Error("Agreement does not have a PandaDoc document yet");
+
+  const apiKey = process.env.PANDADOC_API_KEY;
+  if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
+
+  const parentUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { email: true },
+  });
+  if (!parentUser?.email) throw new Error("Parent user email not found");
+
+  const url = await fetchDocumentViewUrl(apiKey, agreement.pandaDocDocumentId, parentUser.email);
+  if (!url) throw new Error("Could not create signing session - document may not be in a signable state");
+
+  return url;
 }

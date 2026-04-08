@@ -24,6 +24,8 @@ model Provider {
   consultationBookingUrl       String?
   consultationIframeEnabled    Boolean                 @default(false)
   agreementTemplateUrl         String?
+  agreementTemplateOriginalName String?
+  pandaDocTemplateId           String?
   // IVF Clinic matching requirements
   ivfTwinsAllowed              Boolean                 @default(false)
   ivfTransferFromOtherClinics  Boolean                 @default(false)
