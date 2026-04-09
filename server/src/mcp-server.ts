@@ -219,6 +219,236 @@ function ethnicityPostFilter(candidates: any[], ethnicityTerms: string[]): any[]
   });
 }
 
+// Ethnicity purity: 1.0 = pure match (only the requested ethnicity), lower = more mixed.
+// e.g. "Caucasian" with requested "white" → 1.0; "Asian (50%), Caucasian (50%)" → 0.5
+function scoreEthnicityPurity(candidate: any, ethnicityTerms: string[]): number {
+  if (!ethnicityTerms.length) return 0;
+  const splitEthnicities = (val: string): string[] => {
+    if (!val) return [];
+    return val.replace(/\s*\(\s*\d+%?\s*\)/g, "").split(/[,;\/|&+]/).map(s => s.trim()).filter(Boolean);
+  };
+  const allParts = [
+    ...splitEthnicities((candidate.race || "").toLowerCase()),
+    ...splitEthnicities((candidate.ethnicity || "").toLowerCase()),
+  ];
+  if (allParts.length === 0) return 0;
+  const matchingCount = allParts.filter(part => ethnicityTerms.some(t => wordBoundaryMatch(part, t))).length;
+  return matchingCount / allParts.length;
+}
+
+// Scores a donor (egg or sperm) against EVERY criterion the parent requested.
+// matchScore = average of per-criterion scores (0.0-1.0). 1.0 = all criteria fully satisfied.
+// unmatchedCriteria = human-readable list of mismatches so the AI can call them out explicitly.
+//
+// Binary criteria (eyeColor, hairColor, education, location, age, height): 1.0 or 0.0
+// Ethnicity: continuous purity score (0.0-1.0)
+// In Phase 1 all hard-filtered candidates score 1.0 on hard criteria; the differentiator is
+// ethnicity purity. In Phase 2 (fallback) relaxed criteria score 0.0 for non-matching candidates.
+function scoreDonorMatch(
+  candidate: any,
+  filters: {
+    ethnicityTerms?: string[];
+    eyeColor?: string;
+    hairColor?: string;
+    education?: string;
+    location?: string;
+    maxAge?: number;
+    minHeightInches?: number;
+  },
+): { matchScore: number; unmatchedCriteria: string[] } {
+  const criteria: Array<{ score: number; unmatchedLabel?: string }> = [];
+
+  // Ethnicity purity: pure single-ethnicity = 1.0, mixed = fractional
+  if (filters.ethnicityTerms?.length) {
+    const purity = scoreEthnicityPurity(candidate, filters.ethnicityTerms);
+    criteria.push({
+      score: purity,
+      unmatchedLabel: purity < 0.99
+        ? `pure ${filters.ethnicityTerms[0]} ethnicity (donor has mixed heritage: ${[candidate.race, candidate.ethnicity].filter(Boolean).join(" / ")})`
+        : undefined,
+    });
+  }
+
+  if (filters.eyeColor) {
+    const matched = wordBoundaryMatch((candidate.eyeColor || "").toLowerCase(), filters.eyeColor.toLowerCase());
+    criteria.push({ score: matched ? 1 : 0, unmatchedLabel: matched ? undefined : `${filters.eyeColor} eyes (donor has ${candidate.eyeColor || "unspecified"} eyes)` });
+  }
+
+  if (filters.hairColor) {
+    const matched = wordBoundaryMatch((candidate.hairColor || "").toLowerCase(), filters.hairColor.toLowerCase());
+    criteria.push({ score: matched ? 1 : 0, unmatchedLabel: matched ? undefined : `${filters.hairColor} hair (donor has ${candidate.hairColor || "unspecified"} hair)` });
+  }
+
+  if (filters.education) {
+    const matched = (candidate.education || "").toLowerCase().includes(filters.education.toLowerCase());
+    criteria.push({ score: matched ? 1 : 0, unmatchedLabel: matched ? undefined : `${filters.education} education (donor has ${candidate.education || "unspecified"})` });
+  }
+
+  if (filters.location) {
+    const terms = resolveLocationTerms(filters.location);
+    const loc = (candidate.location || "").toLowerCase();
+    const matched = terms.some(t => loc.includes(t.toLowerCase()));
+    criteria.push({ score: matched ? 1 : 0, unmatchedLabel: matched ? undefined : `${filters.location} location (donor is in ${candidate.location || "unknown location"})` });
+  }
+
+  if (filters.maxAge != null && candidate.age != null) {
+    const matched = Number(candidate.age) <= filters.maxAge;
+    criteria.push({ score: matched ? 1 : 0, unmatchedLabel: matched ? undefined : `age under ${filters.maxAge} (donor is ${candidate.age})` });
+  }
+
+  if (filters.minHeightInches != null) {
+    const h = parseHeightToInches(candidate.height);
+    const matched = h === 0 || h >= filters.minHeightInches;
+    const ft = Math.floor(filters.minHeightInches / 12);
+    const inch = filters.minHeightInches % 12;
+    criteria.push({ score: matched ? 1 : 0, unmatchedLabel: matched ? undefined : `height ${ft}'${inch}"+ (donor is ${candidate.height || "height unknown"})` });
+  }
+
+  if (criteria.length === 0) return { matchScore: 1.0, unmatchedCriteria: [] };
+  const totalScore = criteria.reduce((sum, c) => sum + c.score, 0);
+  return {
+    matchScore: totalScore / criteria.length,
+    unmatchedCriteria: criteria.filter(c => c.unmatchedLabel).map(c => c.unmatchedLabel!),
+  };
+}
+
+// Scores a surrogate against every criterion the parent requested.
+// Surrogates are ranked by health/quality metrics (BMI lower = healthier, age margin, experience)
+// since most boolean requirements are already hard-filtered. Also scores ethnicity, location,
+// c-sections, miscarriages, recency of last pregnancy, and covid vaccination when applicable.
+function scoreSurrogateMatch(
+  candidate: any,
+  filters: {
+    ethnicityTerms?: string[];
+    maxAge?: number;
+    minAge?: number;
+    maxBmi?: number;
+    location?: string;
+    requireCovidVaccinated?: boolean;
+  },
+): { matchScore: number; unmatchedCriteria: string[] } {
+  const criteria: Array<{ score: number; unmatchedLabel?: string }> = [];
+
+  // BMI: always scored when available — lower is healthier (0.0-1.0)
+  if (candidate.bmi != null) {
+    const bmi = Number(candidate.bmi);
+    if (bmi > 0) {
+      const bmiMax = filters.maxBmi ?? 32;
+      criteria.push({ score: Math.max(0, Math.min(1, (bmiMax - bmi) / (bmiMax - 18))) });
+    }
+  }
+
+  // Age: younger within the allowed range ranks higher (quality score)
+  if (filters.maxAge != null && candidate.age != null) {
+    const floor = filters.minAge ?? 18;
+    const range = filters.maxAge - floor;
+    criteria.push({ score: range > 0 ? Math.max(0, (filters.maxAge - Number(candidate.age)) / range) : 1 });
+  }
+
+  // Live births: more prior surrogacies = more experience (0.0-1.0, capped at 4)
+  if (candidate.liveBirths != null) {
+    criteria.push({ score: Math.min(1, Number(candidate.liveBirths) / 4) });
+  }
+
+  // C-sections: always scored when available — fewer is better (0 = 1.0, 3+ = 0.0)
+  if (candidate.cSections != null) {
+    const cs = Number(candidate.cSections);
+    const csScore = Math.max(0, 1 - cs / 3);
+    criteria.push({
+      score: csScore,
+      unmatchedLabel: cs >= 3 ? `high c-section count (${cs} c-sections)` : undefined,
+    });
+  }
+
+  // Miscarriages: fewer is better (0 = 1.0, 3+ = 0.0)
+  if (candidate.miscarriages != null) {
+    const m = Number(candidate.miscarriages);
+    const mScore = Math.max(0, 1 - m / 3);
+    criteria.push({
+      score: mScore,
+      unmatchedLabel: m >= 3 ? `high miscarriage count (${m} miscarriages)` : undefined,
+    });
+  }
+
+  // Last delivery recency: more recent = better (0-2 years = 1.0, 5+ years = 0.0)
+  if (candidate.lastDeliveryYear != null) {
+    const currentYear = new Date().getFullYear();
+    const yearsAgo = currentYear - Number(candidate.lastDeliveryYear);
+    const recencyScore = yearsAgo <= 0 ? 1.0 : Math.max(0, 1 - (yearsAgo - 1) / 4);
+    criteria.push({
+      score: recencyScore,
+      unmatchedLabel: yearsAgo > 5 ? `last pregnancy ${yearsAgo} years ago (less recent)` : undefined,
+    });
+  }
+
+  // Covid vaccination: if parent explicitly requires it, binary 1.0/0.0
+  if (filters.requireCovidVaccinated === true) {
+    const vaccinated = candidate.covidVaccinated === true;
+    criteria.push({
+      score: vaccinated ? 1 : 0,
+      unmatchedLabel: vaccinated ? undefined : "covid vaccination not confirmed",
+    });
+  }
+
+  // Ethnicity: purity score (softer for surrogates since they don't contribute genetics)
+  if (filters.ethnicityTerms?.length) {
+    const purity = scoreEthnicityPurity(candidate, filters.ethnicityTerms);
+    criteria.push({
+      score: purity,
+      unmatchedLabel: purity < 0.99 ? `pure ${filters.ethnicityTerms[0]} ethnicity (surrogate has mixed heritage)` : undefined,
+    });
+  }
+
+  // Location: exact match (1.0/0.0)
+  if (filters.location) {
+    const terms = resolveLocationTerms(filters.location);
+    const loc = (candidate.location || "").toLowerCase();
+    const matched = terms.some(t => loc.includes(t.toLowerCase()));
+    criteria.push({ score: matched ? 1 : 0, unmatchedLabel: matched ? undefined : `${filters.location} location (surrogate is in ${candidate.location || "unknown location"})` });
+  }
+
+  if (criteria.length === 0) return { matchScore: 1.0, unmatchedCriteria: [] };
+  const totalScore = criteria.reduce((sum, c) => sum + c.score, 0);
+  return {
+    matchScore: totalScore / criteria.length,
+    unmatchedCriteria: criteria.filter(c => c.unmatchedLabel).map(c => c.unmatchedLabel!),
+  };
+}
+
+// Cascade fallback search:
+// Phase 1 - try with ALL soft criteria as hard Prisma filters (100% match attempt).
+// Phase 2 - if Phase 1 returns zero results, relax ONE soft criterion at a time (in order provided)
+//           and retry. Returns the first non-empty result set and the relaxed criterion label.
+// postFilterFn receives the relaxed criterion label so it can skip corresponding in-memory filters.
+type SoftFilter = { label: string; applyToWhere: (w: any) => void };
+
+async function searchWithFallback(
+  findManyFn: (where: any) => Promise<any[]>,
+  baseWhere: any,
+  softFilters: SoftFilter[],
+  postFilterFn?: (candidates: any[], relaxedLabel: string | null) => any[],
+): Promise<{ candidates: any[]; relaxedFilter: string | null }> {
+  const applyPost = (c: any[], relaxed: string | null) => postFilterFn ? postFilterFn(c, relaxed) : c;
+
+  // Phase 1: full match — all soft criteria applied as hard Prisma filters
+  const fullWhere = { ...baseWhere };
+  for (const sf of softFilters) sf.applyToWhere(fullWhere);
+  const fullResults = applyPost(await findManyFn(fullWhere), null);
+  if (fullResults.length > 0) return { candidates: fullResults, relaxedFilter: null };
+
+  // Phase 2: relax one criterion at a time (most expendable first per the softFilters order)
+  for (const relaxed of softFilters) {
+    const where = { ...baseWhere };
+    for (const sf of softFilters) {
+      if (sf !== relaxed) sf.applyToWhere(where);
+    }
+    const results = applyPost(await findManyFn(where), relaxed.label);
+    if (results.length > 0) return { candidates: results, relaxedFilter: relaxed.label };
+  }
+
+  return { candidates: [], relaxedFilter: null };
+}
+
 const server = new Server(
   {
     name: "gostork-database-mcp",
@@ -311,6 +541,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             maxMiscarriages: {
               type: "number",
               description: "Maximum number of miscarriages (inclusive). Use only if the parent insists on this filter after the advisory explains miscarriages are not a disqualifier.",
+            },
+            requireCovidVaccinated: {
+              type: "boolean",
+              description: "Pass true if the parent explicitly requires the surrogate to be covid vaccinated. Only use when the parent specifically requests this - do not assume.",
             },
             openToInternationalParents: {
               type: "boolean",
@@ -699,7 +933,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_surrogates") {
-      const { query, parentCountry, agreesToTwins, agreesToAbortion, openToSameSexCouple, openToInternationalParents, isExperienced, location, maxCompensation, maxAge, minAge, ethnicity, maxBmi, maxCsections, maxMiscarriages, limit: rawLimit, excludeIds } = args as any;
+      const { query, parentCountry, agreesToTwins, agreesToAbortion, openToSameSexCouple, openToInternationalParents, isExperienced, location, maxCompensation, maxAge, minAge, ethnicity, maxBmi, maxCsections, maxMiscarriages, requireCovidVaccinated, limit: rawLimit, excludeIds } = args as any;
       const take = Math.min(rawLimit || 3, 5);
       const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
       const ethnicityTerms = ethnicity ? resolveEthnicityTerms(ethnicity) : [];
@@ -710,56 +944,91 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         agreesToSelectiveReduction: true, openToSameSexCouple: true,
         agreesToInternationalParents: true,
         isExperienced: true, ethnicity: true, race: true, liveBirths: true,
-        photoUrl: true, religion: true,
+        photoUrl: true, religion: true, bmi: true,
+        cSections: true, miscarriages: true, covidVaccinated: true, lastDeliveryYear: true,
       };
-      const surrogateSelectCols = `id, "providerId", "firstName", "externalId", age, location, "baseCompensation", "agreesToTwins", "agreesToAbortion", "agreesToSelectiveReduction", "openToSameSexCouple", "agreesToInternationalParents", "isExperienced", ethnicity, race, "liveBirths", "photoUrl", religion`;
+      const surrogateSelectCols = `id, "providerId", "firstName", "externalId", age, location, "baseCompensation", "agreesToTwins", "agreesToAbortion", "agreesToSelectiveReduction", "openToSameSexCouple", "agreesToInternationalParents", "isExperienced", ethnicity, race, "liveBirths", "photoUrl", religion, bmi, "cSections", miscarriages, "covidVaccinated", "lastDeliveryYear"`;
 
-      // Phase 1: exact Prisma filter — zero false negatives
-      const where: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
-      if (excludeSet.size > 0) where.id = { notIn: Array.from(excludeSet) };
-      if (agreesToTwins !== undefined) where.agreesToTwins = agreesToTwins;
-      if (agreesToAbortion !== undefined) where.agreesToAbortion = agreesToAbortion;
-      if (openToSameSexCouple !== undefined) where.openToSameSexCouple = openToSameSexCouple;
-      // International parents: only filter when explicitly required (parent is international)
-      // We filter for agreesToInternationalParents = true OR agreesToInternationalParents = null (not set = no restriction)
+      // Base WHERE: absolute requirements — boolean preferences, age, BMI, c-sections, miscarriages.
+      // These are never relaxed because they represent hard parental/medical requirements.
+      const baseWhere: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
+      if (excludeSet.size > 0) baseWhere.id = { notIn: Array.from(excludeSet) };
+      if (agreesToTwins !== undefined) baseWhere.agreesToTwins = agreesToTwins;
+      if (agreesToAbortion !== undefined) baseWhere.agreesToAbortion = agreesToAbortion;
+      if (openToSameSexCouple !== undefined) baseWhere.openToSameSexCouple = openToSameSexCouple;
       if (openToInternationalParents === true) {
-        where.OR = [
+        baseWhere.OR = [
           { agreesToInternationalParents: true },
           { agreesToInternationalParents: null },
         ];
       }
-      if (isExperienced !== undefined) where.isExperienced = isExperienced;
-      if (location) Object.assign(where, buildLocationWhere(location));
-      if (maxCompensation) where.baseCompensation = { lte: maxCompensation };
+      if (isExperienced !== undefined) baseWhere.isExperienced = isExperienced;
+      if (maxCompensation) baseWhere.baseCompensation = { lte: maxCompensation };
       if (maxAge != null || minAge != null) {
-        where.age = {};
-        if (maxAge != null) where.age.lte = Number(maxAge);
-        if (minAge != null) where.age.gte = Number(minAge);
+        baseWhere.age = {};
+        if (maxAge != null) baseWhere.age.lte = Number(maxAge);
+        if (minAge != null) baseWhere.age.gte = Number(minAge);
       }
-      if (ethnicity) Object.assign(where, buildEthnicityWhere(ethnicityTerms));
-      if (maxBmi != null) where.bmi = { lte: Number(maxBmi) };
-      if (maxCsections != null) where.cSections = { lte: Number(maxCsections) };
-      if (maxMiscarriages != null) where.miscarriages = { lte: Number(maxMiscarriages) };
+      if (maxBmi != null) baseWhere.bmi = { lte: Number(maxBmi) };
+      if (maxCsections != null) baseWhere.cSections = { lte: Number(maxCsections) };
+      if (maxMiscarriages != null) baseWhere.miscarriages = { lte: Number(maxMiscarriages) };
 
-      let candidates: any[] = await prisma.surrogate.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        take: take * 8,
-        select: surrogateSelect,
+      // Soft filters: relaxed one-at-a-time if no full-match results.
+      // Covid vaccination is first (most expendable preference); ethnicity and location follow.
+      const softFilters: SoftFilter[] = [];
+      if (requireCovidVaccinated === true) softFilters.push({
+        label: "covid vaccinated",
+        applyToWhere: (w) => { w.covidVaccinated = true; },
       });
-      // Word-boundary post-filter: removes false positives like "Caucasian" matching "asian"
-      if (ethnicityTerms.length > 0) candidates = ethnicityPostFilter(candidates, ethnicityTerms);
+      if (ethnicity) softFilters.push({
+        label: `${ethnicity} ethnicity`,
+        applyToWhere: (w) => { Object.assign(w, buildEthnicityWhere(ethnicityTerms)); },
+      });
+      if (location) softFilters.push({
+        label: `location (${location})`,
+        applyToWhere: (w) => { Object.assign(w, buildLocationWhere(location)); },
+      });
+
+      const { candidates, relaxedFilter: surrogateRelaxedFilter } = await searchWithFallback(
+        (w) => prisma.surrogate.findMany({ where: w, orderBy: { createdAt: "desc" }, take: take * 8, select: surrogateSelect }),
+        baseWhere, softFilters,
+        (cands, relaxedLabel) => {
+          // Skip ethnicityPostFilter when ethnicity itself was the relaxed criterion
+          if (ethnicityTerms.length > 0 && !relaxedLabel?.includes("ethnicity")) {
+            return ethnicityPostFilter(cands, ethnicityTerms);
+          }
+          return cands;
+        },
+      );
+
+      // Score every candidate against ALL requested criteria: BMI, age, experience, c-sections,
+      // miscarriages, last delivery recency, covid vaccination, ethnicity, location
+      const scoredCandidates = candidates.map((s: any) => {
+        const { matchScore, unmatchedCriteria } = scoreSurrogateMatch(s, {
+          ethnicityTerms, maxAge, minAge, maxBmi, location,
+          requireCovidVaccinated: requireCovidVaccinated === true ? true : undefined,
+        });
+        return { ...s, matchScore, unmatchedCriteria };
+      });
+      scoredCandidates.sort((a: any, b: any) => b.matchScore - a.matchScore);
 
       let surrogates: any[];
-      if (candidates.length === 0) {
+      if (scoredCandidates.length === 0) {
         surrogates = [];
       } else if (!query) {
-        surrogates = candidates.slice(0, take);
+        surrogates = scoredCandidates.slice(0, take);
       } else {
-        // Phase 2: rank exact-match pool by semantic similarity
+        const topPool = scoredCandidates.slice(0, Math.max(take * 4, 20));
         const queryText = ["surrogate carrier", query].join(", ");
-        const ranked = await vectorSearchByIds("Surrogate", candidates.map((s: any) => s.id), queryText, take, surrogateSelectCols);
-        surrogates = ranked ?? candidates.slice(0, take);
+        const ranked = await vectorSearchByIds("Surrogate", topPool.map((s: any) => s.id), queryText, take, surrogateSelectCols);
+        if (ranked) {
+          surrogates = ranked.map((r: any) => {
+            const sc = topPool.find((c: any) => c.id === r.id);
+            return sc ? { ...r, matchScore: sc.matchScore, unmatchedCriteria: sc.unmatchedCriteria } : r;
+          });
+        } else {
+          surrogates = topPool.slice(0, take);
+        }
       }
 
       // Agency-level matching requirements: filter surrogates from agencies that exclude the parent
@@ -829,17 +1098,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
         }
 
-        const { photoUrl: _photoUrl, ...sRest } = s;
+        const { photoUrl: _photoUrl, matchScore: _ms, unmatchedCriteria: _uc, ...sRest } = s;
         return {
           ...sRest,
           displayName: s.firstName || (cleanExternalId(s.externalId) ? `Surrogate #${cleanExternalId(s.externalId)}` : `Surrogate #${s.id.slice(-4)}`),
           baseCompensation: s.baseCompensation ? Number(s.baseCompensation) : null,
+          matchScore: s.matchScore ?? 1.0,
+          unmatchedCriteria: s.unmatchedCriteria ?? [],
           ...(Object.keys(profileHighlights).length > 0 ? { profileHighlights } : {}),
         };
       });
 
       return {
-        content: [{ type: "text", text: `Found ${results.length} surrogates:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Surrogate" in your MATCH_CARDs. Use the "displayName" as the name. Use the "profileHighlights" (supportSystem, motivation, pregnancyHistory, letterExcerpt) to write a warm, personalized introduction. ALWAYS mention the support system if available.` }],
+        content: [{ type: "text", text: `Found ${results.length} surrogates:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Surrogate" in your MATCH_CARDs. Use the "displayName" as the name. Use the "profileHighlights" (supportSystem, motivation, pregnancyHistory, letterExcerpt) to write a warm, personalized introduction. ALWAYS mention the support system if available. Results are sorted by matchScore (lowest BMI = healthiest, most experience, youngest age within range). If unmatchedCriteria is non-empty, tell the parent which criteria differ before showing the MATCH_CARD.${surrogateRelaxedFilter ? ` NOTE: No 100% match found. Search broadened by relaxing "${surrogateRelaxedFilter}" - clearly inform the parent.` : ""}` }],
       };
     }
 
@@ -977,55 +1248,78 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
       const eggDonorSelectCols = `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, "donorCompensation", "eggLotCost", "totalCost", "isExperienced", "photoUrl", "numberOfEggs"`;
 
-      // Phase 1: exact Prisma filter — zero false negatives
-      const where: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
-      if (excludeSet.size > 0) where.id = { notIn: Array.from(excludeSet) };
-      if (eyeColor) where.eyeColor = { contains: eyeColor, mode: "insensitive" };
-      if (hairColor) where.hairColor = { contains: hairColor, mode: "insensitive" };
-      if (ethnicity) Object.assign(where, buildEthnicityWhere(ethnicityTerms));
-      if (maxAge) where.age = { lte: maxAge };
-      if (education) where.education = { contains: education, mode: "insensitive" };
-      if (isExperienced) where.isExperienced = true;
-      if (donationType) where.donationTypes = { contains: donationType, mode: "insensitive" };
-      if (location) Object.assign(where, buildLocationWhere(location));
+      // Base WHERE: absolute requirements that are NEVER relaxed.
+      // age and height are medical/physical absolutes; isExperienced and donationType are functional.
+      const baseWhere: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
+      if (excludeSet.size > 0) baseWhere.id = { notIn: Array.from(excludeSet) };
+      if (maxAge) baseWhere.age = { lte: maxAge };
+      if (isExperienced) baseWhere.isExperienced = true;
+      if (donationType) baseWhere.donationTypes = { contains: donationType, mode: "insensitive" };
 
-      // Fetch extra to allow height post-filtering (height is a string field, can't filter in SQL easily)
-      let candidates: any[] = await prisma.eggDonor.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        take: minHeightInches ? 60 : take * 4,
-        select: eggDonorSelect,
+      // Soft filters: ALL parent-requested visual/preference criteria, tried as hard filters first.
+      // If Phase 1 returns zero results, relaxed one-at-a-time (most expendable first):
+      //   eye color → hair color → education → location → ethnicity (genetic, last resort)
+      const softFilters: SoftFilter[] = [];
+      if (eyeColor) softFilters.push({ label: `${eyeColor} eye color`, applyToWhere: (w) => { w.eyeColor = { contains: eyeColor, mode: "insensitive" }; } });
+      if (hairColor) softFilters.push({ label: `${hairColor} hair color`, applyToWhere: (w) => { w.hairColor = { contains: hairColor, mode: "insensitive" }; } });
+      if (education) softFilters.push({ label: `${education} education`, applyToWhere: (w) => { w.education = { contains: education, mode: "insensitive" }; } });
+      if (location) softFilters.push({ label: `${location} location`, applyToWhere: (w) => { Object.assign(w, buildLocationWhere(location)); } });
+      if (ethnicity) softFilters.push({ label: `${ethnicity} ethnicity`, applyToWhere: (w) => { Object.assign(w, buildEthnicityWhere(ethnicityTerms)); } });
+
+      // postFilter receives the relaxed criterion label so it can skip ethnicityPostFilter when
+      // ethnicity itself was relaxed (otherwise we'd filter out the donors we just fetched broadly).
+      const postFilter = (cands: any[], relaxedLabel: string | null) => {
+        let out = cands;
+        if (minHeightInches) out = out.filter((d: any) => { const h = parseHeightToInches(d.height); return h === 0 || h >= minHeightInches; });
+        const ethnicityWasRelaxed = relaxedLabel?.includes("ethnicity");
+        if (ethnicityTerms.length > 0 && !ethnicityWasRelaxed) out = ethnicityPostFilter(out, ethnicityTerms);
+        return out;
+      };
+
+      const { candidates, relaxedFilter } = await searchWithFallback(
+        (w) => prisma.eggDonor.findMany({ where: w, orderBy: { createdAt: "desc" }, take: 200, select: eggDonorSelect }),
+        baseWhere, softFilters, postFilter,
+      );
+
+      // Score every candidate against ALL requested criteria, sort best first
+      const scoredCandidates = candidates.map((d: any) => {
+        const { matchScore, unmatchedCriteria } = scoreDonorMatch(d, { ethnicityTerms, eyeColor, hairColor, education, location, maxAge, minHeightInches });
+        return { ...d, matchScore, unmatchedCriteria };
       });
-      if (minHeightInches) {
-        candidates = candidates.filter((d: any) => {
-          const inches = parseHeightToInches(d.height);
-          return inches === 0 || inches >= minHeightInches;
-        });
-      }
-      // Word-boundary post-filter: removes false positives like "Caucasian" matching "asian"
-      if (ethnicityTerms.length > 0) candidates = ethnicityPostFilter(candidates, ethnicityTerms);
-      candidates = candidates.slice(0, Math.max(take * 4, 20));
+      scoredCandidates.sort((a: any, b: any) => b.matchScore - a.matchScore);
 
       let donors: any[];
-      if (candidates.length === 0) {
+      if (scoredCandidates.length === 0) {
         donors = [];
       } else if (!query) {
-        // No semantic query — return Prisma results directly
-        donors = candidates.slice(0, take);
+        donors = scoredCandidates.slice(0, take);
       } else {
-        // Phase 2: rank the exact-match pool by semantic similarity
+        const topPool = scoredCandidates.slice(0, Math.max(take * 4, 20));
         const queryText = ["egg donor", query].join(", ");
-        const ranked = await vectorSearchByIds("EggDonor", candidates.map((d: any) => d.id), queryText, take, eggDonorSelectCols);
-        donors = ranked ?? candidates.slice(0, take);
+        const ranked = await vectorSearchByIds("EggDonor", topPool.map((d: any) => d.id), queryText, take, eggDonorSelectCols);
+        if (ranked) {
+          donors = ranked.map((r: any) => {
+            const s = topPool.find((c: any) => c.id === r.id);
+            return s ? { ...r, matchScore: s.matchScore, unmatchedCriteria: s.unmatchedCriteria } : r;
+          });
+        } else {
+          donors = topPool.slice(0, take);
+        }
       }
 
       const results = donors.map((d: any) => {
         const { photoUrl: _p, ...dRest } = d;
-        return { ...dRest, displayName: d.firstName || (cleanExternalId(d.externalId) ? `Donor #${cleanExternalId(d.externalId)}` : `Donor #${d.id.slice(-4)}`) };
+        return {
+          ...dRest,
+          displayName: d.firstName || (cleanExternalId(d.externalId) ? `Donor #${cleanExternalId(d.externalId)}` : `Donor #${d.id.slice(-4)}`),
+          matchScore: d.matchScore ?? 1.0,
+          unmatchedCriteria: d.unmatchedCriteria ?? [],
+        };
       });
 
+      const relaxedNote = relaxedFilter ? ` NOTE: No 100% match found. Search was broadened by relaxing "${relaxedFilter}" - present the best available result and clearly tell the parent which property differs from their request.` : "";
       return {
-        content: [{ type: "text", text: `Found ${results.length} egg donors:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Egg Donor" in your MATCH_CARDs. Use the "displayName" as the name.` }],
+        content: [{ type: "text", text: `Found ${results.length} egg donors:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Egg Donor" in your MATCH_CARDs. Use the "displayName" as the name. Results sorted by matchScore (1.0 = all criteria matched). If unmatchedCriteria is non-empty, tell the parent which criteria differ before showing the MATCH_CARD.${relaxedNote}` }],
       };
     }
 
@@ -1043,47 +1337,66 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
       const spermDonorSelectCols = `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, compensation, "isExperienced", "photoUrl"`;
 
-      // Phase 1: exact Prisma filter — zero false negatives
-      const where: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
-      if (excludeSet.size > 0) where.id = { notIn: Array.from(excludeSet) };
-      if (eyeColor) where.eyeColor = { contains: eyeColor, mode: "insensitive" };
-      if (hairColor) where.hairColor = { contains: hairColor, mode: "insensitive" };
-      if (ethnicity) Object.assign(where, buildEthnicityWhere(ethnicityTerms));
-      if (maxAge) where.age = { lte: maxAge };
-      if (education) where.education = { contains: education, mode: "insensitive" };
-      if (height) where.height = { contains: height, mode: "insensitive" };
-      if (location) Object.assign(where, buildLocationWhere(location));
+      // Base WHERE: absolute requirements never relaxed
+      const baseWhere: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
+      if (excludeSet.size > 0) baseWhere.id = { notIn: Array.from(excludeSet) };
+      if (maxAge) baseWhere.age = { lte: maxAge };
+      if (height) baseWhere.height = { contains: height, mode: "insensitive" };
 
-      let candidates: any[] = await prisma.spermDonor.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        take: minHeightInches ? 60 : take * 4,
-        select: spermDonorSelect,
+      // Soft filters: all parent-requested preferences, relaxed one-at-a-time if needed
+      // Order: eye color → hair color → education → location → ethnicity (most to least expendable)
+      const softFilters: SoftFilter[] = [];
+      if (eyeColor) softFilters.push({ label: `${eyeColor} eye color`, applyToWhere: (w) => { w.eyeColor = { contains: eyeColor, mode: "insensitive" }; } });
+      if (hairColor) softFilters.push({ label: `${hairColor} hair color`, applyToWhere: (w) => { w.hairColor = { contains: hairColor, mode: "insensitive" }; } });
+      if (education) softFilters.push({ label: `${education} education`, applyToWhere: (w) => { w.education = { contains: education, mode: "insensitive" }; } });
+      if (location) softFilters.push({ label: `${location} location`, applyToWhere: (w) => { Object.assign(w, buildLocationWhere(location)); } });
+      if (ethnicity) softFilters.push({ label: `${ethnicity} ethnicity`, applyToWhere: (w) => { Object.assign(w, buildEthnicityWhere(ethnicityTerms)); } });
+
+      const postFilter = (cands: any[], relaxedLabel: string | null) => {
+        let out = cands;
+        if (minHeightInches) out = out.filter((d: any) => { const h = parseHeightToInches(d.height); return h === 0 || h >= minHeightInches; });
+        if (ethnicityTerms.length > 0 && !relaxedLabel?.includes("ethnicity")) out = ethnicityPostFilter(out, ethnicityTerms);
+        return out;
+      };
+
+      const { candidates, relaxedFilter } = await searchWithFallback(
+        (w) => prisma.spermDonor.findMany({ where: w, orderBy: { createdAt: "desc" }, take: 200, select: spermDonorSelect }),
+        baseWhere, softFilters, postFilter,
+      );
+
+      const scoredCandidates = candidates.map((d: any) => {
+        const { matchScore, unmatchedCriteria } = scoreDonorMatch(d, { ethnicityTerms, eyeColor, hairColor, education, location, maxAge, minHeightInches });
+        return { ...d, matchScore, unmatchedCriteria };
       });
-      if (minHeightInches) {
-        candidates = candidates.filter((d: any) => {
-          const inches = parseHeightToInches(d.height);
-          return inches === 0 || inches >= minHeightInches;
-        });
-      }
-      // Word-boundary post-filter: removes false positives like "Caucasian" matching "asian"
-      if (ethnicityTerms.length > 0) candidates = ethnicityPostFilter(candidates, ethnicityTerms);
-      candidates = candidates.slice(0, Math.max(take * 4, 20));
+      scoredCandidates.sort((a: any, b: any) => b.matchScore - a.matchScore);
 
       let donors: any[];
-      if (candidates.length === 0) {
+      if (scoredCandidates.length === 0) {
         donors = [];
       } else if (!query) {
-        donors = candidates.slice(0, take);
+        donors = scoredCandidates.slice(0, take);
       } else {
+        const topPool = scoredCandidates.slice(0, Math.max(take * 4, 20));
         const queryText = ["sperm donor", query].join(", ");
-        const ranked = await vectorSearchByIds("SpermDonor", candidates.map((d: any) => d.id), queryText, take, spermDonorSelectCols);
-        donors = ranked ?? candidates.slice(0, take);
+        const ranked = await vectorSearchByIds("SpermDonor", topPool.map((d: any) => d.id), queryText, take, spermDonorSelectCols);
+        if (ranked) {
+          donors = ranked.map((r: any) => {
+            const s = topPool.find((c: any) => c.id === r.id);
+            return s ? { ...r, matchScore: s.matchScore, unmatchedCriteria: s.unmatchedCriteria } : r;
+          });
+        } else {
+          donors = topPool.slice(0, take);
+        }
       }
 
       const results = donors.map((d: any) => {
         const { photoUrl: _p, ...dRest } = d;
-        return { ...dRest, displayName: d.firstName || (cleanExternalId(d.externalId) ? `Donor #${cleanExternalId(d.externalId)}` : `Donor #${d.id.slice(-4)}`) };
+        return {
+          ...dRest,
+          displayName: d.firstName || (cleanExternalId(d.externalId) ? `Donor #${cleanExternalId(d.externalId)}` : `Donor #${d.id.slice(-4)}`),
+          matchScore: d.matchScore ?? 1.0,
+          unmatchedCriteria: d.unmatchedCriteria ?? [],
+        };
       });
 
       if (results.length === 0) {
@@ -1092,8 +1405,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      const relaxedNote = relaxedFilter ? ` NOTE: No 100% match found. Search broadened by relaxing "${relaxedFilter}" - present the best available result and clearly tell the parent which property differs.` : "";
       return {
-        content: [{ type: "text", text: `Found ${results.length} sperm donors:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Sperm Donor" in your MATCH_CARDs. Use the "displayName" as the name.` }],
+        content: [{ type: "text", text: `Found ${results.length} sperm donors:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Sperm Donor" in your MATCH_CARDs. Use the "displayName" as the name. Results sorted by matchScore (1.0 = all criteria matched). If unmatchedCriteria is non-empty, tell the parent which criteria differ before showing the MATCH_CARD.${relaxedNote}` }],
       };
     }
 

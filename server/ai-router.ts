@@ -1862,11 +1862,25 @@ Now continue with any surrogate matching questions not yet answered: D1 (countri
       content: `When offering to schedule a consultation or call, you MUST always name the specific provider/clinic/agency. NEVER say vague phrases like "one of our experts" or "a professional". Always say the specific name, e.g., "Would you like to schedule a free consultation with San Diego Fertility Center?" If multiple providers were presented, name the most recently discussed one.`,
     });
 
+    // Detect short affirmatives and "learn more" intent BEFORE show-more blocks
+    // so both surrogate and egg donor blocks can guard against misinterpreting "yes".
+    const shortAffirmative = /^(yes|sure|ok|absolutely|definitely|please|do it|set it up|sounds good|let.?s do it|i.?d love that|that.?d be great|go ahead|go for it)[.!,\s]*$/i.test(userMessage.trim());
+    let affirmativeIsLearnMore = false;
+    if (shortAffirmative && currentSessionId) {
+      const lastAssistantMsgForLearnMore = [...messages].reverse().find(m => m.role === "assistant");
+      if (lastAssistantMsgForLearnMore && typeof lastAssistantMsgForLearnMore.content === "string" &&
+          /know more|get in touch|explore further|contact the agency|reach out|connect you|more information|interested in|tell you more|learn more|hear more/i.test(lastAssistantMsgForLearnMore.content) &&
+          presentedProviderIds.size > 0) {
+        affirmativeIsLearnMore = true;
+        console.log(`[LEARN-MORE-INTENT] Short affirmative "${userMessage}" after "know more / get in touch" prompt`);
+      }
+    }
+
     // "Show more" enforcement: when parent asks to see more surrogates/donors after already
     // seeing a match card, force the AI to call the search tool again and use [[MATCH_CARD]].
     // Prevents the AI from listing profiles as plain text from memory.
     const isShowMoreRequest = /^(show\s+me\s+more|show\s+more|see\s+more|yes[,.]?\s*(show|let'?s\s+see\s+more|more\s+please|i'?d\s+like\s+more)|more\s+(surrogates?|donors?|options?|profiles?)|next\s+(surrogate|donor|option|profile)|another\s+(surrogate|donor|option)|let'?s\s+(see\s+more|continue)|keep\s+going|yes[.!]?\s*$)/i.test(userMessage.trim());
-    if (isShowMoreRequest && hasSurrogateMatchCardShown && presentedProviderIds.size > 0) {
+    if (isShowMoreRequest && !affirmativeIsLearnMore && hasSurrogateMatchCardShown && presentedProviderIds.size > 0) {
       const excludeList = JSON.stringify(Array.from(presentedProviderIds));
       messages.push({
         role: "system" as const,
@@ -1877,6 +1891,26 @@ The parent wants to see more surrogate profiles. You MUST:
 3. Do NOT describe profiles in plain text. The [[MATCH_CARD]] tag is the ONLY way to present a profile.
 4. After the card, ask: "Want to see more surrogates, or are we all set?" [[QUICK_REPLY:Show me more|We're all set]]
 Use the same filters from the current search (maxAge, agreesToAbortion, agreesToTwins, etc.) plus the excludeIds.`,
+      });
+    }
+
+    // Egg donor equivalent of the surrogate "show more" block above.
+    const hasEggDonorMatchCardShown = chatHistory.some((msg: any) => {
+      const cards = (msg?.uiCardData as any)?.matchCards || [];
+      return cards.some((c: any) => c?.type === "Egg Donor");
+    });
+    if (isShowMoreRequest && !affirmativeIsLearnMore && hasEggDonorMatchCardShown && presentedProviderIds.size > 0) {
+      const excludeList = JSON.stringify(Array.from(presentedProviderIds));
+      messages.push({
+        role: "system" as const,
+        content: `SHOW MORE EGG DONORS - MANDATORY INSTRUCTIONS:
+The parent wants to see more egg donor profiles. You MUST:
+1. Call search_egg_donors with excludeIds: ${excludeList} to get a NEW profile they haven't seen.
+2. Present EXACTLY ONE result using [[MATCH_CARD]]. Never list multiple profiles as text.
+3. Do NOT describe profiles in plain text. The [[MATCH_CARD]] tag is the ONLY way to present a profile.
+4. After the card, ask: "Want to see more donors, or shall we move forward?" [[QUICK_REPLY:Show me more|Let's move forward]]
+Use the same filters from the current search (eyeColor, hairColor, ethnicity, minHeightInches, maxAge, etc.) plus the excludeIds.
+CRITICAL: If search_egg_donors returns results, present them with [[MATCH_CARD]]. Do NOT say "no matches found" unless the tool explicitly returns zero results after filtering out already-shown profiles.`,
       });
     }
 
@@ -1956,7 +1990,6 @@ Use the same filters from the current search (maxAge, agreesToAbortion, agreesTo
     // openAiTools already fetched in parallel above (cached)
 
     const schedulingIntent = /what.?s next|what happens next|what now|next step|move forward|let.?s (go|proceed|do it|move)|ready to (book|schedule|proceed)|i.?m ready|let.?s book|sign me up|yes.*schedule|schedule.*consultation|yes.*free consultation|book.*consultation|^schedule[.!]?$/i.test(userMessage.trim());
-    const shortAffirmative = /^(yes|sure|ok|absolutely|definitely|please|do it|set it up|sounds good|let.?s do it|i.?d love that|that.?d be great|go ahead|go for it)[.!,\s]*$/i.test(userMessage.trim());
     let affirmativeIsScheduling = false;
     if (shortAffirmative && currentSessionId) {
       const lastAssistantMsg = [...messages].reverse().find(m => m.role === "assistant");
@@ -1966,8 +1999,32 @@ Use the same filters from the current search (maxAge, agreesToAbortion, agreesTo
         console.log(`[SCHEDULING-INTENT] Short affirmative "${userMessage}" after scheduling suggestion`);
       }
     }
+    // Inject learn-more context (affirmativeIsLearnMore detected earlier, before show-more blocks)
+    if (affirmativeIsLearnMore && currentSessionId) {
+      try {
+        const mc = await findLatestMatchCard(currentSessionId);
+        if (mc?.providerId) {
+          const profileType = (mc.type || "").toLowerCase(); // e.g. "egg donor", "surrogate"
+          const profileLabel = profileType === "egg donor" ? `Egg Donor #${mc.providerId}` : profileType === "surrogate" ? `Surrogate #${mc.providerId}` : `profile #${mc.providerId}`;
+          messages.push({
+            role: "system" as const,
+            content: `LEARN MORE INTENT DETECTED: The parent just said "${userMessage}" in response to your question about whether they want to know more or get in touch about ${profileLabel}.
+DO NOT search for any new profiles. DO NOT say "no matches found."
+The parent is expressing interest in the CURRENTLY SHOWN profile (${profileLabel}, agency provider ID: ${mc.ownerProviderId || "unknown"}).
+Your response should:
+1. Warmly acknowledge their interest in ${profileLabel}
+2. Offer to connect them with the agency - e.g. "I can connect you with [agency name] so they can share more details and answer any questions you have about her!"
+3. Use [[CONSULTATION_BOOKING:${mc.ownerProviderId || mc.providerId}]] if they seem ready to book, OR ask a warm follow-up like "Would you like me to set up a call with the agency to learn more?" [[QUICK_REPLY:Yes, set up a call|I have more questions first]]
+4. Tag [[HOT_LEAD:${mc.ownerProviderId || mc.providerId}]] since the parent is expressing active interest`,
+          });
+        }
+      } catch (e) {
+        console.error("[LEARN-MORE-INTENT] Error finding match card:", e);
+      }
+    }
+
     const shouldTriggerScheduling = schedulingIntent || affirmativeIsScheduling;
-    if (shouldTriggerScheduling && currentSessionId) {
+    if (shouldTriggerScheduling && !affirmativeIsLearnMore && currentSessionId) {
       try {
         const mc = await findLatestMatchCard(currentSessionId);
         if (mc?.ownerProviderId) {
@@ -2014,14 +2071,17 @@ The parent's message was: "${userMessage}"`,
 
     // Detect if the AI just asked B1 (egg donor preferences) and the user is now answering it.
     // In this case, the ONLY valid next action is [[CURATION]] - not a search, not a text list.
+    // NOTE: regex must NOT match curation summary messages (e.g. "you're looking for an egg donor who is...")
+    // so we only match patterns from the actual B1 question text.
     const conversationMessages = messages.filter(m => m.role === "user" || m.role === "assistant");
     const lastAiMsg = [...conversationMessages].reverse().find(m => m.role === "assistant");
     const lastAiContent = typeof lastAiMsg?.content === "string" ? lastAiMsg.content : "";
-    const justAnsweredB1 = /what matters most.*egg donor|egg donor.*preferences|looking for.*egg donor|specific preferences.*egg donor|qualities.*egg donor/i.test(lastAiContent);
-    const curationAlreadySentAfterB1 = conversationMessages.slice(conversationMessages.indexOf(lastAiMsg!) + 1).some(
+    const justAnsweredB1 = /what matters most.*egg donor|egg donor.*preferences|specific preferences.*egg donor|qualities.*egg donor|preferences.*in an egg donor/i.test(lastAiContent);
+    // Check ALL history for [[CURATION]] - not just messages after lastAiMsg (which is always the last message).
+    const curationAlreadySent = conversationMessages.some(
       m => m.role === "assistant" && typeof m.content === "string" && m.content.includes("[[CURATION]]")
     );
-    if (justAnsweredB1 && !curationAlreadySentAfterB1) {
+    if (justAnsweredB1 && !curationAlreadySent) {
       messages.push({
         role: "system" as const,
         content: `MANDATORY NEXT ACTION - NO EXCEPTIONS:
@@ -2035,6 +2095,21 @@ After you send this, wait for the parent to reply. The system will then auto-sen
       });
     }
 
+    // When the parent says "ready" after a [[CURATION]] summary, force the AI to search immediately.
+    const userSaidReady = /^\s*ready\s*$/i.test(userMessage);
+    if (userSaidReady && curationAlreadySent) {
+      messages.push({
+        role: "system" as const,
+        content: `MANDATORY ACTION - NO EXCEPTIONS:
+The parent said "ready" and a [[CURATION]] summary was already sent. You MUST call the appropriate search tool RIGHT NOW:
+- Call search_egg_donors if parent needs an egg donor (pass filters from their stated preferences: ethnicity, height, eye color, hair color, etc.).
+- Call search_surrogates if parent needs a surrogate.
+- Call search_sperm_donors if parent needs a sperm donor.
+- Call search_clinics if parent needs a clinic.
+Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, then show ONE [[MATCH_CARD]] using a real result.`,
+      });
+    }
+
     // Final enforcement injection - always appended last so model reads it immediately before generating.
     // Rules near end of context are followed more reliably than rules buried in a long system prompt.
     messages.push({
@@ -2042,7 +2117,7 @@ After you send this, wait for the parent to reply. The system will then auto-sen
       content: `ABSOLUTE OUTPUT RULES (enforced every response):
 1. MATCH_CARD MANDATORY: Whenever you mention, describe, or recommend a specific donor, surrogate, or clinic - you MUST use [[MATCH_CARD:{...}]]. Plain-text-only profile descriptions (e.g., "Donor #5596 - Age 20, Brown hair...") are STRICTLY FORBIDDEN.
 2. ONE PROFILE PER MESSAGE: Never list multiple profiles in one message. ONE [[MATCH_CARD]] only, then stop and wait.
-3. CURATION BEFORE SEARCH: After collecting preferences (B1 for egg donors, D1-D3 for surrogates), you MUST send [[CURATION]] first. Only call search tools AFTER receiving "ready".`,
+3. CURATION BEFORE SEARCH: After collecting preferences (B1 for egg donors, D1-D3 for surrogates), you MUST send [[CURATION]] first. Only call search tools AFTER receiving "ready". If the parent already said "ready" and [[CURATION]] was already sent, call search tools immediately - do NOT send [[CURATION]] again.`,
     });
 
     let response = await openai.chat.completions.create({
@@ -3027,7 +3102,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
                   type: cardType,
                   location: locationField,
                   photo: matched.photoUrl || "",
-                  reasons: reasons.slice(0, 4),
+                  reasons: reasons.slice(0, 6),
                   providerId: idField,
                 });
                 console.log(`[MATCH_CARD FALLBACK] Auto-created card for ${nameField} (${idField})`);
@@ -3065,6 +3140,111 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }
     }
 
+    // Ethnicity synonym map - "white" filter must match "caucasian" donors and vice versa.
+    const MATCH_CARD_ETHNICITY_SYNONYMS: Record<string, string[]> = {
+      "white": ["white", "caucasian"],
+      "caucasian": ["caucasian", "white"],
+      "asian": ["asian", "east asian", "south asian", "southeast asian"],
+      "hispanic": ["hispanic", "latina", "latino", "latin"],
+      "latina": ["latina", "hispanic", "latin"],
+      "black": ["black", "african american", "african-american"],
+      "african american": ["african american", "african-american", "black"],
+      "middle eastern": ["middle eastern", "arab", "arabic"],
+      "mixed": ["mixed", "biracial", "multiracial", "multi-racial"],
+    };
+    const resolveEthTerms = (eth: string): string[] =>
+      MATCH_CARD_ETHNICITY_SYNONYMS[eth.toLowerCase()] || [eth.toLowerCase()];
+    const matchesWordBoundary = (fieldVal: string, term: string) => {
+      const esc = term.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`(^|[^a-z])${esc}($|[^a-z])`).test(fieldVal.toLowerCase());
+    };
+    const ethnicityMatchesField = (donorRace: string, donorEth: string, filterEthnicity: string): boolean => {
+      const terms = resolveEthTerms(filterEthnicity);
+      return terms.some(t => matchesWordBoundary(donorRace, t) || matchesWordBoundary(donorEth, t));
+    };
+
+    // For egg/sperm donor cards: always recompute reasons from actual search filters + donor data,
+    // ignoring AI-generated reasons which often include profile highlights the parent never asked for
+    // (e.g. "College degree", specific height value) rather than the actual matching preferences.
+    for (const card of matchCards) {
+      const cardTypeForDonor = (card.type || "").toLowerCase();
+      if (cardTypeForDonor === "egg donor" || cardTypeForDonor === "sperm donor") {
+        const donorSearchTool = cardTypeForDonor === "egg donor" ? "search_egg_donors" : "search_sperm_donors";
+        const donorSearchResult = lastSearchToolResults.find(r => r.toolName === donorSearchTool);
+        if (!donorSearchResult) continue;
+        const donorArgs = donorSearchResult.toolArgs || {};
+        const donorComputedReasons: string[] = [];
+        let donorProfileData: any = null;
+        try {
+          const rb = donorSearchResult.resultText;
+          const js = rb.indexOf("["); const je = rb.lastIndexOf("]");
+          if (js !== -1 && je !== -1) {
+            const results = JSON.parse(rb.substring(js, je + 1));
+            donorProfileData = results.find((r: any) => String(r.id) === String(card.providerId) || String(r.externalId) === String(card.providerId) || String(r.providerId) === String(card.providerId));
+          }
+        } catch {}
+        // Only add a reason if the parent explicitly requested it via args.
+        // Validate against donor data only when the field is populated - if the field is empty,
+        // trust the search tool already filtered correctly and still show the reason.
+        if (donorArgs.eyeColor) {
+          const eyeVal = donorProfileData?.eyeColor || "";
+          if (!eyeVal || matchesWordBoundary(eyeVal, donorArgs.eyeColor)) {
+            donorComputedReasons.push(`${donorArgs.eyeColor} eyes`);
+          }
+        }
+        if (donorArgs.hairColor) {
+          const hairVal = donorProfileData?.hairColor || "";
+          if (!hairVal || matchesWordBoundary(hairVal, donorArgs.hairColor)) {
+            donorComputedReasons.push(`${donorArgs.hairColor} hair`);
+          }
+        }
+        if (donorArgs.ethnicity) {
+          const donorRace = donorProfileData?.race || "";
+          const donorEth = donorProfileData?.ethnicity || "";
+          if (!donorRace && !donorEth) {
+            // Fields empty - trust search tool filtering
+            donorComputedReasons.push(`${donorArgs.ethnicity} ethnicity`);
+          } else if (ethnicityMatchesField(donorRace, donorEth, donorArgs.ethnicity)) {
+            donorComputedReasons.push(`${donorArgs.ethnicity} ethnicity`);
+          } else {
+            console.warn(`[MATCH_CARD] Skipping ethnicity "${donorArgs.ethnicity}" - donor race="${donorRace}" ethnicity="${donorEth}"`);
+          }
+        }
+        if (donorArgs.minHeightInches) {
+          const totalInches = Number(donorArgs.minHeightInches);
+          const feet = Math.floor(totalInches / 12);
+          const inches = totalInches % 12;
+          const heightLabel = inches > 0 ? `${feet}'${inches}" and above` : `${feet}' and above`;
+          const heightVal = donorProfileData?.heightInches;
+          if (heightVal == null || Number(heightVal) >= totalInches) {
+            donorComputedReasons.push(heightLabel);
+          }
+        }
+        if (donorArgs.maxAge) {
+          const ageVal = donorProfileData?.age;
+          if (ageVal == null || Number(ageVal) <= Number(donorArgs.maxAge)) {
+            donorComputedReasons.push(`Under ${donorArgs.maxAge} years old`);
+          }
+        }
+        if (donorArgs.minAge) {
+          const ageVal = donorProfileData?.age;
+          if (ageVal == null || Number(ageVal) >= Number(donorArgs.minAge)) {
+            donorComputedReasons.push(`${donorArgs.minAge}+ years old`);
+          }
+        }
+        // Education: only show if parent explicitly asked for it (AI must pass args.education based on parent's stated preference)
+        if (donorArgs.education) {
+          const eduVal = donorProfileData?.education || "";
+          if (!eduVal || matchesWordBoundary(eduVal, donorArgs.education)) {
+            donorComputedReasons.push(`${donorArgs.education} education`);
+          }
+        }
+        if (donorComputedReasons.length > 0) {
+          card.reasons = donorComputedReasons.slice(0, 6);
+        }
+      }
+    }
+
     // For surrogate cards: always recompute reasons from actual search filters + surrogate data,
     // ignoring AI-generated reasons which tend to include profile highlights the parent never asked for.
     for (const card of matchCards) {
@@ -3079,7 +3259,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             const js = rb.indexOf("["); const je = rb.lastIndexOf("]");
             if (js !== -1 && je !== -1) {
               const results = JSON.parse(rb.substring(js, je + 1));
-              const matched = results.find((r: any) => String(r.id) === String(card.providerId));
+              const matched = results.find((r: any) => String(r.id) === String(card.providerId) || String(r.externalId) === String(card.providerId) || String(r.providerId) === String(card.providerId));
               if (matched) {
                 // Only add reasons for filters the parent ACTUALLY applied
                 if (args.agreesToAbortion === true && (matched.agreesToAbortion || matched.agreesToSelectiveReduction)) computedReasons.push("Pro-choice");
@@ -3094,7 +3274,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             }
           } catch {}
           if (computedReasons.length > 0) {
-            card.reasons = computedReasons.slice(0, 4);
+            card.reasons = computedReasons.slice(0, 6);
           }
         }
       }
@@ -3123,11 +3303,11 @@ NEVER promise to search without actually calling the search tool. NEVER end with
                 const js = rb.indexOf("["); const je = rb.lastIndexOf("]");
                 if (js !== -1 && je !== -1) {
                   const results = JSON.parse(rb.substring(js, je + 1));
-                  donorData = results.find((r: any) => String(r.id) === String(card.providerId) || String(r.externalId) === String(card.providerId));
+                  donorData = results.find((r: any) => String(r.id) === String(card.providerId) || String(r.externalId) === String(card.providerId) || String(r.providerId) === String(card.providerId));
                 }
               } catch {}
               const matchesField = (fieldVal: string, term: string) => {
-                const esc = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                const esc = term.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
                 return new RegExp(`(^|[^a-z])${esc}($|[^a-z])`).test(fieldVal.toLowerCase());
               };
               if (args.eyeColor) {
@@ -3168,7 +3348,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
                 const jsonEnd = resultBody.lastIndexOf("]");
                 if (jsonStart !== -1 && jsonEnd !== -1) {
                   const results = JSON.parse(resultBody.substring(jsonStart, jsonEnd + 1));
-                  const matched = results.find((r: any) => String(r.id) === String(card.providerId));
+                  const matched = results.find((r: any) => String(r.id) === String(card.providerId) || String(r.externalId) === String(card.providerId) || String(r.providerId) === String(card.providerId));
                   if (matched) {
                     if (matched.agreesToTwins) autoReasons.push("Open to twins");
                     if (matched.agreesToAbortion || matched.agreesToSelectiveReduction) autoReasons.push("Pro-choice");
@@ -3184,7 +3364,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             }
 
             if (autoReasons.length > 0) {
-              card.reasons = autoReasons.slice(0, 4);
+              card.reasons = autoReasons.slice(0, 6);
               console.log(`[MATCH_CARD] Auto-populated ${card.reasons.length} reasons for ${card.name || card.type}`);
             }
           }
@@ -3205,14 +3385,18 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             const js = rb.indexOf("["); const je = rb.lastIndexOf("]");
             if (js !== -1 && je !== -1) {
               const results = JSON.parse(rb.substring(js, je + 1));
-              const donorData = results.find((r: any) => String(r.id) === String(card.providerId) || String(r.externalId) === String(card.providerId));
+              const donorData = results.find((r: any) => String(r.id) === String(card.providerId) || String(r.externalId) === String(card.providerId) || String(r.providerId) === String(card.providerId));
               if (donorData) {
                 const donorRace = (donorData.race || "").toLowerCase();
                 const donorEthnicity = (donorData.ethnicity || "").toLowerCase();
+                // Use synonym resolution so "white" reason is valid for "caucasian" donor and vice versa
                 const matchesEth = (term: string) => {
-                  const esc = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                  const re = new RegExp(`(^|[^a-z])${esc}($|[^a-z])`);
-                  return re.test(donorRace) || re.test(donorEthnicity);
+                  const terms = resolveEthTerms(term);
+                  return terms.some(t => {
+                    const esc = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                    const re = new RegExp(`(^|[^a-z])${esc}($|[^a-z])`);
+                    return re.test(donorRace) || re.test(donorEthnicity);
+                  });
                 };
                 const before = card.reasons.length;
                 card.reasons = card.reasons.filter((reason: string) => {

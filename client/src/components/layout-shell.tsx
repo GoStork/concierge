@@ -487,7 +487,10 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     queryKey: ["/api/my/chat-sessions"],
     queryFn: async () => {
       const res = await fetch("/api/my/chat-sessions", { credentials: "include" });
-      if (!res.ok) return [];
+      // Throw on error so React Query keeps the last successful data instead of
+      // overwriting the shared cache with [] (which would trigger matchmaker redirect
+      // in ConversationsPage on transient server errors).
+      if (!res.ok) throw new Error("Failed to fetch chat sessions");
       return res.json();
     },
     enabled: !!user,

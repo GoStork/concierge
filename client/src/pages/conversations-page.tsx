@@ -578,6 +578,11 @@ export default function ConversationsPage() {
 
   const parentSessionsQuery = useQuery<ChatSession[]>({
     queryKey: ["/api/my/chat-sessions"],
+    queryFn: async () => {
+      const res = await fetch("/api/my/chat-sessions", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch chat sessions");
+      return res.json();
+    },
     enabled: isParent && !!user,
     refetchInterval: 10000,
     staleTime: 0,
@@ -869,9 +874,16 @@ export default function ConversationsPage() {
     if (isConciergeUrl) {
       const sessionId = searchParams.get("session");
       if (sessionId) {
-        return parentSessions.find(s => s.id === sessionId && isConciergeSession(s)) || null;
+        // Try strict concierge-session filter first, then fall back to ID-only match.
+        // The fallback prevents ConciergeChatPage from unmounting mid-conversation due to
+        // a transient status change picked up by the 10-second background refetch.
+        return (
+          parentSessions.find(s => s.id === sessionId && isConciergeSession(s)) ||
+          parentSessions.find(s => s.id === sessionId) ||
+          null
+        );
       }
-      // Fallback: most recent concierge session
+      // Fallback: most recent concierge session (only when no ?session= param)
       return parentSessions.find(s => isConciergeSession(s)) || null;
     }
     if (urlEntityId && urlSubjectId) {
@@ -885,6 +897,14 @@ export default function ConversationsPage() {
   const setSelectedParentSession = (session: ChatSession | null) => {
     navigate(session ? buildChatUrl(session) : "/chat", { replace: true });
   };
+
+  // When the fallback path selects a session (no ?session= in URL), immediately lock the
+  // session ID into the URL. This prevents the sort-order-dependent fallback from switching
+  // to a different session on each 10-second background refetch.
+  useEffect(() => {
+    if (!isConciergeUrl || !selectedParentSession || searchParams.get("session")) return;
+    navigate(`?session=${selectedParentSession.id}`, { replace: true });
+  }, [isConciergeUrl, selectedParentSession?.id, searchParams]);
 
   const handleParentSessionClick = (session: ChatSession) => {
     const isMobile = window.innerWidth < 768;
@@ -984,8 +1004,10 @@ export default function ConversationsPage() {
   };
 
   if (isParent) {
-    // New parent with no sessions - go straight to matchmaker selection
-    if (!parentSessionsQuery.isLoading && parentSessionsQuery.data && parentSessionsQuery.data.length === 0) {
+    // New parent with no sessions - go straight to matchmaker selection.
+    // Guard: skip if the user is actively in a session (?session= param) to prevent
+    // a transient empty refetch response from navigating them away mid-conversation.
+    if (!parentSessionsQuery.isLoading && parentSessionsQuery.data && parentSessionsQuery.data.length === 0 && !searchParams.get("session")) {
       navigate("/matchmaker-selection", { replace: true });
       return null;
     }
