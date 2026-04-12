@@ -22,6 +22,8 @@ import {
   buildTitle,
   buildStatusLabel,
   getPhotoList,
+  buildSidebarSections,
+  type SidebarSection,
 } from "@/components/marketplace/swipe-mappers";
 import { Loader2, Send, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine } from "lucide-react";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
@@ -480,12 +482,14 @@ export function InlineBookingCalendar({
   brandColor,
   existingBooking: existingBookingProp,
   consultationMeta,
+  autoResetOnCancel,
 }: {
   slug: string;
   memberName: string;
   brandColor: string;
   existingBooking?: any;
   consultationMeta?: { aiSessionId?: string; matchmakerId?: string | null; profileLabel?: string | null; profilePhotoUrl?: string | null; providerId?: string; subjectProfileId?: string | null; subjectType?: string | null };
+  autoResetOnCancel?: boolean;
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -493,9 +497,10 @@ export function InlineBookingCalendar({
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const isCancelled = existingBookingProp?.status === "CANCELLED";
   const [step, setStep] = useState<"date" | "form" | "pending" | "reschedule" | "cancel_confirm" | "cancelled">(
     existingBookingProp
-      ? existingBookingProp.status === "CANCELLED" ? "cancelled" : "pending"
+      ? (isCancelled ? (autoResetOnCancel ? "date" : "cancelled") : "pending")
       : "date"
   );
   const [name, setName] = useState(user ? (user as any).name || "" : "");
@@ -522,7 +527,7 @@ export function InlineBookingCalendar({
       if (changed) {
         setBooking(existingBookingProp);
         if (existingBookingProp.status === "CANCELLED") {
-          setStep("cancelled");
+          setStep(autoResetOnCancel ? "date" : "cancelled");
         } else {
           setStep("pending");
         }
@@ -1711,16 +1716,24 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
 
 function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { card: MatchCard; brandColor: string; onAction: (text: string) => void; onViewProfile: (card: MatchCard) => void }) {
   const [profile, setProfile] = useState<any>(null);
-  const isClinic = card.type.toLowerCase() === "clinic";
+  const [fetchFailed, setFetchFailed] = useState(false);
+  const cardType = card.type || "";
+  const isClinic = cardType.toLowerCase() === "clinic";
 
   useEffect(() => {
     if (isClinic) return;
     const fetchProfile = async () => {
       try {
-        const typeSlug = card.type.toLowerCase().replace(" ", "-");
+        const typeSlug = cardType.toLowerCase().replace(" ", "-");
         const res = await fetch(`/api/marketplace/profile/${typeSlug}/${card.providerId}`, { credentials: "include" });
-        if (res.ok) setProfile(await res.json());
-      } catch {}
+        if (res.ok) {
+          setProfile(await res.json());
+        } else {
+          setFetchFailed(true);
+        }
+      } catch {
+        setFetchFailed(true);
+      }
     };
     fetchProfile();
   }, [card.providerId, card.type, isClinic]);
@@ -1730,6 +1743,14 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
   }
 
   if (!profile && !card.photo) {
+    if (fetchFailed) {
+      return (
+        <div className="w-full rounded-[var(--container-radius)] overflow-hidden bg-muted border border-border p-4 text-center">
+          <p className="text-sm font-ui text-muted-foreground">{card.name || cardType || "Profile"}</p>
+          <p className="text-xs text-muted-foreground mt-1">Profile unavailable</p>
+        </div>
+      );
+    }
     return (
       <div className="w-full aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -1738,7 +1759,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
   }
 
   if (profile) {
-    const t = card.type.toLowerCase();
+    const t = cardType.toLowerCase();
     const swipeProfile = t === "surrogate"
       ? mapDatabaseSurrogateToSwipeProfile(profile)
       : t === "sperm donor"
@@ -1957,19 +1978,170 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo }: { msg: Cha
   return null;
 }
 
+function ParentChatSidePanel({
+  subjectInfo,
+  subjectSections,
+  subjectPhotoUrl,
+  providerName,
+  sessionCalendarSlug,
+  sessionBookings,
+  brandColor,
+}: {
+  subjectInfo: ConsultationCardData | null;
+  subjectSections: SidebarSection[];
+  subjectPhotoUrl: string | null;
+  providerName: string | null;
+  sessionCalendarSlug: { slug: string | null; memberName: string | null } | null;
+  sessionBookings: any[] | null;
+  brandColor: string;
+}) {
+  const navigate = useNavigate();
+
+  const profileSlug = subjectInfo ? getProfileUrlSlug(subjectInfo.subjectType || "surrogate") : null;
+  const profileUrl =
+    subjectInfo?.subjectProfileId && subjectInfo?.providerId && profileSlug
+      ? `/${profileSlug}/${subjectInfo.providerId}/${subjectInfo.subjectProfileId}`
+      : null;
+
+  const existingBooking =
+    sessionBookings?.find(
+      (b: any) =>
+        b.providerUser?.provider?.id === subjectInfo?.providerId ||
+        b.providerId === subjectInfo?.providerId
+    ) ??
+    sessionBookings?.[0] ??
+    null;
+
+  const displayProviderName = subjectInfo?.providerName || providerName;
+
+  return (
+    <div className="w-72 border-l overflow-y-auto bg-muted/30 hidden md:flex md:flex-col shrink-0">
+      <div className="p-4 space-y-4">
+        {/* Profile Section - only when we have subject data */}
+        {subjectInfo && (
+          <div>
+            {/* Profile ID row with inline photo */}
+            <div className="flex items-center gap-2.5 mb-2">
+              {subjectPhotoUrl ? (
+                <div className="w-10 h-10 rounded-full overflow-hidden bg-muted shrink-0">
+                  <img
+                    src={getPhotoSrc(subjectPhotoUrl) || undefined}
+                    alt={subjectInfo.profileLabel || "Profile"}
+                    className="w-full h-full object-cover object-top"
+                  />
+                </div>
+              ) : (
+                <div
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold shrink-0"
+                  style={{ backgroundColor: brandColor }}
+                >
+                  {(subjectInfo.profileLabel || "?").charAt(0)}
+                </div>
+              )}
+              <p className="text-sm font-semibold leading-tight">{subjectInfo.profileLabel || "-"}</p>
+            </div>
+            {profileUrl && (
+              <button
+                className="text-xs flex items-center gap-1 mb-3"
+                style={{ color: brandColor }}
+                onClick={() => navigate(profileUrl)}
+              >
+                <ExternalLink className="w-3 h-3" />
+                View Full Profile
+              </button>
+            )}
+            {subjectSections.map((section, i) => (
+              <div key={i} className={i > 0 ? "border-t pt-2 mt-2" : "mt-1"}>
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+                  {section.title}
+                </p>
+                <div className="space-y-1">
+                  {section.rows.map((row, j) => (
+                    <div key={j} className="flex items-center gap-1.5 text-xs">
+                      {row.icon && <row.icon className="w-3 h-3 text-muted-foreground shrink-0" />}
+                      <span className="text-muted-foreground shrink-0">{row.label}:</span>
+                      <span className="text-foreground">{row.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Provider Section */}
+        {displayProviderName && (
+          <div className={subjectInfo ? "border-t pt-3" : ""}>
+            <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>
+              Agency
+            </h4>
+            <div className="flex items-center gap-2.5">
+              {subjectInfo?.providerLogo ? (
+                <img
+                  src={getPhotoSrc(subjectInfo.providerLogo) || undefined}
+                  alt={displayProviderName}
+                  className="w-9 h-9 rounded-full object-cover border"
+                />
+              ) : (
+                <div
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold shrink-0"
+                  style={{ backgroundColor: brandColor }}
+                >
+                  {(displayProviderName || "A").charAt(0)}
+                </div>
+              )}
+              <span className="text-sm font-medium">{displayProviderName}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Calendar Section */}
+        {sessionCalendarSlug?.slug && (
+          <div className={displayProviderName || subjectInfo ? "border-t pt-3" : ""}>
+            <h4 className="font-semibold text-sm mb-1" style={{ fontFamily: "var(--font-display)" }}>
+              Coordinator
+            </h4>
+            {(sessionCalendarSlug.memberName || subjectInfo?.memberName) && (
+              <p className="text-sm text-muted-foreground mb-3">
+                {sessionCalendarSlug.memberName || subjectInfo?.memberName}
+              </p>
+            )}
+            <InlineBookingCalendar
+              slug={sessionCalendarSlug.slug}
+              memberName={sessionCalendarSlug.memberName || subjectInfo?.memberName || "Coordinator"}
+              brandColor={brandColor}
+              existingBooking={existingBooking || undefined}
+              consultationMeta={subjectInfo ? {
+                providerId: subjectInfo.providerId,
+                profileLabel: subjectInfo.profileLabel,
+                profilePhotoUrl: subjectInfo.profilePhotoUrl,
+                subjectProfileId: subjectInfo.subjectProfileId,
+                subjectType: subjectInfo.subjectType,
+              } : undefined}
+              autoResetOnCancel
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface ConciergeChatProps {
   inlineSessionId?: string;
   inlineMatchmakerId?: string;
   isInline?: boolean;
   externalBookingSlug?: { slug: string; memberName: string } | null;
   onCloseExternalBooking?: () => void;
+  talkToTeamRef?: React.MutableRefObject<{ trigger: () => void; escalated: boolean } | null>;
 }
 
-export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId, isInline, externalBookingSlug, onCloseExternalBooking }: ConciergeChatProps = {}) {
+export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId, isInline, externalBookingSlug, onCloseExternalBooking, talkToTeamRef }: ConciergeChatProps = {}) {
   const [searchParams] = useSearchParams();
   const matchmakerId = isInline ? (inlineMatchmakerId || null) : searchParams.get("matchmaker");
   const existingSessionId = isInline ? (inlineSessionId || null) : searchParams.get("session");
-  const isEmbedded = isInline || searchParams.get("embedded") === "1";
+  // isEmbedded = fully embedded in an iframe (embedded=1 param); isInline = rendered inside ConversationsShell
+  const isEmbedded = searchParams.get("embedded") === "1";
   const donorIdParam = searchParams.get("donorId");
   const donorTypeParam = searchParams.get("donorType");
   const donorProviderIdParam = searchParams.get("providerId");
@@ -1994,6 +2166,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [providerInChat, setProviderInChat] = useState(false);
   const [providerChatName, setProviderChatName] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState<string | null>(null);
+  // Session-level subject info returned directly from the API (used when no consultation card is in messages)
+  const [sessionSubjectInfo, setSessionSubjectInfo] = useState<{ subjectProfileId: string; subjectType: string; profilePhotoUrl?: string | null; providerLogo?: string | null; providerId?: string } | null>(null);
   const [conciergeBookingSlug, setConciergeBookingSlug] = useState<{ slug: string; memberName: string } | null>(null);
   const parentFileInputRef = useRef<HTMLInputElement>(null);
   const [parentUploading, setParentUploading] = useState(false);
@@ -2245,6 +2419,16 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       const msgs = Array.isArray(data) ? data : (data.messages || []);
       setSessionTitle(data.sessionTitle || null);
       if (data.providerName) setProviderChatName(data.providerName);
+      if (data.providerJoined) setProviderInChat(true);
+      if (data.subjectProfileId && data.subjectType) {
+        setSessionSubjectInfo({
+          subjectProfileId: data.subjectProfileId,
+          subjectType: data.subjectType,
+          profilePhotoUrl: data.profilePhotoUrl || null,
+          providerLogo: data.providerLogo || null,
+          providerId: data.sessionProviderId || undefined,
+        });
+      }
       if (msgs.length > 0) {
         const parsed: ChatMessage[] = msgs.map((m: any) => {
           const extras = m.uiCardData || {};
@@ -2270,10 +2454,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         lastPollTimeRef.current = msgs[msgs.length - 1].createdAt;
         msgs.forEach((m: any) => { if (m.id) knownMessageIds.current.add(m.id); });
         if (msgs.some((m: any) => m.senderType === "human")) setHumanEscalated(true);
-        const providerMsg = msgs.find((m: any) => m.senderType === "provider");
-        if (providerMsg) {
-          setProviderInChat(true);
-        }
+        if (msgs.some((m: any) => m.senderType === "provider")) setProviderInChat(true);
         // Send read receipt
         fetch(`/api/chat-sessions/${existingSessionId}/read`, { method: "POST", credentials: "include" }).catch(() => {});
       }
@@ -2370,6 +2551,56 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     },
     enabled: !!user,
   });
+
+  // Subject profile info for the right panel: prefer consultation card from messages, fall back to session-level data
+  const subjectInfo = useMemo<ConsultationCardData | null>(() => {
+    for (const msg of [...messages].reverse()) {
+      if (msg.consultationCard?.subjectProfileId) return msg.consultationCard;
+    }
+    // Fall back to session-level subject data returned by the API
+    if (sessionSubjectInfo?.subjectProfileId && sessionSubjectInfo?.providerId) {
+      return {
+        providerId: sessionSubjectInfo.providerId,
+        providerName: providerChatName || "",
+        providerLogo: sessionSubjectInfo.providerLogo || undefined,
+        subjectProfileId: sessionSubjectInfo.subjectProfileId,
+        subjectType: sessionSubjectInfo.subjectType,
+        profilePhotoUrl: sessionSubjectInfo.profilePhotoUrl || undefined,
+        profileLabel: sessionTitle?.split(" x ")?.[0]?.trim() || undefined,
+      } as ConsultationCardData;
+    }
+    return null;
+  }, [messages, sessionSubjectInfo, providerChatName, sessionTitle]);
+
+  const subjectProfileApiPath = useMemo(() => {
+    if (!subjectInfo?.subjectProfileId || !subjectInfo?.providerId || !subjectInfo?.subjectType) return null;
+    const t = subjectInfo.subjectType.toLowerCase();
+    const endpoint = t === "surrogate" ? "surrogates" : t.includes("sperm") ? "sperm-donors" : "egg-donors";
+    return `/api/providers/${subjectInfo.providerId}/${endpoint}/${subjectInfo.subjectProfileId}`;
+  }, [subjectInfo]);
+
+  const { data: subjectProfileData = null } = useQuery<any>({
+    queryKey: ["subject-profile", subjectInfo?.subjectProfileId],
+    queryFn: async () => {
+      const res = await fetch(subjectProfileApiPath!, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!subjectProfileApiPath && providerInChat,
+    staleTime: 300000,
+  });
+
+  const { subjectSections, subjectPhotoUrl } = useMemo((): { subjectSections: SidebarSection[]; subjectPhotoUrl: string | null } => {
+    if (!subjectProfileData || !subjectInfo?.subjectType) return { subjectSections: [], subjectPhotoUrl: subjectInfo?.profilePhotoUrl || null };
+    const t = subjectInfo.subjectType.toLowerCase();
+    const swipeProfile = t === "surrogate"
+      ? mapDatabaseSurrogateToSwipeProfile(subjectProfileData)
+      : t.includes("sperm")
+        ? mapDatabaseSpermDonorToSwipeProfile(subjectProfileData)
+        : mapDatabaseDonorToSwipeProfile(subjectProfileData);
+    const photo = swipeProfile.photos?.[0] || swipeProfile.photoUrl || subjectInfo?.profilePhotoUrl || null;
+    return { subjectSections: buildSidebarSections(swipeProfile), subjectPhotoUrl: photo };
+  }, [subjectProfileData, subjectInfo?.subjectType, subjectInfo?.profilePhotoUrl]);
 
   const initialScrollDone = useRef(false);
   const scrollToBottom = useRef((behavior?: "smooth") => {
@@ -2498,6 +2729,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           const statusRes = await fetch(`/api/ai-concierge/session/${sessionId}/messages`, { credentials: "include" });
           if (statusRes.ok) {
             const statusData = await statusRes.json();
+            if (statusData.providerJoined && !providerInChat) {
+              if (statusData.providerName) setProviderChatName(statusData.providerName);
+              setProviderInChat(true);
+            }
             const allMsgs: any[] = Array.isArray(statusData) ? statusData : (statusData.messages || []);
             const statusMap = new Map(allMsgs.map((m: any) => [m.id, { deliveredAt: m.deliveredAt, readAt: m.readAt }]));
             setMessages(prev => {
@@ -2688,8 +2923,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         setHumanEscalated(true);
       }
       if (data.consultationCard) {
-        // Show the consultation booking card but do NOT set providerInChat -
-        // the provider hasn't actually joined yet, this is just a booking opportunity
+        // Open the right-side panel as soon as the AI connects the parent with a provider
+        if (data.consultationCard.providerName) setProviderChatName(data.consultationCard.providerName);
+        setProviderInChat(true);
       }
 
       if (data.message.id) knownMessageIds.current.add(data.message.id);
@@ -2738,6 +2974,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const handleTalkToTeam = () => {
     sendMessage("I'd like to talk to a real person on the GoStork team");
   };
+
+  useEffect(() => {
+    if (talkToTeamRef) {
+      talkToTeamRef.current = { trigger: handleTalkToTeam, escalated: humanEscalated };
+    }
+  }, [talkToTeamRef, humanEscalated]);
 
   const handleCurationComplete = useCallback(async () => {
     showCurationRef.current = false;
@@ -2808,8 +3050,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       {showCuration && (
         <CurationOverlay brandColor={brandColor} onComplete={handleCurationComplete} />
       )}
-      <div className={`flex flex-col ${isInline ? "h-full" : "h-dvh"} ${isEmbedded ? "" : "max-w-3xl mx-auto"} overflow-hidden`} data-testid="concierge-chat-page">
-        {!isEmbedded && <div
+      <div
+        className={`flex ${isInline ? "h-full" : "h-dvh"} overflow-hidden${!isEmbedded && !isInline && !providerInChat ? " max-w-3xl mx-auto" : ""}`}
+        data-testid="concierge-chat-page"
+      >
+        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+        {!isEmbedded && !isInline && <div
           className="flex items-center gap-3 px-4 py-3 border-b shrink-0"
           data-testid="concierge-chat-header"
         >
@@ -3313,7 +3559,19 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             </Button>
           </div>
         </div>
-        
+
+        </div>
+        {providerInChat && !isEmbedded && (
+          <ParentChatSidePanel
+            subjectInfo={subjectInfo}
+            subjectSections={subjectSections}
+            subjectPhotoUrl={subjectPhotoUrl}
+            providerName={providerChatName}
+            sessionCalendarSlug={sessionCalendarSlug ?? null}
+            sessionBookings={sessionBookings ?? null}
+            brandColor={brandColor}
+          />
+        )}
       </div>
       {bookingCard && (
         <BookingOverlay

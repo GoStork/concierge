@@ -1,13 +1,14 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useProvider } from "@/hooks/use-providers";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Upload, FileText, Download, ExternalLink, RefreshCw, Copy, Check, Trash2, PenLine } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Upload, FileText, ExternalLink, RefreshCw, Check, Trash2, PenLine } from "lucide-react";
 
 interface Agreement {
   id: string;
@@ -64,59 +65,7 @@ function statusBadge(status: string) {
   }
 }
 
-function isPdf(url: string) {
-  return url.toLowerCase().includes(".pdf");
-}
 
-function isWord(url: string) {
-  const lower = url.toLowerCase();
-  return lower.includes(".docx") || lower.includes(".doc");
-}
-
-const TOKENS = [
-  { token: "{{CLIENT1_NAME}}", description: "First client's full name" },
-  { token: "{{CLIENT1_EMAIL}}", description: "First client's email" },
-  { token: "{{CLIENT1_DOB}}", description: "First client's date of birth" },
-  { token: "{{CLIENT1_ADDRESS}}", description: "First client's full address" },
-  { token: "{{CLIENT1_SSN}}", description: "First client's SSN" },
-  { token: "{{CLIENT1_PASSPORT}}", description: "First client's passport number" },
-  { token: "{{CLIENT1_PASSPORT_COUNTRY}}", description: "First client's passport country of issue" },
-  { token: "{{CLIENT1_NATIONALITY}}", description: "First client's nationality" },
-  { token: "{{CLIENT2_NAME}}", description: "Second client's full name" },
-  { token: "{{CLIENT2_EMAIL}}", description: "Second client's email" },
-  { token: "{{CLIENT2_DOB}}", description: "Second client's date of birth" },
-  { token: "{{CLIENT2_ADDRESS}}", description: "Second client's full address" },
-  { token: "{{CLIENT2_SSN}}", description: "Second client's SSN" },
-  { token: "{{CLIENT2_PASSPORT}}", description: "Second client's passport number" },
-  { token: "{{CLIENT2_PASSPORT_COUNTRY}}", description: "Second client's passport country of issue" },
-  { token: "{{CLIENT2_NATIONALITY}}", description: "Second client's nationality" },
-  { token: "{{PROVIDER_NAME}}", description: "Your agency name" },
-  { token: "{{PROVIDER_EMAIL}}", description: "Your agency email" },
-  { token: "{{DATE}}", description: "Today's date" },
-  { token: "{{SIGNATURE_1}}", description: "Signature field for client 1 - place where they should sign" },
-  { token: "{{SIGNATURE_2}}", description: "Signature field for client 2 - place where they should sign" },
-  { token: "{{INITIALS_1}}", description: "Initials field for client 1" },
-  { token: "{{INITIALS_2}}", description: "Initials field for client 2" },
-  { token: "{{PROVIDER_SIGNATURE}}", description: "Signature field for the provider/agency" },
-];
-
-function TokenChip({ token }: { token: string }) {
-  const [copied, setCopied] = useState(false);
-  function copy() {
-    navigator.clipboard.writeText(token);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }
-  return (
-    <button
-      onClick={copy}
-      className="flex items-center gap-1.5 px-2 py-1 rounded-[var(--radius)] border bg-muted/50 hover:bg-muted text-xs font-mono transition-colors"
-    >
-      {copied ? <Check className="w-3 h-3 text-[hsl(var(--brand-success))]" /> : <Copy className="w-3 h-3 text-muted-foreground" />}
-      {token}
-    </button>
-  );
-}
 
 export default function DocumentsTab() {
   const { user } = useAuth();
@@ -131,7 +80,6 @@ export default function DocumentsTab() {
   const [deleting, setDeleting] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [editorEToken, setEditorEToken] = useState<string | null>(null);
-  const [editorTemplateId, setEditorTemplateId] = useState<string | null>(null);
   const [loadingEditor, setLoadingEditor] = useState(false);
   const editorInstanceRef = useRef<any>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
@@ -140,6 +88,34 @@ export default function DocumentsTab() {
   const { data: agreements = [], isLoading: agreementsLoading, refetch } = useQuery<Agreement[]>({
     queryKey: ["/api/agreements"],
     enabled: !!providerId,
+  });
+
+  // Role name inputs - must be above early return to respect Rules of Hooks
+  const savedRolesRaw: string | null = (provider as any)?.pandaDocRoles || null;
+  const [roleInputs, setRoleInputs] = useState<string[]>(["", "", ""]);
+  const [rolesSaved, setRolesSaved] = useState(false);
+
+  useEffect(() => {
+    if (!savedRolesRaw) return;
+    try {
+      const parsed: string[] = JSON.parse(savedRolesRaw);
+      if (parsed.length >= 2) setRoleInputs(parsed);
+    } catch { /* ignore */ }
+  }, [savedRolesRaw]);
+
+  const saveRolesMutation = useMutation({
+    mutationFn: async (roles: string[]) => {
+      await apiRequest("PUT", "/api/agreements/template-roles", { roles });
+    },
+    onSuccess: () => {
+      setRolesSaved(true);
+      setTimeout(() => setRolesSaved(false), 3000);
+      queryClient.invalidateQueries({ queryKey: ['/api/providers/:id', providerId] });
+      toast({ title: "Role names saved", description: "GoStork will use these names to assign signers." });
+    },
+    onError: (e: any) => {
+      toast({ title: "Failed to save roles", description: e.message, variant: "destructive" });
+    },
   });
 
   const ALLOWED_TYPES = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
@@ -160,7 +136,8 @@ export default function DocumentsTab() {
       await apiRequest("PUT", `/api/providers/${providerId}`, { agreementTemplateUrl: url, agreementTemplateOriginalName: file.name, pandaDocTemplateId: null });
       queryClient.invalidateQueries({ queryKey: ['/api/providers/:id', providerId] });
 
-      toast({ title: "Agreement template uploaded", description: "Your document has been saved." });
+      toast({ title: "Agreement template uploaded", description: "Opening signature field editor..." });
+      await openFieldEditor();
     } catch (err: any) {
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
     } finally {
@@ -197,6 +174,8 @@ export default function DocumentsTab() {
     try {
       await apiRequest("PUT", `/api/providers/${providerId}`, { agreementTemplateUrl: null, agreementTemplateOriginalName: null, pandaDocTemplateId: null });
       queryClient.invalidateQueries({ queryKey: ['/api/providers/:id', providerId] });
+      if (editorInstanceRef.current) { editorInstanceRef.current.destroy(); editorInstanceRef.current = null; }
+      setEditorEToken(null);
       toast({ title: "Template removed" });
     } catch (err: any) {
       toast({ title: "Failed to remove template", description: err.message, variant: "destructive" });
@@ -240,10 +219,6 @@ export default function DocumentsTab() {
   }, [editorEToken]);
 
   async function openFieldEditor() {
-    // Pre-populate templateId from provider data so the fallback link is available immediately
-    const existingTemplateId = (provider as any)?.pandaDocTemplateId;
-    if (existingTemplateId) setEditorTemplateId(existingTemplateId);
-
     // Destroy any existing editor instance
     if (editorInstanceRef.current) {
       editorInstanceRef.current.destroy();
@@ -252,9 +227,7 @@ export default function DocumentsTab() {
     setEditorEToken(null);
     setLoadingEditor(true);
     try {
-      const syncRes = await fetch("/api/agreements/sync-template", { method: "POST", credentials: "include" });
-      const syncData = await syncRes.json().catch(() => ({}));
-      if (syncData.templateId) setEditorTemplateId(syncData.templateId);
+      await fetch("/api/agreements/sync-template", { method: "POST", credentials: "include" });
 
       const res = await fetch("/api/agreements/template-editor-session", { credentials: "include" });
       if (!res.ok) {
@@ -272,7 +245,7 @@ export default function DocumentsTab() {
 
   if (providerLoading) {
     return (
-      <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+      <div className="space-y-6">
         <div className="h-8 w-48 bg-muted rounded animate-pulse" />
         <div className="h-32 bg-muted rounded-[var(--radius)] animate-pulse" />
       </div>
@@ -284,8 +257,10 @@ export default function DocumentsTab() {
   const templateFilename = (provider as any)?.agreementTemplateOriginalName
     || (templateUrl ? decodeURIComponent(templateUrl.split("/").pop()?.split("?")[0] || "agreement-template") : null);
 
+  const savedRoles: string[] = savedRolesRaw ? (() => { try { return JSON.parse(savedRolesRaw); } catch { return []; } })() : [];
+
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-heading">Documents & Agreements</h1>
         <p className="text-sm text-muted-foreground mt-1">
@@ -302,20 +277,6 @@ export default function DocumentsTab() {
         <p className="text-sm text-muted-foreground">
           Upload your agreement document (PDF or Word). This will be used when generating contracts for parents.
         </p>
-        <p className="text-sm text-muted-foreground">
-          Add placeholders to your document where parent and agency information should appear. When a contract is sent, GoStork fills them in automatically.
-        </p>
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Available placeholders - click to copy</p>
-          <div className="flex flex-wrap gap-2">
-            {TOKENS.map(t => (
-              <div key={t.token} className="flex items-center gap-1.5">
-                <TokenChip token={t.token} />
-                <span className="text-xs text-muted-foreground">{t.description}</span>
-              </div>
-            ))}
-          </div>
-        </div>
 
         {/* Drag-and-drop zone */}
         <div
@@ -334,7 +295,7 @@ export default function DocumentsTab() {
           )}
           <div className="text-center">
             <p className="text-sm font-medium">
-              {uploading ? "Uploading..." : dragging ? "Drop your file here" : "Drag & drop your file here"}
+              {uploading ? (loadingEditor ? "Syncing to PandaDoc..." : "Uploading...") : dragging ? "Drop your file here" : "Drag & drop your file here"}
             </p>
             {!uploading && (
               <p className="text-xs text-muted-foreground mt-1">
@@ -380,85 +341,134 @@ export default function DocumentsTab() {
             <h2 className="text-lg font-heading">Configure Signature Fields</h2>
           </div>
           <p className="text-sm text-muted-foreground">
-            Sync your template to PandaDoc, then use the embedded editor to drag and drop signature and initials fields to the correct positions. This is a one-time setup per template.
+            Use the editor below to drag and drop signature, initials, and date fields onto your document.
           </p>
 
           <div className="flex items-center gap-3">
-            {pandaDocTemplateId ? (
+            {pandaDocTemplateId && !editorEToken && (
               <span className="flex items-center gap-1.5 text-sm text-[hsl(var(--brand-success))]">
                 <Check className="w-4 h-4" />
                 Fields configured
               </span>
-            ) : (
-              <span className="text-sm text-muted-foreground">Not yet synced to PandaDoc</span>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={loadingEditor}
-              onClick={openFieldEditor}
-            >
-              {loadingEditor ? (
-                <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Syncing...</>
-              ) : pandaDocTemplateId ? (
-                <><PenLine className="w-4 h-4 mr-2" />Edit Signature Fields</>
-              ) : (
-                <><PenLine className="w-4 h-4 mr-2" />Sync &amp; Open Field Editor</>
-              )}
-            </Button>
+            {!editorEToken && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loadingEditor}
+                onClick={openFieldEditor}
+              >
+                {loadingEditor ? (
+                  <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Opening editor...</>
+                ) : pandaDocTemplateId ? (
+                  <><PenLine className="w-4 h-4 mr-2" />Edit Signature Fields</>
+                ) : (
+                  <><PenLine className="w-4 h-4 mr-2" />Open Field Editor</>
+                )}
+              </Button>
+            )}
+            {editorEToken && (
+              <>
+                <span className="flex items-center gap-1.5 text-sm text-[hsl(var(--brand-success))]">
+                  <Check className="w-4 h-4" />
+                  Editor open
+                </span>
+                <Button variant="ghost" size="sm" disabled={loadingEditor} onClick={openFieldEditor} className="text-xs text-muted-foreground h-7 px-2">
+                  <RefreshCw className="w-3 h-3 mr-1" />
+                  Reload
+                </Button>
+              </>
+            )}
           </div>
 
+          {/* PandaDoc editor - inline within the card */}
           {editorEToken && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs text-muted-foreground">Drag signature, initials, and date fields onto the document, then close when done.</p>
-                {editorTemplateId && (
-                  <a
-                    href={`https://app.pandadoc.com/a/#/templates/${editorTemplateId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-primary underline underline-offset-2 shrink-0 ml-4"
-                  >
-                    Edit in PandaDoc (sandbox fallback)
-                  </a>
-                )}
+            <div className="rounded-[var(--radius)] border bg-[hsl(var(--brand-warning)/0.08)] border-[hsl(var(--brand-warning)/0.35)] p-4 text-sm">
+              <p className="font-medium mb-2">Set up signing roles in the right panel - use any names you like:</p>
+              <ol className="space-y-1 list-decimal list-inside text-muted-foreground">
+                <li>1st role - First parent (e.g. "Intended Parent 1")</li>
+                <li>2nd role - Second parent, if applicable (optional)</li>
+                <li>Last role - Your own countersignature (e.g. "Agency")</li>
+              </ol>
+              <p className="text-xs text-muted-foreground mt-2">GoStork assigns signers by role order automatically - no specific names required.</p>
+            </div>
+          )}
+          {editorEToken && (
+            <div className="rounded-[var(--radius)] border overflow-hidden -mx-6" style={{ height: "800px" }}>
+              <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/40">
+                <p className="text-xs text-muted-foreground">Changes are saved automatically. When done, click Save.</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (editorInstanceRef.current) { editorInstanceRef.current.destroy(); editorInstanceRef.current = null; }
+                    setEditorEToken(null);
+                    queryClient.invalidateQueries({ queryKey: ['/api/providers/:id', providerId] });
+                    toast({ title: "Signature fields saved", description: "Your field configuration has been saved." });
+                  }}
+                >
+                  Save
+                </Button>
               </div>
+              <div
+                ref={editorContainerRef}
+                id={editorContainerId}
+                style={{ width: "100%", height: "calc(100% - 41px)" }}
+              />
             </div>
           )}
         </Card>
       )}
 
-      {/* Editor container always in DOM so the SDK can find it by ID even if provider data re-fetches */}
-      <div
-        ref={editorContainerRef}
-        id={editorContainerId}
-        className="w-full rounded-[var(--radius)] border"
-        style={{ display: editorEToken ? "block" : "none", height: "750px", minHeight: "750px" }}
-      />
-
-      {/* Section D - Preview */}
-      {templateUrl && (
+      {/* Section C - Role Names */}
+      {pandaDocTemplateId && (
         <Card className="p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-heading">Preview</h2>
-            <a href="/api/documents/download" download>
-              <Button variant="ghost" size="sm">
-                <Download className="w-4 h-4 mr-1" /> Download
-              </Button>
-            </a>
+          <div className="flex items-center gap-2">
+            <Check className="w-5 h-5 text-primary" />
+            <h2 className="text-lg font-heading">Signing Role Names</h2>
           </div>
-
-          {isPdf(templateUrl) || isWord(templateUrl) ? (
-            <iframe
-              src={`/api/documents/preview?v=${encodeURIComponent(templateUrl)}`}
-              className="w-full h-[600px] rounded-[var(--radius)] border bg-[#e8e8e8]"
-              title="Agreement Preview"
-            />
-          ) : (
-            <div className="flex items-center gap-3 p-4 rounded-[var(--radius)] bg-muted/40 text-sm text-muted-foreground">
-              <FileText className="w-5 h-5 shrink-0" />
-              <span>This file type cannot be previewed inline. Download to review.</span>
-            </div>
+          <p className="text-sm text-muted-foreground">
+            Enter the exact role names you created in the PandaDoc editor. GoStork uses these to assign the right signer to each role.
+          </p>
+          <div className="space-y-2">
+            {[
+              { label: "Parent 1 role", placeholder: "e.g. Client 1", index: 0 },
+              { label: "Parent 2 role", placeholder: "e.g. Client 2", index: 1 },
+              { label: "Your role", placeholder: "e.g. Agency", index: 2 },
+            ].map(({ label, placeholder, index }) => (
+              <div key={index} className="flex items-center gap-3">
+                <span className="text-xs text-muted-foreground w-28 shrink-0">{label}</span>
+                <Input
+                  value={roleInputs[index] ?? ""}
+                  onChange={e => setRoleInputs(prev => {
+                    const next = [...prev];
+                    next[index] = e.target.value;
+                    return next;
+                  })}
+                  placeholder={placeholder}
+                  className="flex-1"
+                />
+              </div>
+            ))}
+          </div>
+          <Button
+            size="sm"
+            disabled={saveRolesMutation.isPending || !roleInputs[0]?.trim() || !roleInputs[2]?.trim()}
+            onClick={() => saveRolesMutation.mutate(roleInputs.filter(r => r.trim()))}
+          >
+            {saveRolesMutation.isPending ? (
+              <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Saving...</>
+            ) : rolesSaved ? (
+              <><Check className="w-4 h-4 mr-2" />Saved</>
+            ) : (
+              "Save Role Names"
+            )}
+          </Button>
+          {savedRoles.length >= 2 && (
+            <p className="text-xs text-[hsl(var(--brand-success))]">
+              <Check className="w-3 h-3 inline mr-1" />
+              Currently configured: {savedRoles.join(" - ")}
+            </p>
           )}
         </Card>
       )}

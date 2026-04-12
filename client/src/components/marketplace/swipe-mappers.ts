@@ -519,11 +519,11 @@ export function getSurrogateTabs(profile: SwipeDeckProfile, matchedPrefs: Matche
 
   const medicalItems: TabItem[] = [];
   if (!matchedKeys.has("liveBirths") && profile.liveBirths != null) medicalItems.push({ label: `Live Births: ${String(profile.liveBirths)}`, value: "" });
-  if (profile.lastDeliveryYear) medicalItems.push({ label: `Last Delivery: ${String(profile.lastDeliveryYear)}`, value: "" });
   if (!matchedKeys.has("cSections") && profile.cSections != null) medicalItems.push({ label: `C-Sections: ${String(profile.cSections)}`, value: "" });
   if (profile.miscarriages != null) medicalItems.push({ label: `Miscarriages: ${String(profile.miscarriages)}`, value: "" });
   medicalItems.push({ label: `Abortions: 0`, value: "" });
   if (!matchedKeys.has("covidVaccinated") && profile.covidVaccinated != null) medicalItems.push({ label: `COVID Vaccinated: ${boolLabel(profile.covidVaccinated)}`, value: "", icon: Syringe });
+  if (profile.lastDeliveryYear) medicalItems.push({ label: `Last Delivery: ${String(profile.lastDeliveryYear)}`, value: "" });
   if (medicalItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Medical", items: medicalItems });
 
   const agreesItems: TabItem[] = [];
@@ -544,4 +544,111 @@ export function getSurrogateTabs(profile: SwipeDeckProfile, matchedPrefs: Matche
   }
 
   return tabs;
+}
+
+export interface SidebarRow {
+  label: string;
+  value: string;
+  icon?: LucideIcon;
+}
+
+export interface SidebarSection {
+  title: string;
+  rows: SidebarRow[];
+}
+
+function boolStr(v: boolean | null | undefined): string {
+  return v == null ? "-" : v ? "Yes" : "No";
+}
+
+function fmtCurrency(v: number | null | undefined): string {
+  if (v == null) return "-";
+  return `$${Number(v).toLocaleString()}`;
+}
+
+function isNonEmptyStr(v: string | null | undefined): v is string {
+  return typeof v === "string" && v.trim() !== "";
+}
+
+export function buildSidebarSections(profile: SwipeDeckProfile): SidebarSection[] {
+  const sections: SidebarSection[] = [];
+  const isSurrogate = profile.providerType === "surrogate";
+
+  // Overview
+  const overview: SidebarRow[] = [];
+  if (profile.age != null) overview.push({ label: "Age", value: String(profile.age) });
+  if (isNonEmptyStr(profile.location)) overview.push({ label: "Location", value: profile.location });
+  if (!isSurrogate && isNonEmptyStr(profile.eggType)) overview.push({ label: "Egg Type", value: profile.eggType });
+  if (isSurrogate && profile.bmi != null) overview.push({ label: "BMI", value: String(Math.round(Number(profile.bmi))) });
+  if (isSurrogate && isNonEmptyStr(profile.relationshipStatus)) overview.push({ label: "Relationship Status", value: profile.relationshipStatus });
+  if (isSurrogate && isNonEmptyStr(profile.occupation)) overview.push({ label: "Occupation", value: profile.occupation });
+  if (overview.length > 0) sections.push({ title: "Overview", rows: overview });
+
+  // Physical Traits (donors only)
+  if (!isSurrogate) {
+    const physical: SidebarRow[] = [];
+    if (isNonEmptyStr(profile.height)) physical.push({ label: "Height", value: profile.height });
+    if (isNonEmptyStr(profile.weight)) physical.push({ label: "Weight", value: profile.weight });
+    if (isNonEmptyStr(profile.hairColor)) physical.push({ label: "Hair Color", value: profile.hairColor });
+    if (isNonEmptyStr(profile.eyeColor)) physical.push({ label: "Eye Color", value: profile.eyeColor });
+    if (physical.length > 0) sections.push({ title: "Physical Traits", rows: physical });
+  }
+
+  // Background & Education
+  const bg: SidebarRow[] = [];
+  if (isNonEmptyStr(profile.race)) bg.push({ label: "Race", value: profile.race });
+  if (isNonEmptyStr(profile.ethnicity)) bg.push({ label: "Ethnicity", value: profile.ethnicity });
+  if (isNonEmptyStr(profile.education)) bg.push({ label: "Education", value: profile.education });
+  if (isNonEmptyStr(profile.religion)) bg.push({ label: "Religion", value: profile.religion });
+  if (bg.length > 0) sections.push({ title: "Background & Education", rows: bg });
+
+  // Journey Costs
+  const costs: SidebarRow[] = [];
+  if (isSurrogate) {
+    if (profile.baseCompensation != null) costs.push({ label: "Base Compensation", value: fmtCurrency(profile.baseCompensation) });
+    if (profile.totalCostMin != null && profile.totalCostMax != null && profile.totalCostMin !== profile.totalCostMax) {
+      costs.push({ label: "Total Cost", value: `${fmtCurrency(profile.totalCostMin)} - ${fmtCurrency(profile.totalCostMax)}` });
+    } else if (profile.totalCostMin != null) {
+      costs.push({ label: "Total Cost", value: fmtCurrency(profile.totalCostMin) });
+    }
+  } else {
+    if (profile.numberOfEggs != null && profile.numberOfEggs > 0) costs.push({ label: "Available Eggs", value: String(profile.numberOfEggs) });
+    if (profile.eggLotCost != null) costs.push({ label: "Egg Lot Cost", value: fmtCurrency(profile.eggLotCost) });
+    if (profile.donorCompensation != null) costs.push({ label: "Compensation", value: fmtCurrency(profile.donorCompensation) });
+    if (profile.totalCost != null) costs.push({ label: "Total Journey Cost", value: fmtCurrency(profile.totalCost) });
+  }
+  if (costs.length > 0) sections.push({ title: "Journey Costs", rows: costs });
+
+  // Medical (surrogates only)
+  if (isSurrogate) {
+    const medical: SidebarRow[] = [];
+    if (profile.liveBirths != null) medical.push({ label: "Live Births", value: String(profile.liveBirths) });
+    if (profile.cSections != null) medical.push({ label: "C-Sections", value: String(profile.cSections) });
+    if (profile.miscarriages != null) medical.push({ label: "Miscarriages", value: String(profile.miscarriages) });
+    medical.push({ label: "Abortions", value: "0" });
+    if (profile.covidVaccinated != null) medical.push({ label: "COVID Vaccinated", value: boolStr(profile.covidVaccinated) });
+    if (profile.lastDeliveryYear != null) medical.push({ label: "Last Delivery", value: String(profile.lastDeliveryYear) });
+    if (medical.length > 0) sections.push({ title: "Medical", rows: medical });
+  }
+
+  // Agrees To (surrogates only)
+  if (isSurrogate) {
+    const agrees: SidebarRow[] = [];
+    if (profile.agreesToTwins != null) agrees.push({ label: "Carry Twins", value: boolStr(profile.agreesToTwins) });
+    if (profile.agreesToReduction != null) agrees.push({ label: "Abortion", value: boolStr(profile.agreesToReduction) });
+    if (profile.agreesToReduction != null) agrees.push({ label: "Selective Reduction", value: boolStr(profile.agreesToReduction) });
+    if (profile.openToSameSexCouple != null) agrees.push({ label: "Same Sex Couple", value: boolStr(profile.openToSameSexCouple) });
+    if (profile.agreesToInternationalParents != null) agrees.push({ label: "International Parents", value: boolStr(profile.agreesToInternationalParents) });
+    if (agrees.length > 0) sections.push({ title: "Agrees To", rows: agrees });
+  }
+
+  // Personal Interests (donors only)
+  if (!isSurrogate) {
+    const interests: SidebarRow[] = [];
+    if (isNonEmptyStr(profile.occupation)) interests.push({ label: "Occupation", value: profile.occupation });
+    (profile.interests || []).filter(i => isNonEmptyStr(i)).forEach(i => interests.push({ label: "Interest", value: i }));
+    if (interests.length > 0) sections.push({ title: "Personal Interests", rows: interests });
+  }
+
+  return sections;
 }

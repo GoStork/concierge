@@ -116,11 +116,12 @@ export class CostsController {
     contentType: string,
     providerType: string,
     filename: string,
+    subType?: string,
   ) {
     (async () => {
       try {
         this.logger.log(`Background AI parse started for sheet ${sheetId}`);
-        const items = await this.costsAiService.parseFile(buffer, contentType, providerType, filename);
+        const items = await this.costsAiService.parseFile(buffer, contentType, providerType, filename, subType);
         await this.costsService.saveParseResults(sheetId, items);
       } catch (err: any) {
         this.logger.error(`Background AI parse failed for sheet ${sheetId}: ${err.message}`);
@@ -214,7 +215,7 @@ export class CostsController {
       );
 
       if (providerType) {
-        this.backgroundParseAndSave(sheet.id, buffer, contentType, providerType, parsed.filename);
+        this.backgroundParseAndSave(sheet.id, buffer, contentType, providerType, parsed.filename, subType);
       }
 
       return res.status(201).json(sheet);

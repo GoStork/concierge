@@ -26,6 +26,7 @@ model Provider {
   agreementTemplateUrl         String?
   agreementTemplateOriginalName String?
   pandaDocTemplateId           String?
+  pandaDocRoles                String?  // JSON array of role names in signing order, e.g. ["Client","Client2","Agency"]
   // IVF Clinic matching requirements
   ivfTwinsAllowed              Boolean                 @default(false)
   ivfTransferFromOtherClinics  Boolean                 @default(false)
@@ -77,6 +78,7 @@ model Provider {
   knowledgeChunks      KnowledgeChunk[]
   silentQueries        SilentQuery[]
   chatSessions         AiChatSession[]
+  syncLogs             SyncLog[]
   profileEmbedding     Unsupported("vector(1536)")?
 }
 
@@ -542,6 +544,7 @@ model EggDonor {
   hiddenFromSearch     Boolean   @default(false)
   isPremium            Boolean   @default(false)
   isExperienced        Boolean   @default(false)
+  lastFullSyncAt       DateTime?
   profileEmbedding     Unsupported("vector(1536)")?
   provider             Provider  @relation(fields: [providerId], references: [id])
 
@@ -605,6 +608,7 @@ model Surrogate {
   hiddenFromSearch             Boolean   @default(false)
   isPremium                    Boolean   @default(false)
   isExperienced                Boolean   @default(false)
+  lastFullSyncAt               DateTime?
   profileEmbedding             Unsupported("vector(1536)")?
   provider                     Provider  @relation(fields: [providerId], references: [id])
 
@@ -660,6 +664,7 @@ model SpermDonor {
   hiddenFromSearch     Boolean   @default(false)
   isPremium            Boolean   @default(false)
   isExperienced        Boolean   @default(false)
+  lastFullSyncAt       DateTime?
   profileEmbedding     Unsupported("vector(1536)")?
   provider             Provider  @relation(fields: [providerId], references: [id])
 
@@ -678,6 +683,29 @@ model SpermDonorSyncConfig {
   lastSyncEndedAt   DateTime?
   lastSyncStartedAt DateTime?
   provider          Provider  @relation(fields: [providerId], references: [id])
+}
+
+model SyncLog {
+  id            String    @id @default(uuid())
+  providerId    String
+  type          String    // "egg-donor" | "surrogate" | "sperm-donor"
+  jobId         String
+  source        String    // "nightly" | "manual" | "auto-resume"
+  status        String    // "completed" | "partial" | "failed"
+  startedAt     DateTime
+  completedAt   DateTime?
+  total         Int       @default(0)
+  processed     Int       @default(0)
+  succeeded     Int       @default(0)
+  failed        Int       @default(0)
+  skipped       Int       @default(0)
+  newProfiles   Int       @default(0)
+  staleMarked   Int       @default(0)
+  errors        Json?
+  provider      Provider  @relation(fields: [providerId], references: [id])
+
+  @@index([providerId])
+  @@index([startedAt])
 }
 
 model AvailabilityOverride {
@@ -1008,8 +1036,12 @@ model IntendedParentProfile {
   surrogateExperience  String?
 
   // Donor preferences (open-ended from AI conversation)
-  donorPreferences     String?
-  spermDonorType       String?
+  donorPreferences        String?
+  spermDonorType          String?
+  spermDonorPreferences   String?
+
+  // Surrogate family type
+  sameSexCouple        Boolean?
 
   // IVF history
   isFirstIvf           Boolean?

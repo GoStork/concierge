@@ -89,6 +89,9 @@ export class ScrapersController {
       ];
 
       const staleThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      // Don't restart a sync that started very recently - it may still be running
+      // from a just-killed nightly job (prevents duplicate syncs on server restart)
+      const tooRecentThreshold = new Date(Date.now() - 2 * 60 * 60 * 1000);
 
       for (const { table, type } of syncTypes) {
         const interrupted = await (this.prisma[table] as any).findMany({
@@ -110,8 +113,14 @@ export class ScrapersController {
             });
             continue;
           }
+          // If the sync started very recently (< 2 hours ago), it likely crashed mid-run from a
+          // server restart during an active nightly sync. Skip and let the nightly re-trigger it.
+          if (config.lastSyncStartedAt > tooRecentThreshold) {
+            console.log(`[Donor Sync] Skipping auto-resume for "${config.provider?.name || config.providerId}" - started only ${Math.round((Date.now() - config.lastSyncStartedAt.getTime()) / 60000)}min ago, may still be in-flight`);
+            continue;
+          }
           console.log(`[Donor Sync] Auto-resuming ${type} sync for "${config.provider?.name || config.providerId}"`);
-          startSync(this.prisma, config.providerId, type, undefined, this.storageService).catch((err: any) => {
+          startSync(this.prisma, config.providerId, type, undefined, this.storageService, "auto-resume").catch((err: any) => {
             console.error(`[Donor Sync] Failed to auto-resume ${type} sync for ${config.providerId}:`, err.message);
           });
         }
@@ -924,5 +933,41 @@ export class ScrapersController {
         err.status || HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  @Get("sync-logs")
+  @ApiOperation({ summary: "Get recent sync logs for all providers (admin only)" })
+  async getSyncLogs(
+    @Req() req: any,
+    @Query("limit") limitStr?: string,
+  ) {
+    requireAdmin(req);
+    const limit = Math.min(parseInt(limitStr || "100", 10) || 100, 500);
+    return this.prisma.syncLog.findMany({
+      orderBy: { startedAt: "desc" },
+      take: limit,
+      include: { provider: { select: { name: true } } },
+    });
+  }
+
+  @Get("sync-logs/:providerId/:type")
+  @ApiOperation({ summary: "Get sync log history for a specific provider and type (admin only)" })
+  async getSyncLogsForProvider(
+    @Req() req: any,
+    @Param("providerId") providerId: string,
+    @Param("type") type: string,
+    @Query("limit") limitStr?: string,
+  ) {
+    requireAdmin(req);
+    const validTypes = ["egg-donor", "surrogate", "sperm-donor"];
+    if (!validTypes.includes(type)) {
+      throw new BadRequestException("Invalid sync type");
+    }
+    const limit = Math.min(parseInt(limitStr || "20", 10) || 20, 100);
+    return this.prisma.syncLog.findMany({
+      where: { providerId, type },
+      orderBy: { startedAt: "desc" },
+      take: limit,
+    });
   }
 }

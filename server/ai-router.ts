@@ -464,7 +464,7 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
     const after = req.query.after as string | undefined;
     const session = await prisma.aiChatSession.findUnique({
       where: { id: sessionId },
-      select: { userId: true, providerId: true, title: true, provider: { select: { name: true } } },
+      select: { userId: true, providerId: true, title: true, status: true, providerJoinedAt: true, subjectProfileId: true, subjectType: true, profilePhotoUrl: true, provider: { select: { name: true, logoUrl: true } } },
     });
     if (!session) return res.status(403).json({ message: "Forbidden" });
     const isOwner = session.userId === user.id;
@@ -512,7 +512,17 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       for (const m of undeliveredFromOthers) (m as any).deliveredAt = new Date();
     }
 
-    res.json({ messages: filteredMessages, sessionTitle: cleanTitle(session.title) || null, providerName: session.provider?.name || null });
+    res.json({
+      messages: filteredMessages,
+      sessionTitle: cleanTitle(session.title) || null,
+      providerName: session.provider?.name || null,
+      providerLogo: session.provider?.logoUrl || null,
+      providerJoined: !!session.providerJoinedAt || session.status === "CONSULTATION_BOOKED" || session.status === "PROVIDER_JOINED",
+      subjectProfileId: session.subjectProfileId || null,
+      subjectType: session.subjectType || null,
+      profilePhotoUrl: session.profilePhotoUrl || null,
+      sessionProviderId: session.providerId || null,
+    });
   } catch (e: any) {
     res.status(500).json({ message: e.message });
   }
@@ -2464,6 +2474,123 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }
     }
 
+    // Server-side pattern extraction: save profile fields from parent message
+    // regardless of whether the AI emitted a [[SAVE:]] tag
+    if (userRecord && req.body.message && typeof req.body.message === "string") {
+      try {
+        const msg = req.body.message.toLowerCase().trim();
+        const autoUserData: any = {};
+        const autoProfileData: any = {};
+
+        // Relationship status
+        if (!userRecord.relationshipStatus) {
+          if (/\bi('m| am) single\b|^single$|\bsolo\b|\bon my own\b|\bjust me\b/.test(msg)) {
+            autoUserData.relationshipStatus = "Single";
+          } else if (/\bi('m| am) married\b|\bmy (husband|wife)\b|\bwe('re| are) married\b/.test(msg)) {
+            autoUserData.relationshipStatus = "Married";
+          } else if (/\bwith (a |my )?partner\b|\bi have a partner\b|\bwe('re| are) (a couple|partnered)\b/.test(msg)) {
+            autoUserData.relationshipStatus = "Partnered";
+          }
+        }
+
+        // Sexual orientation
+        if (!userRecord.sexualOrientation) {
+          if (/\bi('m| am) gay\b|\btwo dads\b|\bgay (couple|man|male)\b/.test(msg)) {
+            autoUserData.sexualOrientation = "Gay";
+          } else if (/\bi('m| am) lesbian\b|\btwo moms\b|\btwo mothers\b|\blesbian (couple|woman)\b/.test(msg)) {
+            autoUserData.sexualOrientation = "Lesbian";
+          } else if (/\bi('m| am) (straight|heterosexual)\b/.test(msg)) {
+            autoUserData.sexualOrientation = "Straight";
+          } else if (/\bi('m| am) bi(sexual)?\b/.test(msg)) {
+            autoUserData.sexualOrientation = "Bi";
+          }
+        }
+
+        // Gender
+        if (!userRecord.gender) {
+          if (/\bi('m| am) (a )?wom[ae]n\b|\bi('m| am) female\b|\bas a woman\b|\bsingle (mom|mother|woman)\b/.test(msg)) {
+            autoUserData.gender = "I'm a woman";
+          } else if (/\bi('m| am) (a )?m[ae]n\b|\bi('m| am) male\b|\bas a man\b|\bsingle (dad|father|man)\b|\btwo dads\b/.test(msg)) {
+            autoUserData.gender = "I'm a man";
+          }
+        }
+
+        // Same-sex couple
+        const extractedProfile = userRecord.parentAccountId
+          ? await prisma.intendedParentProfile.findUnique({ where: { parentAccountId: userRecord.parentAccountId } })
+          : null;
+        if (extractedProfile?.sameSexCouple == null) {
+          if (/\btwo dads\b|\btwo moms\b|\btwo mothers\b|\bsame.sex couple\b/.test(msg)) {
+            autoProfileData.sameSexCouple = true;
+          } else if (/\bmy (husband|wife)\b|\bopposite.sex\b/.test(msg)) {
+            autoProfileData.sameSexCouple = false;
+          }
+        }
+
+        // Has embryos
+        if (extractedProfile?.hasEmbryos == null) {
+          const embryoCountMatch = msg.match(/\b(\d+)\s*(frozen\s+)?embryos?\b/);
+          if (embryoCountMatch) {
+            autoProfileData.hasEmbryos = true;
+            autoProfileData.embryoCount = parseInt(embryoCountMatch[1], 10);
+          } else if (/\bhave (frozen )?embryos?\b|\bwe have embryos?\b/.test(msg)) {
+            autoProfileData.hasEmbryos = true;
+          } else if (/\bno (frozen )?embryos?\b|\bdon't have embryos?\b/.test(msg)) {
+            autoProfileData.hasEmbryos = false;
+          }
+        }
+
+        // Needs
+        if (extractedProfile?.needsClinic == null) {
+          if (/\b(need|want|looking for|find) (a |an )?(fertility )?clinic\b/.test(msg)) {
+            autoProfileData.needsClinic = true;
+          } else if (/\balready have (a |an )?(fertility )?clinic\b|\bi have a clinic\b/.test(msg)) {
+            autoProfileData.needsClinic = false;
+          }
+        }
+        if (extractedProfile?.needsSurrogate == null) {
+          if (/\b(need|want|looking for|find) (a |an )?surrogate\b/.test(msg)) {
+            autoProfileData.needsSurrogate = true;
+          } else if (/\balready have (a |an )?surrogate\b/.test(msg)) {
+            autoProfileData.needsSurrogate = false;
+          }
+        }
+        if (extractedProfile?.needsEggDonor == null) {
+          if (/\b(need|want|looking for|find) (a |an )?egg donor\b/.test(msg)) {
+            autoProfileData.needsEggDonor = true;
+          } else if (/\balready have (a |an )?egg donor\b/.test(msg)) {
+            autoProfileData.needsEggDonor = false;
+          }
+        }
+
+        // Age -> birthYear -> dateOfBirth
+        if (!userRecord.dateOfBirth) {
+          const ageMatch = msg.match(/\bi('m| am) (\d{2})\b|\bage[d]? (\d{2})\b|\b(\d{2}) years? old\b/);
+          if (ageMatch) {
+            const age = parseInt(ageMatch[2] || ageMatch[3] || ageMatch[4], 10);
+            if (age >= 18 && age <= 80) {
+              autoUserData.dateOfBirth = new Date(new Date().getFullYear() - age, 0, 1);
+            }
+          }
+        }
+
+        // Persist what we found
+        if (Object.keys(autoUserData).length > 0) {
+          await prisma.user.update({ where: { id: userId }, data: autoUserData });
+          console.log(`[AUTO-EXTRACT] Saved user fields for ${userId}:`, autoUserData);
+        }
+        if (Object.keys(autoProfileData).length > 0 && userRecord.parentAccountId) {
+          const existingAutoProfile = extractedProfile || await prisma.intendedParentProfile.findUnique({ where: { parentAccountId: userRecord.parentAccountId } });
+          if (existingAutoProfile) {
+            await prisma.intendedParentProfile.update({ where: { parentAccountId: userRecord.parentAccountId }, data: autoProfileData });
+          }
+          console.log(`[AUTO-EXTRACT] Saved profile fields for account ${userRecord.parentAccountId}:`, autoProfileData);
+        }
+      } catch (e) {
+        console.error("[AUTO-EXTRACT] Error:", e);
+      }
+    }
+
     const saveMatch = finalContent.match(/\[\[SAVE:(.*?)\]\]/);
     if (saveMatch) {
       try {
@@ -2476,12 +2603,14 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           "donorEyeColor", "donorHairColor", "donorHeight", "donorEducation",
           "surrogateBudget", "surrogateMedPrefs",
           "needsSurrogate", "needsEggDonor", "needsClinic",
+          "currentClinicName", "currentAgencyName", "currentAttorneyName",
           "surrogateTwins", "surrogateCountries", "surrogateTermination",
           "donorEthnicity",
           "surrogateAgeRange", "surrogateExperience",
-          "donorPreferences", "spermDonorType", "isFirstIvf",
+          "donorPreferences", "spermDonorType", "spermDonorPreferences", "isFirstIvf",
+          "sameSexCouple",
         ];
-        const booleanFields = ["hasEmbryos", "embryosTested", "needsSurrogate", "needsEggDonor", "needsClinic", "isFirstIvf"];
+        const booleanFields = ["hasEmbryos", "embryosTested", "needsSurrogate", "needsEggDonor", "needsClinic", "isFirstIvf", "sameSexCouple"];
         // Fields saved to User model
         const allowedUserFields = ["gender", "sexualOrientation", "relationshipStatus"];
         const profileData: any = {};
@@ -3027,7 +3156,12 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     let mcMatch;
     while ((mcMatch = matchCardRegex.exec(finalContent)) !== null) {
       try {
-        matchCards.push(JSON.parse(mcMatch[1]));
+        const parsed = JSON.parse(mcMatch[1]);
+        if (parsed && parsed.type && parsed.providerId) {
+          matchCards.push(parsed);
+        } else {
+          console.warn("[ai-router] MATCH_CARD missing required fields (type/providerId), skipping:", parsed);
+        }
       } catch (e) {
         console.error("Failed to parse MATCH_CARD:", e);
       }

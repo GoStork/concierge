@@ -60,10 +60,46 @@ function AccountTab() {
   const [editGender, setEditGender] = useState("");
   const [editOrientation, setEditOrientation] = useState("");
   const [editRelationship, setEditRelationship] = useState("");
-  const [editDateOfBirth, setEditDateOfBirth] = useState("");
+  const [editAge, setEditAge] = useState("");
   const [editPartnerName, setEditPartnerName] = useState("");
   const [editPartnerAge, setEditPartnerAge] = useState("");
   const [editServices, setEditServices] = useState<string[]>([]);
+
+  // Journey fields
+  const [editJourneyStage, setEditJourneyStage] = useState("");
+  const [editIsFirstIvf, setEditIsFirstIvf] = useState("");
+  // Biological baseline
+  const [editEggSource, setEditEggSource] = useState("");
+  const [editSpermSource, setEditSpermSource] = useState("");
+  const [editCarrier, setEditCarrier] = useState("");
+  const [editHasEmbryos, setEditHasEmbryos] = useState("");
+  const [editEmbryoCount, setEditEmbryoCount] = useState("");
+  const [editEmbryosTested, setEditEmbryosTested] = useState("");
+  // Clinic preferences
+  const [editNeedsClinic, setEditNeedsClinic] = useState("");
+  const [editCurrentClinicName, setEditCurrentClinicName] = useState("");
+  const [editClinicPriority, setEditClinicPriority] = useState("");
+  // Surrogate preferences
+  const [editSurrogateCountries, setEditSurrogateCountries] = useState("");
+  const [editSurrogateTermination, setEditSurrogateTermination] = useState("");
+  const [editSurrogateTwins, setEditSurrogateTwins] = useState("");
+  const [editSurrogateAgeRange, setEditSurrogateAgeRange] = useState("");
+  const [editSurrogateBudget, setEditSurrogateBudget] = useState("");
+  const [editSurrogateExperience, setEditSurrogateExperience] = useState("");
+  const [editSurrogateMedPrefs, setEditSurrogateMedPrefs] = useState("");
+  const [editSameSexCouple, setEditSameSexCouple] = useState("");
+  // Donor preferences
+  const [editDonorPreferences, setEditDonorPreferences] = useState("");
+  const [editDonorEyeColor, setEditDonorEyeColor] = useState("");
+  const [editDonorHairColor, setEditDonorHairColor] = useState("");
+  const [editDonorHeight, setEditDonorHeight] = useState("");
+  const [editDonorEducation, setEditDonorEducation] = useState("");
+  const [editDonorEthnicity, setEditDonorEthnicity] = useState("");
+  const [editSpermDonorType, setEditSpermDonorType] = useState("");
+  const [editSpermDonorPreferences, setEditSpermDonorPreferences] = useState("");
+  // Current providers
+  const [editCurrentAgencyName, setEditCurrentAgencyName] = useState("");
+  const [editCurrentAttorneyName, setEditCurrentAttorneyName] = useState("");
 
   const parentProfileQuery = useQuery<any>({
     queryKey: ["/api/parent-profile"],
@@ -103,10 +139,46 @@ function AccountTab() {
     setEditGender((user as any).gender || "");
     setEditOrientation((user as any).sexualOrientation || "");
     setEditRelationship((user as any).relationshipStatus || "");
-    setEditDateOfBirth((user as any).dateOfBirth ? new Date((user as any).dateOfBirth).toISOString().split("T")[0] : "");
+    const dob = (user as any).dateOfBirth;
+    setEditAge(dob ? String(new Date().getFullYear() - new Date(dob).getFullYear()) : "");
     setEditPartnerName((user as any).partnerFirstName || "");
     setEditPartnerAge((user as any).partnerAge ? String((user as any).partnerAge) : "");
     setEditServices(parentProfileQuery.data?.interestedServices || []);
+    // Journey
+    setEditJourneyStage(parentProfileQuery.data?.journeyStage || "");
+    setEditIsFirstIvf(parentProfileQuery.data?.isFirstIvf != null ? String(parentProfileQuery.data.isFirstIvf) : "");
+    // Biological
+    setEditEggSource(parentProfileQuery.data?.eggSource || "");
+    setEditSpermSource(parentProfileQuery.data?.spermSource || "");
+    setEditCarrier(parentProfileQuery.data?.carrier || "");
+    setEditHasEmbryos(parentProfileQuery.data?.hasEmbryos != null ? String(parentProfileQuery.data.hasEmbryos) : "");
+    setEditEmbryoCount(parentProfileQuery.data?.embryoCount != null ? String(parentProfileQuery.data.embryoCount) : "");
+    setEditEmbryosTested(parentProfileQuery.data?.embryosTested != null ? String(parentProfileQuery.data.embryosTested) : "");
+    // Clinic
+    setEditNeedsClinic(parentProfileQuery.data?.needsClinic != null ? String(parentProfileQuery.data.needsClinic) : "");
+    setEditCurrentClinicName(parentProfileQuery.data?.currentClinicName || "");
+    setEditClinicPriority(parentProfileQuery.data?.clinicPriority || "");
+    // Surrogate
+    setEditSurrogateCountries(parentProfileQuery.data?.surrogateCountries || "");
+    setEditSurrogateTermination(parentProfileQuery.data?.surrogateTermination || "");
+    setEditSurrogateTwins(parentProfileQuery.data?.surrogateTwins || "");
+    setEditSurrogateAgeRange(parentProfileQuery.data?.surrogateAgeRange || "");
+    setEditSurrogateBudget(parentProfileQuery.data?.surrogateBudget || "");
+    setEditSurrogateExperience(parentProfileQuery.data?.surrogateExperience || "");
+    setEditSurrogateMedPrefs(parentProfileQuery.data?.surrogateMedPrefs || "");
+    setEditSameSexCouple(parentProfileQuery.data?.sameSexCouple != null ? String(parentProfileQuery.data.sameSexCouple) : "");
+    // Donor
+    setEditDonorPreferences(parentProfileQuery.data?.donorPreferences || "");
+    setEditDonorEyeColor(parentProfileQuery.data?.donorEyeColor || "");
+    setEditDonorHairColor(parentProfileQuery.data?.donorHairColor || "");
+    setEditDonorHeight(parentProfileQuery.data?.donorHeight || "");
+    setEditDonorEducation(parentProfileQuery.data?.donorEducation || "");
+    setEditDonorEthnicity(parentProfileQuery.data?.donorEthnicity || "");
+    setEditSpermDonorType(parentProfileQuery.data?.spermDonorType || "");
+    setEditSpermDonorPreferences(parentProfileQuery.data?.spermDonorPreferences || "");
+    // Providers
+    setEditCurrentAgencyName(parentProfileQuery.data?.currentAgencyName || "");
+    setEditCurrentAttorneyName(parentProfileQuery.data?.currentAttorneyName || "");
     setEditing(true);
   }
 
@@ -143,10 +215,45 @@ function AccountTab() {
           payload.gender = editGender || null;
           payload.sexualOrientation = editOrientation || null;
           payload.relationshipStatus = editRelationship || null;
-          payload.dateOfBirth = editDateOfBirth || null;
+          payload.dateOfBirth = editAge ? new Date(new Date().getFullYear() - Number(editAge), 0, 1).toISOString() : null;
           payload.partnerFirstName = editPartnerName || null;
           payload.partnerAge = editPartnerAge ? Number(editPartnerAge) : null;
           payload.interestedServices = editServices;
+          // Journey
+          payload.journeyStage = editJourneyStage || null;
+          payload.isFirstIvf = editIsFirstIvf !== "" ? editIsFirstIvf === "true" : null;
+          // Biological
+          payload.eggSource = editEggSource || null;
+          payload.spermSource = editSpermSource || null;
+          payload.carrier = editCarrier || null;
+          payload.hasEmbryos = editHasEmbryos !== "" ? editHasEmbryos === "true" : null;
+          payload.embryoCount = editEmbryoCount !== "" ? Number(editEmbryoCount) : null;
+          payload.embryosTested = editEmbryosTested !== "" ? editEmbryosTested === "true" : null;
+          // Clinic
+          payload.needsClinic = editNeedsClinic !== "" ? editNeedsClinic === "true" : null;
+          payload.currentClinicName = editCurrentClinicName || null;
+          payload.clinicPriority = editClinicPriority || null;
+          // Surrogate
+          payload.surrogateCountries = editSurrogateCountries || null;
+          payload.surrogateTermination = editSurrogateTermination || null;
+          payload.surrogateTwins = editSurrogateTwins || null;
+          payload.surrogateAgeRange = editSurrogateAgeRange || null;
+          payload.surrogateBudget = editSurrogateBudget || null;
+          payload.surrogateExperience = editSurrogateExperience || null;
+          payload.surrogateMedPrefs = editSurrogateMedPrefs || null;
+          payload.sameSexCouple = editSameSexCouple !== "" ? editSameSexCouple === "true" : null;
+          // Donor
+          payload.donorPreferences = editDonorPreferences || null;
+          payload.donorEyeColor = editDonorEyeColor || null;
+          payload.donorHairColor = editDonorHairColor || null;
+          payload.donorHeight = editDonorHeight || null;
+          payload.donorEducation = editDonorEducation || null;
+          payload.donorEthnicity = editDonorEthnicity || null;
+          payload.spermDonorType = editSpermDonorType || null;
+          payload.spermDonorPreferences = editSpermDonorPreferences || null;
+          // Providers
+          payload.currentAgencyName = editCurrentAgencyName || null;
+          payload.currentAttorneyName = editCurrentAttorneyName || null;
         }
       }
       if (editPassword && editPassword.length >= 6) {
@@ -216,7 +323,7 @@ function AccountTab() {
     if (isInitializingRef.current) { isInitializingRef.current = false; setIsDirty(false); return; }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, editName, editMobile, editPassword, confirmPassword, editLocation, editGender, editOrientation, editRelationship, editDateOfBirth, editPartnerName, editPartnerAge, editServices]);
+  }, [editing, editName, editMobile, editPassword, confirmPassword, editLocation, editGender, editOrientation, editRelationship, editAge, editPartnerName, editPartnerAge, editServices, editJourneyStage, editIsFirstIvf, editEggSource, editSpermSource, editCarrier, editHasEmbryos, editEmbryoCount, editEmbryosTested, editNeedsClinic, editCurrentClinicName, editClinicPriority, editSurrogateCountries, editSurrogateTermination, editSurrogateTwins, editSurrogateAgeRange, editSurrogateBudget, editSurrogateExperience, editSurrogateMedPrefs, editSameSexCouple, editDonorPreferences, editDonorEyeColor, editDonorHairColor, editDonorHeight, editDonorEducation, editDonorEthnicity, editSpermDonorType, editSpermDonorPreferences, editCurrentAgencyName, editCurrentAttorneyName]);
 
   return (
     <>
@@ -384,13 +491,16 @@ function AccountTab() {
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="edit-dob">Date of Birth</Label>
+                        <Label htmlFor="edit-age">Your Age</Label>
                         <Input
-                          id="edit-dob"
-                          type="date"
-                          value={editDateOfBirth}
-                          onChange={e => setEditDateOfBirth(e.target.value)}
-                          data-testid="input-edit-dob"
+                          id="edit-age"
+                          type="number"
+                          min={18}
+                          max={80}
+                          value={editAge}
+                          onChange={e => setEditAge(e.target.value)}
+                          placeholder="e.g. 34"
+                          data-testid="input-edit-age"
                         />
                       </div>
                       {(editRelationship === "Partnered" || editRelationship === "Married") && (
@@ -547,7 +657,7 @@ function AccountTab() {
                     <>
                       <div className="space-y-1">
                         <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Gender Identity</label>
-                        <p className="text-sm font-ui" data-testid="text-account-gender">{(user as any).gender?.replace("I'm ", "") || '-'}</p>
+                        <p className="text-sm font-ui" data-testid="text-account-gender">{{ "I'm a woman": "Woman", "I'm a man": "Man", "I'm non-binary": "Non-binary" }[(user as any).gender as string] || (user as any).gender || '-'}</p>
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Sexual Orientation</label>
@@ -558,9 +668,9 @@ function AccountTab() {
                         <p className="text-sm font-ui" data-testid="text-account-relationship">{(user as any).relationshipStatus || '-'}</p>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Date of Birth</label>
-                        <p className="text-sm font-ui" data-testid="text-account-dob">
-                          {(user as any).dateOfBirth ? new Date((user as any).dateOfBirth).toLocaleDateString() : '-'}
+                        <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Age</label>
+                        <p className="text-sm font-ui" data-testid="text-account-age">
+                          {(user as any).dateOfBirth ? String(new Date().getFullYear() - new Date((user as any).dateOfBirth).getFullYear()) : '-'}
                         </p>
                       </div>
                       {((user as any).relationshipStatus === "Partnered" || (user as any).relationshipStatus === "Married") && (
@@ -617,7 +727,200 @@ function AccountTab() {
         </div>
       </div>
     </Card>
+
+    {isParent && (
+      <>
+        {/* Journey */}
+        <ProfileSection
+          title="Journey"
+          editing={editing}
+          data={parentProfileQuery.data}
+          fields={[
+            { label: "Stage", key: "journeyStage", value: editJourneyStage, setter: setEditJourneyStage, type: "text" },
+            { label: "First IVF", key: "isFirstIvf", value: editIsFirstIvf, setter: setEditIsFirstIvf, type: "yesno",
+              display: (v: any) => v === true || v === "true" ? "Yes" : v === false || v === "false" ? "No" : null },
+          ]}
+        />
+
+        {/* Biological Baseline */}
+        <ProfileSection
+          title="Biological Baseline"
+          editing={editing}
+          data={parentProfileQuery.data}
+          fields={[
+            { label: "Egg Source", key: "eggSource", value: editEggSource, setter: setEditEggSource, type: "text" },
+            { label: "Sperm Source", key: "spermSource", value: editSpermSource, setter: setEditSpermSource, type: "text" },
+            { label: "Carrier", key: "carrier", value: editCarrier, setter: setEditCarrier, type: "text" },
+            { label: "Has Embryos", key: "hasEmbryos", value: editHasEmbryos, setter: setEditHasEmbryos, type: "yesno",
+              display: (v: any, d?: any) => {
+                if (v !== true && v !== false && v !== "true" && v !== "false") return null;
+                const hasEmbryos = v === true || v === "true";
+                if (!hasEmbryos) return "No";
+                const count = d?.embryoCount;
+                const tested = d?.embryosTested;
+                return `Yes${count ? ` - ${count}` : ""}${tested === true || tested === "true" ? " (PGT-A tested)" : ""}`;
+              }
+            },
+            { label: "Embryo Count", key: "embryoCount", value: editEmbryoCount, setter: setEditEmbryoCount, type: "number",
+              showIf: editing ? (editHasEmbryos === "true" || editHasEmbryos === "") : false },
+            { label: "Embryos Tested (PGT-A)", key: "embryosTested", value: editEmbryosTested, setter: setEditEmbryosTested, type: "yesno",
+              showIf: editing ? (editHasEmbryos === "true" || editHasEmbryos === "") : false,
+              display: (v: any) => v === true || v === "true" ? "Yes" : v === false || v === "false" ? "No" : null },
+          ]}
+        />
+
+        {/* Clinic Preferences */}
+        <ProfileSection
+          title="Clinic Preferences"
+          editing={editing}
+          data={parentProfileQuery.data}
+          fields={[
+            { label: "Needs Clinic", key: "needsClinic", value: editNeedsClinic, setter: setEditNeedsClinic, type: "yesno",
+              display: (v: any) => v === true || v === "true" ? "Yes - needs a clinic" : v === false || v === "false" ? "No - has one" : null },
+            { label: "Current Clinic", key: "currentClinicName", value: editCurrentClinicName, setter: setEditCurrentClinicName, type: "text" },
+            { label: "Clinic Priority", key: "clinicPriority", value: editClinicPriority, setter: setEditClinicPriority, type: "textarea" },
+          ]}
+        />
+
+        {/* Surrogate Preferences */}
+        <ProfileSection
+          title="Surrogate Preferences"
+          editing={editing}
+          data={parentProfileQuery.data}
+          fields={[
+            { label: "Same-Sex Couple", key: "sameSexCouple", value: editSameSexCouple, setter: setEditSameSexCouple, type: "yesno",
+              display: (v: any) => v === true || v === "true" ? "Yes" : v === false || v === "false" ? "No" : null },
+            { label: "Countries Open To", key: "surrogateCountries", value: editSurrogateCountries, setter: setEditSurrogateCountries, type: "text" },
+            { label: "Termination Preference", key: "surrogateTermination", value: editSurrogateTermination, setter: setEditSurrogateTermination, type: "text" },
+            { label: "Twins", key: "surrogateTwins", value: editSurrogateTwins, setter: setEditSurrogateTwins, type: "text" },
+            { label: "Surrogate Age Range", key: "surrogateAgeRange", value: editSurrogateAgeRange, setter: setEditSurrogateAgeRange, type: "text" },
+            { label: "Budget", key: "surrogateBudget", value: editSurrogateBudget, setter: setEditSurrogateBudget, type: "text" },
+            { label: "Experience Preference", key: "surrogateExperience", value: editSurrogateExperience, setter: setEditSurrogateExperience, type: "text" },
+            { label: "Medical Preferences", key: "surrogateMedPrefs", value: editSurrogateMedPrefs, setter: setEditSurrogateMedPrefs, type: "textarea" },
+          ]}
+        />
+
+        {/* Donor Preferences */}
+        <ProfileSection
+          title="Donor Preferences"
+          editing={editing}
+          data={parentProfileQuery.data}
+          fields={[
+            { label: "Preferences Summary", key: "donorPreferences", value: editDonorPreferences, setter: setEditDonorPreferences, type: "textarea" },
+            { label: "Sperm Donor Type", key: "spermDonorType", value: editSpermDonorType, setter: setEditSpermDonorType, type: "text" },
+            { label: "Sperm Donor Preferences", key: "spermDonorPreferences", value: editSpermDonorPreferences, setter: setEditSpermDonorPreferences, type: "textarea" },
+            { label: "Eye Color", key: "donorEyeColor", value: editDonorEyeColor, setter: setEditDonorEyeColor, type: "text" },
+            { label: "Hair Color", key: "donorHairColor", value: editDonorHairColor, setter: setEditDonorHairColor, type: "text" },
+            { label: "Height", key: "donorHeight", value: editDonorHeight, setter: setEditDonorHeight, type: "text" },
+            { label: "Education", key: "donorEducation", value: editDonorEducation, setter: setEditDonorEducation, type: "text" },
+            { label: "Ethnicity", key: "donorEthnicity", value: editDonorEthnicity, setter: setEditDonorEthnicity, type: "text" },
+          ]}
+        />
+
+        {/* Current Providers */}
+        <ProfileSection
+          title="Current Providers"
+          editing={editing}
+          data={parentProfileQuery.data}
+          fields={[
+            { label: "Agency", key: "currentAgencyName", value: editCurrentAgencyName, setter: setEditCurrentAgencyName, type: "text" },
+            { label: "Attorney", key: "currentAttorneyName", value: editCurrentAttorneyName, setter: setEditCurrentAttorneyName, type: "text" },
+          ]}
+        />
+      </>
+    )}
     </>
+  );
+}
+
+type ProfileFieldDef = {
+  label: string;
+  key: string;
+  value: string;
+  setter: (v: string) => void;
+  type: "text" | "textarea" | "number" | "yesno";
+  display?: (v: any, data?: any) => string | null;
+  showIf?: boolean;
+};
+
+function ProfileSection({ title, editing, data, fields }: {
+  title: string;
+  editing: boolean;
+  data: any;
+  fields: ProfileFieldDef[];
+}) {
+  const activeFields = fields.filter(f => f.showIf === undefined || f.showIf !== false);
+  const hasAnyValue = activeFields.some(f => {
+    const raw = data?.[f.key];
+    if (raw == null || raw === "") return false;
+    if (f.display) return f.display(raw, data) != null;
+    return String(raw).trim() !== "";
+  });
+
+  if (!editing && !hasAnyValue) return null;
+
+  return (
+    <Card className="p-8 mt-6">
+      <h2 className="text-lg font-heading mb-6">{title}</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+        {activeFields.map((f) => {
+          const raw = data?.[f.key];
+          if (editing) {
+            if (f.type === "yesno") {
+              return (
+                <div key={f.key} className="space-y-2">
+                  <Label>{f.label}</Label>
+                  <Select value={f.value} onValueChange={f.setter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="true">Yes</SelectItem>
+                      <SelectItem value="false">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              );
+            }
+            if (f.type === "textarea") {
+              return (
+                <div key={f.key} className="space-y-2 md:col-span-2">
+                  <Label>{f.label}</Label>
+                  <textarea
+                    value={f.value}
+                    onChange={e => f.setter(e.target.value)}
+                    placeholder={`Enter ${f.label.toLowerCase()}`}
+                    rows={3}
+                    className="w-full px-3 py-2 text-sm rounded-[var(--radius)] border border-border bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+              );
+            }
+            return (
+              <div key={f.key} className="space-y-2">
+                <Label>{f.label}</Label>
+                <Input
+                  type={f.type === "number" ? "number" : "text"}
+                  value={f.value}
+                  onChange={e => f.setter(e.target.value)}
+                  placeholder={`Enter ${f.label.toLowerCase()}`}
+                  min={f.type === "number" ? 0 : undefined}
+                />
+              </div>
+            );
+          }
+          // View mode - only show if value exists
+          const display = f.display ? f.display(raw, data) : (raw != null && raw !== "" ? String(raw) : null);
+          if (!display) return null;
+          return (
+            <div key={f.key} className="space-y-1">
+              <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">{f.label}</label>
+              <p className="text-sm font-ui">{display}</p>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 
@@ -1133,6 +1436,7 @@ export default function AccountPage() {
           <Route path="costs" element={
             <ProviderCostsTab
               isAdminView={false}
+              canManagePrograms={true}
               providerId={providerId}
               providerType={firstApprovedSvcName}
               providerServices={approvedServices}

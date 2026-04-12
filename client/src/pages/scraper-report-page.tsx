@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { Loader2, RotateCcw, CheckCircle2, Square, Trash2, Play } from "lucide-react";
+import { Loader2, RotateCcw, Square, Trash2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AdminReportLayout } from "@/components/admin-report-layout";
 import { SyncReportContent, type SyncReport } from "@/components/sync-report-content";
@@ -273,19 +273,12 @@ export default function ScraperReportPage() {
         <SyncProgressBar progress={syncProgress} />
       )}
 
-      {!isSyncing && providerSummary?.syncStatus === "SUCCESS" && isRestarting === false && (
-        <div className="flex items-center gap-2 text-sm text-[hsl(var(--brand-success))]" data-testid="sync-complete-status">
-          <CheckCircle2 className="w-4 h-4" />
-          Last sync completed successfully
-        </div>
-      )}
-
       {isLoading ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="w-6 h-6 animate-spin text-primary" />
         </div>
       ) : data ? (
-        <SyncReportContent data={data} liveProgress={syncProgress} />
+        <SyncReportContent data={data} liveProgress={syncProgress} providerId={providerId} type={type} />
       ) : (
         <p className="text-muted-foreground text-sm" data-testid="text-no-report">No report data available.</p>
       )}

@@ -112,9 +112,13 @@ export class CostsService {
     const sheet = await this.prisma.providerCostSheet.findUnique({ where: { id: sheetId } });
     if (!sheet) return;
 
-    const templates = sheet.providerTypeId
+    const templateWhere: any = sheet.providerTypeId ? { providerTypeId: sheet.providerTypeId } : null;
+    if (templateWhere && sheet.subType) {
+      templateWhere.OR = [{ subType: null }, { subType: sheet.subType }];
+    }
+    const templates = templateWhere
       ? await this.prisma.costTemplate.findMany({
-          where: { providerTypeId: sheet.providerTypeId },
+          where: templateWhere,
           orderBy: [{ category: "asc" }, { sortOrder: "asc" }],
         })
       : [];
@@ -159,6 +163,16 @@ export class CostsService {
       where: { id: sheetId },
       data: { status: "DRAFT" },
     });
+  }
+
+  async resetOrphanedParsingSheets() {
+    const result = await this.prisma.providerCostSheet.updateMany({
+      where: { status: "PARSING" },
+      data: { status: "DRAFT" },
+    });
+    if (result.count > 0) {
+      this.logger.warn(`Reset ${result.count} orphaned PARSING sheet(s) to DRAFT on startup`);
+    }
   }
 
   async cancelUpload(sheetId: string) {
@@ -569,10 +583,24 @@ export class CostsService {
     const where: any = { providerId };
     if (providerTypeId) where.providerTypeId = providerTypeId;
     if (subType) where.subType = subType;
-    return this.prisma.costProgram.findMany({
+    const programs = await this.prisma.costProgram.findMany({
       where,
       orderBy: { createdAt: "asc" },
     });
+    if (programs.length === 0) return programs.map((p: any) => ({ ...p, latestSheetStatus: null }));
+    const programIds = programs.map((p) => p.id);
+    const latestSheets = await this.prisma.providerCostSheet.findMany({
+      where: { programId: { in: programIds }, parentClientId: null },
+      orderBy: { createdAt: "desc" },
+      select: { programId: true, status: true },
+    });
+    const statusByProgram = new Map<string, string>();
+    for (const s of latestSheets) {
+      if (s.programId && !statusByProgram.has(s.programId)) {
+        statusByProgram.set(s.programId, s.status);
+      }
+    }
+    return programs.map((p) => ({ ...p, latestSheetStatus: statusByProgram.get(p.id) ?? null }));
   }
 
   async createProgram(providerId: string, providerTypeId: string | null, subType: string | null, name: string, country: string) {

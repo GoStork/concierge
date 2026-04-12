@@ -352,10 +352,10 @@ chatRouter.get("/api/admin/concierge-sessions/:id", requireAuth, async (req, res
       include: {
         user: {
           select: {
-            id: true, name: true, email: true, photoUrl: true, city: true, state: true,
+            id: true, name: true, email: true, photoUrl: true, city: true, state: true, mobileNumber: true, relationshipStatus: true, partnerFirstName: true, dateOfBirth: true,
             parentAccount: {
               select: {
-                intendedParentProfile: { select: { journeyStage: true, eggSource: true, spermSource: true, carrier: true, hasEmbryos: true, embryoCount: true } },
+                intendedParentProfile: { select: { journeyStage: true, interestedServices: true, isFirstIvf: true, eggSource: true, spermSource: true, carrier: true, hasEmbryos: true, embryoCount: true, embryosTested: true, needsClinic: true, currentClinicName: true, clinicPriority: true, needsEggDonor: true, needsSurrogate: true, surrogateCountries: true, surrogateTermination: true, surrogateTwins: true, surrogateAgeRange: true, surrogateBudget: true, surrogateExperience: true, surrogateMedPrefs: true, donorPreferences: true, donorEyeColor: true, donorHairColor: true, donorHeight: true, donorEducation: true, donorEthnicity: true, spermDonorType: true, currentAgencyName: true, currentAttorneyName: true } },
               },
             },
           },
@@ -635,10 +635,10 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
       include: {
         user: {
           select: {
-            id: true, name: true, email: true, photoUrl: true, city: true, state: true,
+            id: true, name: true, email: true, photoUrl: true, city: true, state: true, mobileNumber: true, relationshipStatus: true, partnerFirstName: true, dateOfBirth: true,
             parentAccount: {
               select: {
-                intendedParentProfile: { select: { journeyStage: true, eggSource: true, spermSource: true, carrier: true, hasEmbryos: true, embryoCount: true } },
+                intendedParentProfile: { select: { journeyStage: true, interestedServices: true, isFirstIvf: true, eggSource: true, spermSource: true, carrier: true, hasEmbryos: true, embryoCount: true, embryosTested: true, needsClinic: true, currentClinicName: true, clinicPriority: true, needsEggDonor: true, needsSurrogate: true, surrogateCountries: true, surrogateTermination: true, surrogateTwins: true, surrogateAgeRange: true, surrogateBudget: true, surrogateExperience: true, surrogateMedPrefs: true, donorPreferences: true, donorEyeColor: true, donorHairColor: true, donorHeight: true, donorEducation: true, donorEthnicity: true, spermDonorType: true, currentAgencyName: true, currentAttorneyName: true } },
               },
             },
           },
@@ -1179,26 +1179,44 @@ chatRouter.get("/api/marketplace/profile/:type/:id", requireAuth, async (req, re
   const t = (type || "").toLowerCase();
   try {
     if (t === "egg-donor" || t === "egg donor") {
-      const donor = await prisma.eggDonor.findUnique({
+      let donor = await prisma.eggDonor.findUnique({
         where: { id },
         include: { provider: { select: { id: true, name: true, logoUrl: true } } },
       });
+      if (!donor) {
+        donor = await prisma.eggDonor.findFirst({
+          where: { externalId: id },
+          include: { provider: { select: { id: true, name: true, logoUrl: true } } },
+        });
+      }
       if (!donor) return res.status(404).json({ message: "Not found" });
       return res.json(donor);
     }
     if (t === "sperm-donor" || t === "sperm donor") {
-      const donor = await prisma.spermDonor.findUnique({
+      let donor = await prisma.spermDonor.findUnique({
         where: { id },
         include: { provider: { select: { id: true, name: true, logoUrl: true } } },
       });
+      if (!donor) {
+        donor = await prisma.spermDonor.findFirst({
+          where: { externalId: id },
+          include: { provider: { select: { id: true, name: true, logoUrl: true } } },
+        });
+      }
       if (!donor) return res.status(404).json({ message: "Not found" });
       return res.json(donor);
     }
     if (t === "surrogate") {
-      const surrogate = await prisma.surrogate.findUnique({
+      let surrogate = await prisma.surrogate.findUnique({
         where: { id },
         include: { provider: { select: { id: true, name: true, logoUrl: true } } },
       });
+      if (!surrogate) {
+        surrogate = await prisma.surrogate.findFirst({
+          where: { externalId: id },
+          include: { provider: { select: { id: true, name: true, logoUrl: true } } },
+        });
+      }
       if (!surrogate) return res.status(404).json({ message: "Not found" });
       return res.json(surrogate);
     }
@@ -1272,7 +1290,7 @@ chatRouter.post("/api/agreements/generate", requireAuth, async (req, res) => {
             parentPhone: parentUser.mobileNumber || null,
             providerName: providerRecord?.name || "Your Agency",
             providerId: user.providerId,
-            signingUrl: (agreement as any).pandaDocViewUrl || null,
+            signingUrl: `${process.env.APP_URL?.replace(/\/+$/, "") || ""}/agreements/${agreement.id}`,
             sessionId: session.id,
           });
         }
@@ -1635,7 +1653,7 @@ chatRouter.post("/api/agreements/generate-from-template", requireAuth, async (re
             parentPhone: parentUser.mobileNumber || null,
             providerName: providerRecord?.name || "Your Agency",
             providerId: user.providerId,
-            signingUrl: (agreement as any).pandaDocViewUrl || null,
+            signingUrl: `${process.env.APP_URL?.replace(/\/+$/, "") || ""}/agreements/${agreement.id}`,
             sessionId: session.id,
           });
         }
@@ -1655,8 +1673,8 @@ chatRouter.post("/api/agreements/generate-from-template", requireAuth, async (re
 chatRouter.get("/api/agreements/:id/signing-session", requireAuth, async (req, res) => {
   const user = req.user as any;
   try {
-    const signingUrl = await getAgreementSigningSession(req.params.id, user.id);
-    res.json({ signingUrl });
+    const result = await getAgreementSigningSession(req.params.id, user.id);
+    res.json(result);
   } catch (e: any) {
     console.error("Signing session error:", e);
     res.status(500).json({ message: e.message });

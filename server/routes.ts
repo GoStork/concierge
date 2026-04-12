@@ -367,10 +367,10 @@ export async function registerRoutes(
         include: {
           user: {
             select: {
-              id: true, name: true, email: true, avatarUrl: true, city: true, state: true,
+              id: true, name: true, email: true, avatarUrl: true, city: true, state: true, mobileNumber: true, relationshipStatus: true, partnerFirstName: true, dateOfBirth: true,
               parentAccount: {
                 select: {
-                  intendedParentProfile: { select: { journeyStage: true, eggSource: true, spermSource: true, carrier: true, hasEmbryos: true, embryoCount: true } },
+                  intendedParentProfile: { select: { journeyStage: true, interestedServices: true, isFirstIvf: true, eggSource: true, spermSource: true, carrier: true, hasEmbryos: true, embryoCount: true, embryosTested: true, needsClinic: true, currentClinicName: true, clinicPriority: true, needsEggDonor: true, needsSurrogate: true, surrogateCountries: true, surrogateTermination: true, surrogateTwins: true, surrogateAgeRange: true, surrogateBudget: true, surrogateExperience: true, surrogateMedPrefs: true, donorPreferences: true, donorEyeColor: true, donorHairColor: true, donorHeight: true, donorEducation: true, donorEthnicity: true, spermDonorType: true, currentAgencyName: true, currentAttorneyName: true } },
                 },
               },
             },
@@ -603,10 +603,10 @@ export async function registerRoutes(
         include: {
           user: {
             select: {
-              id: true, name: true, email: true, avatarUrl: true, city: true, state: true,
+              id: true, name: true, email: true, avatarUrl: true, city: true, state: true, mobileNumber: true, relationshipStatus: true, partnerFirstName: true, dateOfBirth: true,
               parentAccount: {
                 select: {
-                  intendedParentProfile: { select: { journeyStage: true, eggSource: true, spermSource: true, carrier: true, hasEmbryos: true, embryoCount: true } },
+                  intendedParentProfile: { select: { journeyStage: true, interestedServices: true, isFirstIvf: true, eggSource: true, spermSource: true, carrier: true, hasEmbryos: true, embryoCount: true, embryosTested: true, needsClinic: true, currentClinicName: true, clinicPriority: true, needsEggDonor: true, needsSurrogate: true, surrogateCountries: true, surrogateTermination: true, surrogateTwins: true, surrogateAgeRange: true, surrogateBudget: true, surrogateExperience: true, surrogateMedPrefs: true, donorPreferences: true, donorEyeColor: true, donorHairColor: true, donorHeight: true, donorEducation: true, donorEthnicity: true, spermDonorType: true, currentAgencyName: true, currentAttorneyName: true } },
                 },
               },
             },
@@ -890,6 +890,26 @@ export async function registerRoutes(
       res.json({ templateId });
     } catch (e: any) {
       console.error("Sync template error:", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Save the role names the provider configured in the PandaDoc editor
+  app.put("/api/agreements/template-roles", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+    const { roles } = req.body;
+    if (!Array.isArray(roles) || roles.length < 2 || roles.some((r: any) => typeof r !== "string" || !r.trim())) {
+      return res.status(400).json({ message: "roles must be an array of at least 2 non-empty strings" });
+    }
+    try {
+      await prisma.provider.update({
+        where: { id: user.providerId },
+        data: { pandaDocRoles: JSON.stringify(roles.map((r: string) => r.trim())) },
+      });
+      res.json({ ok: true });
+    } catch (e: any) {
+      console.error("Save template roles error:", e);
       res.status(500).json({ message: e.message });
     }
   });

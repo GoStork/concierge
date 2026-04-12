@@ -12,6 +12,7 @@ export class CostsAiService {
     contentType: string,
     providerTypeName: string,
     originalFileName: string,
+    subType?: string,
   ): Promise<
     Array<{
       category: string;
@@ -32,9 +33,13 @@ export class CostsAiService {
     const providerType = await this.prisma.providerType.findFirst({
       where: { name: { contains: providerTypeName, mode: "insensitive" } },
     });
-    const templates = providerType
+    const templateWhere: any = providerType ? { providerTypeId: providerType.id } : null;
+    if (templateWhere && subType) {
+      templateWhere.OR = [{ subType: null }, { subType }];
+    }
+    const templates = templateWhere
       ? await this.prisma.costTemplate.findMany({
-          where: { providerTypeId: providerType.id },
+          where: templateWhere,
           orderBy: [{ category: "asc" }, { sortOrder: "asc" }],
         })
       : [];
@@ -59,10 +64,22 @@ IMPORTANT EXCLUSIONS for Egg Donation cost sheets:
 - Only include costs that the egg donation AGENCY charges (agency fees, donor compensation, donor screening, travel, insurance, legal, escrow).`
       : "";
 
+    const ivfSynonymHint = (!isEggDonation && subType === "ivf_cycle") ? `
+IVF FIELD MAPPING SYNONYMS - use these to map common terminology to the exact template field names:
+- "Consultation" = initial consultation, evaluation, fertility consultation, new patient visit, consultation fee, workup fee
+- "IVF Cycle" = IVF fee, cycle fee, IVF package, embryo creation, stimulation cycle, retrieval + fertilization, monitoring + retrieval, base IVF
+- "Medication" = medications, drugs, injectable medications, stimulation medications, fertility medications, Follistim, Gonal-F, Lupron, Menopur, Progesterone
+- "Embryo Transfer" = ET fee, embryo transfer procedure, frozen embryo transfer (FET), fresh embryo transfer, transfer fee
+- "Cryopreservation" = embryo freezing, freeze fee, cryo fee, embryo storage, vitrification
+- "Lab Fees" = laboratory fees, andrology fees, ICSI, fertilization fee, sperm washing
+- "Genetic Testing (PGT)" = PGT, PGS, PGT-A, genetic screening, biopsy fee, NGS testing
+- "Monitoring" = monitoring visits, ultrasound monitoring, blood work, cycle monitoring, local monitoring` : "";
+
     const systemPrompt = `You are a fertility industry cost sheet parser. Extract cost line items from the provided document.
 
 ${templateContext}
 ${exclusionRules}
+${ivfSynonymHint}
 
 Rules:
 1. Map recognized items to the known categories/fields above when possible. Use the EXACT category and key names from the template.
@@ -118,9 +135,14 @@ Return ONLY a valid JSON array with objects having these exact fields:
         generationConfig: { temperature: 0 } as any,
       });
 
-      const result = await model.generateContent(
-        `${systemPrompt}\n\nDocument content (CSV):\n${textContent}`,
+      const timeoutMs = 120000;
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("AI parsing timed out after 2 minutes")), timeoutMs),
       );
+      const result = await Promise.race([
+        model.generateContent(`${systemPrompt}\n\nDocument content (CSV):\n${textContent}`),
+        timeoutPromise,
+      ]);
       const responseText = result.response.text();
       return this.parseJsonResponse(responseText);
     } else {
@@ -131,14 +153,16 @@ Return ONLY a valid JSON array with objects having these exact fields:
         generationConfig: { temperature: 0 } as any,
       });
 
-      const result = await model.generateContent([
-        {
-          inlineData: {
-            mimeType: contentType,
-            data: base64Data,
-          },
-        },
-        { text: systemPrompt + "\n\nParse the cost items from this document." },
+      const timeoutMs = 120000;
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("AI parsing timed out after 2 minutes")), timeoutMs),
+      );
+      const result = await Promise.race([
+        model.generateContent([
+          { inlineData: { mimeType: contentType, data: base64Data } },
+          { text: systemPrompt + "\n\nParse the cost items from this document." },
+        ]),
+        timeoutPromise,
       ]);
       const responseText = result.response.text();
       return this.parseJsonResponse(responseText);

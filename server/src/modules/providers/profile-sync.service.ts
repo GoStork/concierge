@@ -160,6 +160,8 @@ export interface SyncJob {
   isPdfUpload?: boolean;
   currentStep?: string;
   stepProgress?: number;
+  syncLogId?: string;
+  source?: string;
 }
 
 const syncJobs = new Map<string, SyncJob>();
@@ -1165,6 +1167,7 @@ async function upsertEggDonor(
       isExperienced: skipIfManual("isExperienced", detectExperienced(mergedProfile, "egg-donor"), mf),
       profileData: mergedProfile,
       cardHash: donor.cardHash || undefined,
+      lastFullSyncAt: new Date(),
       updatedAt: new Date(),
     },
     create: {
@@ -1198,6 +1201,7 @@ async function upsertEggDonor(
       isExperienced: detectExperienced(normalizedProfile, "egg-donor"),
       profileData: normalizedProfile,
       cardHash: donor.cardHash || null,
+      lastFullSyncAt: new Date(),
     },
   });
 
@@ -1330,6 +1334,7 @@ async function upsertSurrogate(
       isExperienced: skipIfManual("isExperienced", detectExperienced(mergedProfile, "surrogate"), mf),
       profileData: mergedProfile,
       cardHash: surrogate.cardHash || undefined,
+      lastFullSyncAt: new Date(),
       updatedAt: new Date(),
     },
     create: {
@@ -1365,6 +1370,7 @@ async function upsertSurrogate(
       isExperienced: detectExperienced(normalizedProfile, "surrogate"),
       profileData: normalizedProfile,
       cardHash: surrogate.cardHash || null,
+      lastFullSyncAt: new Date(),
     },
   });
 
@@ -1421,6 +1427,7 @@ async function upsertSpermDonor(
       isExperienced: skipIfManual("isExperienced", detectExperienced(mergedProfile, "sperm-donor"), mf),
       profileData: mergedProfile,
       cardHash: donor.cardHash || undefined,
+      lastFullSyncAt: new Date(),
       updatedAt: new Date(),
     },
     create: {
@@ -1447,6 +1454,7 @@ async function upsertSpermDonor(
       isExperienced: detectExperienced(normalizedProfile, "sperm-donor"),
       profileData: normalizedProfile,
       cardHash: donor.cardHash || null,
+      lastFullSyncAt: new Date(),
     },
   });
 
@@ -1597,6 +1605,7 @@ export async function startSync(
   type: DonorType,
   profileLimit?: number,
   storageService?: StorageService | null,
+  source: string = "manual",
 ): Promise<string> {
   const config = await getSyncConfig(prisma, providerId, type);
   if (!config) {
@@ -1604,6 +1613,24 @@ export async function startSync(
   }
 
   const jobId = generateJobId();
+  const startedAt = new Date();
+
+  // Create persistent SyncLog record
+  const syncLogRecord = await prisma.syncLog.create({
+    data: {
+      id: jobId,
+      providerId,
+      type,
+      jobId,
+      source,
+      status: "running",
+      startedAt,
+    },
+  }).catch((err: any) => {
+    console.error(`[donor-sync] Failed to create SyncLog: ${err.message}`);
+    return null;
+  });
+
   const job: SyncJob = {
     id: jobId,
     providerId,
@@ -1617,7 +1644,9 @@ export async function startSync(
     errors: [],
     missingFields: [],
     staleProfilesMarked: 0,
-    startedAt: new Date(),
+    startedAt,
+    syncLogId: syncLogRecord?.id,
+    source,
   };
   syncJobs.set(jobId, job);
 
@@ -3660,30 +3689,34 @@ async function runSyncJob(
       job.processed = 0;
 
       const existingHashes = new Map<string, string>();
+      const existingLastFullSyncAt = new Map<string, Date>();
       const existingProfilesQuery = job.type === "surrogate"
         ? prisma.surrogate.findMany({
             where: { providerId: job.providerId, externalId: { in: uniqueItems.map((d: any) => d.externalId).filter(Boolean) } },
-            select: { externalId: true, cardHash: true },
+            select: { externalId: true, cardHash: true, lastFullSyncAt: true },
           })
         : job.type === "sperm-donor"
         ? prisma.spermDonor.findMany({
             where: { providerId: job.providerId, externalId: { in: uniqueItems.map((d: any) => d.externalId).filter(Boolean) } },
-            select: { externalId: true, cardHash: true },
+            select: { externalId: true, cardHash: true, lastFullSyncAt: true },
           })
         : prisma.eggDonor.findMany({
             where: { providerId: job.providerId, externalId: { in: uniqueItems.map((d: any) => d.externalId).filter(Boolean) } },
-            select: { externalId: true, cardHash: true },
+            select: { externalId: true, cardHash: true, lastFullSyncAt: true },
           });
       const existingDonors = await existingProfilesQuery;
       for (const d of existingDonors) {
         if (d.externalId && d.cardHash) existingHashes.set(d.externalId, d.cardHash);
+        if (d.externalId && (d as any).lastFullSyncAt) existingLastFullSyncAt.set(d.externalId, (d as any).lastFullSyncAt);
       }
 
+      // Re-check pricing/compensation every 14 days even if card hash matches
+      const PRICING_CHECK_MS = 14 * 24 * 60 * 60 * 1000;
       let skippedUnchanged = 0;
       console.log(`[donor-sync] Found ${uniqueItems.length} unique Orchid JMS ${job.type} profiles to import`);
       console.log(`[donor-sync] Fetching profiles and importing...`);
 
-      const BATCH_SIZE = 3;
+      const BATCH_SIZE = 10;
       for (let i = 0; i < uniqueItems.length; i += BATCH_SIZE) {
         if (isJobCancelled(job.id)) {
           console.log(`[donor-sync] Sync cancelled at ${i}/${uniqueItems.length}`);
@@ -3692,11 +3725,11 @@ async function runSyncJob(
         const batch = uniqueItems.slice(i, i + BATCH_SIZE);
         await Promise.all(batch.map(async (item) => {
           const oldHash = item.externalId ? existingHashes.get(item.externalId) : null;
-          if (oldHash && oldHash === item.cardHash) {
+          const lastFull = item.externalId ? existingLastFullSyncAt.get(item.externalId) : null;
+          const pricingStale = !lastFull || (Date.now() - lastFull.getTime()) > PRICING_CHECK_MS;
+          if (oldHash && oldHash === item.cardHash && !pricingStale) {
             skippedUnchanged++;
             job.processed++;
-            const model = job.type === "surrogate" ? "surrogate" as const : job.type === "sperm-donor" ? "spermDonor" as const : "eggDonor" as const;
-            await migrateLocalPhotosToGcs(prisma, model, job.providerId, item.externalId, storageService || null).catch(() => {});
             return;
           }
           if (item.profileUrl) {
@@ -3981,30 +4014,34 @@ async function runSyncJob(
       job.processed = 0;
 
       const existingHashes = new Map<string, string>();
+      const existingLastFullSyncAt = new Map<string, Date>();
       const existingProfilesQuery = job.type === "surrogate"
         ? prisma.surrogate.findMany({
             where: { providerId: job.providerId, externalId: { in: uniqueItems.map((d: any) => d.externalId).filter(Boolean) } },
-            select: { externalId: true, cardHash: true },
+            select: { externalId: true, cardHash: true, lastFullSyncAt: true },
           })
         : job.type === "sperm-donor"
         ? prisma.spermDonor.findMany({
             where: { providerId: job.providerId, externalId: { in: uniqueItems.map((d: any) => d.externalId).filter(Boolean) } },
-            select: { externalId: true, cardHash: true },
+            select: { externalId: true, cardHash: true, lastFullSyncAt: true },
           })
         : prisma.eggDonor.findMany({
             where: { providerId: job.providerId, externalId: { in: uniqueItems.map((d: any) => d.externalId).filter(Boolean) } },
-            select: { externalId: true, cardHash: true },
+            select: { externalId: true, cardHash: true, lastFullSyncAt: true },
           });
       const existingDonors = await existingProfilesQuery;
       for (const d of existingDonors) {
         if (d.externalId && d.cardHash) existingHashes.set(d.externalId, d.cardHash);
+        if (d.externalId && (d as any).lastFullSyncAt) existingLastFullSyncAt.set(d.externalId, (d as any).lastFullSyncAt);
       }
 
+      // Re-check pricing/compensation every 14 days even if card hash matches
+      const PRICING_CHECK_MS = 14 * 24 * 60 * 60 * 1000;
       let skippedUnchanged = 0;
       console.log(`[donor-sync] Found ${uniqueItems.length} unique ${job.type} profiles to import`);
       console.log(`[donor-sync] Fetching full profile pages for each donor...`);
 
-      const BATCH_SIZE = 5;
+      const BATCH_SIZE = 15;
       for (let i = 0; i < uniqueItems.length; i += BATCH_SIZE) {
         if (isJobCancelled(job.id)) {
           console.log(`[donor-sync] Sync cancelled, stopping at ${i}/${uniqueItems.length}`);
@@ -4013,10 +4050,10 @@ async function runSyncJob(
         const batch = uniqueItems.slice(i, i + BATCH_SIZE);
         const profilePromises = batch.map(async (item) => {
           const oldHash = item.externalId ? existingHashes.get(item.externalId) : null;
-          if (oldHash && oldHash === item.cardHash) {
+          const lastFull = item.externalId ? existingLastFullSyncAt.get(item.externalId) : null;
+          const pricingStale = !lastFull || (Date.now() - lastFull.getTime()) > PRICING_CHECK_MS;
+          if (oldHash && oldHash === item.cardHash && !pricingStale) {
             skippedUnchanged++;
-            const model = job.type === "surrogate" ? "surrogate" as const : job.type === "sperm-donor" ? "spermDonor" as const : "eggDonor" as const;
-            await migrateLocalPhotosToGcs(prisma, model, job.providerId, item.externalId, storageService || null).catch(() => {});
             return;
           }
           if (item.profileUrl) {
@@ -4417,6 +4454,28 @@ async function runSyncJob(
     } catch (dbErr: any) {
       console.error(`[donor-sync] Failed to update sync config after error: ${dbErr.message}`);
     }
+  } finally {
+    // Persist final sync result to SyncLog for durable history
+    if (job.syncLogId) {
+      const skippedCount = (job.total - job.succeeded - job.failed) || 0;
+      prisma.syncLog.update({
+        where: { id: job.syncLogId },
+        data: {
+          status: job.status === "running" ? "failed" : job.status,
+          completedAt: job.completedAt || new Date(),
+          total: job.total,
+          processed: job.processed,
+          succeeded: job.succeeded,
+          failed: job.failed,
+          skipped: skippedCount > 0 ? skippedCount : 0,
+          newProfiles: job.newProfiles,
+          staleMarked: job.staleProfilesMarked,
+          errors: job.errors.length > 0 ? job.errors : undefined,
+        },
+      }).catch((err: any) => {
+        console.error(`[donor-sync] Failed to update SyncLog ${job.syncLogId}: ${err.message}`);
+      });
+    }
   }
 }
 
@@ -4499,7 +4558,7 @@ export async function runNightlySync(prisma: PrismaService, storageService?: Sto
 
       try {
         console.log(`[nightly-sync] Syncing ${config.providerName} (${config.type})...`);
-        const jobId = await startSync(prisma, config.providerId, config.type, undefined, storageService);
+        const jobId = await startSync(prisma, config.providerId, config.type, undefined, storageService, "nightly");
         result.jobId = jobId;
 
         await new Promise<void>((resolve) => {
@@ -4528,11 +4587,11 @@ export async function runNightlySync(prisma: PrismaService, storageService?: Sto
             const job = getSyncJob(jobId);
             if (job && job.status === "running") {
               result.status = "failed";
-              result.errors = ["Timed out after 60 minutes"];
+              result.errors = ["Timed out after 8 hours - sync may still be running in background"];
               result.completedAt = new Date();
             }
             resolve();
-          }, 60 * 60 * 1000);
+          }, 8 * 60 * 60 * 1000);
         });
 
         console.log(`[nightly-sync] ${config.providerName} (${config.type}): ${result.status} - ${result.succeeded}/${result.total}`);

@@ -23,14 +23,42 @@ export interface SessionUser {
   photoUrl: string | null;
   city: string | null;
   state: string | null;
+  mobileNumber?: string | null;
+  relationshipStatus?: string | null;
+  partnerFirstName?: string | null;
+  dateOfBirth?: string | null;
   parentAccount?: {
     intendedParentProfile?: {
       journeyStage: string | null;
+      interestedServices: string[];
+      isFirstIvf: boolean | null;
       eggSource: string | null;
       spermSource: string | null;
       carrier: string | null;
       hasEmbryos: boolean | null;
       embryoCount: number | null;
+      embryosTested: boolean | null;
+      needsClinic: boolean | null;
+      currentClinicName: string | null;
+      clinicPriority: string | null;
+      needsEggDonor: boolean | null;
+      needsSurrogate: boolean | null;
+      surrogateCountries: string | null;
+      surrogateTermination: string | null;
+      surrogateTwins: string | null;
+      surrogateAgeRange: string | null;
+      surrogateBudget: string | null;
+      surrogateExperience: string | null;
+      surrogateMedPrefs: string | null;
+      donorPreferences: string | null;
+      donorEyeColor: string | null;
+      donorHairColor: string | null;
+      donorHeight: string | null;
+      donorEducation: string | null;
+      donorEthnicity: string | null;
+      spermDonorType: string | null;
+      currentAgencyName: string | null;
+      currentAttorneyName: string | null;
     } | null;
   } | null;
 }

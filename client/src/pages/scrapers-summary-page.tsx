@@ -865,9 +865,30 @@ function SyncProgressBar({ progress }: { progress: SyncProgress }) {
   );
 }
 
-function StatusBadge({ status, progress }: { status: string; progress?: SyncProgress | null }) {
+function StatusBadge({
+  status,
+  progress,
+  lastSyncStartedAt,
+  lastSyncEndedAt,
+}: {
+  status: string;
+  progress?: SyncProgress | null;
+  lastSyncStartedAt?: string | null;
+  lastSyncEndedAt?: string | null;
+}) {
   if (progress) {
     return <SyncProgressBar progress={progress} />;
+  }
+
+  // Running: started but not ended (and no live progress in memory)
+  const isStuck = lastSyncStartedAt && !lastSyncEndedAt;
+  if (isStuck) {
+    return (
+      <Badge className="bg-primary/10 text-primary hover:bg-primary/15 gap-1 cursor-pointer transition-colors" data-testid="badge-status-running">
+        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        Running
+      </Badge>
+    );
   }
 
   if (status === "SUCCESS") {
@@ -1048,7 +1069,8 @@ function ScraperTypeSection({
                       {formatDateTime(item.lastSyncStartedAt)}
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-sm text-muted-foreground" data-testid={`text-completed-${item.providerId}`}>
-                      {formatDateTime(item.lastSyncEndedAt)}
+                      {/* Show lastSyncAt (actual last success), falling back to lastSyncEndedAt if completed recently */}
+                      {formatDateTime(item.lastSyncAt || item.lastSyncEndedAt)}
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <div className="flex flex-col gap-0.5">
@@ -1058,7 +1080,12 @@ function ScraperTypeSection({
                             onClick={() => navigate(`/admin/scrapers/report/${item.providerId}/${item.type}?name=${encodeURIComponent(item.providerName)}`)}
                             data-testid={`status-click-${item.providerId}`}
                           >
-                            <StatusBadge status={item.syncStatus} progress={item.syncProgress} />
+                            <StatusBadge
+                              status={item.syncStatus}
+                              progress={item.syncProgress}
+                              lastSyncStartedAt={item.lastSyncStartedAt}
+                              lastSyncEndedAt={item.lastSyncEndedAt}
+                            />
                           </div>
                           <RestartSyncButton item={item} />
                         </div>

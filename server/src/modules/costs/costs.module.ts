@@ -22,5 +22,10 @@ export class CostsModule implements OnModuleInit {
     } catch (err: any) {
       this.logger.warn(`Failed to ensure frozen egg templates: ${err.message}`);
     }
+    try {
+      await this.costsService.resetOrphanedParsingSheets();
+    } catch (err: any) {
+      this.logger.warn(`Failed to reset orphaned parsing sheets: ${err.message}`);
+    }
   }
 }

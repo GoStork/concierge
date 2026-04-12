@@ -7,7 +7,7 @@ export default function AgreementsSigningPage() {
   const { id: agreementId } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const { data, isLoading, error } = useQuery<{ signingUrl: string }>({
+  const { data, isLoading, error } = useQuery<{ signingUrl: string; sessionId: string; providerId: string | null; isProviderThread: boolean }>({
     queryKey: ["/api/agreements", agreementId, "signing-session"],
     queryFn: async () => {
       const res = await fetch(`/api/agreements/${agreementId}/signing-session`, {
@@ -23,11 +23,23 @@ export default function AgreementsSigningPage() {
     retry: false,
   });
 
+  const handleBack = () => {
+    if (data?.sessionId) {
+      if (data.isProviderThread && data.providerId) {
+        navigate(`/chat/${data.providerId}/${data.sessionId}`);
+      } else {
+        navigate(`/chat/concierge?session=${data.sessionId}`);
+      }
+    } else {
+      navigate(-1);
+    }
+  };
+
   return (
     <div className="flex flex-col" style={{ height: "100dvh" }}>
       {/* Minimal header */}
       <div className="flex items-center gap-3 px-4 h-14 border-b bg-background shrink-0">
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="gap-1.5">
+        <Button variant="ghost" size="sm" onClick={handleBack} className="gap-1.5">
           <ArrowLeft className="w-4 h-4" />
           Back
         </Button>
@@ -61,7 +73,7 @@ export default function AgreementsSigningPage() {
             <p className="text-xs text-muted-foreground max-w-sm">
               {(error as Error).message}
             </p>
-            <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
+            <Button variant="outline" size="sm" onClick={handleBack}>
               Go Back
             </Button>
           </div>

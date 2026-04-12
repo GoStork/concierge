@@ -143,6 +143,8 @@ async function waitForDocumentStatus(apiKey: string, documentId: string, targetS
 
 async function fetchDocumentViewUrl(apiKey: string, documentId: string, recipientEmail: string): Promise<string | null> {
   try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
     const res = await fetch(`https://api.pandadoc.com/public/v1/documents/${documentId}/session`, {
       method: "POST",
       headers: {
@@ -150,7 +152,9 @@ async function fetchDocumentViewUrl(apiKey: string, documentId: string, recipien
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ recipient: recipientEmail, lifetime: 86400, type: "SIGNER" }),
+      signal: controller.signal,
     });
+    clearTimeout(timer);
     if (res.ok) {
       const data = await res.json();
       console.log("[PandaDoc] Session created:", JSON.stringify(data));
@@ -186,11 +190,6 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
   if (!session) throw new Error("Chat session not found");
   if (session.providerId !== providerId) throw new Error("Provider/session mismatch");
   if (!provider.agreementTemplateUrl) throw new Error("Provider has not uploaded an agreement template");
-
-  const existingAgreement = await prisma.agreement.findFirst({
-    where: { sessionId, providerId, status: { in: ["DRAFT", "SENT"] } },
-  });
-  if (existingAgreement) throw new Error("An agreement has already been generated for this session");
 
   const apiKey = process.env.PANDADOC_API_KEY;
   if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
@@ -295,16 +294,15 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
           signing_order: 1,
         },
         // Client 2 - only if second parent exists in the account
-        // Sandbox restricts to org domain; production allows external emails
-        ...(parent2 && p2.email && (process.env.NODE_ENV === "production" || process.env.PANDADOC_PRODUCTION === "true") ? [{
+        ...(parent2 && p2.email ? [{
           email: p2.email,
           first_name: parent2.firstName || p2.name.split(" ")[0] || "",
           last_name: parent2.lastName || p2.name.split(" ").slice(1).join(" ") || "",
           role: "signer2",
           signing_order: 2,
         }] : []),
-        // Provider countersigns last - sandbox restricts to org domain only
-        ...(process.env.NODE_ENV === "production" || process.env.PANDADOC_PRODUCTION === "true" ? [{
+        // Provider countersigns last
+        ...(provider.email ? [{
           email: provider.email,
           first_name: provider.name.split(" ")[0] || provider.name,
           last_name: provider.name.split(" ").slice(1).join(" ") || "",
@@ -393,9 +391,8 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
       return await prisma.agreement.findUnique({ where: { id: agreement.id } });
     }
 
-    // Send the document with silent:true - suppresses PandaDoc's own email, just moves status to sent.
-    // GoStork delivers the signing link via our own branded email + chat card.
-    // silent:true bypasses the sandbox org-domain email restriction.
+    // Send with silent:true - suppresses PandaDoc's own notification email.
+    // GoStork delivers the signing link via our own branded email + chat card instead.
     const sendResponse = await fetch(`https://api.pandadoc.com/public/v1/documents/${pandaDocDocumentId}/send`, {
       method: "POST",
       headers: {
@@ -455,10 +452,18 @@ export async function syncTemplateToPandaDoc(providerId: string): Promise<string
   const apiKey = process.env.PANDADOC_API_KEY;
   if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
 
-  // If a template already exists for this file, reuse it - do NOT re-upload and wipe fields
+  // If a template already exists, verify it still exists in PandaDoc before reusing.
+  // If it was deleted (404), clear the ID and re-upload.
   if (provider.pandaDocTemplateId) {
-    console.log(`[PandaDoc] Reusing existing template: ${provider.pandaDocTemplateId}`);
-    return provider.pandaDocTemplateId;
+    const checkRes = await fetch(`https://api.pandadoc.com/public/v1/templates/${provider.pandaDocTemplateId}`, {
+      headers: { "Authorization": `API-Key ${apiKey}` },
+    });
+    if (checkRes.ok) {
+      console.log(`[PandaDoc] Reusing existing template: ${provider.pandaDocTemplateId}`);
+      return provider.pandaDocTemplateId;
+    }
+    console.log(`[PandaDoc] Template ${provider.pandaDocTemplateId} no longer exists (${checkRes.status}), re-uploading...`);
+    await prisma.provider.update({ where: { id: providerId }, data: { pandaDocTemplateId: null } });
   }
 
   // Download the file (no token replacement - raw upload for template editor)
@@ -492,7 +497,7 @@ export async function syncTemplateToPandaDoc(providerId: string): Promise<string
     contentType = resp.headers.get("content-type") || "application/octet-stream";
   }
 
-  // Upload to PandaDoc as a template
+  // Upload to PandaDoc as a template (roles must be added via separate API calls after creation)
   const formData = new FormData();
   formData.append("data", JSON.stringify({ name: `${provider.name} Agreement Template` }));
   formData.append("file", new Blob([buffer], { type: contentType }), filename);
@@ -566,7 +571,8 @@ export async function createTemplateEditingSession(providerId: string, userEmail
 
   const data = await res.json();
   console.log("[PandaDoc] Editing session response:", JSON.stringify(data));
-  const eToken: string = data.id;
+  // PandaDoc returns both `id` (session UUID) and `token`/`key` (the actual auth token for the editor SDK)
+  const eToken: string = data.token || data.key || data.id;
   if (!eToken) throw new Error("PandaDoc did not return an editing session token");
 
   return eToken;
@@ -580,7 +586,7 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
   const [provider, parentUser, session] = await Promise.all([
     prisma.provider.findUnique({
       where: { id: providerId },
-      select: { id: true, name: true, email: true, agreementTemplateUrl: true, pandaDocTemplateId: true },
+      select: { id: true, name: true, email: true, agreementTemplateUrl: true, pandaDocTemplateId: true, pandaDocRoles: true },
     }),
     prisma.user.findUnique({
       where: { id: parentUserId },
@@ -597,11 +603,6 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
   if (!session) throw new Error("Chat session not found");
   if (session.providerId !== providerId) throw new Error("Provider/session mismatch");
   if (!provider.pandaDocTemplateId) throw new Error("Provider has not configured a PandaDoc template. Please sync the template first from the Documents tab.");
-
-  const existingAgreement = await prisma.agreement.findFirst({
-    where: { sessionId, providerId, status: { in: ["DRAFT", "SENT"] } },
-  });
-  if (existingAgreement) throw new Error("An agreement has already been generated for this session");
 
   const apiKey = process.env.PANDADOC_API_KEY;
   if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
@@ -647,71 +648,61 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
   });
 
   try {
-    const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    const hasParent2 = !!(parent2 && p2.email);
+
+    // Parse the stored role names that the provider configured in the Documents tab.
+    // pandaDocRoles is a JSON string: ["Client","Client2","Agency"] - ordered by signing_order.
+    // Positional assignment: 1st role = parent1, last role = provider, middle = parent2.
+    let storedRoles: string[] = [];
+    if (provider.pandaDocRoles) {
+      try {
+        storedRoles = JSON.parse(provider.pandaDocRoles as string);
+      } catch {
+        storedRoles = [];
+      }
+    }
+    console.log("[PandaDoc] Stored roles:", storedRoles.join(", ") || "(none configured)");
+
+    if (storedRoles.length < 2) {
+      throw new Error(
+        "Signing roles not configured. In the Documents tab, enter your role names exactly as you named them in the PandaDoc editor (e.g. 'Client' and 'Agency'), then save."
+      );
+    }
+
+    const role1 = storedRoles[0];
+    const role2 = (hasParent2 && storedRoles.length >= 3) ? storedRoles[1] : null;
+    const role3 = storedRoles[storedRoles.length - 1];
+    console.log(`[PandaDoc] Role assignment: parent1="${role1}", parent2="${role2 ?? "none"}", provider="${role3}"`);
+
+    const recipients: any[] = [
+      {
+        email: parent1Email,
+        first_name: parent1.firstName || p1.name.split(" ")[0] || "",
+        last_name: parent1.lastName || p1.name.split(" ").slice(1).join(" ") || "",
+        role: role1,
+      },
+    ];
+    if (hasParent2 && role2) {
+      recipients.push({
+        email: p2.email,
+        first_name: parent2!.firstName || p2.name.split(" ")[0] || "",
+        last_name: parent2!.lastName || p2.name.split(" ").slice(1).join(" ") || "",
+        role: role2,
+      });
+    }
+    if (provider.email) {
+      recipients.push({
+        email: provider.email,
+        first_name: provider.name.split(" ")[0] || provider.name,
+        last_name: provider.name.split(" ").slice(1).join(" ") || "",
+        role: role3,
+      });
+    }
 
     const docBody = {
       template_uuid: provider.pandaDocTemplateId,
       name: `${provider.name} - Agency Agreement - ${parent1Name}`,
-      // Roles are only included if they match roles defined in the template
-      // (i.e. after the provider has placed fields in the template editor).
-      // Fetch template roles first and only assign matching ones.
-      recipients: await (async () => {
-        // Check what roles exist in the template
-        const tmplRes = await fetch(`https://api.pandadoc.com/public/v1/templates/${provider.pandaDocTemplateId}/roles`, {
-          headers: { "Authorization": `API-Key ${apiKey}` },
-        });
-        const templateRoles: string[] = tmplRes.ok
-          ? ((await tmplRes.json()).results || []).map((r: any) => r.name as string)
-          : [];
-        console.log("[PandaDoc] Template roles:", templateRoles);
-
-        const recipients: any[] = [
-          {
-            email: parent1Email,
-            first_name: parent1.firstName || p1.name.split(" ")[0] || "",
-            last_name: parent1.lastName || p1.name.split(" ").slice(1).join(" ") || "",
-            ...(templateRoles.includes("signer1") ? { role: "signer1" } : {}),
-          },
-        ];
-        if (parent2 && p2.email) {
-          recipients.push({
-            email: p2.email,
-            first_name: parent2.firstName || p2.name.split(" ")[0] || "",
-            last_name: parent2.lastName || p2.name.split(" ").slice(1).join(" ") || "",
-            ...(templateRoles.includes("signer2") ? { role: "signer2" } : {}),
-          });
-        }
-        if (provider.email && templateRoles.includes("signer3")) {
-          recipients.push({
-            email: provider.email,
-            first_name: provider.name.split(" ")[0] || provider.name,
-            last_name: provider.name.split(" ").slice(1).join(" ") || "",
-            role: "signer3",
-          });
-        }
-        return recipients;
-      })(),
-      tokens: [
-        { name: "CLIENT1_NAME", value: p1.name },
-        { name: "CLIENT1_EMAIL", value: p1.email },
-        { name: "CLIENT1_DOB", value: p1.dob },
-        { name: "CLIENT1_ADDRESS", value: p1.address },
-        { name: "CLIENT1_SSN", value: p1.ssn },
-        { name: "CLIENT1_PASSPORT", value: p1.passport },
-        { name: "CLIENT1_PASSPORT_COUNTRY", value: p1.passportCountryOfIssue },
-        { name: "CLIENT1_NATIONALITY", value: p1.nationality },
-        { name: "CLIENT2_NAME", value: p2.name },
-        { name: "CLIENT2_EMAIL", value: p2.email },
-        { name: "CLIENT2_DOB", value: p2.dob },
-        { name: "CLIENT2_ADDRESS", value: p2.address },
-        { name: "CLIENT2_SSN", value: p2.ssn },
-        { name: "CLIENT2_PASSPORT", value: p2.passport },
-        { name: "CLIENT2_PASSPORT_COUNTRY", value: p2.passportCountryOfIssue },
-        { name: "CLIENT2_NATIONALITY", value: p2.nationality },
-        { name: "PROVIDER_NAME", value: provider.name },
-        { name: "PROVIDER_EMAIL", value: provider.email || "" },
-        { name: "DATE", value: today },
-      ],
+      recipients,
       metadata: {
         gostork_provider_id: providerId,
         gostork_parent_user_id: parentUserId,
@@ -737,8 +728,12 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
     }
 
     const pandaDocResult = await createResponse.json();
-    console.log("[PandaDoc] Template document created:", JSON.stringify({ id: pandaDocResult.id, status: pandaDocResult.status }));
     const pandaDocDocumentId = pandaDocResult.id;
+    console.log("[PandaDoc] Document created:", JSON.stringify({
+      id: pandaDocDocumentId,
+      status: pandaDocResult.status,
+      recipients: (pandaDocResult.recipients || []).map((r: any) => `${r.email}(role=${r.role ?? "none"})`),
+    }));
 
     await prisma.agreement.update({
       where: { id: agreement.id },
@@ -756,6 +751,7 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
       return await prisma.agreement.findUnique({ where: { id: agreement.id } });
     }
 
+    // Send the document.
     const sendResponse = await fetch(`https://api.pandadoc.com/public/v1/documents/${pandaDocDocumentId}/send`, {
       method: "POST",
       headers: {
@@ -776,6 +772,13 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
         data: { status: "CREATED" },
       });
       return await prisma.agreement.findUnique({ where: { id: agreement.id } });
+    }
+
+    // Wait for document to reach "sent" state before creating signing session.
+    // PandaDoc's send is async - creating a session before it's SENT gives a view-only link.
+    const isSent = await waitForDocumentStatus(apiKey, pandaDocDocumentId, "document.sent");
+    if (!isSent) {
+      console.warn("[PandaDoc] Document did not reach sent state - signing session may be view-only");
     }
 
     const pandaDocViewUrl = await fetchDocumentViewUrl(apiKey, pandaDocDocumentId, parent1Email);
@@ -800,10 +803,10 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
  * Get a fresh signing session URL for an existing agreement.
  * Verifies the requesting user is the parent on the agreement.
  */
-export async function getAgreementSigningSession(agreementId: string, userId: string): Promise<string> {
+export async function getAgreementSigningSession(agreementId: string, userId: string): Promise<{ signingUrl: string; sessionId: string; providerId: string | null; isProviderThread: boolean }> {
   const agreement = await prisma.agreement.findUnique({
     where: { id: agreementId },
-    select: { id: true, parentUserId: true, pandaDocDocumentId: true, pandaDocViewUrl: true },
+    select: { id: true, parentUserId: true, pandaDocDocumentId: true, pandaDocViewUrl: true, sessionId: true },
   });
   if (!agreement) throw new Error("Agreement not found");
   if (agreement.parentUserId !== userId) throw new Error("Not authorized to access this agreement");
@@ -812,14 +815,30 @@ export async function getAgreementSigningSession(agreementId: string, userId: st
   const apiKey = process.env.PANDADOC_API_KEY;
   if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
 
-  const parentUser = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { email: true },
-  });
+  const [parentUser, session] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { email: true } }),
+    agreement.sessionId
+      ? prisma.aiChatSession.findUnique({
+          where: { id: agreement.sessionId },
+          select: { providerId: true, providerJoinedAt: true, status: true },
+        })
+      : null,
+  ]);
   if (!parentUser?.email) throw new Error("Parent user email not found");
 
   const url = await fetchDocumentViewUrl(apiKey, agreement.pandaDocDocumentId, parentUser.email);
   if (!url) throw new Error("Could not create signing session - document may not be in a signable state");
 
-  return url;
+  const isProviderThread = !!(
+    session?.providerJoinedAt ||
+    session?.status === "CONSULTATION_BOOKED" ||
+    session?.status === "PROVIDER_JOINED"
+  );
+
+  return {
+    signingUrl: url,
+    sessionId: agreement.sessionId,
+    providerId: session?.providerId ?? null,
+    isProviderThread,
+  };
 }

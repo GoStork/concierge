@@ -478,3 +478,16 @@ input[type="time"]::-webkit-date-and-time-value {
   border-radius: 0;
 }
 
+
+/* PandaDoc embedded template editor - force iframe to fill container */
+#pandadoc-template-editor-container,
+#pandadoc-template-editor-container > * {
+  width: 100% !important;
+  height: 100% !important;
+}
+#pandadoc-template-editor-container iframe {
+  width: 100% !important;
+  height: 100% !important;
+  border: none;
+  display: block;
+}

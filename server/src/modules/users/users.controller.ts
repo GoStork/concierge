@@ -388,25 +388,55 @@ export class UsersController {
       }
 
       const validServices = ["Fertility Clinic", "Egg Donor", "Surrogate", "Sperm Donor"];
-      if (Array.isArray(body.interestedServices) && user.parentAccountId) {
-        if (body.interestedServices.some((s: string) => !validServices.includes(s))) {
-          throw new BadRequestException("Invalid service selection");
+      if (user.parentAccountId) {
+        const profileData: any = {};
+
+        if (Array.isArray(body.interestedServices)) {
+          if (body.interestedServices.some((s: string) => !validServices.includes(s))) {
+            throw new BadRequestException("Invalid service selection");
+          }
+          profileData.interestedServices = body.interestedServices;
         }
-        const existing = await tx.intendedParentProfile.findUnique({
-          where: { parentAccountId: user.parentAccountId },
-        });
-        if (existing) {
-          await tx.intendedParentProfile.update({
+
+        // All editable IntendedParentProfile string fields from account page
+        const stringProfileFields = [
+          "journeyStage", "eggSource", "spermSource", "carrier",
+          "clinicPriority", "currentClinicName", "currentAgencyName", "currentAttorneyName",
+          "surrogateCountries", "surrogateTermination", "surrogateTwins",
+          "surrogateAgeRange", "surrogateBudget", "surrogateExperience", "surrogateMedPrefs",
+          "donorPreferences", "donorEyeColor", "donorHairColor", "donorHeight",
+          "donorEducation", "donorEthnicity", "spermDonorType", "spermDonorPreferences",
+        ];
+        for (const field of stringProfileFields) {
+          if (body[field] !== undefined) profileData[field] = body[field] || null;
+        }
+
+        const boolProfileFields = ["hasEmbryos", "embryosTested", "needsClinic", "needsEggDonor", "needsSurrogate", "isFirstIvf", "sameSexCouple"];
+        for (const field of boolProfileFields) {
+          if (body[field] !== undefined) {
+            profileData[field] = body[field] === true || body[field] === "true" ? true : (body[field] === false || body[field] === "false" ? false : null);
+          }
+        }
+
+        if (body.embryoCount !== undefined) {
+          const num = parseInt(String(body.embryoCount), 10);
+          profileData.embryoCount = !isNaN(num) && num >= 0 ? num : null;
+        }
+
+        if (Object.keys(profileData).length > 0) {
+          const existing = await tx.intendedParentProfile.findUnique({
             where: { parentAccountId: user.parentAccountId },
-            data: { interestedServices: body.interestedServices },
           });
-        } else {
-          await tx.intendedParentProfile.create({
-            data: {
-              parentAccountId: user.parentAccountId,
-              interestedServices: body.interestedServices,
-            },
-          });
+          if (existing) {
+            await tx.intendedParentProfile.update({
+              where: { parentAccountId: user.parentAccountId },
+              data: profileData,
+            });
+          } else {
+            await tx.intendedParentProfile.create({
+              data: { parentAccountId: user.parentAccountId, ...profileData },
+            });
+          }
         }
       }
     });

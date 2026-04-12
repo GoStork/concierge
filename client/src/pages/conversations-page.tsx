@@ -14,7 +14,7 @@ import {
   ArrowLeft, MessageSquare, User, Loader2, FileText, X,
   CheckCircle2, UserPlus, Shield, ThumbsUp, ThumbsDown,
   Sparkles, Building2, ChevronDown, MessageCircle,
-  CalendarDays, Video, Trash2,
+  CalendarDays, Video, Trash2, Headphones,
   // Used by legacy dead code pending removal
   CalendarClock, Check, Clock, Crown, Download, ExternalLink, Paperclip, Send,
 } from "lucide-react";
@@ -948,6 +948,12 @@ export default function ConversationsPage() {
     }
   }, [isProvider, selectedSessionId, selectedParentSession?.id, queryClient]);
 
+  // Reset talk-to-team escalation state when switching sessions
+  useEffect(() => {
+    setTalkToTeamEscalated(false);
+    talkToTeamRef.current = null;
+  }, [selectedParentSession?.id]);
+
   const detail = sessionDetailQuery.data;
   const profile = detail?.user?.parentAccount?.intendedParentProfile;
   const selectedSession = (providerSessionsQuery.data || []).find(s => s.id === selectedSessionId);
@@ -970,6 +976,8 @@ export default function ConversationsPage() {
   const { statuses: onlineStatuses } = useOnlineStatus(onlineUserIds, onlineProviderIds);
 
   const [parentBookingOverlay, setParentBookingOverlay] = useState<{ slug: string; memberName: string } | null>(null);
+  const talkToTeamRef = useRef<{ trigger: () => void; escalated: boolean } | null>(null);
+  const [talkToTeamEscalated, setTalkToTeamEscalated] = useState(false);
 
   const handleParentMeeting = async () => {
     if (!selectedParentSession) return;
@@ -1261,6 +1269,25 @@ export default function ConversationsPage() {
               <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>{parentHeaderName}</h2>
             </div>
           )}
+          {!selectedParentSession!.providerId && (
+            <div className="flex items-center gap-1 shrink-0 ml-auto">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs gap-1.5 h-8"
+                style={{ borderColor: `${brandColor}30`, color: brandColor, borderRadius: "999px" }}
+                onClick={() => {
+                  talkToTeamRef.current?.trigger();
+                  setTalkToTeamEscalated(true);
+                }}
+                disabled={talkToTeamEscalated}
+                data-testid="btn-talk-to-team"
+              >
+                <Headphones className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{talkToTeamEscalated ? "Team Notified" : "Talk to GoStork Team"}</span>
+              </Button>
+            </div>
+          )}
           {selectedParentSession!.providerId && (
           <div className="flex items-center gap-1 shrink-0 ml-auto">
             <Button
@@ -1299,6 +1326,7 @@ export default function ConversationsPage() {
           inlineMatchmakerId={selectedParentSession!.matchmakerId || undefined}
           externalBookingSlug={parentBookingOverlay}
           onCloseExternalBooking={() => setParentBookingOverlay(null)}
+          talkToTeamRef={talkToTeamRef}
         />
       </div>
     ) : null;

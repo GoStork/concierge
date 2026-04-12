@@ -121,6 +121,7 @@ interface CostProgram {
   name: string;
   country: string;
   createdAt: string;
+  latestSheetStatus: string | null;
 }
 
 interface ServiceInfo {
@@ -143,6 +144,7 @@ interface ProviderCostsTabProps {
   providerType: string;
   providerId: string;
   isAdminView: boolean;
+  canManagePrograms?: boolean;
   parentId?: string;
   providerServices?: ServiceInfo[];
 }
@@ -298,11 +300,12 @@ function SingleCostsTab({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingFileRef = useRef<File | null>(null);
   const [editItems, setEditItems] = useState<CostItemData[]>([]);
-  const [isEditing, setIsEditing] = useState(!isAdminView || !!programId);
+  const [isEditing, setIsEditing] = useState(!isAdminView);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectFeedback, setRejectFeedback] = useState("");
   const [rejectSheetId, setRejectSheetId] = useState("");
   const [isParsing, setIsParsing] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [parseProgress, setParseProgress] = useState(0);
   const [parseStage, setParseStage] = useState("");
   const parseTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -510,6 +513,7 @@ function SingleCostsTab({
             }));
             setEditItems(items);
             setIsEditing(true);
+            setIsDirty(true);
             const filledCount = items.filter((i: CostItemData) => i.minValue !== null || i.maxValue !== null).length;
             toast({ title: "AI parsing complete", description: `${filledCount} cost items extracted`, variant: "success" });
           }
@@ -529,7 +533,7 @@ function SingleCostsTab({
       formData.append("providerId", providerId);
       formData.append("providerType", providerType);
       if (providerTypeId) formData.append("providerTypeId", providerTypeId);
-      if (subType) formData.append("subType", subType);
+      if (effectiveSubType) formData.append("subType", effectiveSubType);
       if (programId) formData.append("programId", programId);
       const res = await fetch("/api/costs/upload", { method: "POST", body: formData, credentials: "include" });
       if (!res.ok) throw new Error((await res.json()).message);
@@ -584,12 +588,13 @@ function SingleCostsTab({
         items: data.items,
         sheetId: data.sheetId,
         providerTypeId,
-        subType,
+        subType: effectiveSubType,
         programId,
       });
     },
     onSuccess: () => {
       invalidateAll();
+      setIsDirty(false);
       if (isAdminView) setIsEditing(false);
       toast({ title: "Cost sheet submitted for review", variant: "success" });
     },
@@ -776,6 +781,7 @@ function SingleCostsTab({
 
   const updateEditItem = useCallback(
     (idx: number, field: keyof CostItemData, value: any) => {
+      setIsDirty(true);
       setEditItems((prev) => {
         const updated = [...prev];
         updated[idx] = { ...updated[idx], [field]: value };
@@ -931,16 +937,16 @@ function SingleCostsTab({
 
     if (draftSheet && draftSheet.items && draftSheet.items.length > 0) {
       setEditItems(mergeWithTpl(filterBySubType(draftSheet.items.map(mapSheetItem))));
-      setIsEditing(true);
+      if (!isAdminView) setIsEditing(true);
     } else if (pendingSheet && pendingSheet.items && pendingSheet.items.length > 0) {
       setEditItems(mergeWithTpl(filterBySubType(pendingSheet.items.map(mapSheetItem))));
-      setIsEditing(true);
+      if (!isAdminView) setIsEditing(true);
     } else if (latestMaster && latestMaster.items && latestMaster.items.length > 0) {
       setEditItems(mergeWithTpl(filterBySubType(latestMaster.items.map(mapSheetItem))));
-      setIsEditing(true);
+      if (!isAdminView) setIsEditing(true);
     } else if (templateItems.length > 0) {
       setEditItems([...templateItems]);
-      setIsEditing(true);
+      if (!isAdminView) setIsEditing(true);
     }
   }, [sheetsQuery.isLoading, templatesQuery.isLoading, draftSheet?.id, pendingSheet?.id, latestMaster?.id, latestMaster?.status, templateItems.length, isAdminView, parentId, programId]);
 
@@ -1034,7 +1040,8 @@ function SingleCostsTab({
         .map((t) => t.fieldName)
     : [];
 
-  const missingMandatory = effectiveEditing
+  const hasAnyValue = editItems.some((item) => item.minValue !== null || item.maxValue !== null);
+  const missingMandatory = effectiveEditing && !isParsing && (displaySheet || hasAnyValue)
     ? mandatoryFields.filter(
         (field) =>
           !editItems.some(
@@ -1270,7 +1277,19 @@ function SingleCostsTab({
           </span>
           <div className="flex-1" />
 
-          {isAdminView && !effectiveEditing && displaySheet.status === "PENDING" && (
+          {isAdminView && !effectiveEditing && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => startEditingFromSheet(displaySheet)}
+              data-testid="btn-admin-override-edit"
+            >
+              <Pencil className="w-3.5 h-3.5 mr-1" />
+              Override
+            </Button>
+          )}
+
+          {isAdminView && !effectiveEditing && (displaySheet.status === "PENDING" || displaySheet.status === "DRAFT") && (
             <>
               <Button
                 size="sm"
@@ -1785,7 +1804,7 @@ function SingleCostsTab({
         </div>
       )}
 
-      {!isAdminView && editItems.length > 0 && (
+      {!isAdminView && editItems.length > 0 && (isDirty || !displaySheet || displaySheet.status === "DRAFT" || displaySheet.status === "REJECTED") && (
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t flex gap-2 justify-end items-center" data-testid="edit-actions">
           {autoSaveStatus === "saving" && (
             <span className="text-xs text-muted-foreground flex items-center gap-1 mr-auto" data-testid="text-auto-save-status">
@@ -1812,7 +1831,7 @@ function SingleCostsTab({
                 sheetId: displaySheet?.status === "APPROVED" ? undefined : displaySheet?.id,
               });
             }}
-            disabled={submitMutation.isPending || missingMandatory.length > 0}
+            disabled={submitMutation.isPending || missingMandatory.length > 0 || isParsing}
             data-testid="btn-submit-for-approval"
           >
             {submitMutation.isPending ? (
@@ -1913,6 +1932,7 @@ function ProgramsView({
   providerTypeId,
   providerId,
   isAdminView,
+  canManagePrograms,
   parentId,
   subType,
 }: {
@@ -1920,6 +1940,7 @@ function ProgramsView({
   providerTypeId?: string;
   providerId: string;
   isAdminView: boolean;
+  canManagePrograms?: boolean;
   parentId?: string;
   subType?: string;
 }) {
@@ -1941,6 +1962,16 @@ function ProgramsView({
     },
     enabled: !!providerId,
   });
+
+  const programs = Array.isArray(programsQuery.data) ? programsQuery.data : [];
+
+  // Auto-expand the first program with a pending review when admin lands on this tab
+  useEffect(() => {
+    if (!isAdminView || expandedProgramId) return;
+    const pending = programs.find((p) => p.latestSheetStatus === "PENDING");
+    if (pending) setExpandedProgramId(pending.id);
+    else if (programs.length === 1) setExpandedProgramId(programs[0].id);
+  }, [isAdminView, programs.length, expandedProgramId]);
 
   const invalidatePrograms = () => queryClient.invalidateQueries({ queryKey: programsQueryKey });
 
@@ -1997,8 +2028,6 @@ function ProgramsView({
 
   const isIvfType = providerType.toLowerCase().includes("ivf");
 
-  const programs = Array.isArray(programsQuery.data) ? programsQuery.data : [];
-
   function startEdit(program: CostProgram) {
     setEditingProgramId(program.id);
     setFormName(program.name);
@@ -2024,7 +2053,7 @@ function ProgramsView({
         <p className="text-sm text-muted-foreground">
           {programs.length === 0 ? "No programs yet" : `${programs.length} program${programs.length !== 1 ? "s" : ""}`}
         </p>
-        {isAdminView && !isAddingProgram && (
+        {(isAdminView || canManagePrograms) && !isAddingProgram && (
           <Button size="sm" variant="outline" onClick={startAdd}>
             <Plus className="w-4 h-4 mr-1" />
             Add Program
@@ -2119,8 +2148,13 @@ function ProgramsView({
                       {program.country}
                     </Badge>
                     <ProgramTotalBadge providerId={providerId} programId={program.id} isAdminView={isAdminView} />
+                    {isAdminView && program.latestSheetStatus === "PENDING" && (
+                      <Badge className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/40 border">
+                        Pending Review
+                      </Badge>
+                    )}
                   </div>
-                  {isAdminView && (
+                  {(isAdminView || canManagePrograms) && (
                     <>
                       <Button
                         size="sm"
@@ -2221,7 +2255,7 @@ function ProgramsView({
         <div className="text-center py-8 border rounded-[var(--container-radius)] text-muted-foreground">
           <Globe className="w-8 h-8 mx-auto mb-2 opacity-40" />
           <p className="text-sm">No programs created yet.</p>
-          {isAdminView && (
+          {(isAdminView || canManagePrograms) && (
             <p className="text-xs mt-1">Click "Add Program" to create the first program.</p>
           )}
         </div>
@@ -2240,12 +2274,14 @@ function EggDonationSubTabs({
   providerTypeId,
   providerId,
   isAdminView,
+  canManagePrograms,
   parentId,
 }: {
   providerType: string;
   providerTypeId?: string;
   providerId: string;
   isAdminView: boolean;
+  canManagePrograms?: boolean;
   parentId?: string;
 }) {
   const [activeSubTab, setActiveSubTab] = useState("fresh");
@@ -2282,6 +2318,7 @@ function EggDonationSubTabs({
           providerTypeId={providerTypeId}
           providerId={providerId}
           isAdminView={isAdminView}
+          canManagePrograms={canManagePrograms}
           parentId={parentId}
           subType="fresh"
         />
@@ -2292,6 +2329,7 @@ function EggDonationSubTabs({
           providerTypeId={providerTypeId}
           providerId={providerId}
           isAdminView={isAdminView}
+          canManagePrograms={canManagePrograms}
           parentId={parentId}
           subType="frozen"
         />
@@ -2304,6 +2342,7 @@ export default function ProviderCostsTab({
   providerType,
   providerId,
   isAdminView,
+  canManagePrograms,
   parentId,
   providerServices,
 }: ProviderCostsTabProps) {
@@ -2327,6 +2366,7 @@ export default function ProviderCostsTab({
           providerTypeId={svcTypeId}
           providerId={providerId}
           isAdminView={isAdminView}
+          canManagePrograms={canManagePrograms}
           parentId={parentId}
         />
       );
@@ -2338,6 +2378,7 @@ export default function ProviderCostsTab({
         providerTypeId={svcTypeId}
         providerId={providerId}
         isAdminView={isAdminView}
+        canManagePrograms={canManagePrograms}
         parentId={parentId}
       />
     );
@@ -2366,6 +2407,7 @@ export default function ProviderCostsTab({
                 providerTypeId={svc.providerTypeId}
                 providerId={providerId}
                 isAdminView={isAdminView}
+                canManagePrograms={canManagePrograms}
                 parentId={parentId}
               />
             ) : (
@@ -2374,6 +2416,7 @@ export default function ProviderCostsTab({
                 providerTypeId={svc.providerTypeId}
                 providerId={providerId}
                 isAdminView={isAdminView}
+                canManagePrograms={canManagePrograms}
                 parentId={parentId}
               />
             )}
