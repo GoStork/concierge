@@ -645,6 +645,12 @@ export class VideoController {
     const joinerRole: "provider" | "parent" = isProviderSide ? "provider" : "parent";
     const joinerName = req.user.name || req.user.email || "Someone";
 
+    const meetingJoinField = isProviderSide ? "providerJoinedMeetingAt" : "parentJoinedMeetingAt";
+    await this.prisma.booking.update({
+      where: { id: bookingId },
+      data: { [meetingJoinField]: new Date() },
+    });
+
     await this.notifyWaitingParty(booking, joinerRole, joinerName);
     return { ok: true };
   }
@@ -670,6 +676,11 @@ export class VideoController {
     const attendeeEmails: string[] = (booking.attendeeEmails as string[]) || [];
     const isAttendee = attendeeEmails.some(e => e.toLowerCase() === normalizedEmail);
     if (!isAttendee) return { ok: true };
+
+    await this.prisma.booking.update({
+      where: { id: bookingId },
+      data: { parentJoinedMeetingAt: new Date() },
+    });
 
     await this.notifyWaitingParty(booking, "parent", name?.trim() || email);
     return { ok: true };

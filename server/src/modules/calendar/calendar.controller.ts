@@ -863,6 +863,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       data.status = body.status;
       if (body.status === "CANCELLED") {
         data.cancelledAt = new Date();
+        data.cancelledByRole = user.id === booking.providerUserId ? "provider" : "parent";
       }
     }
     if (body.notes !== undefined) data.notes = body.notes;
@@ -947,7 +948,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
 
     const updated = await this.prisma.booking.update({
       where: { id },
-      data: { status: "CANCELLED", cancelledAt: new Date() },
+      data: { status: "CANCELLED", cancelledAt: new Date(), cancelledByRole: "provider" },
       include: {
         providerUser: { select: { id: true, name: true, email: true, photoUrl: true, mobileNumber: true, providerId: true, provider: { select: { name: true } }, scheduleConfig: { select: { bookingPageSlug: true } } } },
         parentUser: { select: { id: true, name: true, email: true, mobileNumber: true } },
@@ -1879,7 +1880,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
 
     const updated = await this.prisma.booking.update({
       where: { publicToken: token },
-      data: { status: "CANCELLED", cancelledAt: new Date() },
+      data: { status: "CANCELLED", cancelledAt: new Date(), cancelledByRole: "parent" },
     });
 
     this.notifications.sendBookingCancellation(updated).catch(() => {});
@@ -1958,7 +1959,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
 
     const updated = await this.prisma.booking.update({
       where: { id: booking.id },
-      data: { status: "CANCELLED", cancelledAt: new Date() },
+      data: { status: "CANCELLED", cancelledAt: new Date(), cancelledByRole: "provider" },
       include: {
         providerUser: { select: { id: true, name: true, email: true, photoUrl: true, mobileNumber: true, providerId: true, provider: { select: { name: true } }, scheduleConfig: { select: { bookingPageSlug: true } } } },
         parentUser: { select: { id: true, name: true, email: true, mobileNumber: true } },

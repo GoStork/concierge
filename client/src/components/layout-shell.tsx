@@ -287,6 +287,12 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     }
   }, [toast, dismiss, navigate]);
 
+  const handleHumanConcludedEvent = useCallback((data: any) => {
+    if (data.type !== "human_concluded") return;
+    // Dispatch a browser event so conversations-page can immediately refetch sessions
+    window.dispatchEvent(new CustomEvent("human-concluded", { detail: { sessionId: data.sessionId } }));
+  }, []);
+
   const handleHumanEscalationEvent = useCallback((data: any) => {
     if (data.type !== "human_escalation") return;
 
@@ -344,6 +350,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         handleBookingEvent(data);
         handleCostSheetEvent(data);
         handleHumanEscalationEvent(data);
+        handleHumanConcludedEvent(data);
       } catch {}
     };
 
@@ -363,7 +370,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       es.close();
       sseRef.current = null;
     };
-  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent]);
+  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent]);
 
   const dispatch = useAppDispatch();
   const marketplaceTab = useAppSelector((state) => state.ui.marketplaceTab);
@@ -386,6 +393,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         handleBookingEvent(data);
         handleCostSheetEvent(data);
         handleHumanEscalationEvent(data);
+        handleHumanConcludedEvent(data);
       } catch {}
     };
 
@@ -405,7 +413,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       es.close();
       costsSseRef.current = null;
     };
-  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent]);
+  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent]);
   const isProvider = hasProviderRole(roles);
   const isParent = roles.includes('PARENT');
   const isParentOnly = isParent && !isAdmin && !isProvider;

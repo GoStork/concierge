@@ -342,6 +342,7 @@ export async function registerRoutes(
         status: s.status,
         humanRequested: s.humanRequested,
         humanJoinedAt: s.humanJoinedAt,
+        humanConcludedAt: (s as any).humanConcludedAt,
         providerId: s.providerId,
         providerName: s.provider?.name || null,
         providerLogo: s.provider?.logoUrl || null,
@@ -379,7 +380,10 @@ export async function registerRoutes(
         },
       });
       if (!session) return res.status(404).json({ message: "Session not found" });
-      res.json(session);
+      const matchmaker = session.matchmakerId
+        ? await prisma.matchmaker.findUnique({ where: { id: session.matchmakerId }, select: { name: true } })
+        : null;
+      res.json({ ...session, matchmakerName: matchmaker?.name || null });
     } catch (e: any) {
       console.error("Admin concierge session detail error:", e);
       res.status(500).json({ message: e.message });
@@ -646,7 +650,6 @@ export async function registerRoutes(
           sessionId: session.id,
           role: "assistant",
           content: `Exciting news! ${providerName} has joined our conversation. They can now answer your questions directly here.`,
-          senderType: "system",
           senderName: "Eva",
         },
       });

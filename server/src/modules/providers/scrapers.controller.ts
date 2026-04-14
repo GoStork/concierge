@@ -88,10 +88,14 @@ export class ScrapersController {
         { table: "spermDonorSyncConfig", type: "sperm-donor" },
       ];
 
+      // Auto-resume only syncs that started within the last 30 minutes - these are genuine
+      // crash-restarts where we want to pick back up. Syncs started hours ago (e.g., a 2am
+      // nightly that got interrupted) should NOT be auto-resumed - they'll run again at the
+      // next nightly. Restarting them from scratch every server restart prevents them from
+      // ever completing.
+      const resumeWindow = new Date(Date.now() - 30 * 60 * 1000);
+      // Still mark anything older than 24h as ended so the DB stays clean
       const staleThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      // Don't restart a sync that started very recently - it may still be running
-      // from a just-killed nightly job (prevents duplicate syncs on server restart)
-      const tooRecentThreshold = new Date(Date.now() - 2 * 60 * 60 * 1000);
 
       for (const { table, type } of syncTypes) {
         const interrupted = await (this.prisma[table] as any).findMany({
@@ -103,23 +107,21 @@ export class ScrapersController {
         });
 
         for (const config of interrupted) {
-          // If the last completed sync was successful and recent, this interrupted run
-          // is just a stuck retry - don't resume it, mark it as ended
-          if (config.syncStatus === "SUCCESS" && config.lastSyncAt && config.lastSyncAt > staleThreshold) {
-            console.log(`[Donor Sync] Skipping auto-resume for "${config.provider?.name || config.providerId}" - last completed sync was successful at ${config.lastSyncAt.toISOString()}, marking interrupted run as ended`);
+          const ageMin = Math.round((Date.now() - config.lastSyncStartedAt.getTime()) / 60000);
+
+          // If started more than 30 minutes ago - it was a long-running nightly sync or manual run
+          // that got interrupted. Mark it as ended and let the next nightly re-run it cleanly.
+          if (config.lastSyncStartedAt <= resumeWindow) {
+            console.log(`[Donor Sync] Not auto-resuming "${config.provider?.name || config.providerId}" (${type}) - started ${ageMin}min ago, too old for auto-resume. Marking ended, next nightly will re-run.`);
             await (this.prisma[table] as any).update({
               where: { providerId: config.providerId },
               data: { lastSyncEndedAt: new Date() },
             });
             continue;
           }
-          // If the sync started very recently (< 2 hours ago), it likely crashed mid-run from a
-          // server restart during an active nightly sync. Skip and let the nightly re-trigger it.
-          if (config.lastSyncStartedAt > tooRecentThreshold) {
-            console.log(`[Donor Sync] Skipping auto-resume for "${config.provider?.name || config.providerId}" - started only ${Math.round((Date.now() - config.lastSyncStartedAt.getTime()) / 60000)}min ago, may still be in-flight`);
-            continue;
-          }
-          console.log(`[Donor Sync] Auto-resuming ${type} sync for "${config.provider?.name || config.providerId}"`);
+
+          // Started within the last 30 minutes - this is a genuine crash restart, resume it
+          console.log(`[Donor Sync] Auto-resuming ${type} sync for "${config.provider?.name || config.providerId}" (started ${ageMin}min ago)`);
           startSync(this.prisma, config.providerId, type, undefined, this.storageService, "auto-resume").catch((err: any) => {
             console.error(`[Donor Sync] Failed to auto-resume ${type} sync for ${config.providerId}:`, err.message);
           });
@@ -167,7 +169,7 @@ export class ScrapersController {
       throw new BadRequestException("A sync is already running for this provider");
     }
     const profileLimit = limitStr ? parseInt(limitStr, 10) : undefined;
-    const jobId = await startSync(this.prisma, providerId, type as DonorType, profileLimit, this.storageService);
+    const jobId = await startSync(this.prisma, providerId, type as DonorType, profileLimit, this.storageService, "manual");
     return { message: "Sync started", jobId };
   }
 
@@ -318,6 +320,22 @@ export class ScrapersController {
       lastSyncAt = lastSyncEndedAt;
     }
 
+    // Determine the source of the last completed run (nightly / manual / auto-resume)
+    // Prefer in-memory job source, fall back to most recent SyncLog entry from DB
+    let lastRunSource: string | null = latestJob?.source || null;
+    if (!lastRunSource) {
+      try {
+        const recentLog = await this.prisma.syncLog.findFirst({
+          where: { providerId, type, status: { not: "running" } },
+          orderBy: { startedAt: "desc" },
+          select: { source: true },
+        });
+        lastRunSource = recentLog?.source || null;
+      } catch {
+        // SyncLog may not exist yet if server hasn't restarted with new schema
+      }
+    }
+
     return {
       missingFields,
       lastSyncErrors,
@@ -328,6 +346,7 @@ export class ScrapersController {
       totalProfiles,
       lastSyncStartedAt,
       lastSyncEndedAt,
+      lastRunSource,
     };
   }
 

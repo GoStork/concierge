@@ -1,0 +1,3 @@
+ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "cancelledByRole" TEXT;
+ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "parentJoinedMeetingAt" TIMESTAMP(3);
+ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "providerJoinedMeetingAt" TIMESTAMP(3);

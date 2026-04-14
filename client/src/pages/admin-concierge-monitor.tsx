@@ -8,7 +8,7 @@ import { deriveChatPalette } from "@/lib/chat-palette";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
-  Headphones, MessageCircle, User, AlertTriangle, Clock, CheckCircle2, Loader2,
+  Headphones, MessageCircle, User, Clock, CheckCircle2, Loader2, UserPlus, LogOut,
 } from "lucide-react";
 import {
   timeAgo,
@@ -31,6 +31,7 @@ interface SessionSummary {
   status: string;
   humanRequested: boolean;
   humanJoinedAt: string | null;
+  humanConcludedAt: string | null;
   providerId: string | null;
   providerName: string | null;
   providerLogo: string | null;
@@ -105,6 +106,41 @@ export default function AdminConciergeMonitor() {
     refetchInterval: 15000,
   });
 
+  const joinSessionMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      const res = await fetch(`/api/admin/concierge-sessions/${sessionId}/join`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.message || "Failed to join");
+      return body;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/concierge-sessions", selectedSessionId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/concierge-sessions"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to join", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const exitSessionMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      const res = await fetch(`/api/admin/concierge-sessions/${sessionId}/exit-human`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to exit");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/concierge-sessions", selectedSessionId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/concierge-sessions"] });
+      toast({ title: "Support session concluded", description: "The AI concierge has resumed." });
+    },
+  });
+
   const sendMessageMutation = useMutation({
     mutationFn: async ({ sessionId, content, uiCardType, uiCardData }: { sessionId: string; content: string; uiCardType?: string; uiCardData?: any }) => {
       const res = await fetch(`/api/admin/concierge-sessions/${sessionId}/message`, {
@@ -135,12 +171,16 @@ export default function AdminConciergeMonitor() {
     scrollToEnd();
     const t1 = setTimeout(scrollToEnd, 150);
     const t2 = setTimeout(scrollToEnd, 400);
-    const t3 = setTimeout(() => { scrollToEnd(); scrollDone.current = true; }, 800);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    const t3 = setTimeout(scrollToEnd, 800);
+    const t4 = setTimeout(() => { scrollToEnd(); scrollDone.current = true; }, 1500);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); };
   }, [sessionDetailQuery.data?.messages?.length, selectedSessionId]);
 
   const sessions = sessionsQuery.data || [];
   const detail = sessionDetailQuery.data;
+  const detailAiName = detail
+    ? (detail.matchmakerName || brand?.matchmakers?.find((m: any) => m.id === detail.matchmakerId)?.name || null)
+    : null;
 
   const handleSend = async (text: string, files: File[]) => {
     if (!selectedSessionId) return;
@@ -249,16 +289,16 @@ export default function AdminConciergeMonitor() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <span className="font-semibold text-sm truncate">{s.userName || "Unknown"}</span>
-              {s.humanRequested && !s.humanJoinedAt && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] text-[10px] font-bold uppercase flex-shrink-0" data-testid={`badge-escalated-${s.id}`}>
-                  <AlertTriangle className="w-2.5 h-2.5" />
-                  Needs Human
+              {s.humanRequested && (!s.humanJoinedAt || !!s.humanConcludedAt) && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase flex-shrink-0" style={{ backgroundColor: `${brandColor}15`, color: brandColor }} data-testid={`badge-escalated-${s.id}`}>
+                  <UserPlus className="w-2.5 h-2.5" />
+                  Ready to Join
                 </span>
               )}
-              {s.humanJoinedAt && (
+              {s.humanJoinedAt && !s.humanConcludedAt && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[10px] font-bold uppercase flex-shrink-0">
                   <CheckCircle2 className="w-2.5 h-2.5" />
-                  Human Active
+                  Active
                 </span>
               )}
               {s.providerJoinedAt && (
@@ -311,16 +351,35 @@ export default function AdminConciergeMonitor() {
             <p className="text-xs text-muted-foreground">{detail.user.email}</p>
           </div>
         </div>
-        {detail.humanRequested && !detail.humanJoinedAt && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] text-xs font-medium" data-testid="badge-awaiting-human">
-            <AlertTriangle className="w-3 h-3" />
-            Awaiting Human
-          </div>
+        {detail.humanRequested && (!detail.humanJoinedAt || !!(detail as any).humanConcludedAt) && (
+          <Button
+            size="sm"
+            onClick={() => joinSessionMutation.mutate(selectedSessionId!)}
+            disabled={joinSessionMutation.isPending}
+            className="gap-1.5 text-xs"
+            data-testid="btn-join-group-chat"
+          >
+            {joinSessionMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
+            Join Group Chat
+          </Button>
         )}
-        {detail.humanJoinedAt && (
+        {detail.humanJoinedAt && !(detail as any).humanConcludedAt && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => exitSessionMutation.mutate(selectedSessionId!)}
+            disabled={exitSessionMutation.isPending}
+            className="gap-1.5 text-xs"
+            data-testid="btn-exit-human"
+          >
+            {exitSessionMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <LogOut className="w-3 h-3" />}
+            Exit Chat
+          </Button>
+        )}
+        {detail.humanJoinedAt && (detail as any).humanConcludedAt && !detail.humanRequested && (
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium" data-testid="badge-human-joined">
             <CheckCircle2 className="w-3 h-3" />
-            Human Joined
+            Concluded
           </div>
         )}
       </div>
@@ -342,8 +401,7 @@ export default function AdminConciergeMonitor() {
                 if (msg.role === "user") return null;
                 if (msg.senderType === "human") return msg.senderName || "GoStork Expert";
                 if (msg.senderType === "provider") return msg.senderName || "Provider";
-                if (msg.senderType === "system") return "Eva";
-                return "AI";
+                return detailAiName || "AI";
               }}
               onBookingUpdate={() => sessionBookingsQuery.refetch()}
               msgTestIdPrefix="monitor-msg"

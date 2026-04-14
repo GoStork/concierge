@@ -49,6 +49,16 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
 
   if (!booking) return null;
   const start = new Date(booking.scheduledAt);
+  const end = new Date(start.getTime() + (booking.duration || 30) * 60 * 1000);
+  const hasPassed = new Date() > end;
+  const parentJoined = !!booking.parentJoinedMeetingAt;
+  const providerJoined = !!booking.providerJoinedMeetingAt;
+  const wasCompleted = hasPassed && isConfirmed && parentJoined && providerJoined;
+  const isParentNoShow = hasPassed && isConfirmed && providerJoined && !parentJoined;
+  const isProviderNoShow = hasPassed && isConfirmed && parentJoined && !providerJoined;
+  const isNoShow = hasPassed && !wasCompleted && !isParentNoShow && !isProviderNoShow && !isCancelled && !isRescheduled;
+  const isParentCancelled = isCancelled && booking.cancelledByRole === "parent";
+  const isProviderCancelled = isCancelled && booking.cancelledByRole === "provider";
   const providerName = booking.providerUser?.name || "Provider";
   const orgName = booking.providerUser?.provider?.name || "";
 
@@ -69,7 +79,9 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
           <div className="flex items-center gap-2 px-3 py-1.5">
             <CalendarClock className="w-4 h-4 text-primary-foreground" />
             <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
-              {orgName ? `${orgName} Consultation Call` : "Consultation Call"}
+              {isProvider
+                ? `Consultation Call with ${booking.parentUser?.name || booking.attendeeName || "Parent"}`
+                : orgName ? `Consultation Call with ${orgName}` : "Consultation Call"}
             </span>
           </div>
         </div>
@@ -77,17 +89,30 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
         <div className="p-4 space-y-3">
           <div className="flex items-center gap-2">
             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider ${
-              isConfirmed
-                ? "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))]"
-                : isPending
-                ? "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]"
-                : isCancelled
+              isCancelled
                 ? "bg-destructive/10 text-destructive"
                 : isRescheduled
                 ? "bg-muted text-muted-foreground"
+                : wasCompleted
+                ? "bg-muted text-muted-foreground"
+                : (isNoShow || isParentNoShow || isProviderNoShow)
+                ? "bg-muted text-muted-foreground"
+                : isConfirmed
+                ? "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))]"
+                : isPending
+                ? "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]"
                 : "bg-muted text-foreground"
             }`}>
-              {isPending ? "Pending Approval" : isCancelled ? "Cancelled" : isRescheduled ? "Rescheduled" : booking.status}
+              {isRescheduled ? "Rescheduled"
+                : isParentCancelled ? "Parent Cancelled"
+                : isProviderCancelled ? "Provider Cancelled"
+                : isCancelled ? "Cancelled"
+                : wasCompleted ? "Completed"
+                : isParentNoShow ? "Parent No Show"
+                : isProviderNoShow ? "Provider No Show"
+                : isNoShow ? "No Show"
+                : isPending ? "Pending Approval"
+                : booking.status}
             </span>
           </div>
 
@@ -127,31 +152,73 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
             </div>
           </div>
 
-          {isPending && isProvider && (
+          {isPending && !isNoShow && !isParentNoShow && !isProviderNoShow && isProvider && (
             <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-[var(--radius)] p-3">
               <p className="text-xs font-medium text-[hsl(var(--brand-warning))]">This meeting request needs your confirmation</p>
               <p className="text-[11px] text-[hsl(var(--brand-warning))] mt-0.5">Requested by {booking.attendeeName || booking.parentUser?.name || "a parent"}.</p>
             </div>
           )}
 
-          {isPending && !isProvider && (
+          {isPending && !isNoShow && !isParentNoShow && !isProviderNoShow && !isProvider && (
             <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-[var(--radius)] p-3">
               <p className="text-xs font-medium text-[hsl(var(--brand-warning))]">Awaiting provider confirmation</p>
               <p className="text-[11px] text-[hsl(var(--brand-warning))] mt-0.5">We'll send you an email once {providerName} confirms your booking.</p>
             </div>
           )}
 
-          {isConfirmed && (
+          {isConfirmed && !wasCompleted && !isNoShow && !isParentNoShow && !isProviderNoShow && (
             <div className="bg-[hsl(var(--brand-success)/0.08)] border border-[hsl(var(--brand-success)/0.3)] rounded-[var(--radius)] p-3">
               <p className="text-xs font-medium text-[hsl(var(--brand-success))]">Meeting confirmed</p>
               <p className="text-[11px] text-[hsl(var(--brand-success))] mt-0.5">This meeting has been confirmed. You'll receive a reminder before it starts.</p>
             </div>
           )}
 
-          {isCancelled && (
+          {wasCompleted && (
+            <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
+              <p className="text-xs font-medium text-muted-foreground">Meeting completed</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Both parties joined this consultation.</p>
+            </div>
+          )}
+
+          {isParentNoShow && (
+            <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
+              <p className="text-xs font-medium text-muted-foreground">Parent no show</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">The provider joined the meeting room but the parent did not.</p>
+            </div>
+          )}
+
+          {isProviderNoShow && (
+            <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
+              <p className="text-xs font-medium text-muted-foreground">Provider no show</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">The parent joined the meeting room but the provider did not.</p>
+            </div>
+          )}
+
+          {isNoShow && (
+            <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
+              <p className="text-xs font-medium text-muted-foreground">No show</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">The scheduled time has passed and no one joined the meeting room.</p>
+            </div>
+          )}
+
+          {isParentCancelled && (
+            <div className="bg-destructive/5 border border-destructive/20 rounded-[var(--radius)] p-3">
+              <p className="text-xs font-medium text-destructive">Parent cancelled</p>
+              <p className="text-[11px] text-destructive/80 mt-0.5">This meeting was cancelled by the parent.</p>
+            </div>
+          )}
+
+          {isProviderCancelled && (
+            <div className="bg-destructive/5 border border-destructive/20 rounded-[var(--radius)] p-3">
+              <p className="text-xs font-medium text-destructive">Provider cancelled</p>
+              <p className="text-[11px] text-destructive/80 mt-0.5">This meeting was cancelled by the provider.</p>
+            </div>
+          )}
+
+          {isCancelled && !isParentCancelled && !isProviderCancelled && (
             <div className="bg-destructive/5 border border-destructive/20 rounded-[var(--radius)] p-3">
               <p className="text-xs font-medium text-destructive">Meeting cancelled</p>
-              <p className="text-[11px] text-destructive/80 mt-0.5">This meeting has been cancelled by the parent.</p>
+              <p className="text-[11px] text-destructive/80 mt-0.5">This meeting has been cancelled.</p>
             </div>
           )}
 
@@ -162,7 +229,7 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
             </div>
           )}
 
-          {showSuggestForm && isPending && isProvider && (
+          {showSuggestForm && isPending && isProvider && !isNoShow && !isParentNoShow && !isProviderNoShow && (
             <div className="border border-border/50 rounded-[var(--radius)] p-3 space-y-2">
               <p className="text-sm font-medium">Suggest a new time</p>
               <InlineSuggestTimeForm
@@ -174,7 +241,7 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
           )}
         </div>
 
-        {isPending && isProvider && !showSuggestForm && (
+        {isPending && isProvider && !showSuggestForm && !isNoShow && !isParentNoShow && !isProviderNoShow && (
           <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-t bg-muted/20">
             <Button size="sm" onClick={() => confirmMutation.mutate()} disabled={confirmMutation.isPending || declineMutation.isPending} className="gap-1 text-xs" data-testid="button-confirm-booking-inline">
               {confirmMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3.5 h-3.5" />}

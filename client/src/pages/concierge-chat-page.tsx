@@ -425,32 +425,14 @@ function RescheduleCalendarPicker({
         </button>
       </div>
       {selectedDate && (
-        <div className="space-y-2">
-          <p className="text-xs font-medium">{format(selectedDate, "EEE, MMM d")} - Select a time:</p>
-          {slotsLoading ? (
-            <div className="flex justify-center py-2"><Loader2 className="w-4 h-4 animate-spin" /></div>
-          ) : availability?.slots?.length > 0 ? (
-            <div className="grid grid-cols-3 gap-1.5">
-              {availability.slots.map((s: any) => {
-                const t = s.time || s;
-                const isSel = selectedSlot === t;
-                return (
-                  <button
-                    key={t}
-                    onClick={() => setSelectedSlot(t)}
-                    className={`text-xs py-1.5 rounded-[var(--radius)] border transition-colors cursor-pointer ${isSel ? "text-primary-foreground border-transparent font-semibold" : "border-border hover:bg-muted"}`}
-                    style={isSel ? { backgroundColor: brandColor } : undefined}
-                    data-testid={`reschedule-slot-${t}`}
-                  >
-                    {formatTime12(t)}
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground text-center py-2">No available slots</p>
-          )}
-        </div>
+        <RescheduleDateSlots
+          selectedDate={selectedDate}
+          slotsLoading={slotsLoading}
+          availability={availability}
+          selectedSlot={selectedSlot}
+          brandColor={brandColor}
+          onSelectSlot={setSelectedSlot}
+        />
       )}
       {selectedSlot && (
         <div className="flex gap-2">
@@ -476,6 +458,203 @@ function RescheduleCalendarPicker({
   );
 }
 
+function BookingForm({
+  selectedDate, selectedSlot, name, setName, email, setEmail, phone, setPhone,
+  notes, setNotes, additionalAttendees, showAttendeeFields, setShowAttendeeFields,
+  newAttendeeEmail, setNewAttendeeEmail, newAttendeeName, setNewAttendeeName,
+  newAttendeePhone, setNewAttendeePhone, addAttendee, removeAttendee,
+  bookMutation, brandColor, onBack,
+}: {
+  selectedDate: Date; selectedSlot: string;
+  name: string; setName: (v: string) => void;
+  email: string; setEmail: (v: string) => void;
+  phone: string; setPhone: (v: string) => void;
+  notes: string; setNotes: (v: string) => void;
+  additionalAttendees: { email: string; name: string; phone: string }[];
+  showAttendeeFields: boolean; setShowAttendeeFields: (v: boolean) => void;
+  newAttendeeEmail: string; setNewAttendeeEmail: (v: string) => void;
+  newAttendeeName: string; setNewAttendeeName: (v: string) => void;
+  newAttendeePhone: string; setNewAttendeePhone: (v: string) => void;
+  addAttendee: () => void; removeAttendee: (email: string) => void;
+  bookMutation: any; brandColor: string; onBack: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [showNotes, setShowNotes] = useState(!!notes);
+
+  // Scroll into view when the form mounts
+  useEffect(() => {
+    if (!ref.current) return;
+    const t = setTimeout(() => {
+      ref.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 50);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <div ref={ref} className="space-y-2 py-1">
+      <button
+        onClick={onBack}
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        data-testid="button-back-to-dates-inline"
+      >
+        <ChevronLeft className="w-3 h-3" />
+        Back
+      </button>
+      <div className="bg-muted/50 rounded-[var(--radius)] px-3 py-2 flex items-center gap-2 text-sm">
+        <CalendarCheck className="w-4 h-4 text-primary shrink-0" />
+        <span className="font-medium">{format(selectedDate, "EEE, MMM d")}</span>
+        <span className="text-muted-foreground">at {formatTime12(selectedSlot)}</span>
+      </div>
+      <form onSubmit={(e) => { e.preventDefault(); bookMutation.mutate(); }} className="space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-0.5">
+            <Label className="text-[11px] font-medium">Name *</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} required className="h-8 text-xs" data-testid="input-book-name-inline" />
+          </div>
+          <div className="space-y-0.5">
+            <Label className="text-[11px] font-medium">Email *</Label>
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-8 text-xs" data-testid="input-book-email-inline" />
+          </div>
+        </div>
+        <div className="space-y-0.5">
+          <Label className="text-[11px] font-medium">Phone</Label>
+          <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="h-8 text-xs" data-testid="input-book-phone-inline" />
+        </div>
+
+        <div className="space-y-1.5">
+          {additionalAttendees.length > 0 && !showAttendeeFields && (
+            <div className="space-y-1">
+              {additionalAttendees.map((ae) => (
+                <div key={ae.email} className="flex items-center gap-2 bg-primary/5 border border-primary/10 rounded-[var(--radius)] px-2 py-1.5" data-testid={`attendee-chip-inline-${ae.email}`}>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate">{ae.name || ae.email}</p>
+                    {ae.name && <p className="text-[11px] text-muted-foreground truncate">{ae.email}</p>}
+                  </div>
+                  <button type="button" onClick={() => removeAttendee(ae.email)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0" data-testid={`button-remove-attendee-inline-${ae.email}`}>
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {!showAttendeeFields ? (
+            <button type="button" onClick={() => setShowAttendeeFields(true)} className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors font-medium" data-testid="button-show-attendee-fields-inline">
+              <UserPlus className="w-3.5 h-3.5" />
+              Add Additional Attendees
+            </button>
+          ) : (
+            <div className="space-y-1.5 bg-muted/30 border border-border rounded-[var(--radius)] p-2.5">
+              <Label className="flex items-center gap-1.5 text-[11px] font-medium"><UserPlus className="w-3 h-3" />Additional Attendees</Label>
+              {additionalAttendees.length > 0 && (
+                <div className="space-y-1">
+                  {additionalAttendees.map((ae) => (
+                    <div key={ae.email} className="flex items-center gap-2 bg-primary/5 border border-primary/10 rounded-[var(--radius)] px-2 py-1.5" data-testid={`attendee-chip-inline-${ae.email}`}>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium truncate">{ae.name || ae.email}</p>
+                        {ae.name && <p className="text-[11px] text-muted-foreground truncate">{ae.email}</p>}
+                      </div>
+                      <button type="button" onClick={() => removeAttendee(ae.email)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0" data-testid={`button-remove-attendee-inline-${ae.email}`}>
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Input type="email" value={newAttendeeEmail} onChange={(e) => setNewAttendeeEmail(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addAttendee(); } }} placeholder="Email address *" className="h-7 text-xs" data-testid="input-additional-attendee-inline" />
+              <div className="flex gap-1.5">
+                <Input type="text" value={newAttendeeName} onChange={(e) => setNewAttendeeName(e.target.value)} placeholder="Name (optional)" className="h-7 text-xs flex-1" data-testid="input-additional-attendee-name-inline" />
+                <Input type="tel" value={newAttendeePhone} onChange={(e) => setNewAttendeePhone(e.target.value)} placeholder="Phone (optional)" className="h-7 text-xs flex-1" data-testid="input-additional-attendee-phone-inline" />
+              </div>
+              <div className="flex gap-1.5">
+                <Button type="button" variant="outline" size="sm" onClick={addAttendee} className="h-7 flex-1 gap-1 text-xs" disabled={!newAttendeeEmail.trim()} data-testid="button-add-attendee-inline"><Plus className="w-3 h-3" />Add</Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setShowAttendeeFields(false)} className="h-7 flex-1 text-[11px] text-muted-foreground" data-testid="button-close-attendee-fields-inline">Done</Button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {!showNotes ? (
+          <button type="button" onClick={() => setShowNotes(true)} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+            <Plus className="w-3 h-3" />
+            Add notes (optional)
+          </button>
+        ) : (
+          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="text-xs resize-none" placeholder="Anything you'd like to share..." data-testid="input-book-notes-inline" />
+        )}
+
+        {bookMutation.isError && (
+          <p className="text-xs text-destructive">{(bookMutation.error as Error).message}</p>
+        )}
+        <Button
+          type="submit"
+          className="w-full h-9 text-sm font-semibold text-primary-foreground"
+          style={{ backgroundColor: brandColor }}
+          disabled={bookMutation.isPending}
+          data-testid="button-confirm-booking-inline"
+        >
+          {bookMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm Booking"}
+        </Button>
+      </form>
+    </div>
+  );
+}
+
+function RescheduleDateSlots({
+  selectedDate,
+  slotsLoading,
+  availability,
+  selectedSlot,
+  brandColor,
+  onSelectSlot,
+}: {
+  selectedDate: Date;
+  slotsLoading: boolean;
+  availability: any;
+  selectedSlot: string | null;
+  brandColor: string;
+  onSelectSlot: (t: string) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const el = ref.current;
+    const t = setTimeout(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 50);
+    return () => clearTimeout(t);
+  }, [slotsLoading]);
+
+  return (
+    <div ref={ref} className="space-y-2">
+      <p className="text-xs font-medium">{format(selectedDate, "EEE, MMM d")} - Select a time:</p>
+      {slotsLoading ? (
+        <div className="flex justify-center py-2"><Loader2 className="w-4 h-4 animate-spin" /></div>
+      ) : availability?.slots?.length > 0 ? (
+        <div className="grid grid-cols-3 gap-1.5">
+          {availability.slots.map((s: any) => {
+            const t = s.time || s;
+            const isSel = selectedSlot === t;
+            return (
+              <button
+                key={t}
+                onClick={() => onSelectSlot(t)}
+                className={`text-xs py-1.5 rounded-[var(--radius)] border transition-colors cursor-pointer ${isSel ? "text-primary-foreground border-transparent font-semibold" : "border-border hover:bg-muted"}`}
+                style={isSel ? { backgroundColor: brandColor } : undefined}
+                data-testid={`reschedule-slot-${t}`}
+              >
+                {formatTime12(t)}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground text-center py-2">No available slots</p>
+      )}
+    </div>
+  );
+}
+
 export function InlineBookingCalendar({
   slug,
   memberName,
@@ -483,6 +662,7 @@ export function InlineBookingCalendar({
   existingBooking: existingBookingProp,
   consultationMeta,
   autoResetOnCancel,
+  showCalendarOnExpiry,
 }: {
   slug: string;
   memberName: string;
@@ -490,6 +670,7 @@ export function InlineBookingCalendar({
   existingBooking?: any;
   consultationMeta?: { aiSessionId?: string; matchmakerId?: string | null; profileLabel?: string | null; profilePhotoUrl?: string | null; providerId?: string; subjectProfileId?: string | null; subjectType?: string | null };
   autoResetOnCancel?: boolean;
+  showCalendarOnExpiry?: boolean;
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -641,13 +822,31 @@ export function InlineBookingCalendar({
     );
   }
 
-  if (step === "pending" && booking) {
+  const bookingEnd = booking ? new Date(new Date(booking.scheduledAt).getTime() + (booking.duration || pageInfo?.meetingDuration || 30) * 60 * 1000) : null;
+  const bookingHasPassed = bookingEnd ? new Date() > bookingEnd : false;
+  const _bParentJoined = !!booking?.parentJoinedMeetingAt;
+  const _bProviderJoined = !!booking?.providerJoinedMeetingAt;
+  const bookingWasCompleted = bookingHasPassed && booking?.status === "CONFIRMED" && _bParentJoined && _bProviderJoined;
+  const bookingIsParentNoShow = bookingHasPassed && booking?.status === "CONFIRMED" && _bProviderJoined && !_bParentJoined;
+  const bookingIsProviderNoShow = bookingHasPassed && booking?.status === "CONFIRMED" && _bParentJoined && !_bProviderJoined;
+  const bookingIsNoShow = bookingHasPassed && !bookingWasCompleted && !bookingIsParentNoShow && !bookingIsProviderNoShow && booking?.status !== "CANCELLED" && booking?.status !== "RESCHEDULED";
+
+  const _bookingExpired = bookingWasCompleted || bookingIsParentNoShow || bookingIsProviderNoShow || bookingIsNoShow;
+  if (step === "pending" && booking && (!bookingHasPassed || booking.status === "CANCELLED" || !(showCalendarOnExpiry && _bookingExpired))) {
     const start = new Date(booking.scheduledAt);
+    const hasPassed = bookingHasPassed;
+    const wasCompleted = bookingWasCompleted;
+    const isParentNoShow = bookingIsParentNoShow;
+    const isProviderNoShow = bookingIsProviderNoShow;
+    const isNoShow = bookingIsNoShow;
+    const isConfirmed = booking.status === "CONFIRMED";
+    const isCancelledStatus = booking.status === "CANCELLED";
+    const isParentCancelled = isCancelledStatus && booking.cancelledByRole === "parent";
+    const isProviderCancelled = isCancelledStatus && booking.cancelledByRole === "provider";
     const providerUser = booking.providerUser;
     const providerPhotoSrc = getPhotoSrc(providerUser?.photoUrl);
     const providerName = providerUser?.name || memberName;
     const providerOrgName = providerUser?.provider?.name || "";
-    const isConfirmed = booking.status === "CONFIRMED";
     const participants: { name: string; email: string }[] = [];
     if (booking.attendeeName || booking.attendeeEmails?.[0]) {
       participants.push({ name: booking.attendeeName || booking.attendeeEmails[0], email: booking.attendeeEmails?.[0] || "" });
@@ -666,7 +865,77 @@ export function InlineBookingCalendar({
     return (
       <div className="space-y-4 py-3" data-testid={isConfirmed ? "inline-booking-confirmed" : "inline-booking-pending"}>
         <div className="text-center space-y-1">
-          {isConfirmed ? (
+          {isParentCancelled ? (
+            <>
+              <div className="w-12 h-12 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
+                <X className="w-6 h-6 text-destructive" />
+              </div>
+              <p className="font-bold text-sm">Parent Cancelled</p>
+              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">
+                Parent Cancelled
+              </span>
+            </>
+          ) : isProviderCancelled ? (
+            <>
+              <div className="w-12 h-12 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
+                <X className="w-6 h-6 text-destructive" />
+              </div>
+              <p className="font-bold text-sm">Provider Cancelled</p>
+              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">
+                Provider Cancelled
+              </span>
+            </>
+          ) : isCancelledStatus ? (
+            <>
+              <div className="w-12 h-12 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
+                <X className="w-6 h-6 text-destructive" />
+              </div>
+              <p className="font-bold text-sm">Meeting Cancelled</p>
+              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">
+                Cancelled
+              </span>
+            </>
+          ) : wasCompleted ? (
+            <>
+              <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
+                <Check className="w-6 h-6 text-muted-foreground" />
+              </div>
+              <p className="font-bold text-sm">Meeting Completed</p>
+              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                Completed
+              </span>
+            </>
+          ) : isParentNoShow ? (
+            <>
+              <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
+                <Clock className="w-6 h-6 text-muted-foreground" />
+              </div>
+              <p className="font-bold text-sm">Parent No Show</p>
+              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                Parent No Show
+              </span>
+            </>
+          ) : isProviderNoShow ? (
+            <>
+              <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
+                <Clock className="w-6 h-6 text-muted-foreground" />
+              </div>
+              <p className="font-bold text-sm">Provider No Show</p>
+              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                Provider No Show
+              </span>
+            </>
+          ) : isNoShow ? (
+            <>
+              <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
+                <Clock className="w-6 h-6 text-muted-foreground" />
+              </div>
+              <p className="font-bold text-sm">No Show</p>
+              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                No Show
+              </span>
+            </>
+          ) : isConfirmed ? (
             <>
               <div className="w-12 h-12 mx-auto rounded-full bg-[hsl(var(--brand-success,142_71%_45%)/0.12)] flex items-center justify-center">
                 <Check className="w-6 h-6 text-[hsl(var(--brand-success,142_71%_45%))]" />
@@ -733,7 +1002,42 @@ export function InlineBookingCalendar({
           </div>
         )}
 
-        {isConfirmed ? (
+        {isParentCancelled ? (
+          <div className="bg-destructive/5 border border-destructive/20 rounded-[var(--radius)] p-3">
+            <p className="text-xs font-medium text-destructive">Parent cancelled</p>
+            <p className="text-[11px] text-destructive/80 mt-0.5">This meeting was cancelled by the parent.</p>
+          </div>
+        ) : isProviderCancelled ? (
+          <div className="bg-destructive/5 border border-destructive/20 rounded-[var(--radius)] p-3">
+            <p className="text-xs font-medium text-destructive">Provider cancelled</p>
+            <p className="text-[11px] text-destructive/80 mt-0.5">This meeting was cancelled by the provider.</p>
+          </div>
+        ) : isCancelledStatus ? (
+          <div className="bg-destructive/5 border border-destructive/20 rounded-[var(--radius)] p-3">
+            <p className="text-xs font-medium text-destructive">Meeting cancelled</p>
+            <p className="text-[11px] text-destructive/80 mt-0.5">This meeting has been cancelled.</p>
+          </div>
+        ) : wasCompleted ? (
+          <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
+            <p className="text-xs font-medium text-muted-foreground">Meeting completed</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Both parties joined this consultation with {providerName}.</p>
+          </div>
+        ) : isParentNoShow ? (
+          <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
+            <p className="text-xs font-medium text-muted-foreground">Parent no show</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">The provider joined the meeting room but the parent did not.</p>
+          </div>
+        ) : isProviderNoShow ? (
+          <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
+            <p className="text-xs font-medium text-muted-foreground">Provider no show</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">The parent joined the meeting room but the provider did not.</p>
+          </div>
+        ) : isNoShow ? (
+          <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
+            <p className="text-xs font-medium text-muted-foreground">No show</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">The scheduled time has passed and no one joined the meeting room.</p>
+          </div>
+        ) : isConfirmed ? (
           <div className="bg-[hsl(var(--brand-success,142_71%_45%)/0.08)] border border-[hsl(var(--brand-success,142_71%_45%)/0.3)] rounded-[var(--radius)] p-3">
             <p className="text-xs font-medium text-[hsl(var(--brand-success,142_71%_45%))]">Meeting confirmed</p>
             <p className="text-[11px] text-[hsl(var(--brand-success,142_71%_45%))] mt-0.5">Your consultation with {providerName} is confirmed. You'll receive a reminder before the meeting.</p>
@@ -745,7 +1049,7 @@ export function InlineBookingCalendar({
           </div>
         )}
 
-        {booking.publicToken && (
+        {booking.publicToken && !wasCompleted && !isNoShow && !isParentNoShow && !isProviderNoShow && !isCancelledStatus && (
           <div className="flex gap-2">
             <button
               onClick={() => { setSelectedDate(null); setSelectedSlot(null); setCurrentMonth(new Date()); setStep("reschedule"); }}
@@ -863,181 +1167,35 @@ export function InlineBookingCalendar({
 
   if (step === "form" && selectedDate && selectedSlot) {
     return (
-      <div className="space-y-3 py-2">
-        <button
-          onClick={() => setStep("date")}
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          data-testid="button-back-to-dates-inline"
-        >
-          <ChevronLeft className="w-3 h-3" />
-          Back
-        </button>
-        <div className="bg-muted/50 rounded-[var(--radius)] p-3 flex items-center gap-2 text-sm">
-          <CalendarCheck className="w-4 h-4 text-primary shrink-0" />
-          <span className="font-medium">{format(selectedDate, "EEE, MMM d")}</span>
-          <span className="text-muted-foreground">at {formatTime12(selectedSlot)}</span>
-        </div>
-        <form onSubmit={(e) => { e.preventDefault(); bookMutation.mutate(); }} className="space-y-3">
-          <div className="space-y-1">
-            <Label className="text-xs font-medium">Name *</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} required className="h-9 text-sm" data-testid="input-book-name-inline" />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs font-medium">Email *</Label>
-            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-9 text-sm" data-testid="input-book-email-inline" />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs font-medium">Phone</Label>
-            <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="h-9 text-sm" data-testid="input-book-phone-inline" />
-          </div>
-
-          <div className="space-y-2">
-            {additionalAttendees.length > 0 && !showAttendeeFields && (
-              <div className="space-y-1.5">
-                {additionalAttendees.map((ae) => (
-                  <div
-                    key={ae.email}
-                    className="flex items-center gap-2 bg-primary/5 border border-primary/10 rounded-[var(--radius)] px-2.5 py-2"
-                    data-testid={`attendee-chip-inline-${ae.email}`}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate">{ae.name || ae.email}</p>
-                      {ae.name && <p className="text-[11px] text-muted-foreground truncate">{ae.email}</p>}
-                      {ae.phone && <p className="text-[11px] text-muted-foreground">{ae.phone}</p>}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeAttendee(ae.email)}
-                      className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
-                      data-testid={`button-remove-attendee-inline-${ae.email}`}
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            {!showAttendeeFields ? (
-              <button
-                type="button"
-                onClick={() => setShowAttendeeFields(true)}
-                className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors font-medium"
-                data-testid="button-show-attendee-fields-inline"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                Add Additional Attendees
-              </button>
-            ) : (
-              <div className="space-y-2 bg-muted/30 border border-border rounded-[var(--radius)] p-3">
-                <Label className="flex items-center gap-1.5 text-xs font-medium">
-                  <UserPlus className="w-3.5 h-3.5" />
-                  Additional Attendees
-                </Label>
-                <p className="text-[10px] text-muted-foreground leading-tight">
-                  Invite others to this meeting. They'll receive all notifications.
-                </p>
-                {additionalAttendees.length > 0 && (
-                  <div className="space-y-1.5">
-                    {additionalAttendees.map((ae) => (
-                      <div
-                        key={ae.email}
-                        className="flex items-center gap-2 bg-primary/5 border border-primary/10 rounded-[var(--radius)] px-2.5 py-2"
-                        data-testid={`attendee-chip-inline-${ae.email}`}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium truncate">{ae.name || ae.email}</p>
-                          {ae.name && <p className="text-[11px] text-muted-foreground truncate">{ae.email}</p>}
-                          {ae.phone && <p className="text-[11px] text-muted-foreground">{ae.phone}</p>}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeAttendee(ae.email)}
-                          className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
-                          data-testid={`button-remove-attendee-inline-${ae.email}`}
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="space-y-1.5">
-                  <Input
-                    type="email"
-                    value={newAttendeeEmail}
-                    onChange={(e) => setNewAttendeeEmail(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") { e.preventDefault(); addAttendee(); }
-                    }}
-                    placeholder="Email address *"
-                    className="h-8 text-xs"
-                    data-testid="input-additional-attendee-inline"
-                  />
-                  <div className="flex gap-1.5">
-                    <Input
-                      type="text"
-                      value={newAttendeeName}
-                      onChange={(e) => setNewAttendeeName(e.target.value)}
-                      placeholder="Full Name (optional)"
-                      className="h-8 text-xs flex-1"
-                      data-testid="input-additional-attendee-name-inline"
-                    />
-                    <Input
-                      type="tel"
-                      value={newAttendeePhone}
-                      onChange={(e) => setNewAttendeePhone(e.target.value)}
-                      placeholder="Mobile (optional)"
-                      className="h-8 text-xs flex-1"
-                      data-testid="input-additional-attendee-phone-inline"
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={addAttendee}
-                    className="h-8 w-full gap-1.5 text-xs"
-                    disabled={!newAttendeeEmail.trim()}
-                    data-testid="button-add-attendee-inline"
-                  >
-                    <Plus className="w-3 h-3" />
-                    Add Attendee
-                  </Button>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowAttendeeFields(false)}
-                  className="h-6 w-full text-[11px] text-muted-foreground"
-                  data-testid="button-close-attendee-fields-inline"
-                >
-                  Done
-                </Button>
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <Label className="text-xs font-medium">Notes</Label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="text-sm resize-none" placeholder="Anything you'd like to share..." data-testid="input-book-notes-inline" />
-          </div>
-          {bookMutation.isError && (
-            <p className="text-xs text-destructive">{(bookMutation.error as Error).message}</p>
-          )}
-          <Button
-            type="submit"
-            className="w-full h-10 text-sm font-semibold text-primary-foreground"
-            style={{ backgroundColor: brandColor }}
-            disabled={bookMutation.isPending}
-            data-testid="button-confirm-booking-inline"
-          >
-            {bookMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm Booking"}
-          </Button>
-        </form>
-      </div>
+      <BookingForm
+        selectedDate={selectedDate}
+        selectedSlot={selectedSlot}
+        name={name}
+        setName={setName}
+        email={email}
+        setEmail={setEmail}
+        phone={phone}
+        setPhone={setPhone}
+        notes={notes}
+        setNotes={setNotes}
+        additionalAttendees={additionalAttendees}
+        showAttendeeFields={showAttendeeFields}
+        setShowAttendeeFields={setShowAttendeeFields}
+        newAttendeeEmail={newAttendeeEmail}
+        setNewAttendeeEmail={setNewAttendeeEmail}
+        newAttendeeName={newAttendeeName}
+        setNewAttendeeName={setNewAttendeeName}
+        newAttendeePhone={newAttendeePhone}
+        setNewAttendeePhone={setNewAttendeePhone}
+        addAttendee={addAttendee}
+        removeAttendee={removeAttendee}
+        bookMutation={bookMutation}
+        brandColor={brandColor}
+        onBack={() => setStep("date")}
+      />
     );
   }
+
 
   return (
     <div className="space-y-3 py-1" data-testid="inline-booking-calendar">
@@ -1108,28 +1266,62 @@ export function InlineBookingCalendar({
       </div>
 
       {selectedDate && (
-        <div className="space-y-2">
-          <p className="text-xs font-semibold text-foreground/80">{format(selectedDate, "EEEE, MMMM d")}</p>
-          {slotsLoading ? (
-            <div className="flex justify-center py-4">
-              <Loader2 className="w-4 h-4 animate-spin text-primary" />
-            </div>
-          ) : availability?.slots?.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-3">No available times on this date.</p>
-          ) : (
-            <div className="grid grid-cols-3 gap-1.5">
-              {availability?.slots?.map((slot: any) => (
-                <button
-                  key={slot.time}
-                  onClick={() => { setSelectedSlot(slot.time); setStep("form"); }}
-                  className="px-2 py-2 rounded-[var(--radius)] text-xs font-medium transition-all cursor-pointer bg-muted/50 border border-border hover:bg-primary/10 hover:border-primary/40 text-foreground/80"
-                  data-testid={`slot-inline-${slot.time}`}
-                >
-                  {formatTime12(slot.time)}
-                </button>
-              ))}
-            </div>
-          )}
+        <SelectedDateSlots
+          selectedDate={selectedDate}
+          slotsLoading={slotsLoading}
+          availability={availability}
+          onSelectSlot={(time) => { setSelectedSlot(time); setStep("form"); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function SelectedDateSlots({
+  selectedDate,
+  slotsLoading,
+  availability,
+  onSelectSlot,
+}: {
+  selectedDate: Date;
+  slotsLoading: boolean;
+  availability: any;
+  onSelectSlot: (time: string) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Scroll into view when date is selected or slots finish loading
+  useEffect(() => {
+    if (!ref.current) return;
+    const el = ref.current;
+    // Use a short delay so layout has settled before scrolling
+    const t = setTimeout(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 50);
+    return () => clearTimeout(t);
+  }, [slotsLoading]);
+
+  return (
+    <div ref={ref} className="space-y-2">
+      <p className="text-xs font-semibold text-foreground/80">{format(selectedDate, "EEEE, MMMM d")}</p>
+      {slotsLoading ? (
+        <div className="flex justify-center py-4">
+          <Loader2 className="w-4 h-4 animate-spin text-primary" />
+        </div>
+      ) : availability?.slots?.length === 0 ? (
+        <p className="text-xs text-muted-foreground text-center py-3">No available times on this date.</p>
+      ) : (
+        <div className="grid grid-cols-3 gap-1.5">
+          {availability?.slots?.map((slot: any) => (
+            <button
+              key={slot.time}
+              onClick={() => onSelectSlot(slot.time)}
+              className="px-2 py-2 rounded-[var(--radius)] text-xs font-medium transition-all cursor-pointer bg-muted/50 border border-border hover:bg-primary/10 hover:border-primary/40 text-foreground/80"
+              data-testid={`slot-inline-${slot.time}`}
+            >
+              {formatTime12(slot.time)}
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -2017,8 +2209,8 @@ function ParentChatSidePanel({
   return (
     <div className="w-72 border-l overflow-y-auto bg-muted/30 hidden md:flex md:flex-col shrink-0">
       <div className="p-4 space-y-4">
-        {/* Profile Section - only when we have subject data */}
-        {subjectInfo && (
+        {/* Profile Section - only after a call has been scheduled */}
+        {subjectInfo && existingBooking && (
           <div>
             {/* Profile ID row with inline photo */}
             <div className="flex items-center gap-2.5 mb-2">
@@ -2069,9 +2261,9 @@ function ParentChatSidePanel({
           </div>
         )}
 
-        {/* Provider Section */}
-        {displayProviderName && (
-          <div className={subjectInfo ? "border-t pt-3" : ""}>
+        {/* Provider Section - only after a call has been scheduled */}
+        {displayProviderName && existingBooking && (
+          <div className={subjectInfo && existingBooking ? "border-t pt-3" : ""}>
             <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>
               Agency
             </h4>
@@ -2097,7 +2289,7 @@ function ParentChatSidePanel({
 
         {/* Calendar Section */}
         {sessionCalendarSlug?.slug && (
-          <div className={displayProviderName || subjectInfo ? "border-t pt-3" : ""}>
+          <div className={existingBooking && (displayProviderName || subjectInfo) ? "border-t pt-3" : ""}>
             <h4 className="font-semibold text-sm mb-1" style={{ fontFamily: "var(--font-display)" }}>
               Coordinator
             </h4>
@@ -2119,6 +2311,7 @@ function ParentChatSidePanel({
                 subjectType: subjectInfo.subjectType,
               } : undefined}
               autoResetOnCancel
+              showCalendarOnExpiry
             />
           </div>
         )}
@@ -2160,6 +2353,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [pendingCurationMessage, setPendingCurationMessage] = useState<ChatMessage | null>(null);
   const curationAwaitingRef = useRef(false);
   const [humanEscalated, setHumanEscalated] = useState(false);
+  const [humanInChat, setHumanInChat] = useState(false);
   const [bookingCard, setBookingCard] = useState<ConsultationCardData | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [greetingSet, setGreetingSet] = useState(false);
@@ -2404,10 +2598,20 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
   const matchmakers: Matchmaker[] = brand?.matchmakers || [];
   const [resolvedMatchmakerId, setResolvedMatchmakerId] = useState<string | null>(null);
+  const [resolvedMatchmakerName, setResolvedMatchmakerName] = useState<string | null>(null);
   const effectiveMatchmakerId = matchmakerId || resolvedMatchmakerId
     || (donorIdParam && matchmakers.find(m => m.isActive)?.id) || null;
   effectiveMatchmakerIdRef.current = effectiveMatchmakerId;
   const selectedMatchmaker = matchmakers.find((m) => m.id === effectiveMatchmakerId);
+  const aiName = selectedMatchmaker?.name || resolvedMatchmakerName || null;
+
+  // Sync resolvedMatchmakerName from brand settings when effectiveMatchmakerId resolves
+  useEffect(() => {
+    if (!effectiveMatchmakerId || resolvedMatchmakerName) return;
+    const mm = matchmakers.find((m) => m.id === effectiveMatchmakerId);
+    if (mm) setResolvedMatchmakerName(mm.name);
+  }, [effectiveMatchmakerId, matchmakers]);
+
   const brandColor = brand?.primaryColor || "#004D4D";
   const chatPalette = useMemo(() => deriveChatPalette(brandColor), [brandColor]);
 
@@ -2420,6 +2624,13 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       setSessionTitle(data.sessionTitle || null);
       if (data.providerName) setProviderChatName(data.providerName);
       if (data.providerJoined) setProviderInChat(true);
+      if (data.matchmakerId) setResolvedMatchmakerId(data.matchmakerId);
+      if (data.matchmakerName) setResolvedMatchmakerName(data.matchmakerName);
+      // Sync human escalation state: active only when humanRequested=true AND not yet concluded
+      if (typeof data.humanRequested === "boolean") {
+        setHumanEscalated(data.humanRequested && !data.humanConcludedAt);
+        setHumanInChat(!!data.humanJoinedAt && !data.humanConcludedAt);
+      }
       if (data.subjectProfileId && data.subjectType) {
         setSessionSubjectInfo({
           subjectProfileId: data.subjectProfileId,
@@ -2630,19 +2841,24 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       }, 1500);
       return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); };
     } else {
+      // New message arrived - scroll immediately and again after cards/calendars finish rendering
       scrollToBottom.current("smooth");
+      const t1 = setTimeout(() => scrollToBottom.current("smooth"), 150);
+      const t2 = setTimeout(() => scrollToBottom.current("smooth"), 400);
+      const t3 = setTimeout(() => scrollToBottom.current("smooth"), 800);
+      const t4 = setTimeout(() => scrollToBottom.current("smooth"), 1500);
+      return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); };
     }
-  }, [messages]);
+  }, [messages, sessionBookings?.length]);
 
-  // Watch for layout shifts (image loads, card renders) and keep scrolled to bottom during initial load
+  // Watch for layout shifts (image loads, card renders) and keep scrolled to bottom
   useEffect(() => {
     const container = document.querySelector('[data-testid="concierge-messages"]');
     if (!container || !messages.length) return;
 
+    // Always scroll on DOM mutations within a 3s window after new content arrives
     const scrollDown = () => {
-      if (!initialScrollDone.current) {
-        container.scrollTop = container.scrollHeight;
-      }
+      container.scrollTop = container.scrollHeight;
     };
 
     // MutationObserver catches DOM changes (new elements, attribute changes from image loads)
@@ -2663,7 +2879,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       container.removeEventListener("load", scrollDown, true);
       clearTimeout(stopTimer);
     };
-  }, [messages.length]);
+  }, [messages.length, sessionBookings?.length]);
 
   useEffect(() => {
     if (externalBookingSlug) {
@@ -2686,6 +2902,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         const newMsgs = Array.isArray(rawData) ? rawData : (rawData.messages || []);
         if (rawData.sessionTitle !== undefined) setSessionTitle(rawData.sessionTitle);
         if (rawData.providerName) setProviderChatName(rawData.providerName);
+        if (rawData.matchmakerId) setResolvedMatchmakerId(rawData.matchmakerId);
+        if (rawData.matchmakerName) setResolvedMatchmakerName(rawData.matchmakerName);
         const unseenMsgs = newMsgs.filter((m: any) => m.id && !knownMessageIds.current.has(m.id));
         if (unseenMsgs.length > 0) {
           unseenMsgs.forEach((m: any) => knownMessageIds.current.add(m.id));
@@ -2732,6 +2950,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             if (statusData.providerJoined && !providerInChat) {
               if (statusData.providerName) setProviderChatName(statusData.providerName);
               setProviderInChat(true);
+            }
+            // Sync human escalation state from server on every status poll
+            if (typeof statusData.humanRequested === "boolean") {
+              setHumanEscalated(statusData.humanRequested && !statusData.humanConcludedAt);
+              setHumanInChat(!!statusData.humanJoinedAt && !statusData.humanConcludedAt);
             }
             const allMsgs: any[] = Array.isArray(statusData) ? statusData : (statusData.messages || []);
             const statusMap = new Map(allMsgs.map((m: any) => [m.id, { deliveredAt: m.deliveredAt, readAt: m.readAt }]));
@@ -2913,14 +3136,13 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         }
       }
 
+      if (data.humanNeeded) {
+        setHumanEscalated(true);
+      }
       if (data.skipAiResponse) {
         setSending(false);
         sendingRef.current = false;
         return;
-      }
-
-      if (data.humanNeeded) {
-        setHumanEscalated(true);
       }
       if (data.consultationCard) {
         // Open the right-side panel as soon as the AI connects the parent with a provider
@@ -2980,6 +3202,13 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       talkToTeamRef.current = { trigger: handleTalkToTeam, escalated: humanEscalated };
     }
   }, [talkToTeamRef, humanEscalated]);
+
+  // Immediately re-enable button when GoStork human exits
+  useEffect(() => {
+    const handler = () => { setHumanEscalated(false); setHumanInChat(false); };
+    window.addEventListener("human-concluded", handler);
+    return () => window.removeEventListener("human-concluded", handler);
+  }, []);
 
   const handleCurationComplete = useCallback(async () => {
     showCurationRef.current = false;
@@ -3081,12 +3310,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold"
               style={{ backgroundColor: brandColor }}
             >
-              {(providerInChat && providerChatName ? providerChatName : (selectedMatchmaker?.name || "?")).charAt(0)}
+              {(providerInChat && providerChatName ? providerChatName : (aiName || "?")).charAt(0)}
             </div>
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>
-              {providerInChat && providerChatName ? providerChatName : (selectedMatchmaker?.name || "AI Concierge")}
+              {providerInChat && providerChatName ? providerChatName : (aiName || "AI Concierge")}
             </h2>
             {sessionTitle && (
               <p className="text-[11px] font-ui text-muted-foreground truncate" data-testid="chat-subject-label">
@@ -3126,18 +3355,29 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               </>
             )}
             {!providerInChat && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs gap-1.5 h-8"
-                style={{ borderColor: `${brandColor}30`, color: brandColor, borderRadius: "999px" }}
-                onClick={handleTalkToTeam}
-                disabled={sending || humanEscalated}
-                data-testid="btn-talk-to-team"
-              >
-                <Headphones className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{humanEscalated ? "Team Notified" : "Talk to GoStork Team"}</span>
-              </Button>
+              humanInChat ? (
+                <div
+                  className="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium rounded-full"
+                  style={{ backgroundColor: `${brandColor}15`, color: brandColor, borderRadius: "999px" }}
+                  data-testid="btn-talk-to-team"
+                >
+                  <Headphones className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Talking with Human</span>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs gap-1.5 h-8"
+                  style={{ borderColor: `${brandColor}30`, color: brandColor, borderRadius: "999px" }}
+                  onClick={handleTalkToTeam}
+                  disabled={sending || humanEscalated}
+                  data-testid="btn-talk-to-team"
+                >
+                  <Headphones className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{humanEscalated ? "Team Notified" : "Talk to GoStork Team"}</span>
+                </Button>
+              )
             )}
           </div>
         </div>}
@@ -3170,7 +3410,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                         <div className="flex items-center gap-2 px-3 py-1.5">
                           <CalendarCheck className="w-4 h-4 text-primary-foreground" />
                           <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
-                            {item.booking.status === "CANCELLED" ? "Meeting Cancelled" : "Meeting Scheduled"}
+                            {`Consultation Call with ${item.booking.providerUser?.provider?.name || item.booking.providerUser?.name || "Provider"}`}
                           </span>
                         </div>
                       </div>
@@ -3219,8 +3459,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   : msg.senderType === "provider"
                   ? (msg.senderName || "Agency Expert")
                   : msg.senderType === "system"
-                  ? (msg.senderName === "GoStork" ? "GoStork" : selectedMatchmaker?.name || "Eva")
-                  : (selectedMatchmaker?.name || "AI");
+                  ? (msg.senderName === "GoStork" ? "GoStork" : aiName || "AI")
+                  : (aiName || "AI");
                 const alignRight = isOwnMessage || (!isOtherParent && msg.role === "user");
                 return (
                   <>
@@ -3464,7 +3704,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 <div className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
                 <div className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
               </div>
-              <span className="text-xs text-muted-foreground">{selectedMatchmaker?.name || "AI Concierge"} is typing</span>
+              <span className="text-xs text-muted-foreground">{aiName || "AI Concierge"} is typing</span>
             </div>
           )}
           {(externalBookingSlug || conciergeBookingSlug) && (() => {
@@ -3535,7 +3775,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               {parentUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
             </Button>
             <Input
-              placeholder={`Message ${providerInChat && providerChatName ? providerChatName : (selectedMatchmaker?.name || "AI Concierge")}...`}
+              placeholder={`Message ${providerInChat && providerChatName ? providerChatName : (aiName || "AI Concierge")}...`}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}

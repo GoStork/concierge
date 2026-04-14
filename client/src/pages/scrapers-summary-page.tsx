@@ -865,28 +865,51 @@ function SyncProgressBar({ progress }: { progress: SyncProgress }) {
   );
 }
 
+// Nightly runs at 2am. A sync is "overdue" if its last successful completion
+// is older than 25 hours - meaning it missed at least one nightly run.
+const NIGHTLY_CYCLE_MS = 25 * 60 * 60 * 1000;
+
 function StatusBadge({
   status,
   progress,
   lastSyncStartedAt,
   lastSyncEndedAt,
+  lastSyncAt,
 }: {
   status: string;
   progress?: SyncProgress | null;
   lastSyncStartedAt?: string | null;
   lastSyncEndedAt?: string | null;
+  lastSyncAt?: string | null;
 }) {
   if (progress) {
     return <SyncProgressBar progress={progress} />;
   }
 
   // Running: started but not ended (and no live progress in memory)
-  const isStuck = lastSyncStartedAt && !lastSyncEndedAt;
-  if (isStuck) {
+  const isRunning = lastSyncStartedAt && !lastSyncEndedAt;
+  if (isRunning) {
     return (
       <Badge className="bg-primary/10 text-primary hover:bg-primary/15 gap-1 cursor-pointer transition-colors" data-testid="badge-status-running">
         <Loader2 className="w-3.5 h-3.5 animate-spin" />
         Running
+      </Badge>
+    );
+  }
+
+  // Overdue: last successful completion is more than 25 hours ago (missed a nightly)
+  const lastCompletedMs = lastSyncAt ? new Date(lastSyncAt).getTime() : null;
+  const isOverdue = !lastCompletedMs || (Date.now() - lastCompletedMs) > NIGHTLY_CYCLE_MS;
+
+  if (status === "SUCCESS" && isOverdue) {
+    const daysAgo = lastCompletedMs
+      ? Math.floor((Date.now() - lastCompletedMs) / (24 * 60 * 60 * 1000))
+      : null;
+    const label = daysAgo && daysAgo > 0 ? `Overdue (${daysAgo}d)` : "Overdue";
+    return (
+      <Badge className="bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))] hover:bg-[hsl(var(--brand-warning)/0.2)] gap-1 cursor-pointer transition-colors" data-testid="badge-status-overdue">
+        <AlertTriangle className="w-3.5 h-3.5" />
+        {label}
       </Badge>
     );
   }
@@ -900,10 +923,11 @@ function StatusBadge({
     );
   }
   if (status === "PARTIAL") {
+    const label = isOverdue ? "Partial (overdue)" : "Partial";
     return (
       <Badge className="bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))] hover:bg-[hsl(var(--brand-warning)/0.2)] gap-1 cursor-pointer transition-colors" data-testid="badge-status-partial">
         <AlertTriangle className="w-3.5 h-3.5" />
-        Partial
+        {label}
       </Badge>
     );
   }
@@ -1085,6 +1109,7 @@ function ScraperTypeSection({
                               progress={item.syncProgress}
                               lastSyncStartedAt={item.lastSyncStartedAt}
                               lastSyncEndedAt={item.lastSyncEndedAt}
+                              lastSyncAt={item.lastSyncAt}
                             />
                           </div>
                           <RestartSyncButton item={item} />
@@ -1164,7 +1189,18 @@ export default function ScrapersSummaryPage() {
 
   const totalProviders = summaries.length;
   const totalProfiles = summaries.reduce((a, b) => a + b.totalProfiles, 0);
-  const successCount = summaries.filter((s) => s.syncStatus === "SUCCESS").length;
+  const successCount = summaries.filter((s) => {
+    if (s.syncStatus !== "SUCCESS") return false;
+    if (s.lastSyncStartedAt && !s.lastSyncEndedAt) return false; // running
+    const lastMs = s.lastSyncAt ? new Date(s.lastSyncAt).getTime() : null;
+    return lastMs !== null && (Date.now() - lastMs) <= NIGHTLY_CYCLE_MS;
+  }).length;
+  const overdueCount = summaries.filter((s) => {
+    if (s.syncStatus !== "SUCCESS") return false;
+    if (s.lastSyncStartedAt && !s.lastSyncEndedAt) return false; // running, not overdue
+    const lastMs = s.lastSyncAt ? new Date(s.lastSyncAt).getTime() : null;
+    return !lastMs || (Date.now() - lastMs) > NIGHTLY_CYCLE_MS;
+  }).length;
   const failedCount = summaries.filter((s) => s.syncStatus === "FAILED" || s.syncStatus === "PARTIAL").length;
 
   return (
@@ -1181,7 +1217,7 @@ export default function ScrapersSummaryPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-2 md:gap-4 mb-6">
+      <div className="grid grid-cols-5 gap-2 md:gap-4 mb-6">
         <Card>
           <CardContent className="pt-4 pb-3 px-4">
             <div className="text-2xl font-heading" data-testid="text-total-providers">{totalProviders}</div>
@@ -1197,7 +1233,13 @@ export default function ScrapersSummaryPage() {
         <Card>
           <CardContent className="pt-4 pb-3 px-4">
             <div className="text-2xl font-heading text-[hsl(var(--brand-success))]" data-testid="text-successful-count">{successCount}</div>
-            <div className="text-xs text-muted-foreground">Successful</div>
+            <div className="text-xs text-muted-foreground">Successful (last 25h)</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="text-2xl font-heading text-[hsl(var(--brand-warning))]" data-testid="text-overdue-count">{overdueCount}</div>
+            <div className="text-xs text-muted-foreground">Overdue</div>
           </CardContent>
         </Card>
         <Card>

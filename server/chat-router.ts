@@ -148,6 +148,8 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       subjectType: (s as any).subjectType || null,
       providerJoinedAt: s.providerJoinedAt,
       humanRequested: s.humanRequested,
+      humanJoinedAt: s.humanJoinedAt,
+      humanConcludedAt: (s as any).humanConcludedAt || null,
       lastMessage: s.messages[0]?.content || null,
       lastMessageAt: s.messages[0]?.createdAt || s.updatedAt,
       lastMessageSenderType: s.messages[0]?.senderType || null,
@@ -371,6 +373,211 @@ chatRouter.get("/api/admin/concierge-sessions/:id", requireAuth, async (req, res
   }
 });
 
+chatRouter.post("/api/admin/concierge-sessions/:id/join", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const session = await prisma.aiChatSession.findUnique({ where: { id: req.params.id } });
+    if (!session) return res.status(404).json({ message: "Session not found" });
+    // Block re-join only if already joined AND not yet concluded (active session)
+    console.log(`[join] humanJoinedAt=${session.humanJoinedAt}, humanConcludedAt=${(session as any).humanConcludedAt}, humanRequested=${session.humanRequested}`);
+    if (session.humanJoinedAt && !(session as any).humanConcludedAt) return res.json({ alreadyJoined: true });
+
+    const expertName = user.name || "GoStork Expert";
+    const expertFirstName = expertName.split(" ")[0];
+    // Preserve PROVIDER_JOINED status if provider is already in the chat
+    const newStatus = session.status === "PROVIDER_JOINED" ? "PROVIDER_JOINED" : "HUMAN_JOINED";
+    await prisma.aiChatSession.update({
+      where: { id: session.id },
+      data: { humanJoinedAt: new Date(), humanConcludedAt: null, humanAgentId: user.id, status: newStatus },
+    });
+
+    await prisma.aiChatMessage.create({
+      data: {
+        sessionId: session.id,
+        role: "assistant",
+        content: `${expertFirstName} from the GoStork concierge team has joined our chat. Feel free to talk :)`,
+        senderType: "system",
+        senderName: "GoStork",
+      },
+    });
+
+    const sessionOwner = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
+    const notifyUserIds = sessionOwner?.parentAccountId
+      ? (await prisma.user.findMany({ where: { parentAccountId: sessionOwner.parentAccountId }, select: { id: true } })).map(u => u.id)
+      : [session.userId];
+    for (const notifyId of notifyUserIds) {
+      await prisma.inAppNotification.create({
+        data: {
+          userId: notifyId,
+          eventType: "HUMAN_JOINED",
+          payload: {
+            sessionId: session.id,
+            expertName,
+            message: `${expertName} from the GoStork team has joined your chat`,
+          },
+        },
+      });
+    }
+
+    res.json({ success: true });
+  } catch (e: any) {
+    console.error("Admin concierge join error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+chatRouter.post("/api/admin/concierge-sessions/:id/exit-human", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const session = await prisma.aiChatSession.findUnique({ where: { id: req.params.id } });
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    const expertFirstName = (user.name || "GoStork Expert").split(" ")[0];
+
+    await prisma.aiChatSession.update({
+      where: { id: session.id },
+      data: {
+        humanConcludedAt: new Date(),
+        humanRequested: false,
+        status: session.status === "PROVIDER_JOINED" ? "PROVIDER_JOINED" : "ACTIVE",
+      },
+    });
+
+    await prisma.aiChatMessage.create({
+      data: {
+        sessionId: session.id,
+        role: "assistant",
+        content: `${expertFirstName} from the GoStork concierge team has left our chat. I'm here if you need anything else!`,
+        senderType: "system",
+        senderName: "GoStork",
+      },
+    });
+
+    // Notify the parent user via SSE so the button re-enables immediately
+    try {
+      const { getNestApp } = await import("./nest-app-ref");
+      const nestApp = getNestApp();
+      if (nestApp) {
+        const { AppEventsService } = await import("./src/modules/notifications/app-events.service");
+        let appEvents: any = null;
+        try { appEvents = nestApp.get(AppEventsService); } catch {}
+        if (appEvents) {
+          // Get all users on the parent's account to notify all of them
+          const sessionOwner = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
+          const notifyUserIds = sessionOwner?.parentAccountId
+            ? (await prisma.user.findMany({ where: { parentAccountId: sessionOwner.parentAccountId }, select: { id: true } })).map((u: any) => u.id)
+            : [session.userId];
+          appEvents.emit({
+            type: "human_concluded",
+            payload: { sessionId: session.id },
+            targetUserIds: notifyUserIds,
+          }).catch(() => {});
+        }
+      }
+    } catch {}
+
+    console.log(`[exit-human] Session ${session.id}: human concierge exited, AI re-enabled`);
+    res.json({ success: true });
+  } catch (e: any) {
+    console.error("Admin concierge exit error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// Parent requests human help - sets humanRequested and notifies admins directly (no AI needed)
+chatRouter.post("/api/chat-sessions/:id/request-human", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  try {
+    const session = await prisma.aiChatSession.findUnique({ where: { id: req.params.id } });
+    if (!session) return res.status(404).json({ message: "Session not found" });
+
+    // Verify access: must be session owner or account member
+    const accountUserIds = user.parentAccountId
+      ? (await prisma.user.findMany({ where: { parentAccountId: user.parentAccountId }, select: { id: true } })).map((u: any) => u.id)
+      : [user.id];
+    if (!accountUserIds.includes(session.userId) && !isAdminUser(user)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    if (session.humanRequested) return res.json({ alreadyRequested: true });
+
+    await prisma.aiChatSession.update({
+      where: { id: session.id },
+      data: { humanRequested: true },
+    });
+
+    // Post a system message in the chat so the parent sees confirmation
+    await prisma.aiChatMessage.create({
+      data: {
+        sessionId: session.id,
+        role: "assistant",
+        content: "We've notified the GoStork concierge team and someone will join this chat shortly. Feel free to keep chatting or wait here - they'll see the full conversation when they arrive.",
+        senderType: "system",
+        senderName: "GoStork",
+      },
+    });
+
+    // Notify admins (in-app + email + SMS)
+    const admins = await prisma.user.findMany({
+      where: { roles: { has: "GOSTORK_ADMIN" } },
+      select: { id: true },
+    });
+    for (const admin of admins) {
+      await prisma.inAppNotification.create({
+        data: {
+          userId: admin.id,
+          eventType: "HUMAN_ESCALATION",
+          payload: {
+            parentName: user.name || "A parent",
+            parentUserId: user.id,
+            sessionId: session.id,
+            message: `${user.name || "A parent"} has requested to speak with a human concierge`,
+          },
+        },
+      });
+    }
+
+    // Email + SMS via standalone notifier
+    const { notifyAdminsHumanEscalation } = await import("./notify-admin-escalation");
+    notifyAdminsHumanEscalation({
+      parentName: user.name || "A parent",
+      parentEmail: user.email || "",
+      parentPhone: user.mobileNumber,
+      sessionId: session.id,
+    }).catch((e: any) => console.error("[request-human] Email/SMS failed:", e));
+
+    // SSE real-time toast to admins
+    try {
+      const { getNestApp } = await import("./nest-app-ref");
+      const nestApp = getNestApp();
+      if (nestApp) {
+        const { AppEventsService } = await import("./src/modules/notifications/app-events.service");
+        let appEvents: any = null;
+        try { appEvents = nestApp.get(AppEventsService); } catch {}
+        if (appEvents) {
+          appEvents.emit({
+            type: "human_escalation",
+            payload: {
+              parentName: user.name || "A parent",
+              sessionId: session.id,
+              message: `${user.name || "A parent"} has requested to speak with a human concierge`,
+            },
+            targetUserIds: admins.map((a: any) => a.id),
+          }).catch(() => {});
+        }
+      }
+    } catch {}
+
+    console.log(`[request-human] Session ${session.id}: humanRequested=true, admins notified`);
+    res.json({ success: true });
+  } catch (e: any) {
+    console.error("Request human error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
 chatRouter.post("/api/admin/concierge-sessions/:id/message", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
@@ -381,26 +588,6 @@ chatRouter.post("/api/admin/concierge-sessions/:id/message", requireAuth, async 
   try {
     const session = await prisma.aiChatSession.findUnique({ where: { id: req.params.id } });
     if (!session) return res.status(404).json({ message: "Session not found" });
-
-    const isFirstJoin = !session.humanJoinedAt;
-    if (isFirstJoin) {
-      await prisma.aiChatSession.update({
-        where: { id: session.id },
-        data: { humanJoinedAt: new Date(), humanAgentId: user.id, status: "HUMAN_JOINED" },
-      });
-
-      // Create a system message introducing the expert to the parent
-      const expertName = user.name || "GoStork Expert";
-      await prisma.aiChatMessage.create({
-        data: {
-          sessionId: session.id,
-          role: "assistant",
-          content: `${expertName} from the GoStork team has joined your chat! They're here to help you personally. Feel free to ask them anything.`,
-          senderType: "system",
-          senderName: "GoStork",
-        },
-      });
-    }
 
     const message = await prisma.aiChatMessage.create({
       data: {
@@ -740,7 +927,6 @@ chatRouter.post("/api/provider/concierge-sessions/:id/join", requireAuth, async 
         sessionId: session.id,
         role: "assistant",
         content: `Exciting news! ${providerName} has joined our conversation. They can now answer your questions directly here.`,
-        senderType: "system",
         senderName: "Eva",
         ...(profileCardData ? { uiCardData: profileCardData } : {}),
       },

@@ -421,7 +421,10 @@ model Booking {
   attendeeEmails       String[]       @default([])
   attendeeName         String?
   invitedByUserId      String?
-  cancelledAt          DateTime?
+  cancelledAt             DateTime?
+  cancelledByRole         String?
+  parentJoinedMeetingAt   DateTime?
+  providerJoinedMeetingAt DateTime?
   rescheduledFromId    String?
   bookerTimezone       String?
   createdAt            DateTime       @default(now())
@@ -951,6 +954,7 @@ model AiChatSession {
   sessionType      String          @default("PARENT")
   humanRequested   Boolean         @default(false)
   humanJoinedAt    DateTime?
+  humanConcludedAt DateTime?
   humanAgentId     String?
   providerId       String?
   providerJoinedAt DateTime?

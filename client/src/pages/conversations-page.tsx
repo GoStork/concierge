@@ -67,6 +67,8 @@ interface ChatSession {
   subjectType: string | null;
   providerJoinedAt: string | null;
   humanRequested: boolean;
+  humanJoinedAt: string | null;
+  humanConcludedAt: string | null;
   lastMessage: string | null;
   lastMessageAt: string;
   lastMessageSenderType: string | null;
@@ -791,24 +793,36 @@ export default function ConversationsPage() {
     const t3 = setTimeout(scrollToEnd, 800);
     const t4 = setTimeout(() => { scrollToEnd(); providerScrollDone.current = true; }, 1500);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); };
-  }, [sessionDetailQuery.data?.messages?.length, selectedSessionId]);
+  }, [sessionDetailQuery.data?.messages?.length, sessionBookingsQuery.data?.length, selectedSessionId]);
 
-  // Watch for layout shifts (image loads) in provider chat during initial load
+  // Watch for layout shifts (image loads, card renders) in provider chat
   useEffect(() => {
     if (!chatEndRef.current) return;
     const container = chatEndRef.current.closest('[data-testid="provider-chat-messages"]');
     if (!container) return;
-    const observer = new ResizeObserver(() => {
-      if (!providerScrollDone.current) {
-        container.scrollTop = container.scrollHeight;
-      }
-    });
-    observer.observe(container.firstElementChild || container);
-    container.addEventListener("load", () => {
+
+    const scrollToEnd = () => {
       if (!providerScrollDone.current) container.scrollTop = container.scrollHeight;
-    }, true);
-    return () => observer.disconnect();
-  }, [selectedSessionId]);
+    };
+
+    // MutationObserver catches card renders and image loads within the scroll window
+    const mutObs = new MutationObserver(scrollToEnd);
+    mutObs.observe(container, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "style", "class"] });
+
+    container.addEventListener("load", scrollToEnd, true);
+
+    // Stop after 3 seconds to avoid interfering with user scroll
+    const stopTimer = setTimeout(() => {
+      mutObs.disconnect();
+      container.removeEventListener("load", scrollToEnd, true);
+    }, 3000);
+
+    return () => {
+      mutObs.disconnect();
+      container.removeEventListener("load", scrollToEnd, true);
+      clearTimeout(stopTimer);
+    };
+  }, [sessionDetailQuery.data?.messages?.length, sessionBookingsQuery.data?.length, selectedSessionId]);
 
   const handleSendReply = async (text?: string, files?: File[]) => {
     const msgText = text ?? replyText.trim();
@@ -953,6 +967,16 @@ export default function ConversationsPage() {
     setTalkToTeamEscalated(false);
     talkToTeamRef.current = null;
   }, [selectedParentSession?.id]);
+
+  // Immediately refetch sessions when GoStork human exits the chat
+  useEffect(() => {
+    const handler = () => {
+      setTalkToTeamEscalated(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
+    };
+    window.addEventListener("human-concluded", handler);
+    return () => window.removeEventListener("human-concluded", handler);
+  }, [queryClient]);
 
   const detail = sessionDetailQuery.data;
   const profile = detail?.user?.parentAccount?.intendedParentProfile;
@@ -1271,25 +1295,73 @@ export default function ConversationsPage() {
           )}
           {!selectedParentSession!.providerId && (
             <div className="flex items-center gap-1 shrink-0 ml-auto">
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs gap-1.5 h-8"
-                style={{ borderColor: `${brandColor}30`, color: brandColor, borderRadius: "999px" }}
-                onClick={() => {
-                  talkToTeamRef.current?.trigger();
-                  setTalkToTeamEscalated(true);
-                }}
-                disabled={talkToTeamEscalated}
-                data-testid="btn-talk-to-team"
-              >
-                <Headphones className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">{talkToTeamEscalated ? "Team Notified" : "Talk to GoStork Team"}</span>
-              </Button>
+              {selectedParentSession!.humanJoinedAt && !selectedParentSession!.humanConcludedAt ? (
+                <div
+                  className="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium"
+                  style={{ backgroundColor: `${brandColor}15`, color: brandColor, borderRadius: "999px" }}
+                  data-testid="btn-talk-to-team"
+                >
+                  <Headphones className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Talking with Human</span>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs gap-1.5 h-8"
+                  style={{ borderColor: `${brandColor}30`, color: brandColor, borderRadius: "999px" }}
+                  onClick={async () => {
+                    setTalkToTeamEscalated(true);
+                    try {
+                      await fetch(`/api/chat-sessions/${selectedParentSession!.id}/request-human`, {
+                        method: "POST",
+                        credentials: "include",
+                      });
+                    } catch {}
+                  }}
+                  disabled={talkToTeamEscalated || !!selectedParentSession!.humanRequested}
+                  data-testid="btn-talk-to-team"
+                >
+                  <Headphones className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{(talkToTeamEscalated || selectedParentSession!.humanRequested) ? "Team Notified" : "Talk to GoStork Team"}</span>
+                </Button>
+              )}
             </div>
           )}
           {selectedParentSession!.providerId && (
           <div className="flex items-center gap-1 shrink-0 ml-auto">
+            {selectedParentSession!.status === "PROVIDER_JOINED" && (
+              selectedParentSession!.humanJoinedAt && !selectedParentSession!.humanConcludedAt ? (
+                <div
+                  className="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium"
+                  style={{ backgroundColor: `${brandColor}15`, color: brandColor, borderRadius: "999px" }}
+                >
+                  <Headphones className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Talking with Human</span>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs gap-1.5 h-8"
+                  style={{ borderColor: `${brandColor}30`, color: brandColor, borderRadius: "999px" }}
+                  onClick={async () => {
+                    setTalkToTeamEscalated(true);
+                    try {
+                      await fetch(`/api/chat-sessions/${selectedParentSession!.id}/request-human`, {
+                        method: "POST",
+                        credentials: "include",
+                      });
+                    } catch {}
+                  }}
+                  disabled={talkToTeamEscalated || selectedParentSession!.humanRequested}
+                  data-testid="btn-talk-to-team"
+                >
+                  <Headphones className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{(talkToTeamEscalated || selectedParentSession!.humanRequested) ? "Team Notified" : "Talk to GoStork Team"}</span>
+                </Button>
+              )
+            )}
             <Button
               variant="ghost"
               size="sm"

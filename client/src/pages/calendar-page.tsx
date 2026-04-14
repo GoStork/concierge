@@ -908,11 +908,21 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
 
   if (!booking) return null;
   const start = new Date(booking.scheduledAt);
+  const end = new Date(start.getTime() + (booking.duration || 30) * 60 * 1000);
+  const hasPassed = new Date() > end;
+  const parentJoined = !!booking.parentJoinedMeetingAt;
+  const providerJoined = !!booking.providerJoinedMeetingAt;
+  const wasCompleted = hasPassed && booking.status === "CONFIRMED" && parentJoined && providerJoined;
+  const isParentNoShow = hasPassed && booking.status === "CONFIRMED" && providerJoined && !parentJoined;
+  const isProviderNoShow = hasPassed && booking.status === "CONFIRMED" && parentJoined && !providerJoined;
+  const isNoShow = hasPassed && !wasCompleted && !isParentNoShow && !isProviderNoShow && booking.status !== "CANCELLED" && booking.status !== "RESCHEDULED";
+  const isParentCancelled = booking.status === "CANCELLED" && booking.cancelledByRole === "parent";
+  const isProviderCancelled = booking.status === "CANCELLED" && booking.cancelledByRole === "provider";
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-w-md">
-        <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg" style={{ backgroundColor: booking.status === "PENDING" ? "hsl(var(--brand-warning))" : "hsl(var(--primary))" }} />
+        <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg" style={{ backgroundColor: booking.status === "CANCELLED" ? "hsl(var(--destructive))" : wasCompleted || isNoShow ? "hsl(var(--muted-foreground))" : booking.status === "PENDING" ? "hsl(var(--brand-warning))" : "hsl(var(--primary))" }} />
         <DialogHeader>
           <DialogTitle>{booking.subject || "Appointment"}</DialogTitle>
         </DialogHeader>
@@ -960,12 +970,23 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
           )}
           <div className="flex items-center gap-2">
             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-ui ${
-              booking.status === "CONFIRMED" ? "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))]" :
               booking.status === "CANCELLED" ? "bg-destructive/15 text-destructive" :
+              booking.status === "RESCHEDULED" ? "bg-muted text-muted-foreground" :
+              wasCompleted || isParentNoShow || isProviderNoShow || isNoShow ? "bg-muted text-muted-foreground" :
+              booking.status === "CONFIRMED" ? "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))]" :
               booking.status === "PENDING" ? "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]" :
               "bg-muted text-foreground"
             }`}>
-              {booking.status === "PENDING" ? "Awaiting Confirmation" : booking.status}
+              {booking.status === "RESCHEDULED" ? "Rescheduled"
+                : isParentCancelled ? "Parent Cancelled"
+                : isProviderCancelled ? "Provider Cancelled"
+                : booking.status === "CANCELLED" ? "Cancelled"
+                : wasCompleted ? "Completed"
+                : isParentNoShow ? "Parent No Show"
+                : isProviderNoShow ? "Provider No Show"
+                : isNoShow ? "No Show"
+                : booking.status === "PENDING" ? "Awaiting Confirmation"
+                : booking.status}
             </span>
           </div>
           {isConfirmed && booking.providerUser?.dailyRoomUrl && booking.meetingType !== "phone" && (
@@ -981,16 +1002,44 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
             </a>
           )}
 
-          {isPending && isProvider && (
+          {isPending && !isNoShow && isProvider && (
             <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-[var(--radius)] p-3">
               <p className="text-sm text-[hsl(var(--brand-warning))] font-ui">This meeting request needs your confirmation</p>
               <p className="text-xs text-[hsl(var(--brand-warning))] mt-1">Requested by {booking.attendeeName || booking.parentUser?.name || "a parent"}.</p>
             </div>
           )}
 
-          {isPending && !isProvider && (
+          {isPending && !isNoShow && !isProvider && (
             <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-[var(--radius)] p-3">
               <p className="text-sm text-[hsl(var(--brand-warning))] font-ui">Awaiting provider confirmation</p>
+            </div>
+          )}
+
+          {wasCompleted && (
+            <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
+              <p className="text-sm font-ui text-muted-foreground">Meeting completed</p>
+              <p className="text-xs text-muted-foreground mt-1">Both parties joined this consultation.</p>
+            </div>
+          )}
+
+          {isParentNoShow && (
+            <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
+              <p className="text-sm font-ui text-muted-foreground">Parent no show</p>
+              <p className="text-xs text-muted-foreground mt-1">The provider joined the meeting room but the parent did not.</p>
+            </div>
+          )}
+
+          {isProviderNoShow && (
+            <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
+              <p className="text-sm font-ui text-muted-foreground">Provider no show</p>
+              <p className="text-xs text-muted-foreground mt-1">The parent joined the meeting room but the provider did not.</p>
+            </div>
+          )}
+
+          {isNoShow && (
+            <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
+              <p className="text-sm font-ui text-muted-foreground">No show</p>
+              <p className="text-xs text-muted-foreground mt-1">The scheduled time has passed and no one joined the meeting room.</p>
             </div>
           )}
 
@@ -1005,7 +1054,7 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
             </Link>
           )}
         </div>
-        {showSuggestForm && isPending && isProvider && (
+        {showSuggestForm && isPending && isProvider && !isNoShow && (
           <div className="border border-border/50 rounded-[var(--radius)] p-3 space-y-2">
             <p className="text-sm font-ui">Suggest a new time</p>
             <SuggestTimeForm
@@ -1015,7 +1064,7 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
             />
           </div>
         )}
-        {showRescheduleForm && (isConfirmed || (isPending && !isProvider)) && (
+        {showRescheduleForm && !wasCompleted && !isNoShow && (isConfirmed || (isPending && !isProvider)) && (
           <div className="border border-border/50 rounded-[var(--radius)] p-3 space-y-2">
             <p className="text-sm font-ui">Reschedule to a new time</p>
             <RescheduleForm
@@ -1026,7 +1075,7 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
           </div>
         )}
         <div className="flex flex-wrap items-center gap-2 pt-4 border-t">
-          {isPending && isProvider && !showSuggestForm && (
+          {!isNoShow && !isParentNoShow && !isProviderNoShow && isPending && isProvider && !showSuggestForm && (
             <>
               <Button size="sm" onClick={() => confirmMutation.mutate()} disabled={confirmMutation.isPending || declineMutation.isPending} className="gap-1" data-testid="button-confirm-booking">
                 {confirmMutation.isPending ? "Confirming..." : <><Check className="w-4 h-4" /> Confirm</>}
@@ -1039,12 +1088,12 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
               </Button>
             </>
           )}
-          {(isConfirmed || (isPending && !isProvider)) && !showRescheduleForm && (
+          {!wasCompleted && !isNoShow && !isParentNoShow && !isProviderNoShow && (isConfirmed || (isPending && !isProvider)) && !showRescheduleForm && (
             <Button size="sm" variant="outline" className="gap-1" onClick={() => setShowRescheduleForm(true)} data-testid="button-reschedule-booking">
               <CalendarClock className="w-4 h-4" /> Reschedule
             </Button>
           )}
-          {booking.status !== "CANCELLED" && booking.status !== "RESCHEDULED" && (!isPending || !isProvider) && (
+          {!wasCompleted && !isNoShow && !isParentNoShow && !isProviderNoShow && booking.status !== "CANCELLED" && booking.status !== "RESCHEDULED" && (!isPending || !isProvider) && (
             <Button size="sm" variant="outline" className="text-destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending} data-testid="button-cancel-booking">
               {cancelMutation.isPending ? "Cancelling..." : "Cancel Booking"}
             </Button>

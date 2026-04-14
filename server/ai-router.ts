@@ -464,7 +464,7 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
     const after = req.query.after as string | undefined;
     const session = await prisma.aiChatSession.findUnique({
       where: { id: sessionId },
-      select: { userId: true, providerId: true, title: true, status: true, providerJoinedAt: true, subjectProfileId: true, subjectType: true, profilePhotoUrl: true, provider: { select: { name: true, logoUrl: true } } },
+      select: { userId: true, providerId: true, title: true, status: true, providerJoinedAt: true, subjectProfileId: true, subjectType: true, profilePhotoUrl: true, matchmakerId: true, humanRequested: true, humanJoinedAt: true, humanConcludedAt: true, provider: { select: { name: true, logoUrl: true } } },
     });
     if (!session) return res.status(403).json({ message: "Forbidden" });
     const isOwner = session.userId === user.id;
@@ -493,8 +493,8 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       const data = m.uiCardData as any;
       if (data?.whisperQuestionId) return false;
       if (m.uiCardType === "provider_only") return false;
-      // System messages are hidden from parents except agreement notifications which are parent-facing
-      if (m.senderType === "system" && m.uiCardType !== "agreement") return false;
+      // System messages: show plain-text ones (join/escalation notices) and agreement cards; hide everything else
+      if (m.senderType === "system" && m.uiCardType !== "agreement" && m.uiCardType != null) return false;
       return true;
     });
 
@@ -512,16 +512,26 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       for (const m of undeliveredFromOthers) (m as any).deliveredAt = new Date();
     }
 
+    let matchmakerName: string | null = null;
+    if (session.matchmakerId) {
+      const mm = await prisma.matchmaker.findUnique({ where: { id: session.matchmakerId }, select: { name: true } });
+      matchmakerName = mm?.name || null;
+    }
     res.json({
       messages: filteredMessages,
       sessionTitle: cleanTitle(session.title) || null,
       providerName: session.provider?.name || null,
       providerLogo: session.provider?.logoUrl || null,
       providerJoined: !!session.providerJoinedAt || session.status === "CONSULTATION_BOOKED" || session.status === "PROVIDER_JOINED",
+      humanRequested: session.humanRequested,
+      humanJoinedAt: (session as any).humanJoinedAt || null,
+      humanConcludedAt: (session as any).humanConcludedAt || null,
       subjectProfileId: session.subjectProfileId || null,
       subjectType: session.subjectType || null,
       profilePhotoUrl: session.profilePhotoUrl || null,
       sessionProviderId: session.providerId || null,
+      matchmakerId: session.matchmakerId || null,
+      matchmakerName,
     });
   } catch (e: any) {
     res.status(500).json({ message: e.message });
@@ -552,7 +562,8 @@ aiRouter.get("/my-session", async (req: Request, res: Response) => {
     const filteredMessages = messages.filter((m: any) => {
       const data = m.uiCardData as any;
       if (data?.whisperQuestionId) return false;
-      if (m.senderType === "system" && m.uiCardType !== "agreement") return false;
+      // System messages: show plain-text ones (join/escalation notices) and agreement cards; hide everything else
+      if (m.senderType === "system" && m.uiCardType !== "agreement" && m.uiCardType != null) return false;
       return true;
     });
     res.json({
@@ -761,8 +772,19 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
     const currentSession = await prisma.aiChatSession.findUnique({
       where: { id: currentSessionId },
-      select: { providerJoinedAt: true, providerId: true, status: true, humanRequested: true },
+      select: { providerJoinedAt: true, providerId: true, status: true, humanRequested: true, humanJoinedAt: true, humanConcludedAt: true },
     });
+
+    // If a GoStork human concierge has joined and not yet concluded, silence the AI
+    if (currentSession?.humanJoinedAt && !currentSession.humanConcludedAt) {
+      return res.json({
+        message: { id: null, content: "", senderType: "ai", role: "assistant" },
+        sessionId: currentSessionId,
+        userMessageId: savedUserMsg?.id,
+        skipAiResponse: true,
+      });
+    }
+
     if (currentSession?.providerJoinedAt && currentSession.status === "PROVIDER_JOINED") {
       let userMsgDeliveredAt: string | null = null;
       if (currentSession.providerId) {
@@ -793,12 +815,65 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
           });
         }
       }
+
+      // If the parent is requesting a human in a provider session, notify GoStork admins
+      let humanEscalationTriggered = false;
+      const humanRequestPatternInProvider = /talk to (?:a )?(?:real|human|actual) person|talk to (?:the )?gostork team|speak (?:to|with) (?:a )?human|connect me with (?:a )?(?:human|person|someone)|i want (?:a )?human|i'd like to talk to a real person/i;
+      if (humanRequestPatternInProvider.test(userMessage) && !currentSession.humanRequested) {
+        try {
+          await prisma.aiChatSession.update({ where: { id: currentSessionId }, data: { humanRequested: true } });
+          humanEscalationTriggered = true;
+          const admins = await prisma.user.findMany({ where: { roles: { has: "GOSTORK_ADMIN" } }, select: { id: true } });
+          for (const admin of admins) {
+            await prisma.inAppNotification.create({
+              data: {
+                userId: admin.id,
+                eventType: "HUMAN_ESCALATION",
+                payload: { parentName: firstName, parentUserId: userId, sessionId: currentSessionId, message: `${firstName} has requested to speak with a human concierge` },
+              },
+            });
+          }
+          try {
+            const { notifyAdminsHumanEscalation } = await import("./notify-admin-escalation");
+            notifyAdminsHumanEscalation({
+              parentName: firstName,
+              parentEmail: currentUser?.email || "",
+              parentPhone: currentUser?.mobileNumber,
+              sessionId: currentSessionId || "",
+            }).catch((e: any) => console.error("[PROVIDER_SESSION ESCALATION] Email/SMS failed:", e));
+
+            // SSE toast (best effort)
+            try {
+              const { getNestApp } = await import("./nest-app-ref");
+              const nestApp = getNestApp();
+              if (nestApp) {
+                const { AppEventsService } = await import("./src/modules/notifications/app-events.service");
+                let appEvents: any = null;
+                try { appEvents = nestApp.get(AppEventsService); } catch {}
+                if (appEvents) {
+                  appEvents.emit({
+                    type: "human_escalation",
+                    payload: { parentName: firstName, sessionId: currentSessionId, message: `${firstName} has requested to speak with a human concierge` },
+                    targetUserIds: admins.map((a: any) => a.id),
+                  }).catch((e: any) => console.error("[PROVIDER_SESSION ESCALATION] SSE failed:", e));
+                }
+              }
+            } catch {}
+          } catch (notifErr) {
+            console.error("[PROVIDER_SESSION ESCALATION] Notification failed:", notifErr);
+          }
+        } catch (e) {
+          console.error("Failed to process human request in PROVIDER_JOINED session:", e);
+        }
+      }
+
       return res.json({
         message: { id: null, content: "", senderType: "ai", role: "assistant" },
         sessionId: currentSessionId,
         userMessageId: savedUserMsg.id,
         userMessageDeliveredAt: userMsgDeliveredAt,
         skipAiResponse: true,
+        humanNeeded: humanEscalationTriggered,
       });
     }
 
@@ -2735,174 +2810,43 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           });
         }
 
-        // Send email + SMS to admins via NotificationService
+        // Send email + SMS to admins via standalone notifier (no NestJS DI needed)
         try {
-        const { getNestApp } = await import("./nest-app-ref");
-        const nestApp = getNestApp();
-        if (nestApp) {
-          const { NotificationService } = await import("./src/modules/notifications/notification.service");
-          const { AppEventsService } = await import("./src/modules/notifications/app-events.service");
-          let notifService: any = null;
-          let appEvents: any = null;
-          try { notifService = nestApp.get(NotificationService); } catch (e) { console.error("Failed to get NotificationService:", e); }
-          try { appEvents = nestApp.get(AppEventsService); } catch (e) { console.error("Failed to get AppEventsService:", e); }
+        const { notifyAdminsHumanEscalation } = await import("./notify-admin-escalation");
+        notifyAdminsHumanEscalation({
+          parentName: userRecord?.name || firstName,
+          parentEmail: userRecord?.email || "",
+          parentPhone: userRecord?.mobileNumber,
+          sessionId: currentSessionId || "",
+        }).catch((e: any) => console.error("[HUMAN_NEEDED] Email/SMS dispatch failed:", e));
 
-          // Build profile details for the email
-          const profileDetails: { label: string; value: string }[] = [];
-          if (userRecord?.name) profileDetails.push({ label: "Name", value: userRecord.name });
-          if (userRecord?.email) profileDetails.push({ label: "Email", value: userRecord.email });
-          if (userRecord?.mobileNumber) profileDetails.push({ label: "Phone", value: userRecord.mobileNumber });
-          if (userRecord?.gender) profileDetails.push({ label: "Gender", value: userRecord.gender });
-          if (userRecord?.sexualOrientation) profileDetails.push({ label: "Sexual Orientation", value: userRecord.sexualOrientation });
-          if (userRecord?.relationshipStatus) profileDetails.push({ label: "Relationship Status", value: userRecord.relationshipStatus });
-          if (userRecord?.partnerFirstName) {
-            let partnerInfo = userRecord.partnerFirstName;
-            if (userRecord?.partnerAge) partnerInfo += `, age ${userRecord.partnerAge}`;
-            profileDetails.push({ label: "Partner", value: partnerInfo });
-          }
-          const loc = [userRecord?.city, userRecord?.state].filter(Boolean).join(", ");
-          if (loc) profileDetails.push({ label: "Location", value: loc });
-          if (userRecord?.dateOfBirth) {
-            const age = Math.floor((Date.now() - new Date(userRecord.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-            profileDetails.push({ label: "Age", value: `${age}` });
-          }
-          if (profile?.eggSource) profileDetails.push({ label: "Egg Source", value: profile.eggSource });
-          if (profile?.spermSource) profileDetails.push({ label: "Sperm Source", value: profile.spermSource });
-          if (profile?.carrier) profileDetails.push({ label: "Carrier", value: profile.carrier });
-          if (profile?.hasEmbryos !== undefined) profileDetails.push({ label: "Has Embryos", value: profile.hasEmbryos ? "Yes" : "No" });
-          if (profile?.embryoCount) profileDetails.push({ label: "Embryo Count", value: `${profile.embryoCount}` });
-          if (profile?.needsSurrogate) profileDetails.push({ label: "Needs Surrogate", value: "Yes" });
-          if (profile?.needsEggDonor) profileDetails.push({ label: "Needs Egg Donor", value: "Yes" });
-          if (profile?.needsClinic) profileDetails.push({ label: "Needs Clinic", value: "Yes" });
-          if (profile?.journeyStage) profileDetails.push({ label: "Journey Stage", value: profile.journeyStage });
-          if (profile?.clinicPriority) profileDetails.push({ label: "Clinic Priorities", value: profile.clinicPriority });
-          if (profile?.surrogateCountries) profileDetails.push({ label: "Surrogate Countries", value: profile.surrogateCountries });
-          if (profile?.isFirstIvf !== undefined) profileDetails.push({ label: "First IVF", value: profile.isFirstIvf ? "Yes" : "No" });
-
-          // Extract concise Q&A pairs from chat as short property-value rows
-          // Map common AI questions to short labels and extract the parent's answer
-          const qaPatterns: { pattern: RegExp; label: string }[] = [
-            { pattern: /on your own.*partner.*couple|who.*going.*journey/i, label: "Family Structure" },
-            { pattern: /two dads.*two moms.*mixed couple|tell me.*about.*partner/i, label: "Couple Type" },
-            { pattern: /frozen embryos/i, label: "Frozen Embryos" },
-            { pattern: /how many embryos/i, label: "Embryo Count" },
-            { pattern: /PGT-?A tested/i, label: "PGT-A Tested" },
-            { pattern: /egg.*source|plan for eggs|own eggs.*donor|working with an egg donor/i, label: "Egg Source" },
-            { pattern: /need help finding an egg donor|help finding.*egg donor|find.*egg donor/i, label: "Needs Egg Donor" },
-            { pattern: /sperm.*source|plan for sperm|own sperm.*donor|working with a sperm donor/i, label: "Sperm Source" },
-            { pattern: /need help finding a sperm donor|help finding.*sperm donor|find.*sperm donor/i, label: "Needs Sperm Donor" },
-            { pattern: /who is.*carry|planning to carry|gestational surrogate|working with a.*surrogate/i, label: "Carrier" },
-            { pattern: /need help finding a surrogate|help finding.*surrogate|find.*surrogate/i, label: "Needs Surrogate" },
-            { pattern: /need help finding.*clinic|already have.*clinic|help finding.*clinic/i, label: "Needs Clinic" },
-            { pattern: /how old are you/i, label: "Age" },
-            { pattern: /how old is your partner/i, label: "Partner Age" },
-            { pattern: /hoping for twins/i, label: "Wants Twins" },
-            { pattern: /first.*ivf.*journey|first time.*ivf|done ivf before/i, label: "First IVF" },
-            { pattern: /most important.*choosing.*clinic|important.*clinic/i, label: "Clinic Priorities" },
-            { pattern: /countries.*open to.*surrogacy/i, label: "Surrogate Countries" },
-            { pattern: /termination|selective reduction/i, label: "Termination Preference" },
-            { pattern: /eye color/i, label: "Donor Eye Color" },
-            { pattern: /hair color/i, label: "Donor Hair Color" },
-            { pattern: /preferred height/i, label: "Donor Height" },
-            { pattern: /ethnic.*cultural.*educational/i, label: "Donor Background" },
-          ];
-          const seenLabels = new Set<string>();
-          for (let i = 0; i < chatHistory.length - 1; i++) {
-            if (chatHistory[i].role !== "assistant" || chatHistory[i + 1]?.role !== "user") continue;
-            const aiMsg = (chatHistory[i].content || "").replace(/\[\[.*?\]\]/g, "").trim();
-            const userAnswer = (chatHistory[i + 1].content || "").trim();
-            if (!aiMsg || !userAnswer) continue;
-            for (const { pattern, label } of qaPatterns) {
-              if (seenLabels.has(label)) continue;
-              if (pattern.test(aiMsg)) {
-                seenLabels.add(label);
-                // Use short answer only (first 80 chars)
-                profileDetails.push({ label, value: userAnswer.substring(0, 80) });
-                break;
-              }
-            }
-            i++; // skip the answer
-          }
-
-          // Also scan parent messages directly for info provided proactively (not in Q&A format)
-          const allParentText = chatHistory.filter(m => m.role === "user").map(m => (m.content || "")).join(" ") + " " + userMessage;
-          if (!seenLabels.has("Family Structure")) {
-            const familyMatch = allParentText.match(/gay\s*couple|lesbian\s*couple|straight\s*couple|single\s*(man|woman|mom|dad|male|female)|two\s*(dads|moms)|couple/i);
-            if (familyMatch) {
-              // Build a richer family structure from all parent text
-              const parts: string[] = [];
-              if (/gay\s*(couple|man|male)/i.test(allParentText)) parts.push("gay couple");
-              else if (/lesbian/i.test(allParentText)) parts.push("lesbian couple");
-              else if (/single\s*(man|male|dad|father|guy)/i.test(allParentText)) parts.push("single male");
-              else if (/single\s*(woman|female|mom|mother)/i.test(allParentText)) parts.push("single female");
-              else if (/couple/i.test(allParentText)) parts.push("couple");
-              if (/need.*ivf|ivf\s*clinic/i.test(allParentText)) parts.push("need ivf clinic");
-              if (/need.*surrogate|surrogate/i.test(allParentText)) parts.push("need surrogate");
-              if (/need.*egg\s*donor|egg\s*donor/i.test(allParentText)) parts.push("need egg donor");
-              if (/need.*sperm\s*donor|sperm\s*donor/i.test(allParentText)) parts.push("need sperm donor");
-              if (parts.length > 0) {
-                seenLabels.add("Family Structure");
-                profileDetails.push({ label: "Family Structure", value: parts.join(", ") });
-              }
+        // Emit SSE real-time toast to admins (best effort via NestJS)
+        try {
+          const { getNestApp } = await import("./nest-app-ref");
+          const nestApp = getNestApp();
+          if (nestApp) {
+            const { AppEventsService } = await import("./src/modules/notifications/app-events.service");
+            let appEvents: any = null;
+            try { appEvents = nestApp.get(AppEventsService); } catch {}
+            if (appEvents) {
+              appEvents.emit({
+                type: "human_escalation",
+                payload: {
+                  parentName: userRecord?.name || firstName,
+                  parentEmail: userRecord?.email || "",
+                  sessionId: currentSessionId,
+                  message: `${firstName} has requested to speak with a human concierge`,
+                },
+                targetUserIds: admins.map((a: any) => a.id),
+              }).catch((e: any) => console.error("[HUMAN_NEEDED] SSE emit failed:", e));
             }
           }
-          if (!seenLabels.has("Age")) {
-            const ageMatch = allParentText.match(/(?:i(?:'m| am)\s+)(\d{2,3})/i);
-            const partnerAgeMatch = allParentText.match(/(?:partner(?:\s+is)?|and)\s+(\d{2,3})/i);
-            if (ageMatch) {
-              const ageStr = partnerAgeMatch ? `${ageMatch[1]} and ${partnerAgeMatch[1]}` : ageMatch[1];
-              seenLabels.add("Age");
-              profileDetails.push({ label: "Age", value: ageStr });
-            } else {
-              // Try "45 and 54" pattern
-              const bothAges = allParentText.match(/(\d{2,3})\s*and\s*(?:my\s*partner\s*(?:is\s*)?)(\d{2,3})/i);
-              if (bothAges) {
-                seenLabels.add("Age");
-                profileDetails.push({ label: "Age", value: `${bothAges[1]} and ${bothAges[2]}` });
-              }
-            }
-          }
-          if (!seenLabels.has("Wants Twins") && /twins|yes.*twins/i.test(allParentText)) {
-            seenLabels.add("Wants Twins");
-            profileDetails.push({ label: "Wants Twins", value: "Yes" });
-          }
-          if (!seenLabels.has("Needs Egg Donor") && /need.*egg\s*donor/i.test(allParentText) && !profile?.needsEggDonor) {
-            seenLabels.add("Needs Egg Donor");
-            profileDetails.push({ label: "Needs Egg Donor", value: "Yes" });
-          }
-          if (!seenLabels.has("Needs Surrogate") && /need.*surrogate/i.test(allParentText) && !profile?.needsSurrogate) {
-            seenLabels.add("Needs Surrogate");
-            profileDetails.push({ label: "Needs Surrogate", value: "Yes" });
-          }
-          if (!seenLabels.has("Needs Clinic") && /need.*clinic|ivf\s*clinic/i.test(allParentText) && !profile?.needsClinic) {
-            seenLabels.add("Needs Clinic");
-            profileDetails.push({ label: "Needs Clinic", value: "Yes" });
-          }
-
-          // Send email + SMS
-          notifService.sendHumanEscalationNotification({
-            parentName: userRecord?.name || firstName,
-            parentEmail: userRecord?.email || "",
-            parentPhone: userRecord?.mobileNumber,
-            parentUserId: userId,
-            sessionId: currentSessionId,
-            profileDetails,
-          }).catch(e => console.error("Human escalation email/SMS failed:", e));
-
-          // Emit real-time SSE event for toast + sound
-          appEvents.emit({
-            type: "human_escalation",
-            payload: {
-              parentName: userRecord?.name || firstName,
-              parentEmail: userRecord?.email || "",
-              sessionId: currentSessionId,
-              message: `${firstName} has requested to speak with a human concierge`,
-            },
-            targetUserIds: admins.map(a => a.id),
-          }).catch(e => console.error("Human escalation SSE emit failed:", e));
+        } catch (sseErr) {
+          console.error("[HUMAN_NEEDED] SSE dispatch failed:", sseErr);
         }
+
         } catch (notifErr) {
-          console.error("Human escalation notification sending failed:", notifErr);
+          console.error("[HUMAN_NEEDED] Notification dispatch error:", notifErr);
         }
       } catch (e) {
         console.error("Failed to process HUMAN_NEEDED:", e);

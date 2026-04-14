@@ -36,6 +36,7 @@ export interface SyncReport {
   totalProfiles: number;
   lastSyncStartedAt: string | null;
   lastSyncEndedAt: string | null;
+  lastRunSource?: string | null;
 }
 
 function formatDuration(startedAt: string | null, endedAt: string | null): string {
@@ -206,6 +207,10 @@ export function SyncReportContent({
 }) {
   const duration = formatDuration(data.lastSyncStartedAt, data.lastSyncEndedAt);
   const isCurrentlyRunning = !!(data.lastSyncStartedAt && !data.lastSyncEndedAt);
+  const NIGHTLY_CYCLE_MS = 25 * 60 * 60 * 1000;
+  const lastCompletedMs = data.lastSyncAt ? new Date(data.lastSyncAt).getTime() : null;
+  const isOverdue = !isCurrentlyRunning && (!lastCompletedMs || (Date.now() - lastCompletedMs) > NIGHTLY_CYCLE_MS);
+  const daysSinceSync = lastCompletedMs ? Math.floor((Date.now() - lastCompletedMs) / (24 * 60 * 60 * 1000)) : null;
 
   // Build a human-readable status banner for the last completed run
   const buildStatusMessage = () => {
@@ -225,21 +230,44 @@ export function SyncReportContent({
     const errors = data.lastSyncErrors || [];
     const stats = data.lastSyncStats;
     if (errors.length > 0 && (!stats || stats.succeeded === 0)) {
-      return { type: "failed" as const, text: `Last run failed: ${errors[0]}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ""}` };
+      const overdueNote = isOverdue && daysSinceSync ? ` Last successful sync was ${daysSinceSync} day(s) ago.` : "";
+      return { type: "failed" as const, text: `Last run failed: ${errors[0]}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ""}${overdueNote}` };
     }
     if (errors.length > 0 || (stats && stats.failed > 0)) {
       const dur = duration !== "N/A" ? ` in ${duration}` : "";
+      const overdueNote = isOverdue && daysSinceSync ? ` Last successful sync was ${daysSinceSync} day(s) ago.` : "";
       return {
         type: "partial" as const,
-        text: `Last run completed with ${stats?.failed || errors.length} error(s)${dur}. ${stats?.succeeded ?? 0} profiles synced successfully.`,
+        text: `Last run completed with ${stats?.failed || errors.length} error(s)${dur}. ${stats?.succeeded ?? 0} profiles synced successfully.${overdueNote}`,
+      };
+    }
+    // Completed successfully - but is it overdue (nightly missed)?
+    if (isOverdue) {
+      const daysNote = daysSinceSync && daysSinceSync > 0 ? `${daysSinceSync} day(s) ago` : "over 25 hours ago";
+      const dur = duration !== "N/A" ? ` in ${duration}` : "";
+      const stats2 = data.lastSyncStats;
+      return {
+        type: "overdue" as const,
+        text: `Last successful run completed ${daysNote}${dur} - the nightly sync has not run since then. Check server logs or restart the nightly manually.`,
+        subtext: stats2 ? `${stats2.succeeded} profiles were synced in that run.` : undefined,
       };
     }
     const dur = duration !== "N/A" ? ` in ${duration}` : "";
     const newNote = data.newProfiles > 0 ? ` ${data.newProfiles} new profiles added.` : "";
     const inactiveNote = data.staleProfilesMarked > 0 ? ` ${data.staleProfilesMarked} profiles marked inactive.` : "";
+    // If the last run was not a nightly (e.g. auto-resume or manual), call that out clearly
+    // so admins don't mistake it for the scheduled 2am nightly completing successfully
+    if (data.lastRunSource && data.lastRunSource !== "nightly") {
+      const sourceLabel = data.lastRunSource === "auto-resume" ? "Auto-resumed run" : "Manual run";
+      return {
+        type: "manual" as const,
+        text: `${sourceLabel} completed${dur}. ${stats?.succeeded ?? data.totalProfiles} profiles synced.${newNote}${inactiveNote}`,
+        subtext: "This was not the scheduled 2am nightly sync. The next nightly will run tonight.",
+      };
+    }
     return {
       type: "success" as const,
-      text: `Last run completed successfully${dur}. ${stats?.succeeded ?? data.totalProfiles} profiles synced.${newNote}${inactiveNote}`,
+      text: `Last nightly sync completed successfully${dur}. ${stats?.succeeded ?? data.totalProfiles} profiles synced.${newNote}${inactiveNote}`,
     };
   };
 
@@ -247,6 +275,8 @@ export function SyncReportContent({
 
   const statusStyles = {
     success: "bg-[hsl(var(--brand-success)/0.08)] border-[hsl(var(--brand-success)/0.25)] text-[hsl(var(--brand-success))]",
+    manual: "bg-primary/5 border-primary/25 text-primary",
+    overdue: "bg-[hsl(var(--brand-warning)/0.08)] border-[hsl(var(--brand-warning)/0.25)] text-[hsl(var(--brand-warning))]",
     partial: "bg-[hsl(var(--brand-warning)/0.08)] border-[hsl(var(--brand-warning)/0.25)] text-[hsl(var(--brand-warning))]",
     failed: "bg-destructive/5 border-destructive/25 text-destructive",
     running: "bg-primary/5 border-primary/25 text-primary",
@@ -254,6 +284,8 @@ export function SyncReportContent({
   };
   const StatusIcon = {
     success: CheckCircle2,
+    manual: CheckCircle2,
+    overdue: AlertTriangle,
     partial: AlertTriangle,
     failed: XCircle,
     running: Loader2,
@@ -265,7 +297,12 @@ export function SyncReportContent({
       {/* Status banner */}
       <div className={`flex items-start gap-2.5 rounded-[var(--radius)] border px-4 py-3 ${statusStyles[statusMsg.type]}`} data-testid="sync-status-banner">
         <StatusIcon className={`w-4 h-4 mt-0.5 shrink-0 ${statusMsg.type === "running" ? "animate-spin" : ""}`} />
-        <span className="text-sm font-ui">{statusMsg.text}</span>
+        <div className="space-y-0.5">
+          <p className="text-sm font-ui">{statusMsg.text}</p>
+          {"subtext" in statusMsg && statusMsg.subtext && (
+            <p className="text-xs opacity-75">{statusMsg.subtext}</p>
+          )}
+        </div>
       </div>
 
       {/* Stat cards */}

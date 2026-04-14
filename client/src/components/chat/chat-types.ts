@@ -72,6 +72,8 @@ export interface SessionDetail {
   humanRequested?: boolean;
   humanJoinedAt?: string | null;
   humanAgentId?: string | null;
+  matchmakerId?: string | null;
+  matchmakerName?: string | null;
   user: SessionUser;
   title?: string | null;
   messages: SessionMessage[];

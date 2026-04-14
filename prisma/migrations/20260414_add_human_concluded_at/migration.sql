@@ -1,0 +1,1 @@
+ALTER TABLE "AiChatSession" ADD COLUMN IF NOT EXISTS "humanConcludedAt" TIMESTAMP(3);
