@@ -1607,6 +1607,28 @@ export async function startSync(
   storageService?: StorageService | null,
   source: string = "manual",
 ): Promise<string> {
+  // Check in-memory first (fast path)
+  const existingMemJob = getActiveSyncJob(providerId, type);
+  if (existingMemJob) {
+    throw new Error(`A sync is already running for this provider (job ${existingMemJob.id})`);
+  }
+
+  // Check DB SyncLog for a running entry - guards against multiple server restarts
+  // each launching a new sync for the same provider before the previous one completes
+  try {
+    const runningLog = await prisma.syncLog.findFirst({
+      where: { providerId, type, status: "running" },
+      select: { id: true, startedAt: true },
+    });
+    if (runningLog) {
+      const ageMin = Math.round((Date.now() - new Date(runningLog.startedAt).getTime()) / 60000);
+      throw new Error(`A sync is already running for this provider (started ${ageMin}min ago, SyncLog ${runningLog.id})`);
+    }
+  } catch (err: any) {
+    // Re-throw if it's the "already running" error, otherwise ignore (SyncLog table may not exist yet)
+    if (err.message?.includes("already running")) throw err;
+  }
+
   const config = await getSyncConfig(prisma, providerId, type);
   if (!config) {
     throw new Error("Sync configuration not found. Please save configuration first.");
