@@ -1,5 +1,6 @@
 import { Injectable, Inject } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { NotificationService } from "../notifications/notification.service";
 import { encryptPassword, decryptPassword } from "./caldav-crypto";
 import { createDAVClient, DAVCalendar, DAVObject } from "tsdav";
 import ICAL from "ical.js";
@@ -28,7 +29,10 @@ interface CalendarEvent {
 
 @Injectable()
 export class CaldavCalendarService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(NotificationService) private readonly notifications: NotificationService,
+  ) {}
 
   private getServerUrl(provider: string): string {
     const url = CALDAV_SERVERS[provider];
@@ -132,11 +136,43 @@ export class CaldavCalendarService {
 
   private async markConnectionsUnhealthy(userId: string, provider: string, email: string): Promise<void> {
     try {
+      const conn = await this.prisma.calendarConnection.findFirst({
+        where: { userId, provider, email, connected: true },
+      });
       await this.prisma.calendarConnection.updateMany({
         where: { userId, provider, email, connected: true },
         data: { tokenValid: false },
       });
       console.warn(`[caldav] Marked ${provider}/${email} connections as unhealthy for user ${userId}`);
+
+      // Send reconnection alert (dedup: skip if already sent in last 24h)
+      const recentAlert = await this.prisma.notification.findFirst({
+        where: {
+          userId,
+          channel: "calendar_reconnection",
+          createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+        },
+      });
+      if (!recentAlert) {
+        const user = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { id: true, email: true, name: true, mobileNumber: true, provider: { select: { name: true } } },
+        });
+        if (user) {
+          this.notifications.sendCalendarReconnectionAlert({
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            mobileNumber: user.mobileNumber,
+            providerName: (user as any).provider?.name || null,
+            calendarLabel: conn?.label || null,
+            calendarEmail: conn?.email || null,
+            calendarProvider: provider,
+          }).catch((e) => {
+            console.error("[caldav] Failed to send calendar reconnection alert:", e.message);
+          });
+        }
+      }
     } catch (e: any) {
       console.warn(`[caldav] Failed to mark connections unhealthy: ${e.message}`);
     }

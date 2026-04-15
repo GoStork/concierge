@@ -879,12 +879,17 @@ export class NotificationService implements OnModuleInit {
     providerName?: string | null;
     calendarLabel?: string | null;
     calendarEmail?: string | null;
+    calendarProvider?: string | null;
   }) {
     const base = getBaseUrl();
-    const reconnectLink = `${base}/account/calendar?connect=true`;
+    const reconnectLink = `${base}/account/calendar`;
     const fullName = user.name || "Team Member";
-    const providerName = user.providerName || "";
+    const orgName = user.providerName || "";
     const calendarName = user.calendarLabel || user.calendarEmail || "your calendar";
+    const calendarProviderLabel =
+      user.calendarProvider === "microsoft" ? "Microsoft Outlook"
+      : user.calendarProvider === "apple" ? "Apple iCloud"
+      : "Google";
     const brandData = await this.getBrandData();
 
     const adminEmails = await this.prisma.user.findMany({
@@ -894,23 +899,23 @@ export class NotificationService implements OnModuleInit {
     const bccList = adminEmails.map((a) => a.email).filter((e) => e !== user.email);
 
     const html = buildBrandedEmail(brandData, {
-      title: "Calendar Reconnection Required",
+      title: "Calendar Connection Lost",
       greeting: `Hi ${esc(getFirstName(user.name))},`,
-      body: `Your calendar connection (<strong>${esc(calendarName)}</strong>) has been disconnected${providerName ? ` for ${esc(providerName)}` : ""}. Please reconnect it to continue receiving booking updates.`,
-      alertBox: { text: "Your calendar is disconnected. New bookings won't sync until you reconnect.", type: "error" },
+      body: `Your <strong>${esc(calendarProviderLabel)}</strong> calendar connection (<strong>${esc(calendarName)}</strong>) has expired${orgName ? ` for ${esc(orgName)}` : ""}. New bookings won't sync to your calendar until you reconnect. Click the button below to fix this now.`,
+      alertBox: { text: `Your ${esc(calendarProviderLabel)} calendar is disconnected. Bookings will not sync until you reconnect.`, type: "error" },
       buttons: [
-        { label: "Reconnect Calendar", url: reconnectLink },
+        { label: `Reconnect ${esc(calendarProviderLabel)} Calendar`, url: reconnectLink },
       ],
     });
 
     await this.dispatchNotification({
       userId: user.id, type: "EMAIL", channel: "calendar_reconnection", recipient: user.email,
-      subject: "Action Required: Reconnect Your Calendar", body: html, bcc: bccList,
+      subject: `Action Required: Reconnect Your ${calendarProviderLabel} Calendar`, body: html, bcc: bccList,
     });
 
     if (user.mobileNumber) {
       await this.dispatchSmsTemplate({ userId: user.id, channel: "calendar_reconnection", recipient: user.mobileNumber,
-        contentSid: TWILIO_TEMPLATES.CALENDAR_RECONNECTION, contentVars: { "1": getFirstName(user.name), "2": fullName, "3": providerName || "GoStork", "4": reconnectLink },
+        contentSid: TWILIO_TEMPLATES.CALENDAR_RECONNECTION, contentVars: { "1": getFirstName(user.name), "2": fullName, "3": orgName || "GoStork", "4": reconnectLink },
       });
     }
   }

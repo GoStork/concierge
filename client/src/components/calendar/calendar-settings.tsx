@@ -537,6 +537,7 @@ export function CalendarSettings() {
 
   const bookingUrl = `${window.location.origin}/book/${bookingPageSlug}`;
   const hasConnections = connections && connections.length > 0;
+  const expiredConnections = connections?.filter((c) => c.tokenValid === false && (c.provider === "google" || c.provider === "microsoft")) ?? [];
 
   return (
     <div className="space-y-6">
@@ -554,6 +555,68 @@ export function CalendarSettings() {
             <CalendarPlus className="w-4 h-4 mr-1" /> Connect
           </Button>
         </div>
+
+        {expiredConnections.length > 0 && (
+          <div className="mb-4 rounded-[var(--radius)] border border-[hsl(var(--brand-warning)/0.4)] bg-[hsl(var(--brand-warning)/0.08)] p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-[hsl(var(--brand-warning))] shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-ui font-medium text-foreground">
+                  {expiredConnections.length === 1 ? "A calendar connection has expired" : `${expiredConnections.length} calendar connections have expired`}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  New bookings won't sync until you reconnect. Click below to fix this now.
+                </p>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {expiredConnections.map((conn) => {
+                    const providerInfo = CALENDAR_PROVIDERS.find((p) => p.id === conn.provider);
+                    const isMs = conn.provider === "microsoft";
+                    const isConnecting = isMs ? microsoftConnecting : googleConnecting;
+                    return (
+                      <Button
+                        key={conn.id}
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs font-ui border-[hsl(var(--brand-warning)/0.5)] text-foreground hover:bg-[hsl(var(--brand-warning)/0.1)]"
+                        disabled={googleConnecting || microsoftConnecting}
+                        onClick={async () => {
+                          if (isMs) setMicrosoftConnecting(true); else setGoogleConnecting(true);
+                          try {
+                            const hint = conn.email ? `?login_hint=${encodeURIComponent(conn.email)}` : "";
+                            const res = await fetch(`/api/calendar/${conn.provider}/auth-url${hint}`, { credentials: "include" });
+                            const data = await res.json();
+                            if (!res.ok) {
+                              toast({ title: data.message || "Failed to start reconnection", variant: "destructive" });
+                              if (isMs) setMicrosoftConnecting(false); else setGoogleConnecting(false);
+                              return;
+                            }
+                            if (data.url) window.location.href = data.url;
+                            else {
+                              toast({ title: "Failed to start reconnection", variant: "destructive" });
+                              if (isMs) setMicrosoftConnecting(false); else setGoogleConnecting(false);
+                            }
+                          } catch {
+                            toast({ title: "Failed to start reconnection", variant: "destructive" });
+                            if (isMs) setMicrosoftConnecting(false); else setGoogleConnecting(false);
+                          }
+                        }}
+                      >
+                        {isConnecting ? (
+                          <Loader2 className="w-3 h-3 animate-spin mr-1.5" />
+                        ) : providerInfo ? (
+                          <providerInfo.icon className="w-3.5 h-3.5 mr-1.5" style={{ color: providerInfo.color }} />
+                        ) : (
+                          <Calendar className="w-3.5 h-3.5 mr-1.5" />
+                        )}
+                        Reconnect {conn.label || conn.email || providerInfo?.name}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {hasConnections ? (
           <div className="space-y-3">
@@ -618,8 +681,17 @@ export function CalendarSettings() {
                             try {
                               const hint = conn.email ? `?login_hint=${encodeURIComponent(conn.email)}` : "";
                               const res = await fetch(`/api/calendar/${conn.provider}/auth-url${hint}`, { credentials: "include" });
-                              const { url } = await res.json();
-                              if (url) window.location.href = url;
+                              const data = await res.json();
+                              if (!res.ok) {
+                                toast({ title: data.message || "Failed to start reconnection", variant: "destructive" });
+                                if (isMs) setMicrosoftConnecting(false); else setGoogleConnecting(false);
+                                return;
+                              }
+                              if (data.url) window.location.href = data.url;
+                              else {
+                                toast({ title: "Failed to start reconnection", variant: "destructive" });
+                                if (isMs) setMicrosoftConnecting(false); else setGoogleConnecting(false);
+                              }
                             } catch {
                               toast({ title: "Failed to start reconnection", variant: "destructive" });
                               if (isMs) setMicrosoftConnecting(false); else setGoogleConnecting(false);

@@ -3397,10 +3397,19 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
 
   private async handleCalendarAuthFailure(userId: string, provider: string = "google") {
     try {
+      // Dedup: skip if a reconnection alert was already sent in the last 24 hours
+      const recentAlert = await this.prisma.notification.findFirst({
+        where: {
+          userId,
+          channel: "calendar_reconnection",
+          createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+        },
+      });
+      if (recentAlert) return;
+
       const conn = await this.prisma.calendarConnection.findFirst({
         where: { userId, provider, connected: true },
       });
-      if (conn && conn.tokenValid === false) return;
 
       await this.prisma.calendarConnection.updateMany({
         where: { userId, provider, connected: true },
@@ -3421,6 +3430,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
           providerName: (user as any).provider?.name || null,
           calendarLabel: conn?.label || null,
           calendarEmail: conn?.email || null,
+          calendarProvider: provider,
         }).catch((e) => {
           console.error("Failed to send calendar reconnection alert:", e.message);
         });
