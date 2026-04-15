@@ -206,7 +206,9 @@ export function SyncReportContent({
   type?: string;
 }) {
   const duration = formatDuration(data.lastSyncStartedAt, data.lastSyncEndedAt);
-  const isCurrentlyRunning = !!(data.lastSyncStartedAt && !data.lastSyncEndedAt);
+  // Treat as running if DB says so OR if the summary has live progress for this provider
+  // (handles the case where report data is stale but a new sync already started)
+  const isCurrentlyRunning = !!(data.lastSyncStartedAt && !data.lastSyncEndedAt) || !!liveProgress;
   const NIGHTLY_CYCLE_MS = 25 * 60 * 60 * 1000;
   const lastCompletedMs = data.lastSyncAt ? new Date(data.lastSyncAt).getTime() : null;
   const isOverdue = !isCurrentlyRunning && (!lastCompletedMs || (Date.now() - lastCompletedMs) > NIGHTLY_CYCLE_MS);

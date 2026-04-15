@@ -92,9 +92,11 @@ export default function ScraperReportPage() {
     },
     enabled: !!providerId && !!type,
     refetchInterval: (query) => {
-      // Refetch report while sync is running to update stat boxes
       const d = query.state.data as SyncReport | undefined;
-      return d?.lastSyncEndedAt ? false : 3000;
+      const isRunning = d?.lastSyncStartedAt && !d?.lastSyncEndedAt;
+      // Fast refresh while running, slow background refresh otherwise so new
+      // auto-resume or nightly syncs are detected without a manual page reload
+      return isRunning ? 3000 : 15000;
     },
   });
 
