@@ -1149,7 +1149,7 @@ export default function ScrapersSummaryPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [nightlyError, setNightlyError] = useState<string | null>(null);
+  const [typeErrors, setTypeErrors] = useState<Record<string, string | null>>({});
 
   const { data, isLoading } = useQuery<SummaryResponse>({
     queryKey: ["/api/scrapers/summary"],
@@ -1160,19 +1160,20 @@ export default function ScrapersSummaryPage() {
     },
   });
 
-  const triggerNightlyMut = useMutation({
-    mutationFn: async () => {
-      setNightlyError(null);
-      const res = await apiRequest("POST", "/api/scrapers/trigger-nightly");
-      return res.json();
+  const triggerTypeMut = useMutation({
+    mutationFn: async (type: string) => {
+      setTypeErrors(prev => ({ ...prev, [type]: null }));
+      const res = await apiRequest("POST", `/api/scrapers/trigger-type/${type}`);
+      return { type, ...(await res.json()) };
     },
-    onSuccess: () => {
-      toast({ title: "Nightly sync started", description: "All providers will be synced sequentially.", variant: "success" });
+    onSuccess: (result) => {
+      const labels: Record<string, string> = { "egg-donor": "Egg Donor", surrogate: "Surrogacy", "sperm-donor": "Sperm Donor" };
+      toast({ title: `${labels[result.type] || result.type} sync started`, description: `Started ${result.started} provider syncs.`, variant: "success" });
       queryClient.invalidateQueries({ queryKey: ["/api/scrapers/summary"] });
     },
-    onError: () => {
-      setNightlyError("Could not start sync. Please try again.");
-      setTimeout(() => setNightlyError(null), 5000);
+    onError: (_err, type) => {
+      setTypeErrors(prev => ({ ...prev, [type]: "Could not start sync. Please try again." }));
+      setTimeout(() => setTypeErrors(prev => ({ ...prev, [type]: null })), 5000);
     },
   });
 
@@ -1270,35 +1271,51 @@ export default function ScrapersSummaryPage() {
           </CardContent>
         </Card>
       ) : (
-        Object.entries(grouped).map(([type, items]) => (
-          <ScraperTypeSection
-            key={type}
-            type={type}
-            items={items}
-            onRowClick={handleRowClick}
-            headerAction={type === "egg-donor" ? (
-              <div className="flex flex-col items-end gap-1">
-                <Button
-                  onClick={() => triggerNightlyMut.mutate()}
-                  disabled={triggerNightlyMut.isPending || data?.nightlySyncRunning}
-                  data-testid="button-trigger-nightly"
-                >
-                  {triggerNightlyMut.isPending || data?.nightlySyncRunning ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-4 h-4 mr-2" />
+        Object.entries(grouped).map(([type, items]) => {
+          const typeLabels: Record<string, string> = {
+            "egg-donor": "Run All Egg Donor Scrapers",
+            surrogate: "Run All Surrogacy Scrapers",
+            "sperm-donor": "Run All Sperm Donor Scrapers",
+          };
+          const typeTestIds: Record<string, string> = {
+            "egg-donor": "button-trigger-egg-donor",
+            surrogate: "button-trigger-surrogate",
+            "sperm-donor": "button-trigger-sperm-donor",
+          };
+          const anyOfTypeRunning = items.some(i => !!i.syncProgress);
+          const isPending = triggerTypeMut.isPending && triggerTypeMut.variables === type;
+          const isDisabled = isPending || anyOfTypeRunning;
+
+          return (
+            <ScraperTypeSection
+              key={type}
+              type={type}
+              items={items}
+              onRowClick={handleRowClick}
+              headerAction={
+                <div className="flex flex-col items-end gap-1">
+                  <Button
+                    onClick={() => triggerTypeMut.mutate(type)}
+                    disabled={isDisabled}
+                    data-testid={typeTestIds[type] || "button-trigger-type"}
+                  >
+                    {isPending || anyOfTypeRunning ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                    )}
+                    {anyOfTypeRunning ? "Sync Running..." : typeLabels[type] || "Run All Scrapers"}
+                  </Button>
+                  {typeErrors[type] && (
+                    <span className="text-xs text-destructive" data-testid={`text-type-error-${type}`}>
+                      {typeErrors[type]}
+                    </span>
                   )}
-                  {data?.nightlySyncRunning ? "Sync Running..." : "Run All Egg Donor Scrapers"}
-                </Button>
-                {nightlyError && (
-                  <span className="text-xs text-destructive" data-testid="text-nightly-error">
-                    {nightlyError}
-                  </span>
-                )}
-              </div>
-            ) : undefined}
-          />
-        ))
+                </div>
+              }
+            />
+          );
+        })
       )}
     </div>
   );

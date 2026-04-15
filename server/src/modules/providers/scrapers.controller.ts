@@ -163,6 +163,36 @@ export class ScrapersController {
     return { message: "Nightly sync started", isRunning: true };
   }
 
+  @Post("trigger-type/:type")
+  @ApiOperation({ summary: "Trigger sync for all providers of a given type (admin only)" })
+  async triggerByType(@Req() req: any, @Param("type") type: string) {
+    requireAdmin(req);
+    const validTypes = ["egg-donor", "surrogate", "sperm-donor"];
+    if (!validTypes.includes(type)) {
+      throw new BadRequestException("Invalid sync type");
+    }
+    const donorType = type as DonorType;
+    const tableMap: Record<DonorType, "eggDonorSyncConfig" | "surrogateSyncConfig" | "spermDonorSyncConfig"> = {
+      "egg-donor": "eggDonorSyncConfig",
+      "surrogate": "surrogateSyncConfig",
+      "sperm-donor": "spermDonorSyncConfig",
+    };
+    const configs = await (this.prisma[tableMap[donorType]] as any).findMany({
+      include: { provider: { select: { name: true } } },
+    });
+    let started = 0;
+    let skipped = 0;
+    for (const config of configs) {
+      try {
+        await startSync(this.prisma, config.providerId, donorType, undefined, this.storageService, "manual");
+        started++;
+      } catch {
+        skipped++;
+      }
+    }
+    return { message: `Started ${started} syncs, skipped ${skipped} already running`, started, skipped };
+  }
+
   @Post("trigger-sync/:providerId/:type")
   @ApiOperation({ summary: "Trigger sync for a single provider (admin only)" })
   async triggerSingleSync(
