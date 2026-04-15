@@ -115,7 +115,7 @@ export default function ScraperReportPage() {
     (s) => s.providerId === providerId && s.type === type
   );
   const syncProgress = providerSummary?.syncProgress;
-  const isSyncing = !!syncProgress;
+  const isSyncing = !!syncProgress || !!(data?.lastSyncStartedAt && !data?.lastSyncEndedAt);
 
   const handleRestart = async (limit?: number) => {
     if (!providerId || !type) return;
