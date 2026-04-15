@@ -1120,13 +1120,23 @@ async function upsertEggDonor(
   storageService?: StorageService | null,
   cookies?: string,
 ): Promise<{ isNew: boolean }> {
-  await persistPhotoUrls(donor, providerId, storageService || null, cookies);
   const extId = donor.externalId || `auto-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
   const existing = await prisma.eggDonor.findUnique({
     where: { providerId_externalId: { providerId, externalId: extId } },
-    select: { manuallyEditedFields: true, profileData: true, status: true },
+    select: { manuallyEditedFields: true, profileData: true, status: true, photoUrl: true, photos: true, photoCount: true },
   });
+
+  // Reuse already-persisted GCS photos to avoid re-downloading on every run
+  if (existing) {
+    if (existing.photoUrl && isAlreadyPersisted(existing.photoUrl)) donor.photoUrl = existing.photoUrl;
+    const existingPhotos = existing.photos as string[] | undefined;
+    if (existingPhotos?.length && existingPhotos.every(p => isAlreadyPersisted(p))) {
+      const newCount = donor.photoCount ?? extractPhotosArray(donor).length;
+      if (!newCount || Math.abs(newCount - existingPhotos.length) <= 1) donor.photos = existingPhotos;
+    }
+  }
+  await persistPhotoUrls(donor, providerId, storageService || null, cookies);
   const isNew = !existing;
   const mf = existing?.manuallyEditedFields || [];
   const normalizedProfile = await normalizeProfileFields(donor.profileData || donor);
@@ -1279,13 +1289,24 @@ async function upsertSurrogate(
   storageService?: StorageService | null,
   cookies?: string,
 ): Promise<{ isNew: boolean }> {
-  await persistPhotoUrls(surrogate, providerId, storageService || null, cookies);
   const extId = surrogate.externalId || `auto-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
   const existing = await prisma.surrogate.findUnique({
     where: { providerId_externalId: { providerId, externalId: extId } },
-    select: { manuallyEditedFields: true, profileData: true, status: true },
+    select: { manuallyEditedFields: true, profileData: true, status: true, photoUrl: true, photos: true, photoCount: true },
   });
+
+  // Reuse already-persisted GCS photos to avoid re-downloading on every run
+  if (existing) {
+    if (existing.photoUrl && isAlreadyPersisted(existing.photoUrl)) surrogate.photoUrl = existing.photoUrl;
+    const existingPhotos = existing.photos as string[] | undefined;
+    if (existingPhotos?.length && existingPhotos.every(p => isAlreadyPersisted(p))) {
+      const newCount = surrogate.photoCount ?? extractPhotosArray(surrogate).length;
+      if (!newCount || Math.abs(newCount - existingPhotos.length) <= 1) surrogate.photos = existingPhotos;
+    }
+  }
+  await persistPhotoUrls(surrogate, providerId, storageService || null, cookies);
+
   const isNew = !existing;
   const mf = existing?.manuallyEditedFields || [];
   const normalizedProfile = await normalizeProfileFields(surrogate.profileData || surrogate);
@@ -1387,13 +1408,24 @@ async function upsertSpermDonor(
   storageService?: StorageService | null,
   cookies?: string,
 ): Promise<{ isNew: boolean }> {
-  await persistPhotoUrls(donor, providerId, storageService || null, cookies);
   const extId = donor.externalId || `auto-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
   const existing = await prisma.spermDonor.findUnique({
     where: { providerId_externalId: { providerId, externalId: extId } },
-    select: { manuallyEditedFields: true, profileData: true, status: true },
+    select: { manuallyEditedFields: true, profileData: true, status: true, photoUrl: true, photos: true, photoCount: true },
   });
+
+  // Reuse already-persisted GCS photos to avoid re-downloading on every run
+  if (existing) {
+    if (existing.photoUrl && isAlreadyPersisted(existing.photoUrl)) donor.photoUrl = existing.photoUrl;
+    const existingPhotos = existing.photos as string[] | undefined;
+    if (existingPhotos?.length && existingPhotos.every(p => isAlreadyPersisted(p))) {
+      const newCount = donor.photoCount ?? extractPhotosArray(donor).length;
+      if (!newCount || Math.abs(newCount - existingPhotos.length) <= 1) donor.photos = existingPhotos;
+    }
+  }
+  await persistPhotoUrls(donor, providerId, storageService || null, cookies);
+
   const isNew = !existing;
   const mf = existing?.manuallyEditedFields || [];
   const normalizedProfile = await normalizeProfileFields(donor.profileData || donor);
