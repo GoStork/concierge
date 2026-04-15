@@ -15,6 +15,7 @@ interface SyncProgress {
   processed: number;
   succeeded: number;
   failed: number;
+  currentStep?: string;
 }
 
 interface ScraperSummary {
@@ -842,25 +843,28 @@ function SyncProgressBar({ progress }: { progress: SyncProgress }) {
   const percentage = progress.total > 0
     ? Math.round((progress.processed / progress.total) * 100)
     : 0;
+  const isFetchingList = progress.total === 0;
 
   return (
     <div className="w-full min-w-[140px]" data-testid="sync-progress-bar">
       <div className="flex items-center gap-2 mb-1">
         <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
         <span className="text-xs font-ui text-primary">
-          Syncing... {percentage}%
+          {isFetchingList ? (progress.currentStep || "Starting...") : `Syncing... ${percentage}%`}
         </span>
       </div>
       <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
         <div
           className="bg-primary h-2 rounded-full transition-all duration-500 ease-out"
-          style={{ width: `${percentage}%` }}
+          style={{ width: isFetchingList ? "5%" : `${percentage}%` }}
           data-testid="progress-bar-fill"
         />
       </div>
-      <div className="text-[10px] text-muted-foreground mt-0.5">
-        {progress.processed} / {progress.total} profiles
-      </div>
+      {!isFetchingList && (
+        <div className="text-[10px] text-muted-foreground mt-0.5">
+          {progress.processed} / {progress.total} profiles
+        </div>
+      )}
     </div>
   );
 }

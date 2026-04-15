@@ -3749,6 +3749,7 @@ async function runSyncJob(
 
     let orchidResult: { donors: any[]; origin: string } | null = null;
     if (isOrchidJmsSite(mainHtml) || sourceUrl.includes("o-jms.com")) {
+      job.currentStep = "Fetching profile list...";
       console.log(`[donor-sync] Detected Orchid JMS site, trying Orchid JMS scraper...`);
       orchidResult = await tryFetchOrchidJmsData(mainHtml, sourceUrl, sessionCookies, job.type);
       if (orchidResult && orchidResult.donors.length > 0) {
@@ -4073,12 +4074,24 @@ async function runSyncJob(
       return;
     }
 
+    job.currentStep = "Fetching profile list...";
     const edcDonorHtml = await tryFetchEdcDonorData(mainHtml, sourceUrl, sessionCookies, job.type);
     let edcParsedDonors: any[] | null = null;
     if (edcDonorHtml) {
       console.log(`[donor-sync] Loaded EDC donor data via AJAX (${edcDonorHtml.length} chars)`);
       edcParsedDonors = parseEdcDonorCards(edcDonorHtml, new URL(sourceUrl).origin);
       console.log(`[donor-sync] Parsed ${edcParsedDonors.length} donors from EDC HTML`);
+      // If EDC returned HTML but 0 donors, the session likely expired (login page returned)
+      if (edcParsedDonors.length === 0 && edcDonorHtml.length > 500) {
+        const isLoginPage = /login|sign.?in|password|username/i.test(edcDonorHtml.slice(0, 3000));
+        if (isLoginPage) {
+          job.status = "failed";
+          job.errors.push("EDC session expired - please update the login credentials in the provider sync config");
+          job.completedAt = new Date();
+          console.error(`[donor-sync] EDC session expired for provider ${job.providerId}`);
+          return;
+        }
+      }
     }
 
     if (edcParsedDonors && edcParsedDonors.length > 0) {
@@ -4758,7 +4771,7 @@ export async function getScrapersSummary(prisma: PrismaService) {
     totalProfiles: number;
     totalErrors: number;
     latestDonorCreatedAt: Date | null;
-    syncProgress?: { total: number; processed: number; succeeded: number; failed: number } | null;
+    syncProgress?: { total: number; processed: number; succeeded: number; failed: number; currentStep?: string } | null;
   }[] = [];
 
   for (const p of providers) {
@@ -4840,6 +4853,7 @@ export async function getScrapersSummary(prisma: PrismaService) {
         processed: activeJob.processed,
         succeeded: activeJob.succeeded,
         failed: activeJob.failed,
+        currentStep: activeJob.currentStep,
       };
     } else {
       summary.syncProgress = null;
