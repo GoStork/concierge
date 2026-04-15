@@ -1015,6 +1015,48 @@ function RestartSyncButton({ item }: { item: ScraperSummary }) {
   );
 }
 
+function StopSyncButton({ item }: { item: ScraperSummary }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [isStopping, setIsStopping] = useState(false);
+
+  const isRunning = !!(item.syncProgress || (item.lastSyncStartedAt && !item.lastSyncEndedAt));
+  if (!isRunning) return null;
+
+  const handleStop = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsStopping(true);
+    try {
+      await apiRequest("POST", `/api/scrapers/stop-sync/${item.providerId}/${item.type}`);
+      toast({ title: "Sync stopped", description: `Stopped sync for ${item.providerName}`, variant: "success" });
+      queryClient.invalidateQueries({ queryKey: ["/api/scrapers/summary"] });
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.message || "Failed to stop sync", variant: "destructive" });
+    } finally {
+      setIsStopping(false);
+    }
+  };
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-5 text-[11px] px-1 gap-0.5 shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+      onClick={handleStop}
+      disabled={isStopping}
+      data-testid={`button-stop-sync-${item.providerId}`}
+      title={`Stop sync for ${item.providerName}`}
+    >
+      {isStopping ? (
+        <Loader2 className="w-2.5 h-2.5 animate-spin" />
+      ) : (
+        <Square className="w-2.5 h-2.5" />
+      )}
+      Stop
+    </Button>
+  );
+}
+
 function ScraperTypeSection({
   type,
   items,
@@ -1126,6 +1168,7 @@ function ScraperTypeSection({
                               lastSyncAt={item.lastSyncAt}
                             />
                           </div>
+                          <StopSyncButton item={item} />
                           <RestartSyncButton item={item} />
                         </div>
                         {(() => {
