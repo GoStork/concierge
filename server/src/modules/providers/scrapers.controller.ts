@@ -249,7 +249,7 @@ export class ScrapersController {
     const syncConfigTable = type === "egg-donor" ? "eggDonorSyncConfig" : type === "surrogate" ? "surrogateSyncConfig" : "spermDonorSyncConfig";
     const syncConfig = await (this.prisma[syncConfigTable] as any).findUnique({
       where: { providerId },
-      select: { lastSyncStartedAt: true, lastSyncEndedAt: true },
+      select: { lastSyncStartedAt: true, lastSyncEndedAt: true, lastSyncAt: true },
     });
     if (syncConfig) {
       lastSyncStartedAt = syncConfig.lastSyncStartedAt;
@@ -311,13 +311,20 @@ export class ScrapersController {
       }
     }
 
+    // Fallback when no in-memory job exists (e.g., after a server restart).
+    // Use the real lastSyncAt (written only on actual successful completion), NOT
+    // lastSyncEndedAt (which gets stamped whenever the process is killed/restarted).
+    // If lastSyncAt < lastSyncStartedAt, the last run never completed - leave stats null
+    // so the banner correctly shows "overdue" rather than "successful".
     if (!lastSyncStats && lastSyncEndedAt && totalProfiles > 0) {
-      lastSyncStats = {
-        succeeded: totalProfiles,
-        failed: 0,
-        total: totalProfiles,
-      };
-      lastSyncAt = lastSyncEndedAt;
+      const dbLastSyncAt: Date | null = syncConfig?.lastSyncAt || null;
+      lastSyncAt = dbLastSyncAt;
+      const runCompleted = dbLastSyncAt && lastSyncStartedAt && dbLastSyncAt >= lastSyncStartedAt;
+      if (runCompleted) {
+        lastSyncStats = { succeeded: totalProfiles, failed: 0, total: totalProfiles };
+      }
+      // If the run never completed (killed mid-run), lastSyncStats remains null so the
+      // banner shows "overdue" or "no sync completed" correctly.
     }
 
     // Determine the source of the last completed run (nightly / manual / auto-resume)

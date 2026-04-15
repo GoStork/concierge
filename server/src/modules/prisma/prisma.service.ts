@@ -63,6 +63,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.spermDonorSyncConfig;
   }
 
+  get syncLog() {
+    return prisma.syncLog;
+  }
+
   get surrogacyAgencyProfile() {
     return prisma.surrogacyAgencyProfile;
   }
@@ -193,6 +197,18 @@ export class PrismaService implements OnModuleDestroy {
 
   get aiChatMessage() {
     return prisma.aiChatMessage;
+  }
+
+  get conciergePromptSection() {
+    return prisma.conciergePromptSection;
+  }
+
+  get journeyPreferences() {
+    return prisma.journeyPreferences;
+  }
+
+  get agreement() {
+    return prisma.agreement;
   }
 
   get $transaction() {
