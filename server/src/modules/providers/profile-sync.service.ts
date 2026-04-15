@@ -1905,7 +1905,18 @@ function parseEdcDonorCards(html: string, origin: string): any[] {
       let locationVal = fieldMap["Residing Country"] || fieldMap["Location"] || null;
       if (locationVal && /^\d'\d+$/.test(locationVal)) locationVal = null;
 
-      const cardHashValue = createHash("md5").update(card).digest("hex");
+      const stableCardData = JSON.stringify({
+        id: externalIdMatch ? externalIdMatch[1] : (internalDonorId || ""),
+        status: donorStatus,
+        donorType,
+        age: ageStr || "",
+        ethnicity: ethnicity || "",
+        photoCount: photoCountMatch ? photoCountMatch[1] : "",
+        hasVideo,
+        race: fieldMap["Race"] || "",
+        education: fieldMap["Education"] || "",
+      });
+      const cardHashValue = createHash("md5").update(stableCardData).digest("hex");
 
       const donor: any = {
         externalId: externalIdMatch ? externalIdMatch[1] : (internalDonorId || null),
@@ -2093,7 +2104,16 @@ function parseOrchidJmsCards(html: string, origin: string): any[] {
       const heightRaw = fields["Height"] || null;
       const ageStr = fields["Age"] || null;
 
-      const cardHashValue = createHash("md5").update(card).digest("hex");
+      const stableCardData = JSON.stringify({
+        id: externalId,
+        status: donorStatus,
+        age: ageStr || "",
+        ethnicity: fields["Ethnicity"] || "",
+        race: fields["Race"] || "",
+        education: fields["Education"] || fields["Education Level"] || "",
+        height: heightRaw || "",
+      });
+      const cardHashValue = createHash("md5").update(stableCardData).digest("hex");
 
       const donor: any = {
         externalId,
