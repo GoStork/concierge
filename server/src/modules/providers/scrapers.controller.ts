@@ -229,6 +229,28 @@ export class ScrapersController {
     }
     const cancelled = cancelSync(providerId, type as DonorType);
     if (!cancelled) {
+      // No in-memory job - check if DB shows a stuck/orphaned running sync and close it
+      const tableMap: Record<string, string> = {
+        "egg-donor": "eggDonorSyncConfig",
+        surrogate: "surrogateSyncConfig",
+        "sperm-donor": "spermDonorSyncConfig",
+      };
+      const tableName = tableMap[type];
+      const config = tableName ? await (this.prisma[tableName as keyof typeof this.prisma] as any).findUnique({
+        where: { providerId },
+        select: { lastSyncStartedAt: true, lastSyncEndedAt: true },
+      }) : null;
+      if (config?.lastSyncStartedAt && !config?.lastSyncEndedAt) {
+        await (this.prisma[tableName as keyof typeof this.prisma] as any).update({
+          where: { providerId },
+          data: { lastSyncEndedAt: new Date() },
+        });
+        await this.prisma.syncLog.updateMany({
+          where: { providerId, type, status: "running" },
+          data: { status: "cancelled", completedAt: new Date(), errors: ["Manually stopped by admin"] },
+        });
+        return { message: "Sync marked as stopped (no active job found - cleared orphaned state)" };
+      }
       throw new BadRequestException("No running sync found for this provider");
     }
     return { message: "Sync stopped" };
