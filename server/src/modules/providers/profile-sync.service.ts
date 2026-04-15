@@ -1293,7 +1293,7 @@ async function upsertSurrogate(
 
   const existing = await prisma.surrogate.findUnique({
     where: { providerId_externalId: { providerId, externalId: extId } },
-    select: { manuallyEditedFields: true, profileData: true, status: true, photoUrl: true, photos: true, photoCount: true },
+    select: { manuallyEditedFields: true, profileData: true, status: true, photoUrl: true, photos: true },
   });
 
   // Reuse already-persisted GCS photos to avoid re-downloading on every run
@@ -1301,7 +1301,7 @@ async function upsertSurrogate(
     if (existing.photoUrl && isAlreadyPersisted(existing.photoUrl)) surrogate.photoUrl = existing.photoUrl;
     const existingPhotos = existing.photos as string[] | undefined;
     if (existingPhotos?.length && existingPhotos.every(p => isAlreadyPersisted(p))) {
-      const newCount = surrogate.photoCount ?? extractPhotosArray(surrogate).length;
+      const newCount = extractPhotosArray(surrogate).length;
       if (!newCount || Math.abs(newCount - existingPhotos.length) <= 1) surrogate.photos = existingPhotos;
     }
   }
