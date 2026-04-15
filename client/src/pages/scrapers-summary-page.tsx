@@ -973,7 +973,17 @@ function RestartSyncButton({ item }: { item: ScraperSummary }) {
       queryClient.invalidateQueries({ queryKey: ["/api/scrapers/summary"] });
     } catch (err: any) {
       const msg = err?.message || "Failed to start sync";
-      toast({ title: "Error", description: /already running/i.test(msg) ? "A sync is already running for this provider" : msg, variant: "destructive" });
+      let description: string;
+      if (/already running/i.test(msg)) {
+        description = "A sync is already running for this provider";
+      } else if (/configuration not found/i.test(msg)) {
+        description = "Sync configuration not found. Set up the scraper config first.";
+      } else if (msg.includes("<!DOCTYPE") || msg.includes("<html")) {
+        description = "Server error - please rebuild and restart the server, then try again.";
+      } else {
+        description = msg.length > 120 ? msg.slice(0, 120) + "..." : msg;
+      }
+      toast({ title: "Error", description, variant: "destructive" });
     } finally {
       setIsRestarting(false);
     }
@@ -1080,10 +1090,10 @@ function ScraperTypeSection({
                     onClick={() => onRowClick(item)}
                     data-testid={`row-scraper-${item.providerId}`}
                   >
-                    <TableCell className="font-ui whitespace-nowrap" data-testid={`text-provider-name-${item.providerId}`}>
-                      <div className="flex items-center gap-2">
-                        {item.providerName}
-                        <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+                    <TableCell className="font-ui max-w-0" data-testid={`text-provider-name-${item.providerId}`}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="truncate">{item.providerName}</span>
+                        <ExternalLink className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
                       </div>
                     </TableCell>
                     <TableCell className="hidden sm:table-cell" data-testid={`text-total-profiles-${item.providerId}`}>
@@ -1167,7 +1177,8 @@ export default function ScrapersSummaryPage() {
   });
 
   const handleRowClick = (item: ScraperSummary) => {
-    navigate(`/admin/providers/${item.providerId}?tab=egg-donors`);
+    const tab = item.type === "sperm-donor" ? "sperm-donors" : item.type === "surrogate" ? "surrogates" : "egg-donors";
+    navigate(`/admin/providers/${item.providerId}?tab=${tab}`);
   };
 
   if (isLoading) {
