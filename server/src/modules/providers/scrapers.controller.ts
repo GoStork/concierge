@@ -117,6 +117,18 @@ export class ScrapersController {
               where: { providerId: config.providerId },
               data: { lastSyncEndedAt: new Date() },
             });
+            // Also mark any stuck SyncLog "running" entries as failed so the dedup
+            // guard in startSync doesn't block the next nightly from starting
+            try {
+              await this.prisma.syncLog.updateMany({
+                where: { providerId: config.providerId, type, status: "running" },
+                data: {
+                  status: "failed",
+                  completedAt: new Date(),
+                  errors: ["Interrupted - server restarted while sync was running"],
+                },
+              });
+            } catch { /* SyncLog may not exist yet */ }
             continue;
           }
 

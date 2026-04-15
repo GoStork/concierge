@@ -1622,7 +1622,16 @@ export async function startSync(
     });
     if (runningLog) {
       const ageMin = Math.round((Date.now() - new Date(runningLog.startedAt).getTime()) / 60000);
-      throw new Error(`A sync is already running for this provider (started ${ageMin}min ago, SyncLog ${runningLog.id})`);
+      // If it has been "running" for more than 9 hours it is a zombie entry from a
+      // hard-killed process. Mark it failed and allow a fresh start.
+      if (ageMin > 9 * 60) {
+        await prisma.syncLog.update({
+          where: { id: runningLog.id },
+          data: { status: "failed", completedAt: new Date(), errors: ["Zombie entry - automatically closed after 9h with no completion"] },
+        }).catch(() => {});
+      } else {
+        throw new Error(`A sync is already running for this provider (started ${ageMin}min ago)`);
+      }
     }
   } catch (err: any) {
     // Re-throw if it's the "already running" error, otherwise ignore (SyncLog table may not exist yet)
