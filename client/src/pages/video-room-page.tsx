@@ -31,15 +31,17 @@ export default function VideoRoomPage() {
   const { bookingId } = useParams<{ bookingId: string }>();
   const [searchParams] = useSearchParams();
   const preConsent = searchParams.get("consent");
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, loginMutation } = useAuth();
   const companyName = useCompanyName();
   const navigate = useNavigate();
 
   const [guestEmail, setGuestEmail] = useState("");
   const [guestName, setGuestName] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [formStep, setFormStep] = useState<"guest" | "login">("guest");
+  const [formError, setFormError] = useState<string | null>(null);
+  const [formLoading, setFormLoading] = useState(false);
   const [guestVerified, setGuestVerified] = useState(false);
-  const [guestError, setGuestError] = useState<string | null>(null);
-  const [guestVerifying, setGuestVerifying] = useState(false);
 
   const isGuest = !authLoading && !user;
   const isReady = !authLoading && (!!user || guestVerified);
@@ -58,16 +60,13 @@ export default function VideoRoomPage() {
   const isProviderOrAdmin = !!(user && (hasProviderRole(user.roles) || user.roles?.includes("GOSTORK_ADMIN")));
 
   const bookingQuery = useQuery({
-    queryKey: isGuest ? ["/api/video/room-info", bookingId] : ["/api/calendar/bookings", bookingId],
+    queryKey: ["/api/calendar/bookings", bookingId],
     queryFn: async () => {
-      const url = isGuest
-        ? `/api/video/room-info/${bookingId}`
-        : `/api/calendar/bookings/${bookingId}`;
-      const res = await fetch(url, { credentials: "include" });
+      const res = await fetch(`/api/calendar/bookings/${bookingId}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load booking");
       return res.json();
     },
-    enabled: !!bookingId && (isReady || isGuest),
+    enabled: !!bookingId && isReady,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     staleTime: Infinity,
@@ -96,10 +95,7 @@ export default function VideoRoomPage() {
         if (!res.ok) throw new Error("Failed to update consent");
         return res.json();
       }
-      const res = await apiRequest("PATCH", "/api/video/consent", {
-        bookingId,
-        consentGiven,
-      });
+      const res = await apiRequest("PATCH", "/api/video/consent", { bookingId, consentGiven });
       return res.json();
     },
   });
@@ -271,29 +267,47 @@ export default function VideoRoomPage() {
     };
   }, []);
 
-  const handleGuestVerify = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!guestName.trim() || !guestEmail.trim()) {
-      setGuestError("Please enter your name and email.");
-      return;
-    }
-    setGuestVerifying(true);
-    setGuestError(null);
-    try {
-      const res = await fetch("/api/video/guest-token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookingId, email: guestEmail.trim(), name: guestName.trim() }),
-      });
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody.message || "Unable to verify your access");
+    setFormError(null);
+
+    if (formStep === "guest") {
+      if (!guestName.trim() || !guestEmail.trim()) {
+        setFormError("Please enter your name and email.");
+        return;
       }
-      setGuestVerified(true);
-    } catch (err: any) {
-      setGuestError(err.message || "Unable to verify your access. Please check your email.");
-    } finally {
-      setGuestVerifying(false);
+      setFormLoading(true);
+      try {
+        const res = await fetch("/api/video/guest-token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bookingId, email: guestEmail.trim(), name: guestName.trim() }),
+        });
+        if (res.ok) {
+          setGuestVerified(true);
+          return;
+        }
+        const errBody = await res.json().catch(() => ({}));
+        const msg: string = errBody.message || errBody.error || "";
+        if (msg === "ACCOUNT_EXISTS") {
+          setFormStep("login");
+        } else {
+          setFormError(msg || "Unable to verify your access. Please check your email.");
+        }
+      } catch (err: any) {
+        setFormError(err.message || "Unable to verify your access.");
+      } finally {
+        setFormLoading(false);
+      }
+    } else {
+      if (!loginPassword.trim()) {
+        setFormError("Please enter your password.");
+        return;
+      }
+      loginMutation.mutate(
+        { email: guestEmail.trim(), password: loginPassword },
+        { onError: () => setFormError("Invalid email or password. Please try again.") }
+      );
     }
   };
 
@@ -306,6 +320,12 @@ export default function VideoRoomPage() {
   }
 
   if (isGuest && !guestVerified) {
+    const subtitle = formStep === "login"
+      ? "Sign in with your GoStork account to join"
+      : "Enter your details to join the video call";
+    const buttonLabel = formStep === "login" ? "Sign In & Join" : "Continue";
+    const isSubmitting = formStep === "login" ? loginMutation.isPending : formLoading;
+
     return (
       <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background flex items-center justify-center p-4">
         <div className="w-full max-w-sm">
@@ -315,41 +335,59 @@ export default function VideoRoomPage() {
                 <Video className="w-7 h-7 text-primary" />
               </div>
               <h1 className="text-xl font-display font-heading mb-1" data-testid="text-guest-join-title">Join Meeting</h1>
-              <p className="text-sm text-muted-foreground">Enter your details to join the video call</p>
+              <p className="text-sm text-muted-foreground">{subtitle}</p>
             </div>
-            <form onSubmit={handleGuestVerify} className="space-y-4">
-              <div className="space-y-1">
-                <Label htmlFor="guest-name">Your Name</Label>
-                <Input
-                  id="guest-name"
-                  value={guestName}
-                  onChange={(e) => setGuestName(e.target.value)}
-                  placeholder="Enter your name"
-                  data-testid="input-guest-name"
-                />
-              </div>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {formStep === "guest" && (
+                <div className="space-y-1">
+                  <Label htmlFor="guest-name">Your Name</Label>
+                  <Input
+                    id="guest-name"
+                    value={guestName}
+                    onChange={(e) => setGuestName(e.target.value)}
+                    placeholder="Enter your name"
+                    data-testid="input-guest-name"
+                    autoComplete="name"
+                  />
+                </div>
+              )}
               <div className="space-y-1">
                 <Label htmlFor="guest-email">Email Address</Label>
                 <Input
                   id="guest-email"
                   type="email"
                   value={guestEmail}
-                  onChange={(e) => setGuestEmail(e.target.value)}
+                  onChange={formStep === "guest" ? (e) => setGuestEmail(e.target.value) : undefined}
+                  readOnly={formStep === "login"}
                   placeholder="Enter the email you were invited with"
                   data-testid="input-guest-email"
+                  autoComplete="email"
+                  className={formStep === "login" ? "bg-muted cursor-default" : ""}
                 />
               </div>
-              {guestError && (
-                <p className="text-sm text-destructive" data-testid="text-guest-error">{guestError}</p>
+              {formStep === "login" && (
+                <div className="space-y-1">
+                  <Label htmlFor="login-password">Password</Label>
+                  <Input
+                    id="login-password"
+                    type="password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder="Enter your password"
+                    data-testid="input-login-password"
+                    autoComplete="current-password"
+                    autoFocus
+                  />
+                </div>
               )}
-              <Button type="submit" className="w-full gap-2" disabled={guestVerifying} data-testid="button-guest-join">
-                {guestVerifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
-                Join Meeting
+              {formError && (
+                <p className="text-sm text-destructive" data-testid="text-form-error">{formError}</p>
+              )}
+              <Button type="submit" className="w-full gap-2" disabled={isSubmitting} data-testid="button-join-meeting">
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
+                {buttonLabel}
               </Button>
             </form>
-            <p className="text-xs text-muted-foreground text-center mt-4">
-              Already have a {companyName} account? <a href="/auth" className="text-primary hover:underline">Sign in</a>
-            </p>
           </Card>
           <p className="text-center text-xs text-muted-foreground mt-4">
             Powered by <span className="font-ui text-primary">{companyName}</span>

@@ -565,6 +565,7 @@ export default function ConversationsPage() {
   const setSelectedSessionId = (id: string | null, session?: ChatSession | ProviderSession | null) => {
     _setSelectedSessionId(id);
     generateAgreementMutation.reset();
+    setPanelShowSuggestForm(false);
     navigate(session ? buildChatUrl(session) : "/chat", { replace: true });
   };
   const [searchQuery, setSearchQuery] = useState("");
@@ -708,6 +709,28 @@ export default function ConversationsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions", selectedSessionId] });
+    },
+  });
+
+  const bookingConfirmMutation = useMutation({
+    mutationFn: async (bookingId: string) => {
+      await apiRequest("POST", `/api/calendar/bookings/${bookingId}/confirm`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chat-session/bookings", selectedSessionId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+      toast({ title: "Meeting confirmed", description: "The parent has been notified.", variant: "success" as any });
+    },
+  });
+
+  const bookingDeclineMutation = useMutation({
+    mutationFn: async (bookingId: string) => {
+      await apiRequest("POST", `/api/calendar/bookings/${bookingId}/decline`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chat-session/bookings", selectedSessionId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+      toast({ title: "Meeting declined", description: "The parent has been notified.", variant: "success" as any });
     },
   });
 
@@ -999,6 +1022,7 @@ export default function ConversationsPage() {
   }, [isProvider, providerSessionsQuery.data, detail?.user?.id]);
   const { statuses: onlineStatuses } = useOnlineStatus(onlineUserIds, onlineProviderIds);
 
+  const [panelShowSuggestForm, setPanelShowSuggestForm] = useState(false);
   const [parentBookingOverlay, setParentBookingOverlay] = useState<{ slug: string; memberName: string } | null>(null);
   const talkToTeamRef = useRef<{ trigger: () => void; escalated: boolean } | null>(null);
   const [talkToTeamEscalated, setTalkToTeamEscalated] = useState(false);
@@ -1888,6 +1912,100 @@ export default function ConversationsPage() {
               testId="provider-sidebar"
               extraSections={
                 <>
+                  {(() => {
+                    const bookings = sessionBookingsQuery.data || [];
+                    const pendingBooking = bookings.find((b: any) => b.status === "PENDING");
+                    const confirmedBooking = bookings.find((b: any) => b.status === "CONFIRMED" && new Date() < new Date(new Date(b.scheduledAt).getTime() + (b.duration || 30) * 60 * 1000));
+                    const activeBooking = pendingBooking || confirmedBooking;
+                    if (!activeBooking) return null;
+                    const start = new Date(activeBooking.scheduledAt);
+                    const isPending = activeBooking.status === "PENDING";
+                    const isConfirmed = activeBooking.status === "CONFIRMED";
+                    return (
+                      <div className="border-t pt-4 mt-4" data-testid="panel-consultation-call-section">
+                        <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Consultation Call</h4>
+                        <div className="rounded-[var(--radius)] border border-border overflow-hidden">
+                          <div className="p-2" style={{ backgroundColor: brandColor }}>
+                            <div className="flex items-center gap-2 px-1">
+                              <CalendarClock className="w-3.5 h-3.5 text-primary-foreground" />
+                              <span className="text-primary-foreground text-[11px] font-semibold uppercase tracking-wider">
+                                {isPending ? "Pending Approval" : "Confirmed"}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="p-3 space-y-2 bg-card">
+                            <div className="flex items-center gap-2 text-xs">
+                              <CalendarClock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                              <span>{format(start, "EEE, MMM d, yyyy")}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs">
+                              <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                              <span>{format(start, "h:mm a")} ({activeBooking.duration || 30} min)</span>
+                            </div>
+                            {isPending && (
+                              <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-[var(--radius)] p-2 mt-1">
+                                <p className="text-[11px] font-medium text-[hsl(var(--brand-warning))]">Needs your confirmation</p>
+                                <p className="text-[10px] text-[hsl(var(--brand-warning))] mt-0.5">Requested by {activeBooking.attendeeName || activeBooking.parentUser?.name || "a parent"}.</p>
+                              </div>
+                            )}
+                            {isConfirmed && (
+                              <div className="bg-[hsl(var(--brand-success)/0.08)] border border-[hsl(var(--brand-success)/0.3)] rounded-[var(--radius)] p-2 mt-1">
+                                <p className="text-[11px] font-medium text-[hsl(var(--brand-success))]">Meeting confirmed</p>
+                              </div>
+                            )}
+                          </div>
+                          {isPending && panelShowSuggestForm && (
+                            <div className="px-3 py-3 border-t">
+                              <p className="text-xs font-medium mb-2">Suggest a new time</p>
+                              <InlineSuggestTimeForm
+                                bookingId={activeBooking.id}
+                                onCancel={() => setPanelShowSuggestForm(false)}
+                                onSuccess={() => {
+                                  setPanelShowSuggestForm(false);
+                                  queryClient.invalidateQueries({ queryKey: ["/api/chat-session/bookings", selectedSessionId] });
+                                }}
+                              />
+                            </div>
+                          )}
+                          {isPending && !panelShowSuggestForm && (
+                            <div className="flex flex-wrap gap-2 px-3 py-2.5 border-t bg-muted/20 justify-center">
+                              <Button
+                                size="sm"
+                                className="gap-1 text-xs text-primary-foreground"
+                                style={{ backgroundColor: brandColor }}
+                                onClick={() => bookingConfirmMutation.mutate(activeBooking.id)}
+                                disabled={bookingConfirmMutation.isPending || bookingDeclineMutation.isPending}
+                                data-testid="panel-btn-confirm-booking"
+                              >
+                                {bookingConfirmMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                Confirm
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-destructive gap-1 text-xs"
+                                onClick={() => bookingDeclineMutation.mutate(activeBooking.id)}
+                                disabled={bookingConfirmMutation.isPending || bookingDeclineMutation.isPending}
+                                data-testid="panel-btn-decline-booking"
+                              >
+                                {bookingDeclineMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                                Decline
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-1 text-xs"
+                                onClick={() => setPanelShowSuggestForm(true)}
+                                data-testid="panel-btn-suggest-time"
+                              >
+                                <CalendarClock className="w-3 h-3" /> New Time
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {hasJoined && (
                     <div className="border-t pt-4 mt-4" data-testid="consultation-status-section">
                       <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Consultation Status</h4>

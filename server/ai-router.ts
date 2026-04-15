@@ -3033,9 +3033,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
               });
             }
 
-            const baseUrl = process.env.APP_URL?.replace(/\/+$/, "")
-              || (process.env.REPLIT_DEPLOYMENT_URL ? `https://${process.env.REPLIT_DEPLOYMENT_URL}` : "")
-              || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "https://app.gostork.com");
+            const baseUrl = process.env.APP_URL?.replace(/\/+$/, "") || "https://app.gostork.com";
             const whisperSession = await prisma.aiChatSession.findUnique({
               where: { id: currentSessionId },
               select: { userId: true, subjectProfileId: true },

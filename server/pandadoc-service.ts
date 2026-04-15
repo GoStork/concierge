@@ -441,10 +441,14 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
  * Upload provider's Word/PDF template to PandaDoc as a reusable template.
  * Stores the resulting template UUID on provider.pandaDocTemplateId.
  */
+/**
+ * Upload provider's file to PandaDoc as a template, embedding role names in the creation payload.
+ * Stores the resulting template UUID in pandaDocTemplateId.
+ */
 export async function syncTemplateToPandaDoc(providerId: string): Promise<string> {
   const provider = await prisma.provider.findUnique({
     where: { id: providerId },
-    select: { id: true, name: true, agreementTemplateUrl: true, pandaDocTemplateId: true },
+    select: { id: true, name: true, agreementTemplateUrl: true, pandaDocTemplateId: true, pandaDocRoles: true },
   });
   if (!provider) throw new Error("Provider not found");
   if (!provider.agreementTemplateUrl) throw new Error("Provider has not uploaded an agreement template");
@@ -452,8 +456,14 @@ export async function syncTemplateToPandaDoc(providerId: string): Promise<string
   const apiKey = process.env.PANDADOC_API_KEY;
   if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
 
-  // If a template already exists, verify it still exists in PandaDoc before reusing.
-  // If it was deleted (404), clear the ID and re-upload.
+  // Parse saved role names to embed in template creation
+  let storedRoles: string[] = [];
+  try { storedRoles = provider.pandaDocRoles ? JSON.parse(provider.pandaDocRoles as string) : []; } catch { /* ignore */ }
+  if (storedRoles.length < 2) {
+    throw new Error("Please save your signing role names in Step 1 before opening the editor.");
+  }
+
+  // If a valid template already exists in PandaDoc, reuse it - preserves field assignments
   if (provider.pandaDocTemplateId) {
     const checkRes = await fetch(`https://api.pandadoc.com/public/v1/templates/${provider.pandaDocTemplateId}`, {
       headers: { "Authorization": `API-Key ${apiKey}` },
@@ -462,11 +472,12 @@ export async function syncTemplateToPandaDoc(providerId: string): Promise<string
       console.log(`[PandaDoc] Reusing existing template: ${provider.pandaDocTemplateId}`);
       return provider.pandaDocTemplateId;
     }
-    console.log(`[PandaDoc] Template ${provider.pandaDocTemplateId} no longer exists (${checkRes.status}), re-uploading...`);
+    // Template not found in PandaDoc (deleted externally) - clear DB and re-create
+    console.log(`[PandaDoc] Template ${provider.pandaDocTemplateId} not found in PandaDoc, creating new one`);
     await prisma.provider.update({ where: { id: providerId }, data: { pandaDocTemplateId: null } });
   }
 
-  // Download the file (no token replacement - raw upload for template editor)
+  // Download the file
   const fileUrl = provider.agreementTemplateUrl;
   let buffer: Buffer;
   let contentType: string;
@@ -497,9 +508,14 @@ export async function syncTemplateToPandaDoc(providerId: string): Promise<string
     contentType = resp.headers.get("content-type") || "application/octet-stream";
   }
 
-  // Upload to PandaDoc as a template (roles must be added via separate API calls after creation)
+  // Embed roles in the template creation payload
+  const templateMeta: any = {
+    name: `${provider.name} Agreement Template`,
+    roles: storedRoles.map((name, i) => ({ name, signing_order: i + 1 })),
+  };
+
   const formData = new FormData();
-  formData.append("data", JSON.stringify({ name: `${provider.name} Agreement Template` }));
+  formData.append("data", JSON.stringify(templateMeta));
   formData.append("file", new Blob([buffer], { type: contentType }), filename);
 
   const createRes = await fetch("https://api.pandadoc.com/public/v1/templates", {
@@ -516,10 +532,9 @@ export async function syncTemplateToPandaDoc(providerId: string): Promise<string
   const created = await createRes.json();
   const templateId: string = created.uuid || created.id;
   if (!templateId) throw new Error("PandaDoc did not return a template ID");
+  console.log(`[PandaDoc] Template created: ${templateId}, roles: ${storedRoles.join(", ")}`);
 
-  console.log(`[PandaDoc] Template created: ${templateId}, polling for active status...`);
-
-  // Poll until template.active
+  // Poll until active
   for (let i = 0; i < 15; i++) {
     await new Promise(resolve => setTimeout(resolve, 2000));
     const pollRes = await fetch(`https://api.pandadoc.com/public/v1/templates/${templateId}`, {
@@ -542,7 +557,6 @@ export async function syncTemplateToPandaDoc(providerId: string): Promise<string
 
 /**
  * Create an embedded editing session for the provider's PandaDoc template.
- * Returns the embed URL for the inline iframe editor.
  */
 export async function createTemplateEditingSession(providerId: string, userEmail: string): Promise<string> {
   const provider = await prisma.provider.findUnique({
@@ -557,10 +571,7 @@ export async function createTemplateEditingSession(providerId: string, userEmail
 
   const res = await fetch(`https://api.pandadoc.com/public/v1/templates/${provider.pandaDocTemplateId}/editing-sessions`, {
     method: "POST",
-    headers: {
-      "Authorization": `API-Key ${apiKey}`,
-      "Content-Type": "application/json",
-    },
+    headers: { "Authorization": `API-Key ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ email: userEmail }),
   });
 
@@ -571,16 +582,14 @@ export async function createTemplateEditingSession(providerId: string, userEmail
 
   const data = await res.json();
   console.log("[PandaDoc] Editing session response:", JSON.stringify(data));
-  // PandaDoc returns both `id` (session UUID) and `token`/`key` (the actual auth token for the editor SDK)
   const eToken: string = data.token || data.key || data.id;
   if (!eToken) throw new Error("PandaDoc did not return an editing session token");
-
   return eToken;
 }
 
 /**
  * Generate an agreement from the provider's PandaDoc template (template-based flow).
- * Tokens are passed as PandaDoc token variables instead of pre-filled XML.
+ * Signers fill all fields themselves; GoStork only assigns recipients to roles.
  */
 export async function generateAgreementFromTemplate({ providerId, parentUserId, sessionId }: GenerateAgreementParams) {
   const [provider, parentUser, session] = await Promise.all([
@@ -602,7 +611,8 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
   if (!parentUser) throw new Error("Parent user not found");
   if (!session) throw new Error("Chat session not found");
   if (session.providerId !== providerId) throw new Error("Provider/session mismatch");
-  if (!provider.pandaDocTemplateId) throw new Error("Provider has not configured a PandaDoc template. Please sync the template first from the Documents tab.");
+  if (!provider.agreementTemplateUrl) throw new Error("Provider has not uploaded an agreement template.");
+  if (!provider.pandaDocRoles) throw new Error("Provider has not configured signing roles. Go to Documents tab and complete Step 1.");
 
   const apiKey = process.env.PANDADOC_API_KEY;
   if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
@@ -669,40 +679,46 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
       );
     }
 
-    const role1 = storedRoles[0];
-    const role2 = (hasParent2 && storedRoles.length >= 3) ? storedRoles[1] : null;
-    const role3 = storedRoles[storedRoles.length - 1];
-    console.log(`[PandaDoc] Role assignment: parent1="${role1}", parent2="${role2 ?? "none"}", provider="${role3}"`);
+    // Order: provider is always first role, then parent(s)
+    const roleProvider = storedRoles[0];
+    const roleParent1 = storedRoles[1] ?? null;
+    const roleParent2 = (hasParent2 && storedRoles.length >= 3) ? storedRoles[2] : null;
+    console.log(`[PandaDoc] Role assignment: provider="${roleProvider}", parent1="${roleParent1 ?? "none"}", parent2="${roleParent2 ?? "none"}"`);
 
-    const recipients: any[] = [
-      {
-        email: parent1Email,
-        first_name: parent1.firstName || p1.name.split(" ")[0] || "",
-        last_name: parent1.lastName || p1.name.split(" ").slice(1).join(" ") || "",
-        role: role1,
-      },
-    ];
-    if (hasParent2 && role2) {
-      recipients.push({
-        email: p2.email,
-        first_name: parent2!.firstName || p2.name.split(" ")[0] || "",
-        last_name: parent2!.lastName || p2.name.split(" ").slice(1).join(" ") || "",
-        role: role2,
-      });
-    }
+    const recipients: any[] = [];
     if (provider.email) {
       recipients.push({
         email: provider.email,
         first_name: provider.name.split(" ")[0] || provider.name,
         last_name: provider.name.split(" ").slice(1).join(" ") || "",
-        role: role3,
+        role: roleProvider,
+      });
+    }
+    recipients.push({
+      email: parent1Email,
+      first_name: parent1.firstName || p1.name.split(" ")[0] || "",
+      last_name: parent1.lastName || p1.name.split(" ").slice(1).join(" ") || "",
+      ...(roleParent1 ? { role: roleParent1 } : {}),
+    });
+    if (hasParent2) {
+      recipients.push({
+        email: p2.email,
+        first_name: parent2!.firstName || p2.name.split(" ")[0] || "",
+        last_name: parent2!.lastName || p2.name.split(" ").slice(1).join(" ") || "",
+        ...(roleParent2 ? { role: roleParent2 } : {}),
       });
     }
 
-    const docBody = {
-      template_uuid: provider.pandaDocTemplateId,
+    // Download the agreement file and upload as a new document with real recipients+roles.
+    const { buffer: fileBuffer, filename: fileFilename, contentType: fileContentType } = await prepareFilledDocument(
+      provider.agreementTemplateUrl!,
+      {}, // no token pre-fill - signers fill all fields themselves
+    );
+
+    const docMeta = {
       name: `${provider.name} - Agency Agreement - ${parent1Name}`,
       recipients,
+      parse_form_fields: false,
       metadata: {
         gostork_provider_id: providerId,
         gostork_parent_user_id: parentUserId,
@@ -712,13 +728,14 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
       tags: ["gostork"],
     };
 
+    const formData = new FormData();
+    formData.append("data", JSON.stringify(docMeta));
+    formData.append("file", new Blob([fileBuffer], { type: fileContentType }), fileFilename);
+
     const createResponse = await fetch("https://api.pandadoc.com/public/v1/documents", {
       method: "POST",
-      headers: {
-        "Authorization": `API-Key ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(docBody),
+      headers: { "Authorization": `API-Key ${apiKey}` },
+      body: formData,
     });
 
     if (!createResponse.ok) {

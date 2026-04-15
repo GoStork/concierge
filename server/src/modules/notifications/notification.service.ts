@@ -44,9 +44,6 @@ const TWILIO_TEMPLATES = {
 
 function getBaseUrl(): string {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
-  if (process.env.REPLIT_DEPLOYMENT_URL) return `https://${process.env.REPLIT_DEPLOYMENT_URL}`;
-  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
-  if (process.env.REPL_SLUG) return `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
   if (process.env.NODE_ENV === "development") {
     const port = process.env.PORT || 5001;
     return `http://localhost:${port}`;
@@ -250,10 +247,7 @@ export class NotificationService implements OnModuleInit {
         const rawLogo = s.logoWithNameUrl || s.logoUrl || "";
         // For email images, always use a publicly accessible URL (not localhost)
         // Prefer APP_URL or Replit deployment URL for image hosting
-        const imageBaseUrl = process.env.APP_URL?.replace(/\/+$/, "")
-          || (process.env.REPLIT_DEPLOYMENT_URL ? `https://${process.env.REPLIT_DEPLOYMENT_URL}` : "")
-          || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "")
-          || getBaseUrl();
+        const imageBaseUrl = getBaseUrl();
         defaults.logoUrl = rawLogo && rawLogo.startsWith("/") ? `${imageBaseUrl}${rawLogo}` : rawLogo;
         defaults.primaryForegroundColor = s.primaryForegroundColor || defaults.primaryForegroundColor;
         defaults.foregroundColor = s.foregroundColor || defaults.foregroundColor;
@@ -424,7 +418,9 @@ export class NotificationService implements OnModuleInit {
     const dateStr = formatDate(scheduledAt, booking.bookerTimezone);
     const timeStr = formatTime(scheduledAt, booking.bookerTimezone);
     const detailsLink = `${base}/booking/${booking.publicToken}`;
-    const joinLink = booking.meetingUrl || videoRoomLink;
+    // Reconstruct GoStork internal room URLs with current base URL to avoid stale stored domains (e.g. old Replit URLs).
+    // Only use booking.meetingUrl as-is for external meeting links (Zoom, Google Meet, etc.)
+    const joinLink = (booking.meetingUrl && !booking.meetingUrl.includes("/room/")) ? booking.meetingUrl : videoRoomLink;
 
     const parentEmailBuilder = (firstName: string) => buildBrandedEmail(brandData, {
       title: "Meeting Confirmed",
@@ -624,7 +620,7 @@ export class NotificationService implements OnModuleInit {
     const newDateStr = formatDate(newDate, newBooking.bookerTimezone);
     const newTimeStr = formatTime(newDate, newBooking.bookerTimezone);
     const detailsLink = `${base}/booking/${newBooking.publicToken}`;
-    const joinLink = newBooking.meetingUrl || videoRoomLink;
+    const joinLink = (newBooking.meetingUrl && !newBooking.meetingUrl.includes("/room/")) ? newBooking.meetingUrl : videoRoomLink;
 
     const parentEmailBuilder = (firstName: string) => buildBrandedEmail(brandData, {
       title: "Meeting Rescheduled",
@@ -1307,7 +1303,7 @@ export class NotificationService implements OnModuleInit {
           const dateStr = formatDate(scheduledAt, booking.bookerTimezone);
           const timeStr = formatTime(scheduledAt, booking.bookerTimezone);
           const detailsLink = `${base}/booking/${booking.publicToken}`;
-          const joinLink = booking.meetingUrl || reminderVideoRoomLink;
+          const joinLink = (booking.meetingUrl && !booking.meetingUrl.includes("/room/")) ? booking.meetingUrl : reminderVideoRoomLink;
           const location = booking.meetingType === "phone" ? "Phone Call" : "Video Call";
           const staffMember = booking.providerUser?.name || "";
 
@@ -1363,7 +1359,7 @@ export class NotificationService implements OnModuleInit {
               "1": getFirstName(isProvider ? booking.providerUser?.name : attendeeName),
               "2": otherPartyName,
               "3": reminderLabel,
-              "4": booking.meetingUrl || `${base}/room/${booking.id}`,
+              "4": (booking.meetingUrl && !booking.meetingUrl.includes("/room/")) ? booking.meetingUrl : `${base}/room/${booking.id}`,
             },
           );
         }

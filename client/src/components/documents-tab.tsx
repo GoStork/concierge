@@ -107,11 +107,16 @@ export default function DocumentsTab() {
     mutationFn: async (roles: string[]) => {
       await apiRequest("PUT", "/api/agreements/template-roles", { roles });
     },
-    onSuccess: () => {
+    onSuccess: (_, _vars, ctx: any) => {
       setRolesSaved(true);
       setTimeout(() => setRolesSaved(false), 3000);
       queryClient.invalidateQueries({ queryKey: ['/api/providers/:id', providerId] });
-      toast({ title: "Role names saved", description: "GoStork will use these names to assign signers." });
+      toast({
+        title: "Role names saved",
+        description: pandaDocTemplateId
+          ? "Re-upload your document in Step 2 to apply the new roles to the editor."
+          : "Now upload your document in Step 2.",
+      });
     },
     onError: (e: any) => {
       toast({ title: "Failed to save roles", description: e.message, variant: "destructive" });
@@ -268,14 +273,65 @@ export default function DocumentsTab() {
         </p>
       </div>
 
-      {/* Section A - Template Upload */}
+      {/* Step 1 - Signing Role Names (must be done before upload) */}
+      <Card className="p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <Check className="w-5 h-5 text-primary" />
+          <h2 className="text-lg font-heading">Step 1 - Define Signing Roles</h2>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Name the roles for your agreement. In the editor, your role goes first, then the parent(s). GoStork creates these roles automatically so you can assign signature fields to them.
+        </p>
+        <div className="space-y-2">
+          {[
+            { label: "Your role", placeholder: "e.g. Agency", index: 0 },
+            { label: "Parent 1 role", placeholder: "e.g. Client 1", index: 1 },
+            { label: "Parent 2 role", placeholder: "e.g. Client 2 (optional)", index: 2 },
+          ].map(({ label, placeholder, index }) => (
+            <div key={index} className="flex items-center gap-3">
+              <span className="text-xs text-muted-foreground w-28 shrink-0">{label}</span>
+              <Input
+                value={roleInputs[index] ?? ""}
+                onChange={e => setRoleInputs(prev => {
+                  const next = [...prev];
+                  next[index] = e.target.value;
+                  return next;
+                })}
+                placeholder={placeholder}
+                className="flex-1"
+              />
+            </div>
+          ))}
+        </div>
+        <Button
+          size="sm"
+          disabled={saveRolesMutation.isPending || !roleInputs[0]?.trim() || !roleInputs[1]?.trim()}
+          onClick={() => saveRolesMutation.mutate(roleInputs.filter(r => r.trim()))}
+        >
+          {saveRolesMutation.isPending ? (
+            <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Saving...</>
+          ) : rolesSaved ? (
+            <><Check className="w-4 h-4 mr-2" />Saved</>
+          ) : (
+            "Save Role Names"
+          )}
+        </Button>
+        {savedRoles.length >= 2 && (
+          <p className="text-xs text-[hsl(var(--brand-success))]">
+            <Check className="w-3 h-3 inline mr-1" />
+            Configured: {savedRoles.join(" - ")}
+          </p>
+        )}
+      </Card>
+
+      {/* Step 2 - Template Upload */}
       <Card className="p-6 space-y-4">
         <div className="flex items-center gap-2">
           <FileText className="w-5 h-5 text-primary" />
-          <h2 className="text-lg font-heading">Agreement Template</h2>
+          <h2 className="text-lg font-heading">Step 2 - Upload Agreement Template</h2>
         </div>
         <p className="text-sm text-muted-foreground">
-          Upload your agreement document (PDF or Word). This will be used when generating contracts for parents.
+          Upload your agreement document (PDF or Word). Your role names will be created automatically in the editor.
         </p>
 
         {/* Drag-and-drop zone */}
@@ -333,15 +389,15 @@ export default function DocumentsTab() {
         />
       </Card>
 
-      {/* Section B - Configure Signature Fields */}
+      {/* Step 3 - Configure Signature Fields */}
       {templateUrl && (
         <Card className="p-6 space-y-4">
           <div className="flex items-center gap-2">
             <PenLine className="w-5 h-5 text-primary" />
-            <h2 className="text-lg font-heading">Configure Signature Fields</h2>
+            <h2 className="text-lg font-heading">Step 3 - Assign Signature Fields</h2>
           </div>
           <p className="text-sm text-muted-foreground">
-            Use the editor below to drag and drop signature, initials, and date fields onto your document.
+            Open the editor and drag signature, date, and text fields onto your document. Assign each field to one of your roles using the dropdown in the right panel.
           </p>
 
           <div className="flex items-center gap-3">
@@ -384,13 +440,8 @@ export default function DocumentsTab() {
           {/* PandaDoc editor - inline within the card */}
           {editorEToken && (
             <div className="rounded-[var(--radius)] border bg-[hsl(var(--brand-warning)/0.08)] border-[hsl(var(--brand-warning)/0.35)] p-4 text-sm">
-              <p className="font-medium mb-2">Set up signing roles in the right panel - use any names you like:</p>
-              <ol className="space-y-1 list-decimal list-inside text-muted-foreground">
-                <li>1st role - First parent (e.g. "Intended Parent 1")</li>
-                <li>2nd role - Second parent, if applicable (optional)</li>
-                <li>Last role - Your own countersignature (e.g. "Agency")</li>
-              </ol>
-              <p className="text-xs text-muted-foreground mt-2">GoStork assigns signers by role order automatically - no specific names required.</p>
+              <p className="font-medium mb-1">Your roles should appear in the right panel dropdown.</p>
+              <p className="text-muted-foreground">Drag signature, date, or text fields onto the document and assign each to a role. Order: 1st role = you (provider), 2nd = Parent 1, 3rd = Parent 2 (if applicable). Click Save when done.</p>
             </div>
           )}
           {editorEToken && (
@@ -416,59 +467,6 @@ export default function DocumentsTab() {
                 style={{ width: "100%", height: "calc(100% - 41px)" }}
               />
             </div>
-          )}
-        </Card>
-      )}
-
-      {/* Section C - Role Names */}
-      {pandaDocTemplateId && (
-        <Card className="p-6 space-y-4">
-          <div className="flex items-center gap-2">
-            <Check className="w-5 h-5 text-primary" />
-            <h2 className="text-lg font-heading">Signing Role Names</h2>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Enter the exact role names you created in the PandaDoc editor. GoStork uses these to assign the right signer to each role.
-          </p>
-          <div className="space-y-2">
-            {[
-              { label: "Parent 1 role", placeholder: "e.g. Client 1", index: 0 },
-              { label: "Parent 2 role", placeholder: "e.g. Client 2", index: 1 },
-              { label: "Your role", placeholder: "e.g. Agency", index: 2 },
-            ].map(({ label, placeholder, index }) => (
-              <div key={index} className="flex items-center gap-3">
-                <span className="text-xs text-muted-foreground w-28 shrink-0">{label}</span>
-                <Input
-                  value={roleInputs[index] ?? ""}
-                  onChange={e => setRoleInputs(prev => {
-                    const next = [...prev];
-                    next[index] = e.target.value;
-                    return next;
-                  })}
-                  placeholder={placeholder}
-                  className="flex-1"
-                />
-              </div>
-            ))}
-          </div>
-          <Button
-            size="sm"
-            disabled={saveRolesMutation.isPending || !roleInputs[0]?.trim() || !roleInputs[2]?.trim()}
-            onClick={() => saveRolesMutation.mutate(roleInputs.filter(r => r.trim()))}
-          >
-            {saveRolesMutation.isPending ? (
-              <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Saving...</>
-            ) : rolesSaved ? (
-              <><Check className="w-4 h-4 mr-2" />Saved</>
-            ) : (
-              "Save Role Names"
-            )}
-          </Button>
-          {savedRoles.length >= 2 && (
-            <p className="text-xs text-[hsl(var(--brand-success))]">
-              <Check className="w-3 h-3 inline mr-1" />
-              Currently configured: {savedRoles.join(" - ")}
-            </p>
           )}
         </Card>
       )}

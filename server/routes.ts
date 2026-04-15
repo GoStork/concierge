@@ -13,6 +13,12 @@ function escapeHtml(str: string): string {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
 
+function getBaseUrl(): string {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
+  if (process.env.NODE_ENV === "development") return `http://localhost:${process.env.PORT || 5001}`;
+  return "https://app.gostork.com";
+}
+
 const PROVIDER_ROLES = ["PROVIDER_ADMIN", "SURROGACY_COORDINATOR", "EGG_DONOR_COORDINATOR", "SPERM_DONOR_COORDINATOR", "IVF_CLINIC_COORDINATOR", "DOCTOR", "BILLING_MANAGER"];
 function getUserRoles(user: any): string[] {
   return user.roles || [];
@@ -1059,7 +1065,7 @@ export async function registerRoutes(
                   subject: `Agreement signed by ${parentName}`,
                   content: [{
                     type: "text/html",
-                    value: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h2>Agreement Signed</h2><p>${parentName} has signed the agreement. You can view it in your <a href="https://app.gostork.com/account/documents">GoStork Documents</a> tab.</p></div>`,
+                    value: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h2>Agreement Signed</h2><p>${parentName} has signed the agreement. You can view it in your <a href="${getBaseUrl()}/account/documents">GoStork Documents</a> tab.</p></div>`,
                   }],
                 }),
               }).catch(() => {});

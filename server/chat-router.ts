@@ -1776,6 +1776,37 @@ chatRouter.get("/api/agreements/template-editor-session", requireAuth, async (re
   }
 });
 
+// Save role names for the provider's PandaDoc template and push them to PandaDoc
+chatRouter.put("/api/agreements/template-roles", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  const { roles } = req.body;
+  if (!Array.isArray(roles) || roles.length < 2 || roles.some((r: any) => typeof r !== "string" || !r.trim())) {
+    return res.status(400).json({ message: "roles must be an array of at least 2 non-empty strings" });
+  }
+  try {
+    const trimmed = roles.map((r: string) => r.trim());
+    const provider = await prisma.provider.update({
+      where: { id: user.providerId },
+      data: { pandaDocRoles: JSON.stringify(trimmed) },
+      select: { pandaDocTemplateId: true },
+    });
+    // If a template already exists, clear it so the next editor open re-uploads
+    // the document with the new roles embedded in the creation payload.
+    // PandaDoc's public API doesn't support adding/editing roles on existing templates.
+    if (provider.pandaDocTemplateId) {
+      await prisma.provider.update({
+        where: { id: user.providerId },
+        data: { pandaDocTemplateId: null },
+      });
+    }
+    res.json({ ok: true, templateCleared: !!provider.pandaDocTemplateId });
+  } catch (e: any) {
+    console.error("Save template roles error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
 // Generate agreement from PandaDoc template (new template-based flow)
 chatRouter.post("/api/agreements/generate-from-template", requireAuth, async (req, res) => {
   const user = req.user as any;
