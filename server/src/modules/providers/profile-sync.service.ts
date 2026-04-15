@@ -1412,7 +1412,7 @@ async function upsertSpermDonor(
 
   const existing = await prisma.spermDonor.findUnique({
     where: { providerId_externalId: { providerId, externalId: extId } },
-    select: { manuallyEditedFields: true, profileData: true, status: true, photoUrl: true, photos: true, photoCount: true },
+    select: { manuallyEditedFields: true, profileData: true, status: true, photoUrl: true, photos: true },
   });
 
   // Reuse already-persisted GCS photos to avoid re-downloading on every run
@@ -1420,7 +1420,7 @@ async function upsertSpermDonor(
     if (existing.photoUrl && isAlreadyPersisted(existing.photoUrl)) donor.photoUrl = existing.photoUrl;
     const existingPhotos = existing.photos as string[] | undefined;
     if (existingPhotos?.length && existingPhotos.every(p => isAlreadyPersisted(p))) {
-      const newCount = donor.photoCount ?? extractPhotosArray(donor).length;
+      const newCount = extractPhotosArray(donor).length;
       if (!newCount || Math.abs(newCount - existingPhotos.length) <= 1) donor.photos = existingPhotos;
     }
   }
