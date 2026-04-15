@@ -4334,10 +4334,44 @@ async function runSyncJob(
     job.total = uniqueItems.length;
     job.processed = 0;
 
+    // Generate a card hash for each item based on its listing-level data so we can
+    // skip full profile fetches for unchanged profiles (same as JMS/EDC paths)
+    for (const item of uniqueItems) {
+      if (!item.cardHash && item.externalId) {
+        const hashSource = JSON.stringify({
+          id: item.externalId,
+          name: item.name || "",
+          age: item.age || "",
+          ethnicity: item.ethnicity || "",
+          status: item.status || "",
+        });
+        item.cardHash = createHash("md5").update(hashSource).digest("hex");
+      }
+    }
+
+    // Load existing hashes + lastFullSyncAt from DB for incremental sync
+    const existingHashes = new Map<string, string>();
+    const existingLastFullSyncAt = new Map<string, Date>();
+    const externalIds = uniqueItems.map((d: any) => d.externalId).filter(Boolean);
+    if (externalIds.length > 0) {
+      const dbTable = job.type === "surrogate"
+        ? prisma.surrogate.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true } })
+        : job.type === "sperm-donor"
+        ? prisma.spermDonor.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true } })
+        : prisma.eggDonor.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true } });
+      const existing = await dbTable;
+      for (const d of existing) {
+        if (d.externalId && d.cardHash) existingHashes.set(d.externalId, d.cardHash);
+        if (d.externalId && (d as any).lastFullSyncAt) existingLastFullSyncAt.set(d.externalId, (d as any).lastFullSyncAt);
+      }
+    }
+
+    const PRICING_CHECK_MS = 14 * 24 * 60 * 60 * 1000;
+    let skippedUnchanged = 0;
     console.log(`[donor-sync] Found ${uniqueItems.length} unique ${job.type} profiles to enrich & import`);
 
     // Enrich + import in a single pass so records appear live in the UI
-    const BATCH_SIZE = 3;
+    const BATCH_SIZE = 10;
     for (let i = 0; i < uniqueItems.length; i += BATCH_SIZE) {
       if (isJobCancelled(job.id)) {
         console.log(`[donor-sync] Sync cancelled at ${i}/${uniqueItems.length}`);
@@ -4348,6 +4382,15 @@ async function runSyncJob(
       // Enrich batch in parallel (fetch individual profile pages)
       await Promise.all(batch.map(async (item) => {
         if (isJobCancelled(job.id)) return;
+        // Skip full profile fetch if card hash unchanged and pricing not stale
+        const oldHash = item.externalId ? existingHashes.get(item.externalId) : null;
+        const lastFull = item.externalId ? existingLastFullSyncAt.get(item.externalId) : null;
+        const pricingStale = !lastFull || (Date.now() - lastFull.getTime()) > PRICING_CHECK_MS;
+        if (oldHash && oldHash === item.cardHash && !pricingStale) {
+          skippedUnchanged++;
+          job.processed++;
+          return;
+        }
         const hasSections = item.profileData?._sections || item._sections;
         if (!hasSections && item.profileUrl) {
           try {
