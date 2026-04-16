@@ -1339,6 +1339,7 @@ function ConsultationBookingCard({
   userEmail,
   userName,
   onCallbackSubmitted,
+  onBookingConfirmed,
 }: {
   card: ConsultationCardData;
   brandColor: string;
@@ -1347,6 +1348,7 @@ function ConsultationBookingCard({
   userEmail?: string;
   userName?: string;
   onCallbackSubmitted?: () => void;
+  onBookingConfirmed?: (meta: { providerId?: string; subjectProfileId?: string | null }) => void;
 }) {
   const [callbackExpanded, setCallbackExpanded] = useState(false);
   const [callbackName, setCallbackName] = useState(userName || "");
@@ -3698,6 +3700,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       }, 800);
                     }}
                     onSchedule={(c) => setBookingCard(c)}
+                    onBookingConfirmed={onBookingConfirmed}
                     existingBooking={(() => {
                       if (!sessionBookings) return undefined;
                       const now = new Date();
