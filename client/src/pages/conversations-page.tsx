@@ -1153,9 +1153,11 @@ export default function ConversationsPage() {
 
   if (isParent) {
     // New parent with no sessions - go straight to matchmaker selection.
-    // Guard: skip if the user is actively in a session (?session= param) to prevent
-    // a transient empty refetch response from navigating them away mid-conversation.
-    if (!parentSessionsQuery.isLoading && parentSessionsQuery.data && parentSessionsQuery.data.length === 0 && !searchParams.get("session")) {
+    // Guards:
+    // - skip if actively in a session (?session= param) to prevent transient empty refetch from navigating away
+    // - skip if a specific entity URL is set (/chat/:entityId/:subjectId) - user navigated to a specific session
+    // - skip while query is still fetching (isFetching covers background refetches where isLoading is already false)
+    if (!parentSessionsQuery.isLoading && !parentSessionsQuery.isFetching && parentSessionsQuery.data && parentSessionsQuery.data.length === 0 && !searchParams.get("session") && !urlEntityId) {
       navigate("/matchmaker-selection", { replace: true });
       return null;
     }
