@@ -1594,7 +1594,6 @@ IMPORTANT RULES:
           break;
         }
       }
-      console.log(`[DONOR INQUIRY CHECK] latestMc=${JSON.stringify(latestMc?.providerId || null)}, latestMatchCardIdx=${latestMatchCardIdx}, totalMsgs=${chatHistory.length}`);
       if (latestMc && latestMatchCardIdx >= 0) {
         const messagesAfterCard = chatHistory.slice(latestMatchCardIdx + 1);
         const userMsgsAfterCard = messagesAfterCard.filter((m: any) => m.role === "user");
@@ -1602,11 +1601,9 @@ IMPORTANT RULES:
         const hasIntakeFlow = assistantMsgsAfterCard.some((m: any) =>
           m.content && /frozen embryos|egg source|sperm source|who is.*carry|gestational surrogate|\[\[CURATION\]\]/i.test(m.content)
         );
-        console.log(`[DONOR INQUIRY CHECK] userMsgsAfter=${userMsgsAfterCard.length}, hasIntakeFlow=${hasIntakeFlow}`);
         if (userMsgsAfterCard.length <= 10 && !hasIntakeFlow) {
           isDonorInquiryMode = true;
           inquiryMatchCard = latestMc;
-          console.log(`[DONOR INQUIRY MODE] ACTIVATED. Match card: ${JSON.stringify({ providerId: inquiryMatchCard?.providerId, type: inquiryMatchCard?.type, ownerProviderId: inquiryMatchCard?.ownerProviderId }).slice(0, 200)}`);
         }
       }
     } catch (e) {
@@ -1737,7 +1734,6 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       skipDirectives.push("DO NOT ask about sperm source (Step 3) or if they need help finding a sperm donor (Step 3a) - they already have one. Skip Match Cycle C entirely.");
     }
 
-    console.log(`[SKIP DIRECTIVES] userMessage="${userMessage}", mentionsClinic=${mentionsClinic}, hasClinic=${hasClinic}, mentionsEggDonor=${mentionsEggDonor}, profileNeedsEggDonor=${profileNeedsEggDonor}, needsEggDonor=${needsEggDonor}, mentionsSurrogate=${mentionsSurrogate}, profileNeedsSurrogate=${profileNeedsSurrogate}, mentionsSpermDonor=${mentionsSpermDonor}, profileNeedsSpermDonor=${profileNeedsSpermDonor}, isGayMale=${isGayMale}, directives=${JSON.stringify(skipDirectives)}`);
     const skipRulesPreamble = skipDirectives.length > 0 ? `
 MANDATORY - QUESTIONS YOU MUST NOT ASK (the parent already answered these):
 ${skipDirectives.map(d => "- " + d).join("\n")}
@@ -2081,7 +2077,6 @@ CRITICAL: If search_egg_donors returns results, present them with [[MATCH_CARD]]
       if (lastAssistantMsg && typeof lastAssistantMsg.content === "string" &&
           /schedule|consultation|set.?that.?up|book.*call|free.*call|arrange.*that|next step/i.test(lastAssistantMsg.content)) {
         affirmativeIsScheduling = true;
-        console.log(`[SCHEDULING-INTENT] Short affirmative "${userMessage}" after scheduling suggestion`);
       }
     }
     // Inject learn-more context (affirmativeIsLearnMore detected earlier, before show-more blocks)
@@ -2113,7 +2108,6 @@ Your response should:
       try {
         const mc = await findLatestMatchCard(currentSessionId);
         if (mc?.ownerProviderId) {
-          console.log(`[SCHEDULING-INTENT] Detected scheduling intent for provider ${mc.ownerProviderId}`);
           messages.push({
             role: "user",
             content: `SYSTEM OVERRIDE: The parent is signaling they want to take the next step. They are ready to schedule a consultation with the agency. Do NOT answer any more profile questions. Do NOT provide a match call prep guide - that comes later when the actual surrogate match call is arranged. Instead:
