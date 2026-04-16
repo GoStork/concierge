@@ -219,7 +219,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`[CONSULTATION] Created session ${targetSessionId} for provider ${consultProviderId}`);
     }
 
-    // System message for provider
+    // System message for provider (provider-only card)
     await this.prisma.aiChatMessage.create({
       data: {
         sessionId: targetSessionId,
@@ -227,6 +227,17 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
         content: `Great news! ${parentName} has scheduled a consultation. You can now join their group chat to communicate directly.`,
         senderType: "system",
         uiCardType: "provider_only",
+      },
+    });
+
+    // Visible system message in main chat pane
+    await this.prisma.aiChatMessage.create({
+      data: {
+        sessionId: targetSessionId,
+        role: "assistant",
+        content: `${parentName} is asking you to join the chat`,
+        senderType: "system",
+        senderName: "GoStork",
       },
     });
 

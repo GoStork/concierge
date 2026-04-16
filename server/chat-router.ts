@@ -251,17 +251,16 @@ chatRouter.post("/api/chat-sessions/:id/read", requireAuth, async (req, res) => 
 
     const now = new Date();
     // For providers: mark parent/AI messages as read
-    // For parents: mark provider/AI messages as read
-    const senderFilter = isProvider
-      ? { senderType: { notIn: ["provider"] } }
-      : { NOT: { AND: [{ role: "user" }, { senderType: { in: ["user", "parent"] } }] } };
-
+    // For admins: mark parent/user messages as read
+    // For parents: mark provider/AI/human messages as read
     const updated = await prisma.aiChatMessage.updateMany({
       where: {
         sessionId: req.params.id,
         readAt: null,
         ...(isProvider
           ? { senderType: { not: "provider" } }
+          : isAdmin
+          ? { senderType: { in: ["parent", "user"] } }
           : { OR: [{ role: "assistant" }, { senderType: { in: ["provider", "system", "human", "ai"] } }] }),
       },
       data: { readAt: now, deliveredAt: now },
@@ -320,6 +319,18 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       orderBy: [{ humanRequested: "desc" }, { updatedAt: "desc" }],
       take: 50,
     });
+    // Count unread messages from parents per session (senderType parent/user, readAt null)
+    const sessionIds = sessions.map(s => s.id);
+    const unreadCounts = sessionIds.length > 0
+      ? await prisma.aiChatMessage.groupBy({
+          by: ["sessionId"],
+          where: { sessionId: { in: sessionIds }, readAt: null, senderType: { in: ["parent", "user"] } },
+          _count: true,
+        })
+      : [];
+    const unreadMap: Record<string, number> = {};
+    for (const uc of unreadCounts) unreadMap[uc.sessionId] = uc._count;
+
     const result = sessions.map(s => ({
       id: s.id,
       userId: s.userId,
@@ -329,6 +340,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       status: s.status,
       humanRequested: s.humanRequested,
       humanJoinedAt: s.humanJoinedAt,
+      humanConcludedAt: (s as any).humanConcludedAt || null,
       providerId: s.providerId,
       providerName: s.provider?.name || null,
       providerLogo: s.provider?.logoUrl || null,
@@ -336,6 +348,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       messageCount: s._count.messages,
       lastMessage: s.messages[0]?.content?.slice(0, 120) || null,
       lastMessageAt: s.messages[0]?.createdAt || s.updatedAt,
+      unreadCount: unreadMap[s.id] || 0,
       createdAt: s.createdAt,
     }));
     res.json(result);

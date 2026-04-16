@@ -14,6 +14,10 @@ interface ConversationsShellProps {
   detailContent: ReactNode;
   brandColor: string;
   headerAction?: ReactNode;
+  /** When true and hasSelection is true, show the left sidebar on desktop. Default: true. */
+  showSidebar?: boolean;
+  /** When true and hasSelection is true, show the left sidebar on ALL screen sizes (consultation mode). */
+  sidebarAlwaysVisible?: boolean;
 }
 
 export function ConversationsShell({
@@ -26,13 +30,29 @@ export function ConversationsShell({
   detailContent,
   brandColor,
   headerAction,
+  showSidebar = true,
+  sidebarAlwaysVisible = false,
 }: ConversationsShellProps) {
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Left sidebar is visible when:
+  // - no selection (user needs to pick a conversation), OR
+  // - has selection AND showSidebar=true (e.g. consultation mode with provider in chat)
+  // Hidden when has selection AND showSidebar=false (e.g. AI-only chat, full-width middle pane)
+  const sidebarVisible = !hasSelection || showSidebar;
+
+  // Sidebar CSS class: always flex when sidebarAlwaysVisible (consultation mode),
+  // otherwise hide on mobile when a session is selected (standard responsive behavior)
+  const sidebarClass = !sidebarVisible
+    ? "hidden"
+    : hasSelection
+      ? (sidebarAlwaysVisible ? "flex" : "hidden md:flex")
+      : "flex";
+
   return (
     <div className="flex fixed inset-0 md:static md:h-[calc(100dvh-64px)] w-full overflow-hidden" data-testid="conversations-page">
-      <div className={`${hasSelection ? "hidden md:flex" : "flex"} flex-col w-full md:w-80 lg:w-96 border-r bg-background overflow-hidden`}>
+      <div className={`${sidebarClass} flex-col shrink-0 ${sidebarAlwaysVisible ? "w-64 md:w-80 lg:w-96" : "w-full md:w-80 lg:w-96"} border-r bg-background overflow-hidden`}>
         <div className="shrink-0 bg-background border-b px-4 pt-4 pb-3 space-y-3">
           <div className="flex items-center justify-between">
             <h1 className="font-display text-lg font-bold" data-testid="text-inbox-title">Conversations</h1>
@@ -86,7 +106,7 @@ export function ConversationsShell({
         </div>
       </div>
 
-      <div className={`${!hasSelection ? "hidden md:flex" : "flex"} flex-1 flex-col bg-background min-h-0 relative overflow-hidden`}>
+      <div className={`${!hasSelection ? "hidden md:flex" : "flex"} flex-1 min-w-0 flex-col bg-background min-h-0 relative overflow-hidden`}>
         {!hasSelection ? (
           <div className="flex-1 flex items-center justify-center text-center px-8">
             <div>

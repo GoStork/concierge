@@ -8,7 +8,7 @@ import { deriveChatPalette } from "@/lib/chat-palette";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
-  Headphones, MessageCircle, User, Clock, CheckCircle2, Loader2, UserPlus, LogOut,
+  Headphones, MessageCircle, User, Clock, CheckCircle2, Loader2, UserPlus, LogOut, Trash2,
 } from "lucide-react";
 import {
   timeAgo,
@@ -39,6 +39,7 @@ interface SessionSummary {
   messageCount: number;
   lastMessage: string | null;
   lastMessageAt: string;
+  unreadCount: number;
   createdAt: string;
 }
 
@@ -50,10 +51,12 @@ export default function AdminConciergeMonitor() {
   const chatPalette = useMemo(() => deriveChatPalette(brandColor), [brandColor]);
   const [searchParams, setSearchParams] = useSearchParams();
   const sessionIdFromUrl = searchParams.get("sessionId");
+  const lastChatKey = user ? `lastAdminChatSessionId:${(user as any).id}` : null;
   const [selectedSessionId, _setSelectedSessionId] = useState<string | null>(sessionIdFromUrl);
   const setSelectedSessionId = (id: string | null) => {
     _setSelectedSessionId(id);
     if (id) {
+      if (lastChatKey) localStorage.setItem(lastChatKey, id);
       setSearchParams({ sessionId: id }, { replace: true });
     } else {
       setSearchParams({}, { replace: true });
@@ -158,6 +161,25 @@ export default function AdminConciergeMonitor() {
     },
   });
 
+  const resetAllChatsMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/admin/reset-all-chats", {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.message || "Reset failed");
+      return body;
+    },
+    onSuccess: (data) => {
+      toast({ title: "All chats reset", description: `Deleted ${data.deleted.sessions} sessions, ${data.deleted.bookings} bookings, ${data.deleted.parentProfiles} parent profiles` });
+      queryClient.invalidateQueries();
+    },
+    onError: (err: any) => {
+      toast({ title: "Reset failed", description: err.message, variant: "destructive" });
+    },
+  });
+
   // Auto-scroll to bottom on new messages
   const scrollDone = useRef(false);
   useEffect(() => {
@@ -175,6 +197,27 @@ export default function AdminConciergeMonitor() {
     const t4 = setTimeout(() => { scrollToEnd(); scrollDone.current = true; }, 1500);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); };
   }, [sessionDetailQuery.data?.messages?.length, selectedSessionId]);
+
+  // Mark parent messages as read when admin opens a session
+  useEffect(() => {
+    if (!selectedSessionId) return;
+    fetch(`/api/chat-sessions/${selectedSessionId}/read`, { method: "POST", credentials: "include" })
+      .then(() => queryClient.invalidateQueries({ queryKey: ["/api/admin/concierge-sessions"] }))
+      .catch(() => {});
+  }, [selectedSessionId]);
+
+  // Auto-restore last viewed session when landing on the page with no selection
+  useEffect(() => {
+    if (!lastChatKey) return;
+    if (selectedSessionId || sessionIdFromUrl) return;
+    if (sessionsQuery.isLoading || !sessionsQuery.data) return;
+    const storedId = localStorage.getItem(lastChatKey);
+    if (!storedId) return;
+    const exists = sessionsQuery.data.some(s => s.id === storedId);
+    if (exists) {
+      setSelectedSessionId(storedId);
+    }
+  }, [lastChatKey, selectedSessionId, sessionIdFromUrl, sessionsQuery.isLoading, sessionsQuery.data]);
 
   const sessions = sessionsQuery.data || [];
   const detail = sessionDetailQuery.data;
@@ -321,12 +364,22 @@ export default function AdminConciergeMonitor() {
               <p className="text-sm text-muted-foreground mt-1 truncate">{s.lastMessage}</p>
             )}
           </div>
-          <div className="text-right flex-shrink-0">
+          <div className="text-right flex-shrink-0 flex flex-col items-end gap-1">
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <Clock className="w-3 h-3" />
               {timeAgo(s.lastMessageAt)}
             </div>
-            <div className="text-xs text-muted-foreground mt-1">{s.messageCount} msgs</div>
+            {(() => {
+              const needsJoin = s.humanRequested && (!s.humanJoinedAt || !!s.humanConcludedAt);
+              const count = needsJoin ? Math.max(1, s.unreadCount || 0) : (s.unreadCount || 0);
+              return count > 0 ? (
+                <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold px-1 text-primary-foreground" style={{ backgroundColor: 'hsl(var(--primary))' }}>
+                  {count > 99 ? "99+" : count}
+                </span>
+              ) : (
+                <div className="text-xs text-muted-foreground">{s.messageCount} msgs</div>
+              );
+            })()}
           </div>
         </button>
       ))}
@@ -351,37 +404,33 @@ export default function AdminConciergeMonitor() {
             <p className="text-xs text-muted-foreground">{detail.user.email}</p>
           </div>
         </div>
-        {detail.humanRequested && (!detail.humanJoinedAt || !!(detail as any).humanConcludedAt) && (
-          <Button
-            size="sm"
-            onClick={() => joinSessionMutation.mutate(selectedSessionId!)}
-            disabled={joinSessionMutation.isPending}
-            className="gap-1.5 text-xs"
-            data-testid="btn-join-group-chat"
-          >
-            {joinSessionMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
-            Join Group Chat
-          </Button>
-        )}
-        {detail.humanJoinedAt && !(detail as any).humanConcludedAt && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => exitSessionMutation.mutate(selectedSessionId!)}
-            disabled={exitSessionMutation.isPending}
-            className="gap-1.5 text-xs"
-            data-testid="btn-exit-human"
-          >
-            {exitSessionMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <LogOut className="w-3 h-3" />}
-            Exit Chat
-          </Button>
-        )}
-        {detail.humanJoinedAt && (detail as any).humanConcludedAt && !detail.humanRequested && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium" data-testid="badge-human-joined">
-            <CheckCircle2 className="w-3 h-3" />
-            Concluded
-          </div>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          {(!detail.humanJoinedAt || !!(detail as any).humanConcludedAt) && (
+            <Button
+              size="sm"
+              onClick={() => joinSessionMutation.mutate(selectedSessionId!)}
+              disabled={joinSessionMutation.isPending}
+              className="gap-1.5 text-xs"
+              data-testid="btn-join-group-chat"
+            >
+              {joinSessionMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
+              {detail.humanRequested ? "Join Group Chat" : "Join Chat"}
+            </Button>
+          )}
+          {detail.humanJoinedAt && !(detail as any).humanConcludedAt && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => exitSessionMutation.mutate(selectedSessionId!)}
+              disabled={exitSessionMutation.isPending}
+              className="gap-1.5 text-xs"
+              data-testid="btn-exit-human"
+            >
+              {exitSessionMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <LogOut className="w-3 h-3" />}
+              Exit Chat
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -407,6 +456,28 @@ export default function AdminConciergeMonitor() {
               msgTestIdPrefix="monitor-msg"
             />
           </div>
+
+          {/* Inline join request card - shown when parent has requested a human */}
+          {detail.humanRequested && (!detail.humanJoinedAt || !!(detail as any).humanConcludedAt) && (
+            <div className="px-4 py-2 shrink-0">
+              <div className="rounded-xl border p-3 flex items-center gap-3" style={{ backgroundColor: `${brandColor}10`, borderColor: `${brandColor}30` }}>
+                <MessageCircle className="w-4 h-4 flex-shrink-0" style={{ color: brandColor }} />
+                <p className="flex-1 text-sm font-medium" style={{ color: brandColor }}>
+                  {detail.user.name || detail.user.email} is asking for you to join the chat
+                </p>
+                <Button
+                  size="sm"
+                  onClick={() => joinSessionMutation.mutate(selectedSessionId!)}
+                  disabled={joinSessionMutation.isPending}
+                  className="gap-1.5 text-xs flex-shrink-0"
+                  data-testid="btn-join-inline"
+                >
+                  {joinSessionMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
+                  Join Group Chat
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* Input bar - reuses shared component */}
           {inlineVideoBookingId && (
@@ -453,7 +524,20 @@ export default function AdminConciergeMonitor() {
       detailContent={detailContent}
       brandColor={brandColor}
       headerAction={
-        <span className="text-sm font-medium text-muted-foreground">Concierge Monitor</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+          onClick={() => {
+            if (window.confirm("Delete ALL chats, meetings, agreements, and parent profiles? This cannot be undone.")) {
+              resetAllChatsMutation.mutate();
+            }
+          }}
+          disabled={resetAllChatsMutation.isPending}
+        >
+          {resetAllChatsMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Trash2 className="w-3.5 h-3.5 mr-1" />}
+          Delete Chats
+        </Button>
       }
     />
   );

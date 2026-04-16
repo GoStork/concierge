@@ -392,8 +392,6 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         handleVideoJoinedEvent(data);
         handleBookingEvent(data);
         handleCostSheetEvent(data);
-        handleHumanEscalationEvent(data);
-        handleHumanConcludedEvent(data);
       } catch {}
     };
 
@@ -413,7 +411,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       es.close();
       costsSseRef.current = null;
     };
-  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent]);
+  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent]);
   const isProvider = hasProviderRole(roles);
   const isParent = roles.includes('PARENT');
   const isParentOnly = isParent && !isAdmin && !isProvider;
@@ -521,10 +519,35 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     // pendingQuestions there would create a ghost badge the provider can never clear.
     const providerUnread = (providerChatSessions || []).reduce((sum, s) => {
       const pending = s.status === "PROVIDER_JOINED" ? 0 : (s.pendingQuestions || 0);
-      return sum + (s.unreadCount || 0) + pending;
+      // "Ready to Join": CONSULTATION_BOOKED means parent requested provider to join - show at least 1 unread
+      const unread = s.status === "CONSULTATION_BOOKED" ? Math.max(1, s.unreadCount || 0) : (s.unreadCount || 0);
+      return sum + unread + pending;
     }, 0);
     return parentUnread + providerUnread;
   }, [chatSessions, providerChatSessions]);
+
+  // Admin: fetch concierge sessions to compute badge count
+  const { data: adminConciergeSessions } = useQuery<{ unreadCount: number; humanRequested: boolean; humanJoinedAt: string | null; humanConcludedAt: string | null }[]>({
+    queryKey: ["/api/admin/concierge-sessions"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/concierge-sessions", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!user && isAdmin,
+    refetchInterval: 30000,
+  });
+  const conciergeUnread = useMemo(() => {
+    return (adminConciergeSessions || []).reduce((sum, s) => {
+      // "Ready to Join": humanRequested AND (never joined OR previously concluded)
+      // Matches the same condition as the "Ready to Join" badge in the monitor sidebar.
+      const needsJoin = s.humanRequested && (!s.humanJoinedAt || !!s.humanConcludedAt);
+      if (needsJoin) {
+        return sum + Math.max(1, s.unreadCount || 0);
+      }
+      return sum + (s.unreadCount || 0);
+    }, 0);
+  }, [adminConciergeSessions]);
 
   if (!user) return <>{children}</>;
 
@@ -554,9 +577,9 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
           mobileLabel: tab.mobileLabel,
           tabId: tab.id,
         })) : []),
-    { show: !isParentOnly, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats', badge: totalUnread },
+    { show: !isParentOnly && !isAdmin, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats', badge: totalUnread },
     { show: isAdmin, to: '/admin/providers', icon: Building2, label: 'Providers', mobileLabel: 'Providers' },
-    { show: isAdmin, to: '/admin/concierge-monitor', icon: Headphones, label: 'Concierge', mobileLabel: 'Concierge' },
+    { show: isAdmin, to: '/admin/concierge-monitor', icon: Headphones, label: 'Concierge', mobileLabel: 'Concierge', badge: conciergeUnread },
     { show: isAdmin || isProvider, to: '/users', icon: Users, label: 'Parents', mobileLabel: 'Parents' },
     { show: !((user as any).parentAccountRole === 'VIEWER'), to: '/calendar', icon: Calendar, label: 'Meetings', mobileLabel: 'Meetings' },
     { show: true, to: '/account', icon: User, label: 'Profile', mobileLabel: 'Profile', mobileOnly: true },

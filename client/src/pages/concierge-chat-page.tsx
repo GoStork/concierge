@@ -25,7 +25,7 @@ import {
   buildSidebarSections,
   type SidebarSection,
 } from "@/components/marketplace/swipe-mappers";
-import { Loader2, Send, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine } from "lucide-react";
+import { Loader2, Send, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User } from "lucide-react";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -42,7 +42,7 @@ interface MatchCard {
   isNewPatient?: boolean;
 }
 
-interface ConsultationCardData {
+export interface ConsultationCardData {
   providerId: string;
   providerName: string;
   providerLogo?: string;
@@ -2170,7 +2170,7 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo }: { msg: Cha
   return null;
 }
 
-function ParentChatSidePanel({
+export function ParentChatSidePanel({
   subjectInfo,
   subjectSections,
   subjectPhotoUrl,
@@ -2320,6 +2320,16 @@ function ParentChatSidePanel({
   );
 }
 
+export interface ParentSidePanelData {
+  providerInChat: boolean;
+  subjectInfo: ConsultationCardData | null;
+  subjectSections: SidebarSection[];
+  subjectPhotoUrl: string | null;
+  providerName: string | null;
+  sessionCalendarSlug: { slug: string | null; memberName: string | null } | null;
+  sessionBookings: any[] | null;
+}
+
 interface ConciergeChatProps {
   inlineSessionId?: string;
   inlineMatchmakerId?: string;
@@ -2327,9 +2337,10 @@ interface ConciergeChatProps {
   externalBookingSlug?: { slug: string; memberName: string } | null;
   onCloseExternalBooking?: () => void;
   talkToTeamRef?: React.MutableRefObject<{ trigger: () => void; escalated: boolean } | null>;
+  onSidePanelChange?: (data: ParentSidePanelData | null) => void;
 }
 
-export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId, isInline, externalBookingSlug, onCloseExternalBooking, talkToTeamRef }: ConciergeChatProps = {}) {
+export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId, isInline, externalBookingSlug, onCloseExternalBooking, talkToTeamRef, onSidePanelChange }: ConciergeChatProps = {}) {
   const [searchParams] = useSearchParams();
   const matchmakerId = isInline ? (inlineMatchmakerId || null) : searchParams.get("matchmaker");
   const existingSessionId = isInline ? (inlineSessionId || null) : searchParams.get("session");
@@ -2340,6 +2351,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const donorProviderIdParam = searchParams.get("providerId");
   const donorPhotoParam = searchParams.get("photoUrl");
   const navigate = useNavigate();
+
   const { user } = useAuth();
   const { data: brand } = useBrandSettings();
   const queryClient = useQueryClient();
@@ -2664,7 +2676,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         setGreetingSet(true);
         lastPollTimeRef.current = msgs[msgs.length - 1].createdAt;
         msgs.forEach((m: any) => { if (m.id) knownMessageIds.current.add(m.id); });
-        if (msgs.some((m: any) => m.senderType === "human")) setHumanEscalated(true);
         if (msgs.some((m: any) => m.senderType === "provider")) setProviderInChat(true);
         // Send read receipt
         fetch(`/api/chat-sessions/${existingSessionId}/read`, { method: "POST", credentials: "include" }).catch(() => {});
@@ -2727,7 +2738,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               setGreetingSet(true);
               lastPollTimeRef.current = msgs[msgs.length - 1].createdAt;
               msgs.forEach((m: any) => { if (m.id) knownMessageIds.current.add(m.id); });
-              if (msgs.some((m: any) => m.senderType === "human")) setHumanEscalated(true);
               if (msgs.find((m: any) => m.senderType === "provider")) setProviderInChat(true);
             }
           }
@@ -2826,6 +2836,48 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       }
     }
   });
+
+  // When inline, notify parent about side panel data so it can render the panel at the correct DOM level
+  useEffect(() => {
+    if (!isInline || !onSidePanelChange) return;
+    onSidePanelChange({
+      providerInChat,
+      subjectInfo,
+      subjectSections,
+      subjectPhotoUrl,
+      providerName: providerChatName,
+      sessionCalendarSlug: sessionCalendarSlug ?? null,
+      sessionBookings: sessionBookings ?? null,
+    });
+  }, [isInline, providerInChat, subjectInfo, subjectSections, subjectPhotoUrl, providerChatName, sessionCalendarSlug, sessionBookings]);
+
+  // Cleanup side panel when unmounting
+  useEffect(() => {
+    if (!isInline || !onSidePanelChange) return;
+    return () => { onSidePanelChange(null); };
+  }, [isInline]);
+
+  // When on the standalone /concierge route (not embedded in ConversationsPage), navigate to the
+  // full provider chat view as soon as a booking is confirmed. The ConversationsPage shell handles
+  // this itself for /chat/concierge, but the standalone /concierge route needs it here.
+  const prevStandaloneBookingCountRef = useRef(0);
+  useEffect(() => {
+    if (isInline) return; // ConversationsPage handles navigation for the embedded case
+    const bookingCount = sessionBookings?.length ?? 0;
+    const wasZero = prevStandaloneBookingCountRef.current === 0;
+    prevStandaloneBookingCountRef.current = bookingCount;
+
+    if (!wasZero || bookingCount === 0) return;
+
+    const providerId = subjectInfo?.providerId;
+    const subjectProfileId = subjectInfo?.subjectProfileId;
+    if (providerId && subjectProfileId) {
+      navigate(`/chat/${providerId}/${subjectProfileId}`, { replace: true });
+    } else if (providerId) {
+      navigate(`/chat`, { replace: true });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionBookings?.length, isInline]);
 
   // Scroll to bottom on messages change
   useEffect(() => {
@@ -2932,7 +2984,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             }),
           ]);
           lastPollTimeRef.current = unseenMsgs[unseenMsgs.length - 1].createdAt;
-          if (unseenMsgs.some((m: any) => m.senderType === "human")) setHumanEscalated(true);
           if (unseenMsgs.some((m: any) => m.senderType === "provider")) {
             setProviderInChat(true);
           }
@@ -3280,7 +3331,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         <CurationOverlay brandColor={brandColor} onComplete={handleCurationComplete} />
       )}
       <div
-        className={`flex ${isInline ? "h-full" : "h-dvh"} overflow-hidden${!isEmbedded && !isInline && !providerInChat ? " max-w-3xl mx-auto" : ""}`}
+        className={`flex ${isInline ? "flex-1 min-h-0 min-w-0" : "h-dvh"} overflow-hidden${!isEmbedded && !isInline && !(providerInChat && (sessionBookings?.length ?? 0) > 0) ? " max-w-3xl mx-auto" : ""}`}
         data-testid="concierge-chat-page"
       >
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
@@ -3297,33 +3348,63 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
-            {!providerInChat && selectedMatchmaker?.avatarUrl && (
-              <img
-                src={getPhotoSrc(selectedMatchmaker.avatarUrl) || undefined}
-                alt={selectedMatchmaker.name}
-                className="w-12 h-12 rounded-full object-cover border absolute inset-0"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-              />
-            )}
-            <div
-              className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold"
-              style={{ backgroundColor: brandColor }}
-            >
-              {(providerInChat && providerChatName ? providerChatName : (aiName || "?")).charAt(0)}
-            </div>
-          </div>
-          <div className="flex-1 min-w-0">
-            <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>
-              {providerInChat && providerChatName ? providerChatName : (aiName || "AI Concierge")}
-            </h2>
-            {sessionTitle && (
-              <p className="text-[11px] font-ui text-muted-foreground truncate" data-testid="chat-subject-label">
-                {sessionTitle}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
+          {providerInChat && (sessionBookings?.length ?? 0) > 0 && subjectInfo ? (
+            /* Consultation mode: show "Subject x Provider" header layout */
+            <>
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-muted">
+                  {subjectInfo.profilePhotoUrl ? (
+                    <img src={getPhotoSrc(subjectInfo.profilePhotoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                      <User className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                  )}
+                </div>
+                <span className="font-semibold text-sm font-ui truncate">{subjectInfo.profileLabel || providerChatName}</span>
+              </div>
+              <span className="text-muted-foreground text-base font-medium flex-shrink-0 px-1" aria-hidden>x</span>
+              <div className="flex items-center gap-2 min-w-0">
+                {subjectInfo.providerLogo ? (
+                  <img src={getPhotoSrc(subjectInfo.providerLogo) || undefined} alt={providerChatName || ""} className="w-10 h-10 rounded-full object-contain flex-shrink-0 border border-border bg-white" />
+                ) : (
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold flex-shrink-0" style={{ backgroundColor: brandColor }}>
+                    {(providerChatName || "?").charAt(0)}
+                  </div>
+                )}
+                <span className="font-semibold text-sm font-ui truncate">{providerChatName}</span>
+              </div>
+            </>
+          ) : (
+            /* Default: matchmaker avatar + name */
+            <>
+              <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
+                {!providerInChat && selectedMatchmaker?.avatarUrl && (
+                  <img
+                    src={getPhotoSrc(selectedMatchmaker.avatarUrl) || undefined}
+                    alt={selectedMatchmaker.name}
+                    className="w-12 h-12 rounded-full object-cover border absolute inset-0"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                )}
+                <div
+                  className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold"
+                  style={{ backgroundColor: brandColor }}
+                >
+                  {(providerInChat && providerChatName ? providerChatName : (aiName || "?")).charAt(0)}
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>
+                  {providerInChat && providerChatName ? providerChatName : (aiName || "AI Concierge")}
+                </h2>
+                <p className="text-[11px] font-ui text-muted-foreground truncate" data-testid="chat-subject-label">
+                  {providerInChat && sessionTitle ? sessionTitle : "AI Concierge Chat"}
+                </p>
+              </div>
+            </>
+          )}
+          <div className="flex items-center gap-1 shrink-0 ml-auto">
             {providerInChat && (
               <>
                 <Button
@@ -3354,7 +3435,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 </Button>
               </>
             )}
-            {!providerInChat && (
+            {!providerInChat && sessionLoaded && (
               humanInChat ? (
                 <div
                   className="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium rounded-full"
@@ -3362,7 +3443,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   data-testid="btn-talk-to-team"
                 >
                   <Headphones className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Talking with Human</span>
+                  <span>Talking with Human</span>
                 </div>
               ) : (
                 <Button
@@ -3375,7 +3456,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   data-testid="btn-talk-to-team"
                 >
                   <Headphones className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">{humanEscalated ? "Team Notified" : "Talk to GoStork Team"}</span>
+                  <span>{humanEscalated ? "Team Notified" : "Talk to GoStork Team"}</span>
                 </Button>
               )
             )}
@@ -3801,7 +3882,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         </div>
 
         </div>
-        {providerInChat && !isEmbedded && (
+        {providerInChat && !isEmbedded && !isInline && (sessionBookings?.length ?? 0) > 0 && (
           <ParentChatSidePanel
             subjectInfo={subjectInfo}
             subjectSections={subjectSections}

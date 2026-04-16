@@ -119,13 +119,14 @@ export class GoogleCalendarService {
         client.setCredentials(credentials);
       } catch (err: any) {
         console.error("Failed to refresh Google token:", err.message);
+        const reason = this.isInvalidGrant(err) ? "invalid_grant" : "refresh_failed";
         const updateWhere: any = { userId, provider: "google", connected: true };
         if (emailScope) {
           updateWhere.email = emailScope;
         }
         await this.prisma.calendarConnection.updateMany({
           where: updateWhere,
-          data: { tokenValid: false },
+          data: { tokenValid: false, disconnectReason: reason },
         }).catch(() => {});
         throw new Error("Google Calendar token expired and refresh failed. Please reconnect your Google Calendar.");
       }
@@ -146,12 +147,20 @@ export class GoogleCalendarService {
     return code === 401 || code === 403 || err.message?.includes("invalid_grant") || err.message?.includes("Token has been");
   }
 
-  private async markUnhealthy(userId: string, email?: string) {
+  private isInvalidGrant(err: any): boolean {
+    return (
+      err.message?.includes("invalid_grant") ||
+      err.message?.includes("Token has been expired or revoked") ||
+      err?.response?.data?.error === "invalid_grant"
+    );
+  }
+
+  private async markUnhealthy(userId: string, email?: string, reason?: string) {
     const where: any = { userId, provider: "google", connected: true };
     if (email) where.email = email;
     await this.prisma.calendarConnection.updateMany({
       where,
-      data: { tokenValid: false },
+      data: { tokenValid: false, disconnectReason: reason || "auth_error" },
     }).catch(() => {});
   }
 
@@ -180,7 +189,7 @@ export class GoogleCalendarService {
           accessRole: cal.accessRole,
         }));
     } catch (err: any) {
-      if (this.isAuthError(err)) await this.markUnhealthy(userId, email);
+      if (this.isAuthError(err)) await this.markUnhealthy(userId, email, this.isInvalidGrant(err) ? "invalid_grant" : "auth_error");
       throw err;
     }
   }
@@ -208,7 +217,7 @@ export class GoogleCalendarService {
         transparency: event.transparency,
       }));
     } catch (err: any) {
-      if (this.isAuthError(err)) await this.markUnhealthy(userId);
+      if (this.isAuthError(err)) await this.markUnhealthy(userId, undefined, this.isInvalidGrant(err) ? "invalid_grant" : "auth_error");
       throw err;
     }
   }
@@ -274,7 +283,7 @@ export class GoogleCalendarService {
       if (err?.code === 410 || err?.response?.status === 410) {
         return null;
       }
-      if (this.isAuthError(err)) await this.markUnhealthy(userId);
+      if (this.isAuthError(err)) await this.markUnhealthy(userId, undefined, this.isInvalidGrant(err) ? "invalid_grant" : "auth_error");
       throw err;
     }
   }
@@ -409,11 +418,12 @@ export class GoogleCalendarService {
       } catch (err: any) {
         allHealthy = false;
         lastError = err.message || "Token invalid or revoked";
+        const reason = this.isInvalidGrant(err) ? "invalid_grant" : "auth_error";
         const updateWhere: any = { userId, provider: "google", connected: true };
         if (connection.email) updateWhere.email = connection.email;
         await this.prisma.calendarConnection.updateMany({
           where: updateWhere,
-          data: { tokenValid: false },
+          data: { tokenValid: false, disconnectReason: reason },
         }).catch(() => {});
       }
     }

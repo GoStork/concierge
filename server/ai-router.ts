@@ -624,7 +624,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
         });
         await prisma.aiChatSession.update({
           where: { id: existing.id },
-          data: { updatedAt: new Date(), title: `${donorLabel} Inquiry` },
+          data: { updatedAt: new Date(), title: "AI Concierge Chat" },
         });
         res.json({ sessionId: existing.id, greetingMessageId: greetingMsg.id, reused: true });
         if (mcpClient) {
@@ -632,7 +632,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
             .then((resolveResult: any) => {
               const resolved = JSON.parse((resolveResult.content as any)?.[0]?.text || "{}");
               if (resolved.name && resolved.name !== donorLabel) {
-                prisma.aiChatSession.update({ where: { id: existing.id }, data: { title: `${resolved.name} Inquiry` } }).catch(() => {});
+                // Title stays "AI Concierge Chat" - do not rename to donor/surrogate name
                 prisma.aiChatMessage.update({
                   where: { id: greetingMsg.id },
                   data: { uiCardData: { matchCards: [{ ...matchCardData.matchCards[0], name: resolved.name, ownerProviderId: resolved.ownerProviderId || req.body.ownerProviderId || undefined }] } },
@@ -645,7 +645,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       return res.json({ sessionId: existing.id });
     }
 
-    const sessionTitle = donorId ? `${donorLabel} Inquiry` : "AI Concierge Chat";
+    const sessionTitle = "AI Concierge Chat";
     const session = await prisma.aiChatSession.create({
       data: { userId, title: sessionTitle, matchmakerId },
     });
@@ -680,7 +680,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
         .then((resolveResult: any) => {
           const resolved = JSON.parse((resolveResult.content as any)?.[0]?.text || "{}");
           if (resolved.name && resolved.name !== donorLabel) {
-            prisma.aiChatSession.update({ where: { id: session.id }, data: { title: `${resolved.name} Inquiry` } }).catch(() => {});
+            // Title stays "AI Concierge Chat" - do not rename to donor/surrogate name
             if (greetingUiCardData) {
               prisma.aiChatMessage.update({
                 where: { id: greetingMsg.id },
@@ -2857,7 +2857,6 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     let whisperMatch = finalContent.match(/\[\[WHISPER:(.*?)\]\]/);
     const whisperPhrasePattern = /(?:whisper|reach(?:ed|ing)?\s*out|sent\s*a\s*message|ask(?:ed|ing)?\s*the\s*(?:agency|coordinator|clinic|provider)|check\s*(?:on|with)|hold\s*on|get\s*(?:that|this|back|the)\s*(?:info|detail|answer)|find\s*(?:that|this)\s*out|look(?:ing)?\s*into\s*(?:that|this|it)|get\s*back\s*to\s*you|couldn'?t\s*(?:retrieve|locate|find|access)|don'?t\s*have\s*(?:that|this|access|the)\s*(?:specific|particular|info|detail|data)?|I'?ll\s*(?:check|find|update\s*you)|ran\s*into\s*a\s*(?:hiccup|issue|problem)|wasn'?t\s*able\s*to\s*(?:find|locate|retrieve|access)|unfortunately.*(?:don'?t|can'?t|couldn'?t)|seems\s*I\s*(?:don'?t|can'?t|couldn'?t)|issue\s*accessing|unable\s*to\s*(?:retrieve|access|find|locate|get)|there\s*was\s*(?:an?\s*)?(?:issue|problem|error)\s*(?:accessing|retrieving|fetching|getting|finding)|I'?m\s*unable\s*to\s*(?:retrieve|access|find))/i;
     const phraseMatched = !whisperMatch && whisperPhrasePattern.test(finalContent);
-    console.log(`[WHISPER DEBUG] whisperMatch=${!!whisperMatch}, phraseMatched=${phraseMatched}, userId=${!!userId}, currentSessionId=${currentSessionId}`);
 
     if ((whisperMatch || phraseMatched) && userId && currentSessionId && mcpClient) {
       let recentEntityId: string | null = null;

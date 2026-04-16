@@ -25,7 +25,7 @@ import { useAppDispatch } from "@/store";
 import { setHideBottomNav } from "@/store/uiSlice";
 import { deriveChatPalette } from "@/lib/chat-palette";
 import { format } from "date-fns";
-import ConciergeChatPage from "@/pages/concierge-chat-page";
+import ConciergeChatPage, { ParentChatSidePanel, type ParentSidePanelData } from "@/pages/concierge-chat-page";
 // Legacy imports for dead code pending removal
 import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-deck-card";
 import {
@@ -484,7 +484,7 @@ export default function ConversationsPage() {
   const navigate = useNavigate();
   const { entityId: urlEntityId, subjectId: urlSubjectId } = useParams<{ entityId?: string; subjectId?: string }>();
   const [searchParams] = useSearchParams();
-  const isConciergeUrl = window.location.pathname === "/chat/concierge";
+  const isConciergeUrl = window.location.pathname === "/chat/concierge" || window.location.pathname === "/concierge";
   const queryClient = useQueryClient();
   const dispatch = useAppDispatch();
   const brandColor = brand?.primaryColor || "#004D4D";
@@ -511,23 +511,6 @@ export default function ConversationsPage() {
       toast({ title: "Reset failed", description: err.message, variant: "destructive" });
     },
   });
-
-  const adminHeaderAction = isAdmin ? (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="h-7 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
-      onClick={() => {
-        if (window.confirm("Delete ALL chats, meetings, agreements, and parent profiles? This cannot be undone.")) {
-          resetAllChatsMutation.mutate();
-        }
-      }}
-      disabled={resetAllChatsMutation.isPending}
-    >
-      {resetAllChatsMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Trash2 className="w-3.5 h-3.5 mr-1" />}
-      Delete Chats
-    </Button>
-  ) : undefined;
 
   const myDisplayName = useMemo(() => {
     const u = user as any;
@@ -561,12 +544,16 @@ export default function ConversationsPage() {
     return "/chat";
   };
 
+  const lastChatKey = user ? `lastChatUrl:${(user as any).id}` : null;
+
   const [selectedSessionId, _setSelectedSessionId] = useState<string | null>(null);
   const setSelectedSessionId = (id: string | null, session?: ChatSession | ProviderSession | null) => {
     _setSelectedSessionId(id);
     generateAgreementMutation.reset();
     setPanelShowSuggestForm(false);
-    navigate(session ? buildChatUrl(session) : "/chat", { replace: true });
+    const url = session ? buildChatUrl(session) : "/chat";
+    if (lastChatKey && url !== "/chat") localStorage.setItem(lastChatKey, url);
+    navigate(url, { replace: true });
   };
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
@@ -615,6 +602,47 @@ export default function ConversationsPage() {
       _setSelectedSessionId(match.id);
     }
   }, [isProvider, urlEntityId, urlSubjectId, providerSessionsQuery.data]);
+
+  // Auto-restore the last viewed chat when landing on /chat with no selection
+  useEffect(() => {
+    if (!lastChatKey) return;
+    const currentPath = window.location.pathname;
+    const hasUrlSelection = !!urlEntityId || !!urlSubjectId || window.location.search.includes("session=");
+    if (currentPath !== "/chat" || hasUrlSelection) return;
+
+    // Wait until the relevant session list has loaded
+    const sessionsLoaded = isProvider
+      ? !providerSessionsQuery.isLoading && providerSessionsQuery.data !== undefined
+      : !parentSessionsQuery.isLoading && parentSessionsQuery.data !== undefined;
+    if (!sessionsLoaded) return;
+
+    const lastUrl = localStorage.getItem(lastChatKey);
+    if (!lastUrl || lastUrl === "/chat") return;
+
+    // Verify the session referenced in the stored URL still exists
+    const allSessions = isProvider
+      ? (providerSessionsQuery.data || [])
+      : (parentSessionsQuery.data || []);
+    const sessionIdMatch = lastUrl.match(/[?&]session=([^&]+)/);
+    const pathIdMatch = lastUrl.match(/\/chat\/[^/]+\/([^/]+)/);
+    const storedSessionId = sessionIdMatch?.[1] || pathIdMatch?.[1];
+    const sessionExists = storedSessionId
+      ? allSessions.some(s => s.id === storedSessionId || (s as any).subjectProfileId === storedSessionId)
+      : allSessions.length > 0;
+
+    if (sessionExists) {
+      navigate(lastUrl, { replace: true });
+    }
+  }, [
+    lastChatKey,
+    isProvider,
+    providerSessionsQuery.isLoading,
+    providerSessionsQuery.data,
+    parentSessionsQuery.isLoading,
+    parentSessionsQuery.data,
+    urlEntityId,
+    urlSubjectId,
+  ]);
 
   const sessionDetailQuery = useQuery<SessionDetail>({
     queryKey: ["/api/provider/concierge-sessions", selectedSessionId],
@@ -932,7 +960,9 @@ export default function ConversationsPage() {
     return null;
   }, [parentSessions, isConciergeUrl, urlEntityId, urlSubjectId, searchParams]);
   const setSelectedParentSession = (session: ChatSession | null) => {
-    navigate(session ? buildChatUrl(session) : "/chat", { replace: true });
+    const url = session ? buildChatUrl(session) : "/chat";
+    if (lastChatKey && url !== "/chat") localStorage.setItem(lastChatKey, url);
+    navigate(url, { replace: true });
   };
 
   // When the fallback path selects a session (no ?session= in URL), immediately lock the
@@ -940,6 +970,8 @@ export default function ConversationsPage() {
   // to a different session on each 10-second background refetch.
   useEffect(() => {
     if (!isConciergeUrl || !selectedParentSession || searchParams.get("session")) return;
+    const lockedUrl = `/chat/concierge?session=${selectedParentSession.id}`;
+    if (lastChatKey) localStorage.setItem(lastChatKey, lockedUrl);
     navigate(`?session=${selectedParentSession.id}`, { replace: true });
   }, [isConciergeUrl, selectedParentSession?.id, searchParams]);
 
@@ -985,11 +1017,29 @@ export default function ConversationsPage() {
     }
   }, [isProvider, selectedSessionId, selectedParentSession?.id, queryClient]);
 
-  // Reset talk-to-team escalation state when switching sessions
+  // Reset talk-to-team escalation state and side panel when switching sessions
   useEffect(() => {
     setTalkToTeamEscalated(false);
     talkToTeamRef.current = null;
+    setParentSidePanelData(null);
   }, [selectedParentSession?.id]);
+
+  // Auto-navigate when the current concierge session transitions to a provider thread
+  // (status becomes CONSULTATION_BOOKED or PROVIDER_JOINED after booking is submitted)
+  useEffect(() => {
+    if (!selectedParentSession || !isConciergeUrl) return;
+    const isNowProviderThread =
+      !!selectedParentSession.providerJoinedAt ||
+      selectedParentSession.status === "CONSULTATION_BOOKED" ||
+      selectedParentSession.status === "PROVIDER_JOINED";
+    if (!isNowProviderThread) return;
+    const targetUrl = buildChatUrl(selectedParentSession);
+    if (targetUrl && targetUrl !== "/chat") {
+      if (lastChatKey) localStorage.setItem(lastChatKey, targetUrl);
+      navigate(targetUrl, { replace: true });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedParentSession?.status, selectedParentSession?.providerJoinedAt, isConciergeUrl]);
 
   // Immediately refetch sessions when GoStork human exits the chat
   useEffect(() => {
@@ -1026,6 +1076,48 @@ export default function ConversationsPage() {
   const [parentBookingOverlay, setParentBookingOverlay] = useState<{ slug: string; memberName: string } | null>(null);
   const talkToTeamRef = useRef<{ trigger: () => void; escalated: boolean } | null>(null);
   const [talkToTeamEscalated, setTalkToTeamEscalated] = useState(false);
+  const [parentSidePanelData, setParentSidePanelData] = useState<ParentSidePanelData | null>(null);
+
+  // When a booking appears while on the concierge URL, immediately navigate to the provider chat.
+  // We use subjectInfo (from the consultation card already shown in chat) which has the
+  // providerId and subjectProfileId needed to build the URL - no need to wait for sessions to reload.
+  const prevBookingCountRef = useRef(0);
+  useEffect(() => {
+    const bookingCount = parentSidePanelData?.sessionBookings?.length ?? 0;
+    const wasZero = prevBookingCountRef.current === 0;
+    prevBookingCountRef.current = bookingCount;
+
+    if (!wasZero || bookingCount === 0 || !isConciergeUrl) return;
+
+    // Invalidate sessions so the provider session loads at the target URL
+    queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
+
+    // Build the target URL directly from subjectInfo (available immediately from the consultation card)
+    const providerId = parentSidePanelData!.subjectInfo?.providerId;
+    const subjectProfileId = parentSidePanelData!.subjectInfo?.subjectProfileId;
+
+    let targetUrl: string | null = null;
+    if (providerId && subjectProfileId) {
+      targetUrl = `/chat/${providerId}/${subjectProfileId}`;
+    } else if (providerId) {
+      // Fallback: try to find the session in current parentSessions
+      const session = parentSessions.find(
+        s => s.providerId === providerId && (
+          !s.matchmakerId ||
+          s.status === "CONSULTATION_BOOKED" ||
+          s.status === "PROVIDER_JOINED" ||
+          !!s.providerJoinedAt
+        )
+      );
+      if (session) targetUrl = buildChatUrl(session);
+    }
+
+    if (targetUrl && targetUrl !== "/chat") {
+      if (lastChatKey) localStorage.setItem(lastChatKey, targetUrl);
+      navigate(targetUrl, { replace: true });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parentSidePanelData?.sessionBookings?.length, isConciergeUrl]);
 
   const handleParentMeeting = async () => {
     if (!selectedParentSession) return;
@@ -1101,6 +1193,18 @@ export default function ConversationsPage() {
     };
 
     const hasParentSession = !!selectedParentSession;
+
+    // Show left sidebar and right profile panel only when a booking exists (consultation mode).
+    // AI-only chats (no booking yet) show full-width centered middle pane with no sidebars.
+    // Also immediately show sidebar when the selected session is already a provider thread
+    // (CONSULTATION_BOOKED / PROVIDER_JOINED) - avoids a flash of missing sidebar while the
+    // inline ConciergeChatPage loads and calls onSidePanelChange for the new session.
+    const parentShowSidebar =
+      (selectedParentSession && isProviderThread(selectedParentSession)) ||
+      (
+        (parentSidePanelData?.providerInChat === true) &&
+        (parentSidePanelData.sessionBookings?.length ?? 0) > 0
+      );
 
     const hasSessions = allSessions.length > 0;
     const sidebarContent = hasSessions ? (
@@ -1258,12 +1362,14 @@ export default function ConversationsPage() {
       : getPhotoSrc(selectedParentSession?.matchmakerAvatar) || null;
 
     const parentDetailContent = hasParentSession ? (
-      <div className="flex flex-col h-full">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        {/* Centering wrapper: constrains both header and content to max-w-3xl in AI-only mode; fills flex-1 in consultation mode */}
+        <div className={`flex flex-col flex-1 min-h-0 overflow-hidden${parentShowSidebar ? "" : " max-w-3xl mx-auto w-full"}`}>
         <div className="flex items-center gap-3 px-4 py-3 border-b bg-background shrink-0" data-testid="parent-chat-header">
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 w-8 p-0 md:hidden"
+            className={`h-8 w-8 p-0 ${parentShowSidebar ? "md:hidden" : ""}`}
             onClick={() => setSelectedParentSession(null)}
             data-testid="btn-back-parent-chat"
           >
@@ -1315,6 +1421,7 @@ export default function ConversationsPage() {
           ) : (
             <div className="flex-1 min-w-0">
               <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>{parentHeaderName}</h2>
+              <p className="text-[11px] font-ui text-muted-foreground truncate">AI Concierge Chat</p>
             </div>
           )}
           {!selectedParentSession!.providerId && (
@@ -1415,15 +1522,30 @@ export default function ConversationsPage() {
           </div>
           )}
         </div>
-        <ConciergeChatPage
-          key={selectedParentSession!.id}
-          isInline
-          inlineSessionId={selectedParentSession!.id}
-          inlineMatchmakerId={selectedParentSession!.matchmakerId || undefined}
-          externalBookingSlug={parentBookingOverlay}
-          onCloseExternalBooking={() => setParentBookingOverlay(null)}
-          talkToTeamRef={talkToTeamRef}
-        />
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <ConciergeChatPage
+            key={selectedParentSession!.id}
+            isInline
+            inlineSessionId={selectedParentSession!.id}
+            inlineMatchmakerId={selectedParentSession!.matchmakerId || undefined}
+            externalBookingSlug={parentBookingOverlay}
+            onCloseExternalBooking={() => setParentBookingOverlay(null)}
+            talkToTeamRef={talkToTeamRef}
+            onSidePanelChange={setParentSidePanelData}
+          />
+        </div>
+        </div>{/* end centering wrapper */}
+        {parentShowSidebar && parentSidePanelData && (
+          <ParentChatSidePanel
+            subjectInfo={parentSidePanelData.subjectInfo}
+            subjectSections={parentSidePanelData.subjectSections}
+            subjectPhotoUrl={parentSidePanelData.subjectPhotoUrl}
+            providerName={parentSidePanelData.providerName}
+            sessionCalendarSlug={parentSidePanelData.sessionCalendarSlug}
+            sessionBookings={parentSidePanelData.sessionBookings}
+            brandColor={brandColor}
+          />
+        )}
       </div>
     ) : null;
 
@@ -1450,7 +1572,8 @@ export default function ConversationsPage() {
           ) : undefined}
           detailContent={parentDetailContent}
           brandColor={brandColor}
-          headerAction={adminHeaderAction}
+          showSidebar={parentShowSidebar}
+          sidebarAlwaysVisible={parentShowSidebar}
         />
         {inlineVideoBookingId && (
           <InlineVideoOverlay
@@ -1507,7 +1630,10 @@ export default function ConversationsPage() {
       <>
         {sortedGroupEntries.map(([parentUserId, groupSessions]) => {
           const first = groupSessions[0];
-          const totalUnread = groupSessions.reduce((sum, s) => sum + s.unreadCount, 0);
+          const totalUnread = groupSessions.reduce((sum, s) => {
+            const unread = s.status === "CONSULTATION_BOOKED" ? Math.max(1, s.unreadCount || 0) : (s.unreadCount || 0);
+            return sum + unread;
+          }, 0);
           const latestMsg = groupSessions.reduce((latest, s) =>
             new Date(s.lastMessageAt).getTime() > new Date(latest.lastMessageAt).getTime() ? s : latest
           , groupSessions[0]);
@@ -1520,6 +1646,7 @@ export default function ConversationsPage() {
             const sIsJoined = s.status === "PROVIDER_JOINED";
             const sIsBooked = s.status === "CONSULTATION_BOOKED";
             const hasPending = s.pendingQuestions > 0;
+            const sUnread = sIsBooked ? Math.max(1, s.unreadCount || 0) : (s.unreadCount || 0);
             return (
               <button
                 key={s.id}
@@ -1569,10 +1696,10 @@ export default function ConversationsPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <span className={`text-[11px] ${s.unreadCount > 0 ? "font-semibold" : "text-muted-foreground"}`} style={s.unreadCount > 0 ? { color: brandColor } : undefined}>{timeAgo(s.lastMessageAt)}</span>
-                      {s.unreadCount > 0 && (
+                      <span className={`text-[11px] ${sUnread > 0 ? "font-semibold" : "text-muted-foreground"}`} style={sUnread > 0 ? { color: brandColor } : undefined}>{timeAgo(s.lastMessageAt)}</span>
+                      {sUnread > 0 && (
                         <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-primary-foreground px-1" style={{ backgroundColor: brandColor }}>
-                          {s.unreadCount}
+                          {sUnread}
                         </span>
                       )}
                     </div>
@@ -1628,6 +1755,7 @@ export default function ConversationsPage() {
                   const sIsJoined = s.status === "PROVIDER_JOINED";
                   const sIsBooked = s.status === "CONSULTATION_BOOKED";
                   const hasPending = s.pendingQuestions > 0;
+                  const sUnread = sIsBooked ? Math.max(1, s.unreadCount || 0) : (s.unreadCount || 0);
                   const photoSrc = getPhotoSrc(s.profilePhotoUrl);
                   return (
                     <button
@@ -1676,10 +1804,10 @@ export default function ConversationsPage() {
                             ) : null}
                           </div>
                           <div className="flex items-center gap-1.5 flex-shrink-0">
-                            <span className={`text-[11px] ${s.unreadCount > 0 ? "font-semibold" : "text-muted-foreground"}`} style={s.unreadCount > 0 ? { color: brandColor } : undefined}>{timeAgo(s.lastMessageAt)}</span>
-                            {s.unreadCount > 0 && (
+                            <span className={`text-[11px] ${sUnread > 0 ? "font-semibold" : "text-muted-foreground"}`} style={sUnread > 0 ? { color: brandColor } : undefined}>{timeAgo(s.lastMessageAt)}</span>
+                            {sUnread > 0 && (
                               <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-primary-foreground px-1" style={{ backgroundColor: brandColor }}>
-                                {s.unreadCount}
+                                {sUnread}
                               </span>
                             )}
                           </div>
@@ -2082,7 +2210,6 @@ export default function ConversationsPage() {
           ) : undefined}
           detailContent={providerDetailContent}
           brandColor={brandColor}
-          headerAction={adminHeaderAction}
         />
         {inlineVideoBookingId && (
           <InlineVideoOverlay

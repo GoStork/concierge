@@ -753,6 +753,7 @@ model CalendarConnection {
   connected          Boolean   @default(true)
   createdAt          DateTime  @default(now())
   tokenValid         Boolean   @default(true)
+  disconnectReason   String?
   encryptedPassword  String?
   passwordIv         String?
   user               User      @relation(fields: [userId], references: [id])

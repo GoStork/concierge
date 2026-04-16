@@ -35,7 +35,8 @@ const TWILIO_TEMPLATES = {
   MEETING_DECLINED_PARENT: "HX1ecf20919c598d71728a371ae5a9338c",
   NEW_TIME_SUGGESTED_PARENT: "HX523f2bab235463f38de799c7c9af6e1e",
   NEW_TIME_SUGGESTED_PARENT_WITH_MSG: "HXce262a7c751f702b1bbe5cc5c04c48a1",
-  CALENDAR_RECONNECTION: "HXefbbfef684696b94e55cf4cc29534794",
+  CALENDAR_RECONNECTION: "HX23ad7022a43c074802b805dddf938df4",
+  CALENDAR_RECONNECTION_REAUTH: "HX4c2f5bdfa7699ceb9fc9b9b8372e5e8c",
   VIDEO_WAITING_PARENT: "HX5ebdfae8412e2b22814ab321e1eb34c7",
   VIDEO_WAITING_PROVIDER: "HX7a0d4fa0fca197607ea546e80eb5750b",
   MEMBER_INVITATION: "HXe69876a807739e3d399e2f5f33ed8f0a",
@@ -880,11 +881,11 @@ export class NotificationService implements OnModuleInit {
     calendarLabel?: string | null;
     calendarEmail?: string | null;
     calendarProvider?: string | null;
+    disconnectReason?: string | null;
   }) {
     const base = getBaseUrl();
     const reconnectLink = `${base}/account/calendar`;
     const fullName = user.name || "Team Member";
-    const orgName = user.providerName || "";
     const calendarName = user.calendarLabel || user.calendarEmail || "your calendar";
     const calendarProviderLabel =
       user.calendarProvider === "microsoft" ? "Microsoft Outlook"
@@ -898,11 +899,24 @@ export class NotificationService implements OnModuleInit {
     });
     const bccList = adminEmails.map((a) => a.email).filter((e) => e !== user.email);
 
+    // Craft user-friendly copy based on why the connection dropped
+    const calendarAccountEmail = user.calendarEmail || calendarName;
+    const isInvalidGrant = user.disconnectReason === "invalid_grant";
+    const emailSubject = isInvalidGrant
+      ? `Action Required: Re-authorize Your ${calendarProviderLabel} Calendar`
+      : `Action Required: Reconnect Your ${calendarProviderLabel} Calendar`;
+    const emailBody = isInvalidGrant
+      ? `Your GoStork account <strong>${esc(user.email)}</strong> has been disconnected from your <strong>${esc(calendarProviderLabel)}</strong> Calendar <strong>${esc(calendarAccountEmail)}</strong>. This happens periodically and has nothing to do with your password - your account and data are completely safe. New bookings won't sync until you reconnect. Click the button below and sign in with ${calendarProviderLabel} to restore the connection.`
+      : `Your GoStork account <strong>${esc(user.email)}</strong> has been disconnected from your <strong>${esc(calendarProviderLabel)}</strong> Calendar <strong>${esc(calendarAccountEmail)}</strong>. New bookings won't sync until you reconnect. Click the button below to fix this now.`;
+    const alertText = isInvalidGrant
+      ? `Your GoStork account ${user.email} has been disconnected from your ${calendarProviderLabel} Calendar ${calendarAccountEmail}. New bookings won't sync until you reconnect.`
+      : `Your GoStork account ${user.email} has been disconnected from your ${calendarProviderLabel} Calendar ${calendarAccountEmail}. New bookings won't sync until you reconnect.`;
+
     const html = buildBrandedEmail(brandData, {
-      title: "Calendar Connection Lost",
+      title: isInvalidGrant ? "Calendar Re-Authorization Required" : "Calendar Connection Lost",
       greeting: `Hi ${esc(getFirstName(user.name))},`,
-      body: `Your <strong>${esc(calendarProviderLabel)}</strong> calendar connection (<strong>${esc(calendarName)}</strong>) has expired${orgName ? ` for ${esc(orgName)}` : ""}. New bookings won't sync to your calendar until you reconnect. Click the button below to fix this now.`,
-      alertBox: { text: `Your ${esc(calendarProviderLabel)} calendar is disconnected. Bookings will not sync until you reconnect.`, type: "error" },
+      body: emailBody,
+      alertBox: { text: alertText, type: "error" },
       buttons: [
         { label: `Reconnect ${esc(calendarProviderLabel)} Calendar`, url: reconnectLink },
       ],
@@ -910,13 +924,19 @@ export class NotificationService implements OnModuleInit {
 
     await this.dispatchNotification({
       userId: user.id, type: "EMAIL", channel: "calendar_reconnection", recipient: user.email,
-      subject: `Action Required: Reconnect Your ${calendarProviderLabel} Calendar`, body: html, bcc: bccList,
+      subject: emailSubject, body: html, bcc: bccList,
     });
 
     if (user.mobileNumber) {
-      await this.dispatchSmsTemplate({ userId: user.id, channel: "calendar_reconnection", recipient: user.mobileNumber,
-        contentSid: TWILIO_TEMPLATES.CALENDAR_RECONNECTION, contentVars: { "1": getFirstName(user.name), "2": fullName, "3": orgName || "GoStork", "4": reconnectLink },
-      });
+      if (isInvalidGrant) {
+        await this.dispatchSmsTemplate({ userId: user.id, channel: "calendar_reconnection", recipient: user.mobileNumber,
+          contentSid: TWILIO_TEMPLATES.CALENDAR_RECONNECTION_REAUTH, contentVars: { "1": user.email, "2": calendarProviderLabel, "3": calendarAccountEmail, "4": reconnectLink },
+        });
+      } else {
+        await this.dispatchSmsTemplate({ userId: user.id, channel: "calendar_reconnection", recipient: user.mobileNumber,
+          contentSid: TWILIO_TEMPLATES.CALENDAR_RECONNECTION, contentVars: { "1": user.email, "2": calendarProviderLabel, "3": calendarAccountEmail, "4": reconnectLink },
+        });
+      }
     }
   }
 

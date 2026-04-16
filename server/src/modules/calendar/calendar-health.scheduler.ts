@@ -15,6 +15,7 @@ export async function runCalendarHealthCheck(prisma: PrismaService, notification
       provider: true,
       label: true,
       email: true,
+      disconnectReason: true,
     },
     distinct: ["userId", "provider"],
   });
@@ -55,6 +56,7 @@ export async function runCalendarHealthCheck(prisma: PrismaService, notification
         calendarLabel: conn.label || null,
         calendarEmail: conn.email || null,
         calendarProvider: conn.provider,
+        disconnectReason: (conn as any).disconnectReason || null,
       });
 
       console.log(`[calendar-health] Sent reconnection alert to ${user.email} (${conn.provider})`);
