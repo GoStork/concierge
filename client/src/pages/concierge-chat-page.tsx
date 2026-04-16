@@ -2860,14 +2860,16 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   // When on the standalone /concierge route (not embedded in ConversationsPage), navigate to the
   // full provider chat view as soon as a booking is confirmed. The ConversationsPage shell handles
   // this itself for /chat/concierge, but the standalone /concierge route needs it here.
-  const prevStandaloneBookingCountRef = useRef(0);
+  // We check createdAt timestamp (< 60s old) to only navigate for newly created bookings.
   useEffect(() => {
     if (isInline) return; // ConversationsPage handles navigation for the embedded case
-    const bookingCount = sessionBookings?.length ?? 0;
-    const wasZero = prevStandaloneBookingCountRef.current === 0;
-    prevStandaloneBookingCountRef.current = bookingCount;
+    if (!sessionBookings?.length) return;
 
-    if (!wasZero || bookingCount === 0) return;
+    // Bookings are ordered by createdAt desc - first is newest
+    const newest = sessionBookings[0];
+    if (!newest?.createdAt) return;
+    const ageMs = Date.now() - new Date(newest.createdAt).getTime();
+    if (ageMs > 60000) return; // older than 60s means pre-existing booking
 
     const providerId = subjectInfo?.providerId;
     const subjectProfileId = subjectInfo?.subjectProfileId;

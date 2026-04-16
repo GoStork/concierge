@@ -1078,16 +1078,20 @@ export default function ConversationsPage() {
   const [talkToTeamEscalated, setTalkToTeamEscalated] = useState(false);
   const [parentSidePanelData, setParentSidePanelData] = useState<ParentSidePanelData | null>(null);
 
-  // When a booking appears while on the concierge URL, immediately navigate to the provider chat.
+  // When a NEWLY created booking appears while on the concierge URL, navigate to the provider chat.
   // We use subjectInfo (from the consultation card already shown in chat) which has the
   // providerId and subjectProfileId needed to build the URL - no need to wait for sessions to reload.
-  const prevBookingCountRef = useRef(0);
+  // We check createdAt timestamp (< 60s old) to distinguish new bookings from pre-existing ones
+  // that load when the user switches back to the concierge session - avoiding the snap-back bug.
   useEffect(() => {
-    const bookingCount = parentSidePanelData?.sessionBookings?.length ?? 0;
-    const wasZero = prevBookingCountRef.current === 0;
-    prevBookingCountRef.current = bookingCount;
+    const bookings = parentSidePanelData?.sessionBookings;
+    if (!bookings?.length || !isConciergeUrl) return;
 
-    if (!wasZero || bookingCount === 0 || !isConciergeUrl) return;
+    // Bookings are ordered by createdAt desc - first is newest
+    const newest = bookings[0];
+    if (!newest?.createdAt) return;
+    const ageMs = Date.now() - new Date(newest.createdAt).getTime();
+    if (ageMs > 60000) return; // older than 60s means pre-existing booking, not a new one
 
     // Invalidate sessions so the provider session loads at the target URL
     queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
