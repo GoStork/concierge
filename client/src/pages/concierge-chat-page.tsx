@@ -663,6 +663,7 @@ export function InlineBookingCalendar({
   consultationMeta,
   autoResetOnCancel,
   showCalendarOnExpiry,
+  onBookingConfirmed,
 }: {
   slug: string;
   memberName: string;
@@ -671,6 +672,7 @@ export function InlineBookingCalendar({
   consultationMeta?: { aiSessionId?: string; matchmakerId?: string | null; profileLabel?: string | null; profilePhotoUrl?: string | null; providerId?: string; subjectProfileId?: string | null; subjectType?: string | null };
   autoResetOnCancel?: boolean;
   showCalendarOnExpiry?: boolean;
+  onBookingConfirmed?: (meta: { providerId?: string; subjectProfileId?: string | null }) => void;
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -810,6 +812,7 @@ export function InlineBookingCalendar({
         setStep("pending");
         queryClient.invalidateQueries({ queryKey: ["/api/chat-session"] });
         queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+        onBookingConfirmed?.({ providerId: consultationMeta?.providerId, subjectProfileId: consultationMeta?.subjectProfileId });
       }
     },
   });
@@ -1407,6 +1410,7 @@ function ConsultationBookingCard({
             brandColor={brandColor}
             existingBooking={existingBooking}
             consultationMeta={{ aiSessionId: card.aiSessionId, matchmakerId: card.matchmakerId, profileLabel: card.profileLabel, profilePhotoUrl: card.profilePhotoUrl, providerId: card.providerId, subjectProfileId: card.subjectProfileId, subjectType: card.subjectType }}
+            onBookingConfirmed={onBookingConfirmed}
           />
         </div>
       </div>
@@ -2338,9 +2342,10 @@ interface ConciergeChatProps {
   onCloseExternalBooking?: () => void;
   talkToTeamRef?: React.MutableRefObject<{ trigger: () => void; escalated: boolean } | null>;
   onSidePanelChange?: (data: ParentSidePanelData | null) => void;
+  onBookingConfirmed?: (meta: { providerId?: string; subjectProfileId?: string | null }) => void;
 }
 
-export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId, isInline, externalBookingSlug, onCloseExternalBooking, talkToTeamRef, onSidePanelChange }: ConciergeChatProps = {}) {
+export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId, isInline, externalBookingSlug, onCloseExternalBooking, talkToTeamRef, onSidePanelChange, onBookingConfirmed }: ConciergeChatProps = {}) {
   const [searchParams] = useSearchParams();
   const matchmakerId = isInline ? (inlineMatchmakerId || null) : searchParams.get("matchmaker");
   const existingSessionId = isInline ? (inlineSessionId || null) : searchParams.get("session");
@@ -2857,19 +2862,20 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     return () => { onSidePanelChange(null); };
   }, [isInline]);
 
-  // When on the standalone /concierge route (not embedded in ConversationsPage), navigate to the
-  // full provider chat view as soon as a booking is confirmed. The ConversationsPage shell handles
-  // this itself for /chat/concierge, but the standalone /concierge route needs it here.
-  // We check createdAt timestamp (< 60s old) to only navigate for newly created bookings.
+  // When on the standalone /concierge route and no onBookingConfirmed callback is provided,
+  // navigate to the full provider chat view when the booking is confirmed.
+  // For the inline (ConversationsPage) case this is handled via the onBookingConfirmed prop.
+  // We use the callback from InlineBookingCalendar's onSuccess for reliability (no polling).
+  // This effect is kept as a fallback for sessions already in progress when the page loads.
   useEffect(() => {
-    if (isInline) return; // ConversationsPage handles navigation for the embedded case
+    if (isInline || onBookingConfirmed) return;
     if (!sessionBookings?.length) return;
 
     // Bookings are ordered by createdAt desc - first is newest
     const newest = sessionBookings[0];
     if (!newest?.createdAt) return;
     const ageMs = Date.now() - new Date(newest.createdAt).getTime();
-    if (ageMs > 60000) return; // older than 60s means pre-existing booking
+    if (ageMs > 15000) return; // only act on very recently created bookings (< 15s)
 
     const providerId = subjectInfo?.providerId;
     const subjectProfileId = subjectInfo?.subjectProfileId;

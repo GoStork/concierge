@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
@@ -1078,35 +1078,17 @@ export default function ConversationsPage() {
   const [talkToTeamEscalated, setTalkToTeamEscalated] = useState(false);
   const [parentSidePanelData, setParentSidePanelData] = useState<ParentSidePanelData | null>(null);
 
-  // When a NEWLY created booking appears while on the concierge URL, navigate to the provider chat.
-  // We use subjectInfo (from the consultation card already shown in chat) which has the
-  // providerId and subjectProfileId needed to build the URL - no need to wait for sessions to reload.
-  // We check createdAt timestamp (< 60s old) to distinguish new bookings from pre-existing ones
-  // that load when the user switches back to the concierge session - avoiding the snap-back bug.
-  useEffect(() => {
-    const bookings = parentSidePanelData?.sessionBookings;
-    if (!bookings?.length || !isConciergeUrl) return;
-
-    // Bookings are ordered by createdAt desc - first is newest
-    const newest = bookings[0];
-    if (!newest?.createdAt) return;
-    const ageMs = Date.now() - new Date(newest.createdAt).getTime();
-    if (ageMs > 60000) return; // older than 60s means pre-existing booking, not a new one
-
-    // Invalidate sessions so the provider session loads at the target URL
+  // Called directly by InlineBookingCalendar's onSuccess - fires exactly once when a booking
+  // is confirmed. This is more reliable than polling sessionBookings for a count change.
+  const handleBookingConfirmed = useCallback((meta: { providerId?: string; subjectProfileId?: string | null }) => {
     queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
 
-    // Build the target URL directly from subjectInfo (available immediately from the consultation card)
-    const providerId = parentSidePanelData!.subjectInfo?.providerId;
-    const subjectProfileId = parentSidePanelData!.subjectInfo?.subjectProfileId;
-
     let targetUrl: string | null = null;
-    if (providerId && subjectProfileId) {
-      targetUrl = `/chat/${providerId}/${subjectProfileId}`;
-    } else if (providerId) {
-      // Fallback: try to find the session in current parentSessions
+    if (meta.providerId && meta.subjectProfileId) {
+      targetUrl = `/chat/${meta.providerId}/${meta.subjectProfileId}`;
+    } else if (meta.providerId) {
       const session = parentSessions.find(
-        s => s.providerId === providerId && (
+        s => s.providerId === meta.providerId && (
           !s.matchmakerId ||
           s.status === "CONSULTATION_BOOKED" ||
           s.status === "PROVIDER_JOINED" ||
@@ -1121,7 +1103,7 @@ export default function ConversationsPage() {
       navigate(targetUrl, { replace: true });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parentSidePanelData?.sessionBookings?.length, isConciergeUrl]);
+  }, [parentSessions, lastChatKey]);
 
   const handleParentMeeting = async () => {
     if (!selectedParentSession) return;
@@ -1538,6 +1520,7 @@ export default function ConversationsPage() {
             onCloseExternalBooking={() => setParentBookingOverlay(null)}
             talkToTeamRef={talkToTeamRef}
             onSidePanelChange={setParentSidePanelData}
+            onBookingConfirmed={handleBookingConfirmed}
           />
         </div>
         </div>{/* end centering wrapper */}
