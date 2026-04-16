@@ -1649,7 +1649,6 @@ chatRouter.delete("/api/admin/reset-all-chats", requireAuth, async (req, res) =>
       prisma.notification.deleteMany({}),
       prisma.intendedParentProfile.deleteMany({}),
     ]);
-    console.log(`[ADMIN RESET] Deleted: ${agreements.count} agreements, ${silentQueries.count} silent queries, ${messages.count} messages, ${sessions.count} sessions, ${bookings.count} bookings, ${notifications.count} notifications, ${profiles.count} parent profiles`);
     res.json({
       message: "All chats, meetings, and parent profiles reset successfully",
       deleted: {
