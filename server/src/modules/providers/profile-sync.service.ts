@@ -1654,12 +1654,12 @@ export async function startSync(
     });
     if (runningLog) {
       const ageMin = Math.round((Date.now() - new Date(runningLog.startedAt).getTime()) / 60000);
-      // If it has been "running" for more than 9 hours it is a zombie entry from a
+      // If it has been "running" for more than 2 hours it is a zombie entry from a
       // hard-killed process. Mark it failed and allow a fresh start.
-      if (ageMin > 9 * 60) {
+      if (ageMin > 2 * 60) {
         await prisma.syncLog.update({
           where: { id: runningLog.id },
-          data: { status: "failed", completedAt: new Date(), errors: ["Zombie entry - automatically closed after 9h with no completion"] },
+          data: { status: "failed", completedAt: new Date(), errors: ["Zombie entry - automatically closed after 2h with no completion"] },
         }).catch(() => {});
       } else {
         throw new Error(`A sync is already running for this provider (started ${ageMin}min ago)`);
