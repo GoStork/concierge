@@ -2202,7 +2202,8 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
                   WHERE id = ${agreement.id}
                   AND "signerOrder" @> ${JSON.stringify([{ email: nextSigner.email, notified: false }])}::jsonb
                 `;
-                if (affected === 0) {
+                // Use == not === because Prisma v7 $executeRaw returns BigInt (0n == 0 is true, 0n === 0 is false)
+                if (affected == 0) {
                   console.log(`[PandaDoc webhook] Duplicate event - ${nextSigner.email} already notified, skipping`);
                   continue;
                 }
