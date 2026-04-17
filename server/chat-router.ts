@@ -2172,7 +2172,9 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
 
         if (signerOrder.length > 0) {
           const nextSigner = signerOrder.find(s => !s.notified);
-          if (nextSigner && completedEmails.size > 0) {
+          if (!nextSigner) {
+            console.log(`[PandaDoc webhook] All signers already notified - skipping`);
+          } else if (nextSigner && completedEmails.size > 0) {
             const signersBeforeNext = signerOrder.filter(s => s.signingOrder < nextSigner.signingOrder);
             const allPreviousDone = signersBeforeNext.every(s => completedEmails.has(s.email));
             if (allPreviousDone) {
