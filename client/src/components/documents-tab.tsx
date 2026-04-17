@@ -1,13 +1,13 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useProvider } from "@/hooks/use-providers";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Upload, FileText, ExternalLink, RefreshCw, Check, Trash2, PenLine } from "lucide-react";
 
 interface Agreement {
@@ -73,6 +73,7 @@ export default function DocumentsTab() {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const navigate = useNavigate();
   const providerId = (user as any)?.providerId || "";
   const { data: provider, isLoading: providerLoading } = useProvider(providerId);
 
@@ -88,39 +89,6 @@ export default function DocumentsTab() {
   const { data: agreements = [], isLoading: agreementsLoading, refetch } = useQuery<Agreement[]>({
     queryKey: ["/api/agreements"],
     enabled: !!providerId,
-  });
-
-  // Role name inputs - must be above early return to respect Rules of Hooks
-  const savedRolesRaw: string | null = (provider as any)?.pandaDocRoles || null;
-  const [roleInputs, setRoleInputs] = useState<string[]>(["", "", ""]);
-  const [rolesSaved, setRolesSaved] = useState(false);
-
-  useEffect(() => {
-    if (!savedRolesRaw) return;
-    try {
-      const parsed: string[] = JSON.parse(savedRolesRaw);
-      if (parsed.length >= 2) setRoleInputs(parsed);
-    } catch { /* ignore */ }
-  }, [savedRolesRaw]);
-
-  const saveRolesMutation = useMutation({
-    mutationFn: async (roles: string[]) => {
-      await apiRequest("PUT", "/api/agreements/template-roles", { roles });
-    },
-    onSuccess: (_, _vars, ctx: any) => {
-      setRolesSaved(true);
-      setTimeout(() => setRolesSaved(false), 3000);
-      queryClient.invalidateQueries({ queryKey: ['/api/providers/:id', providerId] });
-      toast({
-        title: "Role names saved",
-        description: pandaDocTemplateId
-          ? "Re-upload your document in Step 2 to apply the new roles to the editor."
-          : "Now upload your document in Step 2.",
-      });
-    },
-    onError: (e: any) => {
-      toast({ title: "Failed to save roles", description: e.message, variant: "destructive" });
-    },
   });
 
   const ALLOWED_TYPES = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
@@ -177,7 +145,7 @@ export default function DocumentsTab() {
   async function deleteTemplate() {
     setDeleting(true);
     try {
-      await apiRequest("PUT", `/api/providers/${providerId}`, { agreementTemplateUrl: null, agreementTemplateOriginalName: null, pandaDocTemplateId: null });
+      await apiRequest("DELETE", "/api/agreements/template");
       queryClient.invalidateQueries({ queryKey: ['/api/providers/:id', providerId] });
       if (editorInstanceRef.current) { editorInstanceRef.current.destroy(); editorInstanceRef.current = null; }
       setEditorEToken(null);
@@ -262,8 +230,6 @@ export default function DocumentsTab() {
   const templateFilename = (provider as any)?.agreementTemplateOriginalName
     || (templateUrl ? decodeURIComponent(templateUrl.split("/").pop()?.split("?")[0] || "agreement-template") : null);
 
-  const savedRoles: string[] = savedRolesRaw ? (() => { try { return JSON.parse(savedRolesRaw); } catch { return []; } })() : [];
-
   return (
     <div className="space-y-6">
       <div>
@@ -273,65 +239,14 @@ export default function DocumentsTab() {
         </p>
       </div>
 
-      {/* Step 1 - Signing Role Names (must be done before upload) */}
-      <Card className="p-6 space-y-4">
-        <div className="flex items-center gap-2">
-          <Check className="w-5 h-5 text-primary" />
-          <h2 className="text-lg font-heading">Step 1 - Define Signing Roles</h2>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Name the roles for your agreement. In the editor, your role goes first, then the parent(s). GoStork creates these roles automatically so you can assign signature fields to them.
-        </p>
-        <div className="space-y-2">
-          {[
-            { label: "Your role", placeholder: "e.g. Agency", index: 0 },
-            { label: "Parent 1 role", placeholder: "e.g. Client 1", index: 1 },
-            { label: "Parent 2 role", placeholder: "e.g. Client 2 (optional)", index: 2 },
-          ].map(({ label, placeholder, index }) => (
-            <div key={index} className="flex items-center gap-3">
-              <span className="text-xs text-muted-foreground w-28 shrink-0">{label}</span>
-              <Input
-                value={roleInputs[index] ?? ""}
-                onChange={e => setRoleInputs(prev => {
-                  const next = [...prev];
-                  next[index] = e.target.value;
-                  return next;
-                })}
-                placeholder={placeholder}
-                className="flex-1"
-              />
-            </div>
-          ))}
-        </div>
-        <Button
-          size="sm"
-          disabled={saveRolesMutation.isPending || !roleInputs[0]?.trim() || !roleInputs[1]?.trim()}
-          onClick={() => saveRolesMutation.mutate(roleInputs.filter(r => r.trim()))}
-        >
-          {saveRolesMutation.isPending ? (
-            <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Saving...</>
-          ) : rolesSaved ? (
-            <><Check className="w-4 h-4 mr-2" />Saved</>
-          ) : (
-            "Save Role Names"
-          )}
-        </Button>
-        {savedRoles.length >= 2 && (
-          <p className="text-xs text-[hsl(var(--brand-success))]">
-            <Check className="w-3 h-3 inline mr-1" />
-            Configured: {savedRoles.join(" - ")}
-          </p>
-        )}
-      </Card>
-
-      {/* Step 2 - Template Upload */}
+      {/* Step 1 - Template Upload */}
       <Card className="p-6 space-y-4">
         <div className="flex items-center gap-2">
           <FileText className="w-5 h-5 text-primary" />
-          <h2 className="text-lg font-heading">Step 2 - Upload Agreement Template</h2>
+          <h2 className="text-lg font-heading">Step 1 - Upload Agreement Template</h2>
         </div>
         <p className="text-sm text-muted-foreground">
-          Upload your agreement document (PDF or Word). Your role names will be created automatically in the editor.
+          Upload your agreement document (PDF or Word). Once uploaded, open the editor to assign signature and date fields to your signers.
         </p>
 
         {/* Drag-and-drop zone */}
@@ -389,15 +304,15 @@ export default function DocumentsTab() {
         />
       </Card>
 
-      {/* Step 3 - Configure Signature Fields */}
+      {/* Step 2 - Configure Signature Fields */}
       {templateUrl && (
         <Card className="p-6 space-y-4">
           <div className="flex items-center gap-2">
             <PenLine className="w-5 h-5 text-primary" />
-            <h2 className="text-lg font-heading">Step 3 - Assign Signature Fields</h2>
+            <h2 className="text-lg font-heading">Step 2 - Assign Signature Fields</h2>
           </div>
           <p className="text-sm text-muted-foreground">
-            Open the editor and drag signature, date, and text fields onto your document. Assign each field to one of your roles using the dropdown in the right panel.
+            Open the editor and drag signature and date fields onto your document. Assign each field to a signer role using the dropdown in the right panel.
           </p>
 
           <div className="flex items-center gap-3">
@@ -440,8 +355,8 @@ export default function DocumentsTab() {
           {/* PandaDoc editor - inline within the card */}
           {editorEToken && (
             <div className="rounded-[var(--radius)] border bg-[hsl(var(--brand-warning)/0.08)] border-[hsl(var(--brand-warning)/0.35)] p-4 text-sm">
-              <p className="font-medium mb-1">Your roles should appear in the right panel dropdown.</p>
-              <p className="text-muted-foreground">Drag signature, date, or text fields onto the document and assign each to a role. Order: 1st role = you (provider), 2nd = Parent 1, 3rd = Parent 2 (if applicable). Click Save when done.</p>
+              <p className="font-medium mb-1">Drag fields from the right panel onto your document.</p>
+              <p className="text-muted-foreground">Use the role dropdown on each field to assign it to the correct signer. Parents will each receive a personalized signing link. Click Save when done.</p>
             </div>
           )}
           {editorEToken && (
@@ -451,9 +366,15 @@ export default function DocumentsTab() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
+                  onClick={async () => {
                     if (editorInstanceRef.current) { editorInstanceRef.current.destroy(); editorInstanceRef.current = null; }
                     setEditorEToken(null);
+                    // Pull fresh role names from PandaDoc and cache them on the provider record
+                    try {
+                      await fetch("/api/agreements/refresh-roles", { method: "POST", credentials: "include" });
+                    } catch (e) {
+                      console.warn("[PandaDoc] Role refresh failed:", e);
+                    }
                     queryClient.invalidateQueries({ queryKey: ['/api/providers/:id', providerId] });
                     toast({ title: "Signature fields saved", description: "Your field configuration has been saved." });
                   }}
@@ -505,13 +426,9 @@ export default function DocumentsTab() {
                   </p>
                 </div>
                 <div className="shrink-0">{statusBadge(agreement.status)}</div>
-                {agreement.pandaDocViewUrl && (
-                  <a href={agreement.pandaDocViewUrl} target="_blank" rel="noopener noreferrer">
-                    <Button variant="ghost" size="sm" className="shrink-0">
-                      <ExternalLink className="w-4 h-4" />
-                    </Button>
-                  </a>
-                )}
+                <Button variant="ghost" size="sm" className="shrink-0" onClick={() => navigate(`/agreements/${agreement.id}`)}>
+                  <ExternalLink className="w-4 h-4" />
+                </Button>
               </div>
             ))}
           </div>

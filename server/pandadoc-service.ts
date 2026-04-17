@@ -118,6 +118,13 @@ interface GenerateAgreementParams {
   providerId: string;
   parentUserId: string;
   sessionId: string;
+  generatedByUserId?: string;
+  partnerOverride?: {
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+  skipPartner?: boolean;
 }
 
 async function waitForDocumentStatus(apiKey: string, documentId: string, targetStatus: string, maxAttempts = 15): Promise<boolean> {
@@ -141,7 +148,51 @@ async function waitForDocumentStatus(apiKey: string, documentId: string, targetS
   return false;
 }
 
-async function fetchDocumentViewUrl(apiKey: string, documentId: string, recipientEmail: string): Promise<string | null> {
+/**
+ * Fetch roles and per-role field counts from a PandaDoc template's details endpoint.
+ * Roles are returned sorted by signing_order ascending.
+ */
+async function fetchTemplateRolesAndFields(
+  apiKey: string,
+  templateId: string,
+): Promise<{
+  roles: Array<{ id: string; name: string; signingOrder: number }>;
+  fieldCountByRoleId: Record<string, number>;
+}> {
+  const res = await fetch(`https://api.pandadoc.com/public/v1/templates/${templateId}/details`, {
+    headers: { "Authorization": `API-Key ${apiKey}` },
+  });
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`PandaDoc template details failed: ${res.status} - ${errBody}`);
+  }
+  const data = await res.json();
+
+  // PandaDoc document creation API requires signing_order >= 1.
+  // Template detail API may return 0 or null for signing_order (0-based or unset),
+  // so we sort by whatever value we get, then re-assign 1-based sequential order.
+  const roles = ((data.roles || []) as any[])
+    .map((r: any) => ({
+      id: String(r.id),
+      name: String(r.name),
+      signingOrder: Number(r.signing_order ?? 0),
+    }))
+    .sort((a, b) => a.signingOrder - b.signingOrder)
+    .map((r, i) => ({ ...r, signingOrder: i + 1 }));
+
+  const fieldCountByRoleId: Record<string, number> = {};
+  for (const field of (data.fields || []) as any[]) {
+    const assignedTo = field.assigned_to;
+    if (assignedTo?.type === "role" && assignedTo?.id) {
+      const rid = String(assignedTo.id);
+      fieldCountByRoleId[rid] = (fieldCountByRoleId[rid] || 0) + 1;
+    }
+  }
+
+  return { roles, fieldCountByRoleId };
+}
+
+export async function fetchDocumentViewUrl(apiKey: string, documentId: string, recipientEmail: string): Promise<string | null> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
@@ -222,14 +273,17 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
   const p1 = formatMember(parent1);
   const p2 = formatMember(parent2);
 
-  const parent1Name = p1.name;
-  const parent1Email = p1.email;
-  const parent2Name = p2.name;
-  const parent2Email = p2.email;
-
   // Primary signer is parent1 (the one who initiated the session)
-  const parentName = parent1Name;
-  const parentEmail = parent1Email;
+  const parentName = p1.name;
+  const parentEmail = p1.email;
+
+  const initialSignerStatus: Record<string, object> = {};
+  if (p1.email) {
+    initialSignerStatus[p1.email] = { completed: false, completedAt: null, viewed: false, viewedAt: null, role: null, firstName: parent1.firstName || p1.name.split(" ")[0] || null, lastName: parent1.lastName || p1.name.split(" ").slice(1).join(" ") || null };
+  }
+  if (p2.email) {
+    initialSignerStatus[p2.email] = { completed: false, completedAt: null, viewed: false, viewedAt: null, role: null, firstName: parent2?.firstName || p2.name.split(" ")[0] || null, lastName: parent2?.lastName || p2.name.split(" ").slice(1).join(" ") || null };
+  }
 
   const agreement = await prisma.agreement.create({
     data: {
@@ -238,6 +292,7 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
       sessionId,
       status: "DRAFT",
       documentType: "Agency Agreement",
+      signerStatus: Object.keys(initialSignerStatus).length > 0 ? initialSignerStatus : undefined,
     },
   });
 
@@ -287,7 +342,7 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
       recipients: [
         // Client 1 - always present
         {
-          email: parent1Email,
+          email: parentEmail,
           first_name: parent1.firstName || p1.name.split(" ")[0] || "",
           last_name: parent1.lastName || p1.name.split(" ").slice(1).join(" ") || "",
           role: "signer1",
@@ -345,7 +400,7 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
 
     const formData = new FormData();
     formData.append("data", JSON.stringify(docMeta));
-    formData.append("file", new Blob([filledBuffer], { type: contentType }), filename);
+    formData.append("file", new Blob([filledBuffer as unknown as ArrayBuffer], { type: contentType }), filename);
 
     const createResponse = await fetch("https://api.pandadoc.com/public/v1/documents", {
       method: "POST",
@@ -448,20 +503,13 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
 export async function syncTemplateToPandaDoc(providerId: string): Promise<string> {
   const provider = await prisma.provider.findUnique({
     where: { id: providerId },
-    select: { id: true, name: true, agreementTemplateUrl: true, pandaDocTemplateId: true, pandaDocRoles: true },
+    select: { id: true, name: true, agreementTemplateUrl: true, pandaDocTemplateId: true },
   });
   if (!provider) throw new Error("Provider not found");
   if (!provider.agreementTemplateUrl) throw new Error("Provider has not uploaded an agreement template");
 
   const apiKey = process.env.PANDADOC_API_KEY;
   if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
-
-  // Parse saved role names to embed in template creation
-  let storedRoles: string[] = [];
-  try { storedRoles = provider.pandaDocRoles ? JSON.parse(provider.pandaDocRoles as string) : []; } catch { /* ignore */ }
-  if (storedRoles.length < 2) {
-    throw new Error("Please save your signing role names in Step 1 before opening the editor.");
-  }
 
   // If a valid template already exists in PandaDoc, reuse it - preserves field assignments
   if (provider.pandaDocTemplateId) {
@@ -508,15 +556,13 @@ export async function syncTemplateToPandaDoc(providerId: string): Promise<string
     contentType = resp.headers.get("content-type") || "application/octet-stream";
   }
 
-  // Embed roles in the template creation payload
   const templateMeta: any = {
     name: `${provider.name} Agreement Template`,
-    roles: storedRoles.map((name, i) => ({ name, signing_order: i + 1 })),
   };
 
   const formData = new FormData();
   formData.append("data", JSON.stringify(templateMeta));
-  formData.append("file", new Blob([buffer], { type: contentType }), filename);
+  formData.append("file", new Blob([buffer as unknown as ArrayBuffer], { type: contentType }), filename);
 
   const createRes = await fetch("https://api.pandadoc.com/public/v1/templates", {
     method: "POST",
@@ -532,7 +578,7 @@ export async function syncTemplateToPandaDoc(providerId: string): Promise<string
   const created = await createRes.json();
   const templateId: string = created.uuid || created.id;
   if (!templateId) throw new Error("PandaDoc did not return a template ID");
-  console.log(`[PandaDoc] Template created: ${templateId}, roles: ${storedRoles.join(", ")}`);
+  console.log(`[PandaDoc] Template created: ${templateId}`);
 
   // Poll until active
   for (let i = 0; i < 15; i++) {
@@ -588,10 +634,57 @@ export async function createTemplateEditingSession(providerId: string, userEmail
 }
 
 /**
- * Generate an agreement from the provider's PandaDoc template (template-based flow).
- * Signers fill all fields themselves; GoStork only assigns recipients to roles.
+ * After a document reaches draft state, find and DELETE any placeholder recipients
+ * (identified by their @gostork.internal emails). PandaDoc auto-unassigns all fields
+ * belonging to a deleted recipient. Must be called only while document is in draft.
  */
-export async function generateAgreementFromTemplate({ providerId, parentUserId, sessionId }: GenerateAgreementParams) {
+async function removePlaceholderRecipients(
+  apiKey: string,
+  documentId: string,
+  placeholderEmails: string[],
+): Promise<void> {
+  if (placeholderEmails.length === 0) return;
+
+  const detailRes = await fetch(`https://api.pandadoc.com/public/v1/documents/${documentId}/details`, {
+    headers: { "Authorization": `API-Key ${apiKey}` },
+  });
+  if (!detailRes.ok) {
+    const body = await detailRes.text();
+    throw new Error(`Failed to fetch document details for recipient removal: ${detailRes.status} - ${body}`);
+  }
+  const detail = await detailRes.json();
+  const allRecipients: Array<{ id: string; email: string }> = detail.recipients || [];
+
+  for (const email of placeholderEmails) {
+    const recipient = allRecipients.find(r => r.email === email);
+    if (!recipient) {
+      // Fail hard - if we can't find the placeholder we can't guarantee a clean document
+      throw new Error(`Placeholder recipient not found in document: ${email}. Cannot proceed with send.`);
+    }
+    const delRes = await fetch(
+      `https://api.pandadoc.com/public/v1/documents/${documentId}/recipients/${recipient.id}`,
+      {
+        method: "DELETE",
+        headers: { "Authorization": `API-Key ${apiKey}` },
+      },
+    );
+    if (!delRes.ok) {
+      const errBody = await delRes.text();
+      throw new Error(
+        `Failed to remove placeholder recipient ${email} (id=${recipient.id}): ${delRes.status} - ${errBody}`,
+      );
+    }
+    console.log(`[PandaDoc] Removed placeholder recipient ${email} (id=${recipient.id}) - fields auto-unassigned`);
+  }
+}
+
+/**
+ * Generate an agreement from the provider's saved PandaDoc template (template-based flow).
+ * Creates the document with template_uuid so all fields the provider placed in the editor
+ * are preserved. Roles are fetched live from the template details API and recipients are
+ * assigned accordingly.
+ */
+export async function generateAgreementFromTemplate({ providerId, parentUserId, sessionId, generatedByUserId, partnerOverride, skipPartner }: GenerateAgreementParams) {
   const [provider, parentUser, session] = await Promise.all([
     prisma.provider.findUnique({
       where: { id: providerId },
@@ -599,7 +692,8 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
     }),
     prisma.user.findUnique({
       where: { id: parentUserId },
-      select: { id: true, name: true, email: true, firstName: true, lastName: true, parentAccountId: true, dateOfBirth: true, address: true, city: true, state: true, zip: true, ssn: true, passport: true, passportCountryOfIssue: true, nationality: true },
+      // relationshipStatus values: "Single" | "Partnered" | "Married" | null
+      select: { id: true, name: true, email: true, firstName: true, lastName: true, relationshipStatus: true, parentAccountId: true, dateOfBirth: true, address: true, city: true, state: true, zip: true, ssn: true, passport: true, passportCountryOfIssue: true, nationality: true },
     }),
     prisma.aiChatSession.findUnique({
       where: { id: sessionId },
@@ -612,7 +706,9 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
   if (!session) throw new Error("Chat session not found");
   if (session.providerId !== providerId) throw new Error("Provider/session mismatch");
   if (!provider.agreementTemplateUrl) throw new Error("Provider has not uploaded an agreement template.");
-  if (!provider.pandaDocRoles) throw new Error("Provider has not configured signing roles. Go to Documents tab and complete Step 1.");
+  if (!provider.pandaDocTemplateId) {
+    throw new Error("Please open the editor, assign signature fields, and click Save before sending an agreement.");
+  }
 
   const apiKey = process.env.PANDADOC_API_KEY;
   if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
@@ -642,100 +738,243 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
   }
 
   const p1 = formatMember(parent1);
-  const p2 = formatMember(parent2);
 
   const parent1Name = p1.name;
   const parent1Email = p1.email;
+
+  // ── Role resolution (done before creating the agreement record so Case D can throw cleanly) ──
+
+  // Primary: use cached pandaDocRoles when single-role (no field counts needed).
+  // 2+ cached roles or no cache: fetch live for field counts needed by provider-role detection.
+  let roles: Array<{ id: string; name: string; signingOrder: number }> = [];
+  let fieldCountByRoleId: Record<string, number> = {};
+
+  let cachedNames: string[] | null = null;
+  try {
+    if (provider.pandaDocRoles) {
+      const parsed = JSON.parse(provider.pandaDocRoles);
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed.every((n: unknown) => typeof n === "string")) {
+        cachedNames = parsed as string[];
+      }
+    }
+  } catch {
+    // ignore parse errors, fall through to live fetch
+  }
+
+  if (cachedNames && cachedNames.length === 1) {
+    roles = [{ id: "cached", name: cachedNames[0], signingOrder: 1 }];
+    console.log(`[PandaDoc] Using cached single role (no live fetch): "${cachedNames[0]}"`);
+  } else {
+    const fetched = await fetchTemplateRolesAndFields(apiKey, provider.pandaDocTemplateId);
+    roles = fetched.roles;
+    fieldCountByRoleId = fetched.fieldCountByRoleId;
+    const reason = cachedNames ? `${cachedNames.length} cached roles - fetching live for field counts` : "no valid role cache - fetching live";
+    console.log(`[PandaDoc] ${reason}`);
+    console.log(`[PandaDoc] Roles from template: ${JSON.stringify(roles.map(r => r.name))}`);
+    console.log(`[PandaDoc] Field counts: ${JSON.stringify(fieldCountByRoleId)}`);
+  }
+
+  if (roles.length === 0) {
+    throw new Error("No roles found on the template. Open the editor, create at least one role, assign your signature fields to it, and click Save.");
+  }
+
+  // ── Provider-role detection (keyword-only; no field-count heuristics) ──
+  const PROVIDER_KEYWORDS = ["agency", "provider", "clinic", "attorney", "counsel", "lawyer", "principal", "staff", "admin", "weltman", "law group"];
+  let providerRole: { id: string; name: string; signingOrder: number } | null = null;
+
+  const keywordMatch = roles.find(r => {
+    const lower = r.name.toLowerCase();
+    return PROVIDER_KEYWORDS.some(k => lower.includes(k));
+  });
+
+  if (keywordMatch) {
+    const matchedKeyword = PROVIDER_KEYWORDS.find(k => keywordMatch.name.toLowerCase().includes(k))!;
+    providerRole = keywordMatch;
+    console.log(`[PandaDoc] Detected provider role: "${keywordMatch.name}" (reason: keyword match "${matchedKeyword}")`);
+  } else {
+    console.log(`[PandaDoc] No provider role detected - treating all roles as parent roles`);
+  }
+
+  const parentRoles = providerRole ? roles.filter(r => r.id !== providerRole!.id) : [...roles];
+
+  console.log(`[PandaDoc] Parent roles: ${JSON.stringify(parentRoles.map(r => r.name))}`);
+  if (providerRole && !provider.email) {
+    console.warn(`[PandaDoc] Provider role "${providerRole.name}" detected but provider has no email - skipping provider recipient`);
+  }
+
+  // ── Case detection ──
+  // A: 1 parent role  - assign parent1, done.
+  // B: 2+ parent roles, parent is single - use placeholder recipients for extra roles then delete them.
+  // C: 2+ parent roles, partner data available (account 2nd member OR partnerOverride supplied) - assign both.
+  // D: 2+ parent roles, parent is partnered, but no 2nd account member and no partnerOverride - prompt frontend.
+  //
+  // parentIsPartnered: any status other than explicit "Single" (null = unknown = treat as partnered)
+  const parentRoleCount = parentRoles.length;
+  const accountHasPartner = accountMembers.length >= 2;
+  const parentIsPartnered = parentUser.relationshipStatus !== "Single";
+  const usingPartnerOverride = !!partnerOverride;
+
+  let assignmentCase: "A" | "B" | "C" | "D";
+  if (parentRoleCount <= 1) {
+    assignmentCase = "A";
+  } else if (!parentIsPartnered || skipPartner) {
+    assignmentCase = "B";
+  } else if (accountHasPartner || usingPartnerOverride) {
+    assignmentCase = "C";
+  } else {
+    assignmentCase = "D";
+  }
+
+  console.log(`[PandaDoc] Parent assignment case: ${assignmentCase}, parentIsPartnered=${parentIsPartnered}, accountHasPartner=${accountHasPartner}, parentRoleCount=${parentRoleCount}, usingPartnerOverride=${usingPartnerOverride}, skipPartner=${!!skipPartner}`);
+
+  // Case D throws before creating any agreement record - no orphaned DB rows.
+  if (assignmentCase === "D") {
+    throw Object.assign(new Error("PARTNER_INFO_REQUIRED"), {
+      code: "PARTNER_INFO_REQUIRED",
+      parent1: {
+        firstName: parent1.firstName || p1.name.split(" ")[0] || "",
+        lastName: parent1.lastName || p1.name.split(" ").slice(1).join(" ") || "",
+        email: parent1Email,
+      },
+      parentRoles: parentRoles.map(r => r.name),
+    });
+  }
+
+  // ── Agreement record created only after we know we can proceed ──
+  // Seed signerStatus with signer names so "Sent to [Name]" displays immediately.
+  const initialSignerStatus2: Record<string, object> = {};
+  const addSigner = (email: string, firstName: string | null | undefined, lastName: string | null | undefined) => {
+    if (!email) return;
+    initialSignerStatus2[email] = { completed: false, completedAt: null, viewed: false, viewedAt: null, role: null, firstName: firstName || null, lastName: lastName || null };
+  };
+  addSigner(parent1Email, parent1.firstName || p1.name.split(" ")[0], parent1.lastName || p1.name.split(" ").slice(1).join(" ") || null);
+  if (assignmentCase === "C") {
+    if (usingPartnerOverride) {
+      addSigner(partnerOverride!.email, partnerOverride!.firstName, partnerOverride!.lastName);
+    } else if (parent2) {
+      const p2fmt = formatMember(parent2);
+      addSigner(p2fmt.email, parent2.firstName || p2fmt.name.split(" ")[0], parent2.lastName || p2fmt.name.split(" ").slice(1).join(" ") || null);
+    }
+  }
 
   const agreement = await prisma.agreement.create({
     data: {
       providerId,
       parentUserId,
       sessionId,
+      generatedByUserId: generatedByUserId ?? null,
       status: "DRAFT",
       documentType: "Agency Agreement",
+      signerStatus: Object.keys(initialSignerStatus2).length > 0 ? initialSignerStatus2 : undefined,
     },
   });
 
   try {
-    const hasParent2 = !!(parent2 && p2.email);
+    const parent1Role = parentRoles[0];
 
-    // Parse the stored role names that the provider configured in the Documents tab.
-    // pandaDocRoles is a JSON string: ["Client","Client2","Agency"] - ordered by signing_order.
-    // Positional assignment: 1st role = parent1, last role = provider, middle = parent2.
-    let storedRoles: string[] = [];
-    if (provider.pandaDocRoles) {
-      try {
-        storedRoles = JSON.parse(provider.pandaDocRoles as string);
-      } catch {
-        storedRoles = [];
-      }
-    }
-    console.log("[PandaDoc] Stored roles:", storedRoles.join(", ") || "(none configured)");
+    // Build recipients array based on case.
+    const providerRecipient = providerRole && provider.email
+      ? [{
+          email: provider.email,
+          first_name: provider.name.split(" ")[0] || provider.name,
+          last_name: provider.name.split(" ").slice(1).join(" ") || "",
+          role: providerRole.name,
+          signing_order: providerRole.signingOrder,
+        }]
+      : [];
 
-    if (storedRoles.length < 2) {
-      throw new Error(
-        "Signing roles not configured. In the Documents tab, enter your role names exactly as you named them in the PandaDoc editor (e.g. 'Client' and 'Agency'), then save."
+    let recipients: Array<{ email: string; first_name: string; last_name: string; role: string; signing_order: number }>;
+    let placeholderEmails: string[] = [];
+
+    if (assignmentCase === "A") {
+      // Single parent role - parent1 gets it.
+      recipients = [
+        {
+          email: parent1Email,
+          first_name: parent1.firstName || p1.name.split(" ")[0] || "",
+          last_name: parent1.lastName || p1.name.split(" ").slice(1).join(" ") || "",
+          role: parent1Role.name,
+          signing_order: parent1Role.signingOrder,
+        },
+        ...providerRecipient,
+      ];
+    } else if (assignmentCase === "B") {
+      // Single parent, 2+ parent roles: parent1 gets role[0], extras get placeholders.
+      placeholderEmails = parentRoles.slice(1).map(r =>
+        `placeholder-${r.name.toLowerCase().replace(/\s+/g, "-")}@gostork.internal`,
       );
+      recipients = [
+        {
+          email: parent1Email,
+          first_name: parent1.firstName || p1.name.split(" ")[0] || "",
+          last_name: parent1.lastName || p1.name.split(" ").slice(1).join(" ") || "",
+          role: parent1Role.name,
+          signing_order: parent1Role.signingOrder,
+        },
+        ...parentRoles.slice(1).map((r, i) => ({
+          email: placeholderEmails[i],
+          first_name: r.name,
+          last_name: "Placeholder",
+          role: r.name,
+          signing_order: r.signingOrder,
+        })),
+        ...providerRecipient,
+      ];
+    } else {
+      // Case C: partner available from account or override.
+      const parent2Role = parentRoles[1] ?? parentRoles[0];
+      const p2r = usingPartnerOverride
+        ? { email: partnerOverride!.email, first_name: partnerOverride!.firstName, last_name: partnerOverride!.lastName }
+        : (() => {
+            const p2m = parent2!;
+            const p2f = formatMember(p2m);
+            return {
+              email: p2f.email,
+              first_name: p2m.firstName || p2f.name.split(" ")[0] || "",
+              last_name: p2m.lastName || p2f.name.split(" ").slice(1).join(" ") || "",
+            };
+          })();
+      recipients = [
+        {
+          email: parent1Email,
+          first_name: parent1.firstName || p1.name.split(" ")[0] || "",
+          last_name: parent1.lastName || p1.name.split(" ").slice(1).join(" ") || "",
+          role: parent1Role.name,
+          signing_order: parent1Role.signingOrder,
+        },
+        {
+          ...p2r,
+          role: parent2Role.name,
+          signing_order: parent2Role.signingOrder,
+        },
+        ...providerRecipient,
+      ];
     }
 
-    // Order: provider is always first role, then parent(s)
-    const roleProvider = storedRoles[0];
-    const roleParent1 = storedRoles[1] ?? null;
-    const roleParent2 = (hasParent2 && storedRoles.length >= 3) ? storedRoles[2] : null;
-    console.log(`[PandaDoc] Role assignment: provider="${roleProvider}", parent1="${roleParent1 ?? "none"}", parent2="${roleParent2 ?? "none"}"`);
+    console.log(`[PandaDoc] Final recipients: ${JSON.stringify(recipients.map(r => `${r.email}(role=${r.role},order=${r.signing_order})`))}`);
 
-    const recipients: any[] = [];
-    if (provider.email) {
-      recipients.push({
-        email: provider.email,
-        first_name: provider.name.split(" ")[0] || provider.name,
-        last_name: provider.name.split(" ").slice(1).join(" ") || "",
-        role: roleProvider,
-      });
-    }
-    recipients.push({
-      email: parent1Email,
-      first_name: parent1.firstName || p1.name.split(" ")[0] || "",
-      last_name: parent1.lastName || p1.name.split(" ").slice(1).join(" ") || "",
-      ...(roleParent1 ? { role: roleParent1 } : {}),
+    // Cache role names for next time.
+    await prisma.provider.update({
+      where: { id: providerId },
+      data: { pandaDocRoles: JSON.stringify(roles.map(r => r.name)) },
     });
-    if (hasParent2) {
-      recipients.push({
-        email: p2.email,
-        first_name: parent2!.firstName || p2.name.split(" ")[0] || "",
-        last_name: parent2!.lastName || p2.name.split(" ").slice(1).join(" ") || "",
-        ...(roleParent2 ? { role: roleParent2 } : {}),
-      });
-    }
 
-    // Download the agreement file and upload as a new document with real recipients+roles.
-    const { buffer: fileBuffer, filename: fileFilename, contentType: fileContentType } = await prepareFilledDocument(
-      provider.agreementTemplateUrl!,
-      {}, // no token pre-fill - signers fill all fields themselves
-    );
-
-    const docMeta = {
-      name: `${provider.name} - Agency Agreement - ${parent1Name}`,
-      recipients,
-      parse_form_fields: false,
-      metadata: {
-        gostork_provider_id: providerId,
-        gostork_parent_user_id: parentUserId,
-        gostork_session_id: sessionId,
-        gostork_agreement_id: agreement.id,
-      },
-      tags: ["gostork"],
-    };
-
-    const formData = new FormData();
-    formData.append("data", JSON.stringify(docMeta));
-    formData.append("file", new Blob([fileBuffer], { type: fileContentType }), fileFilename);
-
+    // Create document from template (JSON, not multipart) - preserves all editor field placements.
     const createResponse = await fetch("https://api.pandadoc.com/public/v1/documents", {
       method: "POST",
-      headers: { "Authorization": `API-Key ${apiKey}` },
-      body: formData,
+      headers: { "Authorization": `API-Key ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: `${provider.name} - Agency Agreement - ${parent1Name}`,
+        template_uuid: provider.pandaDocTemplateId,
+        recipients,
+        metadata: {
+          gostork_provider_id: providerId,
+          gostork_parent_user_id: parentUserId,
+          gostork_session_id: sessionId,
+          gostork_agreement_id: agreement.id,
+        },
+        tags: ["gostork"],
+      }),
     });
 
     if (!createResponse.ok) {
@@ -752,31 +991,26 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
       recipients: (pandaDocResult.recipients || []).map((r: any) => `${r.email}(role=${r.role ?? "none"})`),
     }));
 
-    await prisma.agreement.update({
-      where: { id: agreement.id },
-      data: { pandaDocDocumentId },
-    });
+    await prisma.agreement.update({ where: { id: agreement.id }, data: { pandaDocDocumentId } });
 
     const isReady = await waitForDocumentStatus(apiKey, pandaDocDocumentId, "document.draft");
-
     if (!isReady) {
       console.warn("[PandaDoc] Template document did not reach draft state");
-      await prisma.agreement.update({
-        where: { id: agreement.id },
-        data: { status: "CREATED" },
-      });
+      await prisma.agreement.update({ where: { id: agreement.id }, data: { status: "CREATED" } });
       return await prisma.agreement.findUnique({ where: { id: agreement.id } });
     }
 
-    // Send the document.
+    // Case B: remove placeholder recipients while document is still in draft.
+    // PandaDoc auto-unassigns all fields belonging to the deleted recipient.
+    if (assignmentCase === "B" && placeholderEmails.length > 0) {
+      await removePlaceholderRecipients(apiKey, pandaDocDocumentId, placeholderEmails);
+    }
+
     const sendResponse = await fetch(`https://api.pandadoc.com/public/v1/documents/${pandaDocDocumentId}/send`, {
       method: "POST",
-      headers: {
-        "Authorization": `API-Key ${apiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Authorization": `API-Key ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        message: `Hi ${parent1Name}, please review and sign your agreement with ${provider.name}. Once you sign, ${provider.name} will countersign to complete the agreement. If you have any questions, reach out through your GoStork chat.`,
+        message: `Hi ${parent1Name}, please review and sign your agreement with ${provider.name}. If you have any questions, reach out through your GoStork chat.`,
         silent: true,
       }),
     });
@@ -784,15 +1018,11 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
     if (!sendResponse.ok) {
       const errorBody = await sendResponse.text();
       console.error("[PandaDoc] Template document send failed:", sendResponse.status, errorBody);
-      await prisma.agreement.update({
-        where: { id: agreement.id },
-        data: { status: "CREATED" },
-      });
+      await prisma.agreement.update({ where: { id: agreement.id }, data: { status: "CREATED" } });
       return await prisma.agreement.findUnique({ where: { id: agreement.id } });
     }
 
-    // Wait for document to reach "sent" state before creating signing session.
-    // PandaDoc's send is async - creating a session before it's SENT gives a view-only link.
+    // Wait for "sent" state before creating the signing session - earlier gives a view-only link.
     const isSent = await waitForDocumentStatus(apiKey, pandaDocDocumentId, "document.sent");
     if (!isSent) {
       console.warn("[PandaDoc] Document did not reach sent state - signing session may be view-only");
@@ -806,7 +1036,37 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
       data: { status: "SENT", ...(pandaDocViewUrl ? { pandaDocViewUrl } : {}) },
     });
 
-    return await prisma.agreement.findUnique({ where: { id: agreement.id } });
+    const dbAgreement = await prisma.agreement.findUnique({ where: { id: agreement.id } });
+
+    // Build the list of parent signers so the route handler can email each one their personal link.
+    const parentSigners: Array<{ name: string; email: string; userId: string | null; signingUrl: string | null; guestToken: string | null; signingOrder: number }> = [
+      { name: parent1Name, email: parent1Email, userId: parentUserId, signingUrl: pandaDocViewUrl, guestToken: null, signingOrder: parent1Role.signingOrder },
+    ];
+    if (assignmentCase === "C" && parentRoles.length >= 2) {
+      const parent2Role = parentRoles[1] ?? parentRoles[0];
+      const p2Email = usingPartnerOverride ? partnerOverride!.email : (parent2 ? formatMember(parent2).email : null);
+      const p2Name = usingPartnerOverride
+        ? `${partnerOverride!.firstName} ${partnerOverride!.lastName}`.trim()
+        : (parent2 ? formatMember(parent2).name : null);
+      if (p2Email) {
+        const p2Url = await fetchDocumentViewUrl(apiKey, pandaDocDocumentId, p2Email);
+        const p2UserId = usingPartnerOverride ? null : (parent2 as any)?.id ?? null;
+        // Generate a guest token for non-GoStork signers so they get a public GoStork link
+        const p2GuestToken = p2UserId ? null : crypto.randomUUID();
+        parentSigners.push({ name: p2Name || p2Email, email: p2Email, userId: p2UserId, signingUrl: p2Url, guestToken: p2GuestToken, signingOrder: parent2Role.signingOrder });
+      }
+    }
+
+    // Persist any guest tokens so the public signing endpoint can look them up
+    const guestSigningTokens: Record<string, string> = {};
+    for (const s of parentSigners) {
+      if (s.guestToken && s.email) guestSigningTokens[s.guestToken] = s.email;
+    }
+    if (Object.keys(guestSigningTokens).length > 0) {
+      await (prisma.agreement.update as any)({ where: { id: agreement.id }, data: { guestSigningTokens } });
+    }
+
+    return Object.assign(dbAgreement ?? {}, { parentSigners });
   } catch (error) {
     await prisma.agreement.update({
       where: { id: agreement.id },
@@ -814,6 +1074,41 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
     }).catch(() => {});
     throw error;
   }
+}
+
+/**
+ * Fetch the current role names from a provider's PandaDoc template and cache them
+ * in provider.pandaDocRoles. Called after the provider closes the editor.
+ */
+export async function refreshTemplateRoles(providerId: string): Promise<{ roles: string[] }> {
+  const provider = await prisma.provider.findUnique({
+    where: { id: providerId },
+    select: { pandaDocTemplateId: true },
+  });
+  if (!provider) throw new Error("Provider not found");
+  if (!provider.pandaDocTemplateId) return { roles: [] };
+
+  const apiKey = process.env.PANDADOC_API_KEY;
+  if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
+
+  const { roles, fieldCountByRoleId } = await fetchTemplateRolesAndFields(apiKey, provider.pandaDocTemplateId);
+
+  const rolesWithFields = roles.filter(r => (fieldCountByRoleId[r.id] ?? 0) > 0);
+  const droppedRoles = roles.filter(r => (fieldCountByRoleId[r.id] ?? 0) === 0);
+
+  if (droppedRoles.length > 0) {
+    console.log(`[PandaDoc] Dropped roles (zero fields): ${JSON.stringify(droppedRoles.map(r => r.name))}`);
+  }
+  console.log(`[PandaDoc] Cached roles (with fields): ${JSON.stringify(rolesWithFields.map(r => r.name))}`);
+
+  const pandaDocRoles = rolesWithFields.length > 0 ? JSON.stringify(rolesWithFields.map(r => r.name)) : null;
+
+  await prisma.provider.update({
+    where: { id: providerId },
+    data: { pandaDocRoles },
+  });
+
+  return { roles: rolesWithFields.map(r => r.name) };
 }
 
 /**
@@ -826,7 +1121,19 @@ export async function getAgreementSigningSession(agreementId: string, userId: st
     select: { id: true, parentUserId: true, pandaDocDocumentId: true, pandaDocViewUrl: true, sessionId: true },
   });
   if (!agreement) throw new Error("Agreement not found");
-  if (agreement.parentUserId !== userId) throw new Error("Not authorized to access this agreement");
+
+  // Allow access if the user is the primary parent OR shares the same parentAccountId (e.g. partner/Parent 2)
+  if (agreement.parentUserId !== userId) {
+    const [primaryParent, requestingUser] = await Promise.all([
+      prisma.user.findUnique({ where: { id: agreement.parentUserId }, select: { parentAccountId: true } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } }),
+    ]);
+    const sameAccount =
+      primaryParent?.parentAccountId &&
+      requestingUser?.parentAccountId &&
+      primaryParent.parentAccountId === requestingUser.parentAccountId;
+    if (!sameAccount) throw new Error("Not authorized to access this agreement");
+  }
   if (!agreement.pandaDocDocumentId) throw new Error("Agreement does not have a PandaDoc document yet");
 
   const apiKey = process.env.PANDADOC_API_KEY;
@@ -858,4 +1165,63 @@ export async function getAgreementSigningSession(agreementId: string, userId: st
     providerId: session?.providerId ?? null,
     isProviderThread,
   };
+}
+
+/**
+ * Sync agreement status from PandaDoc's API.
+ * Fetches the current document status and per-recipient completion state,
+ * updates the DB, and returns the refreshed agreement.
+ */
+export async function syncAgreementStatus(agreementId: string): Promise<{ status: string; signerStatus: Record<string, any> }> {
+  const apiKey = process.env.PANDADOC_API_KEY;
+  if (!apiKey) throw new Error("PANDADOC_API_KEY not configured");
+
+  const agreement = await prisma.agreement.findUnique({
+    where: { id: agreementId },
+    select: { id: true, status: true, pandaDocDocumentId: true, signerStatus: true },
+  });
+  if (!agreement) throw new Error("Agreement not found");
+  if (!agreement.pandaDocDocumentId) return { status: agreement.status, signerStatus: (agreement.signerStatus as Record<string, any>) ?? {} };
+  // Already finalized - no need to poll PandaDoc
+  if (agreement.status === "SIGNED") return { status: agreement.status, signerStatus: (agreement.signerStatus as Record<string, any>) ?? {} };
+
+  const res = await fetch(`https://api.pandadoc.com/public/v1/documents/${agreement.pandaDocDocumentId}`, {
+    headers: { "Authorization": `API-Key ${apiKey}` },
+  });
+  if (!res.ok) throw new Error(`PandaDoc API error: ${res.status}`);
+
+  const doc = await res.json();
+  const recipients: any[] = doc.recipients ?? [];
+
+  const existing: Record<string, any> = (agreement.signerStatus as Record<string, any>) ?? {};
+  const updated = { ...existing };
+  const isCompleted = doc.status === "document.completed";
+
+  for (const r of recipients) {
+    if (!r.email) continue;
+    const prev = existing[r.email] ?? {};
+    // If the whole document is completed, mark every recipient as completed
+    const completed = isCompleted ? true : r.has_completed === true;
+    const completedAt = prev.completedAt ?? (completed ? new Date().toISOString() : null);
+    updated[r.email] = {
+      ...prev,
+      completed,
+      completedAt,
+      role: r.role ?? prev.role ?? null,
+      firstName: prev.firstName ?? r.first_name ?? null,
+      lastName: prev.lastName ?? r.last_name ?? null,
+    };
+  }
+  const newStatus = isCompleted ? "SIGNED" : agreement.status;
+
+  await prisma.agreement.update({
+    where: { id: agreement.id },
+    data: {
+      status: newStatus,
+      signerStatus: updated,
+      ...(isCompleted && agreement.status !== "SIGNED" ? { signedAt: new Date() } : {}),
+    },
+  });
+
+  return { status: newStatus, signerStatus: updated };
 }

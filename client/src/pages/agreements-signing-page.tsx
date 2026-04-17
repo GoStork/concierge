@@ -1,13 +1,17 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Loader2, AlertCircle, ExternalLink } from "lucide-react";
+import { ArrowLeft, Loader2, AlertCircle, Download } from "lucide-react";
+
+type SigningSessionResponse =
+  | { isProviderView: true; status: string; agreementId: string; sessionId: string | null; providerId: string }
+  | { isProviderView?: false; signingUrl: string; sessionId: string; providerId: string | null; isProviderThread: boolean };
 
 export default function AgreementsSigningPage() {
   const { id: agreementId } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const { data, isLoading, error } = useQuery<{ signingUrl: string; sessionId: string; providerId: string | null; isProviderThread: boolean }>({
+  const { data, isLoading, error } = useQuery<SigningSessionResponse>({
     queryKey: ["/api/agreements", agreementId, "signing-session"],
     queryFn: async () => {
       const res = await fetch(`/api/agreements/${agreementId}/signing-session`, {
@@ -25,7 +29,9 @@ export default function AgreementsSigningPage() {
 
   const handleBack = () => {
     if (data?.sessionId) {
-      if (data.isProviderThread && data.providerId) {
+      if (!data.isProviderView && data.isProviderThread && data.providerId) {
+        navigate(`/chat/${data.providerId}/${data.sessionId}`);
+      } else if (data.isProviderView && data.providerId && data.sessionId) {
         navigate(`/chat/${data.providerId}/${data.sessionId}`);
       } else {
         navigate(`/chat/concierge?session=${data.sessionId}`);
@@ -35,6 +41,8 @@ export default function AgreementsSigningPage() {
     }
   };
 
+  const isSigned = data?.isProviderView ? data.status === "SIGNED" : false;
+
   return (
     <div className="flex flex-col" style={{ height: "100dvh" }}>
       {/* Minimal header */}
@@ -43,16 +51,18 @@ export default function AgreementsSigningPage() {
           <ArrowLeft className="w-4 h-4" />
           Back
         </Button>
-        <span className="text-sm font-medium">Sign Agreement</span>
-        {data?.signingUrl && (
+        <span className="text-sm font-medium">
+          {data?.isProviderView ? "Agreement" : "Sign Agreement"}
+        </span>
+        {data?.isProviderView && isSigned && (
           <a
-            href={data.signingUrl.replace("?embedded=1", "")}
+            href={`/api/agreements/${agreementId}/download`}
             target="_blank"
             rel="noopener noreferrer"
-            className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="ml-auto flex items-center gap-1.5 text-sm font-medium text-[hsl(var(--primary))] hover:underline"
           >
-            <ExternalLink className="w-3.5 h-3.5" />
-            Open in new tab
+            <Download className="w-4 h-4" />
+            Download
           </a>
         )}
       </div>
@@ -62,7 +72,7 @@ export default function AgreementsSigningPage() {
         {isLoading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Loading your agreement...</p>
+            <p className="text-sm text-muted-foreground">Loading agreement...</p>
           </div>
         )}
 
@@ -79,7 +89,17 @@ export default function AgreementsSigningPage() {
           </div>
         )}
 
-        {data?.signingUrl && (
+        {/* Provider view - render signed PDF inline */}
+        {data?.isProviderView && (
+          <iframe
+            src={`/api/agreements/${agreementId}/download`}
+            className="w-full h-full border-0"
+            title="Signed Agreement"
+          />
+        )}
+
+        {/* Parent view - signing iframe */}
+        {!data?.isProviderView && data?.signingUrl && (
           <iframe
             src={data.signingUrl}
             className="w-full h-full border-0"

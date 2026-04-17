@@ -50,6 +50,7 @@ import AdminConciergeMonitor from "@/pages/admin-concierge-monitor";
 import OnboardingAiIntroPage from "@/pages/onboarding-ai-intro-page";
 import OnboardingAiReadyPage from "@/pages/onboarding-ai-ready-page";
 import AgreementsSigningPage from "@/pages/agreements-signing-page";
+import AgreementsGuestSigningPage from "@/pages/agreements-guest-signing-page";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -155,6 +156,7 @@ function AppRoutes() {
         <Route path="/chat/concierge" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
         <Route path="/chat/:entityId/:subjectId" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
         <Route path="/agreements/:id" element={<ProtectedRoute><AgreementsSigningPage /></ProtectedRoute>} />
+        <Route path="/agreements/guest/:token" element={<AgreementsGuestSigningPage />} />
         <Route path="/admin/concierge-monitor" element={<ProtectedRoute><AdminConciergeMonitor /></ProtectedRoute>} />
         <Route path="/provider/conversations" element={<Navigate to="/chat" replace />} />
         <Route path="/admin/branding" element={<Navigate to="/account/branding" replace />} />

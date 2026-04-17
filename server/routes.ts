@@ -7,17 +7,12 @@ import { setupAuth, requireAuth, requireRole } from "./auth";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { prisma } from "./db";
-import { generateAgreement, syncTemplateToPandaDoc, createTemplateEditingSession, generateAgreementFromTemplate, getAgreementSigningSession } from "./pandadoc-service";
+import { generateAgreement, syncTemplateToPandaDoc, createTemplateEditingSession, generateAgreementFromTemplate, getAgreementSigningSession, refreshTemplateRoles } from "./pandadoc-service";
 
 function escapeHtml(str: string): string {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
 
-function getBaseUrl(): string {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
-  if (process.env.NODE_ENV === "development") return `http://localhost:${process.env.PORT || 5001}`;
-  return "https://app.gostork.com";
-}
 
 const PROVIDER_ROLES = ["PROVIDER_ADMIN", "SURROGACY_COORDINATOR", "EGG_DONOR_COORDINATOR", "SPERM_DONOR_COORDINATOR", "IVF_CLINIC_COORDINATOR", "DOCTOR", "BILLING_MANAGER"];
 function getUserRoles(user: any): string[] {
@@ -374,7 +369,7 @@ export async function registerRoutes(
         include: {
           user: {
             select: {
-              id: true, name: true, email: true, avatarUrl: true, city: true, state: true, mobileNumber: true, relationshipStatus: true, partnerFirstName: true, dateOfBirth: true,
+              id: true, name: true, email: true, avatarUrl: true, city: true, state: true, mobileNumber: true, relationshipStatus: true, partnerFirstName: true, partnerAge: true, dateOfBirth: true,
               parentAccount: {
                 select: {
                   intendedParentProfile: { select: { journeyStage: true, interestedServices: true, isFirstIvf: true, eggSource: true, spermSource: true, carrier: true, hasEmbryos: true, embryoCount: true, embryosTested: true, needsClinic: true, currentClinicName: true, clinicPriority: true, needsEggDonor: true, needsSurrogate: true, surrogateCountries: true, surrogateTermination: true, surrogateTwins: true, surrogateAgeRange: true, surrogateBudget: true, surrogateExperience: true, surrogateMedPrefs: true, donorPreferences: true, donorEyeColor: true, donorHairColor: true, donorHeight: true, donorEducation: true, donorEthnicity: true, spermDonorType: true, currentAgencyName: true, currentAttorneyName: true } },
@@ -613,7 +608,7 @@ export async function registerRoutes(
         include: {
           user: {
             select: {
-              id: true, name: true, email: true, avatarUrl: true, city: true, state: true, mobileNumber: true, relationshipStatus: true, partnerFirstName: true, dateOfBirth: true,
+              id: true, name: true, email: true, avatarUrl: true, city: true, state: true, mobileNumber: true, relationshipStatus: true, partnerFirstName: true, partnerAge: true, dateOfBirth: true,
               parentAccount: {
                 select: {
                   intendedParentProfile: { select: { journeyStage: true, interestedServices: true, isFirstIvf: true, eggSource: true, spermSource: true, carrier: true, hasEmbryos: true, embryoCount: true, embryosTested: true, needsClinic: true, currentClinicName: true, clinicPriority: true, needsEggDonor: true, needsSurrogate: true, surrogateCountries: true, surrogateTermination: true, surrogateTwins: true, surrogateAgeRange: true, surrogateBudget: true, surrogateExperience: true, surrogateMedPrefs: true, donorPreferences: true, donorEyeColor: true, donorHairColor: true, donorHeight: true, donorEducation: true, donorEthnicity: true, spermDonorType: true, currentAgencyName: true, currentAttorneyName: true } },
@@ -622,6 +617,11 @@ export async function registerRoutes(
             },
           },
           messages: { orderBy: { createdAt: "asc" } },
+          agreements: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: { id: true, status: true, signerStatus: true, signedAt: true, pandaDocViewUrl: true, createdAt: true },
+          },
         },
       });
       if (!session) return res.status(404).json({ message: "Session not found" });
@@ -903,25 +903,6 @@ export async function registerRoutes(
     }
   });
 
-  // Save the role names the provider configured in the PandaDoc editor
-  app.put("/api/agreements/template-roles", requireAuth, async (req, res) => {
-    const user = req.user as any;
-    if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
-    const { roles } = req.body;
-    if (!Array.isArray(roles) || roles.length < 2 || roles.some((r: any) => typeof r !== "string" || !r.trim())) {
-      return res.status(400).json({ message: "roles must be an array of at least 2 non-empty strings" });
-    }
-    try {
-      await prisma.provider.update({
-        where: { id: user.providerId },
-        data: { pandaDocRoles: JSON.stringify(roles.map((r: string) => r.trim())) },
-      });
-      res.json({ ok: true });
-    } catch (e: any) {
-      console.error("Save template roles error:", e);
-      res.status(500).json({ message: e.message });
-    }
-  });
 
   // Get PandaDoc embedded template editor session URL
   app.get("/api/agreements/template-editor-session", requireAuth, async (req, res) => {
@@ -936,14 +917,37 @@ export async function registerRoutes(
     }
   });
 
+  // Refresh cached role names from the PandaDoc template - called after provider closes editor
+  app.post("/api/agreements/refresh-roles", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+    try {
+      const result = await refreshTemplateRoles(user.providerId);
+      res.json(result);
+    } catch (e: any) {
+      console.error("Refresh template roles error:", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // Generate agreement from PandaDoc template (new template-based flow)
   app.post("/api/agreements/generate-from-template", requireAuth, async (req, res) => {
     const user = req.user as any;
     if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
 
-    const { sessionId } = req.body;
+    const { sessionId, partnerOverride, skipPartner } = req.body;
     if (!sessionId || typeof sessionId !== "string") {
       return res.status(400).json({ message: "sessionId is required" });
+    }
+    if (partnerOverride !== undefined) {
+      if (
+        typeof partnerOverride !== "object" || partnerOverride === null ||
+        typeof partnerOverride.firstName !== "string" ||
+        typeof partnerOverride.lastName !== "string" ||
+        typeof partnerOverride.email !== "string"
+      ) {
+        return res.status(400).json({ message: "partnerOverride must have firstName, lastName, and email strings" });
+      }
     }
 
     try {
@@ -958,6 +962,9 @@ export async function registerRoutes(
         providerId: user.providerId,
         parentUserId: session.userId,
         sessionId: session.id,
+        generatedByUserId: user.id,
+        partnerOverride: partnerOverride ?? undefined,
+        skipPartner: skipPartner === true,
       });
 
       await prisma.aiChatMessage.create({
@@ -970,8 +977,50 @@ export async function registerRoutes(
         },
       });
 
-      res.json({ success: true, agreementId: agreement.id, status: agreement.status });
+      // Send "Agreement Ready" email to every parent signer with their personal signing link.
+      try {
+        const { getNestApp } = await import("./nest-app-ref");
+        const nestApp = getNestApp();
+        if (nestApp && agreement) {
+          const { NotificationService } = await import("./src/modules/notifications/notification.service");
+          const notifService = nestApp.get(NotificationService);
+          const providerRecord = await prisma.provider.findUnique({ where: { id: user.providerId }, select: { name: true } });
+          const providerName = providerRecord?.name || "Your Agency";
+          const agr2 = agreement as any;
+          const appBase2 = (process.env.APP_URL || "").replace(/\/+$/, "");
+          const goStorkSigningUrl2 = agr2.id ? `${appBase2}/agreements/${agr2.id}` : null;
+          const signers: Array<{ name: string; email: string; userId: string | null; signingUrl: string | null }> =
+            agr2.parentSigners ?? [{ name: "", email: "", userId: session.userId, signingUrl: null }];
+          for (const signer of signers) {
+            if (!signer.email) continue;
+            // GoStork members get the in-app signing page; non-members get their personal PandaDoc URL directly
+            const emailSigningUrl2 = signer.userId ? goStorkSigningUrl2 : signer.signingUrl;
+            await notifService.sendAgreementReadyNotification({
+              parentUserId: signer.userId || session.userId,
+              parentName: signer.name || signer.email,
+              parentEmail: signer.email,
+              parentPhone: null,
+              providerName,
+              providerId: user.providerId,
+              signingUrl: emailSigningUrl2,
+              sessionId: session.id,
+            });
+          }
+        }
+      } catch (notifErr: any) {
+        console.error("[Agreement] Notification send failed:", notifErr?.message);
+      }
+
+      const agr = agreement as any;
+      res.json({ success: true, agreementId: agr.id, status: agr.status });
     } catch (e: any) {
+      if (e.code === "PARTNER_INFO_REQUIRED") {
+        return res.status(409).json({
+          code: "PARTNER_INFO_REQUIRED",
+          parent1: e.parent1,
+          parentRoles: e.parentRoles,
+        });
+      }
       console.error("Agreement from template error:", e);
       res.status(500).json({ message: e.message });
     }
@@ -985,108 +1034,6 @@ export async function registerRoutes(
       res.json({ signingUrl });
     } catch (e: any) {
       console.error("Signing session error:", e);
-      res.status(500).json({ message: e.message });
-    }
-  });
-
-  // PandaDoc webhook - receives signature events (document completed/rejected/expired)
-  app.post("/api/webhooks/pandadoc", async (req, res) => {
-    try {
-      // Validate HMAC signature if secret is configured
-      const webhookSecret = process.env.PANDADOC_WEBHOOK_SECRET;
-      if (webhookSecret) {
-        const crypto = await import("crypto");
-        const signature = req.headers["x-pandadoc-signature"] as string;
-        if (!signature) {
-          return res.status(401).json({ message: "Missing signature" });
-        }
-        const rawBody = JSON.stringify(req.body);
-        const expected = crypto.createHmac("sha256", webhookSecret).update(rawBody).digest("hex");
-        if (signature !== expected) {
-          return res.status(401).json({ message: "Invalid signature" });
-        }
-      }
-
-      const events = Array.isArray(req.body) ? req.body : [req.body];
-
-      for (const event of events) {
-        const eventType = event?.event;
-        const documentId = event?.data?.id;
-        if (!documentId) continue;
-
-        const agreement = await prisma.agreement.findUnique({
-          where: { pandaDocDocumentId: documentId },
-          include: {
-            provider: { select: { id: true, name: true, email: true } },
-            parentUser: { select: { id: true, name: true, firstName: true, lastName: true, email: true } },
-          },
-        });
-        if (!agreement) continue;
-
-        if (eventType === "document_state_changed") {
-          const newState = event?.data?.status;
-
-          if (newState === "document.completed") {
-            await prisma.agreement.update({
-              where: { id: agreement.id },
-              data: { status: "SIGNED", signedAt: new Date() },
-            });
-
-            // Notify provider via in-app notification
-            const providerUser = await prisma.user.findFirst({
-              where: { providerId: agreement.providerId },
-              select: { id: true },
-            });
-            if (providerUser) {
-              const parentName = agreement.parentUser.name || `${agreement.parentUser.firstName || ""} ${agreement.parentUser.lastName || ""}`.trim() || agreement.parentUser.email;
-              await prisma.inAppNotification.create({
-                data: {
-                  userId: providerUser.id,
-                  eventType: "AGREEMENT_SIGNED",
-                  payload: {
-                    agreementId: agreement.id,
-                    message: `${parentName} has signed the agreement`,
-                  },
-                },
-              });
-            }
-
-            // Email provider
-            const sendgridKey = process.env.SENDGRID_API_KEY;
-            if (sendgridKey && agreement.provider.email) {
-              const parentName = agreement.parentUser.name || `${agreement.parentUser.firstName || ""} ${agreement.parentUser.lastName || ""}`.trim() || "a parent";
-              const fromEmail = process.env.SENDGRID_FROM_EMAIL || "noreply@gostork.com";
-              await fetch("https://api.sendgrid.com/v3/mail/send", {
-                method: "POST",
-                headers: { Authorization: `Bearer ${sendgridKey}`, "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  personalizations: [{ to: [{ email: agreement.provider.email }] }],
-                  from: { email: fromEmail, name: "GoStork" },
-                  subject: `Agreement signed by ${parentName}`,
-                  content: [{
-                    type: "text/html",
-                    value: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h2>Agreement Signed</h2><p>${parentName} has signed the agreement. You can view it in your <a href="${getBaseUrl()}/account/documents">GoStork Documents</a> tab.</p></div>`,
-                  }],
-                }),
-              }).catch(() => {});
-            }
-          } else if (newState === "document.rejected") {
-            await prisma.agreement.update({
-              where: { id: agreement.id },
-              data: { status: "REJECTED", rejectedAt: new Date() },
-            });
-          } else if (newState === "document.expired") {
-            await prisma.agreement.update({
-              where: { id: agreement.id },
-              data: { status: "EXPIRED" },
-            });
-          }
-        }
-      }
-
-      res.json({ received: true });
-    } catch (e: any) {
-      console.error("PandaDoc webhook error:", e);
       res.status(500).json({ message: e.message });
     }
   });
