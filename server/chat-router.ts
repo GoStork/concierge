@@ -1496,6 +1496,7 @@ chatRouter.post("/api/agreements/generate", requireAuth, async (req, res) => {
           select: { name: true },
         });
         if (parentUser?.email) {
+          console.log(`[Agreement notify] OLD generate endpoint -> sending to ${parentUser.email}`);
           await notifService.sendAgreementReadyNotification({
             parentUserId: session.userId,
             parentName: parentUser.name || parentUser.email,
@@ -1953,6 +1954,7 @@ chatRouter.post("/api/agreements/generate-from-template", requireAuth, async (re
             ? goStorkSigningUrl
             : firstSigner.guestToken ? `${appBase}/agreements/guest/${firstSigner.guestToken}` : null;
 
+          console.log(`[Agreement notify] generate-from-template -> sending to ${firstSigner.email}, isGoStorkMember: ${!!firstSigner.userId && !firstSigner.guestToken}`);
           await notifService.sendAgreementReadyNotification({
             parentUserId: firstSigner.userId || session.userId,
             parentName: firstSigner.name || firstSigner.email,
@@ -2227,6 +2229,7 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
                     phone = u?.mobileNumber ?? null;
                   }
 
+                  console.log(`[Agreement notify] webhook recipient_completed -> sending to ${nextSigner.email}, isGoStorkMember: ${!!nextSigner.userId && !nextSigner.guestToken}`);
                   await notifService.sendAgreementReadyNotification({
                     parentUserId: nextSigner.userId || agreement.parentUserId,
                     parentName: nextSigner.name || nextSigner.email,
