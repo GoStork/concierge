@@ -1019,6 +1019,7 @@ export async function registerRoutes(
               providerId: user.providerId,
               signingUrl: emailSigningUrl2,
               sessionId: session.id,
+              isGoStorkMember: !!firstSigner2.userId,
             });
             signers2[0] = { ...firstSigner2, notified: true };
             await (prisma.agreement as any).update({ where: { id: agr2.id }, data: { signerOrder: signers2 } });

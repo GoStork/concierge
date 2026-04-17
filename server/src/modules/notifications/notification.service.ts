@@ -18,7 +18,8 @@ export type NotificationChannel =
   | "cost_sheet_approved"
   | "cost_sheet_rejected"
   | "human_escalation"
-  | "agreement_ready";
+  | "agreement_ready"
+  | "agreement_signed";
 
 
 const TWILIO_TEMPLATES = {
@@ -1774,30 +1775,32 @@ export class NotificationService implements OnModuleInit {
     providerId: string;
     signingUrl: string | null;
     sessionId: string;
+    isGoStorkMember?: boolean;
   }) {
     const brandData = await this.getBrandData();
     const firstName = getFirstName(params.parentName) || "there";
     const providerName = this.escapeHtml(params.providerName);
-    // URL format: /chat/{providerId}/{sessionId} - takes user directly to this provider session
     const chatUrl = `${getBaseUrl()}/chat/${params.providerId}/${params.sessionId}`;
     const subject = `Your Agreement from ${params.providerName} is Ready to Sign`;
+    const isGoStorkMember = params.isGoStorkMember !== false; // default true for backwards compat
+
+    const buttons: Array<{ label: string; url: string }> = [];
+    if (params.signingUrl) buttons.push({ label: "Review & Sign Agreement", url: params.signingUrl });
+    if (isGoStorkMember) buttons.push({ label: "View in Chat", url: chatUrl });
 
     const html = buildBrandedEmail(brandData, {
       title: "Your Agreement is Ready",
       greeting: `Hi ${firstName},`,
       body: `<strong>${providerName}</strong> has prepared an official agreement for you. Please review it carefully and sign electronically to move forward in your journey.`,
       alertBox: { text: "This agreement requires your signature before proceeding.", type: "info" },
-      buttons: params.signingUrl
-        ? [
-            { label: "Review & Sign Agreement", url: params.signingUrl },
-            { label: "View in Chat", url: chatUrl },
-          ]
-        : [{ label: "View in Chat", url: chatUrl }],
-      footer: "If you have any questions about this agreement, please reach out through your GoStork chat.",
+      buttons,
+      footer: isGoStorkMember
+        ? "If you have any questions about this agreement, please reach out through your GoStork chat."
+        : "If you have any questions about this agreement, please contact the agency directly.",
     });
 
-    // Email
-    this.dispatchNotification({
+    // Email - awaited so failures surface and callers can log them
+    await this.dispatchNotification({
       userId: params.parentUserId,
       type: "EMAIL",
       channel: "agreement_ready",
@@ -1828,6 +1831,62 @@ export class NotificationService implements OnModuleInit {
           `Hi ${firstName}, your agreement from ${params.providerName} is ready to sign. Review it here: ${params.signingUrl || chatUrl}`,
         ).catch(e => this.logger.error(`Failed to send agreement SMS (raw): ${e.message}`));
       }
+    }
+  }
+
+  async sendAgreementSignedNotification(params: {
+    /** GoStork userId of the recipient. Pass null for non-GoStork signers (e.g. Case D partner override) - email still sends, but no Notification DB row is created. */
+    recipientUserId: string | null;
+    recipientEmail: string;
+    recipientName: string;
+    recipientRole: "provider" | "parent";
+    providerName: string;
+    /** Full name of the parent who initiated the agreement */
+    parentName: string;
+    providerId: string;
+    sessionId: string;
+    agreementId?: string;
+  }) {
+    const brandData = await this.getBrandData();
+    const firstName = getFirstName(params.recipientName) || "there";
+    const baseUrl = getBaseUrl();
+    const isProvider = params.recipientRole === "provider";
+    const providerButtonUrl = params.agreementId
+      ? `${baseUrl}/agreements/${params.agreementId}`
+      : `${baseUrl}/chat`;
+    const parentButtonUrl = `${baseUrl}/chat`;
+
+    const subject = isProvider
+      ? `Agreement signed - ${params.parentName}`
+      : "Your agreement has been signed";
+
+    const html = buildBrandedEmail(brandData, {
+      title: isProvider ? "Agreement Complete" : "Agreement Fully Signed",
+      greeting: `Hi ${firstName},`,
+      body: isProvider
+        ? `The agreement with <strong>${this.escapeHtml(params.parentName)}</strong> has been signed by all parties and is now fully executed. You can download the completed document from your GoStork Documents tab.`
+        : `Your agreement with <strong>${this.escapeHtml(params.providerName)}</strong> is now fully signed by all parties. The process is complete - you're one step closer on your journey.`,
+      alertBox: { text: "All parties have signed. The agreement is now complete.", type: "success" },
+      buttons: [{ label: isProvider ? "View Documents" : "Continue in GoStork", url: isProvider ? providerButtonUrl : parentButtonUrl }],
+      footer: isProvider
+        ? "You can view and download the signed agreement from your GoStork Documents tab."
+        : "If you have any questions, reach out through your GoStork chat.",
+    });
+
+    if (params.recipientUserId) {
+      await this.dispatchNotification({
+        userId: params.recipientUserId,
+        type: "EMAIL",
+        channel: "agreement_signed",
+        recipient: params.recipientEmail,
+        subject,
+        body: html,
+      }).catch(e => this.logger.error(`Failed to send agreement-signed email to ${params.recipientEmail}: ${e.message}`));
+    } else {
+      // Non-GoStork signer (e.g. Case D partner override) - send email without creating a Notification row
+      this.logger.log(`[Notifications] Sending untracked agreement-signed email to ${params.recipientEmail} (no GoStork userId)`);
+      await this.sendRawEmail(params.recipientEmail, subject, html)
+        .catch(e => this.logger.error(`Failed to send untracked agreement-signed email to ${params.recipientEmail}: ${e.message}`));
     }
   }
 

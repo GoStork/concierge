@@ -1953,6 +1953,7 @@ chatRouter.post("/api/agreements/generate-from-template", requireAuth, async (re
             providerId: user.providerId,
             signingUrl: emailSigningUrl,
             sessionId: session.id,
+            isGoStorkMember: !!firstSigner.userId,
           });
 
           // Mark first signer as notified in signerOrder
@@ -2224,6 +2225,7 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
                     providerId: agreement.providerId,
                     signingUrl: emailSigningUrl,
                     sessionId: agreement.sessionId,
+                    isGoStorkMember: !!nextSigner.userId,
                   });
                   console.log(`[PandaDoc webhook] Notified next signer ${nextSigner.email}`);
                 }
