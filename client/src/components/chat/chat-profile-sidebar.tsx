@@ -1,5 +1,4 @@
 import { type ReactNode } from "react";
-import { User, Mail, MapPin } from "lucide-react";
 import type { SessionUser } from "./chat-types";
 
 interface ChatProfileSidebarProps {
@@ -41,18 +40,27 @@ interface ProfileSection {
   rows: ProfileRow[];
 }
 
+interface BasicInfo {
+  phone: string | null;
+  age: string | null;
+  relationshipStatus: string | null;
+  partnerName: string | null;
+  partnerAge: string | null;
+}
+
+function buildBasics(user: SessionUser): BasicInfo {
+  return {
+    phone: nonEmpty(user.mobileNumber),
+    age: computeAge(user.dateOfBirth),
+    relationshipStatus: nonEmpty(user.relationshipStatus),
+    partnerName: nonEmpty(user.partnerFirstName),
+    partnerAge: user.partnerAge ? String(user.partnerAge) : null,
+  };
+}
+
 function buildSections(user: SessionUser): ProfileSection[] {
   const p = user.parentAccount?.intendedParentProfile;
   const sections: ProfileSection[] = [];
-
-  // BASICS
-  const basics: ProfileRow[] = [];
-  if (nonEmpty(user.mobileNumber)) basics.push({ label: "Phone", value: user.mobileNumber! });
-  if (nonEmpty(user.relationshipStatus)) basics.push({ label: "Relationship Status", value: user.relationshipStatus! });
-  if (nonEmpty(user.partnerFirstName)) basics.push({ label: "Partner Name", value: user.partnerFirstName! });
-  const age = computeAge(user.dateOfBirth);
-  if (age) basics.push({ label: "Age", value: age });
-  if (basics.length > 0) sections.push({ title: "Basics", rows: basics });
 
   if (!p) return sections;
 
@@ -124,24 +132,31 @@ function buildSections(user: SessionUser): ProfileSection[] {
  */
 export function ChatProfileSidebar({ user, brandColor, extraSections, testId = "chat-profile-sidebar" }: ChatProfileSidebarProps) {
   const sections = buildSections(user);
+  const basics = buildBasics(user);
 
   return (
     <div className="w-72 border-l overflow-y-auto p-4 bg-muted/30 hidden md:block" data-testid={testId}>
       <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Parent Profile</h4>
       <div className="space-y-1.5 mb-3">
-        <div className="flex items-center gap-2">
-          <User className="w-4 h-4 text-muted-foreground shrink-0" />
-          <span className="text-sm">{user.name || "-"}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
-          <span className="text-sm truncate">{user.email}</span>
-        </div>
+        <div className="text-sm"><span className="text-muted-foreground">Name:</span> {user.name || "-"}</div>
+        <div className="text-sm truncate"><span className="text-muted-foreground">Email:</span> {user.email}</div>
         {(user.city || user.state) && (
-          <div className="flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-muted-foreground shrink-0" />
-            <span className="text-sm">{[user.city, user.state].filter(Boolean).join(", ")}</span>
-          </div>
+          <div className="text-sm"><span className="text-muted-foreground">Location:</span> {[user.city, user.state].filter(Boolean).join(", ")}</div>
+        )}
+        {basics.phone && (
+          <div className="text-sm"><span className="text-muted-foreground">Phone:</span> {basics.phone}</div>
+        )}
+        {basics.age && (
+          <div className="text-sm"><span className="text-muted-foreground">Age:</span> {basics.age}</div>
+        )}
+        {basics.relationshipStatus && (
+          <div className="text-sm"><span className="text-muted-foreground">Relationship Status:</span> {basics.relationshipStatus}</div>
+        )}
+        {basics.partnerName && (
+          <div className="text-sm"><span className="text-muted-foreground">Partner Name:</span> {basics.partnerName}</div>
+        )}
+        {basics.partnerAge && (
+          <div className="text-sm"><span className="text-muted-foreground">Partner's Age:</span> {basics.partnerAge}</div>
         )}
       </div>
 

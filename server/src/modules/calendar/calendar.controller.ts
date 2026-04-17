@@ -654,6 +654,16 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     return results;
   }
 
+  @Get("bookings/pending-count")
+  @UseGuards(SessionOrJwtGuard)
+  async getPendingBookingsCount(@Req() req: Request) {
+    const user = req.user as any;
+    const count = await this.prisma.booking.count({
+      where: { providerUserId: user.id, status: "PENDING" },
+    });
+    return { count };
+  }
+
   @Get("bookings")
   @UseGuards(SessionOrJwtGuard)
   async listBookings(
@@ -1830,7 +1840,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
   }
 
   @Post("booking/:token/reschedule-public")
-  async reschedulePublic(@Param("token") token: string, @Body() body: any) {
+  async reschedulePublic(@Req() req: Request, @Param("token") token: string, @Body() body: any) {
     const original = await this.prisma.booking.findUnique({ where: { publicToken: token } });
     if (!original) throw new NotFoundException("Booking not found");
     if (original.status === "CANCELLED" || original.status === "RESCHEDULED") {
@@ -1840,6 +1850,11 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     if (!body.scheduledAt) {
       throw new BadRequestException("scheduledAt is required");
     }
+
+    // If the rescheduling user is the booking host (provider/admin), auto-confirm the new booking.
+    // No need for the host to then confirm their own reschedule request.
+    const requestingUser = (req as any).user;
+    const hostIsRescheduling = requestingUser && requestingUser.id === original.providerUserId;
 
     await this.prisma.booking.update({
       where: { publicToken: token },
@@ -1853,7 +1868,9 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
         scheduledAt: new Date(body.scheduledAt),
         duration: original.duration,
         meetingType: original.meetingType,
-        status: "PENDING",
+        status: hostIsRescheduling ? "CONFIRMED" : "PENDING",
+        providerConfirmed: hostIsRescheduling ? true : false,
+        parentConfirmed: false,
         meetingUrl: original.meetingUrl,
         subject: original.subject,
         notes: original.notes,
@@ -1864,11 +1881,17 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
         bookerTimezone: body.bookerTimezone || original.bookerTimezone,
       },
       include: {
-        providerUser: { select: { id: true, name: true, email: true, photoUrl: true } },
+        providerUser: { select: { id: true, name: true, email: true, photoUrl: true, mobileNumber: true, providerId: true, provider: { select: { name: true } } } },
+        parentUser: { select: { id: true, name: true, email: true, mobileNumber: true } },
       },
     });
 
-    this.notifications.sendBookingRescheduled(original, newBooking, body.message || "").catch(() => {});
+    if (hostIsRescheduling) {
+      // Host rescheduled - send confirmation email directly (no approval needed)
+      this.notifications.sendBookingConfirmation(newBooking).catch(() => {});
+    } else {
+      this.notifications.sendBookingRescheduled(original, newBooking, body.message || "").catch(() => {});
+    }
     this.deleteGoogleCalendarEvent(original).catch(() => {});
     this.deleteParentGoogleCalendarEvent(original).catch(() => {});
     this.deleteOutlookCalendarEvent(original).catch(() => {});

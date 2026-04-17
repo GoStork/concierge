@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
 import { InlineSuggestTimeForm } from "./inline-suggest-time-form";
+import { RescheduleCalendarPicker } from "@/pages/concierge-chat-page";
 
 interface InlineBookingNotificationProps {
   booking: any;
@@ -19,6 +20,7 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [showSuggestForm, setShowSuggestForm] = useState(false);
+  const [showRescheduleForm, setShowRescheduleForm] = useState(false);
   const isProvider = booking?.providerUserId === user?.id;
   const isPending = booking?.status === "PENDING";
   const isConfirmed = booking?.status === "CONFIRMED";
@@ -47,6 +49,18 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
     },
   });
 
+  const cancelMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("PATCH", `/api/calendar/bookings/${booking.id}`, { status: "CANCELLED" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+      toast({ title: "Meeting cancelled", description: "All participants have been notified.", variant: "success" as any });
+      onUpdate();
+    },
+    onError: () => toast({ title: "Failed to cancel meeting", variant: "destructive" }),
+  });
+
   if (!booking) return null;
   const start = new Date(booking.scheduledAt);
   const end = new Date(start.getTime() + (booking.duration || 30) * 60 * 1000);
@@ -59,8 +73,12 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
   const isNoShow = hasPassed && !wasCompleted && !isParentNoShow && !isProviderNoShow && !isCancelled && !isRescheduled;
   const isParentCancelled = isCancelled && booking.cancelledByRole === "parent";
   const isProviderCancelled = isCancelled && booking.cancelledByRole === "provider";
-  const providerName = booking.providerUser?.name || "Provider";
-  const orgName = booking.providerUser?.provider?.name || "";
+  // The host is a GoStork admin if they have GOSTORK_ADMIN role, or as fallback have no providerId
+  const isAdminHost = !!(booking.providerUser?.roles as string[] | undefined)?.includes("GOSTORK_ADMIN")
+    || !booking.providerUser?.providerId;
+  const adminName = booking.providerUser?.name || "GoStork Team";
+  const providerName = isAdminHost ? adminName : (booking.providerUser?.name || "Provider");
+  const orgName = isAdminHost ? "" : (booking.providerUser?.provider?.name || "");
 
   const members = booking.parentAccountMembers || [];
   const attendees = members.length > 0
@@ -79,7 +97,11 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
           <div className="flex items-center gap-2 px-3 py-1.5">
             <CalendarClock className="w-4 h-4 text-primary-foreground" />
             <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
-              {isProvider
+              {isAdminHost && isProvider
+                ? `GoStork Concierge Call with ${booking.parentUser?.name || booking.attendeeName || "Parent"}`
+                : isAdminHost
+                ? `GoStork Concierge Call - ${adminName}`
+                : isProvider
                 ? `Consultation Call with ${booking.parentUser?.name || booking.attendeeName || "Parent"}`
                 : orgName ? `Consultation Call with ${orgName}` : "Consultation Call"}
             </span>
@@ -111,7 +133,7 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
                 : isParentNoShow ? "Parent No Show"
                 : isProviderNoShow ? "Provider No Show"
                 : isNoShow ? "No Show"
-                : isPending ? "Pending Approval"
+                : isPending ? (isAdminHost ? "Awaiting Confirmation" : "Pending Approval")
                 : booking.status}
             </span>
           </div>
@@ -137,8 +159,8 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
                 <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: `${brandColor}1A` }}>
                   <Crown className="w-3 h-3" style={{ color: brandColor }} />
                 </div>
-                <span className="font-medium text-xs">{providerName}</span>
-                <span className="text-xs text-muted-foreground">(Host)</span>
+                <span className="font-medium text-xs">{isAdminHost ? adminName : providerName}</span>
+                <span className="text-xs text-muted-foreground">{isAdminHost ? "(GoStork - Host)" : "(Host)"}</span>
               </div>
               {attendees.map((a: any) => (
                 <div key={a.id || a.email} className="flex items-center gap-2 text-sm pl-1">
@@ -239,6 +261,18 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
               />
             </div>
           )}
+
+          {showRescheduleForm && isConfirmed && isProvider && !hasPassed && booking.providerUser?.scheduleConfig?.bookingPageSlug && (
+            <div className="border border-border/50 rounded-[var(--radius)] p-3 space-y-2">
+              <RescheduleCalendarPicker
+                slug={booking.providerUser.scheduleConfig.bookingPageSlug}
+                booking={booking}
+                brandColor={brandColor}
+                onRescheduled={() => { setShowRescheduleForm(false); onUpdate(); }}
+                onCancel={() => setShowRescheduleForm(false)}
+              />
+            </div>
+          )}
         </div>
 
         {isPending && isProvider && !showSuggestForm && !isNoShow && !isParentNoShow && !isProviderNoShow && (
@@ -253,6 +287,18 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
             </Button>
             <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => setShowSuggestForm(true)} data-testid="button-suggest-new-time-inline">
               <CalendarClock className="w-3.5 h-3.5" /> New Time
+            </Button>
+          </div>
+        )}
+
+        {isConfirmed && isProvider && !hasPassed && !showRescheduleForm && (
+          <div className="flex items-center gap-2 px-4 py-3 border-t bg-muted/20">
+            <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => setShowRescheduleForm(true)} data-testid="button-reschedule-booking-inline">
+              <CalendarClock className="w-3.5 h-3.5" /> Reschedule
+            </Button>
+            <Button size="sm" variant="outline" className="text-destructive gap-1 text-xs" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending} data-testid="button-cancel-booking-inline">
+              {cancelMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+              Cancel
             </Button>
           </div>
         )}

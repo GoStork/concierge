@@ -410,8 +410,13 @@ export class NotificationService implements OnModuleInit {
     const attendeeEmail = booking.attendeeEmails?.[0] || booking.parentUser?.email;
     const attendeeName = booking.attendeeName || booking.parentUser?.name || attendeeEmail;
     const providerEmail = providerUser?.email;
-    const providerName = providerUser?.provider?.name || providerUser?.name || "Provider";
-    const staffMember = providerUser?.name || "";
+    // Detect GoStork admin host: fetch roles if not already on the loaded providerUser object
+    const hostRoles = Array.isArray(providerUser?.roles)
+      ? (providerUser!.roles as string[])
+      : ((await this.prisma.user.findUnique({ where: { id: booking.providerUserId }, select: { roles: true } }))?.roles as string[] ?? []);
+    const isGoStorkAdminHost = hostRoles.includes("GOSTORK_ADMIN");
+    const providerName = isGoStorkAdminHost ? "GoStork Team" : (providerUser?.provider?.name || providerUser?.name || "Provider");
+    const staffMember = isGoStorkAdminHost ? "" : (providerUser?.name || "");
     const scheduledAt = new Date(booking.scheduledAt);
     const base = getBaseUrl();
     const videoRoomLink = `${base}/room/${booking.id}`;

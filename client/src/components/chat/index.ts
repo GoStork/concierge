@@ -11,3 +11,4 @@ export type { FilterTab } from "./conversations-shell";
 export { ChatMessageList } from "./chat-message-list";
 export { ChatInputBar, WhisperDisclaimer, ExpertSenderLabel } from "./chat-input-bar";
 export { ChatProfileSidebar } from "./chat-profile-sidebar";
+export { ChatBookingCard } from "./chat-booking-card";

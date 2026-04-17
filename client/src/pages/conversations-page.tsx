@@ -26,6 +26,7 @@ import { setHideBottomNav } from "@/store/uiSlice";
 import { deriveChatPalette } from "@/lib/chat-palette";
 import { format } from "date-fns";
 import ConciergeChatPage, { ParentChatSidePanel, type ParentSidePanelData } from "@/pages/concierge-chat-page";
+import { AgreementSidebarSection } from "@/components/chat/agreement-sidebar-section";
 // Legacy imports for dead code pending removal
 import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-deck-card";
 import {
@@ -38,7 +39,7 @@ import {
   getSurrogateTabs,
   getDonorTabs,
 } from "@/components/marketplace/swipe-mappers";
-import { InlineSuggestTimeForm, getProfileUrlSlug } from "@/components/chat";
+import { getProfileUrlSlug, InlineSuggestTimeForm } from "@/components/chat";
 import {
   timeAgo,
   truncateMessage,
@@ -48,6 +49,7 @@ import {
   ChatInputBar,
   WhisperDisclaimer,
   ChatProfileSidebar,
+  ChatBookingCard,
   type FilterTab,
 } from "@/components/chat";
 
@@ -466,9 +468,34 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold">Book a Meeting</p>
-            <p className="text-xs text-muted-foreground">{data.memberName ? `Schedule with ${data.memberName}` : "Pick a time that works for you"}</p>
+            <p className="text-xs text-muted-foreground">
+              {data.providerName === "GoStork"
+                ? `Schedule GoStork Concierge Call with ${data.memberName || "GoStork Team"}`
+                : data.memberName ? `Schedule with ${data.memberName}` : "Pick a time that works for you"}
+            </p>
           </div>
           <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
+        </a>
+      </div>
+    );
+  }
+
+  if (msg.uiCardType === "agreement_signed") {
+    return (
+      <div className="mt-1">
+        <a
+          href={data.agreementId ? `/agreements/${data.agreementId}` : "#"}
+          className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border-2 bg-background hover:bg-muted transition-colors"
+          style={{ borderColor: brandColor }}
+        >
+          <div className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: brandColor }}>
+            <CheckCircle2 className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Agreement Fully Signed</p>
+            <p className="text-xs text-muted-foreground">Tap to view and download the signed agreement</p>
+          </div>
+          <Download className="w-4 h-4 text-muted-foreground shrink-0" />
         </a>
       </div>
     );
@@ -549,11 +576,11 @@ export default function ConversationsPage() {
   const [selectedSessionId, _setSelectedSessionId] = useState<string | null>(null);
   const setSelectedSessionId = (id: string | null, session?: ChatSession | ProviderSession | null) => {
     _setSelectedSessionId(id);
-    generateAgreementMutation.reset();
-    setPanelShowSuggestForm(false);
     const url = session ? buildChatUrl(session) : "/chat";
     if (lastChatKey && url !== "/chat") localStorage.setItem(lastChatKey, url);
-    navigate(url, { replace: true });
+    // Push when selecting a session so the browser back button returns to the list.
+    // Replace only when clearing the selection (navigating back to /chat).
+    navigate(url, { replace: !session });
   };
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
@@ -603,8 +630,19 @@ export default function ConversationsPage() {
     }
   }, [isProvider, urlEntityId, urlSubjectId, providerSessionsQuery.data]);
 
-  // Auto-restore the last viewed chat when landing on /chat with no selection
+  // Clear provider selection when the browser back button returns to /chat (no URL params)
   useEffect(() => {
+    if (!isProvider) return;
+    if (!urlEntityId && !urlSubjectId && selectedSessionId) {
+      _setSelectedSessionId(null);
+    }
+  }, [isProvider, urlEntityId, urlSubjectId]);
+
+  // Auto-restore the last viewed chat when landing on /chat with no selection.
+  // Only fires once per component mount so the browser back button doesn't re-trigger it.
+  const autoRestored = useRef(false);
+  useEffect(() => {
+    if (autoRestored.current) return;
     if (!lastChatKey) return;
     const currentPath = window.location.pathname;
     const hasUrlSelection = !!urlEntityId || !!urlSubjectId || window.location.search.includes("session=");
@@ -631,6 +669,7 @@ export default function ConversationsPage() {
       : allSessions.length > 0;
 
     if (sessionExists) {
+      autoRestored.current = true;
       navigate(lastUrl, { replace: true });
     }
   }, [
@@ -721,47 +760,6 @@ export default function ConversationsPage() {
     },
   });
 
-  const generateAgreementMutation = useMutation({
-    mutationFn: async ({ sessionId }: { sessionId: string }) => {
-      const res = await fetch("/api/agreements/generate-from-template", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ sessionId }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: "Failed to generate agreement" }));
-        throw new Error(err.message);
-      }
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions", selectedSessionId] });
-    },
-  });
-
-  const bookingConfirmMutation = useMutation({
-    mutationFn: async (bookingId: string) => {
-      await apiRequest("POST", `/api/calendar/bookings/${bookingId}/confirm`, {});
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/chat-session/bookings", selectedSessionId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
-      toast({ title: "Meeting confirmed", description: "The parent has been notified.", variant: "success" as any });
-    },
-  });
-
-  const bookingDeclineMutation = useMutation({
-    mutationFn: async (bookingId: string) => {
-      await apiRequest("POST", `/api/calendar/bookings/${bookingId}/decline`, {});
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/chat-session/bookings", selectedSessionId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
-      toast({ title: "Meeting declined", description: "The parent has been notified.", variant: "success" as any });
-    },
-  });
-
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [providerStagedFiles, setProviderStagedFiles] = useState<File[]>([]);
   const [providerUploading, setProviderUploading] = useState(false);
@@ -780,18 +778,28 @@ export default function ConversationsPage() {
   const handleProviderMeeting = async () => {
     if (!selectedSessionId) return;
     try {
-      const res = await fetch("/api/provider/calendar-slug", { credentials: "include" });
-      const { slug } = await res.json();
-      if (!slug) {
-        alert("You haven't set up your booking calendar yet. Go to Settings → Calendar to configure it.");
+      const [slugRes, connectionsRes] = await Promise.all([
+        fetch("/api/provider/calendar-slug", { credentials: "include" }),
+        fetch("/api/calendar/connections", { credentials: "include" }),
+      ]);
+      const { slug } = await slugRes.json();
+      const connections: any[] = await connectionsRes.json();
+      if (!slug || !connections?.length) {
+        navigate("/account/calendar?connect=true");
         return;
       }
-      const bookingUrl = `${window.location.origin}/book/${slug}`;
       sendMessageMutation.mutate({
         sessionId: selectedSessionId,
         content: "I've shared my calendar - pick a time that works for you!",
-        uiCardType: "calendar_share",
-        uiCardData: { bookingUrl, slug, memberName: (user as any)?.name },
+        uiCardType: "rich",
+        uiCardData: {
+          consultationCard: {
+            memberBookingSlug: slug,
+            memberName: (user as any)?.name,
+            bookingUrl: `${window.location.origin}/book/${slug}`,
+            providerId: (user as any)?.providerId,
+          },
+        },
       });
     } catch {
       alert("Failed to load calendar. Please try again.");
@@ -1052,6 +1060,7 @@ export default function ConversationsPage() {
   }, [queryClient]);
 
   const detail = sessionDetailQuery.data;
+
   const profile = detail?.user?.parentAccount?.intendedParentProfile;
   const selectedSession = (providerSessionsQuery.data || []).find(s => s.id === selectedSessionId);
   const hasJoined = !!detail?.providerJoinedAt;
@@ -1072,7 +1081,6 @@ export default function ConversationsPage() {
   }, [isProvider, providerSessionsQuery.data, detail?.user?.id]);
   const { statuses: onlineStatuses } = useOnlineStatus(onlineUserIds, onlineProviderIds);
 
-  const [panelShowSuggestForm, setPanelShowSuggestForm] = useState(false);
   const [parentBookingOverlay, setParentBookingOverlay] = useState<{ slug: string; memberName: string } | null>(null);
   const talkToTeamRef = useRef<{ trigger: () => void; escalated: boolean } | null>(null);
   const [talkToTeamEscalated, setTalkToTeamEscalated] = useState(false);
@@ -1820,7 +1828,7 @@ export default function ConversationsPage() {
       </>
     ) : null;
 
-    const providerDetailContent = sessionDetailQuery.isLoading ? (
+    const providerDetailContent = (sessionDetailQuery.isLoading || sessionBookingsQuery.isLoading) ? (
       <div className="flex-1 flex items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
@@ -2031,94 +2039,25 @@ export default function ConversationsPage() {
                 <>
                   {(() => {
                     const bookings = sessionBookingsQuery.data || [];
-                    const pendingBooking = bookings.find((b: any) => b.status === "PENDING");
-                    const confirmedBooking = bookings.find((b: any) => b.status === "CONFIRMED" && new Date() < new Date(new Date(b.scheduledAt).getTime() + (b.duration || 30) * 60 * 1000));
-                    const activeBooking = pendingBooking || confirmedBooking;
-                    if (!activeBooking) return null;
-                    const start = new Date(activeBooking.scheduledAt);
-                    const isPending = activeBooking.status === "PENDING";
-                    const isConfirmed = activeBooking.status === "CONFIRMED";
+                    // Only show bookings where this provider user is the host - never show admin/GoStork bookings
+                    const activeBookings = bookings.filter((b: any) =>
+                      b.providerUserId === user?.id && (
+                        b.status === "PENDING" ||
+                        (b.status === "CONFIRMED" && new Date() < new Date(new Date(b.scheduledAt).getTime() + (b.duration || 30) * 60 * 1000))
+                      )
+                    );
+                    if (activeBookings.length === 0) return null;
                     return (
                       <div className="border-t pt-4 mt-4" data-testid="panel-consultation-call-section">
                         <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Consultation Call</h4>
-                        <div className="rounded-[var(--radius)] border border-border overflow-hidden">
-                          <div className="p-2" style={{ backgroundColor: brandColor }}>
-                            <div className="flex items-center gap-2 px-1">
-                              <CalendarClock className="w-3.5 h-3.5 text-primary-foreground" />
-                              <span className="text-primary-foreground text-[11px] font-semibold uppercase tracking-wider">
-                                {isPending ? "Pending Approval" : "Confirmed"}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="p-3 space-y-2 bg-card">
-                            <div className="flex items-center gap-2 text-xs">
-                              <CalendarClock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                              <span>{format(start, "EEE, MMM d, yyyy")}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-xs">
-                              <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                              <span>{format(start, "h:mm a")} ({activeBooking.duration || 30} min)</span>
-                            </div>
-                            {isPending && (
-                              <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-[var(--radius)] p-2 mt-1">
-                                <p className="text-[11px] font-medium text-[hsl(var(--brand-warning))]">Needs your confirmation</p>
-                                <p className="text-[10px] text-[hsl(var(--brand-warning))] mt-0.5">Requested by {activeBooking.attendeeName || activeBooking.parentUser?.name || "a parent"}.</p>
-                              </div>
-                            )}
-                            {isConfirmed && (
-                              <div className="bg-[hsl(var(--brand-success)/0.08)] border border-[hsl(var(--brand-success)/0.3)] rounded-[var(--radius)] p-2 mt-1">
-                                <p className="text-[11px] font-medium text-[hsl(var(--brand-success))]">Meeting confirmed</p>
-                              </div>
-                            )}
-                          </div>
-                          {isPending && panelShowSuggestForm && (
-                            <div className="px-3 py-3 border-t">
-                              <p className="text-xs font-medium mb-2">Suggest a new time</p>
-                              <InlineSuggestTimeForm
-                                bookingId={activeBooking.id}
-                                onCancel={() => setPanelShowSuggestForm(false)}
-                                onSuccess={() => {
-                                  setPanelShowSuggestForm(false);
-                                  queryClient.invalidateQueries({ queryKey: ["/api/chat-session/bookings", selectedSessionId] });
-                                }}
-                              />
-                            </div>
-                          )}
-                          {isPending && !panelShowSuggestForm && (
-                            <div className="flex flex-wrap gap-2 px-3 py-2.5 border-t bg-muted/20 justify-center">
-                              <Button
-                                size="sm"
-                                className="gap-1 text-xs text-primary-foreground"
-                                style={{ backgroundColor: brandColor }}
-                                onClick={() => bookingConfirmMutation.mutate(activeBooking.id)}
-                                disabled={bookingConfirmMutation.isPending || bookingDeclineMutation.isPending}
-                                data-testid="panel-btn-confirm-booking"
-                              >
-                                {bookingConfirmMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                                Confirm
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="text-destructive gap-1 text-xs"
-                                onClick={() => bookingDeclineMutation.mutate(activeBooking.id)}
-                                disabled={bookingConfirmMutation.isPending || bookingDeclineMutation.isPending}
-                                data-testid="panel-btn-decline-booking"
-                              >
-                                {bookingDeclineMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
-                                Decline
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="gap-1 text-xs"
-                                onClick={() => setPanelShowSuggestForm(true)}
-                                data-testid="panel-btn-suggest-time"
-                              >
-                                <CalendarClock className="w-3 h-3" /> New Time
-                              </Button>
-                            </div>
-                          )}
+                        <div className="space-y-2">
+                          {activeBookings.map((b: any) => (
+                            <ChatBookingCard
+                              key={b.id}
+                              booking={b}
+                              onUpdate={() => queryClient.invalidateQueries({ queryKey: ["/api/chat-session/bookings", selectedSessionId] })}
+                            />
+                          ))}
                         </div>
                       </div>
                     );
@@ -2153,30 +2092,14 @@ export default function ConversationsPage() {
                     </div>
                   )}
                   {hasJoined && (
-                    <div className="border-t pt-4 mt-4" data-testid="agreement-section">
-                      <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Agreement</h4>
-                      <Button
-                        size="sm"
-                        className="w-full gap-1.5 text-xs"
-                        style={{ backgroundColor: brandColor }}
-                        onClick={() => { if (selectedSessionId) generateAgreementMutation.mutate({ sessionId: selectedSessionId }); }}
-                        disabled={generateAgreementMutation.isPending}
-                        data-testid="btn-generate-agreement"
-                      >
-                        {generateAgreementMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
-                        Generate & Send Agreement
-                      </Button>
-                      {generateAgreementMutation.isError && (
-                        <p className="text-xs text-destructive mt-1.5" data-testid="text-agreement-error">
-                          {(generateAgreementMutation.error as Error)?.message || "Failed to generate agreement"}
-                        </p>
-                      )}
-                      {generateAgreementMutation.isSuccess && (
-                        <p className="text-xs text-[hsl(var(--brand-success))] mt-1.5" data-testid="text-agreement-success">
-                          Agreement sent successfully
-                        </p>
-                      )}
-                    </div>
+                    <AgreementSidebarSection
+                      key={selectedSessionId || "none"}
+                      agreement={detail?.agreements?.[0]}
+                      brandColor={brandColor}
+                      sessionId={selectedSessionId}
+                      relationshipStatus={detail?.user?.relationshipStatus}
+                      sessionQueryKey="/api/provider/concierge-sessions"
+                    />
                   )}
                 </>
               }

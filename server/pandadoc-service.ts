@@ -843,17 +843,17 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
   // ── Agreement record created only after we know we can proceed ──
   // Seed signerStatus with signer names so "Sent to [Name]" displays immediately.
   const initialSignerStatus2: Record<string, object> = {};
-  const addSigner = (email: string, firstName: string | null | undefined, lastName: string | null | undefined) => {
+  const addSigner = (email: string, firstName: string | null | undefined, lastName: string | null | undefined, signingOrder: number) => {
     if (!email) return;
-    initialSignerStatus2[email] = { completed: false, completedAt: null, viewed: false, viewedAt: null, role: null, firstName: firstName || null, lastName: lastName || null };
+    initialSignerStatus2[email] = { completed: false, completedAt: null, viewed: false, viewedAt: null, role: null, firstName: firstName || null, lastName: lastName || null, signingOrder };
   };
-  addSigner(parent1Email, parent1.firstName || p1.name.split(" ")[0], parent1.lastName || p1.name.split(" ").slice(1).join(" ") || null);
+  addSigner(parent1Email, parent1.firstName || p1.name.split(" ")[0], parent1.lastName || p1.name.split(" ").slice(1).join(" ") || null, parentRoles[0]?.signingOrder ?? 1);
   if (assignmentCase === "C") {
     if (usingPartnerOverride) {
-      addSigner(partnerOverride!.email, partnerOverride!.firstName, partnerOverride!.lastName);
+      addSigner(partnerOverride!.email, partnerOverride!.firstName, partnerOverride!.lastName, (parentRoles[1] ?? parentRoles[0])?.signingOrder ?? 2);
     } else if (parent2) {
       const p2fmt = formatMember(parent2);
-      addSigner(p2fmt.email, parent2.firstName || p2fmt.name.split(" ")[0], parent2.lastName || p2fmt.name.split(" ").slice(1).join(" ") || null);
+      addSigner(p2fmt.email, parent2.firstName || p2fmt.name.split(" ")[0], parent2.lastName || p2fmt.name.split(" ").slice(1).join(" ") || null, (parentRoles[1] ?? parentRoles[0])?.signingOrder ?? 2);
     }
   }
 
@@ -1050,8 +1050,12 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
         : (parent2 ? formatMember(parent2).name : null);
       if (p2Email) {
         const p2Url = await fetchDocumentViewUrl(apiKey, pandaDocDocumentId, p2Email);
-        const p2UserId = usingPartnerOverride ? null : (parent2 as any)?.id ?? null;
-        // Generate a guest token for non-GoStork signers so they get a public GoStork link
+        // For partner overrides, still look up whether the email belongs to a GoStork account.
+        // If it does, use their userId so they get the GoStork signing URL (not a guest link).
+        const p2UserId = usingPartnerOverride
+          ? ((await prisma.user.findFirst({ where: { email: p2Email }, select: { id: true } }))?.id ?? null)
+          : (parent2 as any)?.id ?? null;
+        // Generate a guest token only for non-GoStork signers so they get a public signing link
         const p2GuestToken = p2UserId ? null : crypto.randomUUID();
         parentSigners.push({ name: p2Name || p2Email, email: p2Email, userId: p2UserId, signingUrl: p2Url, guestToken: p2GuestToken, signingOrder: parent2Role.signingOrder });
       }
@@ -1178,7 +1182,13 @@ export async function syncAgreementStatus(agreementId: string): Promise<{ status
 
   const agreement = await prisma.agreement.findUnique({
     where: { id: agreementId },
-    select: { id: true, status: true, pandaDocDocumentId: true, signerStatus: true },
+    select: {
+      id: true, status: true, pandaDocDocumentId: true, signerStatus: true,
+      sessionId: true, providerId: true, parentUserId: true,
+      generatedByUserId: true,
+      provider: { select: { name: true } },
+      parentUser: { select: { name: true, firstName: true, lastName: true, email: true } },
+    },
   });
   if (!agreement) throw new Error("Agreement not found");
   if (!agreement.pandaDocDocumentId) return { status: agreement.status, signerStatus: (agreement.signerStatus as Record<string, any>) ?? {} };
@@ -1214,14 +1224,52 @@ export async function syncAgreementStatus(agreementId: string): Promise<{ status
   }
   const newStatus = isCompleted ? "SIGNED" : agreement.status;
 
+  const transitioningToSigned = isCompleted && agreement.status !== "SIGNED";
+
   await prisma.agreement.update({
     where: { id: agreement.id },
     data: {
       status: newStatus,
       signerStatus: updated,
-      ...(isCompleted && agreement.status !== "SIGNED" ? { signedAt: new Date() } : {}),
+      ...(transitioningToSigned ? { signedAt: new Date() } : {}),
     },
   });
+
+  // If this poll is the first to detect completion, send the provider notification email.
+  // The webhook handler skips when status is already SIGNED, so one of them sends - not both.
+  if (transitioningToSigned && agreement.sessionId) {
+    try {
+      const { getNestApp } = await import("./nest-app-ref");
+      const nestApp = getNestApp();
+      if (nestApp) {
+        const { NotificationService } = await import("./src/modules/notifications/notification.service");
+        const notifService = nestApp.get(NotificationService);
+        const parentName = (agreement as any).parentUser?.name ||
+          `${(agreement as any).parentUser?.firstName || ""} ${(agreement as any).parentUser?.lastName || ""}`.trim() ||
+          (agreement as any).parentUser?.email || "Parent";
+        const providerName = (agreement as any).provider?.name || "Your Agency";
+        const providerUser = (agreement as any).generatedByUserId
+          ? await prisma.user.findUnique({ where: { id: (agreement as any).generatedByUserId }, select: { id: true, email: true, name: true } })
+          : await prisma.user.findFirst({ where: { providerId: agreement.providerId }, select: { id: true, email: true, name: true } });
+        if (providerUser?.email) {
+          await notifService.sendAgreementSignedNotification({
+            recipientUserId: providerUser.id,
+            recipientEmail: providerUser.email,
+            recipientName: providerUser.name || providerName,
+            recipientRole: "provider",
+            providerName,
+            parentName,
+            providerId: agreement.providerId,
+            sessionId: agreement.sessionId,
+            agreementId: agreement.id,
+          });
+          console.log(`[syncAgreementStatus] Sent completion email to provider: ${providerUser.email}`);
+        }
+      }
+    } catch (err: any) {
+      console.error(`[syncAgreementStatus] Failed to send provider completion email: ${err.message}`);
+    }
+  }
 
   return { status: newStatus, signerStatus: updated };
 }

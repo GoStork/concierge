@@ -22,6 +22,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
 import { VideoService } from "../video/video.service";
 import { NotificationService } from "../notifications/notification.service";
+import { AppEventsService } from "../notifications/app-events.service";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { insertUserSchema } from "@shared/schema";
 import { hasProviderRole, PROVIDER_ROLES, PARENT_ACCOUNT_ROLES, isParentAccountAdmin } from "@shared/roles";
@@ -50,6 +51,7 @@ export class UsersController {
     @Inject(AuthService) private readonly authService: AuthService,
     @Inject(VideoService) private readonly videoService: VideoService,
     @Inject(NotificationService) private readonly notificationService: NotificationService,
+    @Inject(AppEventsService) private readonly appEvents: AppEventsService,
   ) {}
 
   private async ensureParentAccount(userId: string): Promise<void> {
@@ -411,8 +413,17 @@ export class UsersController {
           if (body[field] !== undefined) profileData[field] = body[field] || null;
         }
 
-        const boolProfileFields = ["hasEmbryos", "embryosTested", "needsClinic", "needsEggDonor", "needsSurrogate", "isFirstIvf", "sameSexCouple"];
-        for (const field of boolProfileFields) {
+        // Non-nullable booleans (schema: Boolean @default(false)) - skip null to avoid Prisma error
+        const nonNullableBoolFields = ["hasEmbryos", "embryosTested", "needsClinic", "needsEggDonor", "needsSurrogate"];
+        for (const field of nonNullableBoolFields) {
+          if (body[field] !== undefined) {
+            const val = body[field] === true || body[field] === "true" ? true : (body[field] === false || body[field] === "false" ? false : null);
+            if (val !== null) profileData[field] = val;
+          }
+        }
+        // Nullable booleans (schema: Boolean?) - null allowed to clear the value
+        const nullableBoolFields = ["isFirstIvf", "sameSexCouple"];
+        for (const field of nullableBoolFields) {
           if (body[field] !== undefined) {
             profileData[field] = body[field] === true || body[field] === "true" ? true : (body[field] === false || body[field] === "false" ? false : null);
           }
@@ -420,23 +431,23 @@ export class UsersController {
 
         if (body.embryoCount !== undefined) {
           const num = parseInt(String(body.embryoCount), 10);
-          profileData.embryoCount = !isNaN(num) && num >= 0 ? num : null;
+          // embryoCount is Int @default(0) - non-nullable, skip null
+          if (!isNaN(num) && num >= 0) profileData.embryoCount = num;
         }
 
         if (Object.keys(profileData).length > 0) {
-          const existing = await tx.intendedParentProfile.findUnique({
+          // Filter out null values for non-nullable fields to avoid Prisma errors on create
+          const createData = Object.fromEntries(
+            Object.entries(profileData).filter(([, v]) => v !== null)
+          );
+          await tx.intendedParentProfile.upsert({
             where: { parentAccountId: user.parentAccountId },
+            create: {
+              parentAccount: { connect: { id: user.parentAccountId } },
+              ...createData,
+            },
+            update: profileData,
           });
-          if (existing) {
-            await tx.intendedParentProfile.update({
-              where: { parentAccountId: user.parentAccountId },
-              data: profileData,
-            });
-          } else {
-            await tx.intendedParentProfile.create({
-              data: { parentAccountId: user.parentAccountId, ...profileData },
-            });
-          }
         }
       }
     });
@@ -444,7 +455,41 @@ export class UsersController {
     const enriched = await this.authService.getUserWithProvider(user.id);
     const result = enriched || {};
     const { password: _, ...safe } = result;
+
+    // Notify all providers with active sessions + GoStork admins so open chat views refresh
+    this.emitProfileUpdated(user.id).catch(() => {});
+
     return safe;
+  }
+
+  private async emitProfileUpdated(parentUserId: string): Promise<void> {
+    const [sessions, admins] = await Promise.all([
+      this.prisma.aiChatSession.findMany({
+        where: { userId: parentUserId },
+        select: { provider: { select: { users: { select: { id: true } } } } },
+      }),
+      this.prisma.user.findMany({
+        where: { roles: { has: "GOSTORK_ADMIN" } },
+        select: { id: true },
+      }),
+    ]);
+
+    const providerUserIds = sessions.flatMap(
+      (s) => s.provider?.users.map((u) => u.id) ?? [],
+    );
+    const adminIds = admins.map((u) => u.id);
+    const targetUserIds = [...new Set([...providerUserIds, ...adminIds])].filter(
+      (id) => id !== parentUserId,
+    );
+
+    if (targetUserIds.length === 0) return;
+
+    await this.appEvents.emit({
+      type: "user_profile_updated",
+      payload: { userId: parentUserId },
+      targetUserIds,
+      actorUserId: parentUserId,
+    });
   }
 
   @Put("user/photo")

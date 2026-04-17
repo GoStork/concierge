@@ -201,6 +201,14 @@ function AccountTab() {
       toast({ title: "Password must be at least 6 characters", variant: "destructive" });
       return;
     }
+    if ((editRelationship === "Partnered" || editRelationship === "Married") && !editPartnerName.trim()) {
+      toast({ title: "Partner's full name is required", variant: "destructive" });
+      return;
+    }
+    if ((editRelationship === "Partnered" || editRelationship === "Married") && !editPartnerAge) {
+      toast({ title: "Partner's age is required", variant: "destructive" });
+      return;
+    }
     setSaving(true);
     try {
       const payload: any = {
@@ -216,8 +224,9 @@ function AccountTab() {
           payload.sexualOrientation = editOrientation || null;
           payload.relationshipStatus = editRelationship || null;
           payload.dateOfBirth = editAge ? new Date(new Date().getFullYear() - Number(editAge), 0, 1).toISOString() : null;
-          payload.partnerFirstName = editPartnerName || null;
-          payload.partnerAge = editPartnerAge ? Number(editPartnerAge) : null;
+          const hasPartner = editRelationship === "Partnered" || editRelationship === "Married";
+          payload.partnerFirstName = hasPartner ? (editPartnerName || null) : null;
+          payload.partnerAge = hasPartner && editPartnerAge ? Number(editPartnerAge) : null;
           payload.interestedServices = editServices;
           // Journey
           payload.journeyStage = editJourneyStage || null;
@@ -506,17 +515,17 @@ function AccountTab() {
                       {(editRelationship === "Partnered" || editRelationship === "Married") && (
                         <>
                           <div className="space-y-2">
-                            <Label htmlFor="edit-partner-name">Partner's First Name</Label>
+                            <Label htmlFor="edit-partner-name">Partner's Full Name <span className="text-destructive">*</span></Label>
                             <Input
                               id="edit-partner-name"
                               value={editPartnerName}
                               onChange={e => setEditPartnerName(e.target.value)}
-                              placeholder="Partner's first name"
+                              placeholder="Partner's full name"
                               data-testid="input-edit-partner-name"
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor="edit-partner-age">Partner's Age</Label>
+                            <Label htmlFor="edit-partner-age">Partner's Age <span className="text-destructive">*</span></Label>
                             <Input
                               id="edit-partner-age"
                               type="number"
@@ -676,7 +685,7 @@ function AccountTab() {
                       {((user as any).relationshipStatus === "Partnered" || (user as any).relationshipStatus === "Married") && (
                         <>
                           <div className="space-y-1">
-                            <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Partner's Name</label>
+                            <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Partner's Full Name</label>
                             <p className="text-sm font-ui" data-testid="text-account-partner-name">{(user as any).partnerFirstName || '-'}</p>
                           </div>
                           <div className="space-y-1">

@@ -3,12 +3,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
+import { useAppDispatch } from "@/store";
+import { setHideBottomNav } from "@/store/uiSlice";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { deriveChatPalette } from "@/lib/chat-palette";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
-  Headphones, MessageCircle, User, Clock, CheckCircle2, Loader2, UserPlus, LogOut, Trash2,
+  ArrowLeft, Headphones, MessageCircle, User, Clock, CheckCircle2, Loader2, UserPlus, LogOut, Trash2,
 } from "lucide-react";
 import {
   timeAgo,
@@ -18,9 +20,11 @@ import {
   ExpertSenderLabel,
   ChatProfileSidebar,
   InlineVideoOverlay,
+  ChatBookingCard,
   type SessionDetail,
 } from "@/components/chat";
 import { useToast } from "@/hooks/use-toast";
+import { AgreementSidebarSection } from "@/components/chat/agreement-sidebar-section";
 
 interface SessionSummary {
   id: string;
@@ -47,17 +51,20 @@ export default function AdminConciergeMonitor() {
   const { user } = useAuth();
   const { data: brand } = useBrandSettings();
   const queryClient = useQueryClient();
+  const dispatch = useAppDispatch();
   const brandColor = brand?.primaryColor || "#004D4D";
   const chatPalette = useMemo(() => deriveChatPalette(brandColor), [brandColor]);
   const [searchParams, setSearchParams] = useSearchParams();
-  const sessionIdFromUrl = searchParams.get("sessionId");
   const lastChatKey = user ? `lastAdminChatSessionId:${(user as any).id}` : null;
-  const [selectedSessionId, _setSelectedSessionId] = useState<string | null>(sessionIdFromUrl);
+  // Use the URL as the single source of truth - no separate useState needed.
+  // This means the browser back button automatically works: when the URL changes,
+  // selectedSessionId updates and the component re-renders to show the list.
+  const selectedSessionId = searchParams.get("sessionId");
   const setSelectedSessionId = (id: string | null) => {
-    _setSelectedSessionId(id);
     if (id) {
       if (lastChatKey) localStorage.setItem(lastChatKey, id);
-      setSearchParams({ sessionId: id }, { replace: true });
+      // Push a new history entry so the browser back button returns to the list
+      setSearchParams({ sessionId: id });
     } else {
       setSearchParams({}, { replace: true });
     }
@@ -66,6 +73,12 @@ export default function AdminConciergeMonitor() {
   const [inlineVideoBookingId, setInlineVideoBookingId] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+
+  // Hide the bottom nav on mobile when a session is open so it doesn't cover the chat input bar
+  useEffect(() => {
+    dispatch(setHideBottomNav(!!selectedSessionId));
+    return () => { dispatch(setHideBottomNav(false)); };
+  }, [selectedSessionId, dispatch]);
 
   const roles: string[] = (user as any)?.roles || [];
   const isAdmin = roles.includes("GOSTORK_ADMIN");
@@ -206,18 +219,22 @@ export default function AdminConciergeMonitor() {
       .catch(() => {});
   }, [selectedSessionId]);
 
-  // Auto-restore last viewed session when landing on the page with no selection
+  // Auto-restore last viewed session on initial page load only.
+  // The ref prevents the restore from re-firing when the browser back button returns to this page.
+  const autoRestored = useRef(false);
   useEffect(() => {
+    if (autoRestored.current) return;
     if (!lastChatKey) return;
-    if (selectedSessionId || sessionIdFromUrl) return;
+    if (selectedSessionId) return;
     if (sessionsQuery.isLoading || !sessionsQuery.data) return;
     const storedId = localStorage.getItem(lastChatKey);
     if (!storedId) return;
     const exists = sessionsQuery.data.some(s => s.id === storedId);
     if (exists) {
+      autoRestored.current = true;
       setSelectedSessionId(storedId);
     }
-  }, [lastChatKey, selectedSessionId, sessionIdFromUrl, sessionsQuery.isLoading, sessionsQuery.data]);
+  }, [lastChatKey, selectedSessionId, sessionsQuery.isLoading, sessionsQuery.data]);
 
   const sessions = sessionsQuery.data || [];
   const detail = sessionDetailQuery.data;
@@ -283,10 +300,12 @@ export default function AdminConciergeMonitor() {
           consultationCard: {
             providerName: "GoStork",
             providerLogo: null,
-            bookingUrl: `/book/${slug}`,
+            bookingUrl: `${window.location.origin}/book/${slug}`,
             iframeEnabled: true,
             memberBookingSlug: slug,
             memberName: adminName,
+            // Embed admin's userId so session bookings endpoint can find their bookings
+            providerUserId: (user as any)?.id,
           },
         },
       });
@@ -387,10 +406,21 @@ export default function AdminConciergeMonitor() {
   ) : null;
 
   // Build detail content when a session is selected
-  const detailContent = detail ? (
+  // Only render the full chat once BOTH session detail and bookings are ready.
+  // This prevents the booking card from popping in after messages are already shown.
+  const detailContent = (detail && !sessionBookingsQuery.isLoading) ? (
     <div className="flex flex-col h-full" data-testid="concierge-monitor-detail">
       {/* Chat header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b bg-background shrink-0">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0 md:hidden"
+          onClick={() => setSelectedSessionId(null)}
+          data-testid="btn-back-to-sessions"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </Button>
         <div className="flex items-center gap-2 flex-1">
           {detail.user.photoUrl ? (
             <img src={getPhotoSrc(detail.user.photoUrl) || undefined} alt="" className="w-8 h-8 rounded-full object-cover" />
@@ -505,6 +535,42 @@ export default function AdminConciergeMonitor() {
           user={detail.user}
           brandColor={brandColor}
           testId="concierge-monitor-profile"
+          extraSections={(() => {
+            const bookings = sessionBookingsQuery.data || [];
+            // Only show bookings where the current admin is the host - never show provider-parent meetings
+            const activeBookings = bookings.filter((b: any) =>
+              b.providerUserId === (user as any)?.id && (
+                b.status === "PENDING" ||
+                (b.status === "CONFIRMED" && new Date() < new Date(new Date(b.scheduledAt).getTime() + (b.duration || 30) * 60 * 1000))
+              )
+            );
+            return (
+              <>
+                {activeBookings.length > 0 && (
+                  <div className="border-t pt-4 mt-4" data-testid="panel-concierge-call-section">
+                    <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>GoStork Concierge Call</h4>
+                    <div className="space-y-2">
+                      {activeBookings.map((b: any) => (
+                        <ChatBookingCard
+                          key={b.id}
+                          booking={b}
+                          onUpdate={() => sessionBookingsQuery.refetch()}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <AgreementSidebarSection
+                  key={selectedSessionId || "none"}
+                  agreement={detail.agreements?.[0]}
+                  brandColor={brandColor}
+                  sessionId={selectedSessionId}
+                  readOnly
+                  sessionQueryKey="/api/admin/concierge-sessions"
+                />
+              </>
+            );
+          })()}
         />
       </div>
     </div>

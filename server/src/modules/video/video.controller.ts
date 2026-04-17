@@ -114,18 +114,10 @@ export class VideoController {
     let attendeeEmails: string[] = [];
 
     if (callerActsAsProvider) {
-      if (adminAsHost) {
-        providerUserId = user.id;
-      } else if (isAdmin && session.providerId && user.providerId !== session.providerId) {
-        const actualProviderUser = await this.prisma.user.findFirst({
-          where: { providerId: session.providerId },
-          orderBy: { createdAt: "asc" },
-          select: { id: true },
-        });
-        providerUserId = actualProviderUser?.id || user.id;
-      } else {
-        providerUserId = user.id;
-      }
+      // GoStork admin or provider user is always the booking host when they initiate.
+      // Admins use their own userId regardless of which provider session they are monitoring -
+      // so notifications correctly attribute the call to GoStork, not the session's provider.
+      providerUserId = user.id;
       parentUserId = session.userId;
       const parentUser = await this.prisma.user.findUnique({
         where: { id: session.userId },

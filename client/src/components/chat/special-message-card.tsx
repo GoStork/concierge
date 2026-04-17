@@ -1,5 +1,5 @@
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { FileText, Download, Video, CalendarDays, ExternalLink } from "lucide-react";
+import { CheckCircle2, FileText, Download, Video, CalendarDays, ExternalLink } from "lucide-react";
 import type { SessionMessage } from "./chat-types";
 
 interface SpecialMessageCardProps {
@@ -97,9 +97,37 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold">Book a Meeting</p>
-            <p className="text-xs text-muted-foreground">{data.memberName ? `Schedule with ${data.memberName}` : "Pick a time that works for you"}</p>
+            <p className="text-xs text-muted-foreground">
+              {data.providerName === "GoStork"
+                ? `Schedule GoStork Concierge Call with ${data.memberName || "GoStork Team"}`
+                : data.memberName ? `Schedule with ${data.memberName}` : "Pick a time that works for you"}
+            </p>
           </div>
           <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
+        </a>
+      </div>
+    );
+  }
+
+  if (msg.uiCardType === "agreement_signed") {
+    const agreementId = data.agreementId;
+    return (
+      <div className="mt-1" data-testid="agreement-signed-card">
+        <a
+          href={agreementId ? `/api/agreements/${agreementId}/download` : "#"}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border-2 bg-background hover:bg-muted transition-colors"
+          style={{ borderColor: brandColor }}
+        >
+          <div className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: brandColor }}>
+            <CheckCircle2 className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Agreement Fully Signed</p>
+            <p className="text-xs text-muted-foreground">Click to download the signed PDF</p>
+          </div>
+          <Download className="w-4 h-4 text-muted-foreground shrink-0" />
         </a>
       </div>
     );

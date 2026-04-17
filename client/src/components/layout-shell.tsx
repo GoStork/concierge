@@ -293,6 +293,14 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     window.dispatchEvent(new CustomEvent("human-concluded", { detail: { sessionId: data.sessionId } }));
   }, []);
 
+  const handleProfileUpdatedEvent = useCallback((data: any) => {
+    if (data.type !== "user_profile_updated") return;
+    // Invalidate all session list and detail queries so open chat views refresh with the new profile
+    queryClient.invalidateQueries({ queryKey: ["/api/admin/concierge-sessions"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/users", data.userId] });
+  }, []);
+
   const handleHumanEscalationEvent = useCallback((data: any) => {
     if (data.type !== "human_escalation") return;
 
@@ -351,6 +359,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         handleCostSheetEvent(data);
         handleHumanEscalationEvent(data);
         handleHumanConcludedEvent(data);
+        handleProfileUpdatedEvent(data);
       } catch {}
     };
 
@@ -370,7 +379,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       es.close();
       sseRef.current = null;
     };
-  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent]);
+  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent, handleProfileUpdatedEvent]);
 
   const dispatch = useAppDispatch();
   const marketplaceTab = useAppSelector((state) => state.ui.marketplaceTab);
@@ -512,6 +521,16 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     enabled: !!user && isProvider,
     refetchInterval: 30000,
   });
+  const { data: providerPendingBookings } = useQuery<{ count: number }>({
+    queryKey: ["/api/calendar/bookings/pending-count"],
+    queryFn: async () => {
+      const res = await fetch("/api/calendar/bookings/pending-count", { credentials: "include" });
+      if (!res.ok) return { count: 0 };
+      return res.json();
+    },
+    enabled: !!user && isProvider,
+    refetchInterval: 30000,
+  });
   const totalUnread = useMemo(() => {
     const parentUnread = (chatSessions || []).reduce((sum, s) => sum + (s.unreadCount || 0), 0);
     // For providers: count unread messages, plus pending whisper questions only for pre-join sessions.
@@ -523,8 +542,10 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       const unread = s.status === "CONSULTATION_BOOKED" ? Math.max(1, s.unreadCount || 0) : (s.unreadCount || 0);
       return sum + unread + pending;
     }, 0);
-    return parentUnread + providerUnread;
-  }, [chatSessions, providerChatSessions]);
+    // Pending bookings (parent scheduled a meeting, awaiting provider confirmation)
+    const pendingBookings = providerPendingBookings?.count || 0;
+    return parentUnread + providerUnread + pendingBookings;
+  }, [chatSessions, providerChatSessions, providerPendingBookings]);
 
   // Admin: fetch concierge sessions to compute badge count
   const { data: adminConciergeSessions } = useQuery<{ unreadCount: number; humanRequested: boolean; humanJoinedAt: string | null; humanConcludedAt: string | null }[]>({
@@ -718,7 +739,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       </header>
 
       <div
-        className={`fixed bottom-0 left-0 right-0 z-50 md:hidden safe-area-bottom px-3 pb-2 ${hideBottomNav || /^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname) || location.pathname === "/concierge" ? "hidden" : ""}`}
+        className={`fixed bottom-0 left-0 right-0 z-50 md:hidden safe-area-bottom px-3 pb-2 ${hideBottomNav || /^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname) || location.pathname === "/concierge" || location.pathname.startsWith("/agreements/") ? "hidden" : ""}`}
         style={{ backgroundColor: 'var(--bottom-nav-safe-area-bg, transparent)' }}
       >
       <nav

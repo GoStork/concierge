@@ -385,6 +385,11 @@ chatRouter.get("/api/admin/concierge-sessions/:id", requireAuth, async (req, res
           },
         },
         messages: { orderBy: { createdAt: "asc" } },
+        agreements: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { id: true, status: true, signerStatus: true, signedAt: true, pandaDocViewUrl: true, pandaDocDocumentId: true, createdAt: true },
+        },
       },
     });
     if (!session) return res.status(404).json({ message: "Session not found" });
@@ -1560,9 +1565,12 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
         select: { uiCardData: true },
       });
       const providerIds = new Set<string>();
+      const directProviderUserIds = new Set<string>();
       for (const m of consultMsgs) {
         const card = (m.uiCardData as any)?.consultationCard;
         if (card?.providerId) providerIds.add(card.providerId);
+        // Admin calendar messages embed their own userId directly (no providerId)
+        if (card?.providerUserId) directProviderUserIds.add(card.providerUserId);
       }
       if (providerIds.size > 0) {
         const providerUsers = await prisma.user.findMany({
@@ -1570,6 +1578,24 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
           select: { id: true },
         });
         providerUserIds = providerUsers.map(u => u.id);
+      }
+      for (const uid of directProviderUserIds) {
+        if (!providerUserIds.includes(uid)) providerUserIds.push(uid);
+      }
+    }
+    // Always scan rich messages for admin-sent calendar cards (providerUserId with no providerId).
+    // This is needed even when session.providerId is set - an admin can send their own calendar
+    // into a provider session and those bookings must be included.
+    {
+      const adminCalendarMsgs = await prisma.aiChatMessage.findMany({
+        where: { sessionId: session.id, uiCardType: "rich" },
+        select: { uiCardData: true },
+      });
+      for (const m of adminCalendarMsgs) {
+        const card = (m.uiCardData as any)?.consultationCard;
+        if (card?.providerUserId && !providerUserIds.includes(card.providerUserId)) {
+          providerUserIds.push(card.providerUserId);
+        }
       }
     }
     // Also include the human agent (admin) who joined the session - they may have shared their own calendar
@@ -1588,8 +1614,9 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
       include: {
         providerUser: {
           select: {
-            id: true, name: true, email: true, photoUrl: true,
+            id: true, name: true, email: true, photoUrl: true, providerId: true, roles: true,
             provider: { select: { id: true, name: true } },
+            scheduleConfig: { select: { bookingPageSlug: true } },
           },
         },
         parentUser: {
@@ -1917,7 +1944,7 @@ chatRouter.post("/api/agreements/generate-from-template", requireAuth, async (re
         const appBase = getAppBaseUrl();
         const goStorkSigningUrl = agr.id ? `${appBase}/agreements/${agr.id}` : null;
 
-        type SignerEntry = { name: string; email: string; userId: string | null; guestToken: string | null; signingOrder: number; notified: boolean };
+        type SignerEntry = { name: string; email: string; userId: string | null; guestToken: string | null; signingOrder: number; notified: boolean; signed: boolean };
         console.log(`[Agreement signers] parentSigners count: ${(agr.parentSigners ?? []).length}, agreementId: ${agr.id}, emails: ${(agr.parentSigners ?? []).map((s: any) => s.email).join(", ")}`);
         let signers: SignerEntry[] = (agr.parentSigners ?? []).map((s: any) => ({
           name: s.name,
@@ -1926,6 +1953,7 @@ chatRouter.post("/api/agreements/generate-from-template", requireAuth, async (re
           guestToken: s.guestToken ?? null,
           signingOrder: s.signingOrder ?? 1,
           notified: false,
+          signed: false,
         }));
 
         // Fallback: if parentSigners not populated (e.g. old non-template flow), email the primary parent
@@ -1935,7 +1963,7 @@ chatRouter.post("/api/agreements/generate-from-template", requireAuth, async (re
             select: { name: true, email: true },
           });
           if (parentUser?.email) {
-            signers.push({ name: parentUser.name || parentUser.email, email: parentUser.email, userId: session.userId, guestToken: null, signingOrder: 1, notified: false });
+            signers.push({ name: parentUser.name || parentUser.email, email: parentUser.email, userId: session.userId, guestToken: null, signingOrder: 1, notified: false, signed: false });
           }
         }
 
@@ -2111,7 +2139,8 @@ chatRouter.get("/api/agreements/:id/download", requireAuth, async (req, res) => 
       select: { providerId: true, parentUserId: true, pandaDocDocumentId: true, status: true },
     });
     if (!agreement) return res.status(404).json({ message: "Agreement not found" });
-    if (user.providerId !== agreement.providerId && user.id !== agreement.parentUserId) {
+    const isAdmin = isAdminUser(user);
+    if (!isAdmin && user.providerId !== agreement.providerId && user.id !== agreement.parentUserId) {
       return res.status(403).json({ message: "Forbidden" });
     }
     if (!agreement.pandaDocDocumentId) return res.status(400).json({ message: "No PandaDoc document linked" });
@@ -2179,7 +2208,7 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
           where: { id: agreement.id },
           select: { signerOrder: true },
         });
-        const signerOrder: Array<{ email: string; name: string; userId: string | null; guestToken: string | null; signingOrder: number; notified: boolean }> =
+        const signerOrder: Array<{ email: string; name: string; userId: string | null; guestToken: string | null; signingOrder: number; notified: boolean; signed?: boolean }> =
           (freshAgreement?.signerOrder as any[]) ?? [];
 
         console.log(`[PandaDoc webhook] signerOrder contents: ${JSON.stringify(signerOrder.map(s => ({ email: s.email, notified: s.notified, signingOrder: s.signingOrder })))}`);
@@ -2252,6 +2281,70 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
             }
           }
         }
+
+        // Post a chat message for each signer who just completed (idempotent via signed flag)
+        // Also update signerStatus so the provider sidebar reflects the signing immediately.
+        if (agreement.sessionId && completedEmails.size > 0) {
+          // Re-fetch latest signerOrder and signerStatus together
+          const latestAgreement = await (prisma.agreement as any).findUnique({
+            where: { id: agreement.id },
+            select: { signerOrder: true, signerStatus: true, status: true },
+          });
+          const latestOrder: Array<{ email: string; name: string; signingOrder: number; signed?: boolean }> =
+            (latestAgreement?.signerOrder as any[]) ?? [];
+
+          for (const signer of latestOrder) {
+            if (!completedEmails.has(signer.email) || signer.signed === true) continue;
+
+            // Atomically mark as signed - skip if already marked (idempotency)
+            const markedOrder = latestOrder.map(s =>
+              s.email === signer.email ? { ...s, signed: true } : s
+            );
+            const rows = await prisma.$executeRaw`
+              UPDATE "Agreement"
+              SET "signerOrder" = ${JSON.stringify(markedOrder)}::jsonb
+              WHERE id = ${agreement.id}
+              AND NOT "signerOrder" @> ${JSON.stringify([{ email: signer.email, signed: true }])}::jsonb
+            `;
+            if (rows == 0) continue; // duplicate event
+
+            await prisma.aiChatMessage.create({
+              data: {
+                sessionId: agreement.sessionId,
+                role: "assistant",
+                content: `${signer.name || signer.email} has signed the agreement.`,
+                senderType: "system",
+                senderName: "Eva",
+              },
+            });
+            console.log(`[PandaDoc webhook] Posted "signed" chat message for ${signer.email}`);
+          }
+
+          // Update signerStatus to mark completed signers - this makes the sidebar reflect signing immediately
+          if (latestAgreement?.status !== "SIGNED") {
+            const existingStatus: Record<string, any> = (latestAgreement?.signerStatus as Record<string, any>) ?? {};
+            const updatedStatus = { ...existingStatus };
+            let statusChanged = false;
+            for (const email of completedEmails) {
+              const prev = existingStatus[email] ?? {};
+              if (!prev.completed) {
+                updatedStatus[email] = {
+                  ...prev,
+                  completed: true,
+                  completedAt: prev.completedAt ?? new Date().toISOString(),
+                };
+                statusChanged = true;
+              }
+            }
+            if (statusChanged) {
+              await prisma.agreement.update({
+                where: { id: agreement.id },
+                data: { signerStatus: updatedStatus },
+              });
+              console.log(`[PandaDoc webhook] Updated signerStatus for completed signers: ${[...completedEmails].join(", ")}`);
+            }
+          }
+        }
       }
 
       // Build per-signer status from recipients array (present on most event payloads)
@@ -2320,6 +2413,53 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
             }
           } catch (emailErr: any) {
             console.error(`[PandaDoc webhook] Failed to send completion email: ${emailErr.message}`);
+          }
+
+          // Post "all sides signed" chat message with a link to view/download the signed agreement.
+          // First flush any remaining "[Name] has signed" messages for signers not yet announced,
+          // so individual messages always appear before the "all sides" summary.
+          if (agreement.sessionId) {
+            const finalAgreement = await (prisma.agreement as any).findUnique({
+              where: { id: agreement.id },
+              select: { signerOrder: true },
+            });
+            const finalOrder: Array<{ email: string; name: string; signed?: boolean }> =
+              (finalAgreement?.signerOrder as any[]) ?? [];
+
+            for (const signer of finalOrder) {
+              if (signer.signed === true) continue;
+              const markedOrder = finalOrder.map(s =>
+                s.email === signer.email ? { ...s, signed: true } : s
+              );
+              const rows = await prisma.$executeRaw`
+                UPDATE "Agreement"
+                SET "signerOrder" = ${JSON.stringify(markedOrder)}::jsonb
+                WHERE id = ${agreement.id}
+                AND NOT "signerOrder" @> ${JSON.stringify([{ email: signer.email, signed: true }])}::jsonb
+              `;
+              if (rows == 0) continue; // already posted by recipient_completed
+              await prisma.aiChatMessage.create({
+                data: {
+                  sessionId: agreement.sessionId,
+                  role: "assistant",
+                  content: `${signer.name || signer.email} has signed the agreement.`,
+                  senderType: "system",
+                  senderName: "Eva",
+                },
+              });
+            }
+
+            await prisma.aiChatMessage.create({
+              data: {
+                sessionId: agreement.sessionId,
+                role: "assistant",
+                content: "All sides have signed the agreement. It is now ready to view and download.",
+                senderType: "system",
+                senderName: "Eva",
+                uiCardType: "agreement_signed",
+                uiCardData: { agreementId: agreement.id },
+              },
+            }).catch(e => console.error("[PandaDoc webhook] Failed to post all-signed chat message:", e));
           }
 
         } else if (newState === "document.rejected") {

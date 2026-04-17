@@ -1,6 +1,6 @@
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, AlertCircle, ExternalLink } from "lucide-react";
+import { Loader2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function AgreementsGuestSigningPage() {
@@ -29,17 +29,6 @@ export default function AgreementsGuestSigningPage() {
         </span>
         <span className="text-sm font-medium text-muted-foreground">|</span>
         <span className="text-sm font-medium">Sign Agreement</span>
-        {data?.signingUrl && (
-          <a
-            href={data.signingUrl.replace("?embedded=1", "")}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-            Open in new tab
-          </a>
-        )}
       </div>
 
       {/* Content area */}

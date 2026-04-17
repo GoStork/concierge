@@ -63,6 +63,26 @@ export interface SessionUser {
   } | null;
 }
 
+export interface AgreementSignerEntry {
+  completed: boolean;
+  completedAt: string | null;
+  viewed: boolean;
+  viewedAt: string | null;
+  role: string | null;
+  firstName: string | null;
+  lastName: string | null;
+}
+
+export interface SessionAgreement {
+  id: string;
+  status: string;
+  signerStatus: Record<string, AgreementSignerEntry> | null;
+  signedAt: string | null;
+  pandaDocViewUrl: string | null;
+  pandaDocDocumentId: string | null;
+  createdAt: string;
+}
+
 export interface SessionDetail {
   id: string;
   userId: string;
@@ -77,6 +97,7 @@ export interface SessionDetail {
   user: SessionUser;
   title?: string | null;
   messages: SessionMessage[];
+  agreements?: SessionAgreement[];
 }
 
 export type ViewerRole = "provider" | "admin" | "parent";

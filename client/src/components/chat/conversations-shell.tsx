@@ -42,12 +42,13 @@ export function ConversationsShell({
   // Hidden when has selection AND showSidebar=false (e.g. AI-only chat, full-width middle pane)
   const sidebarVisible = !hasSelection || showSidebar;
 
-  // Sidebar CSS class: always flex when sidebarAlwaysVisible (consultation mode),
-  // otherwise hide on mobile when a session is selected (standard responsive behavior)
+  // Sidebar CSS class: on mobile always hide the left sidebar when a session is selected
+  // so the user only sees one column at a time. On desktop, sidebarAlwaysVisible keeps
+  // the conversation list visible alongside the chat (consultation mode).
   const sidebarClass = !sidebarVisible
     ? "hidden"
     : hasSelection
-      ? (sidebarAlwaysVisible ? "flex" : "hidden md:flex")
+      ? "hidden md:flex"
       : "flex";
 
   return (

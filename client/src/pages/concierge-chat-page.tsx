@@ -25,7 +25,7 @@ import {
   buildSidebarSections,
   type SidebarSection,
 } from "@/components/marketplace/swipe-mappers";
-import { Loader2, Send, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User } from "lucide-react";
+import { Loader2, Send, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2 } from "lucide-react";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -259,7 +259,7 @@ function PrepDocCard({ brandColor }: { brandColor: string }) {
   );
 }
 
-function AgreementSignCard({ card, brandColor }: { card: { agreementId: string; status: string; viewUrl: string | null }; brandColor: string }) {
+function AgreementSignCard({ card, brandColor, createdAt }: { card: { agreementId: string; status: string; viewUrl: string | null }; brandColor: string; createdAt?: string }) {
   const navigate = useNavigate();
   return (
     <Card
@@ -287,6 +287,13 @@ function AgreementSignCard({ card, brandColor }: { card: { agreementId: string; 
           </button>
         ) : (
           <p className="text-xs text-muted-foreground italic">Check your email for the signing link.</p>
+        )}
+        {createdAt && (
+          <div className="flex justify-end">
+            <span style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55 }} className="whitespace-nowrap select-none">
+              {new Date(createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+            </span>
+          </div>
         )}
       </div>
     </Card>
@@ -319,7 +326,7 @@ function formatTime12(time24: string): string {
   return `${hour12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
-function RescheduleCalendarPicker({
+export function RescheduleCalendarPicker({
   slug,
   booking,
   brandColor,
@@ -718,6 +725,25 @@ export function InlineBookingCalendar({
       }
     }
   }, [existingBookingProp]);
+
+  // Poll the booking directly when in "pending" step so confirmation by GoStork admin
+  // (or any provider) is reflected immediately without waiting for sessionBookings to catch up.
+  const { data: polledBooking } = useQuery({
+    queryKey: ["/api/calendar/bookings", booking?.id, "status-poll"],
+    queryFn: async () => {
+      const res = await fetch(`/api/calendar/bookings/${booking!.id}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: step === "pending" && !!booking?.id && booking?.status !== "CONFIRMED",
+    refetchInterval: 5000,
+  });
+  useEffect(() => {
+    if (polledBooking && polledBooking.status && polledBooking.status !== booking?.status) {
+      setBooking(polledBooking);
+      prevBookingRef.current = { id: polledBooking.id, status: polledBooking.status };
+    }
+  }, [polledBooking]);
 
   function addAttendee() {
     const trimmed = newAttendeeEmail.trim().toLowerCase();
@@ -1394,14 +1420,20 @@ function ConsultationBookingCard({
     return (
       <div
         className="w-full animate-[slideUp_0.4s_ease-out_forwards] overflow-hidden border border-border bg-card"
-        style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 420px)" }}
+        style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 540px)" }}
         data-testid="consultation-booking-card"
       >
         <div className="p-1.5" style={{ backgroundColor: brandColor }}>
           <div className="flex items-center gap-2 px-3 py-1.5">
             <CalendarCheck className="w-4 h-4 text-primary-foreground" />
             <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
-              {existingBooking && existingBooking.status !== "CANCELLED" ? "Meeting Scheduled" : "Schedule a Free Consultation"}
+              {existingBooking && existingBooking.status !== "CANCELLED"
+                ? card.providerName === "GoStork"
+                  ? `GoStork Concierge Call with ${card.memberName || "GoStork Team"}`
+                  : `Meeting with ${card.memberName || card.providerName || "Consultant"}`
+                : card.providerName === "GoStork"
+                  ? `Schedule GoStork Concierge Call with ${card.memberName || "GoStork Team"}`
+                  : `Schedule with ${card.memberName || card.providerName || "Consultant"}`}
             </span>
           </div>
         </div>
@@ -2169,6 +2201,25 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo }: { msg: Cha
           <p className="text-xs text-muted-foreground">{data.memberName ? `Schedule with ${data.memberName}` : "Pick a time that works"}</p>
         </div>
         <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
+      </a>
+    );
+  }
+
+  if (msg.uiCardType === "agreement_signed") {
+    return (
+      <a
+        href={data.agreementId ? `/agreements/${data.agreementId}` : "#"}
+        className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border-2 bg-background hover:bg-muted transition-colors"
+        style={{ borderColor: brandColor }}
+      >
+        <div className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: brandColor }}>
+          <CheckCircle2 className="w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold">Agreement Fully Signed</p>
+          <p className="text-xs text-muted-foreground">Tap to view and download the signed agreement</p>
+        </div>
+        <Download className="w-4 h-4 text-muted-foreground shrink-0" />
       </a>
     );
   }
@@ -3478,8 +3529,13 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             const shouldInlineBooking = !externalBookingSlug && !conciergeBookingSlug && sessionBookings && sessionBookings.length > 0;
             // Skip standalone booking card if a ConsultationBookingCard already shows this booking inline
             const consultationCardProviderIds = new Set(messages.filter(m => m.consultationCard?.providerId).map(m => m.consultationCard!.providerId));
+            // Also track providerUserId for admin calendar cards (which have no providerId)
+            const consultationCardProviderUserIds = new Set(messages.filter(m => m.consultationCard?.providerUserId).map(m => m.consultationCard!.providerUserId));
             const activeBooking = shouldInlineBooking
-              ? sessionBookings!.find((b: any) => !consultationCardProviderIds.has(b.providerUser?.provider?.id)) || null
+              ? sessionBookings!.find((b: any) =>
+                  !consultationCardProviderIds.has(b.providerUser?.provider?.id) &&
+                  !consultationCardProviderUserIds.has(b.providerUserId ?? b.providerUser?.id)
+                ) || null
               : null;
             type TimelineItem = { type: "message"; msg: ChatMessage; ts: string } | { type: "booking"; booking: any; ts: string };
             const msgItems: TimelineItem[] = messages.map((m) => ({ type: "message" as const, msg: m, ts: m.createdAt || "" }));
@@ -3661,14 +3717,17 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
               {msg.agreementCard && (
                 <div className="flex justify-start mt-3 ml-0">
-                  <AgreementSignCard card={msg.agreementCard} brandColor={brandColor} />
+                  <AgreementSignCard card={msg.agreementCard} brandColor={brandColor} createdAt={msg.createdAt} />
                 </div>
               )}
 
               {msg.consultationCard && (() => {
-                // Only show consultation card on the LAST message that has one for this provider
+                // Only show consultation card on the LAST message that has one for this provider.
+                // Must check m.consultationCard != null first - otherwise messages without a card
+                // match via optional chaining returning undefined === undefined, causing admin
+                // cards (no providerId) to never render if any later message exists.
                 const lastMsgWithCard = [...messages].reverse().find(
-                  m => m.consultationCard?.providerId === msg.consultationCard?.providerId
+                  m => m.consultationCard != null && m.consultationCard?.providerId === msg.consultationCard?.providerId
                 );
                 if (lastMsgWithCard && lastMsgWithCard !== msg) return null;
                 return true;
@@ -3703,13 +3762,25 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                     onBookingConfirmed={onBookingConfirmed}
                     existingBooking={(() => {
                       if (!sessionBookings) return undefined;
-                      const now = new Date();
+                      // Use ?? null to normalise both undefined and null to null before comparing,
+                      // because Prisma returns null for missing relations while JS optional chaining
+                      // returns undefined - strict === would make them unequal.
+                      const cardProviderId = msg.consultationCard?.providerId ?? null;
+                      // Also match by providerUserId for admin calendar cards (no providerId).
+                      const cardProviderUserId = msg.consultationCard?.providerUserId ?? null;
                       const providerBookings = sessionBookings.filter(
-                        (b: any) => b.providerUser?.provider?.id === msg.consultationCard?.providerId
-                          && b.status !== "CANCELLED"
-                          && new Date(b.scheduledAt) > now
+                        (b: any) => {
+                          const bookingProviderId = (b.providerUser?.provider?.id ?? null);
+                          const bookingProviderUserId = (b.providerUser?.id ?? b.providerUserId ?? null);
+                          const idMatch = bookingProviderId === cardProviderId;
+                          const userIdMatch = cardProviderUserId && bookingProviderUserId === cardProviderUserId;
+                          return (idMatch || userIdMatch) && b.status !== "CANCELLED";
+                        }
                       );
-                      return providerBookings[0];
+                      // Prefer the most recent non-cancelled booking
+                      return providerBookings.sort((a: any, b: any) =>
+                        new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()
+                      )[0];
                     })()}
                   />
                 </div>
