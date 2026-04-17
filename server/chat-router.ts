@@ -1918,6 +1918,7 @@ chatRouter.post("/api/agreements/generate-from-template", requireAuth, async (re
         const goStorkSigningUrl = agr.id ? `${appBase}/agreements/${agr.id}` : null;
 
         type SignerEntry = { name: string; email: string; userId: string | null; guestToken: string | null; signingOrder: number; notified: boolean };
+        console.log(`[Agreement signers] parentSigners count: ${(agr.parentSigners ?? []).length}, agreementId: ${agr.id}, emails: ${(agr.parentSigners ?? []).map((s: any) => s.email).join(", ")}`);
         let signers: SignerEntry[] = (agr.parentSigners ?? []).map((s: any) => ({
           name: s.name,
           email: s.email,
@@ -2181,6 +2182,7 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
         const signerOrder: Array<{ email: string; name: string; userId: string | null; guestToken: string | null; signingOrder: number; notified: boolean }> =
           (freshAgreement?.signerOrder as any[]) ?? [];
 
+        console.log(`[PandaDoc webhook] signerOrder contents: ${JSON.stringify(signerOrder.map(s => ({ email: s.email, notified: s.notified, signingOrder: s.signingOrder })))}`);
         if (signerOrder.length > 0) {
           const nextSigner = signerOrder.find(s => !s.notified);
           if (!nextSigner) {
