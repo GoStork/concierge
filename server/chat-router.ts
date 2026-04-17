@@ -2161,19 +2161,38 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
         );
         console.log(`[PandaDoc webhook] recipient_completed - completed emails: ${[...completedEmails].join(", ")}`);
 
+        // Re-fetch signerOrder fresh to avoid using stale data from the top-of-handler load
+        const freshAgreement = await (prisma.agreement as any).findUnique({
+          where: { id: agreement.id },
+          select: { signerOrder: true },
+        });
         const signerOrder: Array<{ email: string; name: string; userId: string | null; guestToken: string | null; signingOrder: number; notified: boolean }> =
-          ((agreement as any).signerOrder as any[]) ?? [];
+          (freshAgreement?.signerOrder as any[]) ?? [];
 
         if (signerOrder.length > 0) {
-          // Find the next signer who hasn't been notified yet
           const nextSigner = signerOrder.find(s => !s.notified);
           if (nextSigner && completedEmails.size > 0) {
-            // All signers before nextSigner must have completed - verify
             const signersBeforeNext = signerOrder.filter(s => s.signingOrder < nextSigner.signingOrder);
             const allPreviousDone = signersBeforeNext.every(s => completedEmails.has(s.email));
             if (allPreviousDone) {
               console.log(`[PandaDoc webhook] Notifying next signer: ${nextSigner.email}`);
               try {
+                // Atomically mark as notified BEFORE sending email to prevent duplicate sends
+                // if PandaDoc retries the webhook. The WHERE condition ensures only one event wins.
+                const updatedOrder = signerOrder.map(s =>
+                  s.email === nextSigner.email ? { ...s, notified: true } : s
+                );
+                const affected = await prisma.$executeRaw`
+                  UPDATE "Agreement"
+                  SET "signerOrder" = ${JSON.stringify(updatedOrder)}::jsonb
+                  WHERE id = ${agreement.id}
+                  AND "signerOrder" @> ${JSON.stringify([{ email: nextSigner.email, notified: false }])}::jsonb
+                `;
+                if (affected === 0) {
+                  console.log(`[PandaDoc webhook] Duplicate event - ${nextSigner.email} already notified, skipping`);
+                  continue;
+                }
+
                 const { getNestApp } = await import("./nest-app-ref");
                 const nestApp = getNestApp();
                 if (nestApp) {
@@ -2206,13 +2225,7 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
                     signingUrl: emailSigningUrl,
                     sessionId: agreement.sessionId,
                   });
-
-                  // Mark as notified
-                  const updatedOrder = signerOrder.map(s =>
-                    s.email === nextSigner.email ? { ...s, notified: true } : s
-                  );
-                  await (prisma.agreement as any).update({ where: { id: agreement.id }, data: { signerOrder: updatedOrder } });
-                  console.log(`[PandaDoc webhook] Notified next signer ${nextSigner.email} and updated signerOrder`);
+                  console.log(`[PandaDoc webhook] Notified next signer ${nextSigner.email}`);
                 }
               } catch (notifErr: any) {
                 console.error(`[PandaDoc webhook] Failed to notify next signer: ${notifErr.message}`);

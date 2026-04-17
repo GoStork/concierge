@@ -989,22 +989,39 @@ export async function registerRoutes(
           const agr2 = agreement as any;
           const appBase2 = (process.env.APP_URL || "").replace(/\/+$/, "");
           const goStorkSigningUrl2 = agr2.id ? `${appBase2}/agreements/${agr2.id}` : null;
-          const signers: Array<{ name: string; email: string; userId: string | null; signingUrl: string | null }> =
-            agr2.parentSigners ?? [{ name: "", email: "", userId: session.userId, signingUrl: null }];
-          for (const signer of signers) {
-            if (!signer.email) continue;
-            // GoStork members get the in-app signing page; non-members get their personal PandaDoc URL directly
-            const emailSigningUrl2 = signer.userId ? goStorkSigningUrl2 : signer.signingUrl;
+
+          type SignerEntry2 = { name: string; email: string; userId: string | null; guestToken: string | null; signingOrder: number; notified: boolean };
+          let signers2: SignerEntry2[] = (agr2.parentSigners ?? []).map((s: any) => ({
+            name: s.name, email: s.email, userId: s.userId ?? null, guestToken: s.guestToken ?? null,
+            signingOrder: s.signingOrder ?? 1, notified: false,
+          }));
+          if (signers2.length === 0) {
+            const parentUser = await prisma.user.findUnique({ where: { id: session.userId }, select: { name: true, email: true } });
+            if (parentUser?.email) {
+              signers2.push({ name: parentUser.name || parentUser.email, email: parentUser.email, userId: session.userId, guestToken: null, signingOrder: 1, notified: false });
+            }
+          }
+          signers2.sort((a, b) => a.signingOrder - b.signingOrder);
+          await (prisma.agreement as any).update({ where: { id: agr2.id }, data: { signerOrder: signers2 } });
+
+          // Only notify the first signer - subsequent signers are notified via recipient_completed webhook
+          const firstSigner2 = signers2[0];
+          if (firstSigner2?.email) {
+            const emailSigningUrl2 = firstSigner2.userId
+              ? goStorkSigningUrl2
+              : firstSigner2.guestToken ? `${appBase2}/agreements/guest/${firstSigner2.guestToken}` : null;
             await notifService.sendAgreementReadyNotification({
-              parentUserId: signer.userId || session.userId,
-              parentName: signer.name || signer.email,
-              parentEmail: signer.email,
+              parentUserId: firstSigner2.userId || session.userId,
+              parentName: firstSigner2.name || firstSigner2.email,
+              parentEmail: firstSigner2.email,
               parentPhone: null,
               providerName,
               providerId: user.providerId,
               signingUrl: emailSigningUrl2,
               sessionId: session.id,
             });
+            signers2[0] = { ...firstSigner2, notified: true };
+            await (prisma.agreement as any).update({ where: { id: agr2.id }, data: { signerOrder: signers2 } });
           }
         }
       } catch (notifErr: any) {
