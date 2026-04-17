@@ -55,6 +55,15 @@ function requireAuth(req: Request, res: Response, next: () => void) {
   next();
 }
 
+function getAppBaseUrl(): string {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
+  if (process.env.NODE_ENV === "development") {
+    const port = process.env.PORT || 5001;
+    return `http://localhost:${port}`;
+  }
+  return "https://app.gostork.com";
+}
+
 export const chatRouter = Router();
 
 // Returns online status for a list of user IDs (or provider IDs).
@@ -1494,7 +1503,7 @@ chatRouter.post("/api/agreements/generate", requireAuth, async (req, res) => {
             parentPhone: parentUser.mobileNumber || null,
             providerName: providerRecord?.name || "Your Agency",
             providerId: user.providerId,
-            signingUrl: `${process.env.APP_URL?.replace(/\/+$/, "") || ""}/agreements/${agreement.id}`,
+            signingUrl: `${getAppBaseUrl()}/agreements/${agreement.id}`,
             sessionId: session.id,
           });
         }
@@ -1904,7 +1913,7 @@ chatRouter.post("/api/agreements/generate-from-template", requireAuth, async (re
         });
         const providerName = providerRecord?.name || "Your Agency";
         const agr = agreement as any;
-        const appBase = (process.env.APP_URL || "").replace(/\/+$/, "");
+        const appBase = getAppBaseUrl();
         const goStorkSigningUrl = agr.id ? `${appBase}/agreements/${agr.id}` : null;
 
         type SignerEntry = { name: string; email: string; userId: string | null; guestToken: string | null; signingOrder: number; notified: boolean };
@@ -1953,7 +1962,7 @@ chatRouter.post("/api/agreements/generate-from-template", requireAuth, async (re
             providerId: user.providerId,
             signingUrl: emailSigningUrl,
             sessionId: session.id,
-            isGoStorkMember: !!firstSigner.userId,
+            isGoStorkMember: !!firstSigner.userId && !firstSigner.guestToken,
           });
 
           // Mark first signer as notified in signerOrder
@@ -2206,7 +2215,7 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
                     select: { name: true },
                   });
                   const providerName = providerRecord?.name || "Your Agency";
-                  const appBase = (process.env.APP_URL || "").replace(/\/+$/, "");
+                  const appBase = getAppBaseUrl();
                   const goStorkSigningUrl = `${appBase}/agreements/${agreement.id}`;
                   const emailSigningUrl = nextSigner.userId
                     ? goStorkSigningUrl
@@ -2227,7 +2236,7 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
                     providerId: agreement.providerId,
                     signingUrl: emailSigningUrl,
                     sessionId: agreement.sessionId,
-                    isGoStorkMember: !!nextSigner.userId,
+                    isGoStorkMember: !!nextSigner.userId && !nextSigner.guestToken,
                   });
                   console.log(`[PandaDoc webhook] Notified next signer ${nextSigner.email}`);
                 }

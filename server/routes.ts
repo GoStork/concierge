@@ -987,7 +987,7 @@ export async function registerRoutes(
           const providerRecord = await prisma.provider.findUnique({ where: { id: user.providerId }, select: { name: true } });
           const providerName = providerRecord?.name || "Your Agency";
           const agr2 = agreement as any;
-          const appBase2 = (process.env.APP_URL || "").replace(/\/+$/, "");
+          const appBase2 = process.env.APP_URL ? process.env.APP_URL.replace(/\/+$/, "") : (process.env.NODE_ENV === "development" ? `http://localhost:${process.env.PORT || 5001}` : "https://app.gostork.com");
           const goStorkSigningUrl2 = agr2.id ? `${appBase2}/agreements/${agr2.id}` : null;
 
           type SignerEntry2 = { name: string; email: string; userId: string | null; guestToken: string | null; signingOrder: number; notified: boolean };
@@ -1019,7 +1019,7 @@ export async function registerRoutes(
               providerId: user.providerId,
               signingUrl: emailSigningUrl2,
               sessionId: session.id,
-              isGoStorkMember: !!firstSigner2.userId,
+              isGoStorkMember: !!firstSigner2.userId && !firstSigner2.guestToken,
             });
             signers2[0] = { ...firstSigner2, notified: true };
             await (prisma.agreement as any).update({ where: { id: agr2.id }, data: { signerOrder: signers2 } });
