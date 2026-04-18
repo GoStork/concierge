@@ -160,6 +160,66 @@ export class UsersController {
     return profile;
   }
 
+  @Get("surrogate-countries")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Get distinct countries where surrogacy agencies or surrogates operate" })
+  async getSurrogateCountries() {
+    // Base list of known surrogacy-friendly countries
+    const KNOWN_COUNTRIES = [
+      "United States", "Colombia", "Mexico", "Canada",
+      "Ukraine", "Georgia", "Cyprus", "Greece", "Czech Republic",
+      "Israel", "Australia", "Portugal", "Albania", "Belarus",
+      "Taiwan", "Cambodia", "Argentina", "Kenya", "South Africa",
+    ];
+
+    // Pull countries from CostProgram (has explicit country field for surrogacy programs)
+    const US_STATES = new Set([
+      "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY",
+      "LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND",
+      "OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC",
+      "Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut","Delaware",
+      "Florida","Georgia","Hawaii","Idaho","Illinois","Indiana","Iowa","Kansas","Kentucky",
+      "Louisiana","Maine","Maryland","Massachusetts","Michigan","Minnesota","Mississippi",
+      "Missouri","Montana","Nebraska","Nevada","New Hampshire","New Jersey","New Mexico",
+      "New York","North Carolina","North Dakota","Ohio","Oklahoma","Oregon","Pennsylvania",
+      "Rhode Island","South Carolina","South Dakota","Tennessee","Texas","Utah","Vermont",
+      "Virginia","Washington","West Virginia","Wisconsin","Wyoming",
+      "USA","Mid-West",
+    ]);
+
+    const [costPrograms, providerLocations] = await Promise.all([
+      this.prisma.$queryRaw<{ country: string }[]>`
+        SELECT DISTINCT cp.country
+        FROM "CostProgram" cp
+        JOIN "ProviderService" ps ON ps."providerTypeId" = cp."providerTypeId"
+        JOIN "ProviderType" pt ON pt.id = cp."providerTypeId"
+        WHERE cp.country IS NOT NULL AND cp.country != '' AND pt.name = 'Surrogacy Agency'
+      `,
+      this.prisma.$queryRaw<{ state: string }[]>`
+        SELECT DISTINCT pl.state
+        FROM "ProviderLocation" pl
+        JOIN "Provider" p ON p.id = pl."providerId"
+        JOIN "ProviderService" ps ON ps."providerId" = p.id
+        JOIN "ProviderType" pt ON pt.id = ps."providerTypeId"
+        WHERE pt.name = 'Surrogacy Agency' AND pl.state IS NOT NULL AND pl.state != ''
+      `,
+    ]);
+
+    const dbCountries = new Set<string>(KNOWN_COUNTRIES);
+    for (const row of costPrograms) {
+      if (row.country) dbCountries.add(row.country.trim());
+    }
+    for (const row of providerLocations) {
+      const s = (row.state || "").trim();
+      if (s && !US_STATES.has(s) && s.length > 2) {
+        dbCountries.add(s);
+      }
+    }
+
+    return Array.from(dbCountries).sort();
+  }
+
   @Post("parent-profile/hot-lead")
   @UseGuards(SessionOrJwtGuard)
   @ApiBearerAuth()
@@ -406,8 +466,16 @@ export class UsersController {
           "clinicPriority", "currentClinicName", "currentAgencyName", "currentAttorneyName",
           "surrogateCountries", "surrogateTermination", "surrogateTwins",
           "surrogateAgeRange", "surrogateBudget", "surrogateExperience", "surrogateMedPrefs",
+          "surrogateRace", "surrogateEthnicity", "surrogateRelationship",
+          "surrogateBmiRange", "surrogateTotalCostRange",
           "donorPreferences", "donorEyeColor", "donorHairColor", "donorHeight",
           "donorEducation", "donorEthnicity", "spermDonorType", "spermDonorPreferences",
+          "spermDonorAgeRange", "spermDonorEyeColor", "spermDonorHairColor",
+          "spermDonorHeightRange", "spermDonorRace", "spermDonorEthnicity", "spermDonorEducation",
+          "eggDonorAgeRange", "eggDonorCompensationRange", "eggDonorTotalCostRange", "eggDonorLotCostRange",
+          "eggDonorEggType", "eggDonorDonationType",
+          "clinicAgeGroup", "clinicPriorityTags",
+          "surrogateLiveBirthsRange",
         ];
         for (const field of stringProfileFields) {
           if (body[field] !== undefined) profileData[field] = body[field] || null;
@@ -422,17 +490,33 @@ export class UsersController {
           }
         }
         // Nullable booleans (schema: Boolean?) - null allowed to clear the value
-        const nullableBoolFields = ["isFirstIvf", "sameSexCouple"];
+        const nullableBoolFields = [
+          "isFirstIvf", "sameSexCouple",
+          "surrogateCovidVaccinated", "surrogateSelectiveReduction", "surrogateInternationalParents",
+          "spermDonorCovidVaccinated",
+        ];
         for (const field of nullableBoolFields) {
           if (body[field] !== undefined) {
             profileData[field] = body[field] === true || body[field] === "true" ? true : (body[field] === false || body[field] === "false" ? false : null);
           }
         }
 
-        if (body.embryoCount !== undefined) {
-          const num = parseInt(String(body.embryoCount), 10);
-          // embryoCount is Int @default(0) - non-nullable, skip null
-          if (!isNaN(num) && num >= 0) profileData.embryoCount = num;
+        // Nullable int fields
+        const nullableIntFields = [
+          "embryoCount",
+          "surrogateMaxCSections", "surrogateMaxMiscarriages",
+          "surrogateMaxAbortions", "surrogateLastDeliveryYear",
+          "spermDonorMaxPrice",
+        ];
+        for (const field of nullableIntFields) {
+          if (body[field] !== undefined) {
+            if (body[field] === null || body[field] === "") {
+              profileData[field] = null;
+            } else {
+              const num = parseInt(String(body[field]), 10);
+              if (!isNaN(num) && num >= 0) profileData[field] = num;
+            }
+          }
         }
 
         if (Object.keys(profileData).length > 0) {

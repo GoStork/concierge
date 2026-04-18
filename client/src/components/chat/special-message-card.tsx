@@ -1,5 +1,5 @@
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { CheckCircle2, FileText, Download, Video, CalendarDays, ExternalLink } from "lucide-react";
+import { CheckCircle2, FileText, Download, Video, CalendarDays, ExternalLink, UserCheck } from "lucide-react";
 import type { SessionMessage } from "./chat-types";
 
 interface SpecialMessageCardProps {
@@ -105,6 +105,27 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
           </div>
           <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
         </a>
+      </div>
+    );
+  }
+
+  if (msg.uiCardType === "signer_signed") {
+    const signerName = data.signerName || "Signer";
+    return (
+      <div className="mt-1" data-testid="signer-signed-card">
+        <div
+          className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border-2 bg-background"
+          style={{ borderColor: brandColor }}
+        >
+          <div className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: brandColor }}>
+            <UserCheck className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">{signerName} Signed</p>
+            <p className="text-xs text-muted-foreground">Has signed the agreement</p>
+          </div>
+          <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: brandColor }} />
+        </div>
       </div>
     );
   }

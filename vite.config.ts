@@ -2,6 +2,9 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+import { config as dotenvConfig } from "dotenv";
+
+dotenvConfig();
 
 export default defineConfig({
   plugins: [
@@ -34,16 +37,12 @@ export default defineConfig({
       output: {
         manualChunks: (id) => {
           if (id.includes("node_modules")) {
-            // react-router and remix-run have no circular deps with react
             if (id.includes("react-router") || id.includes("@remix-run") || id.includes("wouter")) {
               return "vendor-router";
             }
-            // tanstack/zod/react-hook-form are self-contained
             if (id.includes("@tanstack") || id.includes("zod") || id.includes("react-hook-form")) {
               return "vendor-utils";
             }
-            // Everything else (react, react-dom, radix-ui, lucide, date-fns, etc.)
-            // stays in one chunk to avoid circular dependency issues
             return "vendor";
           }
         },
@@ -56,5 +55,12 @@ export default defineConfig({
       deny: ["**/.*"],
     },
     allowedHosts: [".ngrok-free.app", ".ngrok.io"],
+    hmr: process.env.VITE_HMR_HOST
+      ? {
+          protocol: "wss",
+          host: process.env.VITE_HMR_HOST,
+          clientPort: 443,
+        }
+      : true,
   },
 });

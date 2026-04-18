@@ -25,6 +25,7 @@ import DocumentsTab from "@/components/documents-tab";
 import ScrapersSummaryPage from "@/pages/scrapers-summary-page";
 import { hasProviderRole, isParentAccountAdmin } from "@shared/roles";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -97,6 +98,37 @@ function AccountTab() {
   const [editDonorEthnicity, setEditDonorEthnicity] = useState("");
   const [editSpermDonorType, setEditSpermDonorType] = useState("");
   const [editSpermDonorPreferences, setEditSpermDonorPreferences] = useState("");
+  const [editEggDonorAgeRange, setEditEggDonorAgeRange] = useState("");
+  const [editEggDonorCompensationRange, setEditEggDonorCompensationRange] = useState("");
+  const [editEggDonorTotalCostRange, setEditEggDonorTotalCostRange] = useState("");
+  const [editEggDonorLotCostRange, setEditEggDonorLotCostRange] = useState("");
+  const [editEggDonorEggType, setEditEggDonorEggType] = useState("");
+  const [editEggDonorDonationType, setEditEggDonorDonationType] = useState("");
+  const [editClinicAgeGroup, setEditClinicAgeGroup] = useState("");
+  // Surrogate extended preferences
+  const [editSurrogateRace, setEditSurrogateRace] = useState("");
+  const [editSurrogateEthnicity, setEditSurrogateEthnicity] = useState("");
+  const [editSurrogateRelationship, setEditSurrogateRelationship] = useState("");
+  const [editSurrogateBmiRange, setEditSurrogateBmiRange] = useState("");
+  const [editSurrogateTotalCostRange, setEditSurrogateTotalCostRange] = useState("");
+  const [editSurrogateLiveBirthsRange, setEditSurrogateLiveBirthsRange] = useState("");
+  const [editClinicPriorityTags, setEditClinicPriorityTags] = useState("");
+  const [editSurrogateMaxCSections, setEditSurrogateMaxCSections] = useState("");
+  const [editSurrogateMaxMiscarriages, setEditSurrogateMaxMiscarriages] = useState("");
+  const [editSurrogateMaxAbortions, setEditSurrogateMaxAbortions] = useState("");
+  const [editSurrogateLastDeliveryYear, setEditSurrogateLastDeliveryYear] = useState("");
+  const [editSurrogateCovidVaccinated, setEditSurrogateCovidVaccinated] = useState("");
+  const [editSurrogateSelectiveReduction, setEditSurrogateSelectiveReduction] = useState("");
+  const [editSurrogateInternationalParents, setEditSurrogateInternationalParents] = useState("");
+  // Sperm donor extended preferences
+  const [editSpermDonorAgeRange, setEditSpermDonorAgeRange] = useState("");
+  const [editSpermDonorEyeColor, setEditSpermDonorEyeColor] = useState("");
+  const [editSpermDonorHairColor, setEditSpermDonorHairColor] = useState("");
+  const [editSpermDonorHeightRange, setEditSpermDonorHeightRange] = useState("");
+  const [editSpermDonorRace, setEditSpermDonorRace] = useState("");
+  const [editSpermDonorEthnicity, setEditSpermDonorEthnicity] = useState("");
+  const [editSpermDonorEducation, setEditSpermDonorEducation] = useState("");
+  const [editSpermDonorMaxPrice, setEditSpermDonorMaxPrice] = useState("");
   // Current providers
   const [editCurrentAgencyName, setEditCurrentAgencyName] = useState("");
   const [editCurrentAttorneyName, setEditCurrentAttorneyName] = useState("");
@@ -166,7 +198,10 @@ function AccountTab() {
     setEditSurrogateBudget(parentProfileQuery.data?.surrogateBudget || "");
     setEditSurrogateExperience(parentProfileQuery.data?.surrogateExperience || "");
     setEditSurrogateMedPrefs(parentProfileQuery.data?.surrogateMedPrefs || "");
-    setEditSameSexCouple(parentProfileQuery.data?.sameSexCouple != null ? String(parentProfileQuery.data.sameSexCouple) : "");
+    const orientation = (user as any).sexualOrientation || "";
+    const isNonStraight = orientation && orientation.toLowerCase() !== "straight";
+    const savedSameSex = parentProfileQuery.data?.sameSexCouple;
+    setEditSameSexCouple(isNonStraight ? "true" : savedSameSex != null ? String(savedSameSex) : "");
     // Donor
     setEditDonorPreferences(parentProfileQuery.data?.donorPreferences || "");
     setEditDonorEyeColor(parentProfileQuery.data?.donorEyeColor || "");
@@ -176,6 +211,37 @@ function AccountTab() {
     setEditDonorEthnicity(parentProfileQuery.data?.donorEthnicity || "");
     setEditSpermDonorType(parentProfileQuery.data?.spermDonorType || "");
     setEditSpermDonorPreferences(parentProfileQuery.data?.spermDonorPreferences || "");
+    setEditEggDonorAgeRange(parentProfileQuery.data?.eggDonorAgeRange || "");
+    setEditEggDonorCompensationRange(parentProfileQuery.data?.eggDonorCompensationRange || "");
+    setEditEggDonorTotalCostRange(parentProfileQuery.data?.eggDonorTotalCostRange || "");
+    setEditEggDonorLotCostRange(parentProfileQuery.data?.eggDonorLotCostRange || "");
+    setEditEggDonorEggType(parentProfileQuery.data?.eggDonorEggType || "");
+    setEditEggDonorDonationType(parentProfileQuery.data?.eggDonorDonationType || "");
+    setEditClinicAgeGroup(parentProfileQuery.data?.clinicAgeGroup || "");
+    // Surrogate extended
+    setEditSurrogateRace(parentProfileQuery.data?.surrogateRace || "");
+    setEditSurrogateEthnicity(parentProfileQuery.data?.surrogateEthnicity || "");
+    setEditSurrogateRelationship(parentProfileQuery.data?.surrogateRelationship || "");
+    setEditSurrogateBmiRange(parentProfileQuery.data?.surrogateBmiRange || "");
+    setEditSurrogateTotalCostRange(parentProfileQuery.data?.surrogateTotalCostRange || "");
+    setEditSurrogateLiveBirthsRange(parentProfileQuery.data?.surrogateLiveBirthsRange || "");
+    setEditClinicPriorityTags(parentProfileQuery.data?.clinicPriorityTags || "");
+    setEditSurrogateMaxCSections(parentProfileQuery.data?.surrogateMaxCSections != null ? String(parentProfileQuery.data.surrogateMaxCSections) : "");
+    setEditSurrogateMaxMiscarriages(parentProfileQuery.data?.surrogateMaxMiscarriages != null ? String(parentProfileQuery.data.surrogateMaxMiscarriages) : "");
+    setEditSurrogateMaxAbortions(parentProfileQuery.data?.surrogateMaxAbortions != null ? String(parentProfileQuery.data.surrogateMaxAbortions) : "");
+    setEditSurrogateLastDeliveryYear(parentProfileQuery.data?.surrogateLastDeliveryYear != null ? String(parentProfileQuery.data.surrogateLastDeliveryYear) : "");
+    setEditSurrogateCovidVaccinated(parentProfileQuery.data?.surrogateCovidVaccinated != null ? String(parentProfileQuery.data.surrogateCovidVaccinated) : "");
+    setEditSurrogateSelectiveReduction(parentProfileQuery.data?.surrogateSelectiveReduction != null ? String(parentProfileQuery.data.surrogateSelectiveReduction) : "");
+    setEditSurrogateInternationalParents(parentProfileQuery.data?.surrogateInternationalParents != null ? String(parentProfileQuery.data.surrogateInternationalParents) : "");
+    // Sperm donor extended
+    setEditSpermDonorAgeRange(parentProfileQuery.data?.spermDonorAgeRange || "");
+    setEditSpermDonorEyeColor(parentProfileQuery.data?.spermDonorEyeColor || "");
+    setEditSpermDonorHairColor(parentProfileQuery.data?.spermDonorHairColor || "");
+    setEditSpermDonorHeightRange(parentProfileQuery.data?.spermDonorHeightRange || "");
+    setEditSpermDonorRace(parentProfileQuery.data?.spermDonorRace || "");
+    setEditSpermDonorEthnicity(parentProfileQuery.data?.spermDonorEthnicity || "");
+    setEditSpermDonorEducation(parentProfileQuery.data?.spermDonorEducation || "");
+    setEditSpermDonorMaxPrice(parentProfileQuery.data?.spermDonorMaxPrice != null ? String(parentProfileQuery.data.spermDonorMaxPrice) : "");
     // Providers
     setEditCurrentAgencyName(parentProfileQuery.data?.currentAgencyName || "");
     setEditCurrentAttorneyName(parentProfileQuery.data?.currentAttorneyName || "");
@@ -260,6 +326,37 @@ function AccountTab() {
           payload.donorEthnicity = editDonorEthnicity || null;
           payload.spermDonorType = editSpermDonorType || null;
           payload.spermDonorPreferences = editSpermDonorPreferences || null;
+          payload.eggDonorAgeRange = editEggDonorAgeRange || null;
+          payload.eggDonorCompensationRange = editEggDonorCompensationRange || null;
+          payload.eggDonorTotalCostRange = editEggDonorTotalCostRange || null;
+          payload.eggDonorLotCostRange = editEggDonorLotCostRange || null;
+          payload.eggDonorEggType = editEggDonorEggType || null;
+          payload.eggDonorDonationType = editEggDonorDonationType || null;
+          payload.clinicAgeGroup = editClinicAgeGroup || null;
+          // Surrogate extended
+          payload.surrogateRace = editSurrogateRace || null;
+          payload.surrogateEthnicity = editSurrogateEthnicity || null;
+          payload.surrogateRelationship = editSurrogateRelationship || null;
+          payload.surrogateBmiRange = editSurrogateBmiRange || null;
+          payload.surrogateTotalCostRange = editSurrogateTotalCostRange || null;
+          payload.surrogateLiveBirthsRange = editSurrogateLiveBirthsRange || null;
+          payload.clinicPriorityTags = editClinicPriorityTags || null;
+          payload.surrogateMaxCSections = editSurrogateMaxCSections !== "" ? Number(editSurrogateMaxCSections) : null;
+          payload.surrogateMaxMiscarriages = editSurrogateMaxMiscarriages !== "" ? Number(editSurrogateMaxMiscarriages) : null;
+          payload.surrogateMaxAbortions = editSurrogateMaxAbortions !== "" ? Number(editSurrogateMaxAbortions) : null;
+          payload.surrogateLastDeliveryYear = editSurrogateLastDeliveryYear !== "" ? Number(editSurrogateLastDeliveryYear) : null;
+          payload.surrogateCovidVaccinated = editSurrogateCovidVaccinated !== "" ? editSurrogateCovidVaccinated === "true" : null;
+          payload.surrogateSelectiveReduction = editSurrogateSelectiveReduction !== "" ? editSurrogateSelectiveReduction === "true" : null;
+          payload.surrogateInternationalParents = editSurrogateInternationalParents !== "" ? editSurrogateInternationalParents === "true" : null;
+          // Sperm donor extended
+          payload.spermDonorAgeRange = editSpermDonorAgeRange || null;
+          payload.spermDonorEyeColor = editSpermDonorEyeColor || null;
+          payload.spermDonorHairColor = editSpermDonorHairColor || null;
+          payload.spermDonorHeightRange = editSpermDonorHeightRange || null;
+          payload.spermDonorRace = editSpermDonorRace || null;
+          payload.spermDonorEthnicity = editSpermDonorEthnicity || null;
+          payload.spermDonorEducation = editSpermDonorEducation || null;
+          payload.spermDonorMaxPrice = editSpermDonorMaxPrice !== "" ? Number(editSpermDonorMaxPrice) : null;
           // Providers
           payload.currentAgencyName = editCurrentAgencyName || null;
           payload.currentAttorneyName = editCurrentAttorneyName || null;
@@ -327,12 +424,51 @@ function AccountTab() {
     }
   }
 
+  // Keep "Open to Same-Sex Couple" in sync when orientation changes during editing
+  useEffect(() => {
+    if (!editing) return;
+    if (editOrientation && editOrientation.toLowerCase() !== "straight") {
+      setEditSameSexCouple("true");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editOrientation]);
+
   useEffect(() => {
     if (!editing) { setIsDirty(false); return; }
     if (isInitializingRef.current) { isInitializingRef.current = false; setIsDirty(false); return; }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, editName, editMobile, editPassword, confirmPassword, editLocation, editGender, editOrientation, editRelationship, editAge, editPartnerName, editPartnerAge, editServices, editJourneyStage, editIsFirstIvf, editEggSource, editSpermSource, editCarrier, editHasEmbryos, editEmbryoCount, editEmbryosTested, editNeedsClinic, editCurrentClinicName, editClinicPriority, editSurrogateCountries, editSurrogateTermination, editSurrogateTwins, editSurrogateAgeRange, editSurrogateBudget, editSurrogateExperience, editSurrogateMedPrefs, editSameSexCouple, editDonorPreferences, editDonorEyeColor, editDonorHairColor, editDonorHeight, editDonorEducation, editDonorEthnicity, editSpermDonorType, editSpermDonorPreferences, editCurrentAgencyName, editCurrentAttorneyName]);
+  }, [editing, editName, editMobile, editPassword, confirmPassword, editLocation, editGender, editOrientation, editRelationship, editAge, editPartnerName, editPartnerAge, editServices, editJourneyStage, editIsFirstIvf, editEggSource, editSpermSource, editCarrier, editHasEmbryos, editEmbryoCount, editEmbryosTested, editNeedsClinic, editCurrentClinicName, editClinicPriority, editClinicPriorityTags, editSurrogateCountries, editSurrogateTermination, editSurrogateTwins, editSurrogateAgeRange, editSurrogateBudget, editSurrogateExperience, editSurrogateMedPrefs, editSameSexCouple, editSurrogateRace, editSurrogateEthnicity, editSurrogateRelationship, editSurrogateBmiRange, editSurrogateTotalCostRange, editSurrogateLiveBirthsRange, editSurrogateMaxCSections, editSurrogateMaxMiscarriages, editSurrogateMaxAbortions, editSurrogateLastDeliveryYear, editSurrogateCovidVaccinated, editSurrogateSelectiveReduction, editSurrogateInternationalParents, editDonorPreferences, editDonorEyeColor, editDonorHairColor, editDonorHeight, editDonorEducation, editDonorEthnicity, editSpermDonorType, editSpermDonorPreferences, editSpermDonorAgeRange, editSpermDonorEyeColor, editSpermDonorHairColor, editSpermDonorHeightRange, editSpermDonorRace, editSpermDonorEthnicity, editSpermDonorEducation, editSpermDonorMaxPrice, editEggDonorAgeRange, editEggDonorCompensationRange, editEggDonorTotalCostRange, editEggDonorLotCostRange, editEggDonorEggType, editEggDonorDonationType, editClinicAgeGroup, editCurrentAgencyName, editCurrentAttorneyName]);
+
+  // Derive gender-aware options for biological baseline fields
+  // Gender is stored as "I'm a man" / "I'm a woman" / "I'm non-binary"
+  const currentGender = (editing ? editGender : ((user as any).gender || "")).toLowerCase();
+  const isMan = currentGender === "i'm a man" || currentGender === "man";
+
+  const eggSourceOptions = isMan
+    ? ["Egg donor", "Donated embryos"]
+    : ["Own eggs", "Egg donor", "Donated embryos"];
+
+  const spermSourceOptions = isMan
+    ? ["My sperm", "Sperm donor", "Known donor"]
+    : ["Partner/Spouse", "Sperm donor", "Known donor"];
+
+  const carrierOptions = isMan
+    ? ["Gestational surrogate"]
+    : ["Self carrying", "Gestational surrogate"];
+
+  // Egg donor cost slider visibility based on egg type selection
+  const currentEggType = editing ? editEggDonorEggType : (parentProfileQuery.data?.eggDonorEggType || "");
+  const showFreshCosts = currentEggType !== "Frozen";   // Fresh, Either, or unspecified
+  const showFrozenCost = currentEggType !== "Fresh";    // Frozen, Either, or unspecified
+
+  // Countries that GoStork works with for surrogacy
+  const SURROGACY_COUNTRIES = [
+    "United States", "Colombia", "Mexico", "Canada",
+    "Ukraine", "Georgia", "Cyprus", "Greece", "Czech Republic",
+    "Israel", "Australia", "Portugal", "Albania", "Belarus",
+    "Taiwan", "Cambodia", "Argentina", "Kenya", "South Africa",
+  ];
 
   return (
     <>
@@ -745,7 +881,8 @@ function AccountTab() {
           editing={editing}
           data={parentProfileQuery.data}
           fields={[
-            { label: "Stage", key: "journeyStage", value: editJourneyStage, setter: setEditJourneyStage, type: "text" },
+            { label: "Stage", key: "journeyStage", value: editJourneyStage, setter: setEditJourneyStage, type: "select",
+              options: ["Just started researching", "In consultation", "Agency selected", "Match in progress", "IVF in progress", "Egg retrieval complete", "Transfer complete"] },
             { label: "First IVF", key: "isFirstIvf", value: editIsFirstIvf, setter: setEditIsFirstIvf, type: "yesno",
               display: (v: any) => v === true || v === "true" ? "Yes" : v === false || v === "false" ? "No" : null },
           ]}
@@ -757,9 +894,12 @@ function AccountTab() {
           editing={editing}
           data={parentProfileQuery.data}
           fields={[
-            { label: "Egg Source", key: "eggSource", value: editEggSource, setter: setEditEggSource, type: "text" },
-            { label: "Sperm Source", key: "spermSource", value: editSpermSource, setter: setEditSpermSource, type: "text" },
-            { label: "Carrier", key: "carrier", value: editCarrier, setter: setEditCarrier, type: "text" },
+            { label: "Egg Source", key: "eggSource", value: editEggSource, setter: setEditEggSource, type: "select",
+              options: eggSourceOptions },
+            { label: "Sperm Source", key: "spermSource", value: editSpermSource, setter: setEditSpermSource, type: "select",
+              options: spermSourceOptions },
+            { label: "Carrier", key: "carrier", value: editCarrier, setter: setEditCarrier, type: "select",
+              options: carrierOptions },
             { label: "Has Embryos", key: "hasEmbryos", value: editHasEmbryos, setter: setEditHasEmbryos, type: "yesno",
               display: (v: any, d?: any) => {
                 if (v !== true && v !== false && v !== "true" && v !== "false") return null;
@@ -780,14 +920,18 @@ function AccountTab() {
 
         {/* Clinic Preferences */}
         <ProfileSection
-          title="Clinic Preferences"
+          title="IVF Clinic Preferences"
           editing={editing}
           data={parentProfileQuery.data}
           fields={[
             { label: "Needs Clinic", key: "needsClinic", value: editNeedsClinic, setter: setEditNeedsClinic, type: "yesno",
               display: (v: any) => v === true || v === "true" ? "Yes - needs a clinic" : v === false || v === "false" ? "No - has one" : null },
             { label: "Current Clinic", key: "currentClinicName", value: editCurrentClinicName, setter: setEditCurrentClinicName, type: "text" },
-            { label: "Clinic Priority", key: "clinicPriority", value: editClinicPriority, setter: setEditClinicPriority, type: "textarea" },
+            { label: "Patient Age Group", key: "clinicAgeGroup", value: editClinicAgeGroup, setter: setEditClinicAgeGroup, type: "select",
+              options: ["Under 35", "35-37", "38-40", "Over 40"] },
+            { label: "What matters most to you in a clinic?", key: "clinicPriorityTags", value: editClinicPriorityTags, setter: setEditClinicPriorityTags, type: "multiselect",
+              options: ["Success rates", "Location", "Cost", "Volume of cycles", "Physician gender", "LGBTQ+ friendly", "Donor egg program", "Gestational carrier program", "Language support", "Personalized care"] },
+            { label: "Additional notes", key: "clinicPriority", value: editClinicPriority, setter: setEditClinicPriority, type: "textarea" },
           ]}
         />
 
@@ -797,32 +941,118 @@ function AccountTab() {
           editing={editing}
           data={parentProfileQuery.data}
           fields={[
-            { label: "Same-Sex Couple", key: "sameSexCouple", value: editSameSexCouple, setter: setEditSameSexCouple, type: "yesno",
+            { label: "Surrogate Age Range", key: "surrogateAgeRange", value: editSurrogateAgeRange, setter: setEditSurrogateAgeRange, type: "range",
+              rangeMin: 18, rangeMax: 45, rangeStep: 1 },
+            { label: "BMI Range", key: "surrogateBmiRange", value: editSurrogateBmiRange, setter: setEditSurrogateBmiRange, type: "range",
+              rangeMin: 16, rangeMax: 40, rangeStep: 1 },
+            { label: "Base Compensation", key: "surrogateBudget", value: editSurrogateBudget, setter: setEditSurrogateBudget, type: "range",
+              rangeMin: 0, rangeMax: 200000, rangeStep: 5000, rangeUnit: "$" },
+            { label: "Total Cost", key: "surrogateTotalCostRange", value: editSurrogateTotalCostRange, setter: setEditSurrogateTotalCostRange, type: "range",
+              rangeMin: 0, rangeMax: 500000, rangeStep: 10000, rangeUnit: "$" },
+            { label: "Race", key: "surrogateRace", value: editSurrogateRace, setter: setEditSurrogateRace, type: "multiselect",
+              options: ["Asian", "Black", "Hispanic", "White", "Mixed", "Other"] },
+            { label: "Ethnicity", key: "surrogateEthnicity", value: editSurrogateEthnicity, setter: setEditSurrogateEthnicity, type: "multiselect",
+              options: ["Brazilian", "Chinese", "Colombian", "Cuban", "English", "Ethiopian", "Filipino", "French", "German", "Haitian",
+                "Indian", "Irish", "Israeli", "Italian", "Jamaican", "Japanese", "Korean", "Mexican", "Middle Eastern",
+                "Nigerian", "Persian", "Polish", "Puerto Rican", "Russian", "Turkish", "Vietnamese", "Other"] },
+            { label: "Relationship Status", key: "surrogateRelationship", value: editSurrogateRelationship, setter: setEditSurrogateRelationship, type: "multiselect",
+              options: ["Single", "Married", "Partnered", "Divorced"] },
+            { label: "Live Births Range", key: "surrogateLiveBirthsRange", value: editSurrogateLiveBirthsRange, setter: setEditSurrogateLiveBirthsRange, type: "range",
+              rangeMin: 0, rangeMax: 10, rangeStep: 1 },
+            { label: "Max C-Sections", key: "surrogateMaxCSections", value: editSurrogateMaxCSections, setter: setEditSurrogateMaxCSections, type: "singleslider",
+              rangeMin: 0, rangeMax: 5, rangeStep: 1 },
+            { label: "Max Miscarriages", key: "surrogateMaxMiscarriages", value: editSurrogateMaxMiscarriages, setter: setEditSurrogateMaxMiscarriages, type: "singleslider",
+              rangeMin: 0, rangeMax: 5, rangeStep: 1 },
+            { label: "Max Abortions", key: "surrogateMaxAbortions", value: editSurrogateMaxAbortions, setter: setEditSurrogateMaxAbortions, type: "singleslider",
+              rangeMin: 0, rangeMax: 5, rangeStep: 1 },
+            { label: "Last Delivery Year (since)", key: "surrogateLastDeliveryYear", value: editSurrogateLastDeliveryYear, setter: setEditSurrogateLastDeliveryYear, type: "number" },
+            { label: "Agrees to Twins", key: "surrogateTwins", value: editSurrogateTwins, setter: setEditSurrogateTwins, type: "select",
+              options: ["Yes", "No"] },
+            { label: "Agrees to Selective Reduction", key: "surrogateSelectiveReduction", value: editSurrogateSelectiveReduction, setter: setEditSurrogateSelectiveReduction, type: "yesno",
               display: (v: any) => v === true || v === "true" ? "Yes" : v === false || v === "false" ? "No" : null },
-            { label: "Countries Open To", key: "surrogateCountries", value: editSurrogateCountries, setter: setEditSurrogateCountries, type: "text" },
-            { label: "Termination Preference", key: "surrogateTermination", value: editSurrogateTermination, setter: setEditSurrogateTermination, type: "text" },
-            { label: "Twins", key: "surrogateTwins", value: editSurrogateTwins, setter: setEditSurrogateTwins, type: "text" },
-            { label: "Surrogate Age Range", key: "surrogateAgeRange", value: editSurrogateAgeRange, setter: setEditSurrogateAgeRange, type: "text" },
-            { label: "Budget", key: "surrogateBudget", value: editSurrogateBudget, setter: setEditSurrogateBudget, type: "text" },
-            { label: "Experience Preference", key: "surrogateExperience", value: editSurrogateExperience, setter: setEditSurrogateExperience, type: "text" },
+            { label: "Open to International Parents", key: "surrogateInternationalParents", value: editSurrogateInternationalParents, setter: setEditSurrogateInternationalParents, type: "yesno",
+              display: (v: any) => v === true || v === "true" ? "Yes" : v === false || v === "false" ? "No" : null },
+            { label: "Open to Same-Sex Couple", key: "sameSexCouple", value: editSameSexCouple, setter: setEditSameSexCouple, type: "yesno",
+              display: (v: any) => v === true || v === "true" ? "Yes" : v === false || v === "false" ? "No" : null },
+            { label: "COVID Vaccinated Required", key: "surrogateCovidVaccinated", value: editSurrogateCovidVaccinated, setter: setEditSurrogateCovidVaccinated, type: "yesno",
+              display: (v: any) => v === true || v === "true" ? "Yes" : v === false || v === "false" ? "No" : null },
+            { label: "Termination Preference", key: "surrogateTermination", value: editSurrogateTermination, setter: setEditSurrogateTermination, type: "select",
+              options: ["Required", "Preferred", "Open to discuss", "No preference"] },
+            { label: "Experience Preference", key: "surrogateExperience", value: editSurrogateExperience, setter: setEditSurrogateExperience, type: "select",
+              options: ["First-time ok", "Experienced preferred", "Experienced only", "No preference"] },
+            { label: "Countries Open To", key: "surrogateCountries", value: editSurrogateCountries, setter: setEditSurrogateCountries, type: "multiselect",
+              options: SURROGACY_COUNTRIES },
             { label: "Medical Preferences", key: "surrogateMedPrefs", value: editSurrogateMedPrefs, setter: setEditSurrogateMedPrefs, type: "textarea" },
           ]}
         />
 
-        {/* Donor Preferences */}
+        {/* Egg Donor Preferences */}
         <ProfileSection
-          title="Donor Preferences"
+          title="Egg Donor Preferences"
           editing={editing}
           data={parentProfileQuery.data}
           fields={[
+            { label: "Donor Age Range", key: "eggDonorAgeRange", value: editEggDonorAgeRange, setter: setEditEggDonorAgeRange, type: "range",
+              rangeMin: 18, rangeMax: 45, rangeStep: 1 },
+            { label: "Egg Type", key: "eggDonorEggType", value: editEggDonorEggType, setter: setEditEggDonorEggType, type: "select",
+              options: ["Fresh", "Frozen", "Either"] },
+            { label: "Donor Compensation", key: "eggDonorCompensationRange", value: editEggDonorCompensationRange, setter: setEditEggDonorCompensationRange, type: "range",
+              rangeMin: 0, rangeMax: 200000, rangeStep: 5000, rangeUnit: "$", showIf: showFreshCosts },
+            { label: "Total Cost", key: "eggDonorTotalCostRange", value: editEggDonorTotalCostRange, setter: setEditEggDonorTotalCostRange, type: "range",
+              rangeMin: 0, rangeMax: 200000, rangeStep: 5000, rangeUnit: "$", showIf: showFreshCosts },
+            { label: "Egg Lot Cost", key: "eggDonorLotCostRange", value: editEggDonorLotCostRange, setter: setEditEggDonorLotCostRange, type: "range",
+              rangeMin: 0, rangeMax: 50000, rangeStep: 500, rangeUnit: "$", showIf: showFrozenCost },
             { label: "Preferences Summary", key: "donorPreferences", value: editDonorPreferences, setter: setEditDonorPreferences, type: "textarea" },
-            { label: "Sperm Donor Type", key: "spermDonorType", value: editSpermDonorType, setter: setEditSpermDonorType, type: "text" },
-            { label: "Sperm Donor Preferences", key: "spermDonorPreferences", value: editSpermDonorPreferences, setter: setEditSpermDonorPreferences, type: "textarea" },
-            { label: "Eye Color", key: "donorEyeColor", value: editDonorEyeColor, setter: setEditDonorEyeColor, type: "text" },
-            { label: "Hair Color", key: "donorHairColor", value: editDonorHairColor, setter: setEditDonorHairColor, type: "text" },
-            { label: "Height", key: "donorHeight", value: editDonorHeight, setter: setEditDonorHeight, type: "text" },
-            { label: "Education", key: "donorEducation", value: editDonorEducation, setter: setEditDonorEducation, type: "text" },
-            { label: "Ethnicity", key: "donorEthnicity", value: editDonorEthnicity, setter: setEditDonorEthnicity, type: "text" },
+            { label: "Donation Type", key: "eggDonorDonationType", value: editEggDonorDonationType, setter: setEditEggDonorDonationType, type: "select",
+              options: ["Anonymous", "Semi-Open", "Open ID", "Known"] },
+            { label: "Eye Color", key: "donorEyeColor", value: editDonorEyeColor, setter: setEditDonorEyeColor, type: "multiselect",
+              options: ["Brown", "Blue", "Green", "Hazel", "Gray", "Amber"] },
+            { label: "Hair Color", key: "donorHairColor", value: editDonorHairColor, setter: setEditDonorHairColor, type: "multiselect",
+              options: ["Black", "Brown", "Blonde", "Red", "Auburn", "Gray"] },
+            { label: "Height Range", key: "donorHeight", value: editDonorHeight, setter: setEditDonorHeight, type: "range",
+              rangeMin: 48, rangeMax: 84, rangeStep: 1,
+              formatValue: (v: number) => { const ft = Math.floor(v / 12); return `${ft}'${v % 12}"`; } },
+            { label: "Education", key: "donorEducation", value: editDonorEducation, setter: setEditDonorEducation, type: "select",
+              options: ["High School", "Some College", "Associate", "Bachelor", "Master", "Doctorate"] },
+            { label: "Ethnicity", key: "donorEthnicity", value: editDonorEthnicity, setter: setEditDonorEthnicity, type: "multiselect",
+              options: ["Asian", "Black", "Hispanic", "White", "Mixed", "Other",
+                "Chinese", "Japanese", "Korean", "Vietnamese", "Filipino", "Indian",
+                "Mexican", "Puerto Rican", "Cuban", "Colombian",
+                "Italian", "Irish", "German", "French", "English", "Polish", "Russian",
+                "Nigerian", "Ethiopian", "Jamaican", "Haitian",
+                "Middle Eastern", "Persian", "Turkish", "Brazilian"] },
+          ]}
+        />
+
+        {/* Sperm Donor Preferences */}
+        <ProfileSection
+          title="Sperm Donor Preferences"
+          editing={editing}
+          data={parentProfileQuery.data}
+          fields={[
+            { label: "Donor Age Range", key: "spermDonorAgeRange", value: editSpermDonorAgeRange, setter: setEditSpermDonorAgeRange, type: "range",
+              rangeMin: 18, rangeMax: 45, rangeStep: 1 },
+            { label: "Height Range", key: "spermDonorHeightRange", value: editSpermDonorHeightRange, setter: setEditSpermDonorHeightRange, type: "range",
+              rangeMin: 48, rangeMax: 84, rangeStep: 1,
+              formatValue: (v: number) => { const ft = Math.floor(v / 12); return `${ft}'${v % 12}"`; } },
+            { label: "Max Cost", key: "spermDonorMaxPrice", value: editSpermDonorMaxPrice, setter: setEditSpermDonorMaxPrice, type: "singleslider",
+              rangeMin: 0, rangeMax: 5000, rangeStep: 100,
+              formatValue: (v: number) => `$${v.toLocaleString()}` },
+            { label: "Eye Color", key: "spermDonorEyeColor", value: editSpermDonorEyeColor, setter: setEditSpermDonorEyeColor, type: "multiselect",
+              options: ["Brown", "Blue", "Green", "Hazel", "Gray", "Amber"] },
+            { label: "Hair Color", key: "spermDonorHairColor", value: editSpermDonorHairColor, setter: setEditSpermDonorHairColor, type: "multiselect",
+              options: ["Black", "Brown", "Blonde", "Red", "Auburn", "Gray"] },
+            { label: "Race", key: "spermDonorRace", value: editSpermDonorRace, setter: setEditSpermDonorRace, type: "multiselect",
+              options: ["Asian", "Black", "Hispanic", "White", "Mixed", "Other"] },
+            { label: "Ethnicity", key: "spermDonorEthnicity", value: editSpermDonorEthnicity, setter: setEditSpermDonorEthnicity, type: "multiselect",
+              options: ["Brazilian", "Chinese", "Colombian", "Cuban", "English", "Ethiopian", "Filipino", "French", "German", "Haitian",
+                "Indian", "Irish", "Israeli", "Italian", "Jamaican", "Japanese", "Korean", "Mexican", "Middle Eastern",
+                "Nigerian", "Persian", "Polish", "Puerto Rican", "Russian", "Turkish", "Vietnamese", "Other"] },
+            { label: "Education", key: "spermDonorEducation", value: editSpermDonorEducation, setter: setEditSpermDonorEducation, type: "select",
+              options: ["High School", "Some College", "Associate", "Bachelor", "Master", "Doctorate"] },
+            { label: "Donor Type", key: "spermDonorType", value: editSpermDonorType, setter: setEditSpermDonorType, type: "select",
+              options: ["ID Release", "Non-ID Release"] },
+            { label: "Additional Preferences", key: "spermDonorPreferences", value: editSpermDonorPreferences, setter: setEditSpermDonorPreferences, type: "textarea" },
           ]}
         />
 
@@ -847,7 +1077,14 @@ type ProfileFieldDef = {
   key: string;
   value: string;
   setter: (v: string) => void;
-  type: "text" | "textarea" | "number" | "yesno";
+  type: "text" | "textarea" | "number" | "yesno" | "select" | "multiselect" | "range" | "singleslider";
+  options?: string[];
+  // for range / singleslider types
+  rangeMin?: number;
+  rangeMax?: number;
+  rangeStep?: number;
+  rangeUnit?: string; // "$", "", etc.
+  formatValue?: (v: number) => string;
   display?: (v: any, data?: any) => string | null;
   showIf?: boolean;
 };
@@ -891,6 +1128,103 @@ function ProfileSection({ title, editing, data, fields }: {
                 </div>
               );
             }
+            if (f.type === "select") {
+              return (
+                <div key={f.key} className="space-y-2">
+                  <Label>{f.label}</Label>
+                  <Select value={f.value || "__none__"} onValueChange={v => f.setter(v === "__none__" ? "" : v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">-- Not specified --</SelectItem>
+                      {(f.options || []).map(opt => (
+                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              );
+            }
+            if (f.type === "multiselect") {
+              const selected = f.value ? f.value.split(",").map(s => s.trim().toLowerCase()).filter(Boolean) : [];
+              const toggle = (opt: string) => {
+                const key = opt.toLowerCase();
+                const next = selected.includes(key)
+                  ? selected.filter(s => s !== key)
+                  : [...selected, key];
+                f.setter(next.join(","));
+              };
+              return (
+                <div key={f.key} className="space-y-2 md:col-span-2">
+                  <Label>{f.label}</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(f.options || []).map(opt => {
+                      const isSelected = selected.includes(opt.toLowerCase());
+                      return (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => toggle(opt)}
+                          className={`px-3 py-1 text-sm rounded-full border transition-colors font-ui ${
+                            isSelected
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-background text-foreground border-border hover:bg-secondary/60"
+                          }`}
+                        >
+                          {opt}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            }
+            if (f.type === "range") {
+              const min = f.rangeMin ?? 0;
+              const max = f.rangeMax ?? 100;
+              const step = f.rangeStep ?? 1;
+              const parts = f.value ? f.value.split(",") : [];
+              const lo = parts[0] ? Number(parts[0]) : min;
+              const hi = parts[1] ? Number(parts[1]) : max;
+              const fmt = f.formatValue ?? ((v: number) => f.rangeUnit === "$" ? `$${v.toLocaleString()}` : String(v));
+              return (
+                <div key={f.key} className="space-y-3 md:col-span-2">
+                  <div className="flex items-center justify-between">
+                    <Label>{f.label}</Label>
+                    <span className="text-sm font-ui text-muted-foreground">{fmt(lo)} - {fmt(hi)}</span>
+                  </div>
+                  <Slider
+                    min={min} max={max} step={step}
+                    value={[lo, hi]}
+                    onValueChange={([a, b]) => f.setter(`${a},${b}`)}
+                  />
+                </div>
+              );
+            }
+            if (f.type === "singleslider") {
+              const min = f.rangeMin ?? 0;
+              const max = f.rangeMax ?? 10;
+              const step = f.rangeStep ?? 1;
+              const current = f.value !== "" ? Number(f.value) : max;
+              const fmt = f.formatValue ?? ((v: number) => String(v));
+              const isAtMax = current >= max;
+              return (
+                <div key={f.key} className="space-y-3 md:col-span-2">
+                  <div className="flex items-center justify-between">
+                    <Label>{f.label}</Label>
+                    <span className="text-sm font-ui text-muted-foreground">
+                      {isAtMax ? "Any" : `Up to ${fmt(current)}`}
+                    </span>
+                  </div>
+                  <Slider
+                    min={min} max={max} step={step}
+                    value={[current]}
+                    onValueChange={([v]) => f.setter(v >= max ? "" : String(v))}
+                  />
+                </div>
+              );
+            }
             if (f.type === "textarea") {
               return (
                 <div key={f.key} className="space-y-2 md:col-span-2">
@@ -919,12 +1253,45 @@ function ProfileSection({ title, editing, data, fields }: {
             );
           }
           // View mode - only show if value exists
-          const display = f.display ? f.display(raw, data) : (raw != null && raw !== "" ? String(raw) : null);
+          const isWide = f.type === "multiselect" || f.type === "range" || f.type === "singleslider" || f.type === "textarea";
+          const display = f.display
+            ? f.display(raw, data)
+            : (raw != null && raw !== "" ? String(raw) : null);
           if (!display) return null;
+          if (f.type === "range") {
+            const parts = display.split(",");
+            const lo = parts[0] ? Number(parts[0]) : null;
+            const hi = parts[1] ? Number(parts[1]) : null;
+            const fmt = f.formatValue ?? ((v: number) => f.rangeUnit === "$" ? `$${v.toLocaleString()}` : String(v));
+            const rangeLabel = lo != null && hi != null ? `${fmt(lo)} - ${fmt(hi)}` : display;
+            return (
+              <div key={f.key} className="space-y-1 md:col-span-2">
+                <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">{f.label}</label>
+                <p className="text-sm font-ui">{rangeLabel}</p>
+              </div>
+            );
+          }
+          if (f.type === "singleslider") {
+            const fmt = f.formatValue ?? ((v: number) => String(v));
+            return (
+              <div key={f.key} className="space-y-1">
+                <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">{f.label}</label>
+                <p className="text-sm font-ui">Up to {fmt(Number(display))}</p>
+              </div>
+            );
+          }
           return (
-            <div key={f.key} className="space-y-1">
+            <div key={f.key} className={`space-y-1 ${isWide ? "md:col-span-2" : ""}`}>
               <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">{f.label}</label>
-              <p className="text-sm font-ui">{display}</p>
+              {f.type === "multiselect" ? (
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {display.split(",").map(s => s.trim()).filter(Boolean).map(s => (
+                    <span key={s} className="px-2.5 py-0.5 rounded-full text-xs bg-secondary text-secondary-foreground border border-border font-ui">{s}</span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm font-ui">{display}</p>
+              )}
             </div>
           );
         })}

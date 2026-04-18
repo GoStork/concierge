@@ -2315,6 +2315,8 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
                 content: `${signer.name || signer.email} has signed the agreement.`,
                 senderType: "system",
                 senderName: "Eva",
+                uiCardType: "signer_signed",
+                uiCardData: { signerName: signer.name || signer.email, agreementId: agreement.id },
               },
             });
             console.log(`[PandaDoc webhook] Posted "signed" chat message for ${signer.email}`);
@@ -2445,6 +2447,8 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
                   content: `${signer.name || signer.email} has signed the agreement.`,
                   senderType: "system",
                   senderName: "Eva",
+                  uiCardType: "signer_signed",
+                  uiCardData: { signerName: signer.name || signer.email, agreementId: agreement.id },
                 },
               });
             }

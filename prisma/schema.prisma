@@ -1034,16 +1034,50 @@ model IntendedParentProfile {
   needsClinic         Boolean       @default(false)
 
   // Surrogate preferences
-  surrogateTwins       String?
-  surrogateCountries   String?
-  surrogateTermination String?
-  surrogateAgeRange    String?
-  surrogateExperience  String?
+  surrogateTwins              String?
+  surrogateCountries          String?
+  surrogateTermination        String?
+  surrogateAgeRange           String?
+  surrogateExperience         String?
+  surrogateRace               String?
+  surrogateEthnicity          String?
+  surrogateRelationship       String?
+  surrogateBmiRange           String?
+  surrogateTotalCostRange     String?
+  surrogateLiveBirthsRange    String?
+  surrogateMaxCSections       Int?
+  surrogateMaxMiscarriages    Int?
+  surrogateMaxAbortions       Int?
+  surrogateLastDeliveryYear   Int?
+  surrogateCovidVaccinated    Boolean?
+  surrogateSelectiveReduction Boolean?
+  surrogateInternationalParents Boolean?
 
   // Donor preferences (open-ended from AI conversation)
   donorPreferences        String?
   spermDonorType          String?
   spermDonorPreferences   String?
+  spermDonorAgeRange      String?
+  spermDonorEyeColor      String?
+  spermDonorHairColor     String?
+  spermDonorHeightRange   String?
+  spermDonorRace          String?
+  spermDonorEthnicity     String?
+  spermDonorEducation     String?
+  spermDonorMaxPrice      Int?
+  spermDonorCovidVaccinated Boolean?
+
+  // Egg donor specific preferences
+  eggDonorAgeRange          String?
+  eggDonorCompensationRange String?
+  eggDonorTotalCostRange    String?
+  eggDonorLotCostRange      String?
+  eggDonorEggType           String?
+  eggDonorDonationType      String?
+
+  // Clinic preferences
+  clinicAgeGroup            String?
+  clinicPriorityTags        String?
 
   // Surrogate family type
   sameSexCouple        Boolean?

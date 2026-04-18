@@ -111,7 +111,14 @@ function buildSections(user: SessionUser): ProfileSection[] {
   if (nonEmpty(p.donorPreferences)) donor.push({ label: "Preferences", value: p.donorPreferences! });
   if (nonEmpty(p.donorEyeColor)) donor.push({ label: "Eye Color", value: p.donorEyeColor! });
   if (nonEmpty(p.donorHairColor)) donor.push({ label: "Hair Color", value: p.donorHairColor! });
-  if (nonEmpty(p.donorHeight)) donor.push({ label: "Height", value: p.donorHeight! });
+  if (nonEmpty(p.donorHeight)) {
+    const fmtH = (in_: number) => { const ft = Math.floor(in_ / 12); return `${ft}'${in_ % 12}"`; };
+    const hParts = p.donorHeight!.split(",");
+    const hDisplay = hParts.length === 2
+      ? `${fmtH(Number(hParts[0]))} - ${fmtH(Number(hParts[1]))}`
+      : p.donorHeight!;
+    donor.push({ label: "Height", value: hDisplay });
+  }
   if (nonEmpty(p.donorEducation)) donor.push({ label: "Education", value: p.donorEducation! });
   if (nonEmpty(p.donorEthnicity)) donor.push({ label: "Ethnicity", value: p.donorEthnicity! });
   if (nonEmpty(p.spermDonorType)) donor.push({ label: "Sperm Donor Type", value: p.spermDonorType! });

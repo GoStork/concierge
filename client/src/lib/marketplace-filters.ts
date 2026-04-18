@@ -176,6 +176,9 @@ export function matchesFilter(donor: any, key: string, values: string[]): boolea
   if (key === "maxLiveBirths") {
     const lb = donor.liveBirths;
     if (lb == null) return true;
+    if (values.length === 2) {
+      return lb >= Number(values[0]) && lb <= Number(values[1]);
+    }
     return lb <= Number(values[0]);
   }
   if (key === "maxCSections") {

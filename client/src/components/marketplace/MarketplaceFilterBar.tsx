@@ -129,7 +129,7 @@ const FILTER_DISPLAY_NAMES: Record<string, string> = {
   openToSameSexCouple: "Same Sex Couple",
   agreesToInternationalParents: "Int'l Parents",
   covidVaccinated: "COVID Vax",
-  maxLiveBirths: "Max Live Births",
+  maxLiveBirths: "Live Births",
   maxCSections: "Max C-Sections",
   maxMiscarriages: "Max Miscarriages",
   maxAbortions: "Max Abortions",
@@ -141,7 +141,7 @@ const FILTER_DISPLAY_NAMES: Record<string, string> = {
 
 function formatFilterPills(filters: Record<string, string[]>): { key: string; label: string }[] {
   const pills: { key: string; label: string }[] = [];
-  const SINGLE_VALUE_KEYS = new Set(["maxLiveBirths", "maxCSections", "maxMiscarriages", "maxAbortions", "lastDeliveryYear"]);
+  const SINGLE_VALUE_KEYS = new Set(["maxCSections", "maxMiscarriages", "maxAbortions", "lastDeliveryYear"]);
   for (const [key, vals] of Object.entries(filters)) {
     if (!vals || vals.length === 0) continue;
     const displayName = FILTER_DISPLAY_NAMES[key] || key;
@@ -1205,7 +1205,7 @@ function MobileMedicalDrawer({ activeFilters, dispatch, btnStyle, dark }: { acti
       <DrawerContent data-testid="drawer-medical">
         <DrawerHeader><DrawerTitle>Medical</DrawerTitle></DrawerHeader>
         <div className="px-6 pb-6 space-y-4 max-h-[70vh] overflow-y-auto">
-          <SingleValueSlider label="Max Live Births" filterKey="maxLiveBirths" min={0} max={10} step={1} activeFilters={activeFilters} dispatch={dispatch} />
+          <DrawerRangeSlider label="Live Births" filterKey="maxLiveBirths" min={0} max={10} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} />
           <SingleValueSlider label="Max C-Sections" filterKey="maxCSections" min={0} max={5} step={1} activeFilters={activeFilters} dispatch={dispatch} />
           <SingleValueSlider label="Max Miscarriages" filterKey="maxMiscarriages" min={0} max={5} step={1} activeFilters={activeFilters} dispatch={dispatch} />
           <SingleValueSlider label="Max Abortions" filterKey="maxAbortions" min={0} max={5} step={1} activeFilters={activeFilters} dispatch={dispatch} />
@@ -1818,7 +1818,7 @@ export function MarketplaceFilterBar({
             <PopoverContent className="w-80 p-4" align="start">
               <div className="space-y-4">
                 <span className="font-ui" style={{ fontSize: 'var(--filter-label-size, 18px)' }}>Medical</span>
-                <SingleValueSlider label="Max Live Births" filterKey="maxLiveBirths" min={0} max={10} step={1} activeFilters={activeFilters} dispatch={dispatch} />
+                <DrawerRangeSlider label="Live Births" filterKey="maxLiveBirths" min={0} max={10} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} />
                 <SingleValueSlider label="Max C-Sections" filterKey="maxCSections" min={0} max={5} step={1} activeFilters={activeFilters} dispatch={dispatch} />
                 <SingleValueSlider label="Max Miscarriages" filterKey="maxMiscarriages" min={0} max={5} step={1} activeFilters={activeFilters} dispatch={dispatch} />
                 <SingleValueSlider label="Max Abortions" filterKey="maxAbortions" min={0} max={5} step={1} activeFilters={activeFilters} dispatch={dispatch} />
