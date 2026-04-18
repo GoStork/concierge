@@ -12,6 +12,7 @@ import {
   UseGuards,
   ForbiddenException,
   BadRequestException,
+  NotFoundException,
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiBody } from "@nestjs/swagger";
 import { Request } from "express";
@@ -95,8 +96,13 @@ export class ProviderServicesController {
   ) {
     const user = req.user as any;
     const isAdmin = user.roles?.includes("GOSTORK_ADMIN");
-    if (!isAdmin) {
-      throw new ForbiddenException("Only admins can remove services");
+    const isOwnProvider = hasProviderRole(user.roles || []) && user.providerId === providerId;
+    if (!isAdmin && !isOwnProvider) {
+      throw new ForbiddenException("Forbidden");
+    }
+    const existing = await this.prisma.providerService.findFirst({ where: { id, providerId } });
+    if (!existing) {
+      throw new NotFoundException("Service not found");
     }
     await this.prisma.providerService.delete({ where: { id } });
     return { success: true };

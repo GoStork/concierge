@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Param,
   Body,
   Req,
@@ -12,6 +13,7 @@ import {
   UseGuards,
   ForbiddenException,
   BadRequestException,
+  NotFoundException,
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiBody } from "@nestjs/swagger";
 import { Request } from "express";
@@ -76,6 +78,37 @@ export class ProviderLocationsController {
       }
       throw err;
     }
+  }
+
+  @Delete(":id")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Delete a provider location" })
+  @ApiParam({ name: "providerId", description: "Provider UUID" })
+  @ApiParam({ name: "id", description: "Location UUID" })
+  @ApiResponse({ status: 200, description: "Location deleted" })
+  @ApiResponse({ status: 401, description: "Unauthorized", type: ErrorResponseDto })
+  @ApiResponse({ status: 403, description: "Forbidden", type: ErrorResponseDto })
+  @ApiResponse({ status: 404, description: "Location not found", type: ErrorResponseDto })
+  async remove(
+    @Param("providerId") providerId: string,
+    @Param("id") id: string,
+    @Req() req: Request,
+  ) {
+    const user = req.user as any;
+    const isAdmin = user.roles?.includes("GOSTORK_ADMIN");
+    const isOwnProvider = hasProviderRole(user.roles || []) && user.providerId === providerId;
+    if (!isAdmin && !isOwnProvider) {
+      throw new ForbiddenException("Forbidden");
+    }
+    const existing = await this.prisma.providerLocation.findFirst({ where: { id, providerId } });
+    if (!existing) {
+      throw new NotFoundException("Location not found");
+    }
+    await this.prisma.providerMemberLocation.deleteMany({ where: { locationId: id } });
+    await this.prisma.providerLocation.delete({ where: { id } });
+    return { success: true };
   }
 
   @Put(":id")

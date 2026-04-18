@@ -208,6 +208,21 @@ export default function CompanyTab() {
     },
   });
 
+  const removeServiceMutation = useMutation({
+    mutationFn: async (serviceId: string) => {
+      const res = await apiRequest("POST", `/api/providers/${providerId}/services/${serviceId}/delete`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/providers", providerId, "services"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/providers", providerId] });
+      toast({ title: "Service removed", variant: "success" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error removing service", description: err.message, variant: "destructive" });
+    },
+  });
+
   const existingServiceTypeIds = new Set(services?.map((s: any) => s.providerTypeId) || []);
   const availableServiceTypes = providerTypes?.filter((t: any) => !existingServiceTypeIds.has(t.id)) || [];
 
@@ -745,6 +760,17 @@ export default function CompanyTab() {
                 <Check className="w-3 h-3" />
                 {service.providerType?.name || "Service"}
                 <span className="text-[10px] opacity-70 ml-1">{service.status?.replace("_", " ")}</span>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    className="ml-1 opacity-60 hover:opacity-100 transition-opacity"
+                    onClick={() => removeServiceMutation.mutate(service.id)}
+                    disabled={removeServiceMutation.isPending}
+                    data-testid={`btn-remove-service-${service.id}`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
               </Badge>
             ))}
           </div>
