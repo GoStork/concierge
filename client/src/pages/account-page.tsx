@@ -143,6 +143,17 @@ function AccountTab() {
     enabled: !!(user && ((user as any).roles || []).includes("PARENT")),
   });
 
+  const surrogateCountriesQuery = useQuery<string[]>({
+    queryKey: ["/api/providers/marketplace/surrogate-countries"],
+    queryFn: async () => {
+      const res = await fetch("/api/providers/marketplace/surrogate-countries", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!(user && ((user as any).roles || []).includes("PARENT")),
+    staleTime: 5 * 60 * 1000,
+  });
+
   if (!user) return null;
 
   const roles = (user as any).roles || [];
@@ -462,13 +473,7 @@ function AccountTab() {
   const showFreshCosts = currentEggType !== "Frozen";   // Fresh, Either, or unspecified
   const showFrozenCost = currentEggType !== "Fresh";    // Frozen, Either, or unspecified
 
-  // Countries that GoStork works with for surrogacy
-  const SURROGACY_COUNTRIES = [
-    "United States", "Colombia", "Mexico", "Canada",
-    "Ukraine", "Georgia", "Cyprus", "Greece", "Czech Republic",
-    "Israel", "Australia", "Portugal", "Albania", "Belarus",
-    "Taiwan", "Cambodia", "Argentina", "Kenya", "South Africa",
-  ];
+  const SURROGACY_COUNTRIES = surrogateCountriesQuery.data ?? [];
 
   return (
     <>
@@ -1750,6 +1755,13 @@ export default function AccountPage() {
   if (showSpermDonors) donorTabs.push({ to: '/account/sperm-donors', label: 'Sperm Donors', icon: FlaskConical, roles: 'provider' });
   if (showCosts) donorTabs.push({ to: '/account/costs', label: 'Costs', icon: DollarSign, roles: 'provider' });
 
+  const providerTabOrder = [
+    '/account', '/account/company', '/account/team', '/account/members',
+    '/account/calendar', '/account/costs', '/account/documents',
+    '/account/egg-donors', '/account/surrogates', '/account/sperm-donors',
+    '/account/knowledge', '/account/concierge', '/account/branding', '/account/scrapers',
+  ];
+
   const tabs = [...allTabs, ...donorTabs].filter(tab => {
     if (tab.roles === null) {
       if (tab.to === '/account/calendar' && isViewer) return false;
@@ -1762,6 +1774,10 @@ export default function AccountPage() {
     if (tab.roles === 'concierge') return isAdmin || isParent || isProvider;
     if (tab.roles === 'admin') return isAdmin;
     return true;
+  }).sort((a, b) => {
+    const ai = providerTabOrder.indexOf(a.to);
+    const bi = providerTabOrder.indexOf(b.to);
+    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
   });
 
   const isTabActive = (tab: typeof tabs[0]) => {

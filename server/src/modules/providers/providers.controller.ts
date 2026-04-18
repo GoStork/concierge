@@ -186,6 +186,102 @@ export class ProvidersController {
     return result;
   }
 
+  @Get("marketplace/surrogate-countries")
+  @ApiOperation({ summary: "List distinct countries from approved surrogacy agency locations and surrogate locations" })
+  @Header("Cache-Control", "public, max-age=300")
+  async marketplaceSurrogateCountries() {
+    const US_STATE_CODES = new Set([
+      "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD",
+      "MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC",
+      "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC",
+    ]);
+    const US_STATE_NAMES = new Set([
+      "alabama","alaska","arizona","arkansas","california","colorado","connecticut","delaware","florida",
+      "georgia","hawaii","idaho","illinois","indiana","iowa","kansas","kentucky","louisiana","maine",
+      "maryland","massachusetts","michigan","minnesota","mississippi","missouri","montana","nebraska",
+      "nevada","new hampshire","new jersey","new mexico","new york","north carolina","north dakota",
+      "ohio","oklahoma","oregon","pennsylvania","rhode island","south carolina","south dakota",
+      "tennessee","texas","utah","vermont","virginia","washington","west virginia","wisconsin","wyoming",
+      "district of columbia",
+    ]);
+
+    function isUSState(val: string): boolean {
+      return US_STATE_CODES.has(val.trim().toUpperCase()) || US_STATE_NAMES.has(val.trim().toLowerCase());
+    }
+
+    // Extract country from a surrogate "City, State" or "City, Country" location string
+    function countryFromSurrogateLocation(location: string | null | undefined): string | null {
+      if (!location) return null;
+      const loc = location.trim();
+      const parts = loc.split(",").map((p) => p.trim()).filter(Boolean);
+      if (parts.length >= 3) {
+        return capitalize(parts[parts.length - 1]);
+      }
+      if (parts.length === 2) {
+        const last = parts[1].replace(/\d/g, "").trim();
+        return isUSState(last) ? "United States" : capitalize(last);
+      }
+      if (parts.length === 1) {
+        return isUSState(loc) ? "United States" : null;
+      }
+      return null;
+    }
+
+    // Extract country from a ProviderLocation where international providers store the country in the state field
+    function countryFromProviderLocation(state: string | null | undefined): string | null {
+      if (!state) return null;
+      const s = state.trim();
+      if (!s) return null;
+      const lower = s.toLowerCase();
+      if (lower === "usa" || lower === "us") return "United States";
+      if (isUSState(s)) return "United States";
+      return capitalize(s);
+    }
+
+    function capitalize(s: string): string {
+      return s.charAt(0).toUpperCase() + s.slice(1);
+    }
+
+    const approvedSurrogacyAgencyFilter = {
+      services: {
+        some: {
+          status: "APPROVED",
+          providerType: { name: { in: ["Surrogacy Agency"] } },
+        },
+      },
+    };
+
+    const [surrogates, providerLocations] = await Promise.all([
+      this.prisma.surrogate.findMany({
+        where: {
+          hiddenFromSearch: false,
+          status: { not: "INACTIVE" },
+          location: { not: null },
+          provider: approvedSurrogacyAgencyFilter,
+        },
+        select: { location: true },
+      }),
+      this.prisma.providerLocation.findMany({
+        where: {
+          state: { not: null },
+          provider: approvedSurrogacyAgencyFilter,
+        },
+        select: { state: true },
+      }),
+    ]);
+
+    const countrySet = new Set<string>();
+    for (const s of surrogates) {
+      const c = countryFromSurrogateLocation(s.location);
+      if (c) countrySet.add(c);
+    }
+    for (const pl of providerLocations) {
+      const c = countryFromProviderLocation(pl.state);
+      if (c) countrySet.add(c);
+    }
+    return Array.from(countrySet).sort();
+  }
+
   @Get("marketplace/sperm-donors")
   @ApiOperation({ summary: "List all sperm donors across all providers (marketplace)" })
   @Header("Cache-Control", "public, max-age=30")
