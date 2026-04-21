@@ -337,6 +337,7 @@ export class UsersController {
     if (body.state) updateData.state = body.state;
     if (body.country !== undefined) updateData.country = body.country || null;
     if (body.mobileNumber) updateData.mobileNumber = body.mobileNumber;
+    if (body.mobileNumberDisplay) updateData.mobileNumberDisplay = body.mobileNumberDisplay;
     if (body.referralSource) updateData.referralSource = body.referralSource;
 
     await this.ensureParentAccount(user.id);
@@ -389,6 +390,7 @@ export class UsersController {
       updateData.name = name;
     }
     if (body.mobileNumber !== undefined) updateData.mobileNumber = body.mobileNumber || null;
+    if (body.mobileNumberDisplay !== undefined) updateData.mobileNumberDisplay = body.mobileNumberDisplay || null;
     if (body.photoUrl !== undefined) updateData.photoUrl = body.photoUrl || null;
     if (body.city !== undefined) updateData.city = body.city || null;
     if (body.state !== undefined) updateData.state = body.state || null;
@@ -611,7 +613,7 @@ export class UsersController {
     }
     const users = await this.prisma.user.findMany({
       select: {
-        id: true, email: true, name: true, photoUrl: true, mobileNumber: true, city: true, state: true, country: true, roles: true, providerId: true, allLocations: true, createdAt: true, dailyRoomUrl: true, calendarLink: true,
+        id: true, email: true, name: true, photoUrl: true, mobileNumber: true, mobileNumberDisplay: true, city: true, state: true, country: true, roles: true, providerId: true, allLocations: true, createdAt: true, dailyRoomUrl: true, calendarLink: true,
         provider: { select: { id: true, name: true } },
         assignedLocations: { include: { location: true } },
         calendarConnections: { select: { id: true, provider: true, email: true, label: true, tokenValid: true, connected: true }, orderBy: { createdAt: "desc" } },
@@ -639,7 +641,7 @@ export class UsersController {
     const target = await this.prisma.user.findUnique({
       where: { id },
       select: {
-        id: true, email: true, name: true, photoUrl: true, mobileNumber: true, city: true, state: true, country: true, roles: true,
+        id: true, email: true, name: true, photoUrl: true, mobileNumber: true, mobileNumberDisplay: true, city: true, state: true, country: true, roles: true,
         providerId: true, allLocations: true, createdAt: true, dailyRoomUrl: true, calendarLink: true, parentAccountRole: true,
         provider: { select: { id: true, name: true } },
         assignedLocations: { include: { location: true } },
@@ -1397,7 +1399,7 @@ export class UsersController {
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data,
-      select: { id: true, email: true, name: true, mobileNumber: true, photoUrl: true, city: true, state: true, country: true, parentAccountRole: true },
+      select: { id: true, email: true, name: true, mobileNumber: true, mobileNumberDisplay: true, photoUrl: true, city: true, state: true, country: true, parentAccountRole: true },
     });
     return updated;
   }

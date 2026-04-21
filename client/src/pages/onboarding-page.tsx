@@ -8,6 +8,7 @@ import { api } from "@shared/routes";
 import { ChevronLeft, Loader2, Lock, Check, Eye, EyeOff, AlertCircle, UserRound, Sparkles, DollarSign, CalendarCheck, Stethoscope, Heart, Baby, FlaskConical, Search } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import LocationAutocomplete from "@/components/location-autocomplete";
+import { PhoneInput } from "@/components/ui/phone-input";
 
 // AI Intro service-to-visual config (inline version of OnboardingAiIntroPage)
 const AI_INTRO_SERVICE_CONFIG: Record<string, { icon: typeof Stethoscope; gradient: string; label: string; imageKey: string; chatText: string; replyText: string }> = {
@@ -50,23 +51,22 @@ const WELCOME_STEP = 0;
 
 const GOALS = ["Fertility Clinic", "Egg Donor", "Surrogate", "Sperm Donor"];
 
-const COUNTRY_CODES = [
-  { code: "+1", label: "US", flag: "🇺🇸" },
-  { code: "+44", label: "UK", flag: "🇬🇧" },
-  { code: "+972", label: "IL", flag: "🇮🇱" },
-  { code: "+61", label: "AU", flag: "🇦🇺" },
-  { code: "+49", label: "DE", flag: "🇩🇪" },
-  { code: "+33", label: "FR", flag: "🇫🇷" },
-  { code: "+91", label: "IN", flag: "🇮🇳" },
-  { code: "+86", label: "CN", flag: "🇨🇳" },
-  { code: "+81", label: "JP", flag: "🇯🇵" },
-  { code: "+55", label: "BR", flag: "🇧🇷" },
-  { code: "+52", label: "MX", flag: "🇲🇽" },
-  { code: "+34", label: "ES", flag: "🇪🇸" },
-  { code: "+39", label: "IT", flag: "🇮🇹" },
-  { code: "+82", label: "KR", flag: "🇰🇷" },
-  { code: "+31", label: "NL", flag: "🇳🇱" },
-];
+function mapOtpSendError(code: string): string {
+  switch (code) {
+    case "phone_invalid":
+      return "This phone number is invalid. Please check and try again.";
+    case "phone_voip":
+      return "VoIP numbers are not supported. Please enter a mobile phone number.";
+    case "phone_landline":
+      return "Landline numbers can't receive verification codes. Please use a mobile phone.";
+    case "phone_unreachable":
+      return "This number appears to be unreachable. Please check and try again.";
+    case "verify_failed":
+      return "Failed to send verification code. Please try again in a moment.";
+    default:
+      return code || "Please check your number and try again.";
+  }
+}
 
 interface OnboardingData {
   email: string;
@@ -78,8 +78,10 @@ interface OnboardingData {
   city: string;
   state: string;
   country: string;
-  countryCode: string;
-  phone: string;
+  phoneE164: string;
+  phoneDisplay: string;
+  phoneIsoCode: string;
+  phoneIsValid: boolean;
   otp: string[];
 }
 
@@ -159,7 +161,8 @@ export default function OnboardingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [showLoading, setShowLoading] = useState(false);
   const [showAiIntro, setShowAiIntro] = useState(false);
-  const [registrationError, setRegistrationError] = useState<string | null>(null);
+  type RegistrationError = { type: "emailExists" } | { type: "message"; message: string };
+  const [registrationError, setRegistrationError] = useState<RegistrationError | null>(null);
 
   useEffect(() => {
     if (!isLoading && user && !user.mustCompleteProfile && !showLoading && !submitting && !showAiIntro) {
@@ -176,6 +179,7 @@ export default function OnboardingPage() {
 
   const [otpSending, setOtpSending] = useState(false);
   const [otpError, setOtpError] = useState<string | null>(null);
+  const [otpChannel, setOtpChannel] = useState<"sms" | "whatsapp">("sms");
 
   const [data, setData] = useState<OnboardingData>({
     email: "",
@@ -187,10 +191,41 @@ export default function OnboardingPage() {
     city: "",
     state: "",
     country: "",
-    countryCode: "+1",
-    phone: "",
+    phoneE164: "",
+    phoneDisplay: "",
+    phoneIsoCode: "",
+    phoneIsValid: false,
     otp: ["", "", "", "", "", ""],
   });
+
+  const [detectedCountry, setDetectedCountry] = useState<string | null>(null);
+  const [detectingCountry, setDetectingCountry] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    (async () => {
+      try {
+        const res = await fetch("/api/geo/country", {
+          credentials: "include",
+          signal: controller.signal,
+        });
+        if (!cancelled && res.ok) {
+          const json = await res.json();
+          if (typeof json?.countryCode === "string" && json.countryCode.length === 2) {
+            setDetectedCountry(json.countryCode);
+          }
+        }
+      } catch {
+        // silent - user picks manually
+      } finally {
+        clearTimeout(timeout);
+        if (!cancelled) setDetectingCountry(false);
+      }
+    })();
+    return () => { cancelled = true; clearTimeout(timeout); controller.abort(); };
+  }, []);
 
   const update = (partial: Partial<OnboardingData>) => {
     setRegistrationError(null);
@@ -225,7 +260,7 @@ export default function OnboardingPage() {
       case 1: return data.goals.length > 0;
       case 2: return data.firstName.trim().length > 0 && data.lastName.trim().length > 0;
       case 3: return data.city.trim().length > 0;
-      case 4: return data.phone.trim().length >= 7;
+      case 4: return data.phoneIsValid === true;
       case 5: return data.otp.every(d => d !== "");
       case ACCOUNT_STEP: return isValidEmail(data.email) && data.password.length >= 6 && data.confirmPassword === data.password;
       default: return false;
@@ -250,9 +285,9 @@ export default function OnboardingPage() {
           setSubmitting(false);
           const msg = err.message || "";
           if (msg.includes("Email already in use")) {
-            setRegistrationError("An account with this email already exists. Please login instead.");
+            setRegistrationError({ type: "emailExists" });
           } else {
-            setRegistrationError(msg || "Registration failed. Please try again.");
+            setRegistrationError({ type: "message", message: msg || "Registration failed. Please try again." });
           }
           return;
         }
@@ -271,7 +306,8 @@ export default function OnboardingPage() {
         city: data.city.trim(),
         state: data.state.trim(),
         country: data.country.trim() || null,
-        mobileNumber: `${data.countryCode} ${data.phone.trim()}`,
+        mobileNumber: data.phoneE164,
+        mobileNumberDisplay: data.phoneDisplay,
         interestedServices: data.goals,
       });
 
@@ -306,11 +342,11 @@ export default function OnboardingPage() {
       goNext();
     } else if (step === ACCOUNT_STEP && isRegistration) {
       if (data.password !== data.confirmPassword) {
-        setRegistrationError("Passwords do not match.");
+        setRegistrationError({ type: "message", message: "Passwords do not match." });
         return;
       }
       if (data.password.length < 6) {
-        setRegistrationError("Password must be at least 6 characters.");
+        setRegistrationError({ type: "message", message: "Password must be at least 6 characters." });
         return;
       }
       setRegistrationError(null);
@@ -321,21 +357,24 @@ export default function OnboardingPage() {
       setOtpSending(true);
       setOtpError(null);
       try {
-        const fullPhone = `${data.countryCode}${data.phone.replace(/\D/g, "")}`;
+        const fullPhone = data.phoneE164;
         const res = await apiRequest("POST", "/api/auth/send-otp", { phone: fullPhone });
         const result = await res.json();
         if (result.devCode) {
           (window as any).__devOtpCode = result.devCode;
         }
+        if (result.channel === "whatsapp" || result.channel === "sms") {
+          setOtpChannel(result.channel);
+        }
         setOtpError(null);
         goNext();
       } catch (err: any) {
-        let msg = "Please check your number and try again.";
+        let code = "";
         try {
           const parsed = JSON.parse(err.message.replace(/^\d+:\s*/, ""));
-          if (parsed.message) msg = parsed.message;
-        } catch { if (err.message) msg = err.message; }
-        setOtpError(msg);
+          if (parsed.message) code = String(parsed.message);
+        } catch { if (err.message) code = err.message; }
+        setOtpError(mapOtpSendError(code));
       } finally {
         setOtpSending(false);
       }
@@ -344,7 +383,7 @@ export default function OnboardingPage() {
       setOtpSending(true);
       setOtpError(null);
       try {
-        const fullPhone = `${data.countryCode}${data.phone.replace(/\D/g, "")}`;
+        const fullPhone = data.phoneE164;
         await apiRequest("POST", "/api/auth/verify-otp", { phone: fullPhone, code: entered });
         setOtpError(null);
         goNext();
@@ -579,10 +618,20 @@ export default function OnboardingPage() {
           )}
           {step === 4 && (
             <StepPhone
-              countryCode={data.countryCode}
-              phone={data.phone}
-              onCountryCodeChange={v => { update({ countryCode: v }); setOtpError(null); }}
-              onPhoneChange={v => { update({ phone: v }); setOtpError(null); }}
+              value={data.phoneE164}
+              displayValue={data.phoneDisplay}
+              isoCode={data.phoneIsoCode}
+              detectedCountry={detectedCountry}
+              detectingCountry={detectingCountry}
+              onChange={({ e164, display, isValid, isoCode }) => {
+                update({
+                  phoneE164: e164,
+                  phoneDisplay: display,
+                  phoneIsoCode: isoCode,
+                  phoneIsValid: isValid,
+                });
+                setOtpError(null);
+              }}
               error={otpError}
             />
           )}
@@ -590,11 +639,15 @@ export default function OnboardingPage() {
             <StepVerification
               otp={data.otp}
               onChange={v => { update({ otp: v }); setOtpError(null); }}
-              phone={`${data.countryCode} ${data.phone}`}
+              phone={data.phoneDisplay || data.phoneE164}
+              channel={otpChannel}
               onResend={async () => {
                 setOtpError(null);
-                const fullPhone = `${data.countryCode}${data.phone.replace(/\D/g, "")}`;
-                await apiRequest("POST", "/api/auth/send-otp", { phone: fullPhone });
+                const res = await apiRequest("POST", "/api/auth/send-otp", { phone: data.phoneE164 });
+                const result = await res.json();
+                if (result.channel === "whatsapp" || result.channel === "sms") {
+                  setOtpChannel(result.channel);
+                }
               }}
               error={otpError}
             />
@@ -608,6 +661,7 @@ export default function OnboardingPage() {
               onPasswordChange={v => { update({ password: v }); setRegistrationError(null); }}
               onConfirmPasswordChange={v => { update({ confirmPassword: v }); setRegistrationError(null); }}
               error={registrationError}
+              onLoginRedirect={() => navigate("/auth", { state: { prefillEmail: data.email.trim() } })}
             />
           )}
         </div>
@@ -663,6 +717,7 @@ function StepAccount({
   onPasswordChange,
   onConfirmPasswordChange,
   error,
+  onLoginRedirect,
 }: {
   email: string;
   password: string;
@@ -670,7 +725,8 @@ function StepAccount({
   onEmailChange: (v: string) => void;
   onPasswordChange: (v: string) => void;
   onConfirmPasswordChange: (v: string) => void;
-  error: string | null;
+  error: { type: "emailExists" } | { type: "message"; message: string } | null;
+  onLoginRedirect: () => void;
 }) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -750,7 +806,24 @@ function StepAccount({
           )}
         </div>
         {error && (
-          <p className="text-sm text-destructive" data-testid="text-register-error">{error}</p>
+          <p className="text-sm text-destructive" data-testid="text-register-error">
+            {error.type === "emailExists" ? (
+              <>
+                An account with this email already exists. Please{" "}
+                <button
+                  type="button"
+                  onClick={onLoginRedirect}
+                  className="text-primary underline hover:no-underline"
+                  data-testid="btn-register-error-login"
+                >
+                  log in instead
+                </button>
+                .
+              </>
+            ) : (
+              error.message
+            )}
+          </p>
         )}
       </div>
     </div>
@@ -864,20 +937,23 @@ function StepLocation({
 }
 
 function StepPhone({
-  countryCode,
-  phone,
-  onCountryCodeChange,
-  onPhoneChange,
+  value,
+  displayValue,
+  isoCode,
+  detectedCountry,
+  detectingCountry,
+  onChange,
   error,
 }: {
-  countryCode: string;
-  phone: string;
-  onCountryCodeChange: (v: string) => void;
-  onPhoneChange: (v: string) => void;
+  value: string;
+  displayValue: string;
+  isoCode: string;
+  detectedCountry: string | null;
+  detectingCountry: boolean;
+  onChange: (params: { e164: string; display: string; isValid: boolean; isoCode: string }) => void;
   error?: string | null;
 }) {
-  const [showCodes, setShowCodes] = useState(false);
-  const selected = COUNTRY_CODES.find(c => c.code === countryCode) || COUNTRY_CODES[0];
+  const effectiveDefault = isoCode || detectedCountry || undefined;
 
   return (
     <div>
@@ -892,42 +968,15 @@ function StepPhone({
         We will send you a verification code on this number. We make sure our users are real people
       </p>
 
-      <div className="flex items-end gap-4 mb-8">
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setShowCodes(!showCodes)}
-            className="text-lg border-b-2 border-border pb-3 flex items-center gap-1 hover:border-primary transition-colors whitespace-nowrap"
-            data-testid="btn-country-code"
-          >
-            {selected.label} {selected.code} <ChevronLeft className="w-4 h-4 rotate-[-90deg]" />
-          </button>
-          {showCodes && (
-            <div className="absolute top-full left-0 mt-1 bg-background border border-border rounded-[var(--radius)] shadow-lg z-10 max-h-48 overflow-y-auto w-48">
-              {COUNTRY_CODES.map(cc => (
-                <button
-                  key={cc.code}
-                  type="button"
-                  onClick={() => { onCountryCodeChange(cc.code); setShowCodes(false); }}
-                  className="w-full text-left px-3 py-2 hover:bg-muted flex items-center gap-2 text-sm"
-                  data-testid={`country-${cc.label.toLowerCase()}`}
-                >
-                  <span>{cc.flag}</span>
-                  <span>{cc.label}</span>
-                  <span className="text-muted-foreground">{cc.code}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        <input
-          type="tel"
-          value={phone}
-          onChange={e => onPhoneChange(e.target.value)}
-          placeholder="(555) 123-4567"
-          autoFocus
+      <div className="mb-8">
+        <PhoneInput
+          variant="onboarding"
+          value={value}
+          displayValue={displayValue}
+          defaultIsoCode={effectiveDefault}
+          loadingCountry={detectingCountry && !isoCode}
+          onChange={onChange}
           data-testid="input-phone"
-          className="flex-1 text-lg border-0 border-b-2 border-border focus:border-primary outline-none pb-3 bg-transparent placeholder:text-muted-foreground/40 transition-colors"
         />
       </div>
 
@@ -946,12 +995,14 @@ function StepVerification({
   otp,
   onChange,
   phone,
+  channel,
   onResend,
   error,
 }: {
   otp: string[];
   onChange: (v: string[]) => void;
   phone: string;
+  channel?: "sms" | "whatsapp";
   onResend: () => Promise<void>;
   error?: string | null;
 }) {
@@ -979,7 +1030,7 @@ function StepVerification({
       >
         Enter the code you received
       </h1>
-      <p className="text-muted-foreground mb-10">Sent to {phone}</p>
+      <p className="text-muted-foreground mb-10">Sent to {phone} via {channel === "whatsapp" ? "WhatsApp" : "SMS"}</p>
 
       <OtpInput value={otp} onChange={onChange} />
 

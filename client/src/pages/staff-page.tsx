@@ -10,7 +10,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
 import { Plus, UserCircle, Trash2, Pencil, Loader2, Phone, Search, XCircle, Calendar, ChevronDown, Copy, Check } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { parsePhoneNumber } from "libphonenumber-js";
+
+function formatPhone(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  try { return parsePhoneNumber(raw).formatInternational(); } catch { return raw; }
+}
 import { useToast } from "@/hooks/use-toast";
 import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
 import MembersTable from "@/components/members-table";
@@ -72,11 +79,13 @@ function GostorkAdminUsersView() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [deleteMember, setDeleteMember] = useState<StaffMember | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
-  const { sortConfig, handleSort, sortData } = useTableSort();
+  const { sortConfig, handleSort, sortData } = useTableSort("created", "desc");
 
   const { data: allUsers, isLoading } = useQuery<StaffMember[]>({
     queryKey: ["/api/users"],
@@ -145,6 +154,41 @@ function GostorkAdminUsersView() {
     },
   });
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await Promise.all(ids.map(id => apiRequest("DELETE", `/api/users/${id}`)));
+      return ids.length;
+    },
+    onSuccess: (count) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      setSelectedIds(new Set());
+      setShowBulkDeleteConfirm(false);
+      toast({ title: `${count} user${count !== 1 ? "s" : ""} removed`, variant: "success" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const allVisibleSelected = sortedUsers.length > 0 && sortedUsers.every(u => selectedIds.has(u.id));
+  const someSelected = sortedUsers.some(u => selectedIds.has(u.id));
+
+  function toggleSelectAll() {
+    if (allVisibleSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(sortedUsers.map(u => u.id)));
+    }
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
   if (isLoading) return <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
   return (
@@ -154,9 +198,16 @@ function GostorkAdminUsersView() {
           <h1 className="font-display text-3xl font-heading text-primary" data-testid="text-page-title">Parents</h1>
           <p className="text-muted-foreground">Manage intended parent accounts.</p>
         </div>
-        <Button onClick={() => navigate("/users/new")} className="shrink-0" data-testid="button-add-staff">
-          <Plus className="w-4 h-4 mr-2" /> Add Parent
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          {selectedIds.size > 0 && (
+            <Button variant="destructive" onClick={() => setShowBulkDeleteConfirm(true)} data-testid="button-delete-selected">
+              <Trash2 className="w-4 h-4 mr-2" /> Delete Selected ({selectedIds.size})
+            </Button>
+          )}
+          <Button onClick={() => navigate("/users/new")} data-testid="button-add-staff">
+            <Plus className="w-4 h-4 mr-2" /> Add Parent
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide" data-testid="card-parent-filters">
@@ -231,6 +282,14 @@ function GostorkAdminUsersView() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10 pl-4">
+                <Checkbox
+                  checked={allVisibleSelected ? true : someSelected ? "indeterminate" : false}
+                  onCheckedChange={toggleSelectAll}
+                  aria-label="Select all"
+                  data-testid="checkbox-select-all"
+                />
+              </TableHead>
               <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={handleSort} data-testid="sort-name" />
               <SortableTableHead label="Email" sortKey="email" currentSort={sortConfig} onSort={handleSort} className="hidden sm:table-cell" data-testid="sort-email" />
               <SortableTableHead label="Mobile" sortKey="mobile" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden md:table-cell" data-testid="sort-mobile" />
@@ -241,6 +300,14 @@ function GostorkAdminUsersView() {
           <TableBody>
             {sortedUsers.length > 0 ? sortedUsers.map((member) => (
               <TableRow key={member.id} data-testid={`row-staff-${member.id}`} className="cursor-pointer" onClick={() => navigate(`/users/${member.id}`)}>
+                <TableCell className="pl-4 w-10" onClick={(e) => e.stopPropagation()}>
+                  <Checkbox
+                    checked={selectedIds.has(member.id)}
+                    onCheckedChange={() => toggleSelect(member.id)}
+                    aria-label={`Select ${member.name || member.email}`}
+                    data-testid={`checkbox-select-${member.id}`}
+                  />
+                </TableCell>
                 <TableCell className="font-ui">
                   <div className="flex items-center gap-3">
                     {getPhotoSrc(member.photoUrl) ? (
@@ -264,7 +331,7 @@ function GostorkAdminUsersView() {
                   {member.mobileNumber ? (
                     <div className="flex items-center gap-1 text-sm">
                       <Phone className="w-3 h-3 text-muted-foreground" />
-                      <span>{member.mobileNumber}</span>
+                      <span>{formatPhone(member.mobileNumber)}</span>
                       <CopyButton value={member.mobileNumber} testId={`btn-copy-mobile-${member.id}`} />
                     </div>
                   ) : <span className="text-muted-foreground text-sm">-</span>}
@@ -283,7 +350,7 @@ function GostorkAdminUsersView() {
               </TableRow>
             )) : (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                   {hasActiveFilters ? "No parents match your filters." : "No parents found."}
                 </TableCell>
               </TableRow>
@@ -301,6 +368,19 @@ function GostorkAdminUsersView() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteMember(null)}>Cancel</Button>
             <Button variant="destructive" onClick={() => deleteMember && deleteMutation.mutate(deleteMember.id)} disabled={deleteMutation.isPending} data-testid="button-confirm-delete">{deleteMutation.isPending ? "Removing..." : "Remove"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showBulkDeleteConfirm} onOpenChange={(open) => { if (!open) setShowBulkDeleteConfirm(false); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove {selectedIds.size} User{selectedIds.size !== 1 ? "s" : ""}</DialogTitle>
+            <DialogDescription>Are you sure you want to remove {selectedIds.size} selected user{selectedIds.size !== 1 ? "s" : ""}? This action cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkDeleteConfirm(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => bulkDeleteMutation.mutate(Array.from(selectedIds))} disabled={bulkDeleteMutation.isPending} data-testid="button-confirm-bulk-delete">{bulkDeleteMutation.isPending ? "Removing..." : "Remove All"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -382,7 +462,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
                   {parent.mobileNumber ? (
                     <div className="flex items-center gap-1 text-sm">
                       <Phone className="w-3 h-3 text-muted-foreground" />
-                      <span>{parent.mobileNumber}</span>
+                      <span>{formatPhone(parent.mobileNumber)}</span>
                       <CopyButton value={parent.mobileNumber} testId={`btn-copy-mobile-${parent.id}`} />
                     </div>
                   ) : <span className="text-muted-foreground text-sm">-</span>}

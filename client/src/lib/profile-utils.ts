@@ -1,5 +1,6 @@
 export type ProfileType = "egg-donor" | "surrogate" | "sperm-donor";
 
+
 const TYPE_TO_SLUG: Record<string, string> = {
   "egg-donor": "eggdonor",
   "surrogate": "surrogate",

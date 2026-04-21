@@ -1578,19 +1578,25 @@ export class NotificationService implements OnModuleInit {
     const twilioSid = process.env.TWILIO_ACCOUNT_SID;
     const twilioToken = process.env.TWILIO_AUTH_TOKEN;
     const twilioFrom = process.env.TWILIO_PHONE_NUMBER;
+    const twilioMessagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
 
-    if (!twilioSid || !twilioToken || !twilioFrom) {
+    if (!twilioSid || !twilioToken || (!twilioFrom && !twilioMessagingServiceSid)) {
       this.logger.log(`[SMS MOCK] To: ${to}, ContentSid: ${contentSid}, Vars: ${JSON.stringify(contentVars)}`);
       return;
     }
 
     const url = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`;
-    const params = new URLSearchParams({
+    const paramsInit: Record<string, string> = {
       To: to,
-      From: twilioFrom,
       ContentSid: contentSid,
       ContentVariables: JSON.stringify(contentVars),
-    });
+    };
+    if (twilioMessagingServiceSid) {
+      paramsInit.MessagingServiceSid = twilioMessagingServiceSid;
+    } else {
+      paramsInit.From = twilioFrom!;
+    }
+    const params = new URLSearchParams(paramsInit);
 
     const response = await fetch(url, {
       method: "POST",

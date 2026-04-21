@@ -131,14 +131,14 @@ export class AuthController {
 
   @Post("send-otp")
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Send OTP verification code via SMS" })
+  @ApiOperation({ summary: "Send OTP verification code via SMS or WhatsApp" })
   async sendOtp(@Body() body: { phone: string }) {
     if (!body.phone?.trim()) {
       throw new BadRequestException("Phone number is required");
     }
     try {
       const result = await this.authService.sendOtp(body.phone);
-      return { success: true, sent: result.sent, devCode: result.devCode };
+      return { success: true, sent: result.sent, channel: result.channel, devCode: result.devCode };
     } catch (err: any) {
       throw new BadRequestException(err.message);
     }
@@ -151,7 +151,7 @@ export class AuthController {
     if (!body.phone?.trim() || !body.code?.trim()) {
       throw new BadRequestException("Phone and code are required");
     }
-    const valid = this.authService.verifyOtp(body.phone, body.code);
+    const valid = await this.authService.verifyOtp(body.phone, body.code);
     if (!valid) {
       throw new BadRequestException("Invalid or expired verification code");
     }

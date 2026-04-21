@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { parsePhoneNumberFromString } from "libphonenumber-js";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
@@ -14,6 +15,7 @@ import { ArrowLeft, Loader2, RefreshCw, User, UserCircle, Phone, MapPin, Buildin
 import { useToast } from "@/hooks/use-toast";
 import LocationAutocomplete from "@/components/location-autocomplete";
 import ImageCropPreview from "@/components/image-crop-preview";
+import { PhoneInput } from "@/components/ui/phone-input";
 
 const PROVIDER_ROLES = [
   { value: "PROVIDER_ADMIN", label: "Provider Admin" },
@@ -133,7 +135,9 @@ export default function AdminUserEditPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [mobileNumber, setMobileNumber] = useState("");
+  const [mobileE164, setMobileE164] = useState("");
+  const [mobileDisplay, setMobileDisplay] = useState("");
+  const [mobileIsoCode, setMobileIsoCode] = useState("");
   const [identification, setIdentification] = useState("");
   const [roles, setRoles] = useState<string[]>([]);
   const [parentAccountRole, setParentAccountRole] = useState("INTENDED_PARENT_2");
@@ -192,7 +196,16 @@ export default function AdminUserEditPage() {
       isInitializingRef.current = true;
       setName(userData.name || "");
       setEmail(userData.email);
-      setMobileNumber(userData.mobileNumber || "");
+      const parsedPhone = userData.mobileNumber ? parsePhoneNumberFromString(userData.mobileNumber) : null;
+      if (parsedPhone) {
+        setMobileE164(parsedPhone.number);
+        setMobileDisplay((userData as any).mobileNumberDisplay ?? parsedPhone.formatInternational());
+        setMobileIsoCode(parsedPhone.country ?? "");
+      } else {
+        setMobileE164("");
+        setMobileDisplay("");
+        setMobileIsoCode("");
+      }
       setRoles(userData.roles || []);
       setIdentification(userData.identification || "");
       setPersonalLocation({
@@ -217,7 +230,7 @@ export default function AdminUserEditPage() {
     if (isInitializingRef.current) { isInitializingRef.current = false; setIsDirty(false); return; }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, name, email, password, confirmPassword, mobileNumber, identification, roles, parentAccountRole, personalLocation, allLocations, locationIds, localPhotoUrl]);
+  }, [editing, name, email, password, confirmPassword, mobileE164, identification, roles, parentAccountRole, personalLocation, allLocations, locationIds, localPhotoUrl]);
 
   const updateMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -311,7 +324,9 @@ export default function AdminUserEditPage() {
 
     if (isParentAccountMode) {
       const data: any = {
-        name, email, mobileNumber,
+        name, email,
+        mobileNumber: mobileE164 || null,
+        mobileNumberDisplay: mobileDisplay || null,
         city: personalLocation.city || null,
         state: personalLocation.state || null,
         country: personalLocation.country || null,
@@ -327,7 +342,9 @@ export default function AdminUserEditPage() {
     }
 
     const data: any = {
-      name, email, mobileNumber,
+      name, email,
+      mobileNumber: mobileE164 || null,
+      mobileNumberDisplay: mobileDisplay || null,
       photoUrl: localPhotoUrl,
     };
     if (isProviderUser) {
@@ -475,12 +492,16 @@ export default function AdminUserEditPage() {
                 <p className="text-xs text-muted-foreground">Email cannot be changed</p>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-mobile">Mobile Number</Label>
-                <Input
-                  id="edit-mobile"
-                  value={mobileNumber}
-                  onChange={e => setMobileNumber(e.target.value)}
-                  placeholder="e.g. +1 (555) 123-4567"
+                <Label>Mobile Number</Label>
+                <PhoneInput
+                  value={mobileE164}
+                  displayValue={mobileDisplay}
+                  defaultIsoCode={mobileIsoCode || null}
+                  onChange={({ e164, display, isoCode }) => {
+                    setMobileE164(e164);
+                    setMobileDisplay(display);
+                    setMobileIsoCode(isoCode);
+                  }}
                   data-testid="input-edit-mobile"
                 />
               </div>

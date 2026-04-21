@@ -3,19 +3,23 @@ import { JwtService } from "@nestjs/jwt";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { PrismaService } from "../prisma/prisma.service";
+import { getTwilioClient } from "./twilio-client";
+import { parsePhoneIso, pickChannel, type VerificationChannel } from "./verification-channel";
 
 const scryptAsync = promisify(scrypt);
 
-const OTP_TTL_MS = 5 * 60 * 1000;
-const OTP_RATE_LIMIT_MS = 30 * 1000;
+const DEV_OTP_CODE = "000000";
 
-type OtpEntry = { code: string; expiresAt: number; attempts: number };
+export type OtpSendError =
+  | "phone_invalid"
+  | "phone_voip"
+  | "phone_landline"
+  | "phone_unreachable"
+  | "verify_failed";
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
-  private otpStore = new Map<string, OtpEntry>();
-  private otpSentAt = new Map<string, number>();
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -128,79 +132,88 @@ export class AuthService {
     return true;
   }
 
-  async sendOtp(phone: string): Promise<{ sent: boolean; devCode?: string }> {
+  async sendOtp(phone: string): Promise<{ sent: boolean; channel: VerificationChannel; devCode?: string }> {
     const normalized = phone.replace(/\s+/g, "").replace(/[^\d+]/g, "");
-    if (normalized.length < 10) throw new Error("Invalid phone number");
-
-    const lastSent = this.otpSentAt.get(normalized);
-    if (lastSent && Date.now() - lastSent < OTP_RATE_LIMIT_MS) {
-      throw new Error("Please wait before requesting another code");
+    if (!normalized.startsWith("+") || normalized.length < 10) {
+      throw new Error("phone_invalid");
     }
 
-    const code = String(Math.floor(100000 + Math.random() * 900000));
-    this.otpStore.set(normalized, { code, expiresAt: Date.now() + OTP_TTL_MS, attempts: 0 });
-    this.otpSentAt.set(normalized, Date.now());
+    const isoCode = parsePhoneIso(normalized);
+    const channel = pickChannel(isoCode);
+    const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
+    const client = getTwilioClient();
 
-    const twilioSid = process.env.TWILIO_ACCOUNT_SID;
-    const twilioToken = process.env.TWILIO_AUTH_TOKEN;
-    const twilioFrom = process.env.TWILIO_PHONE_NUMBER;
-
-    if (!twilioSid || !twilioToken || !twilioFrom) {
-      this.logger.warn(`[OTP DEV] Code for ${normalized}: ${code}`);
-      return { sent: false, devCode: process.env.NODE_ENV !== "production" ? code : undefined };
+    if (!verifyServiceSid || !client) {
+      if (process.env.NODE_ENV === "production") {
+        this.logger.error("TWILIO_VERIFY_SERVICE_SID not set in production");
+        throw new Error("verify_failed");
+      }
+      this.logger.warn(`[OTP DEV] Verify SID missing — mock send to ${normalized} via ${channel}. Use code ${DEV_OTP_CODE}.`);
+      return { sent: false, channel, devCode: DEV_OTP_CODE };
     }
+
+    await this.assertPhoneIsReachable(client, normalized);
 
     try {
-      const url = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`;
-      const params = new URLSearchParams({
-        To: normalized,
-        From: twilioFrom,
-        Body: `Your GoStork verification code is: ${code}. It expires in 5 minutes.`,
-      });
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          Authorization: "Basic " + Buffer.from(`${twilioSid}:${twilioToken}`).toString("base64"),
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: params.toString(),
-      });
-      if (!response.ok) {
-        const text = await response.text();
-        this.logger.error(`Twilio SMS error: ${response.status} - ${text}`);
-        const isInvalidNumber = text.includes("21211") || text.includes("21614") || text.includes("21217");
-        throw new Error(isInvalidNumber
-          ? "This phone number appears to be invalid. Please check and try again."
-          : "Failed to send verification code");
-      }
-      this.logger.log(`OTP sent to ${normalized.slice(0, -4)}****`);
-      return { sent: true };
+      const verification = await client.verify.v2
+        .services(verifyServiceSid)
+        .verifications.create({ to: normalized, channel });
+      this.logger.log(`Verify sent to ${normalized.slice(0, -4)}**** via ${channel} (status=${verification.status})`);
+      return { sent: true, channel };
     } catch (err: any) {
-      this.logger.error(`Failed to send OTP: ${err.message}`);
-      if (err.message.includes("invalid") || err.message.includes("Failed to send verification code")) {
-        throw err;
-      }
-      throw new Error("Failed to send verification code. Please try again.");
+      this.logger.error(`Verify send failed: ${err?.code ?? "unknown"} ${err?.message ?? err}`);
+      if (err?.code === 60200 || err?.code === 60205) throw new Error("phone_invalid");
+      if (err?.code === 60203) throw new Error("phone_unreachable");
+      throw new Error("verify_failed");
     }
   }
 
-  verifyOtp(phone: string, code: string): boolean {
+  private async assertPhoneIsReachable(client: ReturnType<typeof getTwilioClient>, e164: string): Promise<void> {
+    if (!client) return;
+    try {
+      const lookup = await client.lookups.v2.phoneNumbers(e164).fetch({ fields: "line_type_intelligence" });
+      if (lookup.valid === false) {
+        throw new Error("phone_invalid");
+      }
+      const lineType: string | undefined = lookup.lineTypeIntelligence?.type;
+      if (!lineType) return;
+      const normalizedType = lineType.toLowerCase();
+      if (normalizedType === "nonfixedvoip" || normalizedType === "fixedvoip" || normalizedType === "voip") {
+        throw new Error("phone_voip");
+      }
+      if (normalizedType === "landline") {
+        throw new Error("phone_landline");
+      }
+    } catch (err: any) {
+      const msg = err?.message ?? "";
+      if (msg === "phone_invalid" || msg === "phone_voip" || msg === "phone_landline") {
+        throw err;
+      }
+      this.logger.warn(`Lookup failed for ${e164.slice(0, -4)}**** — proceeding with Verify. Reason: ${msg || err?.code}`);
+    }
+  }
+
+  async verifyOtp(phone: string, code: string): Promise<boolean> {
     const normalized = phone.replace(/\s+/g, "").replace(/[^\d+]/g, "");
-    const entry = this.otpStore.get(normalized);
-    if (!entry) return false;
-    if (Date.now() > entry.expiresAt) {
-      this.otpStore.delete(normalized);
+    const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
+    const client = getTwilioClient();
+
+    if (!verifyServiceSid || !client) {
+      if (process.env.NODE_ENV === "production") {
+        this.logger.error("TWILIO_VERIFY_SERVICE_SID not set in production");
+        return false;
+      }
+      return code === DEV_OTP_CODE;
+    }
+
+    try {
+      const check = await client.verify.v2
+        .services(verifyServiceSid)
+        .verificationChecks.create({ to: normalized, code });
+      return check.status === "approved";
+    } catch (err: any) {
+      this.logger.warn(`VerificationCheck failed: ${err?.code ?? "unknown"} ${err?.message ?? err}`);
       return false;
     }
-    if (entry.attempts >= 5) {
-      this.otpStore.delete(normalized);
-      return false;
-    }
-    entry.attempts++;
-    if (entry.code === code) {
-      this.otpStore.delete(normalized);
-      return true;
-    }
-    return false;
   }
 }

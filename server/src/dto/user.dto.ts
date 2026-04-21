@@ -51,6 +51,9 @@ export class UserResponseDto {
   @ApiPropertyOptional({ type: String, example: "+1234567890", nullable: true })
   mobileNumber?: string | null;
 
+  @ApiPropertyOptional({ type: String, example: "+1 (234) 567-890", nullable: true, description: "Human-readable formatted phone for display" })
+  mobileNumberDisplay?: string | null;
+
   @ApiPropertyOptional({ type: Boolean, example: true })
   allLocations?: boolean;
 

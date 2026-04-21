@@ -20,6 +20,7 @@ export default function AuthPage() {
   const autoLoginAttempted = useRef(false);
   const passwordReset = (location.state as any)?.passwordReset;
   const returnTo = (location.state as any)?.returnTo;
+  const prefillEmail = (location.state as any)?.prefillEmail;
 
   useEffect(() => {
     if (user) {
@@ -33,6 +34,12 @@ export default function AuthPage() {
       password: "",
     },
   });
+
+  useEffect(() => {
+    if (prefillEmail) {
+      loginForm.setValue("email", prefillEmail);
+    }
+  }, [prefillEmail, loginForm]);
 
   const onLogin = useCallback((data: any) => {
     loginMutation.mutate(data);

@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import LocationAutocomplete from "@/components/location-autocomplete";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { parsePhoneNumberFromString } from "libphonenumber-js";
 import MembersTable from "@/components/members-table";
 import ImageCropPreview from "@/components/image-crop-preview";
 import CompanyTab from "@/components/company-tab";
@@ -53,7 +55,10 @@ function AccountTab() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editName, setEditName] = useState("");
-  const [editMobile, setEditMobile] = useState("");
+  const [editMobileE164, setEditMobileE164] = useState("");
+  const [editMobileDisplay, setEditMobileDisplay] = useState("");
+  const [editMobileIsoCode, setEditMobileIsoCode] = useState("");
+  const [editMobileIsValid, setEditMobileIsValid] = useState(false);
   const [editPassword, setEditPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -160,6 +165,7 @@ function AccountTab() {
   const roleDisplay = roles.map((r: string) => r.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())).join(', ');
   const photoUrl = (user as any).photoUrl as string | null;
   const mobileNumber = (user as any).mobileNumber as string | null;
+  const mobileNumberDisplay = (user as any).mobileNumberDisplay as string | null;
   const providerName = (user as any).provider?.name as string | null | undefined;
   const isProviderUser = hasProviderRole(roles);
   const isParent = roles.includes("PARENT");
@@ -175,7 +181,18 @@ function AccountTab() {
   function startEditing() {
     isInitializingRef.current = true;
     setEditName(user!.name || "");
-    setEditMobile(mobileNumber || "");
+    const parsedPhone = mobileNumber ? parsePhoneNumberFromString(mobileNumber) : null;
+    if (parsedPhone && parsedPhone.country) {
+      setEditMobileE164(parsedPhone.number);
+      setEditMobileDisplay(mobileNumberDisplay ?? parsedPhone.formatInternational());
+      setEditMobileIsoCode(parsedPhone.country);
+      setEditMobileIsValid(parsedPhone.isValid());
+    } else {
+      setEditMobileE164("");
+      setEditMobileDisplay("");
+      setEditMobileIsoCode("");
+      setEditMobileIsValid(false);
+    }
     setEditPassword("");
     setConfirmPassword("");
     setEditLocation({ address: "", city: userCity || "", state: userState || "", zip: "", country: userCountry || "" });
@@ -290,8 +307,14 @@ function AccountTab() {
     try {
       const payload: any = {
         name: editName.trim(),
-        mobileNumber: editMobile.trim() || null,
       };
+      if (editMobileE164 === "") {
+        payload.mobileNumber = null;
+        payload.mobileNumberDisplay = null;
+      } else if (editMobileIsValid) {
+        payload.mobileNumber = editMobileE164;
+        payload.mobileNumberDisplay = editMobileDisplay;
+      }
       if (!isProviderUser) {
         payload.city = editLocation.city || null;
         payload.state = editLocation.state || null;
@@ -449,7 +472,7 @@ function AccountTab() {
     if (isInitializingRef.current) { isInitializingRef.current = false; setIsDirty(false); return; }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, editName, editMobile, editPassword, confirmPassword, editLocation, editGender, editOrientation, editRelationship, editAge, editPartnerName, editPartnerAge, editServices, editJourneyStage, editIsFirstIvf, editEggSource, editSpermSource, editCarrier, editHasEmbryos, editEmbryoCount, editEmbryosTested, editNeedsClinic, editCurrentClinicName, editClinicPriority, editClinicPriorityTags, editSurrogateCountries, editSurrogateTermination, editSurrogateTwins, editSurrogateAgeRange, editSurrogateBudget, editSurrogateExperience, editSurrogateMedPrefs, editSameSexCouple, editSurrogateRace, editSurrogateEthnicity, editSurrogateRelationship, editSurrogateBmiRange, editSurrogateTotalCostRange, editSurrogateLiveBirthsRange, editSurrogateMaxCSections, editSurrogateMaxMiscarriages, editSurrogateMaxAbortions, editSurrogateLastDeliveryYear, editSurrogateCovidVaccinated, editSurrogateSelectiveReduction, editSurrogateInternationalParents, editDonorPreferences, editDonorEyeColor, editDonorHairColor, editDonorHeight, editDonorEducation, editDonorEthnicity, editSpermDonorType, editSpermDonorPreferences, editSpermDonorAgeRange, editSpermDonorEyeColor, editSpermDonorHairColor, editSpermDonorHeightRange, editSpermDonorRace, editSpermDonorEthnicity, editSpermDonorEducation, editSpermDonorMaxPrice, editEggDonorAgeRange, editEggDonorCompensationRange, editEggDonorTotalCostRange, editEggDonorLotCostRange, editEggDonorEggType, editEggDonorDonationType, editClinicAgeGroup, editCurrentAgencyName, editCurrentAttorneyName]);
+  }, [editing, editName, editMobileE164, editMobileDisplay, editMobileIsoCode, editMobileIsValid, editPassword, confirmPassword, editLocation, editGender, editOrientation, editRelationship, editAge, editPartnerName, editPartnerAge, editServices, editJourneyStage, editIsFirstIvf, editEggSource, editSpermSource, editCarrier, editHasEmbryos, editEmbryoCount, editEmbryosTested, editNeedsClinic, editCurrentClinicName, editClinicPriority, editClinicPriorityTags, editSurrogateCountries, editSurrogateTermination, editSurrogateTwins, editSurrogateAgeRange, editSurrogateBudget, editSurrogateExperience, editSurrogateMedPrefs, editSameSexCouple, editSurrogateRace, editSurrogateEthnicity, editSurrogateRelationship, editSurrogateBmiRange, editSurrogateTotalCostRange, editSurrogateLiveBirthsRange, editSurrogateMaxCSections, editSurrogateMaxMiscarriages, editSurrogateMaxAbortions, editSurrogateLastDeliveryYear, editSurrogateCovidVaccinated, editSurrogateSelectiveReduction, editSurrogateInternationalParents, editDonorPreferences, editDonorEyeColor, editDonorHairColor, editDonorHeight, editDonorEducation, editDonorEthnicity, editSpermDonorType, editSpermDonorPreferences, editSpermDonorAgeRange, editSpermDonorEyeColor, editSpermDonorHairColor, editSpermDonorHeightRange, editSpermDonorRace, editSpermDonorEthnicity, editSpermDonorEducation, editSpermDonorMaxPrice, editEggDonorAgeRange, editEggDonorCompensationRange, editEggDonorTotalCostRange, editEggDonorLotCostRange, editEggDonorEggType, editEggDonorDonationType, editClinicAgeGroup, editCurrentAgencyName, editCurrentAttorneyName]);
 
   // Derive gender-aware options for biological baseline fields
   // Gender is stored as "I'm a man" / "I'm a woman" / "I'm non-binary"
@@ -576,12 +599,18 @@ function AccountTab() {
                 <p className="text-xs text-muted-foreground">Email cannot be changed</p>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-mobile">Mobile Number</Label>
-                <Input
-                  id="edit-mobile"
-                  value={editMobile}
-                  onChange={e => setEditMobile(e.target.value)}
-                  placeholder="e.g. +1 (555) 123-4567"
+                <Label>Mobile Number</Label>
+                <PhoneInput
+                  variant="default"
+                  value={editMobileE164}
+                  displayValue={editMobileDisplay}
+                  defaultIsoCode={editMobileIsoCode || undefined}
+                  onChange={({ e164, display, isValid, isoCode }) => {
+                    setEditMobileE164(e164);
+                    setEditMobileDisplay(display);
+                    setEditMobileIsoCode(isoCode);
+                    setEditMobileIsValid(isValid);
+                  }}
                   data-testid="input-edit-mobile"
                 />
               </div>
@@ -794,7 +823,7 @@ function AccountTab() {
                 <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Mobile Number</label>
                 <div className="flex items-center gap-2">
                   <Phone className="w-3.5 h-3.5 text-muted-foreground" />
-                  <p className="text-sm font-ui" data-testid="text-account-mobile">{mobileNumber || '-'}</p>
+                  <p className="text-sm font-ui" data-testid="text-account-mobile">{mobileNumberDisplay || mobileNumber || '-'}</p>
                 </div>
               </div>
               {!isProviderUser && (

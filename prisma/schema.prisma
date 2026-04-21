@@ -186,6 +186,7 @@ model User {
   lastName              String?
   photoUrl              String?
   mobileNumber          String?
+  mobileNumberDisplay   String?
   dateOfBirth           DateTime?
   gender                String?
   sexualOrientation     String?
@@ -393,7 +394,7 @@ model ScheduleConfig {
   defaultSubject       String?
   autoConsentRecording Boolean            @default(true)
   availabilitySlots    AvailabilitySlot[]
-  user                 User               @relation(fields: [userId], references: [id])
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model AvailabilitySlot {
@@ -403,7 +404,7 @@ model AvailabilitySlot {
   startTime        String
   endTime          String
   isActive         Boolean        @default(true)
-  scheduleConfig   ScheduleConfig @relation(fields: [scheduleConfigId], references: [id])
+  scheduleConfig   ScheduleConfig @relation(fields: [scheduleConfigId], references: [id], onDelete: Cascade)
 }
 
 model Booking {
@@ -474,7 +475,7 @@ model CalendarBlock {
   blockType     String    @default("busy")
   recurrence    String?
   recurrenceEnd DateTime?
-  user          User      @relation(fields: [userId], references: [id])
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Notification {
@@ -489,7 +490,7 @@ model Notification {
   recipient    String
   createdAt    DateTime  @default(now())
   booking      Booking?  @relation(fields: [bookingId], references: [id])
-  user         User      @relation(fields: [userId], references: [id])
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model InAppNotification {
@@ -719,7 +720,7 @@ model AvailabilityOverride {
   slots       Json?
   label       String?
   createdAt   DateTime @default(now())
-  user        User     @relation(fields: [userId], references: [id])
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, date])
 }
@@ -732,7 +733,7 @@ model EventFreeOverride {
   calendarId      String
   title           String?
   createdAt       DateTime @default(now())
-  user            User     @relation(fields: [userId], references: [id])
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, externalEventId, provider])
 }
@@ -756,7 +757,7 @@ model CalendarConnection {
   disconnectReason   String?
   encryptedPassword  String?
   passwordIv         String?
-  user               User      @relation(fields: [userId], references: [id])
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model SiteSettings {
