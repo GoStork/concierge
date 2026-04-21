@@ -5,7 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { api } from "@shared/routes";
-import { ChevronLeft, Loader2, Lock, Check, Eye, EyeOff, AlertCircle, UserRound, Sparkles, DollarSign, CalendarCheck, Stethoscope, Heart, Baby, FlaskConical } from "lucide-react";
+import { ChevronLeft, Loader2, Lock, Check, Eye, EyeOff, AlertCircle, UserRound, Sparkles, DollarSign, CalendarCheck, Stethoscope, Heart, Baby, FlaskConical, Search } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import LocationAutocomplete from "@/components/location-autocomplete";
 
