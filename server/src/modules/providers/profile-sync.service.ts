@@ -2568,6 +2568,26 @@ async function fetchOrchidJmsProfile(
         }
       }
     }
+    // Match dynamic photo endpoints (e.g. /DonorPhoto?PhotoId=456, /Photo/Get?id=123)
+    // These have no file extension so the regex above misses them
+    const dynamicPhotoRegex = /(?:data-img-src|src)="([^"]*(?:DonorPhoto|Photo\/Get|PhotoHandler|DonorImage|\/Photo\?|\/Image\?)[^"]*)"/gi;
+    while ((m = dynamicPhotoRegex.exec(html)) !== null) {
+      const rawUrl = m[1].replace(/&amp;/g, "&");
+      if (!rawUrl.includes("logo") && !rawUrl.includes("favicon") && !seenPhotoUrls.has(rawUrl)) {
+        try {
+          const resolved = new URL(rawUrl, profileUrl).href;
+          if (!seenPhotoUrls.has(resolved)) {
+            seenPhotoUrls.add(resolved);
+            photos.push(resolved);
+          }
+        } catch {
+          if (!seenPhotoUrls.has(rawUrl)) {
+            seenPhotoUrls.add(rawUrl);
+            photos.push(rawUrl);
+          }
+        }
+      }
+    }
     if (photos.length > 0) {
       profile["Photos"] = photos;
       if (profile["_sections"]) {
