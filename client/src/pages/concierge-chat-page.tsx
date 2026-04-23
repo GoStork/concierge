@@ -1944,14 +1944,127 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
   );
 }
 
+function AgencyMatchCard({ card, brandColor, onAction }: { card: MatchCard; brandColor: string; onAction: (text: string) => void }) {
+  const [provider, setProvider] = useState<any>(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/providers/${card.providerId}`, { credentials: "include" });
+        if (res.ok) setProvider(await res.json());
+      } catch {}
+    })();
+  }, [card.providerId]);
+
+  if (!provider) {
+    return (
+      <div className="min-w-[320px] max-w-[420px] w-full rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const sp = provider.surrogacyProfile || {};
+  const primaryLocation = provider.locations?.[0];
+  const allLocations: string[] = (provider.locations || [])
+    .map((l: any) => [l.city, l.state].filter(Boolean).join(", "))
+    .filter(Boolean);
+  const locationStr = card.location || allLocations[0] || "";
+
+  const stats: { label: string; value: string }[] = [];
+  if (sp.numberOfBabiesBorn) stats.push({ label: "Babies born", value: String(sp.numberOfBabiesBorn) + "+" });
+  if (sp.timeToMatch) stats.push({ label: "Time to match", value: sp.timeToMatch });
+  if (sp.familiesPerCoordinator) stats.push({ label: "Families / coordinator", value: String(sp.familiesPerCoordinator) });
+
+  return (
+    <div
+      className="min-w-[320px] max-w-[420px] w-full animate-[slideUp_0.4s_ease-out_forwards] border border-border bg-card overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
+      style={{ borderRadius: "var(--container-radius, 0.5rem)" }}
+      data-testid={`match-card-${card.providerId}`}
+      onClick={() => navigate(`/providers/${card.providerId}`, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } })}
+    >
+      <div className="p-4 space-y-3">
+        {/* Header: logo + name + location */}
+        <div className="flex items-start gap-3">
+          {provider.logoUrl ? (
+            <img src={getPhotoSrc(provider.logoUrl) || undefined} alt="" className="w-10 h-10 rounded-[var(--radius)] object-contain border border-border/30 bg-background p-0.5 shrink-0" />
+          ) : (
+            <div className="w-10 h-10 rounded-[var(--radius)] flex items-center justify-center text-primary-foreground text-sm font-bold shrink-0" style={{ backgroundColor: brandColor }}>
+              {(provider.name || "A").charAt(0)}
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <h3 className="text-base font-heading text-foreground leading-tight">{provider.name}</h3>
+            {locationStr && (
+              <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
+                <Globe className="w-3.5 h-3.5 shrink-0" />
+                {locationStr}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Key stats */}
+        {stats.length > 0 && (
+          <div className="grid grid-cols-3 gap-2">
+            {stats.map((s) => (
+              <div key={s.label} className="rounded-[var(--radius)] bg-muted px-2 py-2 text-center">
+                <p className="text-sm font-heading text-foreground">{s.value}</p>
+                <p className="text-xs text-muted-foreground leading-tight mt-0.5">{s.label}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Match reasons */}
+        {card.reasons?.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {card.reasons.map((r) => (
+              <span key={r} className="text-xs px-2 py-0.5 rounded-full border border-border bg-background text-foreground font-ui">
+                {r}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Additional locations */}
+        {allLocations.length > 1 && (
+          <p className="text-xs text-muted-foreground">
+            Also in: {allLocations.slice(1).join(" · ")}
+          </p>
+        )}
+      </div>
+
+      <div className="border-t border-border/50 px-4 py-3 flex gap-2">
+        <Button
+          variant="outline"
+          className="flex-1 text-xs font-ui h-8"
+          onClick={(e) => { e.stopPropagation(); navigate(`/providers/${card.providerId}`, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } }); }}
+        >
+          View Agency
+        </Button>
+        <Button
+          className="flex-1 text-xs font-ui h-8 text-primary-foreground"
+          style={{ backgroundColor: brandColor }}
+          onClick={(e) => { e.stopPropagation(); onAction(`I'd like to schedule a consultation with ${provider.name}`); }}
+        >
+          Book Consultation
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { card: MatchCard; brandColor: string; onAction: (text: string) => void; onViewProfile: (card: MatchCard) => void }) {
   const [profile, setProfile] = useState<any>(null);
   const [fetchFailed, setFetchFailed] = useState(false);
   const cardType = card.type || "";
   const isClinic = cardType.toLowerCase() === "clinic";
+  const isAgency = cardType.toLowerCase() === "surrogacyagency" || cardType.toLowerCase() === "surrogacy agency";
 
   useEffect(() => {
-    if (isClinic) return;
+    if (isClinic || isAgency) return;
     const fetchProfile = async () => {
       try {
         const typeSlug = cardType.toLowerCase().replace(" ", "-");
@@ -1966,10 +2079,14 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
       }
     };
     fetchProfile();
-  }, [card.providerId, card.type, isClinic]);
+  }, [card.providerId, card.type, isClinic, isAgency]);
 
   if (isClinic) {
     return <ClinicMatchCard card={card} brandColor={brandColor} onAction={onAction} onViewProfile={onViewProfile} />;
+  }
+
+  if (isAgency) {
+    return <AgencyMatchCard card={card} brandColor={brandColor} onAction={onAction} />;
   }
 
   if (!profile && !card.photo) {
@@ -2681,6 +2798,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     const mm = matchmakers.find((m) => m.id === effectiveMatchmakerId);
     if (mm) setResolvedMatchmakerName(mm.name);
   }, [effectiveMatchmakerId, matchmakers]);
+
+  // Preload the matchmaker avatar so it's in the browser cache before the header renders
+  useEffect(() => {
+    const url = selectedMatchmaker?.avatarUrl ? (getPhotoSrc(selectedMatchmaker.avatarUrl) || selectedMatchmaker.avatarUrl) : null;
+    if (!url) return;
+    const img = new Image();
+    img.src = url;
+  }, [selectedMatchmaker?.avatarUrl]);
 
   const brandColor = brand?.primaryColor || "#004D4D";
   const chatPalette = useMemo(() => deriveChatPalette(brandColor), [brandColor]);

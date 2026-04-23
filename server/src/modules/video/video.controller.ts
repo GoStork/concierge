@@ -730,6 +730,10 @@ export class VideoController {
           where: { id: activeBooking.id },
           data: { actualEndedAt: new Date() },
         });
+        // Fire post-call follow-up asynchronously - don't block the webhook response
+        this.firePostCallFollowUp(activeBooking).catch((err) =>
+          this.logger.error(`Post-call follow-up failed: ${err.message}`),
+        );
       }
     } else if (eventType === "recording.ready-to-download") {
       const recordingId = payload?.recording_id;
@@ -809,6 +813,76 @@ export class VideoController {
       },
       orderBy: { scheduledAt: "desc" },
     });
+  }
+
+  /** Sends AI follow-up messages to both parent and provider after a consultation call ends. */
+  private async firePostCallFollowUp(booking: { id: string; parentUserId?: string | null; providerUserId: string; subject?: string | null }) {
+    const { parentUserId, providerUserId } = booking;
+    if (!parentUserId) return;
+
+    // Resolve parent first name and provider entity in parallel
+    const [parentUser, providerEntity] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: parentUserId }, select: { firstName: true, name: true } }),
+      this.prisma.provider.findFirst({
+        where: { users: { some: { id: providerUserId } } },
+        select: { id: true, name: true },
+      }),
+    ]);
+
+    const parentFirstName = parentUser?.firstName || parentUser?.name?.split(" ")[0] || "there";
+    const providerName = providerEntity?.name || "the agency";
+
+    // --- 1. Parent's main AI concierge session (ACTIVE) ---
+    // This is their primary matchmaking chat - follow up to guide next steps
+    const parentMainSession = await this.prisma.aiChatSession.findFirst({
+      where: { userId: parentUserId, status: "ACTIVE", sessionType: "PARENT" },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true },
+    });
+
+    if (parentMainSession) {
+      await this.prisma.aiChatMessage.create({
+        data: {
+          sessionId: parentMainSession.id,
+          role: "assistant",
+          content: `Your consultation with ${providerName} just wrapped up - that's a big step! How did it go? Did you feel a good connection with them? [[QUICK_REPLY:It went great!|I have some questions|Not the right fit]]`,
+          senderType: "ai",
+        },
+      });
+    }
+
+    // --- 2. The 3-way PROVIDER_JOINED session ---
+    // Ask the provider for their assessment so they can update the session status
+    if (providerEntity) {
+      const providerSession = await this.prisma.aiChatSession.findFirst({
+        where: { userId: parentUserId, providerId: providerEntity.id, status: "PROVIDER_JOINED" },
+        select: { id: true },
+      });
+
+      if (providerSession) {
+        // Message seen by provider in the 3-way chat
+        await this.prisma.aiChatMessage.create({
+          data: {
+            sessionId: providerSession.id,
+            role: "assistant",
+            content: `Great call! ${providerName}, based on your consultation with ${parentFirstName}, what are your initial thoughts? Use the buttons below to update the status and let ${parentFirstName} know next steps. [[QUICK_REPLY:Ready to proceed|Need more information|Not the right fit]]`,
+            senderType: "ai",
+          },
+        });
+      }
+    }
+
+    // --- 3. In-app notification to prompt parent back to chat ---
+    await this.prisma.inAppNotification.create({
+      data: {
+        userId: parentUserId,
+        eventType: "CONSULTATION_CALL_ENDED",
+        payload: {
+          providerName,
+          message: `Your consultation with ${providerName} has ended. The concierge has a follow-up for you.`,
+        },
+      },
+    }).catch(() => { /* non-critical */ });
   }
 
 
