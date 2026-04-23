@@ -65,3 +65,10 @@ export function getCountryFlag(name: string): string {
   if (!code) return "";
   return codeToFlagEmoji(code);
 }
+
+/** Converts a country name (e.g. "United States") to an ISO 3166-1 alpha-2 code (e.g. "US"). */
+export function countryNameToIsoCode(name: string): string | null {
+  if (!name) return null;
+  const lower = name.trim().toLowerCase();
+  return OVERRIDES[lower] ?? buildNameToCode().get(lower) ?? null;
+}

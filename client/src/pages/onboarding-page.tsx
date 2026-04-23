@@ -9,6 +9,7 @@ import { ChevronLeft, Loader2, Lock, Check, Eye, EyeOff, AlertCircle, UserRound,
 import { getPhotoSrc } from "@/lib/profile-utils";
 import LocationAutocomplete from "@/components/location-autocomplete";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { countryNameToIsoCode } from "@/lib/country-flag";
 
 // AI Intro service-to-visual config (inline version of OnboardingAiIntroPage)
 const AI_INTRO_SERVICE_CONFIG: Record<string, { icon: typeof Stethoscope; gradient: string; label: string; imageKey: string; chatText: string; replyText: string }> = {
@@ -621,6 +622,7 @@ export default function OnboardingPage() {
               value={data.phoneE164}
               displayValue={data.phoneDisplay}
               isoCode={data.phoneIsoCode}
+              locationCountry={data.country}
               detectedCountry={detectedCountry}
               detectingCountry={detectingCountry}
               onChange={({ e164, display, isValid, isoCode }) => {
@@ -940,6 +942,7 @@ function StepPhone({
   value,
   displayValue,
   isoCode,
+  locationCountry,
   detectedCountry,
   detectingCountry,
   onChange,
@@ -948,12 +951,15 @@ function StepPhone({
   value: string;
   displayValue: string;
   isoCode: string;
+  locationCountry?: string;
   detectedCountry: string | null;
   detectingCountry: boolean;
   onChange: (params: { e164: string; display: string; isValid: boolean; isoCode: string }) => void;
   error?: string | null;
 }) {
-  const effectiveDefault = isoCode || detectedCountry || undefined;
+  // Priority: explicit user selection > country from location step > geo API detection
+  const isoFromLocation = locationCountry ? countryNameToIsoCode(locationCountry) : null;
+  const effectiveDefault = isoCode || isoFromLocation || detectedCountry || undefined;
 
   return (
     <div>
@@ -974,7 +980,7 @@ function StepPhone({
           value={value}
           displayValue={displayValue}
           defaultIsoCode={effectiveDefault}
-          loadingCountry={detectingCountry && !isoCode}
+          loadingCountry={detectingCountry && !isoCode && !isoFromLocation}
           onChange={onChange}
           data-testid="input-phone"
         />

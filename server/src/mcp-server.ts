@@ -559,6 +559,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               items: { type: "string" },
               description: "Array of surrogate IDs to exclude from results (already presented profiles)",
             },
+            parentClinicName: {
+              type: "string",
+              description: "Name of the parent's IVF clinic. When provided, the clinic's surrogate medical requirements (age range, BMI, c-sections, etc.) are automatically applied as hard filters. Always pass this when the parent has an existing IVF clinic.",
+            },
           },
         },
       },
@@ -933,9 +937,49 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_surrogates") {
-      const { query, parentCountry, agreesToTwins, agreesToAbortion, openToSameSexCouple, openToInternationalParents, isExperienced, location, maxCompensation, maxAge, minAge, ethnicity, maxBmi, maxCsections, maxMiscarriages, requireCovidVaccinated, limit: rawLimit, excludeIds } = args as any;
+      const { query, parentCountry, agreesToTwins, agreesToAbortion, openToSameSexCouple, openToInternationalParents, isExperienced, location, maxCompensation, maxAge, minAge, ethnicity, maxBmi, maxCsections, maxMiscarriages, requireCovidVaccinated, limit: rawLimit, excludeIds, parentClinicName } = args as any;
       const take = Math.min(rawLimit || 3, 5);
       const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
+
+      // Fetch IVF clinic surrogate requirements when parentClinicName is provided.
+      // Clinic requirements are hard constraints (non-negotiable) that override advisory defaults.
+      let clinicSurrogateReqs: any = null;
+      let clinicRequirementsNote = "";
+      if (parentClinicName) {
+        const clinic = await prisma.provider.findFirst({
+          where: {
+            name: { contains: parentClinicName, mode: "insensitive" },
+            type: { in: ["IVF_CLINIC", "FERTILITY_CLINIC"] },
+          },
+          select: {
+            name: true,
+            ivfSurrogateMinAge: true, ivfSurrogateMaxAge: true,
+            ivfSurrogateMinBmi: true, ivfSurrogateMaxBmi: true,
+            ivfSurrogateMaxDeliveries: true, ivfSurrogateMaxCSections: true,
+            ivfSurrogateMaxMiscarriages: true, ivfSurrogateMaxAbortions: true,
+            ivfSurrogateCovidVaccination: true,
+          },
+        });
+        if (clinic) {
+          clinicSurrogateReqs = clinic;
+          const reqs: string[] = [];
+          if (clinic.ivfSurrogateMinAge != null || clinic.ivfSurrogateMaxAge != null) {
+            reqs.push(`age ${clinic.ivfSurrogateMinAge ?? "?"}-${clinic.ivfSurrogateMaxAge ?? "?"}`);
+          }
+          if (clinic.ivfSurrogateMinBmi != null || clinic.ivfSurrogateMaxBmi != null) {
+            reqs.push(`BMI ${clinic.ivfSurrogateMinBmi ?? "?"}-${clinic.ivfSurrogateMaxBmi ?? "?"}`);
+          }
+          if (clinic.ivfSurrogateMaxCSections != null) reqs.push(`max ${clinic.ivfSurrogateMaxCSections} c-sections`);
+          if (clinic.ivfSurrogateMaxMiscarriages != null) reqs.push(`max ${clinic.ivfSurrogateMaxMiscarriages} miscarriages`);
+          if (clinic.ivfSurrogateMaxDeliveries != null) reqs.push(`max ${clinic.ivfSurrogateMaxDeliveries} deliveries`);
+          if (clinic.ivfSurrogateCovidVaccination === true) reqs.push("covid vaccinated required");
+          clinicRequirementsNote = reqs.length > 0
+            ? ` CLINIC REQUIREMENTS APPLIED (${clinic.name}): ${reqs.join(", ")}. These are non-negotiable hard filters set by the parent's IVF clinic.`
+            : ` Clinic "${clinic.name}" found but has no specific surrogate requirements configured.`;
+        } else {
+          clinicRequirementsNote = ` NOTE: Clinic "${parentClinicName}" not found in database - no clinic requirements applied.`;
+        }
+      }
       const ethnicityTerms = ethnicity ? resolveEthnicityTerms(ethnicity) : [];
 
       const surrogateSelect = {
@@ -972,6 +1016,39 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (maxBmi != null) baseWhere.bmi = { lte: Number(maxBmi) };
       if (maxCsections != null) baseWhere.cSections = { lte: Number(maxCsections) };
       if (maxMiscarriages != null) baseWhere.miscarriages = { lte: Number(maxMiscarriages) };
+
+      // Apply IVF clinic surrogate requirements as hard filters (clinic requirements always win)
+      if (clinicSurrogateReqs) {
+        const c = clinicSurrogateReqs;
+        if (c.ivfSurrogateMinAge != null || c.ivfSurrogateMaxAge != null) {
+          baseWhere.age = {
+            ...(baseWhere.age || {}),
+            ...(c.ivfSurrogateMinAge != null ? { gte: Math.max(c.ivfSurrogateMinAge, baseWhere.age?.gte ?? 0) } : {}),
+            ...(c.ivfSurrogateMaxAge != null ? { lte: Math.min(c.ivfSurrogateMaxAge, baseWhere.age?.lte ?? 999) } : {}),
+          };
+        }
+        if (c.ivfSurrogateMinBmi != null || c.ivfSurrogateMaxBmi != null) {
+          const existingLte = baseWhere.bmi?.lte ?? 999;
+          baseWhere.bmi = {
+            ...(c.ivfSurrogateMinBmi != null ? { gte: c.ivfSurrogateMinBmi } : {}),
+            ...(c.ivfSurrogateMaxBmi != null ? { lte: Math.min(c.ivfSurrogateMaxBmi, existingLte) } : {}),
+          };
+        }
+        if (c.ivfSurrogateMaxCSections != null) {
+          const existing = baseWhere.cSections?.lte ?? 999;
+          baseWhere.cSections = { lte: Math.min(c.ivfSurrogateMaxCSections, existing) };
+        }
+        if (c.ivfSurrogateMaxMiscarriages != null) {
+          const existing = baseWhere.miscarriages?.lte ?? 999;
+          baseWhere.miscarriages = { lte: Math.min(c.ivfSurrogateMaxMiscarriages, existing) };
+        }
+        if (c.ivfSurrogateMaxDeliveries != null) {
+          baseWhere.liveBirths = { lte: c.ivfSurrogateMaxDeliveries };
+        }
+        if (c.ivfSurrogateCovidVaccination === true) {
+          baseWhere.covidVaccinated = true;
+        }
+      }
 
       // Soft filters: relaxed one-at-a-time if no full-match results.
       // Covid vaccination is first (most expendable preference); ethnicity and location follow.
@@ -1110,7 +1187,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       });
 
       return {
-        content: [{ type: "text", text: `Found ${results.length} surrogates:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Surrogate" in your MATCH_CARDs. Use the "displayName" as the name. Use the "profileHighlights" (supportSystem, motivation, pregnancyHistory, letterExcerpt) to write a warm, personalized introduction. ALWAYS mention the support system if available. Results are sorted by matchScore (lowest BMI = healthiest, most experience, youngest age within range). If unmatchedCriteria is non-empty, tell the parent which criteria differ before showing the MATCH_CARD.${surrogateRelaxedFilter ? ` NOTE: No 100% match found. Search broadened by relaxing "${surrogateRelaxedFilter}" - clearly inform the parent.` : ""}` }],
+        content: [{ type: "text", text: `Found ${results.length} surrogates:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Surrogate" in your MATCH_CARDs. Use the "displayName" as the name. Use the "profileHighlights" (supportSystem, motivation, pregnancyHistory, letterExcerpt) to write a warm, personalized introduction. ALWAYS mention the support system if available. Results are sorted by matchScore (lowest BMI = healthiest, most experience, youngest age within range). If unmatchedCriteria is non-empty, tell the parent which criteria differ before showing the MATCH_CARD.${surrogateRelaxedFilter ? ` NOTE: No 100% match found. Search broadened by relaxing "${surrogateRelaxedFilter}" - clearly inform the parent.` : ""}${clinicRequirementsNote}` }],
       };
     }
 

@@ -3146,6 +3146,41 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           const data = await res.json();
           if (data.sessionId) setSessionId(data.sessionId);
           if (data.greetingMessageId) knownMessageIds.current.add(data.greetingMessageId);
+
+          // Auto-deliver Phase 0 on brand new sessions (no donor inquiry, not a resumed session)
+          if (!data.reused && !donorIdParam && data.sessionId) {
+            setSending(true);
+            sendingRef.current = true;
+            try {
+              const phase0Res = await fetch("/api/ai-concierge/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({
+                  message: "phase0_init",
+                  isSystemTrigger: true,
+                  sessionId: data.sessionId,
+                  matchmakerId: effectiveMatchmakerId,
+                }),
+              });
+              if (phase0Res.ok) {
+                const phase0Data = await phase0Res.json();
+                if (phase0Data.message?.id) knownMessageIds.current.add(phase0Data.message.id);
+                if (phase0Data.message?.content) {
+                  setMessages((prev) => [...prev, {
+                    role: "assistant" as const,
+                    content: phase0Data.message.content,
+                    id: phase0Data.message.id,
+                    quickReplies: phase0Data.quickReplies,
+                    multiSelect: phase0Data.multiSelect,
+                    createdAt: phase0Data.message.createdAt || new Date().toISOString(),
+                  }]);
+                }
+              }
+            } catch {}
+            setSending(false);
+            sendingRef.current = false;
+          }
         }
       } catch {}
     })();

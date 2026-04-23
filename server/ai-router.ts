@@ -642,7 +642,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
         }
         return;
       }
-      return res.json({ sessionId: existing.id });
+      return res.json({ sessionId: existing.id, reused: true });
     }
 
     const sessionTitle = "AI Concierge Chat";
@@ -756,7 +756,8 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       : parentNameParts[0] || "Parent";
 
     const attachmentData = req.body.attachmentData || null;
-    const isSystemTrigger = req.body.isSystemTrigger === true && req.body.message === "consultation_callback_submitted";
+    const isPhase0Init = req.body.isSystemTrigger === true && req.body.message === "phase0_init";
+    const isSystemTrigger = (req.body.isSystemTrigger === true && req.body.message === "consultation_callback_submitted") || isPhase0Init;
 
     // For system triggers, don't save a user message - just inject context and let AI respond
     const savedUserMsg = isSystemTrigger ? null : await prisma.aiChatMessage.create({
@@ -897,6 +898,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
           mobileNumber: true,
           city: true,
           state: true,
+          country: true,
           gender: true,
           sexualOrientation: true,
           relationshipStatus: true,
@@ -931,6 +933,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     const firstName = userRecord?.firstName || userRecord?.name?.split(" ")[0] || "there";
     const city = userRecord?.city || "";
     const state = userRecord?.state || "";
+    const country = (userRecord as any)?.country || "";
     const location = city && state ? `${city}, ${state}` : city || state || "your area";
     const profile = (userRecord as any)?.parentAccount?.intendedParentProfile;
     const services: string[] = profile?.interestedServices || [];
@@ -951,32 +954,134 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     let userContextBlock = "";
     if (userRecord) {
       const parts: string[] = [];
+
+      // --- IDENTITY ---
       parts.push(`The user's name is ${firstName}.`);
-      if (userRecord.gender) parts.push(`They identify as ${userRecord.gender.replace("I'm ", "").toLowerCase()}.`);
-      else parts.push(`Gender: not yet collected (you MUST ask in PHASE 1 Identity Opener).`);
+      if (userRecord.gender) parts.push(`Gender: ${userRecord.gender}.`);
+      else parts.push(`Gender: not yet collected (ask in Phase 1).`);
       if (userRecord.sexualOrientation) parts.push(`Sexual orientation: ${userRecord.sexualOrientation}.`);
-      else parts.push(`Sexual orientation: not yet collected (you MUST ask in PHASE 1 Identity Opener).`);
+      else parts.push(`Sexual orientation: not yet collected (ask in Phase 1).`);
       if (userRecord.relationshipStatus) parts.push(`Relationship status: ${userRecord.relationshipStatus}.`);
-      else parts.push(`Relationship status: not yet collected (you MUST ask in PHASE 1 Identity Opener).`);
+      else parts.push(`Relationship status: not yet collected (ask in Phase 1).`);
+      if (profile?.sameSexCouple != null) parts.push(`Same-sex couple: ${profile.sameSexCouple ? "yes" : "no"}.`);
       if (userRecord.partnerFirstName) {
         let partnerInfo = `Partner's name: ${userRecord.partnerFirstName}`;
         if (userRecord.partnerAge) partnerInfo += `, age ${userRecord.partnerAge}`;
         parts.push(partnerInfo + ".");
       }
-      parts.push(`Location: ${location}.`);
-      parts.push(`Registered interest in: ${service}. Use this to skip Phase 2 biological baseline questions already answered by their service registration (e.g., if they registered for Egg Donor, skip embryo/egg-source/egg-donor-help questions). You MUST still ask in STEP 5 which services they need help finding - do NOT skip STEP 5 based on registration alone.`);
+      const locationWithCountry = country && country.toLowerCase() !== "united states" && country.toLowerCase() !== "us" && country.toLowerCase() !== "usa"
+        ? `${location}${location !== "your area" ? ", " : ""}${country}`
+        : location;
+      parts.push(`Location: ${locationWithCountry}.${country ? ` Parent's country of citizenship: ${country}. Always pass parentCountry="${country}" to search_surrogates and search_surrogacy_agencies so agencies that do not serve parents from ${country} are automatically excluded.` : ""}`);
+      parts.push(`Registered interest in: ${service}.`);
       if (userRecord.dateOfBirth) {
         const age = Math.floor((Date.now() - new Date(userRecord.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
         parts.push(`Age: ${age}.`);
       }
-      if (profile?.hasEmbryos) {
-        parts.push(`Has frozen embryos: Yes (count: ${profile.embryoCount || "unknown"}, PGT-A tested: ${profile.embryosTested ? "yes" : "unknown"}).`);
+
+      // --- BIOLOGICAL BASELINE (Phase 2) ---
+      if (profile?.hasEmbryos === true) {
+        parts.push(`Has frozen embryos: YES (count: ${profile.embryoCount ?? "unknown"}, PGT-A tested: ${profile.embryosTested === true ? "yes" : profile.embryosTested === false ? "no" : "unknown"}) - do NOT ask about embryos again.`);
+      } else if (profile?.hasEmbryos === false) {
+        parts.push(`Has frozen embryos: NO - do NOT ask about embryos again.`);
       }
-      if (profile?.eggSource) parts.push(`Egg source: ${profile.eggSource}.`);
-      if (profile?.spermSource) parts.push(`Sperm source: ${profile.spermSource}.`);
-      if (profile?.carrier) parts.push(`Carrier: ${profile.carrier}.`);
+      if (profile?.eggSource) parts.push(`Egg source: ${profile.eggSource} - do NOT ask about egg source again.`);
+      if (profile?.spermSource) parts.push(`Sperm source: ${profile.spermSource} - do NOT ask about sperm source again.`);
+      if (profile?.carrier) parts.push(`Carrier: ${profile.carrier} - do NOT ask about carrier again.`);
+      if (profile?.isFirstIvf != null) parts.push(`First IVF: ${profile.isFirstIvf ? "yes" : "no"} - do NOT ask about IVF history again.`);
+
+      // --- SERVICE NEEDS (Phase 2 Step 0 / 2a / 3a / 4a) ---
+      if (profile?.needsClinic === true) parts.push(`Needs help finding a clinic: YES - do NOT ask again.`);
+      else if (profile?.needsClinic === false) {
+        parts.push(`Already has a clinic${profile.currentClinicName ? ` (${profile.currentClinicName})` : ""} - do NOT ask if they need a clinic.`);
+        // Inject IVF clinic surrogate requirements so AI can advise parents and pass clinicName to search
+        if (profile.currentClinicName) {
+          try {
+            const clinicProvider = await prisma.provider.findFirst({
+              where: { name: { contains: profile.currentClinicName, mode: "insensitive" }, type: { in: ["IVF_CLINIC", "FERTILITY_CLINIC"] } },
+              select: {
+                name: true,
+                ivfSurrogateMinAge: true, ivfSurrogateMaxAge: true,
+                ivfSurrogateMinBmi: true, ivfSurrogateMaxBmi: true,
+                ivfSurrogateMaxDeliveries: true, ivfSurrogateMaxCSections: true,
+                ivfSurrogateMaxMiscarriages: true, ivfSurrogateMaxAbortions: true,
+                ivfSurrogateCovidVaccination: true,
+                ivfMaxAgeIp1: true, ivfMaxAgeIp2: true,
+                ivfTwinsAllowed: true, ivfAcceptingPatients: true,
+              },
+            });
+            if (clinicProvider) {
+              const surReqs: string[] = [];
+              if (clinicProvider.ivfSurrogateMinAge != null || clinicProvider.ivfSurrogateMaxAge != null)
+                surReqs.push(`age ${clinicProvider.ivfSurrogateMinAge ?? "?"}-${clinicProvider.ivfSurrogateMaxAge ?? "?"}`);
+              if (clinicProvider.ivfSurrogateMinBmi != null || clinicProvider.ivfSurrogateMaxBmi != null)
+                surReqs.push(`BMI ${clinicProvider.ivfSurrogateMinBmi ?? "?"}-${clinicProvider.ivfSurrogateMaxBmi ?? "?"}`);
+              if (clinicProvider.ivfSurrogateMaxCSections != null) surReqs.push(`max ${clinicProvider.ivfSurrogateMaxCSections} c-sections`);
+              if (clinicProvider.ivfSurrogateMaxMiscarriages != null) surReqs.push(`max ${clinicProvider.ivfSurrogateMaxMiscarriages} miscarriages`);
+              if (clinicProvider.ivfSurrogateMaxDeliveries != null) surReqs.push(`max ${clinicProvider.ivfSurrogateMaxDeliveries} deliveries`);
+              if (clinicProvider.ivfSurrogateCovidVaccination === true) surReqs.push("covid vaccinated required");
+              if (surReqs.length > 0) {
+                parts.push(`IVF CLINIC SURROGATE REQUIREMENTS (${clinicProvider.name}) - these are MANDATORY hard filters, tell the parent upfront and always pass parentClinicName="${profile.currentClinicName}" to search_surrogates: ${surReqs.join(", ")}.`);
+              }
+              const ipReqs: string[] = [];
+              if (clinicProvider.ivfMaxAgeIp1 != null) ipReqs.push(`primary parent max age ${clinicProvider.ivfMaxAgeIp1}`);
+              if (clinicProvider.ivfMaxAgeIp2 != null) ipReqs.push(`secondary parent max age ${clinicProvider.ivfMaxAgeIp2}`);
+              if (clinicProvider.ivfTwinsAllowed === false) ipReqs.push("does not allow twins transfers");
+              if (ipReqs.length > 0) {
+                parts.push(`IVF CLINIC PARENT REQUIREMENTS (${clinicProvider.name}): ${ipReqs.join(", ")}.`);
+              }
+            }
+          } catch { /* non-critical - skip if lookup fails */ }
+        }
+      }
+      if (profile?.needsEggDonor === true) parts.push(`Needs help finding an egg donor: YES - do NOT ask again.`);
+      else if (profile?.needsEggDonor === false) parts.push(`Already has an egg donor - do NOT ask if they need one.`);
+      if (profile?.needsSurrogate === true) parts.push(`Needs help finding a surrogate: YES - do NOT ask again.`);
+      else if (profile?.needsSurrogate === false) parts.push(`Already has a surrogate - do NOT ask if they need one.`);
+
+      // --- JOURNEY ---
       if (profile?.journeyStage) parts.push(`Journey stage: ${profile.journeyStage}.`);
-      userContextBlock = parts.join(" ");
+
+      // --- CLINIC PREFERENCES (Match Cycle A) ---
+      const clinicPrefs: string[] = [];
+      if (profile?.clinicPriority) clinicPrefs.push(`priority: ${profile.clinicPriority}`);
+      if (profile?.clinicAgeGroup) clinicPrefs.push(`age group: ${profile.clinicAgeGroup}`);
+      if (clinicPrefs.length > 0) parts.push(`Saved clinic preferences (do NOT re-ask): ${clinicPrefs.join(", ")}.`);
+
+      // --- EGG DONOR PREFERENCES (Match Cycle B) ---
+      const donorPrefs: string[] = [];
+      if (profile?.donorEyeColor) donorPrefs.push(`eye color: ${profile.donorEyeColor}`);
+      if (profile?.donorHairColor) donorPrefs.push(`hair color: ${profile.donorHairColor}`);
+      if (profile?.donorEthnicity) donorPrefs.push(`ethnicity: ${profile.donorEthnicity}`);
+      if (profile?.donorHeight) donorPrefs.push(`height: ${profile.donorHeight}`);
+      if (profile?.donorEducation) donorPrefs.push(`education: ${profile.donorEducation}`);
+      if (profile?.eggDonorAgeRange) donorPrefs.push(`age range: ${profile.eggDonorAgeRange}`);
+      if (profile?.eggDonorEggType) donorPrefs.push(`egg type: ${profile.eggDonorEggType}`);
+      if (profile?.donorPreferences) donorPrefs.push(`other: ${profile.donorPreferences}`);
+      if (donorPrefs.length > 0) parts.push(`Saved egg donor preferences (do NOT re-ask B1): ${donorPrefs.join(", ")}.`);
+
+      // --- SPERM DONOR PREFERENCES (Match Cycle C) ---
+      const spermPrefs: string[] = [];
+      if (profile?.spermDonorType) spermPrefs.push(`type: ${profile.spermDonorType}`);
+      if (profile?.spermDonorPreferences) spermPrefs.push(`other: ${profile.spermDonorPreferences}`);
+      if (profile?.spermDonorEthnicity) spermPrefs.push(`ethnicity: ${profile.spermDonorEthnicity}`);
+      if (spermPrefs.length > 0) parts.push(`Saved sperm donor preferences (do NOT re-ask C1/C2): ${spermPrefs.join(", ")}.`);
+
+      // --- SURROGATE PREFERENCES (Match Cycle D) ---
+      const surrogatePrefs: string[] = [];
+      if (profile?.surrogateCountries) surrogatePrefs.push(`countries: ${profile.surrogateCountries}`);
+      if (profile?.surrogateTermination) surrogatePrefs.push(`termination: ${profile.surrogateTermination}`);
+      if (profile?.surrogateTwins) surrogatePrefs.push(`twins: ${profile.surrogateTwins}`);
+      if (profile?.surrogateAgeRange) surrogatePrefs.push(`age range: ${profile.surrogateAgeRange}`);
+      if (profile?.surrogateExperience) surrogatePrefs.push(`experience: ${profile.surrogateExperience}`);
+      if (profile?.surrogateBudget) surrogatePrefs.push(`budget: ${profile.surrogateBudget}`);
+      if (profile?.surrogateBmiRange) surrogatePrefs.push(`BMI range: ${profile.surrogateBmiRange}`);
+      if (profile?.surrogateMaxCSections != null) surrogatePrefs.push(`max c-sections: ${profile.surrogateMaxCSections}`);
+      if (profile?.surrogateMaxMiscarriages != null) surrogatePrefs.push(`max miscarriages: ${profile.surrogateMaxMiscarriages}`);
+      if (profile?.surrogateMedPrefs) surrogatePrefs.push(`other: ${profile.surrogateMedPrefs}`);
+      if (surrogatePrefs.length > 0) parts.push(`Saved surrogate preferences (do NOT re-ask D1/D2/D3): ${surrogatePrefs.join(", ")}.`);
+
+      userContextBlock = parts.join("\n");
     }
 
     // Try loading prompt sections from DB (admin-editable)
@@ -1655,83 +1760,156 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     const hasSpermDonor = /have.*sperm\s*donor|already.*sperm/i.test(allUserMessages);
     const isGayMale = /gay\s*(couple|man|male|men|dad|father)|two\s*dad|two\s*men|single\s*(man|male|dad|father|guy)/i.test(allUserMessages);
 
-    // Also check profile-registered services - fire skip directives from the very first message
-    // even before the user mentions these services in chat
+    // Also check saved profile DB fields - these are the most reliable signal
     const profileServices: string[] = profile?.interestedServices || [];
-    const profileNeedsEggDonor = profileServices.includes("Egg Donor");
-    const profileNeedsSurrogate = profileServices.includes("Surrogate");
+    const profileNeedsEggDonor = profileServices.includes("Egg Donor") || profile?.needsEggDonor === true;
+    const profileAlreadyHasEggDonor = profile?.needsEggDonor === false;
+    const profileNeedsSurrogate = profileServices.includes("Surrogate") || profile?.needsSurrogate === true;
+    const profileAlreadyHasSurrogate = profile?.needsSurrogate === false;
     const profileNeedsSpermDonor = profileServices.includes("Sperm Donor");
+    const profileNeedsClinic = profile?.needsClinic === true;
+    const profileAlreadyHasClinic = profile?.needsClinic === false;
 
-    // Combined signals (chat OR profile)
+    // Combined signals (DB profile takes precedence over regex chat scan)
     const needsEggDonor = mentionsEggDonor || profileNeedsEggDonor;
-    const alreadyHasEggDonor = hasEggDonor;
+    const alreadyHasEggDonor = hasEggDonor || profileAlreadyHasEggDonor;
     const needsSurrogate = mentionsSurrogate || profileNeedsSurrogate;
-    const alreadyHasSurrogate = hasSurrogate;
+    const alreadyHasSurrogate = hasSurrogate || profileAlreadyHasSurrogate;
     const needsSpermDonor = mentionsSpermDonor || profileNeedsSpermDonor;
     const alreadyHasSpermDonor = hasSpermDonor;
 
-    // Embryo question: skip if they need an egg donor (no embryos yet) or are a gay couple needing donor
-    if (needsEggDonor || (isGayMale && !(/have.*embryo|frozen\s*embryo|embryos/i.test(allUserMessages)))) {
+    // --- PHASE 2: BIOLOGICAL BASELINE SKIP DIRECTIVES ---
+
+    // Embryos: skip if already answered in DB or if context makes it obvious
+    if (profile?.hasEmbryos === true) {
+      skipDirectives.push(`DO NOT ask about frozen embryos (Step 1) - already saved: YES, ${profile.embryoCount ?? "unknown"} embryos, PGT-A tested: ${profile.embryosTested === true ? "yes" : "unknown"}.`);
+    } else if (profile?.hasEmbryos === false) {
+      skipDirectives.push("DO NOT ask about frozen embryos (Step 1) - already saved: NO embryos.");
+    } else if (needsEggDonor || (isGayMale && !(/have.*embryo|frozen\s*embryo|embryos/i.test(allUserMessages)))) {
       skipDirectives.push("DO NOT ask about frozen embryos (Step 1) - parent needs an egg donor, so they do not have embryos yet.");
     }
-    // Egg source: skip for gay males (always donor) or if they need/have an egg donor
-    if (isGayMale || needsEggDonor || alreadyHasEggDonor) {
+
+    // Egg source: skip if already saved or context is obvious
+    if (profile?.eggSource) {
+      skipDirectives.push(`DO NOT ask about egg source (Step 2) - already saved: ${profile.eggSource}.`);
+    } else if (isGayMale || needsEggDonor || alreadyHasEggDonor) {
       skipDirectives.push("DO NOT ask about egg source (Step 2) - already known: using egg donor.");
     }
-    // Help finding egg donor: skip if they need one or already have one - and explicitly activate Match Cycle B
+
+    // Sperm source: skip if already saved
+    if (profile?.spermSource) {
+      skipDirectives.push(`DO NOT ask about sperm source (Step 3) - already saved: ${profile.spermSource}.`);
+    }
+
+    // Carrier: skip if already saved or context is obvious
+    if (profile?.carrier) {
+      skipDirectives.push(`DO NOT ask about carrier/who will carry (Step 4) - already saved: ${profile.carrier}.`);
+    } else if (isGayMale || needsSurrogate || alreadyHasSurrogate) {
+      skipDirectives.push("DO NOT ask about carrier/who will carry (Step 4) - already known: using surrogate.");
+    }
+
+    // Clinic (Step 0): skip if already answered in DB
+    if (profileNeedsClinic) {
+      skipDirectives.push("DO NOT ask if they need help finding a clinic (Step 0) - already saved: YES, they need a clinic.");
+    } else if (profileAlreadyHasClinic) {
+      skipDirectives.push(`DO NOT ask if they need help finding a clinic (Step 0) - already saved: they already have one${profile?.currentClinicName ? ` (${profile.currentClinicName})` : ""}.`);
+    } else if (mentionsClinic && !hasClinic) {
+      skipDirectives.push("DO NOT ask if they need help finding a clinic (Step 0) - they said they need one.");
+    } else if (hasClinic) {
+      skipDirectives.push("DO NOT ask if they need help finding a clinic (Step 0) - they already have one.");
+    }
+
+    // Egg donor help (Step 2a): skip if already answered in DB or from chat
     if (needsEggDonor && !alreadyHasEggDonor) {
       skipDirectives.push(
-        "DO NOT ask if they need help finding an egg donor (Step 2a) - they already indicated they need an egg donor. " +
-        "Treat this as confirmed: they DO need help finding an egg donor. " +
-        "When you reach Phase 3, you MUST run Match Cycle B (Egg Donor) - ask the egg donor preference question and present egg donor matches."
+        "DO NOT ask if they need help finding an egg donor (Step 2a) - already confirmed: they DO need an egg donor. " +
+        "When you reach Phase 3, MUST run Match Cycle B (Egg Donor)."
       );
     }
     if (alreadyHasEggDonor) {
-      skipDirectives.push("DO NOT ask if they need help finding an egg donor (Step 2a) - they already have one. Skip Match Cycle B entirely.");
+      skipDirectives.push("DO NOT ask if they need help finding an egg donor (Step 2a) - already saved: they already have one. Skip Match Cycle B entirely.");
     }
-    // Carrier: skip for gay males (always surrogate) or if they need/have a surrogate
-    if (isGayMale || needsSurrogate || alreadyHasSurrogate) {
-      skipDirectives.push("DO NOT ask about carrier/who will carry (Step 4) - already known: using surrogate.");
-    }
-    // Help finding surrogate: skip if they need one or already have one - and explicitly activate Match Cycle D
+
+    // Surrogate help (Step 4a): skip if already answered in DB or from chat
     if (needsSurrogate && !alreadyHasSurrogate) {
       skipDirectives.push(
-        "DO NOT ask if they need help finding a surrogate (Step 4a) - they already indicated they need a surrogate. " +
-        "Treat this as confirmed: they DO need help finding a surrogate. " +
-        "When you reach Phase 3, you MUST run Match Cycle D (Surrogate) - ask twins/country/termination questions and present surrogate matches."
+        "DO NOT ask if they need help finding a surrogate (Step 4a) - already confirmed: they DO need a surrogate. " +
+        "When you reach Phase 3, MUST run Match Cycle D (Surrogate)."
       );
     }
     if (alreadyHasSurrogate) {
-      skipDirectives.push("DO NOT ask if they need help finding a surrogate (Step 4a) - they already have one. Skip Match Cycle D entirely.");
+      skipDirectives.push("DO NOT ask if they need help finding a surrogate (Step 4a) - already saved: they already have one. Skip Match Cycle D entirely.");
     }
-    // Clinic
-    if (mentionsClinic && !hasClinic) {
-      skipDirectives.push("DO NOT ask if they need help finding a clinic (Step 5) - they said they need one.");
-    }
-    if (hasClinic) {
-      skipDirectives.push("DO NOT ask if they need help finding a clinic (Step 5) - they already have one.");
-    }
-    // First IVF question: skip if using donor eggs (success rates don't vary by new vs prior IVF for donor eggs)
-    if (needsEggDonor || alreadyHasEggDonor || isGayMale) {
-      skipDirectives.push("DO NOT ask if this is their first IVF journey (A4 in Match Cycle A / Step 5-CLINIC-D) - they are using donor eggs, so this question is irrelevant for clinic matching.");
-    }
-    // Age question: skip if using donor eggs (donor egg success rates don't vary by recipient age)
-    if (needsEggDonor || alreadyHasEggDonor || isGayMale) {
-      skipDirectives.push(
-        "DO NOT ask for the parent's age or their partner's age for clinic matching (A1 and A2 in Match Cycle A / Step 5-CLINIC-C) - the parent is using donor eggs. " +
-        "Donor egg success rates do not vary by the recipient's age. Skip both age questions and go directly to A3 (twins) then A5 (priorities)."
-      );
-    }
-    // Sperm donor: skip source/help questions and explicitly activate Match Cycle C
+
+    // Sperm donor help (Step 3a): skip if already answered in DB or from chat
     if (needsSpermDonor && !alreadyHasSpermDonor) {
       skipDirectives.push(
-        "DO NOT ask about sperm source (Step 3) or if they need help finding a sperm donor (Step 3a) - they already indicated they need a sperm donor. " +
-        "Treat this as confirmed: they DO need help finding a sperm donor. " +
-        "When you reach Phase 3, you MUST run Match Cycle C (Sperm Donor) - ask the ID release and sperm donor preference questions and present sperm donor matches."
+        "DO NOT ask about sperm source (Step 3) or if they need help finding a sperm donor (Step 3a) - already confirmed: they DO need a sperm donor. " +
+        "When you reach Phase 3, MUST run Match Cycle C (Sperm Donor)."
       );
     }
     if (alreadyHasSpermDonor) {
-      skipDirectives.push("DO NOT ask about sperm source (Step 3) or if they need help finding a sperm donor (Step 3a) - they already have one. Skip Match Cycle C entirely.");
+      skipDirectives.push("DO NOT ask about sperm source (Step 3) or if they need help finding a sperm donor (Step 3a) - already saved: they already have one. Skip Match Cycle C entirely.");
+    }
+
+    // isFirstIvf (A4): skip if already saved
+    if (profile?.isFirstIvf != null) {
+      skipDirectives.push(`DO NOT ask if this is their first IVF journey (A4) - already saved: ${profile.isFirstIvf ? "first time" : "done IVF before"}.`);
+    } else if (needsEggDonor || alreadyHasEggDonor || isGayMale) {
+      skipDirectives.push("DO NOT ask if this is their first IVF journey (A4) - using donor eggs, irrelevant for clinic matching.");
+    }
+
+    // Age for clinic (A1/A2): skip if already saved in User model or if using donor eggs
+    if (userRecord?.dateOfBirth) {
+      const savedAge = Math.floor((Date.now() - new Date(userRecord.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+      skipDirectives.push(`DO NOT ask for the parent's age (A1) - already saved: ${savedAge} years old.`);
+    }
+    if (userRecord?.partnerAge) {
+      skipDirectives.push(`DO NOT ask for the partner's age (A2) - already saved: ${userRecord.partnerAge} years old.`);
+    }
+    if (!userRecord?.dateOfBirth && (needsEggDonor || alreadyHasEggDonor || isGayMale)) {
+      skipDirectives.push("DO NOT ask for the parent's or partner's age for clinic matching (A1/A2) - using donor eggs, age does not affect donor egg success rates.");
+    }
+
+    // --- PHASE 3: MATCH CYCLE SKIP DIRECTIVES (preferences already saved) ---
+
+    // Clinic preferences already saved (A5)
+    if (profile?.clinicPriority) {
+      skipDirectives.push(`DO NOT ask what matters most in a clinic (A5) - already saved: ${profile.clinicPriority}.`);
+    }
+
+    // Egg donor preferences already saved (B1)
+    const hasEggDonorPrefs = profile?.donorEyeColor || profile?.donorHairColor || profile?.donorEthnicity ||
+      profile?.donorHeight || profile?.donorEducation || profile?.donorPreferences || profile?.eggDonorAgeRange;
+    if (hasEggDonorPrefs) {
+      skipDirectives.push("DO NOT ask about egg donor preferences (B1) - already saved. Use the saved preferences from USER CONTEXT when running Match Cycle B.");
+    }
+
+    // Sperm donor preferences already saved (C1/C2)
+    if (profile?.spermDonorType) {
+      skipDirectives.push(`DO NOT ask about ID Release preference (C1) - already saved: ${profile.spermDonorType}.`);
+    }
+    if (profile?.spermDonorPreferences) {
+      skipDirectives.push("DO NOT ask about sperm donor preferences (C2) - already saved. Use saved preferences when running Match Cycle C.");
+    }
+
+    // Surrogate preferences already saved (D1/D2/D3)
+    if (profile?.surrogateCountries) {
+      skipDirectives.push(`DO NOT ask about surrogate countries (D1) - already saved: ${profile.surrogateCountries}. Skip the international education message and country question.`);
+    }
+    if (profile?.surrogateTermination) {
+      skipDirectives.push(`DO NOT ask about termination preference (D2) - already saved: ${profile.surrogateTermination}.`);
+    }
+    if (profile?.surrogateTwins) {
+      skipDirectives.push(`DO NOT ask about twins preference (D3 / A3) - already saved: ${profile.surrogateTwins}.`);
+    }
+
+    // D0a/D0b: skip if identity/relationship already known
+    if (profile?.sameSexCouple != null) {
+      skipDirectives.push(`DO NOT ask D0b (same-sex or opposite-sex couple) - already saved: ${profile.sameSexCouple ? "same-sex couple" : "opposite-sex couple"}.`);
+    }
+    if (userRecord?.relationshipStatus) {
+      skipDirectives.push(`DO NOT ask D0a (solo or with partner) - already saved: ${userRecord.relationshipStatus}.`);
     }
 
     const skipRulesPreamble = skipDirectives.length > 0 ? `
@@ -2124,8 +2302,16 @@ The parent's message was: "${userMessage}"`,
       }
     }
 
+    // System trigger: Phase 0 auto-delivery on new session open
+    if (isPhase0Init) {
+      messages.push({
+        role: "user",
+        content: `SYSTEM: The parent just opened a brand new chat session. They have not typed anything yet. Deliver Phase 0 now - your GoStork introduction - conversationally and warmly, exactly as described in your instructions. After the intro, naturally ask Phase 1 Question 1 to get the conversation started. Do not wait for input.`,
+      });
+    }
+
     // System trigger: consultation callback submitted - tell AI to transition to next cycle
-    if (isSystemTrigger) {
+    if (isSystemTrigger && !isPhase0Init) {
       messages.push({
         role: "user",
         content: `SYSTEM: The parent just submitted a callback consultation request and it was confirmed. The consultation for this cycle is now complete. DO NOT mention the callback again or summarize what just happened - the confirmation message was already shown. Your ONLY job now is to immediately start the next pending match cycle from the checklist. Ask the very first question of the next cycle (ONE question only). Be warm and excited. Example: "Wonderful - your request is in! 🎉 Now let's find you the perfect egg donor. **What matters most to you in an egg donor?**" or "Now that your clinic is sorted, let's find your surrogate! **Are you going on this journey solo, or with a partner?**" - adapt to whatever the next service in the checklist is.`,
@@ -2660,75 +2846,118 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }
     }
 
-    const saveMatch = finalContent.match(/\[\[SAVE:(.*?)\]\]/);
-    if (saveMatch) {
-      try {
-        const fieldsToSave = JSON.parse(saveMatch[1]);
-        // Fields saved to IntendedParentProfile
-        const allowedProfileFields = [
-          "hasEmbryos", "embryoCount", "embryosTested",
-          "eggSource", "spermSource", "carrier", "journeyStage",
-          "clinicReason", "clinicPriority",
-          "donorEyeColor", "donorHairColor", "donorHeight", "donorEducation",
-          "surrogateBudget", "surrogateMedPrefs",
-          "needsSurrogate", "needsEggDonor", "needsClinic",
-          "currentClinicName", "currentAgencyName", "currentAttorneyName",
-          "surrogateTwins", "surrogateCountries", "surrogateTermination",
-          "donorEthnicity",
-          "surrogateAgeRange", "surrogateExperience",
-          "donorPreferences", "spermDonorType", "spermDonorPreferences", "isFirstIvf",
-          "sameSexCouple",
-        ];
-        const booleanFields = ["hasEmbryos", "embryosTested", "needsSurrogate", "needsEggDonor", "needsClinic", "isFirstIvf", "sameSexCouple"];
-        // Fields saved to User model
-        const allowedUserFields = ["gender", "sexualOrientation", "relationshipStatus"];
-        const profileData: any = {};
-        const userData: any = {};
-        for (const [key, value] of Object.entries(fieldsToSave)) {
-          if (allowedProfileFields.includes(key)) {
-            if (booleanFields.includes(key)) {
-              profileData[key] = value === true || value === "true";
-            } else if (key === "embryoCount") {
-              const num = parseInt(String(value), 10);
-              if (!isNaN(num) && num >= 0) profileData[key] = num;
-            } else {
-              profileData[key] = value;
-            }
-          } else if (allowedUserFields.includes(key)) {
-            userData[key] = value;
-          } else if (key === "birthYear") {
-            // Convert birth year to dateOfBirth (Jan 1 of that year as approximation)
-            const year = parseInt(String(value), 10);
-            if (!isNaN(year) && year > 1900 && year <= new Date().getFullYear()) {
-              userData.dateOfBirth = new Date(year, 0, 1);
-            }
-          } else if (key === "partnerBirthYear") {
-            // Convert partner birth year to partnerAge (calculated dynamically)
-            const year = parseInt(String(value), 10);
-            if (!isNaN(year) && year > 1900 && year <= new Date().getFullYear()) {
-              userData.partnerAge = new Date().getFullYear() - year;
-            }
-          }
+    // Collect ALL [[SAVE:]] tags from the response (AI sometimes emits multiple)
+    const saveTagMatches = [...finalContent.matchAll(/\[\[SAVE:(.*?)\]\]/g)];
+    if (saveTagMatches.length > 0) {
+      // Merge all SAVE tags into one object (later tags override earlier ones for the same key)
+      const fieldsToSave: any = {};
+      for (const m of saveTagMatches) {
+        try {
+          Object.assign(fieldsToSave, JSON.parse(m[1]));
+        } catch (e) {
+          console.error("Failed to parse SAVE block:", m[1], e);
         }
-        if (userRecord) {
-          // Save User model fields
-          if (Object.keys(userData).length > 0) {
-            await prisma.user.update({ where: { id: userRecord.id }, data: userData });
-          }
-          // Save IntendedParentProfile fields
-          if (Object.keys(profileData).length > 0) {
-            const parentAccountId = userRecord.parentAccountId;
-            if (parentAccountId) {
-              const existing = await prisma.intendedParentProfile.findUnique({ where: { parentAccountId } });
-              if (existing) {
-                await prisma.intendedParentProfile.update({ where: { parentAccountId }, data: profileData });
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.error("Failed to parse SAVE block:", e);
       }
+
+      // Fields saved to IntendedParentProfile - every DB column that the AI can set
+      const allowedProfileFields = [
+        // Biological baseline
+        "hasEmbryos", "embryoCount", "embryosTested",
+        "eggSource", "spermSource", "carrier",
+        // Journey
+        "journeyStage", "isFirstIvf",
+        // Needs flags
+        "needsSurrogate", "needsEggDonor", "needsClinic",
+        // Family type
+        "sameSexCouple",
+        // Clinic preferences
+        "clinicReason", "clinicPriority", "clinicAgeGroup", "clinicPriorityTags",
+        "currentClinicName",
+        // Current professionals
+        "currentAgencyName", "currentAttorneyName",
+        // Egg donor preferences
+        "donorPreferences", "donorEyeColor", "donorHairColor", "donorHeight",
+        "donorEducation", "donorEthnicity",
+        "eggDonorAgeRange", "eggDonorCompensationRange", "eggDonorTotalCostRange",
+        "eggDonorLotCostRange", "eggDonorEggType", "eggDonorDonationType",
+        // Sperm donor preferences
+        "spermDonorType", "spermDonorPreferences",
+        "spermDonorAgeRange", "spermDonorEyeColor", "spermDonorHairColor",
+        "spermDonorHeightRange", "spermDonorRace", "spermDonorEthnicity",
+        "spermDonorEducation", "spermDonorMaxPrice", "spermDonorCovidVaccinated",
+        // Surrogate core preferences
+        "surrogateTwins", "surrogateCountries", "surrogateTermination",
+        "surrogateAgeRange", "surrogateExperience", "surrogateBudget", "surrogateMedPrefs",
+        // Surrogate extended preferences
+        "surrogateRace", "surrogateEthnicity", "surrogateRelationship",
+        "surrogateBmiRange", "surrogateTotalCostRange", "surrogateLiveBirthsRange",
+        "surrogateMaxCSections", "surrogateMaxMiscarriages", "surrogateMaxAbortions",
+        "surrogateLastDeliveryYear",
+        "surrogateCovidVaccinated", "surrogateSelectiveReduction", "surrogateInternationalParents",
+      ];
+
+      const booleanProfileFields = [
+        "hasEmbryos", "embryosTested", "needsSurrogate", "needsEggDonor", "needsClinic",
+        "isFirstIvf", "sameSexCouple",
+        "surrogateCovidVaccinated", "surrogateSelectiveReduction", "surrogateInternationalParents",
+        "spermDonorCovidVaccinated",
+      ];
+
+      const integerProfileFields = [
+        "embryoCount", "surrogateMaxCSections", "surrogateMaxMiscarriages",
+        "surrogateMaxAbortions", "surrogateLastDeliveryYear", "spermDonorMaxPrice",
+      ];
+
+      // Fields saved to User model
+      const allowedUserFields = ["gender", "sexualOrientation", "relationshipStatus", "partnerFirstName"];
+
+      const profileData: any = {};
+      const userData: any = {};
+
+      for (const [key, value] of Object.entries(fieldsToSave)) {
+        // hopingForTwins is the prompt-facing alias; DB column is surrogateTwins
+        const resolvedKey = key === "hopingForTwins" ? "surrogateTwins" : key;
+
+        if (allowedProfileFields.includes(resolvedKey)) {
+          if (booleanProfileFields.includes(resolvedKey)) {
+            profileData[resolvedKey] = value === true || value === "true";
+          } else if (integerProfileFields.includes(resolvedKey)) {
+            const num = parseInt(String(value), 10);
+            if (!isNaN(num) && num >= 0) profileData[resolvedKey] = num;
+          } else {
+            profileData[resolvedKey] = value;
+          }
+        } else if (allowedUserFields.includes(key)) {
+          userData[key] = value;
+        } else if (key === "birthYear") {
+          const year = parseInt(String(value), 10);
+          if (!isNaN(year) && year > 1900 && year <= new Date().getFullYear()) {
+            userData.dateOfBirth = new Date(year, 0, 1);
+          }
+        } else if (key === "partnerBirthYear") {
+          const year = parseInt(String(value), 10);
+          if (!isNaN(year) && year > 1900 && year <= new Date().getFullYear()) {
+            userData.partnerAge = new Date().getFullYear() - year;
+          }
+        }
+      }
+
+      if (userRecord) {
+        if (Object.keys(userData).length > 0) {
+          await prisma.user.update({ where: { id: userRecord.id }, data: userData });
+        }
+        if (Object.keys(profileData).length > 0) {
+          const parentAccountId = userRecord.parentAccountId;
+          if (parentAccountId) {
+            const existing = await prisma.intendedParentProfile.findUnique({ where: { parentAccountId } });
+            if (existing) {
+              await prisma.intendedParentProfile.update({ where: { parentAccountId }, data: profileData });
+              console.log(`[SAVE] Saved profile fields for account ${parentAccountId}:`, Object.keys(profileData));
+            }
+          }
+        }
+      }
+
       finalContent = finalContent.replace(/\[\[SAVE:.*?\]\]/g, "").trim();
     }
 
