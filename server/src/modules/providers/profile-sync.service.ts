@@ -4637,14 +4637,18 @@ async function runSyncJob(
             const profileHtml = await fetchHtml(item.profileUrl, sessionCookies);
             if (profileHtml && !profileHtml.includes('type="password"')) {
               // Direct regex extraction of vialTypes from "Available for: IUI" text in raw profile HTML
-              // Uses [^<\n]+ to capture until next HTML tag (works even inside stripped elements)
+              // Values may be plain text or wrapped in <strong>, <span>, etc.
               if (!item.vialTypes || item.vialTypes.length === 0) {
-                const avMatch = profileHtml.match(/Available\s+for[:\s]+([^<\n]+)/i);
-                if (avMatch) {
-                  const extracted = avMatch[1].split(/[,\s]+/).map((s: string) => s.trim().toUpperCase()).filter((v: string) => ["ICI", "IUI", "IVF"].includes(v));
+                const avPos = profileHtml.search(/Available\s+for\s*[:\-]?\s*/i);
+                if (avPos !== -1) {
+                  // Take up to 200 chars after "Available for:" and strip HTML tags
+                  const avWindow = profileHtml.slice(avPos, avPos + 200).replace(/<[^>]+>/g, " ");
+                  const extracted = avWindow.split(/[,\s]+/).map((s: string) => s.trim().toUpperCase()).filter((v: string) => ["ICI", "IUI", "IVF"].includes(v));
                   if (extracted.length > 0) {
                     item.vialTypes = extracted;
                     console.log(`[donor-sync] Extracted vialTypes ${extracted.join(",")} from profile page for ${item.externalId}`);
+                  } else {
+                    console.log(`[donor-sync] "Available for:" found on profile for ${item.externalId} but no ICI/IUI/IVF - window: ${avWindow.slice(0, 100)}`);
                   }
                 }
               }
