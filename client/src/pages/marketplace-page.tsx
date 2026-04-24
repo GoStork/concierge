@@ -489,7 +489,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange }: {
   const getTabs = (profile: ReturnType<typeof mapDonor>) => {
     const matched = getMatchedPreferences(profile, userPrefs);
     if (type === "surrogate") return getSurrogateTabs(profile, matched);
-    return getDonorTabs(profile, matched);
+    return getDonorTabs(profile, matched, type === "sperm-donor");
   };
 
   const syncPref = (prefType: "favorite" | "skip", donorId: string, action: "add" | "remove") => {

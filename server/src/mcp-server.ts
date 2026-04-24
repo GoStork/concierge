@@ -1417,9 +1417,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
         eyeColor: true, hairColor: true, height: true, weight: true,
         ethnicity: true, race: true, education: true, donorType: true, vialTypes: true,
-        compensation: true, isExperienced: true, photoUrl: true,
+        compensation: true, iciCost: true, iuiCost: true, ivfCost: true, totalCost: true, isExperienced: true, photoUrl: true,
       };
-      const spermDonorSelectCols = `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, compensation, "isExperienced", "photoUrl"`;
+      const spermDonorSelectCols = `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, compensation, "iciCost", "iuiCost", "ivfCost", "totalCost", "isExperienced", "photoUrl"`;
 
       // Base WHERE: absolute requirements never relaxed
       const baseWhere: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };

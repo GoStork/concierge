@@ -223,6 +223,10 @@ export interface ResolvedSpermDonorFields {
   relationshipStatus: string | null;
   donorType: string | null;
   vialTypes: string[];
+  vialCosts: { label: string; cost: number }[];
+  iciCost: number | null;
+  iuiCost: number | null;
+  ivfCost: number | null;
   resolvedCompensation: number | null;
   compensation: number | null;
   totalCost: number | null;
@@ -246,6 +250,10 @@ export function resolveSpermDonorFields(d: any): ResolvedSpermDonorFields {
     relationshipStatus: normalizeRelationshipStatus(F(d.relationshipStatus) || F(pd["Relationship Status"]) || extractFromSections(pd, "Relationship Status")),
     donorType: F(d.donorType),
     vialTypes: Array.isArray(d.vialTypes) ? d.vialTypes : [],
+    vialCosts: Array.isArray(d.vialCosts) ? d.vialCosts : [],
+    iciCost: d.iciCost != null ? Number(d.iciCost) : null,
+    iuiCost: d.iuiCost != null ? Number(d.iuiCost) : null,
+    ivfCost: d.ivfCost != null ? Number(d.ivfCost) : null,
     resolvedCompensation: d.resolvedCompensation != null ? Number(d.resolvedCompensation) : null,
     compensation: d.compensation != null ? Number(d.compensation) : null,
     totalCost: d.totalCost != null ? Number(d.totalCost) : null,
@@ -280,12 +288,18 @@ export function getProfileCardSummary(d: any, type: string): { label: string; va
     const r = resolveSpermDonorFields(d);
     items.push(
       { label: "Age", value: r.age },
-      { label: "Available for", value: r.vialTypes.length > 0 ? r.vialTypes.join(", ") : null },
       { label: "Ethnicity", value: r.ethnicity },
       { label: "Height", value: r.height },
       { label: "Education", value: r.education },
       { label: "Location", value: r.location },
     );
+    if (r.vialCosts.length > 0) {
+      for (const vc of r.vialCosts) {
+        items.push({ label: vc.label, value: `$${vc.cost.toLocaleString()}` });
+      }
+    } else if (r.totalCost) {
+      items.push({ label: "Vial Cost", value: `$${r.totalCost.toLocaleString()}` });
+    }
   }
 
   return items.filter((i): i is { label: string; value: string } => i.value !== null && i.value !== "");
@@ -371,8 +385,15 @@ export function getProfileDetails(d: any, type: ProfileType): { label: string; v
       { label: "Education", value: V(r.education) },
       { label: "Religion", value: V(r.religion) },
       { label: "Occupation", value: V(r.occupation) },
-      { label: "Total Cost", value: r.calculatedTotalCost ? fmtTotalCostRange(r.calculatedTotalCost) : (r.totalCost ? `$${r.totalCost.toLocaleString()}` : "-") },
     );
+    // Per-vial costs from cost sheet matching; fall back to totalCost if not available
+    if (r.vialCosts.length > 0) {
+      for (const vc of r.vialCosts) {
+        result.push({ label: vc.label, value: `$${vc.cost.toLocaleString()}` });
+      }
+    } else if (r.totalCost) {
+      result.push({ label: "Vial Cost", value: `$${r.totalCost.toLocaleString()}` });
+    }
   }
 
   return result as { label: string; value: string }[];

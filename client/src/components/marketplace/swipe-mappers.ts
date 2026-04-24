@@ -47,6 +47,10 @@ export interface SwipeDeckProfile {
   experienceLevel: string | null;
   donationType: string | null;
   vialTypes: string[];
+  vialCosts: { label: string; cost: number }[];
+  iciCost: number | null;
+  iuiCost: number | null;
+  ivfCost: number | null;
   donorCompensation: number | null;
   totalCost: number | null;
   eggLotCost: number | null;
@@ -124,6 +128,10 @@ export function mapDatabaseDonorToSwipeProfile(dbDonor: any): SwipeDeckProfile {
     experienceLevel: null,
     donationType: r.donationTypes,
     vialTypes: [],
+    vialCosts: [],
+    iciCost: null,
+    iuiCost: null,
+    ivfCost: null,
     donorCompensation: r.resolvedCompensation ?? r.donorCompensation,
     totalCost: r.totalCost,
     eggLotCost: r.eggLotCost,
@@ -187,6 +195,10 @@ export function mapDatabaseSurrogateToSwipeProfile(dbSurrogate: any): SwipeDeckP
     experienceLevel: null,
     donationType: null,
     vialTypes: [],
+    vialCosts: [],
+    iciCost: null,
+    iuiCost: null,
+    ivfCost: null,
     donorCompensation: null,
     totalCost: null,
     eggLotCost: null,
@@ -252,6 +264,10 @@ export function mapDatabaseSpermDonorToSwipeProfile(dbSperm: any): SwipeDeckProf
     experienceLevel: null,
     donationType: null,
     vialTypes: r.vialTypes,
+    vialCosts: r.vialCosts,
+    iciCost: r.iciCost,
+    iuiCost: r.iuiCost,
+    ivfCost: r.ivfCost,
     donorCompensation: r.resolvedCompensation ?? r.compensation,
     totalCost: r.totalCost,
     eggLotCost: null,
@@ -425,7 +441,7 @@ export function buildStatusLabel(profile: SwipeDeckProfile): string | null {
   return null;
 }
 
-export function getDonorTabs(profile: SwipeDeckProfile, matchedPrefs: MatchedPref[]): TabSection[] {
+export function getDonorTabs(profile: SwipeDeckProfile, matchedPrefs: MatchedPref[], isSpermDonor = false): TabSection[] {
   const tabs: TabSection[] = [];
   const matchedKeys = new Set(matchedPrefs.map(mp => mp.key));
   const isFrozen = profile.eggType != null && profile.eggType.toLowerCase().includes("frozen");
@@ -459,23 +475,35 @@ export function getDonorTabs(profile: SwipeDeckProfile, matchedPrefs: MatchedPre
   if (bgItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Background & Education", items: bgItems });
 
   const costItems: TabItem[] = [];
-  if (profile.numberOfEggs != null && profile.numberOfEggs > 0) {
-    costItems.push({ label: `Eggs: ${profile.numberOfEggs}`, value: "", icon: Hash });
-  }
-  const isFreshAndFrozen = profile.eggType != null
-    && profile.eggType.toLowerCase().includes("fresh")
-    && profile.eggType.toLowerCase().includes("frozen");
-  const isFrozenOnly = isFrozen && !isFreshAndFrozen;
-
-  if (isFrozenOnly) {
-    if (isNonEmpty(profile.eggLotCost)) costItems.push({ label: `Egg Lot Cost: ${formatCurrency(profile.eggLotCost)}`, value: "", icon: Wallet });
-  } else if (isFreshAndFrozen) {
-    if (isNonEmpty(profile.eggLotCost)) costItems.push({ label: `Egg Lot Cost: ${formatCurrency(profile.eggLotCost)}`, value: "", icon: Wallet });
-    if (isNonEmpty(profile.donorCompensation)) costItems.push({ label: `Compensation: ${formatCurrency(profile.donorCompensation)}`, value: "", icon: DollarSign });
-    if (isNonEmpty(profile.totalCost)) costItems.push({ label: `Total Journey Cost: ${formatCurrency(profile.totalCost)}`, value: "", icon: Wallet });
+  if (isSpermDonor) {
+    // Show all matching vial cost programs from the cost sheet
+    if (profile.vialCosts?.length > 0) {
+      for (const vc of profile.vialCosts) {
+        costItems.push({ label: `${vc.label}: ${formatCurrency(vc.cost)}`, value: "", icon: Wallet });
+      }
+    } else if (isNonEmpty(profile.totalCost)) {
+      // Fall back to totalCost if no per-vial costs available yet
+      costItems.push({ label: `Vial Cost: ${formatCurrency(profile.totalCost)}`, value: "", icon: Wallet });
+    }
   } else {
-    if (isNonEmpty(profile.donorCompensation)) costItems.push({ label: `Compensation: ${formatCurrency(profile.donorCompensation)}`, value: "", icon: DollarSign });
-    if (isNonEmpty(profile.totalCost)) costItems.push({ label: `Total Journey Cost: ${formatCurrency(profile.totalCost)}`, value: "", icon: Wallet });
+    if (profile.numberOfEggs != null && profile.numberOfEggs > 0) {
+      costItems.push({ label: `Eggs: ${profile.numberOfEggs}`, value: "", icon: Hash });
+    }
+    const isFreshAndFrozen = profile.eggType != null
+      && profile.eggType.toLowerCase().includes("fresh")
+      && profile.eggType.toLowerCase().includes("frozen");
+    const isFrozenOnly = isFrozen && !isFreshAndFrozen;
+
+    if (isFrozenOnly) {
+      if (isNonEmpty(profile.eggLotCost)) costItems.push({ label: `Egg Lot Cost: ${formatCurrency(profile.eggLotCost)}`, value: "", icon: Wallet });
+    } else if (isFreshAndFrozen) {
+      if (isNonEmpty(profile.eggLotCost)) costItems.push({ label: `Egg Lot Cost: ${formatCurrency(profile.eggLotCost)}`, value: "", icon: Wallet });
+      if (isNonEmpty(profile.donorCompensation)) costItems.push({ label: `Compensation: ${formatCurrency(profile.donorCompensation)}`, value: "", icon: DollarSign });
+      if (isNonEmpty(profile.totalCost)) costItems.push({ label: `Total Journey Cost: ${formatCurrency(profile.totalCost)}`, value: "", icon: Wallet });
+    } else {
+      if (isNonEmpty(profile.donorCompensation)) costItems.push({ label: `Compensation: ${formatCurrency(profile.donorCompensation)}`, value: "", icon: DollarSign });
+      if (isNonEmpty(profile.totalCost)) costItems.push({ label: `Total Journey Cost: ${formatCurrency(profile.totalCost)}`, value: "", icon: Wallet });
+    }
   }
   if (costItems.length > 0) tabs.push({ layoutType: "icon_list", title: "Journey Costs", items: costItems });
 
@@ -579,7 +607,7 @@ function isNonEmptyStr(v: string | null | undefined): v is string {
   return typeof v === "string" && v.trim() !== "";
 }
 
-export function buildSidebarSections(profile: SwipeDeckProfile): SidebarSection[] {
+export function buildSidebarSections(profile: SwipeDeckProfile, isSpermDonor = false): SidebarSection[] {
   const sections: SidebarSection[] = [];
   const isSurrogate = profile.providerType === "surrogate";
 
@@ -619,6 +647,15 @@ export function buildSidebarSections(profile: SwipeDeckProfile): SidebarSection[
       costs.push({ label: "Total Cost", value: `${fmtCurrency(profile.totalCostMin)} - ${fmtCurrency(profile.totalCostMax)}` });
     } else if (profile.totalCostMin != null) {
       costs.push({ label: "Total Cost", value: fmtCurrency(profile.totalCostMin) });
+    }
+  } else if (isSpermDonor) {
+    // Show all matching vial cost programs from the cost sheet
+    if (profile.vialCosts?.length > 0) {
+      for (const vc of profile.vialCosts) {
+        costs.push({ label: vc.label, value: fmtCurrency(vc.cost) });
+      }
+    } else if (profile.totalCost != null) {
+      costs.push({ label: "Vial Cost", value: fmtCurrency(profile.totalCost) });
     }
   } else {
     if (profile.numberOfEggs != null && profile.numberOfEggs > 0) costs.push({ label: "Available Eggs", value: String(profile.numberOfEggs) });

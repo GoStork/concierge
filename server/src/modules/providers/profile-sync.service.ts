@@ -563,7 +563,10 @@ Extract ALL sperm donor profiles visible on this page. For each donor, extract:
 - location: Location
 - relationshipStatus: Relationship status
 - occupation: Occupation
-- compensation: Price per vial as a number (no $ sign)
+- iciCost: Cost for ICI vials as a number (no $ sign), or null if not shown
+- iuiCost: Cost for IUI vials as a number (no $ sign), or null if not shown
+- ivfCost: Cost for IVF vials as a number (no $ sign), or null if not shown
+- compensation: Generic price per vial as a number (no $ sign) if only one price is shown and vial type is unclear
 - status: "AVAILABLE" or "SOLD_OUT"
 - photoUrl: URL to donor's photo if visible
 - profileUrl: URL to this donor's individual profile page (if visible as a link)
@@ -586,6 +589,9 @@ Return a JSON object:
       "location": "string or null",
       "relationshipStatus": "string or null",
       "occupation": "string or null",
+      "iciCost": number or null,
+      "iuiCost": number or null,
+      "ivfCost": number or null,
       "compensation": number or null,
       "status": "AVAILABLE",
       "photoUrl": "string or null",
@@ -789,10 +795,14 @@ Return a JSON object:
   },
   "photoUrl": "URL to profile photo if visible",
   "externalId": "Donor/surrogate ID if visible",
-  "vialTypes": ["ICI", "IUI"]
+  "vialTypes": ["ICI", "IUI"],
+  "iciCost": number or null,
+  "iuiCost": number or null,
+  "ivfCost": number or null
 }
 
 Note: vialTypes is an array of vial preparation types this donor is available for. Look for text like "Available for: ICI, IUI" or "Available for IUI" anywhere on the page (sidebar, header, profile details). Only include values from: "ICI", "IUI", "IVF". Return empty array [] if not found.
+Note: iciCost/iuiCost/ivfCost are the costs (as plain numbers, no $ sign) for each vial type. Look for pricing sections, cost tables, or labels like "ICI Vials: $X", "IUI Vial Price: $X", "Washed (IUI): $X", "Unwashed (ICI): $X". If only a single price is shown for all vials, put it in whichever vial type applies. Return null if not found.
 
 IMPORTANT RULES:
 - Extract EVERY section and EVERY field-value pair - do not skip any
@@ -1417,7 +1427,7 @@ async function upsertSpermDonor(
 
   const existing = await prisma.spermDonor.findUnique({
     where: { providerId_externalId: { providerId, externalId: extId } },
-    select: { manuallyEditedFields: true, profileData: true, status: true, photoUrl: true, photos: true, vialTypes: true },
+    select: { manuallyEditedFields: true, profileData: true, status: true, photoUrl: true, photos: true, vialTypes: true, iciCost: true, iuiCost: true, ivfCost: true },
   });
 
   // Reuse already-persisted GCS photos to avoid re-downloading on every run
@@ -1467,6 +1477,10 @@ async function upsertSpermDonor(
     if (Array.isArray(existing?.vialTypes) && (existing.vialTypes as string[]).length > 0) return existing.vialTypes as string[];
     return [];
   })();
+  const parseVialCost = (v: any): number | null => { if (!v) return null; const n = parseFloat(String(v).replace(/[$,\s]/g, "")); return isNaN(n) ? null : Math.round(n); };
+  const sdIciCost = parseVialCost(donor.iciCost);
+  const sdIuiCost = parseVialCost(donor.iuiCost);
+  const sdIvfCost = parseVialCost(donor.ivfCost);
 
   const upsertedSpermDonor = await prisma.spermDonor.upsert({
     where: {
@@ -1493,6 +1507,9 @@ async function upsertSpermDonor(
       status: skipIfManual("status", existing?.status === "INACTIVE" && (!donor.status || donor.status === "AVAILABLE") ? "INACTIVE" : (donor.status || "AVAILABLE"), mf),
       isExperienced: skipIfManual("isExperienced", detectExperienced(mergedProfile, "sperm-donor"), mf),
       vialTypes: sdVialTypes.length > 0 ? sdVialTypes : undefined,
+      iciCost: skipIfManual("iciCost", sdIciCost ?? undefined, mf),
+      iuiCost: skipIfManual("iuiCost", sdIuiCost ?? undefined, mf),
+      ivfCost: skipIfManual("ivfCost", sdIvfCost ?? undefined, mf),
       profileData: mergedProfile,
       cardHash: donor.cardHash || undefined,
       lastFullSyncAt: new Date(),
@@ -1521,6 +1538,9 @@ async function upsertSpermDonor(
       status: donor.status || "AVAILABLE",
       isExperienced: detectExperienced(normalizedProfile, "sperm-donor"),
       vialTypes: sdVialTypes,
+      iciCost: sdIciCost,
+      iuiCost: sdIuiCost,
+      ivfCost: sdIvfCost,
       profileData: normalizedProfile,
       cardHash: donor.cardHash || null,
       lastFullSyncAt: new Date(),
@@ -4560,7 +4580,8 @@ async function runSyncJob(
           return;
         }
         const hasSections = item.profileData?._sections || item._sections;
-        if (!hasSections && item.profileUrl) {
+        const needsVialTypes = job.type === "sperm-donor" && (!item.vialTypes || item.vialTypes.length === 0);
+        if ((!hasSections || needsVialTypes) && item.profileUrl) {
           try {
             const profileHtml = await fetchHtml(item.profileUrl, sessionCookies);
             if (profileHtml && !profileHtml.includes('type="password"')) {
@@ -4624,6 +4645,11 @@ async function runSyncJob(
                 if ((!item.vialTypes || item.vialTypes.length === 0) && Array.isArray(sections.vialTypes) && sections.vialTypes.length > 0) {
                   item.vialTypes = sections.vialTypes.filter((v: string) => ["ICI", "IUI", "IVF"].includes(v));
                 }
+                // Extract per-vial costs from sections response
+                const parseVialCost = (v: any) => { if (!v) return undefined; const n = parseFloat(String(v).replace(/[$,\s]/g, "")); return isNaN(n) ? undefined : Math.round(n); };
+                if (!item.iciCost && sections.iciCost) item.iciCost = parseVialCost(sections.iciCost);
+                if (!item.iuiCost && sections.iuiCost) item.iuiCost = parseVialCost(sections.iuiCost);
+                if (!item.ivfCost && sections.ivfCost) item.ivfCost = parseVialCost(sections.ivfCost);
               }
             }
           } catch (err: any) {

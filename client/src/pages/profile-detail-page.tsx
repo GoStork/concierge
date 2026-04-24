@@ -380,6 +380,7 @@ function getMandatoryFields(donor: any, type: string): { label: string; value: s
       { label: "Age", value: V(r.age) },
       { label: "Education", value: V(r.education) },
       { label: "Type", value: V(r.donorType) },
+      { label: "Available for", value: r.vialTypes.length > 0 ? r.vialTypes.join(", ") : "-" },
       { label: "Location", value: V(r.location) },
       { label: "Ethnicity", value: V(r.ethnicity) },
       { label: "Race", value: V(r.race) },
@@ -389,8 +390,14 @@ function getMandatoryFields(donor: any, type: string): { label: string; value: s
       { label: "Weight", value: V(r.weight) },
       { label: "Religion", value: V(r.religion) },
       { label: "Occupation", value: V(r.occupation) },
-      { label: "Price", value: fmtUSD(r.resolvedCompensation ?? r.compensation) },
-      { label: "Total Cost", value: r.calculatedTotalCost ? fmtTotalCost(r.calculatedTotalCost) : (r.totalCost ? fmtUSD(r.totalCost) : "-") },
+      ...(() => {
+        if (r.vialCosts && r.vialCosts.length > 0) {
+          return r.vialCosts.map((vc: { label: string; cost: number }) => ({ label: vc.label, value: fmtUSD(vc.cost) }));
+        } else if (r.totalCost) {
+          return [{ label: "Vial Cost", value: fmtUSD(r.totalCost) }];
+        }
+        return [];
+      })(),
     ];
   }
 }
@@ -553,7 +560,15 @@ export default function DonorProfilePage() {
   const headerMeta: string[] = [];
   if (donor.status) headerMeta.push(donor.status);
   if (donor.location) headerMeta.push(donor.location);
-  if (donor.calculatedTotalCost) {
+  if (type === "sperm-donor") {
+    // Show all matching vial cost programs from the cost sheet
+    const vialCosts: { label: string; cost: number }[] = Array.isArray(donor.vialCosts) ? donor.vialCosts : [];
+    if (vialCosts.length > 0) {
+      vialCosts.forEach(vc => headerMeta.push(`${vc.label}: $${Number(vc.cost).toLocaleString()}`));
+    } else if (donor.totalCost) {
+      headerMeta.push(`Vial Cost: $${Number(donor.totalCost).toLocaleString()}`);
+    }
+  } else if (donor.calculatedTotalCost) {
     const tc = donor.calculatedTotalCost;
     if (tc.min === tc.max || tc.max === 0) {
       headerMeta.push(`Total Cost: $${Number(tc.min).toLocaleString()}`);

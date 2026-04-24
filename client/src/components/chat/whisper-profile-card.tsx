@@ -54,7 +54,7 @@ export function WhisperProfileCard({ card, brandColor }: WhisperProfileCardProps
     const photos = getPhotoList(swipeProfile);
     const title = buildTitle(swipeProfile);
     const statusLabel = buildStatusLabel(swipeProfile);
-    const baseTabs = isSurrogate ? getSurrogateTabs(swipeProfile, []) : getDonorTabs(swipeProfile, []);
+    const baseTabs = isSurrogate ? getSurrogateTabs(swipeProfile, []) : getDonorTabs(swipeProfile, [], t === "sperm donor");
     const reasons = card.reasons || [];
     const tabs: TabSection[] = reasons.length > 0
       ? [{ layoutType: "matched_bubbles" as const, title: `Matched ${reasons.length} Preference${reasons.length !== 1 ? "s" : ""}`, items: reasons.map((r: string) => ({ label: r, value: "" })) }, ...baseTabs]

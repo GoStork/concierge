@@ -670,6 +670,9 @@ model SpermDonor {
   isExperienced        Boolean   @default(false)
   lastFullSyncAt       DateTime?
   vialTypes            String[]  @default([])
+  iciCost              Int?
+  iuiCost              Int?
+  ivfCost              Int?
   profileEmbedding     Unsupported("vector(1536)")?
   provider             Provider  @relation(fields: [providerId], references: [id])
 
@@ -687,6 +690,7 @@ model SpermDonorSyncConfig {
   syncFrequency     String    @default("manual")
   lastSyncEndedAt   DateTime?
   lastSyncStartedAt DateTime?
+  defaultVialTypes  String[]  @default([])
   provider          Provider  @relation(fields: [providerId], references: [id])
 }
 

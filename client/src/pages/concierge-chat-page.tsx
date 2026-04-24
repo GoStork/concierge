@@ -1830,7 +1830,7 @@ function buildMatchTabs(profile: any, cardType: string, reasons: string[]): TabS
 
   const baseTabs = isSurrogate
     ? getSurrogateTabs(swipeProfile, [])
-    : getDonorTabs(swipeProfile, []);
+    : getDonorTabs(swipeProfile, [], t === "sperm donor");
 
   if (reasons.length > 0) {
     const matchTab: TabSection = {
@@ -3073,7 +3073,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         ? mapDatabaseSpermDonorToSwipeProfile(subjectProfileData)
         : mapDatabaseDonorToSwipeProfile(subjectProfileData);
     const photo = swipeProfile.photos?.[0] || swipeProfile.photoUrl || subjectInfo?.profilePhotoUrl || null;
-    return { subjectSections: buildSidebarSections(swipeProfile), subjectPhotoUrl: photo };
+    return { subjectSections: buildSidebarSections(swipeProfile, t.includes("sperm")), subjectPhotoUrl: photo };
   }, [subjectProfileData, subjectInfo?.subjectType, subjectInfo?.profilePhotoUrl]);
 
   const initialScrollDone = useRef(false);

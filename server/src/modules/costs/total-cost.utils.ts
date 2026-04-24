@@ -329,6 +329,38 @@ async function getProviderSheetData(
   return { approvedSheet, baseCompTemplateKeys };
 }
 
+/**
+ * Returns all cost sheet line items matching the donor's vial types.
+ * A donor available for IUI will get ALL IUI-prefixed cost items (e.g. IUI Premium + IUI Platinum).
+ * Also returns per-vial minimum costs for filtering/sorting (iciCost, iuiCost, ivfCost).
+ */
+function matchVialCostsFromSheet(
+  sheetItems: any[],
+  vialTypes: string[],
+): { vialCosts: { label: string; cost: number }[]; iciCost: number | null; iuiCost: number | null; ivfCost: number | null } {
+  const vialCosts: { label: string; cost: number }[] = [];
+  const minCosts: Record<string, number | null> = { ICI: null, IUI: null, IVF: null };
+
+  for (const vt of vialTypes) {
+    const vtLower = vt.toLowerCase();
+    const matching = sheetItems.filter(ci => ci.key.toLowerCase().startsWith(vtLower));
+    for (const ci of matching) {
+      const cost = ci.minValue != null ? Number(ci.minValue) : null;
+      if (cost == null) continue;
+      vialCosts.push({ label: ci.key, cost });
+      // Track minimum cost per vial type for sorting
+      if (minCosts[vt] == null || cost < minCosts[vt]!) minCosts[vt] = cost;
+    }
+  }
+
+  return {
+    vialCosts,
+    iciCost: minCosts["ICI"],
+    iuiCost: minCosts["IUI"],
+    ivfCost: minCosts["IVF"],
+  };
+}
+
 function computeCostFromSheet(
   sheetData: CachedSheetData,
   profileCompensation: number | null | undefined,
@@ -426,14 +458,18 @@ async function enrichDonorsWithCosts(
   }
   if (donorType === "sperm-donor") {
     const sheetData = await getProviderSheetData(prisma, providerId, donorType, statuses);
+    const sheetItems = sheetData.approvedSheet?.items || [];
     return donors.map((donor) => {
       const { resolvedCompensation, calculatedTotalCost } = computeCostFromSheet(
         sheetData, donor.compensation != null ? Number(donor.compensation) : null,
       );
+      const vialTypes: string[] = Array.isArray(donor.vialTypes) ? donor.vialTypes : [];
+      const { vialCosts, iciCost, iuiCost, ivfCost } = matchVialCostsFromSheet(sheetItems, vialTypes);
       return {
         ...donor,
         ...(resolvedCompensation != null ? { resolvedCompensation } : {}),
         ...(calculatedTotalCost ? { totalCost: Math.round(calculatedTotalCost.min), calculatedTotalCost } : {}),
+        ...(vialCosts.length > 0 ? { vialCosts, iciCost, iuiCost, ivfCost } : {}),
       };
     });
   }
@@ -499,6 +535,24 @@ export async function enrichDonorsWithPendingCosts(
         ...donor,
         ...(resolvedCompensation != null ? { resolvedCompensation } : {}),
         ...(calculatedTotalCost ? { totalCostMin: calculatedTotalCost.min, totalCostMax: calculatedTotalCost.max, calculatedTotalCost } : {}),
+      };
+    });
+  }
+
+  if (donorType === "sperm-donor") {
+    const sheetData = await getProviderSheetData(prisma, providerId, donorType, statuses);
+    const sheetItems = sheetData.approvedSheet?.items || [];
+    return donors.map((donor) => {
+      const { resolvedCompensation, calculatedTotalCost } = computeCostFromSheet(
+        sheetData, donor.compensation != null ? Number(donor.compensation) : null,
+      );
+      const vialTypes: string[] = Array.isArray(donor.vialTypes) ? donor.vialTypes : [];
+      const { vialCosts, iciCost, iuiCost, ivfCost } = matchVialCostsFromSheet(sheetItems, vialTypes);
+      return {
+        ...donor,
+        ...(resolvedCompensation != null ? { resolvedCompensation } : {}),
+        ...(calculatedTotalCost ? { totalCost: Math.round(calculatedTotalCost.min), calculatedTotalCost } : {}),
+        ...(vialCosts.length > 0 ? { vialCosts, iciCost, iuiCost, ivfCost } : {}),
       };
     });
   }
