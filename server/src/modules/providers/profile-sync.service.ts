@@ -659,39 +659,20 @@ function tryDirectSpermDonorExtraction(html: string, pageUrl: string): any | nul
     if (!imgMap.has(donorId)) imgMap.set(donorId, imgUrl);
   }
 
-  // Pre-scan full listing page HTML for <p class="ICI, IUI, IVF"> and map to nearest preceding donor ID.
-  // SBC renders: <p class="ICI, IUI, IVF">Available for: <strong>ICI, IUI, IVF</strong></p>
-  // The class attribute contains ALL vial types as a comma-separated string.
+  // Extract vial types from the SBC listing page JSON.
+  // The listing page embeds donor data as JSON with structure:
+  //   "display_id":"CXQ39", ... "available_for":"ICI, IUI, IVF"
+  // Parse all "display_id"/"available_for" pairs from the raw HTML.
   const listingVialMap = new Map<string, string[]>();
-  // Match any <p class="..."> whose class contains ICI, IUI, or IVF
-  const vialPClassRegex = /<p\s+class="([^"]*(?:ICI|IUI|IVF)[^"]*)"/gi;
-  const donorHeadingGlobalRegex = /Donor\s*#\s*(\w+)/gi;
-  // Build an array of [position, donorId] for all donor headings in raw HTML
-  const donorPositions: Array<{ pos: number; id: string }> = [];
-  let dpMatch;
-  while ((dpMatch = donorHeadingGlobalRegex.exec(html)) !== null) {
-    donorPositions.push({ pos: dpMatch.index, id: dpMatch[1] });
+  const donorJsonRegex = /"display_id"\s*:\s*"([^"]+)"[\s\S]{0,2000}?"available_for"\s*:\s*"([^"]+)"/g;
+  let djMatch;
+  while ((djMatch = donorJsonRegex.exec(html)) !== null) {
+    const donorId = djMatch[1];
+    const availableFor = djMatch[2]; // e.g. "ICI, IUI, IVF" or "IUI"
+    const types = availableFor.split(/[,\s]+/).map((s: string) => s.trim().toUpperCase()).filter((v: string) => ["ICI", "IUI", "IVF"].includes(v));
+    if (types.length > 0) listingVialMap.set(donorId, types);
   }
-  // For each matching <p class>, parse all vial types from the class value
-  let vpMatch;
-  while ((vpMatch = vialPClassRegex.exec(html)) !== null) {
-    const classValue = vpMatch[1];
-    // Split class by comma/space and filter for valid vial types
-    const types = classValue.split(/[,\s]+/).map((s: string) => s.trim().toUpperCase()).filter((v: string) => ["ICI", "IUI", "IVF"].includes(v));
-    if (types.length === 0) continue;
-    const pos = vpMatch.index;
-    // Find the last donor heading before this position
-    let nearestId: string | null = null;
-    for (let i = donorPositions.length - 1; i >= 0; i--) {
-      if (donorPositions[i].pos < pos) { nearestId = donorPositions[i].id; break; }
-    }
-    if (nearestId) {
-      const existing = listingVialMap.get(nearestId) || [];
-      for (const vt of types) { if (!existing.includes(vt)) existing.push(vt); }
-      listingVialMap.set(nearestId, existing);
-    }
-  }
-  console.log(`[donor-sync] Listing page vialMap: ${listingVialMap.size} donors have vialTypes`);
+  console.log(`[donor-sync] Listing page vialMap: ${listingVialMap.size} donors with available_for`);
   if (listingVialMap.size > 0) {
     const sample = Array.from(listingVialMap.entries()).slice(0, 4).map(([id, vt]) => `${id}:[${vt}]`).join(", ");
     console.log(`[donor-sync] Sample vialMap: ${sample}`);
@@ -3912,6 +3893,7 @@ async function runSyncJob(
       }
     }
 
+
     let orchidResult: { donors: any[]; origin: string } | null = null;
     if (isOrchidJmsSite(mainHtml) || sourceUrl.includes("o-jms.com")) {
       job.currentStep = "Fetching profile list...";
@@ -4645,10 +4627,6 @@ async function runSyncJob(
               // so we match <p class="..."> with class values ICI/IUI/IVF (primary method).
               // Fallback: find "Available for:" text, take 200-char window, strip tags.
               if (!item.vialTypes || item.vialTypes.length === 0) {
-                // DEBUG: log a snippet of the profile HTML near "sidebar" or "IUI"
-                const sidebarPos = profileHtml.indexOf("sidebar-inner");
-                const iuiPos = profileHtml.search(/class="IUI"|class="ICI"|class="IVF"|Available\s+for/i);
-                console.log(`[donor-sync] vialTypes debug for ${item.externalId}: html=${profileHtml.length}chars sidebarPos=${sidebarPos} iuiPos=${iuiPos} snippet=${profileHtml.slice(Math.max(0,iuiPos-50), iuiPos+150).replace(/\s+/g," ")}`);
                 const pClassMatches = profileHtml.matchAll(/<p\s+class="([^"]+)"/gi);
                 const fromClass: string[] = [];
                 for (const m of pClassMatches) {
