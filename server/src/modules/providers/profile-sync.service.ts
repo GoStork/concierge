@@ -659,6 +659,41 @@ function tryDirectSpermDonorExtraction(html: string, pageUrl: string): any | nul
     if (!imgMap.has(donorId)) imgMap.set(donorId, imgUrl);
   }
 
+  // Pre-scan full listing page HTML for <p class="IUI|ICI|IVF"> and map to nearest preceding donor ID.
+  // SBC renders vial types as <p class="IUI">Available for: <strong>IUI</strong></p> in each card.
+  // The profile page renders the same but Vue.js injects it client-side (not in server HTML).
+  // The listing page HTML IS server-rendered, so we can reliably extract it here.
+  const listingVialMap = new Map<string, string[]>();
+  const vialPClassRegex = /<p\s+class="(ICI|IUI|IVF)"/gi;
+  const donorHeadingGlobalRegex = /Donor\s*#\s*(\w+)/gi;
+  // Build an array of [position, donorId] for all donor headings in raw HTML
+  const donorPositions: Array<{ pos: number; id: string }> = [];
+  let dpMatch;
+  while ((dpMatch = donorHeadingGlobalRegex.exec(html)) !== null) {
+    donorPositions.push({ pos: dpMatch.index, id: dpMatch[1] });
+  }
+  // For each <p class="IUI|ICI|IVF">, find the nearest preceding donor heading
+  let vpMatch;
+  while ((vpMatch = vialPClassRegex.exec(html)) !== null) {
+    const vt = vpMatch[1].toUpperCase();
+    const pos = vpMatch.index;
+    // Find the last donor heading before this position
+    let nearestId: string | null = null;
+    for (let i = donorPositions.length - 1; i >= 0; i--) {
+      if (donorPositions[i].pos < pos) { nearestId = donorPositions[i].id; break; }
+    }
+    if (nearestId) {
+      const existing = listingVialMap.get(nearestId) || [];
+      if (!existing.includes(vt)) existing.push(vt);
+      listingVialMap.set(nearestId, existing);
+    }
+  }
+  console.log(`[donor-sync] Listing page vialMap: ${listingVialMap.size} donors have vialTypes from <p class>`);
+  if (listingVialMap.size > 0) {
+    const sample = Array.from(listingVialMap.entries()).slice(0, 3).map(([id, vt]) => `${id}:[${vt}]`).join(", ");
+    console.log(`[donor-sync] Sample vialMap: ${sample}`);
+  }
+
   // Split cleaned text by "Donor #" entries
   const parts = cleanedText.split(/(?=Donor\s*#\s*\w)/i);
 
@@ -698,42 +733,8 @@ function tryDirectSpermDonorExtraction(html: string, pageUrl: string): any | nul
       profileLinks.push(profileUrl || donorLink);
     }
 
-    // Extract vialTypes from "Available for: ICI, IUI, IVF" text
-    // Search raw HTML near "Donor #ID" heading - avoids matching bare ID in URLs/hrefs
-    // which appear earlier in the HTML and have no "Available for:" nearby
-    const vialTypes: string[] = [];
-    // Use a regex to find "Donor #<id>" in the raw HTML (case-insensitive)
-    const donorHeadingRegex = new RegExp(`Donor\\s*#\\s*${externalId}`, "i");
-    const donorHeadingMatch = donorHeadingRegex.exec(html);
-    const donorIdPos = donorHeadingMatch ? donorHeadingMatch.index : -1;
-    if (donorIdPos !== -1) {
-      // Search up to 1500 chars after the donor heading for "Available for:"
-      const rawWindow = html.slice(donorIdPos, donorIdPos + 1500);
-      const avRawMatch = rawWindow.match(/Available\s+for[:\s]+([^<\n]+)/i);
-      if (avRawMatch) {
-        const rawParts = avRawMatch[1].split(/[,\s]+/).map((s: string) => s.trim().toUpperCase());
-        for (const part of rawParts) {
-          if (["ICI", "IUI", "IVF"].includes(part)) vialTypes.push(part);
-        }
-      }
-      if (donors.length === 0) {
-        // Log first donor's raw window for debugging if vialTypes empty
-        const debugWindow = rawWindow.slice(0, 400).replace(/\s+/g, " ");
-        console.log(`[donor-sync] First donor ${externalId} vialTypes: [${vialTypes.join(",")}] rawWindow: ${debugWindow}`);
-      }
-    } else {
-      if (donors.length === 0) console.log(`[donor-sync] First donor ${externalId}: "Donor #${externalId}" not found in raw HTML`);
-    }
-    // Also try cleaned text as fallback
-    if (vialTypes.length === 0) {
-      const availableForMatch = text.match(/Available\s+for[:\s]+([A-Z,\s]+)/i);
-      if (availableForMatch) {
-        const cleanParts = availableForMatch[1].split(/[,\s]+/).map((s: string) => s.trim().toUpperCase());
-        for (const part of cleanParts) {
-          if (["ICI", "IUI", "IVF"].includes(part)) vialTypes.push(part);
-        }
-      }
-    }
+    // Use the pre-built listing page vialMap
+    const vialTypes: string[] = listingVialMap.get(externalId) || [];
 
     const donor: any = {
       externalId,
@@ -4636,19 +4637,38 @@ async function runSyncJob(
           try {
             const profileHtml = await fetchHtml(item.profileUrl, sessionCookies);
             if (profileHtml && !profileHtml.includes('type="password"')) {
-              // Direct regex extraction of vialTypes from "Available for: IUI" text in raw profile HTML
-              // Values may be plain text or wrapped in <strong>, <span>, etc.
+              // Direct extraction of vialTypes from SBC profile HTML.
+              // SBC renders: <p class="IUI">Available for: <strong>IUI</strong></p>
+              // so we match <p class="..."> with class values ICI/IUI/IVF (primary method).
+              // Fallback: find "Available for:" text, take 200-char window, strip tags.
               if (!item.vialTypes || item.vialTypes.length === 0) {
-                const avPos = profileHtml.search(/Available\s+for\s*[:\-]?\s*/i);
-                if (avPos !== -1) {
-                  // Take up to 200 chars after "Available for:" and strip HTML tags
-                  const avWindow = profileHtml.slice(avPos, avPos + 200).replace(/<[^>]+>/g, " ");
-                  const extracted = avWindow.split(/[,\s]+/).map((s: string) => s.trim().toUpperCase()).filter((v: string) => ["ICI", "IUI", "IVF"].includes(v));
-                  if (extracted.length > 0) {
-                    item.vialTypes = extracted;
-                    console.log(`[donor-sync] Extracted vialTypes ${extracted.join(",")} from profile page for ${item.externalId}`);
+                // DEBUG: log a snippet of the profile HTML near "sidebar" or "IUI"
+                const sidebarPos = profileHtml.indexOf("sidebar-inner");
+                const iuiPos = profileHtml.search(/class="IUI"|class="ICI"|class="IVF"|Available\s+for/i);
+                console.log(`[donor-sync] vialTypes debug for ${item.externalId}: html=${profileHtml.length}chars sidebarPos=${sidebarPos} iuiPos=${iuiPos} snippet=${profileHtml.slice(Math.max(0,iuiPos-50), iuiPos+150).replace(/\s+/g," ")}`);
+                const pClassMatches = profileHtml.matchAll(/<p\s+class="([^"]+)"/gi);
+                const fromClass: string[] = [];
+                for (const m of pClassMatches) {
+                  const cls = m[1].trim().toUpperCase();
+                  if (["ICI", "IUI", "IVF"].includes(cls) && !fromClass.includes(cls)) fromClass.push(cls);
+                }
+                if (fromClass.length > 0) {
+                  item.vialTypes = fromClass;
+                  console.log(`[donor-sync] Extracted vialTypes ${fromClass.join(",")} from <p class> on profile for ${item.externalId}`);
+                } else {
+                  // Fallback: "Available for:" text search with HTML tag stripping
+                  const avPos = profileHtml.search(/Available\s+for\s*[:\-]?\s*/i);
+                  if (avPos !== -1) {
+                    const avWindow = profileHtml.slice(avPos, avPos + 200).replace(/<[^>]+>/g, " ");
+                    const extracted = avWindow.split(/[,\s]+/).map((s: string) => s.trim().toUpperCase()).filter((v: string) => ["ICI", "IUI", "IVF"].includes(v));
+                    if (extracted.length > 0) {
+                      item.vialTypes = extracted;
+                      console.log(`[donor-sync] Extracted vialTypes ${extracted.join(",")} from "Available for:" text on profile for ${item.externalId}`);
+                    } else {
+                      console.log(`[donor-sync] No vialTypes found on profile for ${item.externalId} - avWindow: ${avWindow.slice(0, 100)}`);
+                    }
                   } else {
-                    console.log(`[donor-sync] "Available for:" found on profile for ${item.externalId} but no ICI/IUI/IVF - window: ${avWindow.slice(0, 100)}`);
+                    console.log(`[donor-sync] "Available for:" not found in profile HTML for ${item.externalId} (${profileHtml.length} chars)`);
                   }
                 }
               }
