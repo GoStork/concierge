@@ -4551,17 +4551,19 @@ async function runSyncJob(
     // Load existing hashes + lastFullSyncAt from DB for incremental sync
     const existingHashes = new Map<string, string>();
     const existingLastFullSyncAt = new Map<string, Date>();
+    const existingVialTypes = new Map<string, string[]>();
     const externalIds = uniqueItems.map((d: any) => d.externalId).filter(Boolean);
     if (externalIds.length > 0) {
       const dbTable = job.type === "surrogate"
         ? prisma.surrogate.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true } })
         : job.type === "sperm-donor"
-        ? prisma.spermDonor.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true } })
+        ? prisma.spermDonor.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true, vialTypes: true } })
         : prisma.eggDonor.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true } });
       const existing = await dbTable;
       for (const d of existing) {
         if (d.externalId && d.cardHash) existingHashes.set(d.externalId, d.cardHash);
         if (d.externalId && (d as any).lastFullSyncAt) existingLastFullSyncAt.set(d.externalId, (d as any).lastFullSyncAt);
+        if (d.externalId && (d as any).vialTypes) existingVialTypes.set(d.externalId, (d as any).vialTypes);
       }
     }
 
@@ -4587,6 +4589,17 @@ async function runSyncJob(
         const pricingStale = !lastFull || (Date.now() - lastFull.getTime()) > PRICING_CHECK_MS;
         const needsVialTypes = job.type === "sperm-donor" && (!item.vialTypes || item.vialTypes.length === 0);
         if (oldHash && oldHash === item.cardHash && !pricingStale && !needsVialTypes) {
+          // Even on hash-skip, save vialTypes from listing page if DB doesn't have them yet
+          if (job.type === "sperm-donor" && item.vialTypes?.length > 0) {
+            const dbVt = item.externalId ? existingVialTypes.get(item.externalId) : null;
+            if (!dbVt || dbVt.length === 0) {
+              await prisma.spermDonor.updateMany({
+                where: { providerId: job.providerId, externalId: item.externalId },
+                data: { vialTypes: { set: item.vialTypes } },
+              });
+              console.log(`[donor-sync] Saved vialTypes ${item.vialTypes.join(",")} for ${item.externalId} (hash-skip)`);
+            }
+          }
           skippedUnchanged++;
           job.processed++;
           return;
