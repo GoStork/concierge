@@ -376,28 +376,35 @@ function getMandatoryFields(donor: any, type: string): { label: string; value: s
     ];
   } else {
     const r = resolveSpermDonorFields(donor);
+    const vialCostItems = (() => {
+      if (r.vialCosts && r.vialCosts.length > 0) {
+        return r.vialCosts.map((vc: { label: string; cost: number }) => ({ label: vc.label, value: fmtUSD(vc.cost) }));
+      } else if (r.totalCost) {
+        return [{ label: "Vial Cost", value: fmtUSD(r.totalCost) }];
+      }
+      return [];
+    })();
+    // Left-column items first (1..ceil(N/2)), then right-column items (rest).
+    // Cost fields go at the very end so they land in the bottom of the right column.
+    // The renderer interleaves [left..., right...] into the 2-col grid.
     return [
+      // Left column (top to bottom)
       { label: "Age", value: V(r.age) },
-      { label: "Education", value: V(r.education) },
       { label: "Type", value: V(r.donorType) },
-      { label: "Available for", value: r.vialTypes.length > 0 ? r.vialTypes.join(", ") : "-" },
-      { label: "Location", value: V(r.location) },
-      { label: "Ethnicity", value: V(r.ethnicity) },
       { label: "Race", value: V(r.race) },
+      { label: "Ethnicity", value: V(r.ethnicity) },
       { label: "Hair Color", value: V(r.hairColor) },
-      { label: "Height", value: V(r.height) },
       { label: "Eye Color", value: V(r.eyeColor) },
-      { label: "Weight", value: V(r.weight) },
       { label: "Religion", value: V(r.religion) },
+      { label: "Education", value: V(r.education) },
       { label: "Occupation", value: V(r.occupation) },
-      ...(() => {
-        if (r.vialCosts && r.vialCosts.length > 0) {
-          return r.vialCosts.map((vc: { label: string; cost: number }) => ({ label: vc.label, value: fmtUSD(vc.cost) }));
-        } else if (r.totalCost) {
-          return [{ label: "Vial Cost", value: fmtUSD(r.totalCost) }];
-        }
-        return [];
-      })(),
+      // Right column (top to bottom) - costs at very end
+      { label: "Location", value: V(r.location) },
+      { label: "Height", value: V(r.height) },
+      { label: "Weight", value: V(r.weight) },
+      ...(vialCostItems.length > 0
+        ? [{ label: "Available for", value: r.vialTypes.length > 0 ? r.vialTypes.join(", ") : "-" }, ...vialCostItems]
+        : [{ label: "Available for", value: r.vialTypes.length > 0 ? r.vialTypes.join(", ") : "-" }]),
     ];
   }
 }
@@ -664,7 +671,17 @@ export default function DonorProfilePage() {
         <SectionHeader title="Summary" />
         <div className="p-6">
           <div className="grid grid-cols-2 gap-x-12 gap-y-3">
-            {mandatoryFields.map(({ label, value }) => (
+            {(() => {
+              // For sperm donors, fields are ordered [left-col items..., right-col items...].
+              // Interleave them so the CSS grid places each pair side-by-side.
+              if (type === "sperm-donor") {
+                const half = Math.ceil(mandatoryFields.length / 2);
+                const left = mandatoryFields.slice(0, half);
+                const right = mandatoryFields.slice(half);
+                return left.flatMap((item, i) => right[i] !== undefined ? [item, right[i]] : [item]);
+              }
+              return mandatoryFields;
+            })().map(({ label, value }) => (
               <div key={label} data-testid={`field-${label.toLowerCase().replace(/\s+/g, "-")}`}>
                 <p className="text-xs font-ui text-foreground">{label}</p>
                 <p className="text-sm text-muted-foreground">{value}</p>

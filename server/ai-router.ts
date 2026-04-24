@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { prisma } from "./db";
+import path from "path";
 import { isUserOnline } from "./online-tracker";
 
 // Clean session titles: strip alphabetic prefixes from IDs (e.g. "Surrogate #pdf-23068" → "Surrogate #23068")
@@ -429,7 +430,7 @@ async function initMcp(attempt = 1): Promise<void> {
     const transport = new StdioClientTransport({
       command: "node",
       args: isProd
-        ? ["dist/mcp-server.cjs"]
+        ? [path.join(__dirname, "mcp-server.cjs")]
         : ["--import", "tsx/esm", "server/src/mcp-server.ts"],
       env: { ...process.env, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME || `${process.env.HOME}/.config` } as Record<string, string>,
     });

@@ -42,6 +42,7 @@ import {
   recalcAndPersistSingleDonorCost,
   recalcAndPersistTotalCostsForProvider,
   enrichDonorsWithPendingCosts,
+  enrichDonorsAcrossProviders,
 } from "../costs/total-cost.utils";
 
 const VALID_TYPES: DonorType[] = ["egg-donor", "surrogate", "sperm-donor"];
@@ -393,10 +394,8 @@ export class ProfileSyncController {
     const donor = await this.prisma.spermDonor.findFirst({ where: { id: donorId, providerId } });
     if (!donor) throw new NotFoundException("Sperm donor not found");
     if (donor.hiddenFromSearch && parent) throw new NotFoundException("Sperm donor not found");
-    const { resolvedCompensation, calculatedTotalCost } = await resolveCompensationAndTotalCost(
-      this.prisma, providerId, "sperm-donor", donor.compensation != null ? Number(donor.compensation) : null,
-    );
-    return { ...donor, resolvedCompensation, calculatedTotalCost };
+    const [enriched] = await enrichDonorsAcrossProviders(this.prisma, "sperm-donor", [donor]);
+    return enriched;
   }
 
   @Patch("donors/:type/:donorId")

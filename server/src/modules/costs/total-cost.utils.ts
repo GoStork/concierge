@@ -283,6 +283,24 @@ interface CachedSheetData {
   baseCompTemplateKeys: Set<string>;
 }
 
+async function getAllSpermDonorSheetItems(
+  prisma: PrismaService,
+  providerId: string,
+  statuses: string[],
+): Promise<any[]> {
+  const providerTypeId = await findProviderTypeIdForDonorType(prisma, providerId, "sperm-donor");
+  const allSheets = await prisma.providerCostSheet.findMany({
+    where: {
+      providerId,
+      parentClientId: null,
+      status: { in: statuses },
+      ...(providerTypeId ? { providerTypeId } : {}),
+    },
+    include: { items: { orderBy: [{ category: "asc" }, { sortOrder: "asc" }] } },
+  });
+  return allSheets.flatMap((s) => s.items);
+}
+
 async function getProviderSheetData(
   prisma: PrismaService,
   providerId: string,
@@ -457,18 +475,12 @@ async function enrichDonorsWithCosts(
     });
   }
   if (donorType === "sperm-donor") {
-    const sheetData = await getProviderSheetData(prisma, providerId, donorType, statuses);
-    const sheetItems = sheetData.approvedSheet?.items || [];
+    const sheetItems = await getAllSpermDonorSheetItems(prisma, providerId, statuses);
     return donors.map((donor) => {
-      const { resolvedCompensation, calculatedTotalCost } = computeCostFromSheet(
-        sheetData, donor.compensation != null ? Number(donor.compensation) : null,
-      );
       const vialTypes: string[] = Array.isArray(donor.vialTypes) ? donor.vialTypes : [];
       const { vialCosts, iciCost, iuiCost, ivfCost } = matchVialCostsFromSheet(sheetItems, vialTypes);
       return {
         ...donor,
-        ...(resolvedCompensation != null ? { resolvedCompensation } : {}),
-        ...(calculatedTotalCost ? { totalCost: Math.round(calculatedTotalCost.min), calculatedTotalCost } : {}),
         ...(vialCosts.length > 0 ? { vialCosts, iciCost, iuiCost, ivfCost } : {}),
       };
     });
@@ -540,18 +552,12 @@ export async function enrichDonorsWithPendingCosts(
   }
 
   if (donorType === "sperm-donor") {
-    const sheetData = await getProviderSheetData(prisma, providerId, donorType, statuses);
-    const sheetItems = sheetData.approvedSheet?.items || [];
+    const sheetItems = await getAllSpermDonorSheetItems(prisma, providerId, statuses);
     return donors.map((donor) => {
-      const { resolvedCompensation, calculatedTotalCost } = computeCostFromSheet(
-        sheetData, donor.compensation != null ? Number(donor.compensation) : null,
-      );
       const vialTypes: string[] = Array.isArray(donor.vialTypes) ? donor.vialTypes : [];
       const { vialCosts, iciCost, iuiCost, ivfCost } = matchVialCostsFromSheet(sheetItems, vialTypes);
       return {
         ...donor,
-        ...(resolvedCompensation != null ? { resolvedCompensation } : {}),
-        ...(calculatedTotalCost ? { totalCost: Math.round(calculatedTotalCost.min), calculatedTotalCost } : {}),
         ...(vialCosts.length > 0 ? { vialCosts, iciCost, iuiCost, ivfCost } : {}),
       };
     });
