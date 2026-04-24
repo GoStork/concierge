@@ -659,12 +659,12 @@ function tryDirectSpermDonorExtraction(html: string, pageUrl: string): any | nul
     if (!imgMap.has(donorId)) imgMap.set(donorId, imgUrl);
   }
 
-  // Pre-scan full listing page HTML for <p class="IUI|ICI|IVF"> and map to nearest preceding donor ID.
-  // SBC renders vial types as <p class="IUI">Available for: <strong>IUI</strong></p> in each card.
-  // The profile page renders the same but Vue.js injects it client-side (not in server HTML).
-  // The listing page HTML IS server-rendered, so we can reliably extract it here.
+  // Pre-scan full listing page HTML for <p class="ICI, IUI, IVF"> and map to nearest preceding donor ID.
+  // SBC renders: <p class="ICI, IUI, IVF">Available for: <strong>ICI, IUI, IVF</strong></p>
+  // The class attribute contains ALL vial types as a comma-separated string.
   const listingVialMap = new Map<string, string[]>();
-  const vialPClassRegex = /<p\s+class="(ICI|IUI|IVF)"/gi;
+  // Match any <p class="..."> whose class contains ICI, IUI, or IVF
+  const vialPClassRegex = /<p\s+class="([^"]*(?:ICI|IUI|IVF)[^"]*)"/gi;
   const donorHeadingGlobalRegex = /Donor\s*#\s*(\w+)/gi;
   // Build an array of [position, donorId] for all donor headings in raw HTML
   const donorPositions: Array<{ pos: number; id: string }> = [];
@@ -672,10 +672,13 @@ function tryDirectSpermDonorExtraction(html: string, pageUrl: string): any | nul
   while ((dpMatch = donorHeadingGlobalRegex.exec(html)) !== null) {
     donorPositions.push({ pos: dpMatch.index, id: dpMatch[1] });
   }
-  // For each <p class="IUI|ICI|IVF">, find the nearest preceding donor heading
+  // For each matching <p class>, parse all vial types from the class value
   let vpMatch;
   while ((vpMatch = vialPClassRegex.exec(html)) !== null) {
-    const vt = vpMatch[1].toUpperCase();
+    const classValue = vpMatch[1];
+    // Split class by comma/space and filter for valid vial types
+    const types = classValue.split(/[,\s]+/).map((s: string) => s.trim().toUpperCase()).filter((v: string) => ["ICI", "IUI", "IVF"].includes(v));
+    if (types.length === 0) continue;
     const pos = vpMatch.index;
     // Find the last donor heading before this position
     let nearestId: string | null = null;
@@ -684,13 +687,13 @@ function tryDirectSpermDonorExtraction(html: string, pageUrl: string): any | nul
     }
     if (nearestId) {
       const existing = listingVialMap.get(nearestId) || [];
-      if (!existing.includes(vt)) existing.push(vt);
+      for (const vt of types) { if (!existing.includes(vt)) existing.push(vt); }
       listingVialMap.set(nearestId, existing);
     }
   }
-  console.log(`[donor-sync] Listing page vialMap: ${listingVialMap.size} donors have vialTypes from <p class>`);
+  console.log(`[donor-sync] Listing page vialMap: ${listingVialMap.size} donors have vialTypes`);
   if (listingVialMap.size > 0) {
-    const sample = Array.from(listingVialMap.entries()).slice(0, 3).map(([id, vt]) => `${id}:[${vt}]`).join(", ");
+    const sample = Array.from(listingVialMap.entries()).slice(0, 4).map(([id, vt]) => `${id}:[${vt}]`).join(", ");
     console.log(`[donor-sync] Sample vialMap: ${sample}`);
   }
 
