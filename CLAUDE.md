@@ -8,6 +8,8 @@ GoStork is a multi-tenant fertility marketplace connecting Intended Parents with
 
 Always use Claude Sonnet 4.6 for all coding, planning, and debugging tasks in this project. Apply maximum effort to security and multi-tenant logic.
 
+**Always create migration files with schema changes:** Any time `prisma/schema.prisma` is modified (new field, new model, changed type, etc.), immediately create a matching migration SQL file at `prisma/migrations/YYYYMMDD_description/migration.sql` using `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements. Do this in the same commit as the schema change - never push a schema change without its migration file.
+
 **Never use em dashes:** Never use em dashes or en dashes. Always use a hyphen-minus (-) instead, everywhere - code, UI text, comments, prompts, and all generated content.
 
 **No dialogs/modals/popups:** Always use full pages or inline expandable sections instead of dialogs, modals, or popups. The app is designed with future native mobile apps in mind, where modals don't translate well. Dialogs are only acceptable for simple destructive-action confirmations (e.g., "Are you sure you want to delete?").
