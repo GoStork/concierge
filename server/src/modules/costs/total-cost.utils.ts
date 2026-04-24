@@ -332,8 +332,6 @@ async function getProviderSheetData(
 /**
  * Returns all cost sheet line items matching the donor's vial types.
  * A donor available for IUI will get ALL IUI-prefixed cost items (e.g. IUI Premium + IUI Platinum).
- * If vialTypes is empty, derives implied types from the cost sheet itself (e.g. if sheet has "IUI Premium"
- * and "ICI Premium" items, all donors from that provider are treated as available for IUI and ICI).
  * Also returns per-vial minimum costs for filtering/sorting (iciCost, iuiCost, ivfCost).
  */
 function matchVialCostsFromSheet(
@@ -343,15 +341,7 @@ function matchVialCostsFromSheet(
   const vialCosts: { label: string; cost: number }[] = [];
   const minCosts: Record<string, number | null> = { ICI: null, IUI: null, IVF: null };
 
-  // If no per-donor vialTypes, derive implied types from the cost sheet items
-  const VIAL_PREFIXES = ["ICI", "IUI", "IVF"];
-  const effectiveVialTypes = vialTypes.length > 0
-    ? vialTypes
-    : VIAL_PREFIXES.filter(vt =>
-        sheetItems.some(ci => ci.key?.toLowerCase().startsWith(vt.toLowerCase()))
-      );
-
-  for (const vt of effectiveVialTypes) {
+  for (const vt of vialTypes) {
     const vtLower = vt.toLowerCase();
     const matching = sheetItems.filter(ci => ci.key?.toLowerCase().startsWith(vtLower));
     for (const ci of matching) {
