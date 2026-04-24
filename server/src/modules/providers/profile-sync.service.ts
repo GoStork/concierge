@@ -4574,13 +4574,13 @@ async function runSyncJob(
         const oldHash = item.externalId ? existingHashes.get(item.externalId) : null;
         const lastFull = item.externalId ? existingLastFullSyncAt.get(item.externalId) : null;
         const pricingStale = !lastFull || (Date.now() - lastFull.getTime()) > PRICING_CHECK_MS;
-        if (oldHash && oldHash === item.cardHash && !pricingStale) {
+        const needsVialTypes = job.type === "sperm-donor" && (!item.vialTypes || item.vialTypes.length === 0);
+        if (oldHash && oldHash === item.cardHash && !pricingStale && !needsVialTypes) {
           skippedUnchanged++;
           job.processed++;
           return;
         }
         const hasSections = item.profileData?._sections || item._sections;
-        const needsVialTypes = job.type === "sperm-donor" && (!item.vialTypes || item.vialTypes.length === 0);
         if ((!hasSections || needsVialTypes) && item.profileUrl) {
           try {
             const profileHtml = await fetchHtml(item.profileUrl, sessionCookies);
