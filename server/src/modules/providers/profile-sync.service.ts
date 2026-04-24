@@ -699,14 +699,31 @@ function tryDirectSpermDonorExtraction(html: string, pageUrl: string): any | nul
     }
 
     // Extract vialTypes from "Available for: ICI, IUI, IVF" text
-    const availableForMatch = text.match(/Available\s+for[:\s]+([A-Z,\s]+)/i);
+    // Search raw HTML near this donor ID - more reliable than cleaned text
+    // since cleanHtml may strip <header> or other elements containing this info
     const vialTypes: string[] = [];
-    if (availableForMatch) {
-      const parts = availableForMatch[1].split(/[,\s]+/).map((s: string) => s.trim().toUpperCase());
-      for (const part of parts) {
-        if (["ICI", "IUI", "IVF"].includes(part)) vialTypes.push(part);
+    const donorIdPos = html.indexOf(externalId);
+    if (donorIdPos !== -1) {
+      const rawWindow = html.slice(Math.max(0, donorIdPos - 300), donorIdPos + 800);
+      const avRawMatch = rawWindow.match(/Available\s+for[:\s]+([^<\n]+)/i);
+      if (avRawMatch) {
+        const rawParts = avRawMatch[1].split(/[,\s]+/).map((s: string) => s.trim().toUpperCase());
+        for (const part of rawParts) {
+          if (["ICI", "IUI", "IVF"].includes(part)) vialTypes.push(part);
+        }
       }
     }
+    // Also try cleaned text as fallback
+    if (vialTypes.length === 0) {
+      const availableForMatch = text.match(/Available\s+for[:\s]+([A-Z,\s]+)/i);
+      if (availableForMatch) {
+        const cleanParts = availableForMatch[1].split(/[,\s]+/).map((s: string) => s.trim().toUpperCase());
+        for (const part of cleanParts) {
+          if (["ICI", "IUI", "IVF"].includes(part)) vialTypes.push(part);
+        }
+      }
+    }
+    if (donors.length === 0) console.log(`[donor-sync] First donor ${externalId} vialTypes: [${vialTypes.join(",")}]`);
 
     const donor: any = {
       externalId,
@@ -4609,10 +4626,10 @@ async function runSyncJob(
           try {
             const profileHtml = await fetchHtml(item.profileUrl, sessionCookies);
             if (profileHtml && !profileHtml.includes('type="password"')) {
-              // Direct regex extraction of vialTypes from "Available for: IUI" text in profile HTML
-              // This is more reliable than Gemini for sidebar content
+              // Direct regex extraction of vialTypes from "Available for: IUI" text in raw profile HTML
+              // Uses [^<\n]+ to capture until next HTML tag (works even inside stripped elements)
               if (!item.vialTypes || item.vialTypes.length === 0) {
-                const avMatch = profileHtml.match(/Available\s+for[:\s]+([A-Z,\s]+)/i);
+                const avMatch = profileHtml.match(/Available\s+for[:\s]+([^<\n]+)/i);
                 if (avMatch) {
                   const extracted = avMatch[1].split(/[,\s]+/).map((s: string) => s.trim().toUpperCase()).filter((v: string) => ["ICI", "IUI", "IVF"].includes(v));
                   if (extracted.length > 0) {
