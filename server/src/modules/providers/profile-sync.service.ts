@@ -699,12 +699,16 @@ function tryDirectSpermDonorExtraction(html: string, pageUrl: string): any | nul
     }
 
     // Extract vialTypes from "Available for: ICI, IUI, IVF" text
-    // Search raw HTML near this donor ID - more reliable than cleaned text
-    // since cleanHtml may strip <header> or other elements containing this info
+    // Search raw HTML near "Donor #ID" heading - avoids matching bare ID in URLs/hrefs
+    // which appear earlier in the HTML and have no "Available for:" nearby
     const vialTypes: string[] = [];
-    const donorIdPos = html.indexOf(externalId);
+    // Use a regex to find "Donor #<id>" in the raw HTML (case-insensitive)
+    const donorHeadingRegex = new RegExp(`Donor\\s*#\\s*${externalId}`, "i");
+    const donorHeadingMatch = donorHeadingRegex.exec(html);
+    const donorIdPos = donorHeadingMatch ? donorHeadingMatch.index : -1;
     if (donorIdPos !== -1) {
-      const rawWindow = html.slice(Math.max(0, donorIdPos - 300), donorIdPos + 800);
+      // Search up to 1500 chars after the donor heading for "Available for:"
+      const rawWindow = html.slice(donorIdPos, donorIdPos + 1500);
       const avRawMatch = rawWindow.match(/Available\s+for[:\s]+([^<\n]+)/i);
       if (avRawMatch) {
         const rawParts = avRawMatch[1].split(/[,\s]+/).map((s: string) => s.trim().toUpperCase());
@@ -712,6 +716,13 @@ function tryDirectSpermDonorExtraction(html: string, pageUrl: string): any | nul
           if (["ICI", "IUI", "IVF"].includes(part)) vialTypes.push(part);
         }
       }
+      if (donors.length === 0) {
+        // Log first donor's raw window for debugging if vialTypes empty
+        const debugWindow = rawWindow.slice(0, 400).replace(/\s+/g, " ");
+        console.log(`[donor-sync] First donor ${externalId} vialTypes: [${vialTypes.join(",")}] rawWindow: ${debugWindow}`);
+      }
+    } else {
+      if (donors.length === 0) console.log(`[donor-sync] First donor ${externalId}: "Donor #${externalId}" not found in raw HTML`);
     }
     // Also try cleaned text as fallback
     if (vialTypes.length === 0) {
@@ -723,7 +734,6 @@ function tryDirectSpermDonorExtraction(html: string, pageUrl: string): any | nul
         }
       }
     }
-    if (donors.length === 0) console.log(`[donor-sync] First donor ${externalId} vialTypes: [${vialTypes.join(",")}]`);
 
     const donor: any = {
       externalId,
