@@ -1484,9 +1484,23 @@ async function upsertSpermDonor(
   const secRel = rawSections["Religious Background"] || {};
   const sdAge = (() => { const v = secGc["Age When Donated"] || flatSections["Age When Donated"] || flatSections["Age"]; if (!v) return undefined; const p = parseInt(String(v)); return isNaN(p) ? undefined : p; })();
   const sdRace = donor.race || secEth["Race"] || flatSections["Race"] || undefined;
-  const sdEthnicity = donor.ethnicity || (() => {
-    const origins = [secEth["Mother's Ethnic Origin"], secEth["Father's Ethnic Origin"]].filter(Boolean);
-    return origins.length > 0 ? origins.join(", ") : (flatSections["Ethnicity"] || undefined);
+  const sdEthnicity = (() => {
+    // Build a deduplicated, title-cased ethnicity string
+    const dedupeEthnicity = (raw: string | null | undefined): string | undefined => {
+      if (!raw) return undefined;
+      const parts = raw.split(/[,;]+/).map(s => s.trim()).filter(Boolean);
+      const seen = new Set<string>();
+      const unique: string[] = [];
+      for (const p of parts) {
+        const key = p.toLowerCase();
+        if (!seen.has(key)) { seen.add(key); unique.push(p); }
+      }
+      return unique.length > 0 ? unique.join(", ") : undefined;
+    };
+    if (donor.ethnicity) return dedupeEthnicity(donor.ethnicity);
+    const origins = [secEth["Mother's Ethnic Origin"], secEth["Father's Ethnic Origin"]].filter(Boolean) as string[];
+    if (origins.length > 0) return dedupeEthnicity(origins.join(", "));
+    return dedupeEthnicity(flatSections["Ethnicity"] || undefined);
   })();
   const sdHeight = donor.height || secGc["Height"] || flatSections["Height"] || undefined;
   const sdWeight = donor.weight || secGc["Weight"] || flatSections["Weight"] || undefined;
@@ -1494,6 +1508,7 @@ async function upsertSpermDonor(
   const sdHairColor = donor.hairColor || secGc["Hair Color"] || flatSections["Hair Color"] || undefined;
   const sdEducation = donor.education || secEd["Major/Area of Study"] || secEd["Education"] || flatSections["Major/Area of Study"] || flatSections["Education"] || undefined;
   const sdOccupation = donor.occupation || secEd["What is your current or most recent occupation?"] || secEd["Occupation"] || flatSections["Occupation"] || undefined;
+  const sdLocation = donor.location || secGc["Place of Birth"] || flatSections["Place of Birth"] || secGc["Location"] || flatSections["Location"] || undefined;
   const sdReligion = donor.religion || secRel["Religion Practiced"] || secRel["Religion Born Into"] || secRel["Religion"] || flatSections["Religion"] || undefined;
   const sdVialTypes: string[] = (() => {
     if (Array.isArray(donor.vialTypes) && donor.vialTypes.length > 0) return (donor.vialTypes as string[]).filter((v: string) => ["ICI", "IUI", "IVF"].includes(v));
@@ -1519,7 +1534,8 @@ async function upsertSpermDonor(
       eyeColor: skipIfManual("eyeColor", sdEyeColor || undefined, mf),
       hairColor: skipIfManual("hairColor", sdHairColor || undefined, mf),
       education: skipIfManual("education", sdEducation || undefined, mf),
-      location: skipIfManual("location", donor.location || undefined, mf),
+      location: skipIfManual("location", sdLocation || undefined, mf),
+      religion: skipIfManual("religion", sdReligion || undefined, mf),
       relationshipStatus: skipIfManual("relationshipStatus", normalizeRelationshipStatus(donor.relationshipStatus) || undefined, mf),
       occupation: skipIfManual("occupation", sdOccupation || undefined, mf),
       compensation: skipIfManual("compensation", donor.compensation ? parseFloat(String(donor.compensation)) : undefined, mf),
@@ -1550,7 +1566,8 @@ async function upsertSpermDonor(
       eyeColor: sdEyeColor || null,
       hairColor: sdHairColor || null,
       education: sdEducation || null,
-      location: donor.location || null,
+      location: sdLocation || null,
+      religion: sdReligion || null,
       relationshipStatus: normalizeRelationshipStatus(donor.relationshipStatus) || null,
       occupation: sdOccupation || null,
       compensation: donor.compensation ? parseFloat(String(donor.compensation)) : null,
@@ -4565,18 +4582,24 @@ async function runSyncJob(
     const existingHashes = new Map<string, string>();
     const existingLastFullSyncAt = new Map<string, Date>();
     const existingVialTypes = new Map<string, string[]>();
+    const existingHasSections = new Set<string>(); // tracks which donors already have rich section data
     const externalIds = uniqueItems.map((d: any) => d.externalId).filter(Boolean);
     if (externalIds.length > 0) {
       const dbTable = job.type === "surrogate"
         ? prisma.surrogate.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true } })
         : job.type === "sperm-donor"
-        ? prisma.spermDonor.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true, vialTypes: true } })
+        ? prisma.spermDonor.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true, vialTypes: true, profileData: true } })
         : prisma.eggDonor.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true } });
       const existing = await dbTable;
       for (const d of existing) {
         if (d.externalId && d.cardHash) existingHashes.set(d.externalId, d.cardHash);
         if (d.externalId && (d as any).lastFullSyncAt) existingLastFullSyncAt.set(d.externalId, (d as any).lastFullSyncAt);
         if (d.externalId && (d as any).vialTypes) existingVialTypes.set(d.externalId, (d as any).vialTypes);
+        // Mark donors whose profileData already has rich section data (from a previous full profile fetch)
+        const pd = (d as any).profileData;
+        if (d.externalId && pd && typeof pd === "object" && pd._sections && Object.keys(pd._sections).length > 0) {
+          existingHasSections.add(d.externalId);
+        }
       }
     }
 
@@ -4601,7 +4624,9 @@ async function runSyncJob(
         const lastFull = item.externalId ? existingLastFullSyncAt.get(item.externalId) : null;
         const pricingStale = !lastFull || (Date.now() - lastFull.getTime()) > PRICING_CHECK_MS;
         const needsVialTypes = job.type === "sperm-donor" && (!item.vialTypes || item.vialTypes.length === 0);
-        if (oldHash && oldHash === item.cardHash && !pricingStale && !needsVialTypes) {
+        // Force full profile fetch if this donor has never had rich section data extracted
+        const needsSections = job.type === "sperm-donor" && !existingHasSections.has(item.externalId || "");
+        if (oldHash && oldHash === item.cardHash && !pricingStale && !needsVialTypes && !needsSections) {
           // Even on hash-skip, save vialTypes from listing page if DB doesn't have them yet
           if (job.type === "sperm-donor" && item.vialTypes?.length > 0) {
             const dbVt = item.externalId ? existingVialTypes.get(item.externalId) : null;
@@ -4675,39 +4700,48 @@ async function runSyncJob(
                   }
                 }
 
-                if (!item.age) {
-                  const ageVal = gc["Age When Donated"] || flatAll["Age When Donated"] || flatAll["Age"];
-                  if (ageVal) { const p = parseInt(String(ageVal)); if (!isNaN(p)) item.age = p; }
+                // Section data is authoritative - always prefer it over listing-page extracted values
+                const dedupeOrigins = (parts: string[]): string | null => {
+                  const seen = new Set<string>();
+                  const unique: string[] = [];
+                  for (const p of parts) {
+                    const key = p.trim().toLowerCase();
+                    if (key && !seen.has(key)) { seen.add(key); unique.push(p.trim()); }
+                  }
+                  return unique.length > 0 ? unique.join(", ") : null;
+                };
+
+                const ageVal = gc["Age When Donated"] || flatAll["Age When Donated"] || flatAll["Age"];
+                if (ageVal) { const p = parseInt(String(ageVal)); if (!isNaN(p)) item.age = p; }
+                // Always use section data for physical fields (listing-page regex often corrupts them)
+                item.height = gc["Height"] || flatAll["Height"] || item.height || null;
+                item.weight = gc["Weight"] || flatAll["Weight"] || item.weight || null;
+                item.eyeColor = gc["Eye Color"] || flatAll["Eye Color"] || item.eyeColor || null;
+                item.hairColor = gc["Hair Color"] || flatAll["Hair Color"] || item.hairColor || null;
+                item.race = eth["Race"] || flatAll["Race"] || item.race || null;
+                // Ethnicity: deduplicate across all origin fields (mother, father, grandparents)
+                const ethnicOrigins = [
+                  eth["Mother's Ethnic Origin"], eth["Father's Ethnic Origin"],
+                  eth["Maternal Grandmother's Ethnic Origin"], eth["Maternal Grandfather's Ethnic Origin"],
+                  eth["Paternal Grandmother's Ethnic Origin"], eth["Paternal Grandfather's Ethnic Origin"],
+                ].filter(Boolean) as string[];
+                // Also split comma-separated values within each origin field before deduping
+                const allOriginParts = ethnicOrigins.flatMap(o => o.split(/[,;]+/).map(s => s.trim())).filter(Boolean);
+                if (allOriginParts.length > 0) {
+                  item.ethnicity = dedupeOrigins(allOriginParts);
+                } else if (flatAll["Ethnicity"]) {
+                  item.ethnicity = dedupeOrigins(flatAll["Ethnicity"].split(/[,;]+/)) || item.ethnicity || null;
                 }
-                if (!item.height) item.height = gc["Height"] || flatAll["Height"] || null;
-                if (!item.weight) item.weight = gc["Weight"] || flatAll["Weight"] || null;
-                if (!item.eyeColor) item.eyeColor = gc["Eye Color"] || flatAll["Eye Color"] || null;
-                if (!item.hairColor) item.hairColor = gc["Hair Color"] || flatAll["Hair Color"] || null;
-                if (!item.race) {
-                  item.race = eth["Race"] || flatAll["Race"] || null;
-                }
-                if (!item.ethnicity) {
-                  // Build from ethnic origin fields if not already set
-                  const origins = [
-                    eth["Mother's Ethnic Origin"], eth["Father's Ethnic Origin"],
-                    eth["Maternal Grandmother's Ethnic Origin"], eth["Maternal Grandfather's Ethnic Origin"],
-                    eth["Paternal Grandmother's Ethnic Origin"], eth["Paternal Grandfather's Ethnic Origin"],
-                  ].filter(Boolean);
-                  if (origins.length > 0) item.ethnicity = origins.join(", ");
-                  else if (flatAll["Ethnicity"]) item.ethnicity = flatAll["Ethnicity"];
-                }
-                if (!item.education) {
-                  item.education = ed["Major/Area of Study"] || ed["Education"] || ed["Education Level"]
-                    || flatAll["Major/Area of Study"] || flatAll["Education"] || null;
-                }
-                if (!item.occupation) {
-                  item.occupation = ed["What is your current or most recent occupation?"]
-                    || ed["Occupation"] || ed["Current Occupation"] || ed["What is your occupation?"]
-                    || flatAll["Occupation"] || flatAll["What is your current or most recent occupation?"] || null;
-                }
-                if (!item.religion) {
-                  item.religion = relBg["Religion Practiced"] || relBg["Religion Born Into"]
-                    || relBg["Religion"] || flatAll["Religion Practiced"] || flatAll["Religion"] || null;
+                item.education = ed["Major/Area of Study"] || ed["Education"] || ed["Education Level"]
+                  || flatAll["Major/Area of Study"] || flatAll["Education"] || item.education || null;
+                item.occupation = ed["What is your current or most recent occupation?"]
+                  || ed["Occupation"] || ed["Current Occupation"] || ed["What is your occupation?"]
+                  || flatAll["Occupation"] || flatAll["What is your current or most recent occupation?"] || item.occupation || null;
+                item.religion = relBg["Religion Practiced"] || relBg["Religion Born Into"]
+                  || relBg["Religion"] || flatAll["Religion Practiced"] || flatAll["Religion"] || item.religion || null;
+                // Location: use Place of Birth or Location from sections
+                if (!item.location) {
+                  item.location = gc["Place of Birth"] || gc["Location"] || flatAll["Place of Birth"] || flatAll["Location"] || null;
                 }
                 // Extract vialTypes from sections response
                 if ((!item.vialTypes || item.vialTypes.length === 0) && Array.isArray(sections.vialTypes) && sections.vialTypes.length > 0) {

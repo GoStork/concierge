@@ -649,6 +649,7 @@ model SpermDonor {
   hairColor            String?
   education            String?
   location             String?
+  religion             String?
   relationshipStatus   String?
   occupation           String?
   compensation         Decimal?

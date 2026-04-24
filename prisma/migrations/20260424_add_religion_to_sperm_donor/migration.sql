@@ -1,0 +1,1 @@
+ALTER TABLE "SpermDonor" ADD COLUMN IF NOT EXISTS "religion" TEXT;
