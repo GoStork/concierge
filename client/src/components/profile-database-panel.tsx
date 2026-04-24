@@ -48,7 +48,7 @@ import { typeToUrlSlug } from "@/lib/profile-utils";
 import type { ProfileType } from "@/lib/profile-utils";
 import { MarketplaceFilterBar } from "@/components/marketplace/MarketplaceFilterBar";
 import { useAppSelector, useAppDispatch } from "@/store";
-import { clearFilters, setMarketplaceSearchQuery, setMarketplaceSortBy } from "@/store/uiSlice";
+import { clearFilters, setMarketplaceSearchQuery, setMarketplaceSortBy, setFilter } from "@/store/uiSlice";
 import { matchesFilter, matchesSameSexCoupleRequirement, matchesInternationalRequirement, omniSearch, sortDonors } from "@/lib/marketplace-filters";
 
 interface ProfileDatabasePanelProps {
@@ -128,7 +128,14 @@ export default function ProfileDatabasePanel({
     dispatch(clearFilters());
     dispatch(setMarketplaceSearchQuery(""));
     dispatch(setMarketplaceSortBy("newest"));
+    setLocationValue("");
   }, [type, dispatch]);
+
+  const [locationValue, setLocationValue] = useState("");
+  const handleLocationChange = (v: string) => {
+    setLocationValue(v);
+    dispatch(setFilter({ key: "location", values: v ? [v] : [] }));
+  };
 
   const [configUrl, setConfigUrl] = useState("");
   const [configUsername, setConfigUsername] = useState("");
@@ -1098,7 +1105,13 @@ export default function ProfileDatabasePanel({
 
         {profiles.length > 0 && (
           <div className="mb-4" data-testid={`filter-bar-${type}`}>
-            <MarketplaceFilterBar providerType={filterProviderType} hideFavorites />
+            <MarketplaceFilterBar
+              providerType={filterProviderType}
+              hideFavorites
+              location={locationValue}
+              onLocationChange={handleLocationChange}
+              hasLocation={!!locationValue}
+            />
           </div>
         )}
 

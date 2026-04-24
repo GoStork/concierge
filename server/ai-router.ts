@@ -576,15 +576,57 @@ aiRouter.get("/my-session", async (req: Request, res: Response) => {
   }
 });
 
+// Phase 0 templates - duplicated from client so server can build them with correct services
+function buildServerPhase0(services: string[]): string {
+  const PHASE0_SURROGACY = `Before we dive in, let me give you a quick overview of how GoStork works.
+
+GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of researching dozens of agencies on your own, we've brought everything together in one place. Every provider on GoStork lists their full costs, so you know exactly what to expect - no surprises. We partner with over 60 surrogacy agencies. And it's completely free for intended parents - the agencies pay us a referral fee, and they're not allowed to pass that cost on to you.
+
+Every agency we work with has been personally vetted by Eran Amir, GoStork's founder, who went through surrogacy himself. He personally interviews each agency's leadership, reviews their operations and processes, and makes sure they have the right team in place. Plus, no waiting lists - every surrogate you'll see is available now.
+
+To help guide you toward the perfect match...`;
+
+  const PHASE0_EGG_DONOR = `Before we dive in, let me give you a quick overview of how GoStork works.
+
+GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of searching across dozens of agency websites, we've pulled everything into one place. Every provider lists their full costs on GoStork so you know exactly what to expect - no surprises. We work with 30 egg donor agencies and have over 10,000 egg donors in our database. And it's completely free for intended parents - the agencies pay us a referral fee and are not allowed to pass that cost on to you.
+
+Every agency we work with has been personally vetted by Eran Amir, GoStork's founder, who went through the fertility journey himself. He personally interviews each agency's leadership, reviews their operations and processes, and makes sure they have the right team in place.
+
+To help me find you the right match...`;
+
+  const PHASE0_CLINIC = `Before we dive in, let me give you a quick overview of how GoStork works.
+
+GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of researching IVF clinics on your own, we've brought everything together in one place. Every clinic lists their full costs and success rates on GoStork so you know exactly what to expect - no surprises. We partner with 30+ IVF clinics across the country. And it's completely free for intended parents - clinics pay us a referral fee and are not allowed to pass that cost on to you.
+
+Every clinic we work with has been personally vetted by Eran Amir, GoStork's founder, who went through the fertility journey himself. He personally interviews each clinic's leadership, reviews their outcomes and processes, and makes sure they have the right team in place.
+
+To help me find you the right clinic...`;
+
+  const PHASE0_GENERAL = `Before we dive in, let me give you a quick overview of how GoStork works.
+
+GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of researching providers across dozens of websites, we've brought everything together in one place. Every provider lists their full costs on GoStork so you know exactly what to expect - no surprises. We partner with over 60 surrogacy agencies, 30 egg donor agencies with 10,000+ donors, and 30+ IVF clinics. And it's completely free for intended parents - providers pay us a referral fee and are not allowed to pass that cost on to you.
+
+Every provider on GoStork has been personally vetted by Eran Amir, GoStork's founder, who went through the fertility journey himself. He personally interviews each provider's leadership, reviews their operations and processes, and makes sure they have the right team in place.
+
+To help guide you toward the perfect match...`;
+
+  if (services.includes("Surrogate")) return PHASE0_SURROGACY;
+  if (services.includes("Egg Donor")) return PHASE0_EGG_DONOR;
+  if (services.includes("Fertility Clinic")) return PHASE0_CLINIC;
+  return PHASE0_GENERAL;
+}
+
 aiRouter.post("/init-session", async (req: Request, res: Response) => {
   try {
     if (!req.isAuthenticated || !req.isAuthenticated() || !req.user) {
       return res.status(401).json({ error: "Not authenticated" });
     }
     const userId = (req.user as any).id;
-    const { matchmakerId, greeting, donorId, donorType } = req.body;
-    if (!matchmakerId || !greeting) {
-      return res.status(400).json({ error: "matchmakerId and greeting required" });
+    const { matchmakerId, donorId, donorType } = req.body;
+    // Accept legacy client-sent greeting as fallback only
+    const clientGreeting: string | undefined = req.body.greeting;
+    if (!matchmakerId) {
+      return res.status(400).json({ error: "matchmakerId required" });
     }
 
     const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
@@ -602,6 +644,38 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       ? (donorType === "surrogate" ? "Surrogate" : donorType === "sperm-donor" ? "Sperm Donor" : "Egg Donor")
       : null;
 
+    // Build greeting server-side using matchmaker template + user profile (eliminates client timing issues)
+    const [matchmakerRecord, userForGreeting] = await Promise.all([
+      prisma.matchmaker.findUnique({ where: { id: matchmakerId } }),
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          firstName: true, name: true, city: true, state: true,
+          parentAccount: { select: { intendedParentProfile: { select: { interestedServices: true } } } },
+        },
+      }),
+    ]);
+    const firstName = userForGreeting?.firstName || userForGreeting?.name?.split(" ")[0] || "there";
+    const city = userForGreeting?.city || "";
+    const state = userForGreeting?.state || "";
+    const location = city && state ? `${city}, ${state}` : city || state || "your area";
+    const interestedServices: string[] = (userForGreeting?.parentAccount as any)?.intendedParentProfile?.interestedServices || [];
+    const SERVICE_LABEL_MAP: Record<string, string> = {
+      "Surrogate": "surrogacy", "Egg Donor": "egg donation",
+      "Fertility Clinic": "IVF clinics", "Sperm Donor": "sperm donation",
+    };
+    const serviceLabels = interestedServices.map((s: string) => SERVICE_LABEL_MAP[s] || s.toLowerCase());
+    const serviceLabel = serviceLabels.length === 1 ? serviceLabels[0]
+      : serviceLabels.length > 1 ? serviceLabels.slice(0, -1).join(", ") + " and " + serviceLabels[serviceLabels.length - 1]
+      : "fertility services";
+    const templateGreeting = matchmakerRecord?.initialGreeting
+      || `Hi ${firstName}! I'm ${matchmakerRecord?.name || "your concierge"}, your GoStork concierge. I see you're exploring ${serviceLabel} - I'm here to make that journey a lot clearer and help you find the right match.`;
+    const builtGreeting = donorId ? (clientGreeting || templateGreeting) : templateGreeting
+      .replace(/\[First Name\]/gi, firstName)
+      .replace(/\[Service\]/gi, serviceLabel)
+      .replace(/\[Location\]/gi, location);
+    const builtPhase0 = !donorId ? buildServerPhase0(interestedServices) : null;
+
     if (existing) {
       if (donorId) {
         const matchCardData = {
@@ -617,7 +691,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
           data: {
             sessionId: existing.id,
             role: "assistant",
-            content: greeting,
+            content: builtGreeting,
             senderType: "ai",
             uiCardData: matchCardData,
           },
@@ -626,7 +700,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
           where: { id: existing.id },
           data: { updatedAt: new Date(), title: "AI Concierge Chat" },
         });
-        res.json({ sessionId: existing.id, greetingMessageId: greetingMsg.id, reused: true });
+        res.json({ sessionId: existing.id, greetingMessageId: greetingMsg.id, greeting: builtGreeting, reused: true });
         if (mcpClient) {
           mcpClient.callTool({ name: "resolve_match_card", arguments: { entityId: donorId, entityType: donorLabel } })
             .then((resolveResult: any) => {
@@ -667,13 +741,33 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       data: {
         sessionId: session.id,
         role: "assistant",
-        content: greeting,
+        content: builtGreeting,
         senderType: "ai",
         ...(greetingUiCardData ? { uiCardData: greetingUiCardData } : {}),
       },
     });
 
-    res.json({ sessionId: session.id, greetingMessageId: greetingMsg.id });
+    // Save Phase 0 template message immediately - built server-side with correct services
+    let phase0Msg: { id: string } | null = null;
+    if (builtPhase0) {
+      phase0Msg = await prisma.aiChatMessage.create({
+        data: {
+          sessionId: session.id,
+          role: "assistant",
+          content: builtPhase0,
+          senderType: "ai",
+        },
+      });
+    }
+
+    res.json({
+      sessionId: session.id,
+      greetingMessageId: greetingMsg.id,
+      greeting: builtGreeting,
+      phase0Content: builtPhase0,
+      interestedServices,
+      ...(phase0Msg ? { phase0MessageId: phase0Msg.id } : {}),
+    });
 
     if (donorId && mcpClient) {
       mcpClient.callTool({ name: "resolve_match_card", arguments: { entityId: donorId, entityType: donorLabel } })
@@ -757,7 +851,8 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
     const attachmentData = req.body.attachmentData || null;
     const isPhase0Init = req.body.isSystemTrigger === true && req.body.message === "phase0_init";
-    const isSystemTrigger = (req.body.isSystemTrigger === true && req.body.message === "consultation_callback_submitted") || isPhase0Init;
+    const isPhase1Init = req.body.isSystemTrigger === true && req.body.message === "phase1_init";
+    const isSystemTrigger = (req.body.isSystemTrigger === true && req.body.message === "consultation_callback_submitted") || isPhase0Init || isPhase1Init;
 
     // For system triggers, don't save a user message - just inject context and let AI respond
     const savedUserMsg = isSystemTrigger ? null : await prisma.aiChatMessage.create({
@@ -1062,7 +1157,8 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
       // --- SPERM DONOR PREFERENCES (Match Cycle C) ---
       const spermPrefs: string[] = [];
-      if (profile?.spermDonorType) spermPrefs.push(`type: ${profile.spermDonorType}`);
+      if (profile?.spermDonorType) spermPrefs.push(`donor type: ${profile.spermDonorType}`);
+      if (profile?.spermDonorVialType) spermPrefs.push(`vial type: ${profile.spermDonorVialType}`);
       if (profile?.spermDonorPreferences) spermPrefs.push(`other: ${profile.spermDonorPreferences}`);
       if (profile?.spermDonorEthnicity) spermPrefs.push(`ethnicity: ${profile.spermDonorEthnicity}`);
       if (spermPrefs.length > 0) parts.push(`Saved sperm donor preferences (do NOT re-ask C1/C2): ${spermPrefs.join(", ")}.`);
@@ -1887,7 +1983,7 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
 
     // Sperm donor preferences already saved (C1/C2)
     if (profile?.spermDonorType) {
-      skipDirectives.push(`DO NOT ask about ID Release preference (C1) - already saved: ${profile.spermDonorType}.`);
+      skipDirectives.push(`DO NOT ask about donor type preference (C2) - already saved: ${profile.spermDonorType}.`);
     }
     if (profile?.spermDonorPreferences) {
       skipDirectives.push("DO NOT ask about sperm donor preferences (C2) - already saved. Use saved preferences when running Match Cycle C.");
@@ -2302,16 +2398,34 @@ The parent's message was: "${userMessage}"`,
       }
     }
 
-    // System trigger: Phase 0 auto-delivery on new session open
-    if (isPhase0Init) {
-      messages.push({
-        role: "user",
-        content: `SYSTEM: The parent just opened a brand new chat session. They have not typed anything yet. Deliver Phase 0 now - your GoStork introduction - conversationally and warmly, exactly as described in your instructions. After the intro, naturally ask Phase 1 Question 1 to get the conversation started. Do not wait for input.`,
-      });
+    // Phase 0 is now delivered as a pre-written template - no AI generation needed.
+    // The isPhase0Init path is intentionally left as a no-op; the client no longer calls it.
+
+    // Phase 1 trigger: Phase 0 template has been displayed, now ask the first question
+    if (isPhase1Init) {
+      const donorOnlyServices = ["Egg Donor", "Sperm Donor"];
+      const sessionServices: string[] = profile?.interestedServices || [];
+      const isDonorOnly = sessionServices.length > 0 && sessionServices.every((s: string) => donorOnlyServices.includes(s));
+      const hasEggDonor = sessionServices.includes("Egg Donor");
+      const hasSpermDonor = sessionServices.includes("Sperm Donor");
+
+      if (isDonorOnly) {
+        // Skip Phase 1 entirely - go straight to first match cycle question
+        const firstCycle = hasEggDonor ? "B1 (egg donor preferences)" : "C1 (sperm donor preferences)";
+        messages.push({
+          role: "user",
+          content: `SYSTEM: Phase 0 has been shown. The parent is ONLY looking for ${sessionServices.join(" and ")} - skip Phase 1 (identity/relationship question) entirely. Go straight to ${firstCycle}. Ask a single warm, open-ended question about what they are looking for in a donor. Keep it brief.`,
+        });
+      } else {
+        messages.push({
+          role: "user",
+          content: `SYSTEM: The GoStork introduction (Phase 0) has already been shown to the parent as a pre-written message ending with "To help guide you toward the perfect match..." or similar. Do NOT repeat or summarize Phase 0. Your ONLY job now is to ask Phase 1 Question 1 - a single warm, natural question to start the conversation. Keep it brief.`,
+        });
+      }
     }
 
     // System trigger: consultation callback submitted - tell AI to transition to next cycle
-    if (isSystemTrigger && !isPhase0Init) {
+    if (isSystemTrigger && !isPhase0Init && !isPhase1Init) {
       messages.push({
         role: "user",
         content: `SYSTEM: The parent just submitted a callback consultation request and it was confirmed. The consultation for this cycle is now complete. DO NOT mention the callback again or summarize what just happened - the confirmation message was already shown. Your ONLY job now is to immediately start the next pending match cycle from the checklist. Ask the very first question of the next cycle (ONE question only). Be warm and excited. Example: "Wonderful - your request is in! 🎉 Now let's find you the perfect egg donor. **What matters most to you in an egg donor?**" or "Now that your clinic is sorted, let's find your surrogate! **Are you going on this journey solo, or with a partner?**" - adapt to whatever the next service in the checklist is.`,
@@ -2884,7 +2998,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         "spermDonorType", "spermDonorPreferences",
         "spermDonorAgeRange", "spermDonorEyeColor", "spermDonorHairColor",
         "spermDonorHeightRange", "spermDonorRace", "spermDonorEthnicity",
-        "spermDonorEducation", "spermDonorMaxPrice", "spermDonorCovidVaccinated",
+        "spermDonorEducation", "spermDonorMaxPrice", "spermDonorVialType", "spermDonorCovidVaccinated",
         // Surrogate core preferences
         "surrogateTwins", "surrogateCountries", "surrogateTermination",
         "surrogateAgeRange", "surrogateExperience", "surrogateBudget", "surrogateMedPrefs",
@@ -4049,14 +4163,17 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       },
     });
     // Mark the user's message as delivered AND read (AI always processes immediately)
-    prisma.aiChatMessage.update({
-      where: { id: savedUserMsg.id },
-      data: { deliveredAt: now, readAt: now },
-    }).catch(() => {});
+    // savedUserMsg is null for system triggers - skip the update in that case
+    if (savedUserMsg) {
+      prisma.aiChatMessage.update({
+        where: { id: savedUserMsg.id },
+        data: { deliveredAt: now, readAt: now },
+      }).catch(() => {});
+    }
 
     res.json({
       sessionId: replySessionId,
-      userMessageId: savedUserMsg.id,
+      userMessageId: savedUserMsg?.id ?? null,
       userMessageDeliveredAt: now.toISOString(),
       userMessageReadAt: now.toISOString(),
       message: savedAiMessage,

@@ -473,7 +473,7 @@ export class UsersController {
           "donorPreferences", "donorEyeColor", "donorHairColor", "donorHeight",
           "donorEducation", "donorEthnicity", "spermDonorType", "spermDonorPreferences",
           "spermDonorAgeRange", "spermDonorEyeColor", "spermDonorHairColor",
-          "spermDonorHeightRange", "spermDonorRace", "spermDonorEthnicity", "spermDonorEducation",
+          "spermDonorHeightRange", "spermDonorRace", "spermDonorEthnicity", "spermDonorEducation", "spermDonorVialType",
           "eggDonorAgeRange", "eggDonorCompensationRange", "eggDonorTotalCostRange", "eggDonorLotCostRange",
           "eggDonorEggType", "eggDonorDonationType",
           "clinicAgeGroup", "clinicPriorityTags",

@@ -611,6 +611,9 @@ export default function DonorProfilePage() {
           {donor.donorType && (
             <Badge variant="outline" className="text-xs">{donor.donorType}</Badge>
           )}
+          {type === "sperm-donor" && Array.isArray(donor.vialTypes) && donor.vialTypes.length > 0 && (
+            <Badge variant="outline" className="text-xs">Available for: {donor.vialTypes.join(", ")}</Badge>
+          )}
         </div>
         {donor.profileUrl && user && (
           hasAnyRole(user.roles || [], [...GOSTORK_ROLES]) ||

@@ -91,6 +91,46 @@ function chatDateLabel(dateStr: string): string {
   return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined });
 }
 
+// Phase 0 templates - static, bypass AI generation for consistency
+const PHASE0_SURROGACY = `Before we dive in, let me give you a quick overview of how GoStork works.
+
+GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of researching dozens of agencies on your own, we've brought everything together in one place. Every provider on GoStork lists their full costs, so you know exactly what to expect - no surprises. We partner with over 60 surrogacy agencies. And it's completely free for intended parents - the agencies pay us a referral fee, and they're not allowed to pass that cost on to you.
+
+Every agency we work with has been personally vetted by Eran Amir, GoStork's founder, who went through surrogacy himself. He personally interviews each agency's leadership, reviews their operations and processes, and makes sure they have the right team in place. Plus, no waiting lists - every surrogate you'll see is available now.
+
+To help guide you toward the perfect match...`;
+
+const PHASE0_EGG_DONOR = `Before we dive in, let me give you a quick overview of how GoStork works.
+
+GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of searching across dozens of agency websites, we've pulled everything into one place. Every provider lists their full costs on GoStork so you know exactly what to expect - no surprises. We work with 30 egg donor agencies and have over 10,000 egg donors in our database. And it's completely free for intended parents - the agencies pay us a referral fee and are not allowed to pass that cost on to you.
+
+Every agency we work with has been personally vetted by Eran Amir, GoStork's founder, who went through the fertility journey himself. He personally interviews each agency's leadership, reviews their operations and processes, and makes sure they have the right team in place.
+
+To help me find you the right match...`;
+
+const PHASE0_CLINIC = `Before we dive in, let me give you a quick overview of how GoStork works.
+
+GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of researching IVF clinics across dozens of websites, we've brought over 30 vetted clinics into one place. Every clinic lists their full costs on GoStork so you know exactly what to expect - no surprises. And it's completely free for intended parents - the clinics pay us a referral fee and are not allowed to pass that cost on to you.
+
+Every clinic on GoStork has been personally vetted by Eran Amir, GoStork's founder, who went through the fertility journey himself. He personally interviews each clinic's leadership, reviews their outcomes and processes, and makes sure they have the right team in place.
+
+To help me find you the right clinic...`;
+
+const PHASE0_GENERAL = `Before we dive in, let me give you a quick overview of how GoStork works.
+
+GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of researching providers across dozens of websites, we've brought everything together in one place. Every provider lists their full costs on GoStork so you know exactly what to expect - no surprises. We partner with over 60 surrogacy agencies, 30 egg donor agencies with 10,000+ donors, and 30+ IVF clinics. And it's completely free for intended parents - providers pay us a referral fee and are not allowed to pass that cost on to you.
+
+Every provider on GoStork has been personally vetted by Eran Amir, GoStork's founder, who went through the fertility journey himself. He personally interviews each provider's leadership, reviews their operations and processes, and makes sure they have the right team in place.
+
+To help guide you toward the perfect match...`;
+
+function buildPhase0(services: string[]): string {
+  if (services.includes("Surrogate")) return PHASE0_SURROGACY;
+  if (services.includes("Egg Donor")) return PHASE0_EGG_DONOR;
+  if (services.includes("Fertility Clinic")) return PHASE0_CLINIC;
+  return PHASE0_GENERAL;
+}
+
 const CURATION_LINES = [
   "Analyzing your family-building goals...",
   "Matching your criteria with 1,000+ providers...",
@@ -2799,21 +2839,42 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     if (mm) setResolvedMatchmakerName(mm.name);
   }, [effectiveMatchmakerId, matchmakers]);
 
+  // Resolved avatar URL: use selectedMatchmaker when brand has loaded, otherwise fall back
+  // to the sessionStorage cache written by the matchmaker-selection page so the header
+  // renders the real photo instantly instead of showing the letter placeholder.
+  const resolvedAvatarUrl = useMemo(() => {
+    if (selectedMatchmaker?.avatarUrl) {
+      return getPhotoSrc(selectedMatchmaker.avatarUrl) || selectedMatchmaker.avatarUrl;
+    }
+    if (!effectiveMatchmakerId) return null;
+    // Fall back to localStorage brand cache (persists across page loads / direct URL navigation)
+    try {
+      const raw = localStorage.getItem("gostork_brand_settings");
+      if (raw) {
+        const brand = JSON.parse(raw);
+        const mm = (brand?.matchmakers || []).find((m: any) => m.id === effectiveMatchmakerId);
+        if (mm?.avatarUrl) return getPhotoSrc(mm.avatarUrl) || mm.avatarUrl;
+      }
+    } catch {
+      // localStorage unavailable
+    }
+    return null;
+  }, [selectedMatchmaker?.avatarUrl, effectiveMatchmakerId]);
+
   // Preload the matchmaker avatar so it's in the browser cache before the header renders
   useEffect(() => {
-    const url = selectedMatchmaker?.avatarUrl ? (getPhotoSrc(selectedMatchmaker.avatarUrl) || selectedMatchmaker.avatarUrl) : null;
-    if (!url) return;
+    if (!resolvedAvatarUrl) return;
     const img = new Image();
-    img.src = url;
-  }, [selectedMatchmaker?.avatarUrl]);
+    img.src = resolvedAvatarUrl;
+  }, [resolvedAvatarUrl]);
 
   const brandColor = brand?.primaryColor || "#004D4D";
   const chatPalette = useMemo(() => deriveChatPalette(brandColor), [brandColor]);
 
-  const loadMessagesForSession = async (sid: string) => {
+  const loadMessagesForSession = async (sid: string): Promise<boolean> => {
     try {
       const res = await fetch(`/api/ai-concierge/session/${sid}/messages`, { credentials: "include" });
-      if (!res.ok) return;
+      if (!res.ok) return false;
       const data = await res.json();
       const msgs = Array.isArray(data) ? data : (data.messages || []);
       setSessionTitle(data.sessionTitle || null);
@@ -2863,7 +2924,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         // Send read receipt
         fetch(`/api/chat-sessions/${existingSessionId}/read`, { method: "POST", credentials: "include" }).catch(() => {});
       }
-    } catch {}
+    } catch { return false; }
+    return true;
   };
 
   useEffect(() => {
@@ -2871,7 +2933,13 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
     if (existingSessionId) {
       (async () => {
-        await loadMessagesForSession(existingSessionId);
+        const found = await loadMessagesForSession(existingSessionId);
+        if (!found) {
+          // Session no longer exists (e.g. after "Delete All Chats") - clear the stale URL
+          // param so existingSessionId becomes null and the greeting effect can fire.
+          setSessionId(null);
+          navigate(window.location.pathname, { replace: true });
+        }
         setSessionLoaded(true);
       })();
       return;
@@ -2954,6 +3022,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       return res.json();
     },
     enabled: !!user,
+    staleTime: 0,           // always treat cached data as stale
+    refetchOnMount: true,   // always refetch on component mount
   });
 
   // Subject profile info for the right panel: prefer consultation card from messages, fall back to session-level data
@@ -3215,101 +3285,94 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     return () => clearInterval(interval);
   }, [sessionId]);
 
-  const profileReady = !parentProfileQuery.isLoading;
-
   useEffect(() => {
     if (greetingSet || !selectedMatchmaker || !user) return;
-    if (!donorIdParam && !profileReady) return;
     if (!donorIdParam && !sessionLoaded) return;
     if (!donorIdParam && (sessionId || existingSessionId)) return;
-    let greeting = selectedMatchmaker.initialGreeting
-      || `Hi there! I'm ${selectedMatchmaker.name}, ${selectedMatchmaker.title.toLowerCase()}. ${selectedMatchmaker.description} How can I help you on your fertility journey today?`;
-    const u = user as any;
-    const firstName = u.firstName || u.name?.split(" ")[0] || "there";
-    const city = u.city || "";
-    const state = u.state || "";
-    const location = city && state ? `${city}, ${state}` : city || state || "your area";
-    const services = parentProfileQuery.data?.interestedServices || [];
-    const service = services.length ? services.join(" and ") : "fertility services";
-    greeting = greeting
-      .replace(/\[First Name\]/gi, firstName)
-      .replace(/\[Service\]/gi, service)
-      .replace(/\[Location\]/gi, location);
-
-    let greetingMatchCards: MatchCard[] | undefined;
-    if (donorIdParam) {
-      const donorLabel = donorTypeParam === "surrogate" ? "Surrogate" : donorTypeParam === "sperm-donor" ? "Sperm Donor" : "Egg Donor";
-      greeting = `Hi ${firstName}! I see you're interested in learning more about a ${donorLabel} profile. I'd love to help you with any questions you have. Do you have a specific question about this ${donorLabel.toLowerCase()}?`;
-      greetingMatchCards = [{
-        name: donorLabel,
-        type: donorLabel,
-        providerId: donorIdParam,
-        ownerProviderId: donorProviderIdParam || undefined,
-        photo: donorPhotoParam || undefined,
-        reasons: [],
-      }];
-    }
-
-    setMessages([{ role: "assistant", content: greeting, createdAt: new Date().toISOString(), matchCards: greetingMatchCards }]);
     setGreetingSet(true);
 
+    // For donor deep-links: build greeting client-side immediately (no profile needed)
+    if (donorIdParam) {
+      const u = user as any;
+      const firstName = u.firstName || u.name?.split(" ")[0] || "there";
+      const donorLabel = donorTypeParam === "surrogate" ? "Surrogate" : donorTypeParam === "sperm-donor" ? "Sperm Donor" : "Egg Donor";
+      const greeting = `Hi ${firstName}! I see you're interested in learning more about a ${donorLabel} profile. I'd love to help you with any questions you have. Do you have a specific question about this ${donorLabel.toLowerCase()}?`;
+      const greetingMatchCards: MatchCard[] = [{
+        name: donorLabel, type: donorLabel, providerId: donorIdParam,
+        ownerProviderId: donorProviderIdParam || undefined,
+        photo: donorPhotoParam || undefined, reasons: [],
+      }];
+      setMessages([{ role: "assistant", content: greeting, createdAt: new Date().toISOString(), matchCards: greetingMatchCards }]);
+      (async () => {
+        try {
+          const res = await fetch("/api/ai-concierge/init-session", {
+            method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+            body: JSON.stringify({ matchmakerId: effectiveMatchmakerId, greeting, donorId: donorIdParam, donorType: donorTypeParam, ownerProviderId: donorProviderIdParam || undefined }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.sessionId) setSessionId(data.sessionId);
+            if (data.greetingMessageId) knownMessageIds.current.add(data.greetingMessageId);
+          }
+        } catch {}
+      })();
+      return;
+    }
+
+    // For normal chat: call init-session and let server build greeting + phase0 with correct services
+    // Show a minimal placeholder while waiting so UI feels instant
     (async () => {
       try {
-        const initBody: any = { matchmakerId: effectiveMatchmakerId, greeting };
-        if (donorIdParam) {
-          initBody.donorId = donorIdParam;
-          initBody.donorType = donorTypeParam;
-          initBody.ownerProviderId = donorProviderIdParam || undefined;
-        }
         const res = await fetch("/api/ai-concierge/init-session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify(initBody),
+          method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+          body: JSON.stringify({ matchmakerId: effectiveMatchmakerId }),
         });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.sessionId) setSessionId(data.sessionId);
-          if (data.greetingMessageId) knownMessageIds.current.add(data.greetingMessageId);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.sessionId) setSessionId(data.sessionId);
+        if (data.greetingMessageId) knownMessageIds.current.add(data.greetingMessageId);
+        if (data.phase0MessageId) knownMessageIds.current.add(data.phase0MessageId);
 
-          // Auto-deliver Phase 0 on brand new sessions (no donor inquiry, not a resumed session)
-          if (!data.reused && !donorIdParam && data.sessionId) {
-            setSending(true);
-            sendingRef.current = true;
-            try {
-              const phase0Res = await fetch("/api/ai-concierge/chat", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify({
-                  message: "phase0_init",
-                  isSystemTrigger: true,
-                  sessionId: data.sessionId,
-                  matchmakerId: effectiveMatchmakerId,
-                }),
-              });
-              if (phase0Res.ok) {
-                const phase0Data = await phase0Res.json();
-                if (phase0Data.message?.id) knownMessageIds.current.add(phase0Data.message.id);
-                if (phase0Data.message?.content) {
-                  setMessages((prev) => [...prev, {
-                    role: "assistant" as const,
-                    content: phase0Data.message.content,
-                    id: phase0Data.message.id,
-                    quickReplies: phase0Data.quickReplies,
-                    multiSelect: phase0Data.multiSelect,
-                    createdAt: phase0Data.message.createdAt || new Date().toISOString(),
-                  }]);
-                }
+        // Display server-built greeting and phase0
+        const initialMessages: typeof messages = [];
+        if (data.greeting) {
+          initialMessages.push({ role: "assistant", content: data.greeting, createdAt: new Date().toISOString() });
+        }
+        if (data.phase0Content) {
+          initialMessages.push({ role: "assistant", content: data.phase0Content, createdAt: new Date().toISOString() });
+        }
+        if (initialMessages.length) setMessages(initialMessages);
+
+        // Trigger AI to ask Phase 1 (or B1/C1 for donor-only parents)
+        if (!data.reused && data.sessionId) {
+          setSending(true);
+          sendingRef.current = true;
+          try {
+            const phase1Res = await fetch("/api/ai-concierge/chat", {
+              method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+              body: JSON.stringify({ message: "phase1_init", isSystemTrigger: true, sessionId: data.sessionId, matchmakerId: effectiveMatchmakerId }),
+            });
+            if (phase1Res.ok) {
+              const phase1Data = await phase1Res.json();
+              if (phase1Data.message?.id) knownMessageIds.current.add(phase1Data.message.id);
+              if (phase1Data.message?.content) {
+                setMessages((prev) => [...prev, {
+                  role: "assistant" as const,
+                  content: phase1Data.message.content,
+                  id: phase1Data.message.id,
+                  quickReplies: phase1Data.quickReplies,
+                  multiSelect: phase1Data.multiSelect,
+                  createdAt: phase1Data.message.createdAt || new Date().toISOString(),
+                }]);
               }
-            } catch {}
-            setSending(false);
-            sendingRef.current = false;
-          }
+            }
+          } catch {}
+          setSending(false);
+          sendingRef.current = false;
         }
       } catch {}
     })();
-  }, [selectedMatchmaker, user, profileReady, greetingSet, parentProfileQuery.data, sessionLoaded, sessionId, existingSessionId, donorIdParam, donorTypeParam]);
+  }, [selectedMatchmaker, user, greetingSet, sessionLoaded, sessionId, existingSessionId, donorIdParam, donorTypeParam]);
 
   if (!effectiveMatchmakerId && !existingSessionId && !sessionId && sessionLoaded) {
     return (
@@ -3600,10 +3663,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             /* Default: matchmaker avatar + name */
             <>
               <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
-                {!providerInChat && selectedMatchmaker?.avatarUrl && (
+                {!providerInChat && resolvedAvatarUrl && (
                   <img
-                    src={getPhotoSrc(selectedMatchmaker.avatarUrl) || undefined}
-                    alt={selectedMatchmaker.name}
+                    src={resolvedAvatarUrl}
+                    alt={selectedMatchmaker?.name || aiName || "AI Concierge"}
                     className="w-12 h-12 rounded-full object-cover border absolute inset-0"
                     onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                   />

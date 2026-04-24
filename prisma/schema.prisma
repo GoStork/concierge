@@ -669,6 +669,7 @@ model SpermDonor {
   isPremium            Boolean   @default(false)
   isExperienced        Boolean   @default(false)
   lastFullSyncAt       DateTime?
+  vialTypes            String[]  @default([])
   profileEmbedding     Unsupported("vector(1536)")?
   provider             Provider  @relation(fields: [providerId], references: [id])
 
@@ -1066,6 +1067,7 @@ model IntendedParentProfile {
   spermDonorEthnicity     String?
   spermDonorEducation     String?
   spermDonorMaxPrice      Int?
+  spermDonorVialType      String?
   spermDonorCovidVaccinated Boolean?
 
   // Egg donor specific preferences

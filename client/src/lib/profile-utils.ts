@@ -222,6 +222,7 @@ export interface ResolvedSpermDonorFields {
   occupation: string | null;
   relationshipStatus: string | null;
   donorType: string | null;
+  vialTypes: string[];
   resolvedCompensation: number | null;
   compensation: number | null;
   totalCost: number | null;
@@ -244,6 +245,7 @@ export function resolveSpermDonorFields(d: any): ResolvedSpermDonorFields {
     occupation: F(d.occupation) || F(pd["Occupation"]) || extractFromSections(pd, "Occupation") || extractFromSections(pd, "What is your current or most recent occupation?"),
     relationshipStatus: normalizeRelationshipStatus(F(d.relationshipStatus) || F(pd["Relationship Status"]) || extractFromSections(pd, "Relationship Status")),
     donorType: F(d.donorType),
+    vialTypes: Array.isArray(d.vialTypes) ? d.vialTypes : [],
     resolvedCompensation: d.resolvedCompensation != null ? Number(d.resolvedCompensation) : null,
     compensation: d.compensation != null ? Number(d.compensation) : null,
     totalCost: d.totalCost != null ? Number(d.totalCost) : null,
@@ -278,11 +280,11 @@ export function getProfileCardSummary(d: any, type: string): { label: string; va
     const r = resolveSpermDonorFields(d);
     items.push(
       { label: "Age", value: r.age },
+      { label: "Available for", value: r.vialTypes.length > 0 ? r.vialTypes.join(", ") : null },
       { label: "Ethnicity", value: r.ethnicity },
       { label: "Height", value: r.height },
       { label: "Education", value: r.education },
       { label: "Location", value: r.location },
-      { label: "Price", value: (r.resolvedCompensation ?? r.compensation) ? `$${(r.resolvedCompensation ?? r.compensation)!.toLocaleString()}` : null },
     );
   }
 
@@ -359,6 +361,7 @@ export function getProfileDetails(d: any, type: ProfileType): { label: string; v
     result.push(
       { label: "Age", value: V(r.age) },
       { label: "Type", value: V(r.donorType) },
+      { label: "Available for", value: r.vialTypes.length > 0 ? r.vialTypes.join(", ") : "-" },
       { label: "Location", value: V(r.location) },
       { label: "Ethnicity", value: V(r.ethnicity) },
       { label: "Race", value: V(r.race) },
@@ -368,7 +371,6 @@ export function getProfileDetails(d: any, type: ProfileType): { label: string; v
       { label: "Education", value: V(r.education) },
       { label: "Religion", value: V(r.religion) },
       { label: "Occupation", value: V(r.occupation) },
-      { label: "Price", value: (r.resolvedCompensation ?? r.compensation) ? `$${(r.resolvedCompensation ?? r.compensation)!.toLocaleString()}` : "-" },
       { label: "Total Cost", value: r.calculatedTotalCost ? fmtTotalCostRange(r.calculatedTotalCost) : (r.totalCost ? `$${r.totalCost.toLocaleString()}` : "-") },
     );
   }

@@ -46,6 +46,7 @@ export interface SwipeDeckProfile {
   eggType: string | null;
   experienceLevel: string | null;
   donationType: string | null;
+  vialTypes: string[];
   donorCompensation: number | null;
   totalCost: number | null;
   eggLotCost: number | null;
@@ -122,6 +123,7 @@ export function mapDatabaseDonorToSwipeProfile(dbDonor: any): SwipeDeckProfile {
     eggType: r.donorType,
     experienceLevel: null,
     donationType: r.donationTypes,
+    vialTypes: [],
     donorCompensation: r.resolvedCompensation ?? r.donorCompensation,
     totalCost: r.totalCost,
     eggLotCost: r.eggLotCost,
@@ -184,6 +186,7 @@ export function mapDatabaseSurrogateToSwipeProfile(dbSurrogate: any): SwipeDeckP
     eggType: null,
     experienceLevel: null,
     donationType: null,
+    vialTypes: [],
     donorCompensation: null,
     totalCost: null,
     eggLotCost: null,
@@ -245,9 +248,10 @@ export function mapDatabaseSpermDonorToSwipeProfile(dbSperm: any): SwipeDeckProf
     religion: r.religion,
     education: r.education,
     occupation: r.occupation,
-    eggType: null,
+    eggType: r.donorType,
     experienceLevel: null,
     donationType: null,
+    vialTypes: r.vialTypes,
     donorCompensation: r.resolvedCompensation ?? r.compensation,
     totalCost: r.totalCost,
     eggLotCost: null,
@@ -324,6 +328,8 @@ export function getMatchedPreferences(profile: SwipeDeckProfile, prefs: UserPref
     bmi: profile.bmi,
     covidVaccinated: profile.covidVaccinated,
     eggType: profile.eggType,
+    donorType: profile.eggType,
+    vialTypes: profile.vialTypes?.length ? profile.vialTypes.join(", ") : null,
     donorCompensation: profile.donorCompensation ?? 0,
     maxCost: profile.totalCost ?? profile.eggLotCost ?? 0,
     baseCompensation: profile.baseCompensation ?? 0,
@@ -344,6 +350,8 @@ export function getMatchedPreferences(profile: SwipeDeckProfile, prefs: UserPref
     bmi: (v) => `BMI ${Math.round(Number(v))}`,
     covidVaccinated: (v) => v ? "COVID Vaccinated" : "Not COVID Vaccinated",
     eggType: (v) => String(v),
+    donorType: (v) => String(v),
+    vialTypes: (v) => `Available for: ${v}`,
     donorCompensation: (v) => `${fmtCurrency(v)} Compensation`,
     maxCost: (v) => `${fmtCurrency(v)} Total Cost`,
     baseCompensation: (v) => `${fmtCurrency(v)} Base Comp.`,
@@ -384,8 +392,9 @@ export function getMatchedPreferences(profile: SwipeDeckProfile, prefs: UserPref
       }
     } else if (typeof pref.value === "boolean" && val === pref.value) {
       isMatch = true;
-    } else if (typeof pref.value === "string" && String(val).toLowerCase().includes(pref.value.toLowerCase())) {
-      isMatch = true;
+    } else if (typeof pref.value === "string") {
+      const normalizeHair = (s: string) => s.replace(/\bblonde\b/gi, "blond");
+      isMatch = normalizeHair(String(val).toLowerCase()).includes(normalizeHair(pref.value.toLowerCase()));
     } else if (typeof pref.value === "number" && Number(val) === pref.value) {
       isMatch = true;
     }

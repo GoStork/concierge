@@ -374,6 +374,22 @@ export function applyBrandToDocument(settings: BrandSettings) {
   }
 }
 
+const BRAND_CACHE_KEY = "gostork_brand_settings";
+
+function loadCachedBrand(): BrandSettings | undefined {
+  try {
+    const raw = localStorage.getItem(BRAND_CACHE_KEY);
+    if (raw) return JSON.parse(raw) as BrandSettings;
+  } catch {}
+  return undefined;
+}
+
+function saveCachedBrand(settings: BrandSettings) {
+  try {
+    localStorage.setItem(BRAND_CACHE_KEY, JSON.stringify(settings));
+  } catch {}
+}
+
 export function useBrandSettings() {
   const query = useQuery<BrandSettings>({
     queryKey: ["/api/brand/settings"],
@@ -382,6 +398,9 @@ export function useBrandSettings() {
       if (!res.ok) return BRAND_DEFAULTS;
       return res.json();
     },
+    // Serve from localStorage on first render so avatars/colors are instant
+    initialData: loadCachedBrand,
+    initialDataUpdatedAt: 0, // always treat cached data as stale so a fresh fetch still runs
     staleTime: 30_000,
     refetchOnWindowFocus: true,
     refetchOnMount: "always",
@@ -390,6 +409,7 @@ export function useBrandSettings() {
   useEffect(() => {
     if (query.data) {
       applyBrandToDocument(query.data);
+      saveCachedBrand(query.data);
     }
   }, [query.data]);
 

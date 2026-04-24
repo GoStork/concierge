@@ -550,7 +550,8 @@ const SPERM_DONOR_EXTRACTION_PROMPT = `You are extracting sperm donor profiles f
 Extract ALL sperm donor profiles visible on this page. For each donor, extract:
 
 - externalId: The donor's ID number/code
-- donorType: Type (e.g. "IUI Ready", "ICI Ready", etc.)
+- donorType: Type of donor identity release (e.g. "Open", "Anonymous", "Exclusive")
+- vialTypes: Array of vial preparation types available for this donor (e.g. ["ICI", "IUI"] or ["IUI", "IVF"]). Look for "Available for: ICI, IUI" or similar text. Only include values from: "ICI", "IUI", "IVF".
 - age: Integer age
 - race: Race(s)
 - ethnicity: Ethnicity/ethnicities
@@ -573,6 +574,7 @@ Return a JSON object:
     {
       "externalId": "string or null",
       "donorType": "string or null",
+      "vialTypes": ["ICI", "IUI"] or [],
       "age": number or null,
       "race": "string or null",
       "ethnicity": "string or null",
@@ -786,8 +788,11 @@ Return a JSON object:
     }
   },
   "photoUrl": "URL to profile photo if visible",
-  "externalId": "Donor/surrogate ID if visible"
+  "externalId": "Donor/surrogate ID if visible",
+  "vialTypes": ["ICI", "IUI"]
 }
+
+Note: vialTypes is an array of vial preparation types this donor is available for. Look for text like "Available for: ICI, IUI" or "Available for IUI" anywhere on the page (sidebar, header, profile details). Only include values from: "ICI", "IUI", "IVF". Return empty array [] if not found.
 
 IMPORTANT RULES:
 - Extract EVERY section and EVERY field-value pair - do not skip any
@@ -1412,7 +1417,7 @@ async function upsertSpermDonor(
 
   const existing = await prisma.spermDonor.findUnique({
     where: { providerId_externalId: { providerId, externalId: extId } },
-    select: { manuallyEditedFields: true, profileData: true, status: true, photoUrl: true, photos: true },
+    select: { manuallyEditedFields: true, profileData: true, status: true, photoUrl: true, photos: true, vialTypes: true },
   });
 
   // Reuse already-persisted GCS photos to avoid re-downloading on every run
@@ -1433,23 +1438,53 @@ async function upsertSpermDonor(
     ? { ...(normalizedProfile as any), ...(existing?.profileData as any || {}) }
     : normalizedProfile;
 
+  // Fallback: extract top-level fields from _sections if not already on donor
+  // (handles non-EDC sites like Sperm Bank of California where sections are rich)
+  const rawSections = (donor.profileData as any)?._sections || (mergedProfile as any)?._sections || {};
+  const flatSections: Record<string, any> = {};
+  for (const sec of Object.values(rawSections)) {
+    if (sec && typeof sec === "object" && !Array.isArray(sec)) Object.assign(flatSections, sec);
+  }
+  const secGc = rawSections["General Characteristics"] || {};
+  const secEd = rawSections["Education and Occupation"] || {};
+  const secEth = rawSections["Ethnic Background"] || {};
+  const secRel = rawSections["Religious Background"] || {};
+  const sdAge = (() => { const v = secGc["Age When Donated"] || flatSections["Age When Donated"] || flatSections["Age"]; if (!v) return undefined; const p = parseInt(String(v)); return isNaN(p) ? undefined : p; })();
+  const sdRace = donor.race || secEth["Race"] || flatSections["Race"] || undefined;
+  const sdEthnicity = donor.ethnicity || (() => {
+    const origins = [secEth["Mother's Ethnic Origin"], secEth["Father's Ethnic Origin"]].filter(Boolean);
+    return origins.length > 0 ? origins.join(", ") : (flatSections["Ethnicity"] || undefined);
+  })();
+  const sdHeight = donor.height || secGc["Height"] || flatSections["Height"] || undefined;
+  const sdWeight = donor.weight || secGc["Weight"] || flatSections["Weight"] || undefined;
+  const sdEyeColor = donor.eyeColor || secGc["Eye Color"] || flatSections["Eye Color"] || undefined;
+  const sdHairColor = donor.hairColor || secGc["Hair Color"] || flatSections["Hair Color"] || undefined;
+  const sdEducation = donor.education || secEd["Major/Area of Study"] || secEd["Education"] || flatSections["Major/Area of Study"] || flatSections["Education"] || undefined;
+  const sdOccupation = donor.occupation || secEd["What is your current or most recent occupation?"] || secEd["Occupation"] || flatSections["Occupation"] || undefined;
+  const sdReligion = donor.religion || secRel["Religion Practiced"] || secRel["Religion Born Into"] || secRel["Religion"] || flatSections["Religion"] || undefined;
+  const sdVialTypes: string[] = (() => {
+    if (Array.isArray(donor.vialTypes) && donor.vialTypes.length > 0) return (donor.vialTypes as string[]).filter((v: string) => ["ICI", "IUI", "IVF"].includes(v));
+    if (Array.isArray(existing?.vialTypes) && (existing.vialTypes as string[]).length > 0) return existing.vialTypes as string[];
+    return [];
+  })();
+
   const upsertedSpermDonor = await prisma.spermDonor.upsert({
     where: {
       providerId_externalId: { providerId, externalId: extId },
     },
     update: {
       donorType: skipIfManual("donorType", donor.donorType || undefined, mf),
-      age: skipIfManual("age", donor.age ? parseInt(String(donor.age)) || null : undefined, mf),
-      race: skipIfManual("race", donor.race || undefined, mf),
-      ethnicity: skipIfManual("ethnicity", donor.ethnicity || undefined, mf),
-      height: skipIfManual("height", donor.height || undefined, mf),
-      weight: skipIfManual("weight", donor.weight || undefined, mf),
-      eyeColor: skipIfManual("eyeColor", donor.eyeColor || undefined, mf),
-      hairColor: skipIfManual("hairColor", donor.hairColor || undefined, mf),
-      education: skipIfManual("education", donor.education || undefined, mf),
+      age: skipIfManual("age", donor.age ? parseInt(String(donor.age)) || null : sdAge || undefined, mf),
+      race: skipIfManual("race", sdRace || undefined, mf),
+      ethnicity: skipIfManual("ethnicity", sdEthnicity || undefined, mf),
+      height: skipIfManual("height", sdHeight || undefined, mf),
+      weight: skipIfManual("weight", sdWeight || undefined, mf),
+      eyeColor: skipIfManual("eyeColor", sdEyeColor || undefined, mf),
+      hairColor: skipIfManual("hairColor", sdHairColor || undefined, mf),
+      education: skipIfManual("education", sdEducation || undefined, mf),
       location: skipIfManual("location", donor.location || undefined, mf),
       relationshipStatus: skipIfManual("relationshipStatus", normalizeRelationshipStatus(donor.relationshipStatus) || undefined, mf),
-      occupation: skipIfManual("occupation", donor.occupation || undefined, mf),
+      occupation: skipIfManual("occupation", sdOccupation || undefined, mf),
       compensation: skipIfManual("compensation", donor.compensation ? parseFloat(String(donor.compensation)) : undefined, mf),
       photoUrl: skipIfManual("photoUrl", donor.photoUrl || extractPhotosArray(donor)[0] || undefined, mf),
       photos: skipIfManual("photos", extractPhotosArray(donor), mf),
@@ -1457,6 +1492,7 @@ async function upsertSpermDonor(
       profileUrl: donor.profileUrl || undefined,
       status: skipIfManual("status", existing?.status === "INACTIVE" && (!donor.status || donor.status === "AVAILABLE") ? "INACTIVE" : (donor.status || "AVAILABLE"), mf),
       isExperienced: skipIfManual("isExperienced", detectExperienced(mergedProfile, "sperm-donor"), mf),
+      vialTypes: sdVialTypes.length > 0 ? sdVialTypes : undefined,
       profileData: mergedProfile,
       cardHash: donor.cardHash || undefined,
       lastFullSyncAt: new Date(),
@@ -1466,17 +1502,17 @@ async function upsertSpermDonor(
       providerId,
       externalId: extId,
       donorType: donor.donorType || null,
-      age: donor.age ? parseInt(String(donor.age)) || null : null,
-      race: donor.race || null,
-      ethnicity: donor.ethnicity || null,
-      height: donor.height || null,
-      weight: donor.weight || null,
-      eyeColor: donor.eyeColor || null,
-      hairColor: donor.hairColor || null,
-      education: donor.education || null,
+      age: donor.age ? parseInt(String(donor.age)) || null : sdAge || null,
+      race: sdRace || null,
+      ethnicity: sdEthnicity || null,
+      height: sdHeight || null,
+      weight: sdWeight || null,
+      eyeColor: sdEyeColor || null,
+      hairColor: sdHairColor || null,
+      education: sdEducation || null,
       location: donor.location || null,
       relationshipStatus: normalizeRelationshipStatus(donor.relationshipStatus) || null,
-      occupation: donor.occupation || null,
+      occupation: sdOccupation || null,
       compensation: donor.compensation ? parseFloat(String(donor.compensation)) : null,
       photoUrl: donor.photoUrl || null,
       profileUrl: donor.profileUrl || null,
@@ -1484,6 +1520,7 @@ async function upsertSpermDonor(
       videoUrl: donor.videoUrl || (donor.profileData?.["Video URL"] as string) || null,
       status: donor.status || "AVAILABLE",
       isExperienced: detectExperienced(normalizedProfile, "sperm-donor"),
+      vialTypes: sdVialTypes,
       profileData: normalizedProfile,
       cardHash: donor.cardHash || null,
       lastFullSyncAt: new Date(),
@@ -2816,6 +2853,52 @@ const FIELD_SYNONYMS: Record<string, string> = {
   "id": "Donor ID",
   "donor number": "Donor ID",
   "reference number": "Donor ID",
+  // Sperm donor specific fields
+  "age when donated": "Age",
+  "donor age": "Age",
+  "hair type": "Hair Type",
+  "hair texture": "Hair Texture",
+  "hair fullness": "Hair Fullness",
+  "body frame": "Body Frame",
+  "complexion": "Complexion",
+  "shoe size": "Shoe Size",
+  "handedness": "Handedness",
+  "cmv": "CMV",
+  "confirmed pregnancy": "Confirmed Pregnancy",
+  "zodiac": "Zodiac",
+  "nose width": "Nose Width",
+  "nose bridge": "Nose Bridge",
+  "ear lobes": "Ear Lobes",
+  "chin size": "Chin Size",
+  "eye size": "Eye Size",
+  "eyebrow arc": "Eyebrow Arc",
+  "lip fullness": "Lip Fullness",
+  "mouth size": "Mouth Size",
+  "finger length": "Finger Length",
+  "celebrity lookalike": "Celebrity Lookalike",
+  "celebrity lookalike(s)": "Celebrity Lookalike",
+  "major/area of study": "Education",
+  "area of study": "Education",
+  "what is your current or most recent occupation?": "Occupation",
+  "what is your occupation?": "Occupation",
+  "childhood dream job": "Childhood Dream Job",
+  "what was your childhood dream job?": "Childhood Dream Job",
+  "personality/character": "Personality",
+  "sports play": "Sports",
+  "favorite sport to play": "Favorite Sport",
+  "why is this your favorite sport to play?": "Favorite Sport Reason",
+  "religion born into": "Religion Born Into",
+  "religion practiced": "Religion",
+  "mother's religion": "Mother's Religion",
+  "father's religion": "Father's Religion",
+  "do you have any jewish ancestry?": "Jewish Ancestry",
+  "mother's ethnic origin": "Mother's Ethnic Origin",
+  "father's ethnic origin": "Father's Ethnic Origin",
+  "maternal grandmother's ethnic origin": "Maternal Grandmother's Ethnic Origin",
+  "maternal grandfather's ethnic origin": "Maternal Grandfather's Ethnic Origin",
+  "paternal grandmother's ethnic origin": "Paternal Grandmother's Ethnic Origin",
+  "paternal grandfather's ethnic origin": "Paternal Grandfather's Ethnic Origin",
+  "available for": "Available For",
   "donor compensation": "Donor Compensation",
   "egg donor compensation": "Donor Compensation",
   "fresh cycle compensation": "Donor Compensation",
@@ -4487,6 +4570,60 @@ async function runSyncJob(
                 item.profileData._sections = sections._sections;
                 if (sections.photoUrl && !item.photoUrl) item.photoUrl = sections.photoUrl;
                 console.log(`[donor-sync] Enriched ${item.externalId} with ${Object.keys(sections._sections).length} sections`);
+
+                // Map section fields to top-level DB columns for sperm donors
+                // (mirrors the EDC/Orchid JMS enrichment at lines ~4179-4215)
+                const gc = sections._sections["General Characteristics"] || {};
+                const ed = sections._sections["Education and Occupation"] || {};
+                const eth = sections._sections["Ethnic Background"] || {};
+                const relBg = sections._sections["Religious Background"] || {};
+                // any variant section names
+                const allSections = sections._sections;
+                const flatAll: Record<string, any> = {};
+                for (const sec of Object.values(allSections)) {
+                  if (sec && typeof sec === "object" && !Array.isArray(sec)) {
+                    Object.assign(flatAll, sec);
+                  }
+                }
+
+                if (!item.age) {
+                  const ageVal = gc["Age When Donated"] || flatAll["Age When Donated"] || flatAll["Age"];
+                  if (ageVal) { const p = parseInt(String(ageVal)); if (!isNaN(p)) item.age = p; }
+                }
+                if (!item.height) item.height = gc["Height"] || flatAll["Height"] || null;
+                if (!item.weight) item.weight = gc["Weight"] || flatAll["Weight"] || null;
+                if (!item.eyeColor) item.eyeColor = gc["Eye Color"] || flatAll["Eye Color"] || null;
+                if (!item.hairColor) item.hairColor = gc["Hair Color"] || flatAll["Hair Color"] || null;
+                if (!item.race) {
+                  item.race = eth["Race"] || flatAll["Race"] || null;
+                }
+                if (!item.ethnicity) {
+                  // Build from ethnic origin fields if not already set
+                  const origins = [
+                    eth["Mother's Ethnic Origin"], eth["Father's Ethnic Origin"],
+                    eth["Maternal Grandmother's Ethnic Origin"], eth["Maternal Grandfather's Ethnic Origin"],
+                    eth["Paternal Grandmother's Ethnic Origin"], eth["Paternal Grandfather's Ethnic Origin"],
+                  ].filter(Boolean);
+                  if (origins.length > 0) item.ethnicity = origins.join(", ");
+                  else if (flatAll["Ethnicity"]) item.ethnicity = flatAll["Ethnicity"];
+                }
+                if (!item.education) {
+                  item.education = ed["Major/Area of Study"] || ed["Education"] || ed["Education Level"]
+                    || flatAll["Major/Area of Study"] || flatAll["Education"] || null;
+                }
+                if (!item.occupation) {
+                  item.occupation = ed["What is your current or most recent occupation?"]
+                    || ed["Occupation"] || ed["Current Occupation"] || ed["What is your occupation?"]
+                    || flatAll["Occupation"] || flatAll["What is your current or most recent occupation?"] || null;
+                }
+                if (!item.religion) {
+                  item.religion = relBg["Religion Practiced"] || relBg["Religion Born Into"]
+                    || relBg["Religion"] || flatAll["Religion Practiced"] || flatAll["Religion"] || null;
+                }
+                // Extract vialTypes from sections response
+                if ((!item.vialTypes || item.vialTypes.length === 0) && Array.isArray(sections.vialTypes) && sections.vialTypes.length > 0) {
+                  item.vialTypes = sections.vialTypes.filter((v: string) => ["ICI", "IUI", "IVF"].includes(v));
+                }
               }
             }
           } catch (err: any) {

@@ -406,10 +406,20 @@ export function MarketplaceFilterDrawer({ open, onClose, providerType, initialTa
               {isSperm && (
                 <FilterSection title="Donor Type">
                   <MultiSelectBubbles
-                    options={["ID Release", "Non-ID Release"]}
+                    options={["Open", "Anonymous", "Exclusive"]}
                     selected={activeFilters.donorType || []}
                     onToggle={(v) => toggleFilter("donorType", v)}
                     testIdPrefix="filter-donor-type"
+                  />
+                </FilterSection>
+              )}
+              {isSperm && (
+                <FilterSection title="Vial Type Availability">
+                  <MultiSelectBubbles
+                    options={["ICI", "IUI", "IVF"]}
+                    selected={activeFilters.vialTypes || []}
+                    onToggle={(v) => toggleFilter("vialTypes", v)}
+                    testIdPrefix="filter-vial-type"
                   />
                 </FilterSection>
               )}

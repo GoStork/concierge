@@ -26,6 +26,21 @@ export default function MatchmakerSelectionPage() {
     .filter(m => m.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
+  // Cache resolved avatar URLs in sessionStorage so the chat header can display them
+  // instantly on the next page before brand data loads
+  useEffect(() => {
+    if (!matchmakers.length) return;
+    try {
+      const cache = matchmakers.map(m => ({
+        id: m.id,
+        avatarUrl: m.avatarUrl ? (getPhotoSrc(m.avatarUrl) || m.avatarUrl) : null,
+      }));
+      sessionStorage.setItem("gostork_matchmakers_cache", JSON.stringify(cache));
+    } catch {
+      // sessionStorage unavailable
+    }
+  }, [matchmakers]);
+
   useEffect(() => {
     if (checkedExisting || !existingSessions || !matchmakers.length) return;
     setCheckedExisting(true);
@@ -56,7 +71,7 @@ export default function MatchmakerSelectionPage() {
           <div className="w-24 h-24 rounded-full flex-shrink-0 relative mb-6">
             {transitionMatchmaker.avatarUrl && (
               <img
-                src={transitionMatchmaker.avatarUrl}
+                src={getPhotoSrc(transitionMatchmaker.avatarUrl) || transitionMatchmaker.avatarUrl}
                 alt={transitionMatchmaker.name}
                 className="w-24 h-24 rounded-full object-cover border-4 absolute inset-0 z-10"
                 style={{ borderColor: brand?.primaryColor || "#004D4D" }}

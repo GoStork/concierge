@@ -134,6 +134,7 @@ function AccountTab() {
   const [editSpermDonorEthnicity, setEditSpermDonorEthnicity] = useState("");
   const [editSpermDonorEducation, setEditSpermDonorEducation] = useState("");
   const [editSpermDonorMaxPrice, setEditSpermDonorMaxPrice] = useState("");
+  const [editSpermDonorVialType, setEditSpermDonorVialType] = useState("");
   // Current providers
   const [editCurrentAgencyName, setEditCurrentAgencyName] = useState("");
   const [editCurrentAttorneyName, setEditCurrentAttorneyName] = useState("");
@@ -270,6 +271,7 @@ function AccountTab() {
     setEditSpermDonorEthnicity(parentProfileQuery.data?.spermDonorEthnicity || "");
     setEditSpermDonorEducation(parentProfileQuery.data?.spermDonorEducation || "");
     setEditSpermDonorMaxPrice(parentProfileQuery.data?.spermDonorMaxPrice != null ? String(parentProfileQuery.data.spermDonorMaxPrice) : "");
+    setEditSpermDonorVialType(parentProfileQuery.data?.spermDonorVialType || "");
     // Providers
     setEditCurrentAgencyName(parentProfileQuery.data?.currentAgencyName || "");
     setEditCurrentAttorneyName(parentProfileQuery.data?.currentAttorneyName || "");
@@ -391,6 +393,7 @@ function AccountTab() {
           payload.spermDonorEthnicity = editSpermDonorEthnicity || null;
           payload.spermDonorEducation = editSpermDonorEducation || null;
           payload.spermDonorMaxPrice = editSpermDonorMaxPrice !== "" ? Number(editSpermDonorMaxPrice) : null;
+          payload.spermDonorVialType = editSpermDonorVialType || null;
           // Providers
           payload.currentAgencyName = editCurrentAgencyName || null;
           payload.currentAttorneyName = editCurrentAttorneyName || null;
@@ -472,7 +475,7 @@ function AccountTab() {
     if (isInitializingRef.current) { isInitializingRef.current = false; setIsDirty(false); return; }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, editName, editMobileE164, editMobileDisplay, editMobileIsoCode, editMobileIsValid, editPassword, confirmPassword, editLocation, editGender, editOrientation, editRelationship, editAge, editPartnerName, editPartnerAge, editServices, editJourneyStage, editIsFirstIvf, editEggSource, editSpermSource, editCarrier, editHasEmbryos, editEmbryoCount, editEmbryosTested, editNeedsClinic, editCurrentClinicName, editClinicPriority, editClinicPriorityTags, editSurrogateCountries, editSurrogateTermination, editSurrogateTwins, editSurrogateAgeRange, editSurrogateBudget, editSurrogateExperience, editSurrogateMedPrefs, editSameSexCouple, editSurrogateRace, editSurrogateEthnicity, editSurrogateRelationship, editSurrogateBmiRange, editSurrogateTotalCostRange, editSurrogateLiveBirthsRange, editSurrogateMaxCSections, editSurrogateMaxMiscarriages, editSurrogateMaxAbortions, editSurrogateLastDeliveryYear, editSurrogateCovidVaccinated, editSurrogateSelectiveReduction, editSurrogateInternationalParents, editDonorPreferences, editDonorEyeColor, editDonorHairColor, editDonorHeight, editDonorEducation, editDonorEthnicity, editSpermDonorType, editSpermDonorPreferences, editSpermDonorAgeRange, editSpermDonorEyeColor, editSpermDonorHairColor, editSpermDonorHeightRange, editSpermDonorRace, editSpermDonorEthnicity, editSpermDonorEducation, editSpermDonorMaxPrice, editEggDonorAgeRange, editEggDonorCompensationRange, editEggDonorTotalCostRange, editEggDonorLotCostRange, editEggDonorEggType, editEggDonorDonationType, editClinicAgeGroup, editCurrentAgencyName, editCurrentAttorneyName]);
+  }, [editing, editName, editMobileE164, editMobileDisplay, editMobileIsoCode, editMobileIsValid, editPassword, confirmPassword, editLocation, editGender, editOrientation, editRelationship, editAge, editPartnerName, editPartnerAge, editServices, editJourneyStage, editIsFirstIvf, editEggSource, editSpermSource, editCarrier, editHasEmbryos, editEmbryoCount, editEmbryosTested, editNeedsClinic, editCurrentClinicName, editClinicPriority, editClinicPriorityTags, editSurrogateCountries, editSurrogateTermination, editSurrogateTwins, editSurrogateAgeRange, editSurrogateBudget, editSurrogateExperience, editSurrogateMedPrefs, editSameSexCouple, editSurrogateRace, editSurrogateEthnicity, editSurrogateRelationship, editSurrogateBmiRange, editSurrogateTotalCostRange, editSurrogateLiveBirthsRange, editSurrogateMaxCSections, editSurrogateMaxMiscarriages, editSurrogateMaxAbortions, editSurrogateLastDeliveryYear, editSurrogateCovidVaccinated, editSurrogateSelectiveReduction, editSurrogateInternationalParents, editDonorPreferences, editDonorEyeColor, editDonorHairColor, editDonorHeight, editDonorEducation, editDonorEthnicity, editSpermDonorType, editSpermDonorPreferences, editSpermDonorAgeRange, editSpermDonorEyeColor, editSpermDonorHairColor, editSpermDonorHeightRange, editSpermDonorRace, editSpermDonorEthnicity, editSpermDonorEducation, editSpermDonorMaxPrice, editSpermDonorVialType, editEggDonorAgeRange, editEggDonorCompensationRange, editEggDonorTotalCostRange, editEggDonorLotCostRange, editEggDonorEggType, editEggDonorDonationType, editClinicAgeGroup, editCurrentAgencyName, editCurrentAttorneyName]);
 
   // Derive gender-aware options for biological baseline fields
   // Gender is stored as "I'm a man" / "I'm a woman" / "I'm non-binary"
@@ -1085,7 +1088,9 @@ function AccountTab() {
             { label: "Education", key: "spermDonorEducation", value: editSpermDonorEducation, setter: setEditSpermDonorEducation, type: "select",
               options: ["High School", "Some College", "Associate", "Bachelor", "Master", "Doctorate"] },
             { label: "Donor Type", key: "spermDonorType", value: editSpermDonorType, setter: setEditSpermDonorType, type: "select",
-              options: ["ID Release", "Non-ID Release"] },
+              options: ["Open", "Anonymous", "Exclusive"] },
+            { label: "Vial Type Availability", key: "spermDonorVialType", value: editSpermDonorVialType, setter: setEditSpermDonorVialType, type: "multiselect",
+              options: ["ICI", "IUI", "IVF"] },
             { label: "Additional Preferences", key: "spermDonorPreferences", value: editSpermDonorPreferences, setter: setEditSpermDonorPreferences, type: "textarea" },
           ]}
         />

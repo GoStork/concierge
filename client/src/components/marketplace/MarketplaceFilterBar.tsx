@@ -1527,7 +1527,10 @@ export function MarketplaceFilterBar({
       )}
 
       {isSperm && (
-        <MobileMultiSelectDrawer label="Donor Type" filterKey="donorType" options={["ID Release", "Non-ID Release"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-donor-type" btnStyle={obs} dark={darkLabels} />
+        <MobileMultiSelectDrawer label="Donor Type" filterKey="donorType" options={["Open", "Anonymous", "Exclusive"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-donor-type" btnStyle={obs} dark={darkLabels} />
+      )}
+      {isSperm && (
+        <MobileMultiSelectDrawer label="Vial Type" filterKey="vialTypes" options={["ICI", "IUI", "IVF"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-vial-type" btnStyle={obs} dark={darkLabels} />
       )}
     </>
   );
@@ -1863,7 +1866,10 @@ export function MarketplaceFilterBar({
       )}
 
       {isSperm && (
-        <MultiSelectPopover label="Donor Type" filterKey="donorType" options={["ID Release", "Non-ID Release"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-donor-type" />
+        <MultiSelectPopover label="Donor Type" filterKey="donorType" options={["Open", "Anonymous", "Exclusive"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-donor-type" />
+      )}
+      {isSperm && (
+        <MultiSelectPopover label="Vial Type" filterKey="vialTypes" options={["ICI", "IUI", "IVF"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-vial-type" />
       )}
     </>
   );

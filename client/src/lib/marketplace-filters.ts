@@ -242,14 +242,22 @@ export function matchesFilter(donor: any, key: string, values: string[]): boolea
 
   const comboKeys = new Set(["eyeColor", "hairColor", "education"]);
   if (comboKeys.has(key)) {
-    const fieldVal = (donor[key] || "").toString().toLowerCase();
+    // Normalize blond/blonde synonyms so filters always match regardless of spelling
+    const normalizeHair = (s: string) => s.replace(/\bblonde\b/gi, "blond");
+    const fieldVal = normalizeHair((donor[key] || "").toString().toLowerCase());
     return values.some((v) => {
       if (v.includes(" + ")) {
-        const parts = v.split(" + ").map(p => p.trim().toLowerCase());
+        const parts = v.split(" + ").map(p => normalizeHair(p.trim().toLowerCase()));
         return parts.every(part => fieldVal.includes(part));
       }
-      return fieldVal.includes(v.toLowerCase());
+      return fieldVal.includes(normalizeHair(v.toLowerCase()));
     });
+  }
+
+  if (key === "vialTypes") {
+    const donorVials: string[] = Array.isArray(donor.vialTypes) ? donor.vialTypes : [];
+    if (donorVials.length === 0) return true; // no data - don't exclude
+    return values.some((v) => donorVials.some((dv) => dv.toUpperCase() === v.toUpperCase()));
   }
 
   const fieldName = key === "eggType" ? "donorType" : key === "donationType" ? "donationTypes" : key;

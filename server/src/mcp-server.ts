@@ -240,6 +240,11 @@ function scoreEthnicityPurity(candidate: any, ethnicityTerms: string[]): number 
 // matchScore = average of per-criterion scores (0.0-1.0). 1.0 = all criteria fully satisfied.
 // unmatchedCriteria = human-readable list of mismatches so the AI can call them out explicitly.
 //
+// Normalize blond/blonde synonyms so "Blonde" and "Blond" always match each other.
+function normalizeHairColor(s: string): string {
+  return s.replace(/\bblonde\b/gi, "Blond");
+}
+
 // Binary criteria (eyeColor, hairColor, education, location, age, height): 1.0 or 0.0
 // Ethnicity: continuous purity score (0.0-1.0)
 // In Phase 1 all hard-filtered candidates score 1.0 on hard criteria; the differentiator is
@@ -275,7 +280,9 @@ function scoreDonorMatch(
   }
 
   if (filters.hairColor) {
-    const matched = wordBoundaryMatch((candidate.hairColor || "").toLowerCase(), filters.hairColor.toLowerCase());
+    const normCandidate = normalizeHairColor(candidate.hairColor || "").toLowerCase();
+    const normFilter = normalizeHairColor(filters.hairColor).toLowerCase();
+    const matched = wordBoundaryMatch(normCandidate, normFilter);
     criteria.push({ score: matched ? 1 : 0, unmatchedLabel: matched ? undefined : `${filters.hairColor} hair (donor has ${candidate.hairColor || "unspecified"} hair)` });
   }
 
@@ -1338,7 +1345,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       //   eye color → hair color → education → location → ethnicity (genetic, last resort)
       const softFilters: SoftFilter[] = [];
       if (eyeColor) softFilters.push({ label: `${eyeColor} eye color`, applyToWhere: (w) => { w.eyeColor = { contains: eyeColor, mode: "insensitive" }; } });
-      if (hairColor) softFilters.push({ label: `${hairColor} hair color`, applyToWhere: (w) => { w.hairColor = { contains: hairColor, mode: "insensitive" }; } });
+      if (hairColor) softFilters.push({ label: `${hairColor} hair color`, applyToWhere: (w) => { w.hairColor = { contains: normalizeHairColor(hairColor), mode: "insensitive" }; } });
       if (education) softFilters.push({ label: `${education} education`, applyToWhere: (w) => { w.education = { contains: education, mode: "insensitive" }; } });
       if (location) softFilters.push({ label: `${location} location`, applyToWhere: (w) => { Object.assign(w, buildLocationWhere(location)); } });
       if (ethnicity) softFilters.push({ label: `${ethnicity} ethnicity`, applyToWhere: (w) => { Object.assign(w, buildEthnicityWhere(ethnicityTerms)); } });
@@ -1409,7 +1416,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const spermDonorSelect = {
         id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
         eyeColor: true, hairColor: true, height: true, weight: true,
-        ethnicity: true, race: true, education: true,
+        ethnicity: true, race: true, education: true, donorType: true, vialTypes: true,
         compensation: true, isExperienced: true, photoUrl: true,
       };
       const spermDonorSelectCols = `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, compensation, "isExperienced", "photoUrl"`;
@@ -1424,7 +1431,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // Order: eye color → hair color → education → location → ethnicity (most to least expendable)
       const softFilters: SoftFilter[] = [];
       if (eyeColor) softFilters.push({ label: `${eyeColor} eye color`, applyToWhere: (w) => { w.eyeColor = { contains: eyeColor, mode: "insensitive" }; } });
-      if (hairColor) softFilters.push({ label: `${hairColor} hair color`, applyToWhere: (w) => { w.hairColor = { contains: hairColor, mode: "insensitive" }; } });
+      if (hairColor) softFilters.push({ label: `${hairColor} hair color`, applyToWhere: (w) => { w.hairColor = { contains: normalizeHairColor(hairColor), mode: "insensitive" }; } });
       if (education) softFilters.push({ label: `${education} education`, applyToWhere: (w) => { w.education = { contains: education, mode: "insensitive" }; } });
       if (location) softFilters.push({ label: `${location} location`, applyToWhere: (w) => { Object.assign(w, buildLocationWhere(location)); } });
       if (ethnicity) softFilters.push({ label: `${ethnicity} ethnicity`, applyToWhere: (w) => { Object.assign(w, buildEthnicityWhere(ethnicityTerms)); } });
