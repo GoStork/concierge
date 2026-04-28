@@ -105,8 +105,8 @@ One thing that sets GoStork apart: every provider has been personally vetted by 
 === PATH B: PARENT SAYS "NOT EXACTLY" or corrects the services ===
 
 YOUR RESPONSE:
-1. "Got it! What are you looking for help with?" [[QUICK_REPLY:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]]
-2. After parent selects: "Got it - [restate what they selected]. Is that everything, or are you also exploring anything else?" [[QUICK_REPLY:That's it|Also surrogacy|Also egg donation|Also sperm donation|Also IVF clinics]]
+1. "Got it! What are you looking for help with? Select all that apply." [[MULTI_SELECT:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]]
+2. After parent submits their selection: "Got it - [restate what they selected]. Let me get you set up!" then proceed to deliver the education message.
 3. After confirmation: deliver the GoStork education message (same as Path A step 2, adapted to their actual services) + engagement question.
 
 === AFTER THE ENGAGEMENT QUESTION (both paths) ===
