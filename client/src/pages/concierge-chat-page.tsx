@@ -3356,36 +3356,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           initialMessages.push({ role: "assistant", content: data.phase0Content, createdAt: new Date().toISOString() });
         }
         if (initialMessages.length) setMessages(initialMessages);
-
-        // Trigger AI to ask Phase 1 (or B1/C1 for donor-only parents).
-        // Also trigger if reusing an empty session (e.g. session was created but never sent messages).
-        const isEmptyReuse = data.reused && data.messageCount === 0;
-        if ((!data.reused || isEmptyReuse) && data.sessionId) {
-          setSending(true);
-          sendingRef.current = true;
-          try {
-            const phase1Res = await fetch("/api/ai-concierge/chat", {
-              method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
-              body: JSON.stringify({ message: "phase1_init", isSystemTrigger: true, sessionId: data.sessionId, matchmakerId: effectiveMatchmakerId }),
-            });
-            if (phase1Res.ok) {
-              const phase1Data = await phase1Res.json();
-              if (phase1Data.message?.id) knownMessageIds.current.add(phase1Data.message.id);
-              if (phase1Data.message?.content) {
-                setMessages((prev) => [...prev, {
-                  role: "assistant" as const,
-                  content: phase1Data.message.content,
-                  id: phase1Data.message.id,
-                  quickReplies: phase1Data.quickReplies,
-                  multiSelect: phase1Data.multiSelect,
-                  createdAt: phase1Data.message.createdAt || new Date().toISOString(),
-                }]);
-              }
-            }
-          } catch {}
-          setSending(false);
-          sendingRef.current = false;
-        }
+        // Phase 0 ends with an engagement question - wait for the parent to respond.
+        // The AI will naturally deliver the vetting paragraph + Phase 1 question after their reply.
+        if (data.sessionId) setSessionId(data.sessionId);
       } catch {}
     })();
   }, [selectedMatchmaker, user, greetingSet, sessionLoaded, sessionId, existingSessionId, donorIdParam, donorTypeParam]);
