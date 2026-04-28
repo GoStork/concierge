@@ -717,7 +717,12 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
         }
         return;
       }
-      return res.json({ sessionId: existing.id, reused: true });
+      const msgCount = await prisma.aiChatMessage.count({ where: { sessionId: existing.id } });
+      // If the session is empty, include greeting + phase0 so the frontend can display them
+      if (msgCount === 0) {
+        return res.json({ sessionId: existing.id, reused: true, messageCount: 0, greeting: builtGreeting, phase0Content: builtPhase0 });
+      }
+      return res.json({ sessionId: existing.id, reused: true, messageCount: msgCount });
     }
 
     const sessionTitle = "AI Concierge Chat";

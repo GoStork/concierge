@@ -3357,8 +3357,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         }
         if (initialMessages.length) setMessages(initialMessages);
 
-        // Trigger AI to ask Phase 1 (or B1/C1 for donor-only parents)
-        if (!data.reused && data.sessionId) {
+        // Trigger AI to ask Phase 1 (or B1/C1 for donor-only parents).
+        // Also trigger if reusing an empty session (e.g. session was created but never sent messages).
+        const isEmptyReuse = data.reused && data.messageCount === 0;
+        if ((!data.reused || isEmptyReuse) && data.sessionId) {
           setSending(true);
           sendingRef.current = true;
           try {
