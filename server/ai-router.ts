@@ -746,7 +746,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
         role: "assistant",
         content: builtGreeting,
         senderType: "ai",
-        ...(greetingUiCardData ? { uiCardData: greetingUiCardData } : {}),
+        uiCardData: { ...(greetingUiCardData || {}), ...(greetingQuickReplies.length ? { quickReplies: greetingQuickReplies } : {}) },
       },
     });
 
