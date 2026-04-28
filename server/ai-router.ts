@@ -665,13 +665,8 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
     const defaultGreeting = interestedServices.length > 0
       ? `Hi ${firstName}! I'm ${conciergeNameLabel}, your GoStork AI concierge. I see you're looking into ${serviceLabel} - is that correct? [[QUICK_REPLY:Yes, that's right|Not exactly]]`
       : `Hi ${firstName}! I'm ${conciergeNameLabel}, your GoStork AI concierge. What are you looking for help with? [[QUICK_REPLY:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]]`;
-    const templateGreeting = matchmakerRecord?.initialGreeting
-      ? matchmakerRecord.initialGreeting
-          .replace(/\[First Name\]/gi, firstName)
-          .replace(/\[Service\]/gi, serviceLabel)
-          .replace(/\[Location\]/gi, location)
-      : defaultGreeting;
-    const builtGreeting = donorId ? (clientGreeting || templateGreeting) : templateGreeting;
+    // Always use the confirmation-style greeting - DB initialGreeting is the old static format.
+    const builtGreeting = donorId ? (clientGreeting || defaultGreeting) : defaultGreeting;
     // Phase 0 is no longer sent statically - the AI delivers it after the parent confirms their services.
     const builtPhase0 = null;
 
