@@ -666,7 +666,11 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       ? `Hi ${firstName}! I'm ${conciergeNameLabel}, your GoStork AI concierge. I see you're looking into ${serviceLabel} - is that correct? [[QUICK_REPLY:Yes, that's right|Not exactly]]`
       : `Hi ${firstName}! I'm ${conciergeNameLabel}, your GoStork AI concierge. What are you looking for help with? [[QUICK_REPLY:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]]`;
     // Always use the confirmation-style greeting - DB initialGreeting is the old static format.
-    const builtGreeting = donorId ? (clientGreeting || defaultGreeting) : defaultGreeting;
+    const rawGreeting = donorId ? (clientGreeting || defaultGreeting) : defaultGreeting;
+    // Parse [[QUICK_REPLY:...]] from greeting so buttons render in the chat UI
+    const greetingQrMatch = rawGreeting.match(/\[\[QUICK_REPLY:(.*?)\]\]/);
+    const greetingQuickReplies: string[] = greetingQrMatch ? greetingQrMatch[1].split("|").map((s: string) => s.trim()) : [];
+    const builtGreeting = rawGreeting.replace(/\[\[QUICK_REPLY:.*?\]\]/g, "").trim();
     // Phase 0 is no longer sent statically - the AI delivers it after the parent confirms their services.
     const builtPhase0 = null;
 
@@ -694,7 +698,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
           where: { id: existing.id },
           data: { updatedAt: new Date(), title: "AI Concierge Chat" },
         });
-        res.json({ sessionId: existing.id, greetingMessageId: greetingMsg.id, greeting: builtGreeting, reused: true });
+        res.json({ sessionId: existing.id, greetingMessageId: greetingMsg.id, greeting: builtGreeting, greetingQuickReplies, reused: true });
         if (mcpClient) {
           mcpClient.callTool({ name: "resolve_match_card", arguments: { entityId: donorId, entityType: donorLabel } })
             .then((resolveResult: any) => {
@@ -713,7 +717,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       const msgCount = await prisma.aiChatMessage.count({ where: { sessionId: existing.id } });
       // If the session is empty, include greeting + phase0 so the frontend can display them
       if (msgCount === 0) {
-        return res.json({ sessionId: existing.id, reused: true, messageCount: 0, greeting: builtGreeting, phase0Content: builtPhase0 });
+        return res.json({ sessionId: existing.id, reused: true, messageCount: 0, greeting: builtGreeting, greetingQuickReplies, phase0Content: builtPhase0 });
       }
       return res.json({ sessionId: existing.id, reused: true, messageCount: msgCount });
     }
@@ -763,6 +767,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       sessionId: session.id,
       greetingMessageId: greetingMsg.id,
       greeting: builtGreeting,
+      greetingQuickReplies,
       phase0Content: builtPhase0,
       interestedServices,
       ...(phase0Msg ? { phase0MessageId: phase0Msg.id } : {}),

@@ -3361,7 +3361,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         // Display server-built greeting and phase0
         const initialMessages: typeof messages = [];
         if (data.greeting) {
-          initialMessages.push({ role: "assistant", content: data.greeting, createdAt: new Date().toISOString() });
+          initialMessages.push({
+            role: "assistant",
+            content: data.greeting,
+            createdAt: new Date().toISOString(),
+            quickReplies: data.greetingQuickReplies?.length ? data.greetingQuickReplies : undefined,
+          });
         }
         if (data.phase0Content) {
           initialMessages.push({ role: "assistant", content: data.phase0Content, createdAt: new Date().toISOString() });
