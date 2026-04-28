@@ -3071,6 +3071,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   }, [subjectProfileData, subjectInfo?.subjectType, subjectInfo?.profilePhotoUrl]);
 
   const initialScrollDone = useRef(false);
+  // When true, the initial batch was a new session - scroll to top so greeting is visible first.
+  const newSessionInitRef = useRef(false);
   // Track whether the user is near the bottom (within 120px). Only auto-scroll when they are.
   const userNearBottom = useRef(true);
   const scrollToBottom = useRef((behavior?: "smooth") => {
@@ -3151,17 +3153,26 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   useEffect(() => {
     if (!messages.length) return;
     if (!initialScrollDone.current) {
-      // Initial load: always scroll to bottom unconditionally
-      scrollToBottom.current();
-      const t1 = setTimeout(() => scrollToBottom.current(), 150);
-      const t2 = setTimeout(() => scrollToBottom.current(), 400);
-      const t3 = setTimeout(() => scrollToBottom.current(), 800);
-      const t4 = setTimeout(() => {
-        scrollToBottom.current();
+      if (newSessionInitRef.current) {
+        // New session: scroll to TOP so the greeting (first message) is visible.
+        // The parent reads top-down - they should not be thrown past it to message 2.
+        const container = messagesEndRef.current?.closest('[data-testid="concierge-messages"]') as HTMLElement | null;
+        if (container) container.scrollTop = 0;
         initialScrollDone.current = true;
-        userNearBottom.current = true;
-      }, 1500);
-      return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); };
+        userNearBottom.current = false;
+      } else {
+        // Existing session: scroll to bottom to show the latest messages
+        scrollToBottom.current();
+        const t1 = setTimeout(() => scrollToBottom.current(), 150);
+        const t2 = setTimeout(() => scrollToBottom.current(), 400);
+        const t3 = setTimeout(() => scrollToBottom.current(), 800);
+        const t4 = setTimeout(() => {
+          scrollToBottom.current();
+          initialScrollDone.current = true;
+          userNearBottom.current = true;
+        }, 1500);
+        return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); };
+      }
     } else {
       // New message arrived - only scroll if user is already near the bottom
       scrollToBottomIfNear.current("smooth");
@@ -3355,7 +3366,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         if (data.phase0Content) {
           initialMessages.push({ role: "assistant", content: data.phase0Content, createdAt: new Date().toISOString() });
         }
-        if (initialMessages.length) setMessages(initialMessages);
+        if (initialMessages.length) {
+          newSessionInitRef.current = true;
+          setMessages(initialMessages);
+        }
         // Phase 0 ends with an engagement question - wait for the parent to respond.
         // The AI will naturally deliver the vetting paragraph + Phase 1 question after their reply.
         if (data.sessionId) setSessionId(data.sessionId);
