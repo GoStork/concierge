@@ -661,13 +661,19 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
     const serviceLabel = serviceLabels.length === 1 ? serviceLabels[0]
       : serviceLabels.length > 1 ? serviceLabels.slice(0, -1).join(", ") + " and " + serviceLabels[serviceLabels.length - 1]
       : "fertility services";
+    const conciergeNameLabel = matchmakerRecord?.name || "your concierge";
+    const defaultGreeting = interestedServices.length > 0
+      ? `Hi ${firstName}! I'm ${conciergeNameLabel}, your GoStork AI concierge. I see you're looking into ${serviceLabel} - is that correct? [[QUICK_REPLY:Yes, that's right|Not exactly]]`
+      : `Hi ${firstName}! I'm ${conciergeNameLabel}, your GoStork AI concierge. What are you looking for help with? [[QUICK_REPLY:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]]`;
     const templateGreeting = matchmakerRecord?.initialGreeting
-      || `Hi ${firstName}! I'm ${matchmakerRecord?.name || "your concierge"}, your GoStork concierge. I see you're exploring ${serviceLabel} - I'm here to make that journey a lot clearer and help you find the right match.`;
-    const builtGreeting = donorId ? (clientGreeting || templateGreeting) : templateGreeting
-      .replace(/\[First Name\]/gi, firstName)
-      .replace(/\[Service\]/gi, serviceLabel)
-      .replace(/\[Location\]/gi, location);
-    const builtPhase0 = !donorId ? buildServerPhase0(interestedServices) : null;
+      ? matchmakerRecord.initialGreeting
+          .replace(/\[First Name\]/gi, firstName)
+          .replace(/\[Service\]/gi, serviceLabel)
+          .replace(/\[Location\]/gi, location)
+      : defaultGreeting;
+    const builtGreeting = donorId ? (clientGreeting || templateGreeting) : templateGreeting;
+    // Phase 0 is no longer sent statically - the AI delivers it after the parent confirms their services.
+    const builtPhase0 = null;
 
     if (existing) {
       if (donorId) {
