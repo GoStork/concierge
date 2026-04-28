@@ -579,37 +579,29 @@ aiRouter.get("/my-session", async (req: Request, res: Response) => {
 
 // Phase 0 templates - duplicated from client so server can build them with correct services
 function buildServerPhase0(services: string[]): string {
-  const PHASE0_SURROGACY = `Before we dive in, let me give you a quick overview of how GoStork works.
+  const PHASE0_SURROGACY = `Before we dive in, let me give you a quick picture of how GoStork works.
 
-GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of researching dozens of agencies on your own, we've brought everything together in one place. Every provider on GoStork lists their full costs, so you know exactly what to expect - no surprises. We partner with over 60 surrogacy agencies. And it's completely free for intended parents - the agencies pay us a referral fee, and they're not allowed to pass that cost on to you.
+GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of researching dozens of agencies on your own, we've brought everything together in one place with full transparent pricing and no surprises. We partner with over 60 surrogacy agencies, and it's completely free for intended parents - the agencies pay us a referral fee and are not allowed to pass that cost on to you.
 
-Every agency we work with has been personally vetted by Eran Amir, GoStork's founder, who went through surrogacy himself. He personally interviews each agency's leadership, reviews their operations and processes, and makes sure they have the right team in place. Plus, no waiting lists - every surrogate you'll see is available now.
+Where are you in your journey right now - just starting to explore, or have you already done some research?`;
 
-To help guide you toward the perfect match...`;
+  const PHASE0_EGG_DONOR = `Before we dive in, let me give you a quick picture of how GoStork works.
 
-  const PHASE0_EGG_DONOR = `Before we dive in, let me give you a quick overview of how GoStork works.
+GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of searching across dozens of agency websites, we've pulled everything into one place with full transparent pricing. We work with 30 egg donor agencies and have over 10,000 egg donors in our database. And it's completely free for intended parents - the agencies pay us a referral fee and are not allowed to pass that cost on to you.
 
-GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of searching across dozens of agency websites, we've pulled everything into one place. Every provider lists their full costs on GoStork so you know exactly what to expect - no surprises. We work with 30 egg donor agencies and have over 10,000 egg donors in our database. And it's completely free for intended parents - the agencies pay us a referral fee and are not allowed to pass that cost on to you.
+Where are you in your journey right now - just starting to explore, or have you already done some research?`;
 
-Every agency we work with has been personally vetted by Eran Amir, GoStork's founder, who went through the fertility journey himself. He personally interviews each agency's leadership, reviews their operations and processes, and makes sure they have the right team in place.
+  const PHASE0_CLINIC = `Before we dive in, let me give you a quick picture of how GoStork works.
 
-To help me find you the right match...`;
+GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of researching IVF clinics across dozens of websites, we've brought over 30 vetted clinics into one place with full transparent pricing. And it's completely free for intended parents - the clinics pay us a referral fee and are not allowed to pass that cost on to you.
 
-  const PHASE0_CLINIC = `Before we dive in, let me give you a quick overview of how GoStork works.
+Where are you in your journey right now - just starting to explore, or have you already done some research?`;
 
-GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of researching IVF clinics on your own, we've brought everything together in one place. Every clinic lists their full costs and success rates on GoStork so you know exactly what to expect - no surprises. We partner with 30+ IVF clinics across the country. And it's completely free for intended parents - clinics pay us a referral fee and are not allowed to pass that cost on to you.
+  const PHASE0_GENERAL = `Before we dive in, let me give you a quick picture of how GoStork works.
 
-Every clinic we work with has been personally vetted by Eran Amir, GoStork's founder, who went through the fertility journey himself. He personally interviews each clinic's leadership, reviews their outcomes and processes, and makes sure they have the right team in place.
+GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of researching providers across dozens of websites, we've brought everything together in one place with full transparent pricing. We partner with over 60 surrogacy agencies, 30 egg donor agencies with 10,000+ donors, and 30+ IVF clinics. And it's completely free for intended parents - providers pay us a referral fee and are not allowed to pass that cost on to you.
 
-To help me find you the right clinic...`;
-
-  const PHASE0_GENERAL = `Before we dive in, let me give you a quick overview of how GoStork works.
-
-GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of researching providers across dozens of websites, we've brought everything together in one place. Every provider lists their full costs on GoStork so you know exactly what to expect - no surprises. We partner with over 60 surrogacy agencies, 30 egg donor agencies with 10,000+ donors, and 30+ IVF clinics. And it's completely free for intended parents - providers pay us a referral fee and are not allowed to pass that cost on to you.
-
-Every provider on GoStork has been personally vetted by Eran Amir, GoStork's founder, who went through the fertility journey himself. He personally interviews each provider's leadership, reviews their operations and processes, and makes sure they have the right team in place.
-
-To help guide you toward the perfect match...`;
+Where are you in your journey right now - just starting to explore, or have you already done some research?`;
 
   if (services.includes("Surrogate")) return PHASE0_SURROGACY;
   if (services.includes("Egg Donor")) return PHASE0_EGG_DONOR;
