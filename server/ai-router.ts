@@ -1225,6 +1225,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       prisma.user.findUnique({
         where: { id: userId },
         select: {
+          id: true,
           firstName: true,
           lastName: true,
           name: true,
