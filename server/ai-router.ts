@@ -16,14 +16,18 @@ const geminiAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 // -------------------------------------------------------------------------
 function setupSSE(res: Response) {
   res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
+  res.setHeader("Transfer-Encoding", "chunked");
+  // Disable TCP Nagle algorithm to send each chunk immediately
+  (res as any).socket?.setNoDelay?.(true);
   res.flushHeaders();
+  const flush = () => { if (typeof (res as any).flush === "function") (res as any).flush(); };
   return {
-    sendToken: (delta: string) => res.write(`data: ${JSON.stringify({ type: "token", delta })}\n\n`),
-    sendDone: (payload: object) => { res.write(`data: ${JSON.stringify({ type: "done", ...payload })}\n\n`); res.end(); },
-    sendError: (msg: string) => { res.write(`data: ${JSON.stringify({ type: "error", message: msg })}\n\n`); res.end(); },
+    sendToken: (delta: string) => { res.write(`data: ${JSON.stringify({ type: "token", delta })}\n\n`); flush(); },
+    sendDone: (payload: object) => { res.write(`data: ${JSON.stringify({ type: "done", ...payload })}\n\n`); flush(); res.end(); },
+    sendError: (msg: string) => { res.write(`data: ${JSON.stringify({ type: "error", message: msg })}\n\n`); flush(); res.end(); },
   };
 }
 type SSEHandle = ReturnType<typeof setupSSE>;
@@ -36,7 +40,12 @@ async function callTier1Gemini(
   messages: any[],
   sse: SSEHandle
 ): Promise<string> {
-  const model = geminiAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+  // Use gemini-2.5-flash with thinking disabled for instant conversational responses
+  // thinkingBudget: 0 disables the reasoning phase that adds 5-7s latency
+  const model = geminiAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any,
+  });
 
   // Collect inline system messages and merge into the system instruction
   const inlineSysT1 = messages
@@ -47,19 +56,22 @@ async function callTier1Gemini(
     ? inlineSysT1.join("\n\n---\n\n")
     : systemPrompt;
 
-  const history = messages
+  // Gemini requires history to start with a "user" turn - drop leading model messages
+  const rawHistory = messages
     .filter((m) => m.role !== "system")
     .slice(0, -1)
     .map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
       parts: [{ text: typeof m.content === "string" ? m.content : JSON.stringify(m.content) }],
     }));
+  const firstUserIdx = rawHistory.findIndex((m) => m.role === "user");
+  const history = firstUserIdx > 0 ? rawHistory.slice(firstUserIdx) : firstUserIdx === 0 ? rawHistory : [];
 
   const lastMsg = messages[messages.length - 1];
   const userMessage = typeof lastMsg?.content === "string" ? lastMsg.content : JSON.stringify(lastMsg?.content);
 
   const chat = model.startChat({
-    systemInstruction: fullSystemT1,
+    systemInstruction: { parts: [{ text: fullSystemT1 }] },
     history,
   });
 
@@ -1951,17 +1963,20 @@ IMPORTANT RULES:
     const userMessage = req.body.message || "";
     const ragProviderId = req.body.providerId || undefined;
 
-    // Parallelize guidance rules, whisper answers, and RAG search
-    const [guidanceRules, answeredWhispers, knowledgeResults] = await Promise.all([
-      getExpertGuidanceRules(),
-      prisma.silentQuery.findMany({
-        where: { parentUserId: userId, sessionId: currentSessionId, status: "ANSWERED" }, // RELAYED whispers are excluded - already injected directly
-        select: { questionText: true, answerText: true, providerId: true },
-        orderBy: { updatedAt: "desc" },
-        take: 5,
-      }).catch(() => [] as any[]),
-      searchKnowledgeBase(userMessage, ragProviderId, 5).catch(() => [] as any[]),
-    ]);
+    // Skip expensive Tier 2-only operations for Tier 1 (Gemini Flash) sessions
+    const useTier2Early = !!(currentSession?.tier2Active);
+    const [guidanceRules, answeredWhispers, knowledgeResults] = useTier2Early
+      ? await Promise.all([
+          getExpertGuidanceRules(),
+          prisma.silentQuery.findMany({
+            where: { parentUserId: userId, sessionId: currentSessionId, status: "ANSWERED" },
+            select: { questionText: true, answerText: true, providerId: true },
+            orderBy: { updatedAt: "desc" },
+            take: 5,
+          }).catch(() => [] as any[]),
+          searchKnowledgeBase(userMessage, ragProviderId, 5).catch(() => [] as any[]),
+        ])
+      : ["", [], []]; // Tier 1: skip all expensive lookups
 
     let answeredWhispersContext = "";
     if (answeredWhispers.length > 0) {
@@ -2714,6 +2729,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
     const useTier2 = !!(currentSession?.tier2Active);
     let finalContent = "";
     let lastSearchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] = [];
+    const tierCallStart = Date.now();
 
     // Extract the system prompt text (first message in messages array after unshift)
     const systemPromptForTiers = typeof messages[0]?.content === "string" ? messages[0].content : "";
@@ -2729,14 +2745,44 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       );
       finalContent = tier2Result.content || "I'm sorry, I couldn't process that.";
     } else {
-      // Tier 1: Gemini 2.5 Flash - no tools, trimmed context
-      // Build a Tier 1 system prompt excluding matching/advisory rules to save tokens
-      const tier1SystemPrompt = [
-        systemPromptForTiers.split("STEP 5 - SERVICE DEEP DIVES")[0], // Phase 0-2 only
-        "\nDo not call any search tools. Do not show MATCH_CARD. Collect preferences and guide the conversation.",
-      ].join("");
+      // Tier 1: Gemini 2.5 Flash - MINIMAL prompt, Phase 0-2 only, no matching
+      // Extract only the Phase 0 + conversation flow section from the DB prompt
+      const promptSections = await getPromptSections();
+      const conversationFlow = promptSections.get("conversation_flow") || "";
+      const expertPersona = promptSections.get("expert_persona") || "";
+      const uiComponents = promptSections.get("ui_components") || "";
 
-      finalContent = await callTier1Gemini(tier1SystemPrompt, messages, sse);
+      // Strip the full userContextBlock from Tier 1 - it contains matching state that confuses Gemini
+      const tier1Name = userRecord?.firstName || userRecord?.name?.split(" ")[0] || "there";
+      const tier1Services = services.join(" and ") || "fertility services";
+      const tier1SystemPrompt = `You are ${matchmaker?.name || "Adam"}, the AI concierge for GoStork, a fertility marketplace.
+${matchmaker?.personalityPrompt ? `YOUR PERSONA: ${matchmaker.personalityPrompt}\n` : ""}
+USER CONTEXT (introduction phase only):
+- Parent name: ${tier1Name}
+- Services they registered interest in: ${tier1Services}
+
+QUICK REPLY FORMAT: Always attach [[QUICK_REPLY:option1|option2]] to any question offering choices.
+SAVE FORMAT: Use [[SAVE:{"field":"value"}]] to save stated preferences immediately.
+
+${conversationFlow}
+
+=== MANDATORY PHASE 0 FLOW - CANNOT BE SKIPPED ===
+The greeting was already sent. The parent just confirmed their services ("Yes, that's right").
+
+YOUR ONLY VALID NEXT ACTION RIGHT NOW:
+Deliver the GoStork introduction (PATH A from conversation_flow above). Then end EXACTLY with:
+"Do you have any questions about GoStork and how we can help you?" [[QUICK_REPLY:I understand, let's get started|I have a few questions]]
+
+CRITICAL OVERRIDES - these override everything else:
+1. IGNORE all profile data about "already has clinic/egg donor/surrogate" - that is irrelevant right now
+2. DO NOT ask about sperm donor preferences yet - that comes AFTER Phase 0
+3. DO NOT output [[MATCH_CARD]], [[CURATION]], or any matching content
+4. DO NOT skip the education message under ANY circumstances
+5. The education message is MANDATORY before any matching can begin`;
+
+      // Pass only non-system messages to Tier 1 - the tier1SystemPrompt is the sole system context
+      const tier1Messages = messages.filter((m: any) => m.role !== "system");
+      finalContent = await callTier1Gemini(tier1SystemPrompt, tier1Messages, sse);
       if (!finalContent) finalContent = "I'm sorry, I couldn't process that.";
     }
 

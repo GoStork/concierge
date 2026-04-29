@@ -2590,6 +2590,13 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   // Ref so uploadAndSendFiles can access the current matchmaker ID without TDZ issues
   const effectiveMatchmakerIdRef = useRef<string | null>(null);
 
+  // Typing animation refs - buffer chars from SSE and drain at fixed speed
+  const typingQueueRef = useRef("");
+  const typingStreamingIdRef = useRef<string | null>(null);
+  const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Callback to run once the queue drains (applied instead of immediate flush on done)
+  const typingOnDoneRef = useRef<(() => void) | null>(null);
+
   const { data: sessionBookings } = useQuery<any[]>({
     queryKey: ["/api/chat-session", sessionId, "bookings"],
     queryFn: async () => {
@@ -2776,7 +2783,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             let ev: any;
             try { ev = JSON.parse(ln.slice(6).trim()); } catch { continue; }
             if (ev.type === "token") {
-              setMessages(prev => prev.map(m => m.id === `${streamingUploadId}-ai` ? { ...m, content: m.content + ev.delta } : m));
+              const delta = ev.delta || "";
+              if (delta) {
+                if (!typingStreamingIdRef.current) startTypingAnimation(`${streamingUploadId}-ai`);
+                typingQueueRef.current += delta;
+              }
             } else if (ev.type === "done") {
               aiData = ev;
             }
@@ -2793,24 +2804,31 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       // Remove optimistic upload message - real user message was saved by AI endpoint
       setMessages(prev => prev.filter(m => m.id !== streamingUploadId));
 
-      // Finalize AI response bubble
+      // Finalize AI response bubble - defer until typing animation drains
       if (aiData?.message?.content) {
         const aiMsgId = aiData.message.id;
-        setMessages(prev => prev.map(m => {
-          if (m.id !== `${streamingUploadId}-ai`) return m;
-          if (aiMsgId && prev.some(x => x.id === aiMsgId && x.id !== m.id)) return null as any;
-          return {
-            ...m,
-            content: aiData.message.content,
-            createdAt: aiData.message.createdAt || now,
-            id: aiMsgId,
-            quickReplies: aiData.quickReplies,
-            matchCards: aiData.matchCards,
-            senderType: aiData.message.senderType,
-            senderName: aiData.message.senderName,
-          };
-        }).filter(Boolean));
-        if (aiData.message.id) knownMessageIds.current.add(aiData.message.id);
+        const finalizeUploadBubble = () => {
+          setMessages(prev => prev.map(m => {
+            if (m.id !== `${streamingUploadId}-ai`) return m;
+            if (aiMsgId && prev.some(x => x.id === aiMsgId && x.id !== m.id)) return null as any;
+            return {
+              ...m,
+              content: aiData.message.content,
+              createdAt: aiData.message.createdAt || now,
+              id: aiMsgId,
+              quickReplies: aiData.quickReplies,
+              matchCards: aiData.matchCards,
+              senderType: aiData.message.senderType,
+              senderName: aiData.message.senderName,
+            };
+          }).filter(Boolean));
+          if (aiData.message.id) knownMessageIds.current.add(aiData.message.id);
+        };
+        if (typingIntervalRef.current) {
+          typingOnDoneRef.current = finalizeUploadBubble;
+        } else {
+          finalizeUploadBubble();
+        }
       }
 
       // Save additional files as separate attachment messages (fire-and-forget)
@@ -3386,22 +3404,35 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         if (data.greetingMessageId) knownMessageIds.current.add(data.greetingMessageId);
         if (data.phase0MessageId) knownMessageIds.current.add(data.phase0MessageId);
 
-        // Display server-built greeting and phase0
-        const initialMessages: typeof messages = [];
+        // Display server-built greeting and phase0 with typing animation
         if (data.greeting) {
-          initialMessages.push({
-            role: "assistant",
-            content: data.greeting,
-            createdAt: new Date().toISOString(),
-            quickReplies: data.greetingQuickReplies?.length ? data.greetingQuickReplies : undefined,
-          });
-        }
-        if (data.phase0Content) {
-          initialMessages.push({ role: "assistant", content: data.phase0Content, createdAt: new Date().toISOString() });
-        }
-        if (initialMessages.length) {
+          const greetingId = `greeting-${Date.now()}`;
           newSessionInitRef.current = true;
-          setMessages(initialMessages);
+          setMessages([{ role: "assistant", content: "", id: greetingId, createdAt: new Date().toISOString() }]);
+
+          typingQueueRef.current = data.greeting;
+          typingOnDoneRef.current = () => {
+            // Attach quick replies after greeting finishes typing
+            if (data.greetingQuickReplies?.length) {
+              setMessages(prev => prev.map(m => m.id === greetingId ? { ...m, quickReplies: data.greetingQuickReplies } : m));
+            }
+            // Animate phase0 message after greeting completes
+            if (data.phase0Content) {
+              const phase0Id = `phase0-${Date.now()}`;
+              setMessages(prev => [...prev, { role: "assistant", content: "", id: phase0Id, createdAt: new Date().toISOString() }]);
+              typingQueueRef.current = data.phase0Content;
+              typingOnDoneRef.current = null;
+              startTypingAnimation(phase0Id);
+            }
+          };
+          startTypingAnimation(greetingId);
+        } else if (data.phase0Content) {
+          const phase0Id = `phase0-${Date.now()}`;
+          newSessionInitRef.current = true;
+          setMessages([{ role: "assistant", content: "", id: phase0Id, createdAt: new Date().toISOString() }]);
+          typingQueueRef.current = data.phase0Content;
+          typingOnDoneRef.current = null;
+          startTypingAnimation(phase0Id);
         }
         // Phase 0 ends with an engagement question - wait for the parent to respond.
         // The AI will naturally deliver the vetting paragraph + Phase 1 question after their reply.
@@ -3492,12 +3523,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
       if (!res.ok) throw new Error("Chat request failed");
 
-      // Add a streaming placeholder bubble immediately
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant" as const, content: "", id: streamingId, createdAt: new Date().toISOString() },
-      ]);
-
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -3522,12 +3547,17 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           try { event = JSON.parse(jsonStr); } catch { continue; }
 
           if (event.type === "token") {
-            // Append streamed token to the placeholder bubble
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === streamingId ? { ...m, content: m.content + event.delta } : m
-              )
-            );
+            const delta = event.delta || "";
+            if (delta) {
+              if (!typingStreamingIdRef.current) {
+                setMessages(prev => {
+                  if (prev.some(m => m.id === streamingId)) return prev;
+                  return [...prev, { role: "assistant" as const, content: "", id: streamingId, createdAt: new Date().toISOString() }];
+                });
+                startTypingAnimation(streamingId);
+              }
+              typingQueueRef.current += delta;
+            }
           } else if (event.type === "done") {
             const data = event;
 
@@ -3586,15 +3616,36 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               createdAt: data.message?.createdAt || new Date().toISOString(),
             };
 
-            // Replace the streaming placeholder with the finalized message
-            if (data.showCuration) {
-              setMessages((prev) => prev.map((m) => m.id === streamingId ? finalMsg : m));
-              setPendingCurationMessage(finalMsg);
-              curationAwaitingRef.current = true;
+            // Apply the final message (with metadata like quickReplies, matchCards, etc.)
+            // after the typing animation finishes draining - or immediately if no animation ran
+            const applyFinalMsg = () => {
+              if (data.showCuration) {
+                setMessages((prev) => {
+                  const hasPlaceholder = prev.some((m) => m.id === streamingId);
+                  return hasPlaceholder
+                    ? prev.map((m) => m.id === streamingId ? finalMsg : m)
+                    : [...prev.filter((m) => m.id !== streamingId), finalMsg];
+                });
+                setPendingCurationMessage(finalMsg);
+                curationAwaitingRef.current = true;
+              } else {
+                setMessages((prev) => {
+                  const hasPlaceholder = prev.some((m) => m.id === streamingId);
+                  return hasPlaceholder
+                    ? prev.map((m) => m.id === streamingId ? finalMsg : m)
+                    : [...prev.filter((m) => m.id !== streamingId), finalMsg];
+                });
+              }
+            };
+
+            if (typingIntervalRef.current) {
+              // Animation still running - defer finalMsg until queue drains
+              typingOnDoneRef.current = applyFinalMsg;
             } else {
-              setMessages((prev) => prev.map((m) => m.id === streamingId ? finalMsg : m));
+              applyFinalMsg();
             }
           } else if (event.type === "error") {
+            stopTypingAnimation(false);
             setMessages((prev) => prev.filter((m) => m.id !== streamingId));
             setMessages((prev) => [
               ...prev,
@@ -3604,6 +3655,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         }
       }
     } catch {
+      stopTypingAnimation(false);
       // Remove streaming placeholder on error
       setMessages((prev) => prev.filter((m) => m.id !== streamingId));
       setMessages((prev) => [
@@ -3614,6 +3666,53 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       setSending(false);
       sendingRef.current = false;
     }
+  };
+
+  const startTypingAnimation = (streamingId: string) => {
+    typingStreamingIdRef.current = streamingId;
+    if (typingIntervalRef.current) return;
+    typingIntervalRef.current = setInterval(() => {
+      if (!typingQueueRef.current.length) {
+        // Queue drained - fire the done callback if streaming has finished
+        if (typingOnDoneRef.current) {
+          const cb = typingOnDoneRef.current;
+          typingOnDoneRef.current = null;
+          clearInterval(typingIntervalRef.current!);
+          typingIntervalRef.current = null;
+          typingStreamingIdRef.current = null;
+          cb();
+        }
+        return;
+      }
+      const qLen = typingQueueRef.current.length;
+      // Target: drain any queue within ~2 seconds (111 ticks at 18ms), min 1 char/tick
+      // Short messages (< 111 chars) → 1 char/tick → clearly visible animation
+      // Long messages → proportionally faster so they never lag for more than 2 seconds
+      const drain = Math.max(1, Math.ceil(qLen / 111));
+      const chars = typingQueueRef.current.slice(0, drain);
+      typingQueueRef.current = typingQueueRef.current.slice(drain);
+      const sid = typingStreamingIdRef.current;
+      if (sid) {
+        setMessages(prev => prev.map(m => m.id === sid ? { ...m, content: m.content + chars } : m));
+      }
+    }, 18);
+  };
+
+  const stopTypingAnimation = (flush: boolean) => {
+    typingOnDoneRef.current = null;
+    if (typingIntervalRef.current) {
+      clearInterval(typingIntervalRef.current);
+      typingIntervalRef.current = null;
+    }
+    if (flush) {
+      const remaining = typingQueueRef.current;
+      const sid = typingStreamingIdRef.current;
+      if (remaining && sid) {
+        setMessages(prev => prev.map(m => m.id === sid ? { ...m, content: m.content + remaining } : m));
+      }
+    }
+    typingQueueRef.current = "";
+    typingStreamingIdRef.current = null;
   };
 
   const handleSend = () => sendMessage(input);
@@ -3637,6 +3736,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     const handler = () => { setHumanEscalated(false); setHumanInChat(false); };
     window.addEventListener("human-concluded", handler);
     return () => window.removeEventListener("human-concluded", handler);
+  }, []);
+
+  useEffect(() => {
+    return () => { if (typingIntervalRef.current) clearInterval(typingIntervalRef.current); };
   }, []);
 
   const handleCurationComplete = useCallback(async () => {
@@ -3885,7 +3988,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 ) || null
               : null;
             type TimelineItem = { type: "message"; msg: ChatMessage; ts: string } | { type: "booking"; booking: any; ts: string };
-            const msgItems: TimelineItem[] = messages.map((m) => ({ type: "message" as const, msg: m, ts: m.createdAt || "" }));
+            // Filter out empty assistant streaming placeholders that haven't received tokens yet
+            const msgItems: TimelineItem[] = messages
+              .filter((m) => !(m.role === "assistant" && !m.content && !m.uiCardData && !m.uiCardType && !m.consultationCard))
+              .map((m) => ({ type: "message" as const, msg: m, ts: m.createdAt || "" }));
             const bookingItems: TimelineItem[] = activeBooking
               ? [{ type: "booking" as const, booking: activeBooking, ts: activeBooking.createdAt || activeBooking.scheduledAt || "" }]
               : [];
@@ -4165,6 +4271,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                     return (
                       <Button
                         key={qi}
+                        type="button"
                         variant="outline"
                         size="sm"
                         className="text-sm transition-all hover:shadow-sm"
@@ -4199,6 +4306,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   })}
                   {msg.multiSelect && multiSelectChoices.size > 0 && (
                     <Button
+                      type="button"
                       size="sm"
                       className="text-sm font-medium"
                       style={{

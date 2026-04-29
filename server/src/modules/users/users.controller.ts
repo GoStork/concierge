@@ -503,9 +503,18 @@ export class UsersController {
           }
         }
 
+        // embryoCount is non-nullable (Int @default(0)) - null/empty maps to 0
+        if (body.embryoCount !== undefined) {
+          if (body.embryoCount === null || body.embryoCount === "") {
+            profileData.embryoCount = 0;
+          } else {
+            const num = parseInt(String(body.embryoCount), 10);
+            if (!isNaN(num) && num >= 0) profileData.embryoCount = num;
+          }
+        }
+
         // Nullable int fields
         const nullableIntFields = [
-          "embryoCount",
           "surrogateMaxCSections", "surrogateMaxMiscarriages",
           "surrogateMaxAbortions", "surrogateLastDeliveryYear",
           "spermDonorMaxPrice",
