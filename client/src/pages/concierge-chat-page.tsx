@@ -2590,11 +2590,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   // Ref so uploadAndSendFiles can access the current matchmaker ID without TDZ issues
   const effectiveMatchmakerIdRef = useRef<string | null>(null);
 
-  // Typing animation refs - buffer chars from SSE and drain at fixed speed
-  const typingQueueRef = useRef("");
+  // Typing animation refs
+  const typingRawRef = useRef("");       // total raw chars received from stream
+  const typingDisplayedRef = useRef(0); // how many raw chars have been revealed
   const typingStreamingIdRef = useRef<string | null>(null);
   const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Callback to run once the queue drains (applied instead of immediate flush on done)
   const typingOnDoneRef = useRef<(() => void) | null>(null);
 
   const { data: sessionBookings } = useQuery<any[]>({
@@ -2786,7 +2786,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               const delta = ev.delta || "";
               if (delta) {
                 if (!typingStreamingIdRef.current) startTypingAnimation(`${streamingUploadId}-ai`);
-                typingQueueRef.current += delta;
+                typingRawRef.current += delta;
               }
             } else if (ev.type === "done") {
               aiData = ev;
@@ -3410,7 +3410,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           newSessionInitRef.current = true;
           setMessages([{ role: "assistant", content: "", id: greetingId, createdAt: new Date().toISOString() }]);
 
-          typingQueueRef.current = data.greeting;
+          typingRawRef.current = data.greeting; typingDisplayedRef.current = 0;
           typingOnDoneRef.current = () => {
             // Attach quick replies after greeting finishes typing
             if (data.greetingQuickReplies?.length) {
@@ -3420,7 +3420,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             if (data.phase0Content) {
               const phase0Id = `phase0-${Date.now()}`;
               setMessages(prev => [...prev, { role: "assistant", content: "", id: phase0Id, createdAt: new Date().toISOString() }]);
-              typingQueueRef.current = data.phase0Content;
+              typingRawRef.current = data.phase0Content; typingDisplayedRef.current = 0;
               typingOnDoneRef.current = null;
               startTypingAnimation(phase0Id);
             }
@@ -3430,7 +3430,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           const phase0Id = `phase0-${Date.now()}`;
           newSessionInitRef.current = true;
           setMessages([{ role: "assistant", content: "", id: phase0Id, createdAt: new Date().toISOString() }]);
-          typingQueueRef.current = data.phase0Content;
+          typingRawRef.current = data.phase0Content; typingDisplayedRef.current = 0;
           typingOnDoneRef.current = null;
           startTypingAnimation(phase0Id);
         }
@@ -3556,7 +3556,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 });
                 startTypingAnimation(streamingId);
               }
-              typingQueueRef.current += delta;
+              typingRawRef.current += delta;
             }
           } else if (event.type === "done") {
             const data = event;
@@ -3668,12 +3668,18 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     }
   };
 
+  // Strip [[TAG:...]] structured tags from display content during animation.
+  // Complete tags are removed entirely; trailing incomplete tags are hidden until closed.
+  const stripStreamingTags = (raw: string) =>
+    raw.replace(/\[\[[\s\S]*?\]\]/g, "").replace(/\[\[[\s\S]*$/, "");
+
   const startTypingAnimation = (streamingId: string) => {
     typingStreamingIdRef.current = streamingId;
     if (typingIntervalRef.current) return;
     typingIntervalRef.current = setInterval(() => {
-      if (!typingQueueRef.current.length) {
-        // Queue drained - fire the done callback if streaming has finished
+      const rawLen = typingRawRef.current.length;
+      const displayed = typingDisplayedRef.current;
+      if (displayed >= rawLen) {
         if (typingOnDoneRef.current) {
           const cb = typingOnDoneRef.current;
           typingOnDoneRef.current = null;
@@ -3684,16 +3690,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         }
         return;
       }
-      const qLen = typingQueueRef.current.length;
-      // Target: drain any queue within ~2 seconds (111 ticks at 18ms), min 1 char/tick
-      // Short messages (< 111 chars) → 1 char/tick → clearly visible animation
-      // Long messages → proportionally faster so they never lag for more than 2 seconds
-      const drain = Math.max(1, Math.ceil(qLen / 111));
-      const chars = typingQueueRef.current.slice(0, drain);
-      typingQueueRef.current = typingQueueRef.current.slice(drain);
+      const remaining = rawLen - displayed;
+      const drain = Math.max(1, Math.ceil(remaining / 111));
+      const newDisplayed = Math.min(displayed + drain, rawLen);
+      typingDisplayedRef.current = newDisplayed;
+      const displayContent = stripStreamingTags(typingRawRef.current.slice(0, newDisplayed));
       const sid = typingStreamingIdRef.current;
       if (sid) {
-        setMessages(prev => prev.map(m => m.id === sid ? { ...m, content: m.content + chars } : m));
+        setMessages(prev => prev.map(m => m.id === sid ? { ...m, content: displayContent } : m));
       }
     }, 18);
   };
@@ -3705,13 +3709,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       typingIntervalRef.current = null;
     }
     if (flush) {
-      const remaining = typingQueueRef.current;
       const sid = typingStreamingIdRef.current;
-      if (remaining && sid) {
-        setMessages(prev => prev.map(m => m.id === sid ? { ...m, content: m.content + remaining } : m));
+      if (sid && typingRawRef.current) {
+        const displayContent = stripStreamingTags(typingRawRef.current);
+        setMessages(prev => prev.map(m => m.id === sid ? { ...m, content: displayContent } : m));
       }
     }
-    typingQueueRef.current = "";
+    typingRawRef.current = "";
+    typingDisplayedRef.current = 0;
     typingStreamingIdRef.current = null;
   };
 
