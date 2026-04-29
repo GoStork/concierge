@@ -2788,15 +2788,15 @@ USER CONTEXT (introduction phase only):
 - Parent name: ${tier1Name}
 - Services they registered interest in: ${tier1Services}
 
+CRITICAL FORMATTING RULE - COPY QUESTIONS VERBATIM:
+The conversation_flow below contains exact question text including [[QUICK_REPLY:...]] tags. You MUST output those questions EXACTLY as written - copy the full text including the [[QUICK_REPLY:...]] part. Do NOT paraphrase or reword questions. Do NOT drop the [[QUICK_REPLY:...]] tags.
+
 MANDATORY QUICK REPLY RULE: Every question with a finite set of answers MUST end with [[QUICK_REPLY:option1|option2|...]]. There are NO exceptions.
 - Yes/No questions: always [[QUICK_REPLY:Yes|No]] or [[QUICK_REPLY:Yes|No|Not sure]]
-- Binary choice: [[QUICK_REPLY:Option A|Option B]]
-- Multiple choice: [[QUICK_REPLY:A|B|C]]
-Examples of questions that MUST have quick replies:
-- "Have they been PGT-A tested?" → [[QUICK_REPLY:Yes|No|Not sure]]
-- "Do you need help finding a surrogate?" → [[QUICK_REPLY:Yes, I need help finding one|No, I already have one]]
-- "Are you doing this solo or with a partner?" → [[QUICK_REPLY:Solo|With a partner|As a couple]]
-NEVER ask a binary or multiple-choice question as plain text only. If a question has clear answer options, attach [[QUICK_REPLY]].
+- "Do you already have frozen embryos?" MUST end with [[QUICK_REPLY:Yes, I do|No, not yet|Working to create them]]
+- "Have they been PGT-A tested?" MUST end with [[QUICK_REPLY:Yes|No|I'm not sure]]
+- "Do you need help finding a surrogate?" MUST end with [[QUICK_REPLY:Yes, I need help finding one|No, I already have one]]
+NEVER output a question with clear answer options as plain text without [[QUICK_REPLY]].
 SAVE FORMAT: Use [[SAVE:{"field":"value"}]] to save stated preferences immediately.
 
 ${conversationFlow}
