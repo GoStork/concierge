@@ -1,19 +1,17 @@
 import { Injectable, Inject } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 @Injectable()
 export class KnowledgeService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async generateEmbedding(text: string): Promise<number[]> {
-    const response = await openai.embeddings.create({
-      model: "text-embedding-3-small",
-      input: text,
-    });
-    return response.data[0].embedding;
+    const model = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
+    const result = await model.embedContent({ content: { parts: [{ text }], role: "user" }, outputDimensionality: 768 } as any);
+    return result.embedding.values;
   }
 
   chunkText(text: string, chunkSize = 300, overlap = 50): string[] {

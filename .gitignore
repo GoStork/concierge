@@ -12,3 +12,4 @@ public/
 *.jpeg
 /generated/prisma
 dump.rdb
+.mcp.json

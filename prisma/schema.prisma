@@ -79,7 +79,7 @@ model Provider {
   silentQueries        SilentQuery[]
   chatSessions         AiChatSession[]
   syncLogs             SyncLog[]
-  profileEmbedding     Unsupported("vector(1536)")?
+  profileEmbedding     Unsupported("vector(768)")?
 }
 
 model ProviderType {
@@ -549,7 +549,7 @@ model EggDonor {
   isPremium            Boolean   @default(false)
   isExperienced        Boolean   @default(false)
   lastFullSyncAt       DateTime?
-  profileEmbedding     Unsupported("vector(1536)")?
+  profileEmbedding     Unsupported("vector(768)")?
   provider             Provider  @relation(fields: [providerId], references: [id])
 
   @@unique([providerId, externalId])
@@ -613,7 +613,7 @@ model Surrogate {
   isPremium                    Boolean   @default(false)
   isExperienced                Boolean   @default(false)
   lastFullSyncAt               DateTime?
-  profileEmbedding             Unsupported("vector(1536)")?
+  profileEmbedding             Unsupported("vector(768)")?
   provider                     Provider  @relation(fields: [providerId], references: [id])
 
   @@unique([providerId, externalId])
@@ -674,7 +674,7 @@ model SpermDonor {
   iciCost              Int?
   iuiCost              Int?
   ivfCost              Int?
-  profileEmbedding     Unsupported("vector(1536)")?
+  profileEmbedding     Unsupported("vector(768)")?
   provider             Provider  @relation(fields: [providerId], references: [id])
 
   @@unique([providerId, externalId])
@@ -1136,7 +1136,7 @@ model KnowledgeChunk {
   id              String   @id @default(uuid())
   content         String
   metadata        Json?
-  embedding       Unsupported("vector(1536)")?
+  embedding       Unsupported("vector(768)")?
   sourceTier      Int      @default(1)
   providerId      String?
   sourceType      String   @default("DOCUMENT")

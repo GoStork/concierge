@@ -7,12 +7,12 @@ import {
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 const cleanExternalId = (eid: string | null | undefined) => eid ? eid.replace(/^[a-zA-Z]+-/, "") : null;
 
 function parseHeightToInches(h: string | null | undefined): number {
@@ -26,13 +26,11 @@ function parseHeightToInches(h: string | null | undefined): number {
 
 
 async function generateSearchEmbedding(text: string): Promise<number[] | null> {
-  if (!text || !process.env.OPENAI_API_KEY) return null;
+  if (!text || !process.env.GEMINI_API_KEY) return null;
   try {
-    const response = await openai.embeddings.create({
-      model: "text-embedding-3-small",
-      input: text,
-    });
-    return response.data[0].embedding;
+    const model = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
+    const result = await model.embedContent({ content: { parts: [{ text }], role: "user" }, outputDimensionality: 768 } as any);
+    return result.embedding.values;
   } catch (e) {
     return null;
   }
@@ -1818,11 +1816,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const maxRes = kbMaxResults || 5;
 
       try {
-        const embeddingResponse = await openai.embeddings.create({
-          model: "text-embedding-3-small",
-          input: kbQuery,
-        });
-        const embedding = embeddingResponse.data[0].embedding;
+        const embeddingModel = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
+        const embeddingResult = await embeddingModel.embedContent({ content: { parts: [{ text: kbQuery }], role: "user" }, outputDimensionality: 768 } as any);
+        const embedding = embeddingResult.embedding.values;
         const vectorStr = `[${embedding.join(",")}]`;
 
         let results: any[];

@@ -2,13 +2,11 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createHash } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
-import OpenAI from "openai";
 import { PrismaService } from "../prisma/prisma.service";
 import { recalcAndPersistTotalCostsForProvider } from "../costs/total-cost.utils";
 import type { StorageService } from "../storage/storage.service";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export function profileDataToText(profileData: any): string {
   if (!profileData) return "";
@@ -35,13 +33,11 @@ export function profileDataToText(profileData: any): string {
 }
 
 async function generateProfileEmbedding(text: string): Promise<number[] | null> {
-  if (!text || text.length < 20 || !process.env.OPENAI_API_KEY) return null;
+  if (!text || text.length < 20 || !process.env.GEMINI_API_KEY) return null;
   try {
-    const response = await openaiClient.embeddings.create({
-      model: "text-embedding-3-small",
-      input: text,
-    });
-    return response.data[0].embedding;
+    const model = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
+    const result = await model.embedContent({ content: { parts: [{ text }], role: "user" }, outputDimensionality: 768 } as any);
+    return result.embedding.values;
   } catch (e: any) {
     console.error("Embedding generation failed:", e.message);
     return null;
