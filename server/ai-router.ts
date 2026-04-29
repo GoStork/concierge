@@ -270,22 +270,24 @@ function escapeHtml(str: string): string {
 }
 
 async function findLatestMatchCard(sessionId: string): Promise<any | null> {
-  const richMessages = await prisma.aiChatMessage.findMany({
-    where: { sessionId, uiCardType: "rich" },
-    orderBy: { createdAt: "desc" },
-    take: 20,
-    select: { uiCardData: true },
-  });
+  const [richMessages, anyMatchCardMessages] = await Promise.all([
+    prisma.aiChatMessage.findMany({
+      where: { sessionId, uiCardType: "rich" },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: { uiCardData: true },
+    }),
+    prisma.aiChatMessage.findMany({
+      where: { sessionId, NOT: { uiCardData: { equals: null } } },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: { uiCardData: true },
+    }),
+  ]);
   for (const msg of richMessages) {
     const mc = (msg.uiCardData as any)?.matchCards?.[0];
     if (mc?.providerId && mc?.type) return mc;
   }
-  const anyMatchCardMessages = await prisma.aiChatMessage.findMany({
-    where: { sessionId, NOT: { uiCardData: { equals: null } } },
-    orderBy: { createdAt: "desc" },
-    take: 20,
-    select: { uiCardData: true },
-  });
   for (const msg of anyMatchCardMessages) {
     const mc = (msg.uiCardData as any)?.matchCards?.[0];
     if (mc?.providerId && mc?.type) return mc;
@@ -1230,6 +1232,25 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       getCachedMcpTools(mcpClient),
     ]);
 
+    const profile = (userRecord as any)?.parentAccount?.intendedParentProfile;
+
+    // Kick off clinic lookup in parallel with synchronous context-building below
+    const clinicLookupPromise = (profile?.needsClinic === false && profile?.currentClinicName)
+      ? prisma.provider.findFirst({
+          where: { name: { contains: profile.currentClinicName, mode: "insensitive" }, type: { in: ["IVF_CLINIC", "FERTILITY_CLINIC"] } },
+          select: {
+            name: true,
+            ivfSurrogateMinAge: true, ivfSurrogateMaxAge: true,
+            ivfSurrogateMinBmi: true, ivfSurrogateMaxBmi: true,
+            ivfSurrogateMaxDeliveries: true, ivfSurrogateMaxCSections: true,
+            ivfSurrogateMaxMiscarriages: true, ivfSurrogateMaxAbortions: true,
+            ivfSurrogateCovidVaccination: true,
+            ivfMaxAgeIp1: true, ivfMaxAgeIp2: true,
+            ivfTwinsAllowed: true, ivfAcceptingPatients: true,
+          },
+        })
+      : Promise.resolve(null);
+
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = chatHistory.map(
       (msg) => ({
         role: msg.role as "user" | "assistant" | "system",
@@ -1249,7 +1270,6 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     const state = userRecord?.state || "";
     const country = (userRecord as any)?.country || "";
     const location = city && state ? `${city}, ${state}` : city || state || "your area";
-    const profile = (userRecord as any)?.parentAccount?.intendedParentProfile;
     const services: string[] = profile?.interestedServices || [];
     const service = services.length ? services.join(" and ") : "fertility services";
 
@@ -1311,19 +1331,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         // Inject IVF clinic surrogate requirements so AI can advise parents and pass clinicName to search
         if (profile.currentClinicName) {
           try {
-            const clinicProvider = await prisma.provider.findFirst({
-              where: { name: { contains: profile.currentClinicName, mode: "insensitive" }, type: { in: ["IVF_CLINIC", "FERTILITY_CLINIC"] } },
-              select: {
-                name: true,
-                ivfSurrogateMinAge: true, ivfSurrogateMaxAge: true,
-                ivfSurrogateMinBmi: true, ivfSurrogateMaxBmi: true,
-                ivfSurrogateMaxDeliveries: true, ivfSurrogateMaxCSections: true,
-                ivfSurrogateMaxMiscarriages: true, ivfSurrogateMaxAbortions: true,
-                ivfSurrogateCovidVaccination: true,
-                ivfMaxAgeIp1: true, ivfMaxAgeIp2: true,
-                ivfTwinsAllowed: true, ivfAcceptingPatients: true,
-              },
-            });
+            const clinicProvider = await clinicLookupPromise;
             if (clinicProvider) {
               const surReqs: string[] = [];
               if (clinicProvider.ivfSurrogateMinAge != null || clinicProvider.ivfSurrogateMaxAge != null)
