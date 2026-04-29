@@ -1,10 +1,203 @@
 import { Router, Request, Response } from "express";
 import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { prisma } from "./db";
 import path from "path";
 import { isUserOnline } from "./online-tracker";
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const geminiAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+
+// -------------------------------------------------------------------------
+// SSE helpers
+// -------------------------------------------------------------------------
+function setupSSE(res: Response) {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+  return {
+    sendToken: (delta: string) => res.write(`data: ${JSON.stringify({ type: "token", delta })}\n\n`),
+    sendDone: (payload: object) => { res.write(`data: ${JSON.stringify({ type: "done", ...payload })}\n\n`); res.end(); },
+    sendError: (msg: string) => { res.write(`data: ${JSON.stringify({ type: "error", message: msg })}\n\n`); res.end(); },
+  };
+}
+type SSEHandle = ReturnType<typeof setupSSE>;
+
+// -------------------------------------------------------------------------
+// Tier 1: Gemini 2.5 Flash - fast conversational turns before [[CURATION]]
+// -------------------------------------------------------------------------
+async function callTier1Gemini(
+  systemPrompt: string,
+  messages: any[],
+  sse: SSEHandle
+): Promise<string> {
+  const model = geminiAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+  // Collect inline system messages and merge into the system instruction
+  const inlineSysT1 = messages
+    .filter((m) => m.role === "system")
+    .map((m) => (typeof m.content === "string" ? m.content : ""))
+    .filter(Boolean);
+  const fullSystemT1 = inlineSysT1.length > 1
+    ? inlineSysT1.join("\n\n---\n\n")
+    : systemPrompt;
+
+  const history = messages
+    .filter((m) => m.role !== "system")
+    .slice(0, -1)
+    .map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: typeof m.content === "string" ? m.content : JSON.stringify(m.content) }],
+    }));
+
+  const lastMsg = messages[messages.length - 1];
+  const userMessage = typeof lastMsg?.content === "string" ? lastMsg.content : JSON.stringify(lastMsg?.content);
+
+  const chat = model.startChat({
+    systemInstruction: fullSystemT1,
+    history,
+  });
+
+  const result = await chat.sendMessageStream(userMessage);
+  let fullText = "";
+  for await (const chunk of result.stream) {
+    const text = chunk.text();
+    if (text) {
+      fullText += text;
+      sse.sendToken(text);
+    }
+  }
+  return fullText;
+}
+
+// -------------------------------------------------------------------------
+// Tier 2: Claude Sonnet 4.6 - matching, tool calls, complex rules
+// -------------------------------------------------------------------------
+async function callTier2Claude(
+  systemPrompt: string,
+  messages: any[],
+  openAiTools: any[],
+  sse: SSEHandle,
+  mcpClientRef: Client | null
+): Promise<{ content: string; toolCallsExecuted: boolean }> {
+  // Collect all inline system messages (injected throughout the messages array) and
+  // append them to the main system prompt, since Anthropic only supports system content
+  // in the top-level "system" field - not as role:"system" entries in the messages array.
+  const inlineSystemParts: string[] = [];
+  for (const m of messages) {
+    if (m.role === "system" && typeof m.content === "string") {
+      inlineSystemParts.push(m.content);
+    }
+  }
+  const fullSystemPrompt = inlineSystemParts.length > 1
+    ? inlineSystemParts.join("\n\n---\n\n") // merge all; first entry is the main system prompt
+    : systemPrompt;
+
+  // Convert to Anthropic message format (no system role)
+  const anthropicMessages: Anthropic.Messages.MessageParam[] = messages
+    .filter((m) => m.role !== "system")
+    .map((m) => ({
+      role: (m.role === "assistant" ? "assistant" : "user") as "assistant" | "user",
+      content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+    }));
+
+  // Prompt caching on the system prompt - 90% cost reduction after first cache hit
+  const systemWithCache: Anthropic.Messages.TextBlockParam[] = [
+    {
+      type: "text",
+      text: fullSystemPrompt,
+      // @ts-ignore - cache_control is supported by the API
+      cache_control: { type: "ephemeral" },
+    },
+  ];
+
+  // Convert OpenAI tools to Anthropic format
+  const anthropicTools: Anthropic.Messages.Tool[] = openAiTools.map((t) => ({
+    name: t.function.name,
+    description: t.function.description || "",
+    input_schema: t.function.parameters as Anthropic.Messages.Tool["input_schema"],
+  }));
+
+  let currentMessages = [...anthropicMessages];
+  let toolCallsExecuted = false;
+
+  while (true) {
+    const hasTools = anthropicTools.length > 0;
+
+    if (!toolCallsExecuted) {
+      // First call - non-streaming to detect tool use
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 4096,
+        // @ts-ignore
+        system: systemWithCache,
+        messages: currentMessages,
+        ...(hasTools ? { tools: anthropicTools } : {}),
+      });
+
+      if (response.stop_reason === "tool_use") {
+        toolCallsExecuted = true;
+        const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
+
+        for (const block of response.content) {
+          if (block.type === "tool_use" && mcpClientRef) {
+            try {
+              const toolResult = await mcpClientRef.callTool({
+                name: block.name,
+                arguments: block.input as Record<string, unknown>,
+              });
+              const resultText = (toolResult.content as any)?.[0]?.text || JSON.stringify(toolResult);
+              toolResults.push({ type: "tool_result", tool_use_id: block.id, content: resultText });
+            } catch (e: any) {
+              toolResults.push({ type: "tool_result", tool_use_id: block.id, content: `Error: ${e.message}`, is_error: true });
+            }
+          }
+        }
+
+        currentMessages = [
+          ...currentMessages,
+          { role: "assistant" as const, content: response.content },
+          { role: "user" as const, content: toolResults },
+        ];
+        continue; // loop again to get final response
+      } else {
+        // No tool calls - stream this response word by word
+        const textBlock = response.content.find((b) => b.type === "text");
+        const text = textBlock?.type === "text" ? textBlock.text : "";
+        const words = text.split(" ");
+        for (const word of words) {
+          sse.sendToken(word + " ");
+          await new Promise((r) => setTimeout(r, 0));
+        }
+        return { content: text, toolCallsExecuted: false };
+      }
+    } else {
+      // After tool calls - true streaming
+      const stream = await anthropic.messages.stream({
+        model: "claude-sonnet-4-6",
+        max_tokens: 4096,
+        // @ts-ignore
+        system: systemWithCache,
+        messages: currentMessages,
+      });
+
+      let fullText = "";
+      for await (const event of stream) {
+        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          const text = event.delta.text;
+          fullText += text;
+          sse.sendToken(text);
+        }
+      }
+      return { content: fullText, toolCallsExecuted: true };
+    }
+  }
+}
 
 // Clean session titles: strip alphabetic prefixes from IDs (e.g. "Surrogate #pdf-23068" → "Surrogate #23068")
 function cleanTitle(title: string | null | undefined): string | null {
@@ -879,7 +1072,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
     const currentSession = await prisma.aiChatSession.findUnique({
       where: { id: currentSessionId },
-      select: { providerJoinedAt: true, providerId: true, status: true, humanRequested: true, humanJoinedAt: true, humanConcludedAt: true },
+      select: { providerJoinedAt: true, providerId: true, status: true, humanRequested: true, humanJoinedAt: true, humanConcludedAt: true, tier2Active: true },
     });
 
     // If a GoStork human concierge has joined and not yet concluded, silence the AI
@@ -983,6 +1176,9 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         humanNeeded: humanEscalationTriggered,
       });
     }
+
+    // Set up SSE streaming - all AI responses from here forward use SSE
+    const sse = setupSSE(res);
 
     // Parallelize all independent queries for performance
     const matchmakerId = req.body.matchmakerId;
@@ -2510,57 +2706,47 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
 3. CURATION BEFORE SEARCH: After collecting preferences (B1 for egg donors, D1-D3 for surrogates), you MUST send [[CURATION]] first. Only call search tools AFTER receiving "ready". If the parent already said "ready" and [[CURATION]] was already sent, call search tools immediately - do NOT send [[CURATION]] again.`,
     });
 
-    let response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages,
-      tools: needsTools && openAiTools.length > 0 ? openAiTools : undefined,
-    });
-
-    let responseMessage = response.choices[0].message;
+    // -------------------------------------------------------------------------
+    // TIER ROUTING: Tier 1 (Gemini 2.5 Flash) for early turns, Tier 2 (Claude
+    // Sonnet 4.6) once [[CURATION]] fires or for all tool-calling turns.
+    // One-way door: tier2Active stays true for all subsequent turns.
+    // -------------------------------------------------------------------------
+    const useTier2 = !!(currentSession?.tier2Active);
+    let finalContent = "";
     let lastSearchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] = [];
 
-    while (
-      responseMessage.tool_calls &&
-      responseMessage.tool_calls.length > 0 &&
-      mcpClient
-    ) {
-      messages.push(responseMessage);
+    // Extract the system prompt text (first message in messages array after unshift)
+    const systemPromptForTiers = typeof messages[0]?.content === "string" ? messages[0].content : "";
 
-      for (const toolCall of responseMessage.tool_calls) {
-        const toolArgs = JSON.parse(toolCall.function.arguments);
-        if (toolCall.function.name === "get_ip_profile") {
-          toolArgs.userId = userId;
-        }
-        const mcpResult = await mcpClient.callTool({
-          name: toolCall.function.name,
-          arguments: toolArgs,
-        });
-
-        const resultText = mcpResult.content
-          .map((c: any) => (c.type === "text" ? c.text : ""))
-          .join("\n");
-        messages.push({
-          role: "tool",
-          tool_call_id: toolCall.id,
-          content: resultText,
-        });
-
-        const searchTools = ["search_surrogates", "search_egg_donors", "search_sperm_donors", "search_clinics"];
-        if (searchTools.includes(toolCall.function.name)) {
-          lastSearchToolResults.push({ toolName: toolCall.function.name, resultText, toolArgs });
-        }
-      }
-
-      response = await openai.chat.completions.create({
-        model: "gpt-4o",
+    if (useTier2) {
+      // Tier 2: Claude Sonnet 4.6 with full prompt + caching + tools
+      const tier2Result = await callTier2Claude(
+        systemPromptForTiers,
         messages,
-        tools: openAiTools,
-      });
-      responseMessage = response.choices[0].message;
+        needsTools && openAiTools.length > 0 ? openAiTools : [],
+        sse,
+        mcpClient
+      );
+      finalContent = tier2Result.content || "I'm sorry, I couldn't process that.";
+    } else {
+      // Tier 1: Gemini 2.5 Flash - no tools, trimmed context
+      // Build a Tier 1 system prompt excluding matching/advisory rules to save tokens
+      const tier1SystemPrompt = [
+        systemPromptForTiers.split("STEP 5 - SERVICE DEEP DIVES")[0], // Phase 0-2 only
+        "\nDo not call any search tools. Do not show MATCH_CARD. Collect preferences and guide the conversation.",
+      ].join("");
+
+      finalContent = await callTier1Gemini(tier1SystemPrompt, messages, sse);
+      if (!finalContent) finalContent = "I'm sorry, I couldn't process that.";
     }
 
-    let finalContent =
-      responseMessage.content || "I'm sorry, I couldn't process that.";
+    // One-way door: [[CURATION]] in response permanently activates Tier 2
+    if (!useTier2 && finalContent.includes("[[CURATION]]")) {
+      prisma.aiChatSession.update({
+        where: { id: currentSessionId },
+        data: { tier2Active: true },
+      }).catch((e: any) => console.error("[TIER ROUTER] Failed to activate tier2:", e));
+    }
 
     // QUESTION INTERCEPTOR: Detect when parent asked a question about a presented profile
     // but the AI ignored it and showed a new match card instead.
@@ -4182,7 +4368,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }).catch(() => {});
     }
 
-    res.json({
+    sse.sendDone({
       sessionId: replySessionId,
       userMessageId: savedUserMsg?.id ?? null,
       userMessageDeliveredAt: now.toISOString(),
@@ -4198,6 +4384,12 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     });
   } catch (error: any) {
     console.error("AI Router Error:", error);
-    res.status(500).json({ error: error.message });
+    // If SSE was already started, send error via SSE; otherwise fall back to JSON
+    try {
+      res.write(`data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`);
+      res.end();
+    } catch {
+      if (!res.headersSent) res.status(500).json({ error: error.message });
+    }
   }
 });

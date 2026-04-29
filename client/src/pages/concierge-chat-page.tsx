@@ -2739,7 +2739,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       // Step 3: Call AI with attachmentData - it saves ONE unified user message (text + attachment)
       const aiRes = await fetch("/api/ai-concierge/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
         credentials: "include",
         body: JSON.stringify({
           message: aiText,
@@ -2755,24 +2755,52 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         throw new Error(errData.error || `AI request failed (${aiRes.status})`);
       }
 
-      const aiData = await aiRes.json();
+      // Parse SSE stream for file upload response
+      const streamingUploadId = `streaming-upload-${Date.now()}`;
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: streamingUploadId } : m));
+
+      let aiData: any = null;
+      const aiReader = aiRes.body?.getReader();
+      const aiDecoder = new TextDecoder();
+      let aiBuf = "";
+      if (aiReader) {
+        setMessages(prev => [...prev, { role: "assistant" as const, content: "", id: `${streamingUploadId}-ai`, createdAt: new Date().toISOString() }]);
+        while (true) {
+          const { done, value } = await aiReader.read();
+          if (done) break;
+          aiBuf += aiDecoder.decode(value, { stream: true });
+          const aiLines = aiBuf.split("\n");
+          aiBuf = aiLines.pop() ?? "";
+          for (const ln of aiLines) {
+            if (!ln.startsWith("data: ")) continue;
+            let ev: any;
+            try { ev = JSON.parse(ln.slice(6).trim()); } catch { continue; }
+            if (ev.type === "token") {
+              setMessages(prev => prev.map(m => m.id === `${streamingUploadId}-ai` ? { ...m, content: m.content + ev.delta } : m));
+            } else if (ev.type === "done") {
+              aiData = ev;
+            }
+          }
+        }
+      }
 
       // Step 4: Update session ID if new session was created
-      if (aiData.sessionId && aiData.sessionId !== sessionId) {
+      if (aiData?.sessionId && aiData.sessionId !== sessionId) {
         setSessionId(aiData.sessionId);
         queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
       }
 
-      // Remove optimistic - real user message was saved by AI endpoint
-      setMessages(prev => prev.filter(m => m.id !== tempId));
+      // Remove optimistic upload message - real user message was saved by AI endpoint
+      setMessages(prev => prev.filter(m => m.id !== streamingUploadId));
 
-      // Show AI response
-      if (aiData.message?.content) {
+      // Finalize AI response bubble
+      if (aiData?.message?.content) {
         const aiMsgId = aiData.message.id;
-        setMessages(prev => {
-          if (aiMsgId && prev.some(m => m.id === aiMsgId)) return prev;
-          return [...prev, {
-            role: "assistant" as const,
+        setMessages(prev => prev.map(m => {
+          if (m.id !== `${streamingUploadId}-ai`) return m;
+          if (aiMsgId && prev.some(x => x.id === aiMsgId && x.id !== m.id)) return null as any;
+          return {
+            ...m,
             content: aiData.message.content,
             createdAt: aiData.message.createdAt || now,
             id: aiMsgId,
@@ -2780,8 +2808,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             matchCards: aiData.matchCards,
             senderType: aiData.message.senderType,
             senderName: aiData.message.senderName,
-          }];
-        });
+          };
+        }).filter(Boolean));
         if (aiData.message.id) knownMessageIds.current.add(aiData.message.id);
       }
 
@@ -3444,10 +3472,16 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     }
     setSending(true);
 
+    // Unique key to track the streaming placeholder message
+    const streamingId = `streaming-${Date.now()}`;
+
     try {
       const res = await fetch("/api/ai-concierge/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "text/event-stream",
+        },
         credentials: "include",
         body: JSON.stringify({
           message: userMessage,
@@ -3457,72 +3491,124 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       });
 
       if (!res.ok) throw new Error("Chat request failed");
-      const data = await res.json();
-      if (data.sessionId && data.sessionId !== sessionId) {
-        setSessionId(data.sessionId);
-        queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
-      }
 
-      if (data.userMessageId) {
-        knownMessageIds.current.add(data.userMessageId);
-        // Back-fill the optimistic user message with its real id + deliveredAt + readAt
-        setMessages(prev => prev.map(m =>
-          m.role === "user" && m.content === userMessage && !m.id
-            ? { ...m, id: data.userMessageId, deliveredAt: data.userMessageDeliveredAt || null, readAt: data.userMessageReadAt || null }
-            : m
-        ));
-        // Update sidebar delivery status
-        if (data.userMessageDeliveredAt && sessionId) {
-          queryClient.setQueryData<any[]>(["/api/my/chat-sessions"], (old) =>
-            old?.map(s => s.id === sessionId ? { ...s, lastMessageDeliveredAt: data.userMessageDeliveredAt } : s)
-          );
-        }
-      }
-
-      if (data.humanNeeded) {
-        setHumanEscalated(true);
-      }
-      if (data.skipAiResponse) {
-        setSending(false);
-        sendingRef.current = false;
-        return;
-      }
-      if (data.consultationCard) {
-        // Open the right-side panel as soon as the AI connects the parent with a provider
-        if (data.consultationCard.providerName) setProviderChatName(data.consultationCard.providerName);
-        setProviderInChat(true);
-      }
-
-      if (data.message.id) knownMessageIds.current.add(data.message.id);
-
-      const newMessage: ChatMessage = {
-        role: "assistant",
-        content: data.message.content,
-        id: data.message.id,
-        quickReplies: data.quickReplies,
-        multiSelect: data.multiSelect,
-        matchCards: data.matchCards,
-        prepDoc: data.prepDoc,
-        consultationCard: data.consultationCard,
-        agreementCard: data.agreementCard,
-        senderType: data.message.senderType,
-        senderName: data.message.senderName,
-        deliveredAt: data.message.deliveredAt,
-        readAt: data.message.readAt,
-        createdAt: data.message.createdAt || new Date().toISOString(),
-      };
-
-      if (data.showCuration) {
-        setMessages((prev) => [...prev, newMessage]);
-        setPendingCurationMessage(newMessage);
-        curationAwaitingRef.current = true;
-      } else {
-        setMessages((prev) => [...prev, newMessage]);
-      }
-    } catch {
+      // Add a streaming placeholder bubble immediately
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "I'm sorry, I'm having trouble connecting right now. Please try again.", createdAt: new Date().toISOString() },
+        { role: "assistant" as const, content: "", id: streamingId, createdAt: new Date().toISOString() },
+      ]);
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      if (!reader) throw new Error("No response body");
+
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? ""; // keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+
+          let event: any;
+          try { event = JSON.parse(jsonStr); } catch { continue; }
+
+          if (event.type === "token") {
+            // Append streamed token to the placeholder bubble
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === streamingId ? { ...m, content: m.content + event.delta } : m
+              )
+            );
+          } else if (event.type === "done") {
+            const data = event;
+
+            if (data.sessionId && data.sessionId !== sessionId) {
+              setSessionId(data.sessionId);
+              queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
+            }
+
+            if (data.userMessageId) {
+              knownMessageIds.current.add(data.userMessageId);
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.role === "user" && m.content === userMessage && !m.id
+                    ? { ...m, id: data.userMessageId, deliveredAt: data.userMessageDeliveredAt || null, readAt: data.userMessageReadAt || null }
+                    : m
+                )
+              );
+              if (data.userMessageDeliveredAt && sessionId) {
+                queryClient.setQueryData<any[]>(["/api/my/chat-sessions"], (old) =>
+                  old?.map((s) => s.id === sessionId ? { ...s, lastMessageDeliveredAt: data.userMessageDeliveredAt } : s)
+                );
+              }
+            }
+
+            if (data.humanNeeded) setHumanEscalated(true);
+
+            if (data.skipAiResponse) {
+              // Remove the streaming placeholder
+              setMessages((prev) => prev.filter((m) => m.id !== streamingId));
+              setSending(false);
+              sendingRef.current = false;
+              return;
+            }
+
+            if (data.consultationCard) {
+              if (data.consultationCard.providerName) setProviderChatName(data.consultationCard.providerName);
+              setProviderInChat(true);
+            }
+
+            if (data.message?.id) knownMessageIds.current.add(data.message.id);
+
+            const finalMsg: ChatMessage = {
+              role: "assistant",
+              content: data.message?.content ?? "",
+              id: data.message?.id,
+              quickReplies: data.quickReplies,
+              multiSelect: data.multiSelect,
+              matchCards: data.matchCards,
+              prepDoc: data.prepDoc,
+              consultationCard: data.consultationCard,
+              agreementCard: data.agreementCard,
+              senderType: data.message?.senderType,
+              senderName: data.message?.senderName,
+              deliveredAt: data.message?.deliveredAt,
+              readAt: data.message?.readAt,
+              createdAt: data.message?.createdAt || new Date().toISOString(),
+            };
+
+            // Replace the streaming placeholder with the finalized message
+            if (data.showCuration) {
+              setMessages((prev) => prev.map((m) => m.id === streamingId ? finalMsg : m));
+              setPendingCurationMessage(finalMsg);
+              curationAwaitingRef.current = true;
+            } else {
+              setMessages((prev) => prev.map((m) => m.id === streamingId ? finalMsg : m));
+            }
+          } else if (event.type === "error") {
+            setMessages((prev) => prev.filter((m) => m.id !== streamingId));
+            setMessages((prev) => [
+              ...prev,
+              { role: "assistant" as const, content: "I'm sorry, I'm having trouble connecting right now. Please try again.", createdAt: new Date().toISOString() },
+            ]);
+          }
+        }
+      }
+    } catch {
+      // Remove streaming placeholder on error
+      setMessages((prev) => prev.filter((m) => m.id !== streamingId));
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant" as const, content: "I'm sorry, I'm having trouble connecting right now. Please try again.", createdAt: new Date().toISOString() },
       ]);
     } finally {
       setSending(false);
@@ -3562,10 +3648,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     // Send "ready" silently (not visible in chat) to trigger match search
     setSending(true);
     sendingRef.current = true;
+    const curationStreamId = `streaming-curation-${Date.now()}`;
     try {
       const res = await fetch("/api/ai-concierge/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
         credentials: "include",
         body: JSON.stringify({
           message: "ready",
@@ -3574,35 +3661,64 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         }),
       });
       if (!res.ok) throw new Error("Chat request failed");
-      const data = await res.json();
-      if (data.sessionId && data.sessionId !== sessionId) {
-        setSessionId(data.sessionId);
-        queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
+
+      // Add streaming placeholder
+      setMessages((prev) => [...prev, { role: "assistant" as const, content: "", id: curationStreamId, createdAt: new Date().toISOString() }]);
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            let ev: any;
+            try { ev = JSON.parse(line.slice(6).trim()); } catch { continue; }
+            if (ev.type === "token") {
+              setMessages((prev) => prev.map((m) => m.id === curationStreamId ? { ...m, content: m.content + ev.delta } : m));
+            } else if (ev.type === "done") {
+              const data = ev;
+              if (data.sessionId && data.sessionId !== sessionId) {
+                setSessionId(data.sessionId);
+                queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
+              }
+              if (data.skipAiResponse) {
+                setMessages((prev) => prev.filter((m) => m.id !== curationStreamId));
+                return;
+              }
+              if (data.humanNeeded) setHumanEscalated(true);
+              if (data.message?.id) knownMessageIds.current.add(data.message.id);
+              const newMessage: ChatMessage = {
+                role: "assistant",
+                content: data.message?.content ?? "",
+                id: data.message?.id,
+                quickReplies: data.quickReplies,
+                multiSelect: data.multiSelect,
+                matchCards: data.matchCards,
+                prepDoc: data.prepDoc,
+                consultationCard: data.consultationCard,
+                agreementCard: data.agreementCard,
+                senderType: data.message?.senderType,
+                senderName: data.message?.senderName,
+                deliveredAt: data.message?.deliveredAt,
+                readAt: data.message?.readAt,
+                createdAt: data.message?.createdAt || new Date().toISOString(),
+              };
+              setMessages((prev) => prev.map((m) => m.id === curationStreamId ? newMessage : m));
+            }
+          }
+        }
       }
-      if (data.skipAiResponse) return;
-      if (data.humanNeeded) setHumanEscalated(true);
-      if (data.message?.id) knownMessageIds.current.add(data.message.id);
-      const newMessage: ChatMessage = {
-        role: "assistant",
-        content: data.message.content,
-        id: data.message.id,
-        quickReplies: data.quickReplies,
-        multiSelect: data.multiSelect,
-        matchCards: data.matchCards,
-        prepDoc: data.prepDoc,
-        consultationCard: data.consultationCard,
-        agreementCard: data.agreementCard,
-        senderType: data.message.senderType,
-        senderName: data.message.senderName,
-        deliveredAt: data.message.deliveredAt,
-        readAt: data.message.readAt,
-        createdAt: data.message.createdAt || new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, newMessage]);
     } catch {
+      setMessages((prev) => prev.filter((m) => m.id !== curationStreamId));
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "I'm sorry, I'm having trouble connecting right now. Please try again.", createdAt: new Date().toISOString() },
+        { role: "assistant" as const, content: "I'm sorry, I'm having trouble connecting right now. Please try again.", createdAt: new Date().toISOString() },
       ]);
     } finally {
       setSending(false);
@@ -3975,7 +4091,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                           await loadMessagesForSession(sessionId);
                           fetch("/api/ai-concierge/chat", {
                             method: "POST",
-                            headers: { "Content-Type": "application/json" },
+                            headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
                             credentials: "include",
                             body: JSON.stringify({
                               message: "consultation_callback_submitted",
@@ -3983,8 +4099,24 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                               matchmakerId: effectiveMatchmakerIdRef.current,
                               isSystemTrigger: true,
                             }),
-                          }).then(r => r.ok ? r.json() : null).then(data => {
-                            if (data && sessionId) loadMessagesForSession(sessionId);
+                          }).then(async (r) => {
+                            if (!r.ok || !r.body) return;
+                            const rd = r.body.getReader();
+                            const dc = new TextDecoder();
+                            let b = "";
+                            while (true) {
+                              const { done, value } = await rd.read();
+                              if (done) break;
+                              b += dc.decode(value, { stream: true });
+                              const ls = b.split("\n");
+                              b = ls.pop() ?? "";
+                              for (const l of ls) {
+                                if (!l.startsWith("data: ")) continue;
+                                let ev: any;
+                                try { ev = JSON.parse(l.slice(6).trim()); } catch { continue; }
+                                if (ev.type === "done" && sessionId) loadMessagesForSession(sessionId);
+                              }
+                            }
                           }).catch(() => {});
                         }
                       }, 800);
@@ -4222,7 +4354,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 // Send a hidden trigger so the AI continues with the next pending match cycle
                 fetch("/api/ai-concierge/chat", {
                   method: "POST",
-                  headers: { "Content-Type": "application/json" },
+                  headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
                   credentials: "include",
                   body: JSON.stringify({
                     message: "consultation_callback_submitted",
@@ -4230,8 +4362,24 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                     matchmakerId: effectiveMatchmakerIdRef.current,
                     isSystemTrigger: true,
                   }),
-                }).then(r => r.ok ? r.json() : null).then(data => {
-                  if (data && sessionId) loadMessagesForSession(sessionId);
+                }).then(async (r) => {
+                  if (!r.ok || !r.body) return;
+                  const rd = r.body.getReader();
+                  const dc = new TextDecoder();
+                  let b = "";
+                  while (true) {
+                    const { done, value } = await rd.read();
+                    if (done) break;
+                    b += dc.decode(value, { stream: true });
+                    const ls = b.split("\n");
+                    b = ls.pop() ?? "";
+                    for (const l of ls) {
+                      if (!l.startsWith("data: ")) continue;
+                      let ev: any;
+                      try { ev = JSON.parse(l.slice(6).trim()); } catch { continue; }
+                      if (ev.type === "done" && sessionId) loadMessagesForSession(sessionId);
+                    }
+                  }
                 }).catch(() => {});
               }
             }, 800);
