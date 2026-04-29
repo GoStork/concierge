@@ -1,5 +1,4 @@
 import { Router, Request, Response } from "express";
-import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -237,14 +236,28 @@ function assemblePromptFromSections(sections: Map<string, string>, sectionKeys: 
   return sectionKeys.map(k => sections.get(k) || "").filter(Boolean).join("\n\n");
 }
 
+// Simple non-streaming Claude call for interceptor retries (replaces gpt-4o retries)
+async function claudeRetry(messages: any[]): Promise<string> {
+  const systemMsg = messages.find((m: any) => m.role === "system");
+  const conversationMsgs = messages
+    .filter((m: any) => m.role === "user" || m.role === "assistant")
+    .map((m: any) => ({ role: m.role as "user" | "assistant", content: typeof m.content === "string" ? m.content : JSON.stringify(m.content) }));
+  const res = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 1024,
+    ...(systemMsg ? { system: systemMsg.content } : {}),
+    messages: conversationMsgs,
+  });
+  return res.content[0].type === "text" ? res.content[0].text : "";
+}
+
 export const aiRouter = Router();
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Cache MCP tools list - refreshed every 5 minutes instead of every message
-let cachedOpenAiTools: OpenAI.Chat.ChatCompletionTool[] = [];
+let cachedOpenAiTools: any[] = [];
 let toolsCacheExpiry = 0;
 export function invalidateMcpToolsCache() { toolsCacheExpiry = 0; cachedOpenAiTools = []; }
-async function getCachedMcpTools(mcpClient: Client | null): Promise<OpenAI.Chat.ChatCompletionTool[]> {
+async function getCachedMcpTools(mcpClient: Client | null): Promise<any[]> {
   if (!mcpClient) return [];
   if (Date.now() < toolsCacheExpiry && cachedOpenAiTools.length > 0) return cachedOpenAiTools;
   try {
@@ -1251,7 +1264,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         })
       : Promise.resolve(null);
 
-    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = chatHistory.map(
+    const messages: any[] = chatHistory.map(
       (msg) => ({
         role: msg.role as "user" | "assistant" | "system",
         content: msg.content,
@@ -2856,11 +2869,7 @@ CRITICAL OVERRIDES - these override everything else:
                 content: `SYSTEM OVERRIDE: The parent asked a QUESTION about the currently presented match profile. They did NOT ask to skip or see a new match. You MUST answer their question using the profile data below. Do NOT present a new match card. Do NOT call search tools. Just answer the question.\n\nFULL PROFILE DATA:\n${profileText}\n\nParent's question: "${userMessage}"\n\nAnswer the question directly from the profile data. After answering, ask if they have more questions: "Anything else you'd like to know about ${pronounLabel}?" [[QUICK_REPLY:More questions|I like ${pronounLabel}!|Show me someone else]]`,
               });
 
-              const retryResponse = await openai.chat.completions.create({
-                model: "gpt-4o",
-                messages,
-              });
-              const retryContent = retryResponse.choices[0].message?.content;
+              const retryContent = await claudeRetry(messages);
               if (retryContent && !/\[\[MATCH_CARD:/i.test(retryContent)) {
                 console.log(`[QUESTION INTERCEPT SUCCESS] AI answered from profile data instead of showing new match`);
                 finalContent = retryContent;
@@ -2969,11 +2978,7 @@ CRITICAL OVERRIDES - these override everything else:
                 role: "user",
                 content: `SYSTEM OVERRIDE: You said you couldn't access the profile - but here it is. Answer the parent's question using this data. NEVER tell the parent there was a data access issue.\n\nFULL PROFILE DATA:\n${profileText}\n\nParent's question: "${userMessage}"\n\nIf the answer IS in the profile, respond with it directly. If it truly is NOT in the profile data, say: "Great question! Let me check on that for you - I'll have an answer shortly." and use [[WHISPER:${ownerProviderId || ""}]] to ask the agency.`,
               });
-              const retryResponse = await openai.chat.completions.create({
-                model: "gpt-4o",
-                messages,
-              });
-              const retryContent = retryResponse.choices[0].message?.content;
+              const retryContent = await claudeRetry(messages);
               if (retryContent && !accessFailurePatterns.some((p) => p.test(retryContent))) {
                 console.log(`[ACCESS-FAILURE] Step 2 SUCCESS: AI answered from profile data`);
                 finalContent = retryContent;
@@ -3000,11 +3005,7 @@ CRITICAL OVERRIDES - these override everything else:
                 role: "user",
                 content: `SYSTEM OVERRIDE: Here is relevant knowledge base information. Use it to answer the parent's question. NEVER mention data access issues.\n\nKNOWLEDGE BASE DATA:\n${kbText}\n\nParent's question: "${userMessage}"\n\nIf this answers the question, respond warmly. If not, say: "Great question! Let me check on that for you - I'll have an answer shortly." and use [[WHISPER:${ownerProviderId || ""}]] to ask the agency.`,
               });
-              const retryResponse = await openai.chat.completions.create({
-                model: "gpt-4o",
-                messages,
-              });
-              const retryContent = retryResponse.choices[0].message?.content;
+              const retryContent = await claudeRetry(messages);
               if (retryContent && !accessFailurePatterns.some((p) => p.test(retryContent))) {
                 console.log(`[ACCESS-FAILURE] Step 3 SUCCESS: AI answered from knowledge base`);
                 finalContent = retryContent;
@@ -3070,11 +3071,7 @@ CRITICAL OVERRIDES - these override everything else:
 
 NEVER promise to search without actually calling the search tool. NEVER end without either a [[MATCH_CARD]], a direct question, or a [[QUICK_REPLY]].`,
         });
-        const retryResponse = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages,
-        });
-        const retryContent = retryResponse.choices[0].message?.content;
+        const retryContent = await claudeRetry(messages);
         if (retryContent && !deadEndPatterns.some((p) => p.test(retryContent))) {
           console.log(`[DEAD-END INTERCEPT SUCCESS] AI retried with active next step`);
           finalContent = retryContent;
@@ -3509,11 +3506,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
                 content: `SYSTEM OVERRIDE: I found the full profile data for this person. Search through it carefully for the answer. Do NOT whisper or reach out to the agency UNLESS the answer truly is not here.\n\nIMPORTANT: The profile is a large JSON with nested sections. Key sections:\n- "Letter to Intended Parents" → contains _letterText and _letterTitle\n- "Pregnancy History" → entries with Weight, Delivery, Gestation\n- "Basic Information" → BMI, Height, Education\n- "Personal Information" → Location, Pets, Partner/Husband info\n- "My Health History" → medications, conditions\n- "General Interests" → hobbies, personality\n\nCRITICAL: If the answer to the question is NOT explicitly in this profile data, do NOT guess or make it up. Instead say: "Great question! I'll check with her agency on that and get back to you with the answer. In the meantime, would you like to schedule a free consultation to speak with them directly?" and use [[WHISPER:${inferredProviderId || ""}]] to ask the agency.\n\nFULL PROFILE DATA:\n${profileText}\n\nNow answer the parent's original question: "${userMessage}"`,
               });
 
-              const retryResponse = await openai.chat.completions.create({
-                model: "gpt-4o",
-                messages,
-              });
-              const retryContent = retryResponse.choices[0].message?.content;
+              const retryContent = await claudeRetry(messages);
               if (retryContent && !retryContent.includes("[[WHISPER:") && !whisperPhrasePattern.test(retryContent)) {
                 console.log(`[WHISPER INTERCEPT SUCCESS] AI answered from profile data - whisper avoided`);
                 finalContent = retryContent;
