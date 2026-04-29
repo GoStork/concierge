@@ -3688,6 +3688,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           clearInterval(typingIntervalRef.current!);
           typingIntervalRef.current = null;
           typingStreamingIdRef.current = null;
+          // Reset buffers so next message starts clean
+          typingRawRef.current = "";
+          typingDisplayedRef.current = 0;
           cb();
         }
         return;
@@ -3700,6 +3703,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       const sid = typingStreamingIdRef.current;
       if (sid) {
         setMessages(prev => prev.map(m => m.id === sid ? { ...m, content: displayContent } : m));
+      }
+      // Scroll to keep up with new text appearing, but only instant (no smooth)
+      // to avoid the stacked-smooth-scroll overshoot problem
+      if (userNearBottom.current) {
+        const container = messagesEndRef.current?.closest('[data-testid="concierge-messages"]') as HTMLElement | null;
+        if (container) container.scrollTop = container.scrollHeight;
       }
     }, 18);
   };
