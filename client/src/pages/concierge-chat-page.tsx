@@ -3423,7 +3423,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               const phase0Id = `phase0-${Date.now()}`;
               setMessages(prev => [...prev, { role: "assistant", content: "", id: phase0Id, createdAt: new Date().toISOString() }]);
               typingRawRef.current = data.phase0Content; typingDisplayedRef.current = 0;
-              typingOnDoneRef.current = null;
+              typingOnDoneRef.current = () => {}; // no-op: stops interval + resets refs when phase0 drains
               startTypingAnimation(phase0Id);
             }
           };
@@ -3433,7 +3433,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           newSessionInitRef.current = true;
           setMessages([{ role: "assistant", content: "", id: phase0Id, createdAt: new Date().toISOString() }]);
           typingRawRef.current = data.phase0Content; typingDisplayedRef.current = 0;
-          typingOnDoneRef.current = null;
+          typingOnDoneRef.current = () => {}; // no-op: stops interval + resets refs when phase0 drains
           startTypingAnimation(phase0Id);
         }
         // Phase 0 ends with an engagement question - wait for the parent to respond.
