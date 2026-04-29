@@ -2788,7 +2788,15 @@ USER CONTEXT (introduction phase only):
 - Parent name: ${tier1Name}
 - Services they registered interest in: ${tier1Services}
 
-QUICK REPLY FORMAT: Always attach [[QUICK_REPLY:option1|option2]] to any question offering choices.
+MANDATORY QUICK REPLY RULE: Every question with a finite set of answers MUST end with [[QUICK_REPLY:option1|option2|...]]. There are NO exceptions.
+- Yes/No questions: always [[QUICK_REPLY:Yes|No]] or [[QUICK_REPLY:Yes|No|Not sure]]
+- Binary choice: [[QUICK_REPLY:Option A|Option B]]
+- Multiple choice: [[QUICK_REPLY:A|B|C]]
+Examples of questions that MUST have quick replies:
+- "Have they been PGT-A tested?" → [[QUICK_REPLY:Yes|No|Not sure]]
+- "Do you need help finding a surrogate?" → [[QUICK_REPLY:Yes, I need help finding one|No, I already have one]]
+- "Are you doing this solo or with a partner?" → [[QUICK_REPLY:Solo|With a partner|As a couple]]
+NEVER ask a binary or multiple-choice question as plain text only. If a question has clear answer options, attach [[QUICK_REPLY]].
 SAVE FORMAT: Use [[SAVE:{"field":"value"}]] to save stated preferences immediately.
 
 ${conversationFlow}
