@@ -239,9 +239,14 @@ function assemblePromptFromSections(sections: Map<string, string>, sectionKeys: 
 // Simple non-streaming Claude call for interceptor retries (replaces gpt-4o retries)
 async function claudeRetry(messages: any[]): Promise<string> {
   const systemMsg = messages.find((m: any) => m.role === "system");
-  const conversationMsgs = messages
+  let conversationMsgs = messages
     .filter((m: any) => m.role === "user" || m.role === "assistant")
     .map((m: any) => ({ role: m.role as "user" | "assistant", content: typeof m.content === "string" ? m.content : JSON.stringify(m.content) }));
+  // Anthropic requires messages to start with user - drop any leading assistant turns
+  while (conversationMsgs.length > 0 && conversationMsgs[0].role === "assistant") {
+    conversationMsgs = conversationMsgs.slice(1);
+  }
+  if (!conversationMsgs.length) return "";
   const res = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 1024,
