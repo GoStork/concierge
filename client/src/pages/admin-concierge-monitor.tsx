@@ -594,11 +594,7 @@ export default function AdminConciergeMonitor() {
           variant="ghost"
           size="sm"
           className="h-7 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
-          onClick={() => {
-            if (window.confirm("Delete ALL chats, meetings, agreements, and parent profiles? This cannot be undone.")) {
-              resetAllChatsMutation.mutate();
-            }
-          }}
+          onClick={() => resetAllChatsMutation.mutate()}
           disabled={resetAllChatsMutation.isPending}
         >
           {resetAllChatsMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Trash2 className="w-3.5 h-3.5 mr-1" />}
