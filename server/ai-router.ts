@@ -665,8 +665,15 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
     const defaultGreeting = interestedServices.length > 0
       ? `Hi ${firstName}! I'm ${conciergeNameLabel}, your GoStork AI concierge. I see you're looking into ${serviceLabel} - is that correct? [[QUICK_REPLY:Yes, that's right|Not exactly]]`
       : `Hi ${firstName}! I'm ${conciergeNameLabel}, your GoStork AI concierge. What are you looking for help with? [[QUICK_REPLY:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]]`;
-    // Always use the confirmation-style greeting - DB initialGreeting is the old static format.
-    const rawGreeting = donorId ? (clientGreeting || defaultGreeting) : defaultGreeting;
+    // Use the matchmaker's initialGreeting template from DB with [First Name]/[Service]/[Location] replaced.
+    // Fall back to defaultGreeting if no template is set.
+    const templateGreeting = matchmakerRecord?.initialGreeting
+      ? matchmakerRecord.initialGreeting
+          .replace(/\[First Name\]/gi, firstName)
+          .replace(/\[Service\]/gi, serviceLabel)
+          .replace(/\[Location\]/gi, location)
+      : defaultGreeting;
+    const rawGreeting = donorId ? (clientGreeting || templateGreeting) : templateGreeting;
     // Parse [[QUICK_REPLY:...]] from greeting so buttons render in the chat UI
     const greetingQrMatch = rawGreeting.match(/\[\[QUICK_REPLY:(.*?)\]\]/);
     const greetingQuickReplies: string[] = greetingQrMatch ? greetingQrMatch[1].split("|").map((s: string) => s.trim()) : [];
