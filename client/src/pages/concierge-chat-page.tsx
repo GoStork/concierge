@@ -3198,6 +3198,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   // Scroll to bottom on messages change
   useEffect(() => {
     if (!messages.length) return;
+    // Skip scroll-on-tick during typing animation - the interval fires setMessages
+    // every 18ms and stacking smooth scrolls causes overshoot when quick replies appear.
+    // The animation's applyFinalMsg triggers one clean scroll when it's done.
+    if (typingIntervalRef.current) return;
     if (!initialScrollDone.current) {
       if (newSessionInitRef.current) {
         // New session: scroll to TOP so the greeting (first message) is visible.
@@ -3224,9 +3228,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       scrollToBottomIfNear.current("smooth");
       const t1 = setTimeout(() => scrollToBottomIfNear.current("smooth"), 150);
       const t2 = setTimeout(() => scrollToBottomIfNear.current("smooth"), 400);
-      const t3 = setTimeout(() => scrollToBottomIfNear.current("smooth"), 800);
-      const t4 = setTimeout(() => scrollToBottomIfNear.current("smooth"), 1500);
-      return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); };
+      return () => { clearTimeout(t1); clearTimeout(t2); };
     }
   }, [messages, sessionBookings?.length]);
 
