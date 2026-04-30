@@ -289,8 +289,14 @@ STEP 1a: "How many embryos do you have?"
   → After answer, save [[SAVE:{"embryoCount":<number>}]] and go to STEP 1b
 
 STEP 1b: "Have they been PGT-A tested?" [[QUICK_REPLY:Yes|No|I'm not sure]]
-  → If YES or NO: save [[SAVE:{"embryosTested":<true/false>}]] and go to STEP 2
-  → If NOT SURE: go to STEP 2 (do not save embryosTested)
+  → If YES or NO: save [[SAVE:{"embryosTested":<true/false>}]] and go to STEP 1c (if applicable) or STEP 2
+  → If NOT SURE: go to STEP 1c (if applicable) or STEP 2 (do not save embryosTested)
+
+STEP 1c - EGG DONOR CONFLICT RESOLUTION (ONLY if parent has embryos AND registered for egg donation at the start):
+"You mentioned you're looking for an egg donor, but you already have frozen embryos. Just to confirm - are you looking to create new embryos with a fresh egg donor, or will you be using your existing embryos?" [[QUICK_REPLY:Create new embryos with a donor|Use my existing embryos]]
+  → If "Create new embryos with a donor": save [[SAVE:{"needsEggDonor":true}]] and go to STEP 2 (will reach STEP 2a naturally)
+  → If "Use my existing embryos": save [[SAVE:{"needsEggDonor":false}]] and SKIP Step 2 AND Step 2a entirely - go directly to STEP 3
+  SKIP this step if: the parent did NOT register for egg donation, OR they already clarified this earlier in the conversation.
 
 CRITICAL CONTEXT RULES FOR STEPS 2-4:
 You MUST adapt questions based on TWO factors:
@@ -327,6 +333,12 @@ STEP 2a: "Do you need help finding an egg donor, or do you already have one?" [[
   SKIP if the parent already said they need one (e.g., "I need an egg donor") or already have one.
   → If "I need help finding one": save [[SAVE:{"needsEggDonor":true}]] and go to STEP 3
   → If "I already have one": save [[SAVE:{"needsEggDonor":false}]] and go to STEP 3
+
+STEP 3b - SPERM DONOR CONFLICT RESOLUTION (check BEFORE asking the sperm source question, ONLY if parent has embryos AND registered for sperm donation at the start AND Step 1c did NOT already result in "Use my existing embryos"):
+"You mentioned you're looking for a sperm donor, but you already have frozen embryos. Just to confirm - are you looking to create new embryos with donor sperm, or will you be using your existing embryos?" [[QUICK_REPLY:Create new embryos with donor sperm|Use my existing embryos]]
+  → If "Create new embryos with donor sperm": save [[SAVE:{"needsSpermDonor":true}]] and proceed to ask the sperm source question (STEP 3) normally
+  → If "Use my existing embryos": save [[SAVE:{"needsSpermDonor":false}]] and SKIP Step 3 AND Step 3a entirely - go directly to STEP 4
+  SKIP this step if: the parent did NOT register for sperm donation, OR Step 1c already resolved the embryo question with "Use my existing embryos" (no need to ask again), OR the parent already clarified this earlier in the conversation.
 
 STEP 3 - SPERM:
   Adapt based on gender/orientation:
