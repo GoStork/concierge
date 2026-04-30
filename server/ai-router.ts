@@ -109,6 +109,18 @@ function injectMissingQuickReplies(content: string): string {
     [/need help finding.*fertility clinic.*already have one/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
     [/do you already have frozen embryos/i, "[[QUICK_REPLY:Yes, I do|No, not yet|Working to create them]]"],
     [/have they been pgt-?a tested/i, "[[QUICK_REPLY:Yes|No|I'm not sure]]"],
+    // Step 2 - egg source (past tense: has embryos)
+    [/were the eggs.*yours.*partner.*from a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs]]"],
+    [/eggs yours.*partner.*from a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs]]"],
+    // Step 2 - egg source (future tense: no embryos)
+    [/what.*plan for eggs.*using your own.*considering a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]"],
+    [/thinking of using your own.*considering a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]"],
+    // Step 3 - sperm source (past tense)
+    [/for sperm.*did you use.*donor sperm/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm]]"],
+    [/sperm.*your own.*partner.*donor sperm/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm]]"],
+    // Step 3 - sperm source (future tense)
+    [/for sperm.*will you be using.*still deciding/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]"],
+    [/sperm.*own.*partner.*donor.*still deciding/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]"],
     [/do you need help finding an egg donor/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
     [/do you need help finding a sperm donor/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
     [/do you need help finding a surrogate/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
