@@ -111,9 +111,10 @@ export class ProvidersController {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   @Get("marketplace/egg-donors")
-  @ApiOperation({ summary: "List all egg donors across all providers (marketplace)" })
+  @ApiOperation({ summary: "List egg donors (paginated, 100 per page)" })
   @Header("Cache-Control", "public, max-age=30")
-  async marketplaceEggDonors(@Req() req: Request) {
+  async marketplaceEggDonors(@Req() req: Request, @Query("page") page = "0") {
+    const PAGE_SIZE = 100;
     const user = req.user as any;
     const roles: string[] = user?.roles || [];
     const isProviderUser = hasProviderRole(roles);
@@ -123,11 +124,16 @@ export class ProvidersController {
         include: { provider: { select: { id: true, name: true, logoUrl: true } } },
         orderBy: { createdAt: "desc" },
       });
-      return enrichDonorsWithPendingCosts(this.prisma, user.providerId, "egg-donor", donors);
+      const data = await enrichDonorsWithPendingCosts(this.prisma, user.providerId, "egg-donor", donors);
+      return { data, hasMore: false, nextPage: null };
     }
-    const cached = getCached("marketplace:egg-donors");
+    const pageNum = Math.max(0, parseInt(page) || 0);
+    const cacheKey = `marketplace:egg-donors:p${pageNum}`;
+    const cached = getCached(cacheKey);
     if (cached) return cached;
-    const donors = await this.prisma.eggDonor.findMany({
+    const rows = await this.prisma.eggDonor.findMany({
+      take: PAGE_SIZE + 1,
+      skip: pageNum * PAGE_SIZE,
       where: {
         hiddenFromSearch: false,
         status: { not: "INACTIVE" },
@@ -143,15 +149,19 @@ export class ProvidersController {
       include: { provider: { select: { id: true, name: true, logoUrl: true } } },
       orderBy: { createdAt: "desc" },
     });
-    const result = await enrichDonorsAcrossProviders(this.prisma, "egg-donor", donors);
-    setCache("marketplace:egg-donors", result);
+    const hasMore = rows.length > PAGE_SIZE;
+    const pageRows = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
+    const data = await enrichDonorsAcrossProviders(this.prisma, "egg-donor", pageRows);
+    const result = { data, hasMore, nextPage: hasMore ? pageNum + 1 : null };
+    setCache(cacheKey, result);
     return result;
   }
 
   @Get("marketplace/surrogates")
-  @ApiOperation({ summary: "List all surrogates across all providers (marketplace)" })
+  @ApiOperation({ summary: "List surrogates (paginated, 100 per page)" })
   @Header("Cache-Control", "public, max-age=30")
-  async marketplaceSurrogates(@Req() req: Request) {
+  async marketplaceSurrogates(@Req() req: Request, @Query("page") page = "0") {
+    const PAGE_SIZE = 100;
     const user = req.user as any;
     const roles: string[] = user?.roles || [];
     const isProviderUser = hasProviderRole(roles);
@@ -161,11 +171,16 @@ export class ProvidersController {
         include: { provider: { select: { id: true, name: true, logoUrl: true } } },
         orderBy: { createdAt: "desc" },
       });
-      return enrichDonorsWithPendingCosts(this.prisma, user.providerId, "surrogate", donors);
+      const data = await enrichDonorsWithPendingCosts(this.prisma, user.providerId, "surrogate", donors);
+      return { data, hasMore: false, nextPage: null };
     }
-    const cached = getCached("marketplace:surrogates");
+    const pageNum = Math.max(0, parseInt(page) || 0);
+    const cacheKey = `marketplace:surrogates:p${pageNum}`;
+    const cached = getCached(cacheKey);
     if (cached) return cached;
-    const donors = await this.prisma.surrogate.findMany({
+    const rows = await this.prisma.surrogate.findMany({
+      take: PAGE_SIZE + 1,
+      skip: pageNum * PAGE_SIZE,
       where: {
         hiddenFromSearch: false,
         status: { not: "INACTIVE" },
@@ -181,8 +196,11 @@ export class ProvidersController {
       include: { provider: { select: { id: true, name: true, logoUrl: true } } },
       orderBy: { createdAt: "desc" },
     });
-    const result = await enrichDonorsAcrossProviders(this.prisma, "surrogate", donors);
-    setCache("marketplace:surrogates", result);
+    const hasMore = rows.length > PAGE_SIZE;
+    const pageRows = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
+    const data = await enrichDonorsAcrossProviders(this.prisma, "surrogate", pageRows);
+    const result = { data, hasMore, nextPage: hasMore ? pageNum + 1 : null };
+    setCache(cacheKey, result);
     return result;
   }
 
@@ -283,9 +301,10 @@ export class ProvidersController {
   }
 
   @Get("marketplace/sperm-donors")
-  @ApiOperation({ summary: "List all sperm donors across all providers (marketplace)" })
+  @ApiOperation({ summary: "List sperm donors (paginated, 100 per page)" })
   @Header("Cache-Control", "public, max-age=30")
-  async marketplaceSpermDonors(@Req() req: Request) {
+  async marketplaceSpermDonors(@Req() req: Request, @Query("page") page = "0") {
+    const PAGE_SIZE = 100;
     const user = req.user as any;
     const roles: string[] = user?.roles || [];
     const isProviderUser = hasProviderRole(roles);
@@ -295,11 +314,16 @@ export class ProvidersController {
         include: { provider: { select: { id: true, name: true, logoUrl: true } } },
         orderBy: { createdAt: "desc" },
       });
-      return enrichDonorsWithPendingCosts(this.prisma, user.providerId, "sperm-donor", donors);
+      const data = await enrichDonorsWithPendingCosts(this.prisma, user.providerId, "sperm-donor", donors);
+      return { data, hasMore: false, nextPage: null };
     }
-    const cached = getCached("marketplace:sperm-donors");
+    const pageNum = Math.max(0, parseInt(page) || 0);
+    const cacheKey = `marketplace:sperm-donors:p${pageNum}`;
+    const cached = getCached(cacheKey);
     if (cached) return cached;
-    const donors = await this.prisma.spermDonor.findMany({
+    const rows = await this.prisma.spermDonor.findMany({
+      take: PAGE_SIZE + 1,
+      skip: pageNum * PAGE_SIZE,
       where: {
         hiddenFromSearch: false,
         status: { not: "INACTIVE" },
@@ -315,8 +339,11 @@ export class ProvidersController {
       include: { provider: { select: { id: true, name: true, logoUrl: true } } },
       orderBy: { createdAt: "desc" },
     });
-    const result = await enrichDonorsAcrossProviders(this.prisma, "sperm-donor", donors);
-    setCache("marketplace:sperm-donors", result);
+    const hasMore = rows.length > PAGE_SIZE;
+    const pageRows = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
+    const data = await enrichDonorsAcrossProviders(this.prisma, "sperm-donor", pageRows);
+    const result = { data, hasMore, nextPage: hasMore ? pageNum + 1 : null };
+    setCache(cacheKey, result);
     return result;
   }
 

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { typeToUrlSlug } from "@/lib/profile-utils";
 import { api } from "@shared/routes";
@@ -387,11 +387,14 @@ function ProviderGrid({ providers, searchQuery, providerTypeName, onSchedule }: 
   );
 }
 
-function DonorGrid({ donors, searchQuery, type, onFilteredCountChange }: {
+function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore, hasNextPage, isFetchingMore }: {
   donors: any[] | undefined;
   searchQuery: string;
   type: "egg-donor" | "surrogate" | "sperm-donor";
   onFilteredCountChange?: (count: number) => void;
+  fetchMore?: () => void;
+  hasNextPage?: boolean;
+  isFetchingMore?: boolean;
 }) {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
@@ -431,6 +434,25 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange }: {
   useEffect(() => {
     onFilteredCountChange?.(filtered?.length ?? 0);
   }, [filtered?.length, onFilteredCountChange]);
+
+  // Auto-load next page when filter leaves too few visible results
+  useEffect(() => {
+    if (fetchMore && hasNextPage && !isFetchingMore && (filtered?.length ?? 0) < 12) {
+      fetchMore();
+    }
+  }, [filtered?.length, fetchMore, hasNextPage, isFetchingMore]);
+
+  // Intersection observer sentinel to load next page as user scrolls near bottom
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!sentinelRef.current || !fetchMore || !hasNextPage) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting && !isFetchingMore) fetchMore(); },
+      { rootMargin: "300px" }
+    );
+    obs.observe(sentinelRef.current);
+    return () => obs.disconnect();
+  }, [fetchMore, hasNextPage, isFetchingMore]);
 
   const userPrefs = useMemo(() => {
     const RANGE_KEYS = new Set(["age", "bmi", "height", "donorCompensation", "maxCost", "baseCompensation", "maxLiveBirths", "maxCSections", "maxMiscarriages", "maxAbortions", "lastDeliveryYear"]);
@@ -527,6 +549,11 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange }: {
       );
     }
 
+    // Pre-load next page when within 10 cards of the end
+    if (fetchMore && hasNextPage && !isFetchingMore && filtered.length - currentIndex <= 10) {
+      fetchMore();
+    }
+
     const currentDonor = filtered[currentIndex];
     const nextDonor = currentIndex + 1 < filtered.length ? filtered[currentIndex + 1] : null;
     const profile = mapDonor(currentDonor);
@@ -618,6 +645,13 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange }: {
           </div>
         );
       })}
+      {/* Infinite scroll sentinel - load next page when this comes into view */}
+      <div ref={sentinelRef} className="col-span-full" />
+      {isFetchingMore && (
+        <div className="col-span-full flex justify-center py-6">
+          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+        </div>
+      )}
     </div>
   );
 }
@@ -874,35 +908,62 @@ export default function MarketplacePage() {
     ).length;
   }, [providers, isIvfTab]);
 
-  const { data: eggDonors, isLoading: eggLoading } = useQuery({
+  const {
+    data: eggDonorPages,
+    isLoading: eggLoading,
+    fetchNextPage: fetchMoreEggDonors,
+    hasNextPage: hasMoreEggDonors,
+    isFetchingNextPage: isFetchingMoreEggDonors,
+  } = useInfiniteQuery({
     queryKey: ["/api/providers/marketplace/egg-donors"],
-    queryFn: async () => {
-      const res = await fetch("/api/providers/marketplace/egg-donors", { credentials: "include" });
+    queryFn: async ({ pageParam = 0 }) => {
+      const res = await fetch(`/api/providers/marketplace/egg-donors?page=${pageParam}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch egg donors");
-      return res.json();
+      return res.json() as Promise<{ data: any[]; hasMore: boolean; nextPage: number | null }>;
     },
+    getNextPageParam: (last) => last.nextPage ?? undefined,
+    initialPageParam: 0,
     staleTime: 30_000,
   });
+  const eggDonors = useMemo(() => eggDonorPages?.pages.flatMap((p) => p.data) ?? [], [eggDonorPages]);
 
-  const { data: surrogates, isLoading: surrogatesLoading } = useQuery({
+  const {
+    data: surrogatePages,
+    isLoading: surrogatesLoading,
+    fetchNextPage: fetchMoreSurrogates,
+    hasNextPage: hasMoreSurrogates,
+    isFetchingNextPage: isFetchingMoreSurrogates,
+  } = useInfiniteQuery({
     queryKey: ["/api/providers/marketplace/surrogates"],
-    queryFn: async () => {
-      const res = await fetch("/api/providers/marketplace/surrogates", { credentials: "include" });
+    queryFn: async ({ pageParam = 0 }) => {
+      const res = await fetch(`/api/providers/marketplace/surrogates?page=${pageParam}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch surrogates");
-      return res.json();
+      return res.json() as Promise<{ data: any[]; hasMore: boolean; nextPage: number | null }>;
     },
+    getNextPageParam: (last) => last.nextPage ?? undefined,
+    initialPageParam: 0,
     staleTime: 30_000,
   });
+  const surrogates = useMemo(() => surrogatePages?.pages.flatMap((p) => p.data) ?? [], [surrogatePages]);
 
-  const { data: spermDonors, isLoading: spermLoading } = useQuery({
+  const {
+    data: spermDonorPages,
+    isLoading: spermLoading,
+    fetchNextPage: fetchMoreSpermDonors,
+    hasNextPage: hasMoreSpermDonors,
+    isFetchingNextPage: isFetchingMoreSpermDonors,
+  } = useInfiniteQuery({
     queryKey: ["/api/providers/marketplace/sperm-donors"],
-    queryFn: async () => {
-      const res = await fetch("/api/providers/marketplace/sperm-donors", { credentials: "include" });
+    queryFn: async ({ pageParam = 0 }) => {
+      const res = await fetch(`/api/providers/marketplace/sperm-donors?page=${pageParam}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch sperm donors");
-      return res.json();
+      return res.json() as Promise<{ data: any[]; hasMore: boolean; nextPage: number | null }>;
     },
+    getNextPageParam: (last) => last.nextPage ?? undefined,
+    initialPageParam: 0,
     staleTime: 30_000,
   });
+  const spermDonors = useMemo(() => spermDonorPages?.pages.flatMap((p) => p.data) ?? [], [spermDonorPages]);
 
   const isLoading =
     (activeTab === "ivf-clinics" && providersLoading) ||
@@ -937,13 +998,13 @@ export default function MarketplacePage() {
           ) : (
             <>
               {activeTab === "egg-donors" && (
-                <DonorGrid donors={eggDonors} searchQuery={searchQuery} type="egg-donor" onFilteredCountChange={onFilteredCountChange} />
+                <DonorGrid donors={eggDonors} searchQuery={searchQuery} type="egg-donor" onFilteredCountChange={onFilteredCountChange} fetchMore={fetchMoreEggDonors} hasNextPage={hasMoreEggDonors} isFetchingMore={isFetchingMoreEggDonors} />
               )}
               {activeTab === "surrogates" && (
-                <DonorGrid donors={surrogates} searchQuery={searchQuery} type="surrogate" onFilteredCountChange={onFilteredCountChange} />
+                <DonorGrid donors={surrogates} searchQuery={searchQuery} type="surrogate" onFilteredCountChange={onFilteredCountChange} fetchMore={fetchMoreSurrogates} hasNextPage={hasMoreSurrogates} isFetchingMore={isFetchingMoreSurrogates} />
               )}
               {activeTab === "sperm-donors" && (
-                <DonorGrid donors={spermDonors} searchQuery={searchQuery} type="sperm-donor" onFilteredCountChange={onFilteredCountChange} />
+                <DonorGrid donors={spermDonors} searchQuery={searchQuery} type="sperm-donor" onFilteredCountChange={onFilteredCountChange} fetchMore={fetchMoreSpermDonors} hasNextPage={hasMoreSpermDonors} isFetchingMore={isFetchingMoreSpermDonors} />
               )}
             </>
           )}
@@ -1079,13 +1140,13 @@ export default function MarketplacePage() {
               />
             )}
             {activeTab === "egg-donors" && (
-              <DonorGrid donors={eggDonors} searchQuery={searchQuery} type="egg-donor" />
+              <DonorGrid donors={eggDonors} searchQuery={searchQuery} type="egg-donor" fetchMore={fetchMoreEggDonors} hasNextPage={hasMoreEggDonors} isFetchingMore={isFetchingMoreEggDonors} />
             )}
             {activeTab === "surrogates" && (
-              <DonorGrid donors={surrogates} searchQuery={searchQuery} type="surrogate" />
+              <DonorGrid donors={surrogates} searchQuery={searchQuery} type="surrogate" fetchMore={fetchMoreSurrogates} hasNextPage={hasMoreSurrogates} isFetchingMore={isFetchingMoreSurrogates} />
             )}
             {activeTab === "sperm-donors" && (
-              <DonorGrid donors={spermDonors} searchQuery={searchQuery} type="sperm-donor" />
+              <DonorGrid donors={spermDonors} searchQuery={searchQuery} type="sperm-donor" fetchMore={fetchMoreSpermDonors} hasNextPage={hasMoreSpermDonors} isFetchingMore={isFetchingMoreSpermDonors} />
             )}
           </>
         )}
