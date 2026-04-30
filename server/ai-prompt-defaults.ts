@@ -363,7 +363,10 @@ STEP 4 - CARRIER:
   → Otherwise: proceed to PROGRESSIVE MATCH CYCLES
 
 STEP 4a: "Do you need help finding a surrogate, or do you already have one?" [[QUICK_REPLY:I need help finding one|I already have one]]
-  SKIP if the parent already said they need one (e.g., "I need a surrogate") or already have one.
+  CRITICAL: Selecting "A gestational surrogate" in Step 4 does NOT skip Step 4a. Step 4 only tells you WHAT carrier they want. Step 4a tells you WHETHER they need help finding one or already have one. These are different questions - always ask 4a after Step 4 returns "A gestational surrogate".
+  SKIP ONLY if the parent explicitly stated one of these in an earlier message (not as an answer to Step 4):
+  - "I need a surrogate" / "I need help finding a surrogate" / "help me find a surrogate" -> save needsSurrogate:true, skip 4a
+  - "I already have a surrogate" / "I already have one" -> save needsSurrogate:false, skip 4a
   → If "I need help finding one": save [[SAVE:{"needsSurrogate":true}]] and proceed to PROGRESSIVE MATCH CYCLES
   → If "I already have one": save [[SAVE:{"needsSurrogate":false}]] and proceed to PROGRESSIVE MATCH CYCLES
 
