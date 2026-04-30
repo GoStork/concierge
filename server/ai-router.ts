@@ -86,6 +86,50 @@ async function callTier1Gemini(
   return fullText;
 }
 
+// Post-process Gemini Tier 1 output: inject [[QUICK_REPLY:...]] tags for known
+// questions when Gemini drops them. Only fires when no [[QUICK_REPLY:]] is present.
+function injectMissingQuickReplies(content: string): string {
+  if (/\[\[QUICK_REPLY:/.test(content) || /\[\[MULTI_SELECT:/.test(content)) return content;
+
+  // Ordered from most specific to least specific
+  const patterns: [RegExp, string][] = [
+    // Phase 0
+    [/do you have any questions about gostork/i, "[[QUICK_REPLY:I understand, let's get started|I have a few questions]]"],
+    [/what are you looking for help with/i, "[[QUICK_REPLY:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]]"],
+    // Phase 1 identity
+    [/are you a woman or a man/i, "[[QUICK_REPLY:A woman|A man]]"],
+    [/same-sex couple or opposite-sex/i, "[[QUICK_REPLY:Same-sex couple|Opposite-sex couple]]"],
+    [/two dads.*two moms.*man and a woman/i, "[[QUICK_REPLY:Two dads|Two moms|A man and a woman]]"],
+    [/two moms.*two dads.*man and a woman/i, "[[QUICK_REPLY:Two dads|Two moms|A man and a woman]]"],
+    [/solo.*with a partner.*as a couple/i, "[[QUICK_REPLY:Solo|With a partner|As a couple]]"],
+    [/on your own.*with a partner/i, "[[QUICK_REPLY:Solo|With a partner|As a couple]]"],
+    [/are you on this journey solo/i, "[[QUICK_REPLY:Solo|With a partner]]"],
+    // Phase 2 biological baseline
+    [/do you already have a fertility clinic.*need help finding one/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
+    [/need help finding.*fertility clinic.*already have one/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
+    [/do you already have frozen embryos/i, "[[QUICK_REPLY:Yes, I do|No, not yet|Working to create them]]"],
+    [/have they been pgt-?a tested/i, "[[QUICK_REPLY:Yes|No|I'm not sure]]"],
+    [/do you need help finding an egg donor/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
+    [/do you need help finding a sperm donor/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
+    [/do you need help finding a surrogate/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
+    [/who is.*planning to carry the pregnancy/i, "[[QUICK_REPLY:Me|My partner|A gestational surrogate]]"],
+    [/who is carrying the pregnancy/i, "[[QUICK_REPLY:Me|My partner|A gestational surrogate]]"],
+    // Cycle intake
+    [/are you hoping for twins/i, "[[QUICK_REPLY:Yes|No]]"],
+    [/are you hoping to have twins.*singleton/i, "[[QUICK_REPLY:Hoping for twins|Singleton only|No preference]]"],
+    [/first ivf journey.*done ivf before/i, "[[QUICK_REPLY:First time|I've done IVF before]]"],
+    [/termination if medically necessary/i, "[[QUICK_REPLY:Pro-choice surrogate|Pro-life surrogate|No preference]]"],
+  ];
+
+  for (const [pattern, tag] of patterns) {
+    if (pattern.test(content)) {
+      console.log(`[Tier1 QR inject] Pattern matched, injecting: ${tag.slice(0, 60)}`);
+      return content.trimEnd() + " " + tag;
+    }
+  }
+  return content;
+}
+
 // -------------------------------------------------------------------------
 // Tier 2: Claude Sonnet 4.6 - matching, tool calls, complex rules
 // -------------------------------------------------------------------------
@@ -2819,6 +2863,7 @@ CRITICAL OVERRIDES - these override everything else:
       const tier1Messages = messages.filter((m: any) => m.role !== "system");
       finalContent = await callTier1Gemini(tier1SystemPrompt, tier1Messages, sse);
       if (!finalContent) finalContent = "I'm sorry, I couldn't process that.";
+      finalContent = injectMissingQuickReplies(finalContent);
     }
 
     // One-way door: [[CURATION]] in response permanently activates Tier 2
