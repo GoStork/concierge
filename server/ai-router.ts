@@ -2881,11 +2881,19 @@ CRITICAL OVERRIDES - these override everything else:
 4. DO NOT skip the education message under ANY circumstances
 5. The education message is MANDATORY before any matching can begin`;
 
-      // Pass only non-system messages to Tier 1 - the tier1SystemPrompt is the sole system context
-      const tier1Messages = messages.filter((m: any) => m.role !== "system");
-      finalContent = await callTier1Gemini(tier1SystemPrompt, tier1Messages, sse);
-      if (!finalContent) finalContent = "I'm sorry, I couldn't process that.";
-      finalContent = injectMissingQuickReplies(finalContent);
+      // Human escalation: bypass Gemini entirely and return the correct response
+      const humanRequestRegexT1 = /talk to (?:a )?(?:real|human|actual) person|talk to (?:the )?gostork team|speak (?:to|with) (?:a )?human|connect me with (?:a )?(?:human|person|someone)|i want (?:a )?human|i'd like to talk to a real person|just want to speak to (?:a )?human|want to talk to (?:a )?human/i;
+      if (humanRequestRegexT1.test(userMessage)) {
+        const humanMsg = `Of course! I've just notified the GoStork concierge team - someone will join our chat shortly to assist you directly. In the meantime, would you like to keep making progress on your matches while you wait? [[HUMAN_NEEDED]] [[QUICK_REPLY:Yes, let's keep going|I'll wait for the team]]`;
+        sse.sendToken(humanMsg.replace(/\[\[HUMAN_NEEDED\]\]/g, "").replace(/\[\[QUICK_REPLY:.*?\]\]/g, "").trim());
+        finalContent = humanMsg;
+      } else {
+        // Pass only non-system messages to Tier 1 - the tier1SystemPrompt is the sole system context
+        const tier1Messages = messages.filter((m: any) => m.role !== "system");
+        finalContent = await callTier1Gemini(tier1SystemPrompt, tier1Messages, sse);
+        if (!finalContent) finalContent = "I'm sorry, I couldn't process that.";
+        finalContent = injectMissingQuickReplies(finalContent);
+      }
     }
 
     // One-way door: [[CURATION]] in response permanently activates Tier 2
