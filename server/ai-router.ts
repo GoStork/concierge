@@ -2592,7 +2592,6 @@ CRITICAL: If search_egg_donors returns results, present them with [[MATCH_CARD]]
     if (looksLikeProfileQuestion && isNotAction && currentSessionId && mcpClient) {
       try {
         const mc = await findLatestMatchCard(currentSessionId);
-        console.log(`[PROACTIVE PROFILE DEBUG] matchCard found: ${JSON.stringify({ providerId: mc?.providerId, type: mc?.type, ownerProviderId: mc?.ownerProviderId, name: mc?.name }).slice(0, 200)}`);
         if (mc?.providerId && mc?.type) {
           const etype = (mc.type || "").toLowerCase();
           let profileText = "";
