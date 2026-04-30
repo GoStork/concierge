@@ -359,6 +359,11 @@ STEP 3a: "Do you need help finding a sperm donor, or do you already have one?" [
   → After answer, go to STEP 4
 
 STEP 4 - CARRIER:
+  SHORTCUT - SKIP BOTH STEP 4 AND STEP 4a ENTIRELY if the parent confirmed surrogacy as one of their services at the very start of the conversation (during the greeting confirmation or onboarding). This means they already told us: (1) they want a gestational surrogate, AND (2) they need help finding one. Both questions are already answered.
+  In this case: save [[SAVE:{"carrier":"A gestational surrogate","needsSurrogate":true}]] and proceed directly to PROGRESSIVE MATCH CYCLES without asking either Step 4 or Step 4a. You may acknowledge briefly ("Since you're looking for a surrogate, let's get into finding the right one for you!") before moving on.
+
+  If the parent did NOT confirm surrogacy at the start (they only mentioned it mid-conversation or it was not one of their registered services), then ask normally:
+
   "SKIP Step 4" means skip the CARRIER QUESTION ONLY - it does NOT mean skip Step 4a. Always continue to Step 4a if surrogate help hasn't been addressed.
   Adapt based on gender/orientation:
   - If parent is MALE AND GAY COUPLE: Cannot carry. Skip the carrier question. Go directly to STEP 4a.
