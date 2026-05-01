@@ -109,6 +109,12 @@ function injectMissingQuickReplies(content: string): string {
     [/need help finding.*fertility clinic.*already have one/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
     [/do you already have frozen embryos/i, "[[QUICK_REPLY:Yes, I do|No, not yet|Working to create them]]"],
     [/have they been pgt-?a tested/i, "[[QUICK_REPLY:Yes|No|I'm not sure]]"],
+    // Step 1c - egg donor conflict (has embryos but registered for egg donation)
+    [/fresh egg donor.*existing embryos/i, "[[QUICK_REPLY:Create new embryos with a donor|Use my existing embryos]]"],
+    [/create new embryos with.*donor.*existing embryos/i, "[[QUICK_REPLY:Create new embryos with a donor|Use my existing embryos]]"],
+    // Step 3b - sperm donor conflict (has embryos but registered for sperm donation)
+    [/create new embryos with donor sperm.*existing embryos/i, "[[QUICK_REPLY:Create new embryos with donor sperm|Use my existing embryos]]"],
+    [/donor sperm.*existing embryos/i, "[[QUICK_REPLY:Create new embryos with donor sperm|Use my existing embryos]]"],
     // Phase 1 - which partner is speaking (straight couple)
     [/are you the woman or the man/i, "[[QUICK_REPLY:I'm the woman|I'm the man]]"],
     // Step 2 - egg source (past tense, straight male: no "My own eggs")
