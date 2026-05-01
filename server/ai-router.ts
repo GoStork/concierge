@@ -1317,6 +1317,56 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       getCachedMcpTools(mcpClient),
     ]);
 
+    // Detect service selection during the greeting/onboarding phase and persist it to the profile.
+    // This covers two cases:
+    //   1. Fresh user selects from the initial [[QUICK_REPLY:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]] greeting
+    //   2. Returning user with pre-saved services says "Not exactly" and then picks from the MULTI_SELECT
+    // In both cases the preceding AI message contains recognizable service option text.
+    if (!isSystemTrigger && req.body.message && chatHistory.length <= 8) {
+      try {
+        const SERVICE_KEYWORD_MAP: Record<string, string> = {
+          "surrogacy": "Surrogate",
+          "egg donation": "Egg Donor",
+          "sperm donation": "Sperm Donor",
+          "ivf clinics": "Fertility Clinic",
+          "ivf clinic": "Fertility Clinic",
+          "egg donor": "Egg Donor",
+          "sperm donor": "Sperm Donor",
+          "surrogate": "Surrogate",
+          "fertility clinic": "Fertility Clinic",
+        };
+        // Find the last AI message before the current user message
+        const lastAiMsg = [...chatHistory].reverse().find(m => m.role === "assistant");
+        const isServiceSelectionMsg = lastAiMsg && (
+          lastAiMsg.content.includes("Surrogacy|Egg Donation|Sperm Donation|IVF Clinics") ||
+          lastAiMsg.content.includes("What are you looking for help with")
+        );
+        if (isServiceSelectionMsg) {
+          const msgLower = (req.body.message as string).toLowerCase();
+          const selectedServices: string[] = [];
+          for (const [keyword, dbValue] of Object.entries(SERVICE_KEYWORD_MAP)) {
+            if (msgLower.includes(keyword) && !selectedServices.includes(dbValue)) {
+              selectedServices.push(dbValue);
+            }
+          }
+          if (selectedServices.length > 0 && userRecord?.parentAccountId) {
+            const parentAccountId = userRecord.parentAccountId;
+            const existingProfile = await prisma.intendedParentProfile.findUnique({ where: { parentAccountId } });
+            if (existingProfile) {
+              await prisma.intendedParentProfile.update({ where: { parentAccountId }, data: { interestedServices: selectedServices } });
+              console.log(`[GREETING SERVICE UPDATE] Updated interestedServices for account ${parentAccountId}:`, selectedServices);
+              // Patch the in-memory profile so the rest of this request sees the updated services
+              if ((userRecord as any).parentAccount?.intendedParentProfile) {
+                (userRecord as any).parentAccount.intendedParentProfile.interestedServices = selectedServices;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error("[GREETING SERVICE UPDATE] Error:", e);
+      }
+    }
+
     const profile = (userRecord as any)?.parentAccount?.intendedParentProfile;
 
     // Kick off clinic lookup in parallel with synchronous context-building below
@@ -2178,7 +2228,7 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     const profileNeedsSurrogate = profileServices.includes("Surrogate") || profile?.needsSurrogate === true;
     const profileAlreadyHasSurrogate = profile?.needsSurrogate === false;
     const profileNeedsSpermDonor = profileServices.includes("Sperm Donor");
-    const profileNeedsClinic = profile?.needsClinic === true;
+    const profileNeedsClinic = profileServices.includes("Fertility Clinic") || profile?.needsClinic === true;
     const profileAlreadyHasClinic = profile?.needsClinic === false;
 
     // Combined signals (DB profile takes precedence over regex chat scan)
@@ -2219,15 +2269,21 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       skipDirectives.push("DO NOT ask about carrier/who will carry (Step 4) - already known: using surrogate.");
     }
 
-    // Clinic (Step 0): skip if already answered in DB
+    // Clinic: skip if already answered in DB or from chat
     if (profileNeedsClinic) {
-      skipDirectives.push("DO NOT ask if they need help finding a clinic (Step 0) - already saved: YES, they need a clinic.");
+      skipDirectives.push(
+        "DO NOT ask if they need help finding a clinic or whether they already have one - already confirmed: they DO need a clinic. " +
+        "When you reach Phase 3, MUST run Match Cycle A (IVF Clinic)."
+      );
     } else if (profileAlreadyHasClinic) {
-      skipDirectives.push(`DO NOT ask if they need help finding a clinic (Step 0) - already saved: they already have one${profile?.currentClinicName ? ` (${profile.currentClinicName})` : ""}.`);
+      skipDirectives.push(`DO NOT ask if they need help finding a clinic - already saved: they already have one${profile?.currentClinicName ? ` (${profile.currentClinicName})` : ""}. Skip Match Cycle A entirely.`);
     } else if (mentionsClinic && !hasClinic) {
-      skipDirectives.push("DO NOT ask if they need help finding a clinic (Step 0) - they said they need one.");
+      skipDirectives.push(
+        "DO NOT ask if they need help finding a clinic or whether they already have one - they said they need one. " +
+        "When you reach Phase 3, MUST run Match Cycle A (IVF Clinic)."
+      );
     } else if (hasClinic) {
-      skipDirectives.push("DO NOT ask if they need help finding a clinic (Step 0) - they already have one.");
+      skipDirectives.push("DO NOT ask if they need help finding a clinic - they already have one. Skip Match Cycle A entirely.");
     }
 
     // Egg donor help (Step 2a): skip if already answered in DB or from chat
