@@ -314,10 +314,22 @@ function boolLabel(val: boolean | null | undefined): string {
   return "-";
 }
 
+function isExpiredPresignedAwsUrl(url: string): boolean {
+  if (!/amazonaws\.com/i.test(url) || !/[?&]X-Amz-/i.test(url)) return false;
+  const dateMatch = url.match(/[?&]X-Amz-Date=(\d{8}T\d{6}Z)/i);
+  const expiresMatch = url.match(/[?&]X-Amz-Expires=(\d+)/i);
+  if (!dateMatch || !expiresMatch) return true;
+  const d = dateMatch[1];
+  const signedAt = new Date(`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}T${d.slice(9,11)}:${d.slice(11,13)}:${d.slice(13,15)}Z`);
+  const expiresAt = new Date(signedAt.getTime() + parseInt(expiresMatch[1]) * 1000);
+  return Date.now() > expiresAt.getTime();
+}
+
 export function getPhotoList(profile: SwipeDeckProfile): string[] {
   const list: string[] = [];
   if (profile.photos?.length) {
     for (const p of profile.photos) {
+      if (isExpiredPresignedAwsUrl(p)) continue;
       const src = getPhotoSrc(p);
       if (src) list.push(src);
     }
