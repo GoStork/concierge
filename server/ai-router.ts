@@ -2225,7 +2225,11 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     const hasClinic = /have.*clinic|already.*clinic|clinic.*already/i.test(allUserMessages);
     const mentionsSpermDonor = /sperm\s*donor|need.*sperm/i.test(allUserMessages);
     const hasSpermDonor = /have.*sperm\s*donor|already.*sperm/i.test(allUserMessages);
-    const isGayMale = /gay\s*(couple|man|male|men|dad|father)|two\s*dad|two\s*men|single\s*(man|male|dad|father|guy)/i.test(allUserMessages);
+    const dbIsMale = /^(i'm a )?man$/i.test(userRecord?.gender || "") || (userRecord?.gender || "").toLowerCase() === "male";
+    const dbIsNonStraight = userRecord?.sexualOrientation ? !["straight", "heterosexual"].includes(userRecord.sexualOrientation.toLowerCase()) : false;
+    const dbIsSingle = userRecord?.relationshipStatus === "Single";
+    const isGayMale = /gay\s*(couple|man|male|men|dad|father)|two\s*dad|two\s*men|single\s*(man|male|dad|father|guy)|lgbtq[a+]?/i.test(allUserMessages)
+      || (dbIsMale && (dbIsNonStraight || dbIsSingle));
 
     // Also check saved profile DB fields - these are the most reliable signal
     const profileServices: string[] = profile?.interestedServices || [];
@@ -3249,37 +3253,35 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         const autoUserData: any = {};
         const autoProfileData: any = {};
 
-        // Relationship status
-        if (!userRecord.relationshipStatus) {
-          if (/\bi('m| am) single\b|^single$|\bsolo\b|\bon my own\b|\bjust me\b/.test(msg)) {
-            autoUserData.relationshipStatus = "Single";
-          } else if (/\bi('m| am) married\b|\bmy (husband|wife)\b|\bwe('re| are) married\b/.test(msg)) {
+        // Relationship status - always update when user actively states it
+        if (/\bi('m| am) single\b|^single$|\bsolo\b|\bon my own\b|\bjust me\b/.test(msg)) {
+          autoUserData.relationshipStatus = "Single";
+        } else if (!userRecord.relationshipStatus) {
+          if (/\bi('m| am) married\b|\bmy (husband|wife)\b|\bwe('re| are) married\b/.test(msg)) {
             autoUserData.relationshipStatus = "Married";
           } else if (/\bwith (a |my )?partner\b|\bi have a partner\b|\bwe('re| are) (a couple|partnered)\b/.test(msg)) {
             autoUserData.relationshipStatus = "Partnered";
           }
         }
 
-        // Sexual orientation
-        if (!userRecord.sexualOrientation) {
-          if (/\bi('m| am) gay\b|\btwo dads\b|\bgay (couple|man|male)\b/.test(msg)) {
-            autoUserData.sexualOrientation = "Gay";
-          } else if (/\bi('m| am) lesbian\b|\btwo moms\b|\btwo mothers\b|\blesbian (couple|woman)\b/.test(msg)) {
-            autoUserData.sexualOrientation = "Lesbian";
-          } else if (/\bi('m| am) (straight|heterosexual)\b/.test(msg)) {
+        // Sexual orientation - always update when user actively states it
+        if (/\bi('m| am) gay\b|\btwo dads\b|\bgay (couple|man|male)\b|\blgbtq[a+]?\b|\bqueer\b/.test(msg)) {
+          autoUserData.sexualOrientation = "Gay";
+        } else if (/\bi('m| am) lesbian\b|\btwo moms\b|\btwo mothers\b|\blesbian (couple|woman)\b/.test(msg)) {
+          autoUserData.sexualOrientation = "Lesbian";
+        } else if (/\bi('m| am) bi(sexual)?\b/.test(msg)) {
+          autoUserData.sexualOrientation = "Bi";
+        } else if (!userRecord.sexualOrientation) {
+          if (/\bi('m| am) (straight|heterosexual)\b/.test(msg)) {
             autoUserData.sexualOrientation = "Straight";
-          } else if (/\bi('m| am) bi(sexual)?\b/.test(msg)) {
-            autoUserData.sexualOrientation = "Bi";
           }
         }
 
-        // Gender
-        if (!userRecord.gender) {
-          if (/\bi('m| am) (a )?wom[ae]n\b|\bi('m| am) female\b|\bas a woman\b|\bsingle (mom|mother|woman)\b/.test(msg)) {
-            autoUserData.gender = "I'm a woman";
-          } else if (/\bi('m| am) (a )?m[ae]n\b|\bi('m| am) male\b|\bas a man\b|\bsingle (dad|father|man)\b|\btwo dads\b/.test(msg)) {
-            autoUserData.gender = "I'm a man";
-          }
+        // Gender - always update when user actively states it
+        if (/\bi('m| am) (a )?wom[ae]n\b|\bi('m| am) female\b|\bas a woman\b|\bsingle (mom|mother|woman)\b/.test(msg)) {
+          autoUserData.gender = "I'm a woman";
+        } else if (/\bi('m| am) (a )?m[ae]n\b|\bi('m| am) male\b|\bas a man\b|\bsingle (dad|father|man)\b|\btwo dads\b/.test(msg)) {
+          autoUserData.gender = "I'm a man";
         }
 
         // Same-sex couple
