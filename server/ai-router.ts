@@ -2228,7 +2228,7 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     const dbIsMale = /^(i'm a )?man$/i.test(userRecord?.gender || "") || (userRecord?.gender || "").toLowerCase() === "male";
     const dbIsNonStraight = userRecord?.sexualOrientation ? !["straight", "heterosexual"].includes(userRecord.sexualOrientation.toLowerCase()) : false;
     const dbIsSingle = userRecord?.relationshipStatus === "Single";
-    const isGayMale = /gay\s*(couple|man|male|men|dad|father)|two\s*dad|two\s*men|single\s*(man|male|dad|father|guy)|lgbtq[a+]?/i.test(allUserMessages)
+    const isGayMale = /gay\s*(couple|man|male|men|dad|father)|two\s*dad|two\s*men|single\s*(man|male|dad|father|guy)|solo\s*(man|male|dad|father)|lgbtq[a+]?/i.test(allUserMessages)
       || (dbIsMale && (dbIsNonStraight || dbIsSingle));
 
     // Also check saved profile DB fields - these are the most reliable signal
@@ -3278,10 +3278,17 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         }
 
         // Gender - always update when user actively states it
-        if (/\bi('m| am) (a )?wom[ae]n\b|\bi('m| am) female\b|\bas a woman\b|\bsingle (mom|mother|woman)\b/.test(msg)) {
+        if (/\bi('m| am) (a )?wom[ae]n\b|\bi('m| am) female\b|\bas a woman\b|\bsingle (mom|mother|woman)\b|\bsolo (mom|mother|woman)\b/.test(msg)) {
           autoUserData.gender = "I'm a woman";
-        } else if (/\bi('m| am) (a )?m[ae]n\b|\bi('m| am) male\b|\bas a man\b|\bsingle (dad|father|man)\b|\btwo dads\b/.test(msg)) {
+        } else if (/\bi('m| am) (a )?m[ae]n\b|\bi('m| am) male\b|\bas a man\b|\bsingle (dad|father|man)\b|\bsolo (man|male|dad|father)\b|\btwo dads\b/.test(msg)) {
           autoUserData.gender = "I'm a man";
+        }
+
+        // Context-aware LGBTQ save: if last AI message asked about LGBTQ+ and user says yes
+        const lastAiMsg = [...chatHistory].reverse().find((m: any) => m.role === "assistant")?.content || "";
+        if (/lgbtq|identify as/i.test(lastAiMsg) && /^(yes|yeah|yep|yup|i do|i am|correct|that's right)$/i.test(msg)) {
+          autoUserData.sexualOrientation = "Gay";
+          autoUserData.relationshipStatus = autoUserData.relationshipStatus || (dbIsSingle ? "Single" : undefined);
         }
 
         // Same-sex couple
