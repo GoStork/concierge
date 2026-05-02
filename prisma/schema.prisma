@@ -1088,8 +1088,9 @@ model IntendedParentProfile {
   clinicAgeGroup            String?
   clinicPriorityTags        String?
 
-  // Surrogate family type
+  // Surrogate family type / LGBTQ+ identity
   sameSexCouple        Boolean?
+  isLGBTQ              Boolean?
 
   // IVF history
   isFirstIvf           Boolean?

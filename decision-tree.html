@@ -66,7 +66,7 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
 <header>
   <div>
     <h1>GoStork &mdash; Question Decision Tree</h1>
-    <p>Auto-generated from <code>server/ai-prompt-defaults.ts</code> &mdash; May 1, 2026, 11:00 AM &mdash; 59 questions discovered</p>
+    <p>Auto-generated from <code>server/ai-prompt-defaults.ts</code> &mdash; May 2, 2026, 06:34 PM &mdash; 54 questions discovered</p>
   </div>
   <span class="gen-badge">&#9889; Live from source</span>
 </header>
@@ -74,7 +74,7 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
   <button class="active" onclick="show('overview',this)">Overview</button>
   <button onclick="show('onboarding',this)">Onboarding</button>
   <button onclick="show('phase-0',this)">AI Intro (Phase 0)<span class="stat">5q</span></button>
-  <button onclick="show('phase-1-identity-opener',this)">Phase 1: Identity Opener<span class="stat">7q</span></button>
+  <button onclick="show('phase-1-identity-opener',this)">Phase 1: Identity Opener<span class="stat">2q</span></button>
   <button onclick="show('phase-2-biological-baseline-asked-once-shared-across-all-providers',this)">Phase 2: Biological Baseline (Asked Once, Shared Across All Providers)<span class="stat">28q</span></button>
   <button onclick="show('phase-3-progressive-match-cycles',this)">Phase 3: Progressive Match Cycles<span class="stat">19q</span></button>
   <button onclick="show('phase-4-wrap-up',this)">Phase 4: Wrap-Up<span class="stat">0q</span></button>
@@ -95,7 +95,7 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
   <div class="cards">
     <div class="card"><span class="ctag t-ob">Onboarding</span><h4>6 screens before chat</h4><p>Service selection, name, location, phone, OTP, account creation. Not in ai-prompt-defaults.ts.</p></div>
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>AI Intro (Phase 0)</h4><p>5 user-facing questions</p></div>
-    <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 1: Identity Opener</h4><p>7 user-facing questions</p></div>
+    <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 1: Identity Opener</h4><p>2 user-facing questions</p></div>
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 2: Biological Baseline (Asked Once, Shared Across All Providers)</h4><p>28 user-facing questions</p></div>
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 3: Progressive Match Cycles</h4><p>19 user-facing questions</p></div>
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 4: Wrap-Up</h4><p>0 user-facing questions</p></div>
@@ -236,63 +236,18 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
   <div class="tab-content">
     
 <div class="q-card q-anon">
-  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q1</span><div class="qtext">Are you doing this on your own, with a partner, or as a couple?&quot;</div></div>
-  <div class="chips"><span class="chip">Solo</span><span class="chip">With a partner</span><span class="chip">As a couple</span></div>
-  <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">gender</span><span class="save-field">relationshipStatus</span><span class="save-field">sexualOrientation</span><span class="save-field">sameSexCouple</span></div>
+  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q1</span><div class="qtext">To make sure I ask you the right questions - who's going on this journey?</div></div>
+  <div class="chips"><span class="chip">Solo woman</span><span class="chip">Solo man</span><span class="chip">Two moms</span><span class="chip">Two dads</span><span class="chip">A woman and a man</span></div>
+  <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">gender</span><span class="save-field">relationshipStatus</span><span class="save-field">sameSexCouple</span><span class="save-field">sexualOrientation</span><span class="save-field">isLGBTQ</span></div>
   
   
 </div>
 <div class="q-arrow">▼</div>
 
 <div class="q-card q-anon">
-  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q2</span><div class="qtext">Are you on this journey solo, or is there a partner involved?</div></div>
-  <div class="chips"><span class="chip">Solo</span><span class="chip">With a partner</span></div>
-  <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">gender</span><span class="save-field">relationshipStatus</span><span class="save-field">sexualOrientation</span><span class="save-field">sameSexCouple</span></div>
-  
-  
-</div>
-<div class="q-arrow">▼</div>
-
-<div class="q-card q-anon">
-  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q3</span><div class="qtext">Who's going on this journey with you?</div></div>
-  <div class="chips"><span class="chip">Just me</span><span class="chip">My partner</span><span class="chip">We're a couple</span></div>
-  <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">gender</span><span class="save-field">relationshipStatus</span><span class="save-field">sexualOrientation</span><span class="save-field">sameSexCouple</span></div>
-  
-  
-</div>
-<div class="q-arrow">▼</div>
-
-<div class="q-card q-anon">
-  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q4</span><div class="qtext">Can you tell me a bit more about you and your partner?&quot;</div></div>
-  <div class="chips"><span class="chip">Two dads</span><span class="chip">Two moms</span><span class="chip">A man and a woman</span></div>
-  <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">gender</span><span class="save-field">relationshipStatus</span><span class="save-field">sexualOrientation</span><span class="save-field">sameSexCouple</span></div>
-  
-  
-</div>
-<div class="q-arrow">▼</div>
-
-<div class="q-card q-anon">
-  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q5</span><div class="qtext">And just so I can ask the right questions - are you the woman or the man in this journey?</div></div>
-  <div class="chips"><span class="chip">I'm the woman</span><span class="chip">I'm the man</span></div>
-  <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">gender</span><span class="save-field">relationshipStatus</span><span class="save-field">sexualOrientation</span><span class="save-field">sameSexCouple</span></div>
-  
-  
-</div>
-<div class="q-arrow">▼</div>
-
-<div class="q-card q-anon">
-  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q6</span><div class="qtext">Just so I can ask the right questions for your journey - are you a woman or a man?&quot;</div></div>
-  <div class="chips"><span class="chip">A woman</span><span class="chip">A man</span></div>
-  <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">gender</span><span class="save-field">relationshipStatus</span><span class="save-field">sexualOrientation</span><span class="save-field">sameSexCouple</span></div>
-  
-  
-</div>
-<div class="q-arrow">▼</div>
-
-<div class="q-card q-anon">
-  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q7</span><div class="qtext">Love that energy! Quick one so I can tailor this perfectly - are you a woman or a man on this solo journey?</div></div>
-  <div class="chips"><span class="chip">A woman</span><span class="chip">A man</span></div>
-  <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">gender</span><span class="save-field">relationshipStatus</span><span class="save-field">sexualOrientation</span><span class="save-field">sameSexCouple</span></div>
+  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q2</span><div class="qtext">One quick question - do you identify as LGBTQ+?</div></div>
+  <div class="chips"><span class="chip">Yes</span><span class="chip">No</span></div>
+  <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">isLGBTQ</span><span class="save-field">gender</span><span class="save-field">sexualOrientation</span><span class="save-field">relationshipStatus</span><span class="save-field">sameSexCouple</span></div>
   
   
 </div>
@@ -677,16 +632,16 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
   <div class="q-header"><span class="qlabel">D0A</span><div class="qtext">Are you going on this journey solo, or with a partner?</div></div>
   <div class="chips"><span class="chip">Solo</span><span class="chip">With a partner</span></div>
   <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">relationshipStatus</span></div>
-  <div class="qbranches"><div class="branch-item">→ Saves:</div><div class="branch-item">→ Skip if: parent already revealed this in a prior message (e.g., &quot;my wife and I&quot;, &quot;I'm single&quot;, &quot;just me&quot;, &quot;two dads&quot;, &quot;my husband and I&quot;)</div><div class="branch-item">→ NOTE: The shortcut rule (parent's first message) does NOT bypass D0a. The parent must have explicitly stated their status in a prior message to skip it.</div></div>
+  <div class="qbranches"><div class="branch-item">→ Saves:</div><div class="branch-item">→ Skip if: relationshipStatus is already known from Phase 1 (it always is when Phase 1 ran).</div><div class="branch-item">→ NOTE: The shortcut rule (parent's first message) does NOT bypass D0a. The parent must have explicitly stated their status in a prior message to skip it.</div></div>
   
 </div>
 <div class="q-arrow">▼</div>
 
 <div class="q-card q-step">
-  <div class="q-header"><span class="qlabel">D0B</span><div class="qtext">Are you a same-sex couple or opposite-sex couple?</div></div>
-  <div class="chips"><span class="chip">Same-sex couple</span><span class="chip">Opposite-sex couple</span></div>
-  <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">sameSexCouple</span></div>
-  <div class="qbranches"><div class="branch-item">→ If &quot;Same-sex couple&quot;: save</div><div class="branch-item">→ If &quot;Opposite-sex couple&quot;: save</div><div class="branch-item">→ Skip if: parent answered &quot;Solo&quot; to D0a, OR already explicitly revealed orientation in a prior message (e.g., &quot;two dads&quot;, &quot;my husband and I&quot;, &quot;my wife and I&quot;)</div><div class="branch-item">→ NOTE: D0a and D0b are asked ONLY in Cycle D - never for egg donor, sperm donor, or clinic matching. Surrogates have preferences about the families they work with.</div></div>
+  <div class="q-header"><span class="qlabel">D0B</span><div class="qtext">Do you identify as LGBTQ+?</div></div>
+  <div class="chips"><span class="chip">Yes</span><span class="chip">No</span></div>
+  <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">isLGBTQ</span><span class="save-field">sameSexCouple</span></div>
+  <div class="qbranches"><div class="branch-item">→ If &quot;Yes&quot;: save</div><div class="branch-item">→ If &quot;No&quot;:  save</div><div class="branch-item">→ Skip if: isLGBTQ is already known from Phase 1 (it always is when Phase 1 ran).</div><div class="branch-item">→ Skip if: parent answered &quot;Solo&quot; to D0a AND isLGBTQ is already saved from Phase 1.</div><div class="branch-item">→ NOTE: This question applies to ALL parent types - solo LGBTQ+ parents and same-sex couples both need surrogates open to LGBTQ+ families.</div></div>
   
 </div>
 <div class="q-arrow">▼</div>
