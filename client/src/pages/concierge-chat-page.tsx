@@ -3429,7 +3429,13 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               const phase0Id = `phase0-${Date.now()}`;
               setMessages(prev => [...prev, { role: "assistant", content: "", id: phase0Id, createdAt: new Date().toISOString() }]);
               typingRawRef.current = data.phase0Content; typingDisplayedRef.current = 0;
-              typingOnDoneRef.current = () => {}; // no-op: stops interval + resets refs when phase0 drains
+              typingOnDoneRef.current = () => {};
+              const p0ms = data.phase0Content.match(/\[\[MULTI_SELECT:(.*?)\]\]/);
+              const p0qr = data.phase0Content.match(/\[\[QUICK_REPLY:(.*?)\]\]/);
+              const p0tag = p0ms || p0qr;
+              if (p0tag && p0tag.index !== undefined) {
+                earlyQuickReplyRef.current = { tagPos: p0tag.index, options: p0tag[1].split("|").map((s: string) => s.trim()), multiSelect: !!p0ms };
+              }
               startTypingAnimation(phase0Id);
             }
           };
@@ -3439,7 +3445,13 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           newSessionInitRef.current = true;
           setMessages([{ role: "assistant", content: "", id: phase0Id, createdAt: new Date().toISOString() }]);
           typingRawRef.current = data.phase0Content; typingDisplayedRef.current = 0;
-          typingOnDoneRef.current = () => {}; // no-op: stops interval + resets refs when phase0 drains
+          typingOnDoneRef.current = () => {};
+          const p0ms = data.phase0Content.match(/\[\[MULTI_SELECT:(.*?)\]\]/);
+          const p0qr = data.phase0Content.match(/\[\[QUICK_REPLY:(.*?)\]\]/);
+          const p0tag = p0ms || p0qr;
+          if (p0tag && p0tag.index !== undefined) {
+            earlyQuickReplyRef.current = { tagPos: p0tag.index, options: p0tag[1].split("|").map((s: string) => s.trim()), multiSelect: !!p0ms };
+          }
           startTypingAnimation(phase0Id);
         }
         // Phase 0 ends with an engagement question - wait for the parent to respond.
