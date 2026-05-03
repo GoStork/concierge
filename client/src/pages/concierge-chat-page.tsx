@@ -3781,6 +3781,21 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       if (/already have/i.test(o)) return "I already have a fertility clinic";
     }
 
+    // General affirmative/negative to a service-confirmation question
+    // e.g. AI: "I see you're looking into surrogacy - is that correct?" → "Yes, that's right"
+    const isAffirmative = /^(yes|yeah|yep|that'?s right|correct|exactly|right|sure)\b/i.test(o);
+    const isNegative = /^(no|nope|not exactly|not quite|not really)\b/i.test(o);
+    if (isAffirmative || isNegative) {
+      if (/surrogacy|surrogate/i.test(q))
+        return isAffirmative ? "Yes, I'm looking into surrogacy" : "No, I'm not specifically looking into surrogacy";
+      if (/egg donation|egg donor/i.test(q))
+        return isAffirmative ? "Yes, I'm looking into egg donation" : "No, I'm not specifically looking into egg donation";
+      if (/sperm donation|sperm donor/i.test(q))
+        return isAffirmative ? "Yes, I'm looking into sperm donation" : "No, I'm not specifically looking into sperm donation";
+      if (/ivf clinic|fertility clinic/i.test(q))
+        return isAffirmative ? "Yes, I'm looking for a fertility clinic" : "No, I'm not specifically looking for a clinic";
+    }
+
     // Already descriptive (e.g. "My own eggs", "Donor sperm", "A gestational surrogate")
     return option;
   };
