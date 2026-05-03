@@ -340,7 +340,9 @@ You MUST adapt questions based on TWO factors:
 STEP 2 - EGGS:
   "SKIP Step 2" means skip the EGG SOURCE QUESTION ONLY - it does NOT mean skip Step 2a. Always continue to Step 2a if egg donor help hasn't been addressed.
   Adapt based on gender/orientation:
-  - If parent is MALE AND GAY COUPLE OR MALE AND SINGLE: Eggs MUST come from a donor - only one option exists. Do NOT ask. Save [[SAVE:{"eggSource":"donor eggs"}]] silently and go directly to STEP 2a (unless already answered).
+  - If parent is MALE AND GAY COUPLE OR MALE AND SINGLE: Eggs MUST come from a donor - only one option exists. Do NOT ask. Save [[SAVE:{"eggSource":"donor eggs"}]] silently.
+    - If parent already HAS embryos: SKIP Step 2a entirely - the egg donor was already used to create those embryos, no need to find one. Go directly to STEP 3.
+    - If parent does NOT have embryos: go to STEP 2a (unless already answered).
   - If parent is MALE AND STRAIGHT COUPLE: His female partner CAN provide eggs, but he CANNOT. NEVER include "My own eggs" as an option.
     - If HAS embryos: "For those embryos, were the eggs your partner's or from a donor?" [[QUICK_REPLY:My partner's eggs|Donor eggs]]
     - If does NOT have embryos: "What's your plan for eggs - are you thinking of using your partner's own eggs, or considering a donor?" [[QUICK_REPLY:My partner's eggs|Donor eggs|I'm not sure yet]]
@@ -368,7 +370,9 @@ STEP 3b - SPERM DONOR CONFLICT RESOLUTION (check BEFORE asking the sperm source 
 STEP 3 - SPERM:
   Adapt based on gender/orientation:
   - If parent is FEMALE (lesbian or single): Sperm must come from a donor. Say: "For the sperm source, will you be working with a sperm donor?" Then go to STEP 3a (only if they do NOT already have embryos).
-  - If parent is SINGLE MALE: Ask ONLY "did you use your own sperm or donor sperm?" - NEVER mention "partner" anywhere in the question or options. [[QUICK_REPLY:My own|Donor sperm]]
+  - If parent is SINGLE MALE: His sperm could be his own or a donor's. Ask with correct tense - NEVER mention "partner" anywhere:
+    - If HAS embryos (past tense): "For those embryos, did you use your own sperm or a sperm donor?" [[QUICK_REPLY:My own|Donor sperm]]
+    - If does NOT have embryos (future tense): "For sperm, will you be using your own or a sperm donor?" [[QUICK_REPLY:My own|Donor sperm]]
   - If parent is MALE AND GAY COUPLE: One partner provides sperm; donor sperm is possible but rare. Ask:
     - If HAS embryos: "And for sperm, did you use your own, your partner's, or a sperm donor?" [[QUICK_REPLY:My own|My partner's|Donor sperm]]
     - If does NOT have embryos: "And for sperm, will you be using your own, your partner's, or a sperm donor?" [[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]
