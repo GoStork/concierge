@@ -1648,8 +1648,8 @@ STEP 3a (only if needs sperm donor and has no embryos yet):
   → STEP 4
 
 STEP 4 - CARRIER:
-  Skip if already known (male parent - always surrogate).
-  Ask who will carry the pregnancy. Valid options: Me / My partner (if partnered) / A gestational surrogate.
+  Gay/solo male or gay couple: SKIP THIS STEP ENTIRELY. Never ask. Carrier is always a gestational surrogate. Save [[SAVE:{"carrier":"gestational surrogate"}]] silently and skip to Step 4a. NEVER ask "who is carrying the pregnancy?" for a male parent - it is forbidden.
+  Female parent: Ask who will carry the pregnancy. Valid options: Me / My partner (if partnered) / A gestational surrogate.
   → Save: [[SAVE:{"carrier":"me|my partner|gestational surrogate"}]]
   → Gestational surrogate → STEP 4a  |  Otherwise → STEP 5
 
@@ -2314,7 +2314,14 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // Carrier: skip if already saved or context is obvious
     if (profile?.carrier) {
       skipDirectives.push(`DO NOT ask about carrier/who will carry (Step 4) - already saved: ${profile.carrier}.`);
-    } else if (isGayMale || needsSurrogate || alreadyHasSurrogate) {
+    } else if (isGayMale) {
+      skipDirectives.push(
+        "DO NOT ask about carrier (Step 4). NEVER ask 'who is carrying the pregnancy?', " +
+        "'who will carry?', or any equivalent question. This parent is a gay/solo male - " +
+        "carrier is ALWAYS a gestational surrogate by biology. There is nothing to ask. " +
+        "Skip Step 4 and Step 4a entirely - go directly to Step 5."
+      );
+    } else if (needsSurrogate || alreadyHasSurrogate) {
       skipDirectives.push("DO NOT ask about carrier/who will carry (Step 4) - already known: using surrogate.");
     }
 
