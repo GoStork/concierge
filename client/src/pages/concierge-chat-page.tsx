@@ -3127,6 +3127,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const newSessionInitRef = useRef(false);
   // Track whether the user is near the bottom (within 120px). Only auto-scroll when they are.
   const userNearBottom = useRef(true);
+  // Force-scroll during phase0 animation regardless of userNearBottom (phase0 starts at top so
+  // the scroll event handler immediately sets userNearBottom=false before the first tick fires).
+  const forceScrollRef = useRef(false);
   const scrollToBottom = useRef((behavior?: "smooth") => {
     if (messagesEndRef.current) {
       const container = messagesEndRef.current.closest('[data-testid="concierge-messages"]') as HTMLElement | null;
@@ -3438,6 +3441,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               }
               // Greeting is done - re-enable auto-scroll so phase0 follows the text as it types
               userNearBottom.current = true;
+              forceScrollRef.current = true;
+              typingOnDoneRef.current = () => { forceScrollRef.current = false; };
               startTypingAnimation(phase0Id);
             }
           };
@@ -3447,7 +3452,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           newSessionInitRef.current = true;
           setMessages([{ role: "assistant", content: "", id: phase0Id, createdAt: new Date().toISOString() }]);
           typingRawRef.current = data.phase0Content; typingDisplayedRef.current = 0;
-          typingOnDoneRef.current = () => {};
+          typingOnDoneRef.current = () => { forceScrollRef.current = false; };
           const p0ms = data.phase0Content.match(/\[\[MULTI_SELECT:(.*?)\]\]/);
           const p0qr = data.phase0Content.match(/\[\[QUICK_REPLY:(.*?)\]\]/);
           const p0tag = p0ms || p0qr;
@@ -3455,6 +3460,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             earlyQuickReplyRef.current = { tagPos: p0tag.index, options: p0tag[1].split("|").map((s: string) => s.trim()), multiSelect: !!p0ms };
           }
           userNearBottom.current = true;
+          forceScrollRef.current = true;
           startTypingAnimation(phase0Id);
         }
         // Phase 0 ends with an engagement question - wait for the parent to respond.
@@ -3749,7 +3755,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       }
       // Scroll to keep up with new text appearing, but only instant (no smooth)
       // to avoid the stacked-smooth-scroll overshoot problem
-      if (userNearBottom.current) {
+      if (userNearBottom.current || forceScrollRef.current) {
         const container = messagesEndRef.current?.closest('[data-testid="concierge-messages"]') as HTMLElement | null;
         if (container) container.scrollTop = container.scrollHeight;
       }
@@ -3759,6 +3765,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const stopTypingAnimation = (flush: boolean) => {
     typingOnDoneRef.current = null;
     earlyQuickReplyRef.current = null;
+    forceScrollRef.current = false;
     if (typingIntervalRef.current) {
       clearInterval(typingIntervalRef.current);
       typingIntervalRef.current = null;
