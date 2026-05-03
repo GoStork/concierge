@@ -3856,6 +3856,34 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       finalContent = finalContent.replace(/\[\[QUICK_REPLY:.*?\]\]/g, "").trim();
     }
 
+    // Fallback: if AI forgot to include [[QUICK_REPLY:...]], inject known options for
+    // recognised Phase 1/2 questions based on content pattern matching
+    if (quickReplies.length === 0 && finalContent.trim().endsWith("?")) {
+      const lc = finalContent.toLowerCase();
+      if (/lgbtq/i.test(finalContent)) {
+        quickReplies = ["Yes", "No"];
+        console.log("[QUICK_REPLY FALLBACK] Injected Yes|No for LGBTQ+ question");
+      } else if (/going on this journey|who.{0,20}journey|journey.{0,20}who/i.test(finalContent)) {
+        quickReplies = ["Solo woman", "Solo man", "Two moms", "Two dads", "A woman and a man"];
+        console.log("[QUICK_REPLY FALLBACK] Injected identity options for journey question");
+      } else if (/already have.{0,20}frozen embryos|frozen embryos.{0,20}already/i.test(finalContent)) {
+        quickReplies = ["Yes, I do", "No, not yet", "Working to create them"];
+        console.log("[QUICK_REPLY FALLBACK] Injected embryo options");
+      } else if (/pgt.{0,5}a tested|been tested/i.test(finalContent)) {
+        quickReplies = ["Yes", "No", "I'm not sure"];
+        console.log("[QUICK_REPLY FALLBACK] Injected PGT-A tested options");
+      } else if (/already have.{0,20}(fertility clinic|ivf clinic|clinic)|help finding.{0,20}(clinic|one)/i.test(finalContent)) {
+        quickReplies = ["I need help finding one", "I already have one"];
+        console.log("[QUICK_REPLY FALLBACK] Injected clinic options");
+      } else if (/does that make sense|make sense so far/i.test(finalContent)) {
+        quickReplies = ["Yes, makes sense!", "I have a question"];
+        console.log("[QUICK_REPLY FALLBACK] Injected sense-check options");
+      } else if (/questions about gostork|questions.{0,30}help you/i.test(finalContent)) {
+        quickReplies = ["I understand, let's get started", "I have a few questions"];
+        console.log("[QUICK_REPLY FALLBACK] Injected GoStork intro options");
+      }
+    }
+
     let showCuration = false;
     if (finalContent.includes("[[CURATION]]")) {
       showCuration = true;
