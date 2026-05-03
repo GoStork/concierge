@@ -66,7 +66,7 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
 <header>
   <div>
     <h1>GoStork &mdash; Question Decision Tree</h1>
-    <p>Auto-generated from <code>server/ai-prompt-defaults.ts</code> &mdash; May 3, 2026, 06:16 PM &mdash; 59 questions discovered</p>
+    <p>Auto-generated from <code>server/ai-prompt-defaults.ts</code> &mdash; May 3, 2026, 06:22 PM &mdash; 60 questions discovered</p>
   </div>
   <span class="gen-badge">&#9889; Live from source</span>
 </header>
@@ -75,7 +75,7 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
   <button onclick="show('onboarding',this)">Onboarding</button>
   <button onclick="show('phase-0',this)">AI Intro (Phase 0)<span class="stat">5q</span></button>
   <button onclick="show('phase-1-identity-opener',this)">Phase 1: Identity Opener<span class="stat">7q</span></button>
-  <button onclick="show('phase-2-biological-baseline-asked-once-shared-across-all-providers',this)">Phase 2: Biological Baseline (Asked Once, Shared Across All Providers)<span class="stat">28q</span></button>
+  <button onclick="show('phase-2-biological-baseline-asked-once-shared-across-all-providers',this)">Phase 2: Biological Baseline (Asked Once, Shared Across All Providers)<span class="stat">29q</span></button>
   <button onclick="show('phase-3-progressive-match-cycles',this)">Phase 3: Progressive Match Cycles<span class="stat">19q</span></button>
   <button onclick="show('phase-4-wrap-up',this)">Phase 4: Wrap-Up<span class="stat">0q</span></button>
 </nav>
@@ -96,7 +96,7 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
     <div class="card"><span class="ctag t-ob">Onboarding</span><h4>6 screens before chat</h4><p>Service selection, name, location, phone, OTP, account creation. Not in ai-prompt-defaults.ts.</p></div>
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>AI Intro (Phase 0)</h4><p>5 user-facing questions</p></div>
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 1: Identity Opener</h4><p>7 user-facing questions</p></div>
-    <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 2: Biological Baseline (Asked Once, Shared Across All Providers)</h4><p>28 user-facing questions</p></div>
+    <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 2: Biological Baseline (Asked Once, Shared Across All Providers)</h4><p>29 user-facing questions</p></div>
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 3: Progressive Match Cycles</h4><p>19 user-facing questions</p></div>
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 4: Wrap-Up</h4><p>0 user-facing questions</p></div>
     <div class="card"><span class="ctag t-ru">Key Rule</span><h4>One question per message</h4><p>Never ask multiple questions in a single AI message. Wait for a response before the next.</p></div>
@@ -356,7 +356,7 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
 <div class="q-card q-step">
   <div class="q-header"><span class="qlabel">STEP 1C</span><div class="qtext">You mentioned you're looking for an egg donor, but you already have frozen embryos. Just to confirm - are you looking to create new embryos with a fresh egg donor, or will you be using your existing embryos?</div></div>
   <div class="chips"><span class="chip">Create new embryos with a donor</span><span class="chip">Use my existing embryos</span></div>
-  <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">needsEggDonor</span></div>
+  <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">needsEggDonor</span><span class="save-field">eggSource</span><span class="save-field">carrier</span></div>
   <div class="qbranches"><div class="branch-item">→ If &quot;Create new embryos with a donor&quot;: save  and go to STEP 2 (will reach STEP 2a naturally)</div><div class="branch-item">→ If &quot;Use my existing embryos&quot;: save  and SKIP Step 2 AND Step 2a entirely - go directly to STEP 3</div></div>
   <div class="qskip"><span>Skip if: this step if: the parent did NOT register for egg donation, OR they already clarified this earlier in the conversation.</span></div>
 </div>
@@ -365,7 +365,7 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
 <div class="q-card q-step">
   <div class="q-header"><span class="qlabel">STEP 2</span><div class="qtext">For those embryos, were the eggs your partner's or from a donor?</div></div>
   <div class="chips"><span class="chip">My partner's eggs</span><span class="chip">Donor eggs</span></div>
-  
+  <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">eggSource</span></div>
   
   
 </div>
@@ -435,8 +435,8 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
 <div class="q-arrow">▼</div>
 
 <div class="q-card q-step">
-  <div class="q-header"><span class="qlabel">STEP 3</span><div class="qtext">And for sperm, did you use your own, your partner's, or a sperm donor?</div></div>
-  <div class="chips"><span class="chip">My own</span><span class="chip">My partner's</span><span class="chip">Donor sperm</span></div>
+  <div class="q-header"><span class="qlabel">STEP 3</span><div class="qtext">did you use your own sperm or donor sperm?</div></div>
+  <div class="chips"><span class="chip">My own</span><span class="chip">Donor sperm</span></div>
   
   
   
@@ -444,7 +444,16 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
 <div class="q-arrow">▼</div>
 
 <div class="q-card q-anon">
-  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q16</span><div class="qtext">And for sperm, will you be using your own, your partner's, or a sperm donor?</div></div>
+  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q16</span><div class="qtext">And for sperm, did you use your own, your partner's, or a sperm donor?</div></div>
+  <div class="chips"><span class="chip">My own</span><span class="chip">My partner's</span><span class="chip">Donor sperm</span></div>
+  <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">spermSource</span></div>
+  
+  
+</div>
+<div class="q-arrow">▼</div>
+
+<div class="q-card q-anon">
+  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q17</span><div class="qtext">And for sperm, will you be using your own, your partner's, or a sperm donor?</div></div>
   <div class="chips"><span class="chip">My own</span><span class="chip">My partner's</span><span class="chip">Donor sperm</span><span class="chip">Not sure yet</span></div>
   <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">spermSource</span></div>
   
@@ -453,7 +462,7 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
 <div class="q-arrow">▼</div>
 
 <div class="q-card q-anon">
-  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q17</span><div class="qtext">And for sperm, did you use your own or a sperm donor?</div></div>
+  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q18</span><div class="qtext">And for sperm, did you use your own or a sperm donor?</div></div>
   <div class="chips"><span class="chip">My own</span><span class="chip">Donor sperm</span></div>
   <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">spermSource</span></div>
   
@@ -462,7 +471,7 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
 <div class="q-arrow">▼</div>
 
 <div class="q-card q-anon">
-  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q18</span><div class="qtext">And for sperm, will you be using your own or a sperm donor?</div></div>
+  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q19</span><div class="qtext">And for sperm, will you be using your own or a sperm donor?</div></div>
   <div class="chips"><span class="chip">My own</span><span class="chip">Donor sperm</span><span class="chip">Not sure yet</span></div>
   <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">spermSource</span></div>
   <div class="qbranches"><div class="branch-item">→ After answer, save</div><div class="branch-item">→ If DONOR SPERM AND no embryos: go to STEP 3a</div><div class="branch-item">→ If DONOR SPERM AND has embryos: SKIP 3a, go to STEP 4</div><div class="branch-item">→ Otherwise: go to STEP 4</div></div>
@@ -489,7 +498,7 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
 <div class="q-arrow">▼</div>
 
 <div class="q-card q-anon">
-  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q21</span><div class="qtext">And who is planning to carry the pregnancy?</div></div>
+  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q22</span><div class="qtext">And who is planning to carry the pregnancy?</div></div>
   <div class="chips"><span class="chip">My partner</span><span class="chip">A gestational surrogate</span></div>
   <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">carrier</span></div>
   
@@ -498,7 +507,7 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
 <div class="q-arrow">▼</div>
 
 <div class="q-card q-anon">
-  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q22</span><div class="qtext">And who is carrying the pregnancy?</div></div>
+  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q23</span><div class="qtext">And who is carrying the pregnancy?</div></div>
   <div class="chips"><span class="chip">Me</span><span class="chip">My partner</span><span class="chip">A gestational surrogate</span></div>
   <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">carrier</span></div>
   
@@ -507,7 +516,7 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
 <div class="q-arrow">▼</div>
 
 <div class="q-card q-anon">
-  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q23</span><div class="qtext">And who is planning to carry the pregnancy?</div></div>
+  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q24</span><div class="qtext">And who is planning to carry the pregnancy?</div></div>
   <div class="chips"><span class="chip">Me</span><span class="chip">My partner</span><span class="chip">A gestational surrogate</span></div>
   <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">carrier</span></div>
   
@@ -516,7 +525,7 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
 <div class="q-arrow">▼</div>
 
 <div class="q-card q-anon">
-  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q24</span><div class="qtext">If SINGLE: do NOT offer &quot;My partner&quot; option. Use .</div></div>
+  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q25</span><div class="qtext">If SINGLE: do NOT offer &quot;My partner&quot; option. Use .</div></div>
   <div class="chips"><span class="chip">Me</span><span class="chip">A gestational surrogate</span></div>
   <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">carrier</span></div>
   <div class="qbranches"><div class="branch-item">→ After answer, save</div><div class="branch-item">→ If GESTATIONAL SURROGATE: go to STEP 4a</div><div class="branch-item">→ Otherwise: proceed to PROGRESSIVE MATCH CYCLES</div></div>
@@ -534,7 +543,7 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
 <div class="q-arrow">▼</div>
 
 <div class="q-card q-anon">
-  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q26</span><div class="qtext">Do you already have frozen embryos?</div></div>
+  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q27</span><div class="qtext">Do you already have frozen embryos?</div></div>
   <div class="chips"><span class="chip">Yes, I do</span><span class="chip">No, not yet</span><span class="chip">Working to create them</span></div>
   
   
@@ -543,7 +552,7 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
 <div class="q-arrow">▼</div>
 
 <div class="q-card q-anon">
-  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q27</span><div class="qtext">Do you need help finding an egg donor, or do you already have one?</div></div>
+  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q28</span><div class="qtext">Do you need help finding an egg donor, or do you already have one?</div></div>
   <div class="chips"><span class="chip">I need help finding one</span><span class="chip">I already have one</span></div>
   
   
@@ -552,7 +561,7 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
 <div class="q-arrow">▼</div>
 
 <div class="q-card q-anon">
-  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q28</span><div class="qtext">Do you need help finding a surrogate, or do you already have one?</div></div>
+  <div class="q-header"><span class="qlabel qlabel-unlabeled">Q29</span><div class="qtext">Do you need help finding a surrogate, or do you already have one?</div></div>
   <div class="chips"><span class="chip">I need help finding one</span><span class="chip">I already have one</span></div>
   
   <div class="qbranches"><div class="branch-item">→ ONLY NOW proceed to PROGRESSIVE MATCH CYCLES</div></div>
@@ -677,7 +686,7 @@ main{padding:24px 28px;max-width:1300px;margin:0 auto}
   <div class="q-header"><span class="qlabel">D0A</span><div class="qtext">Are you going on this journey solo, or with a partner?</div></div>
   <div class="chips"><span class="chip">Solo</span><span class="chip">With a partner</span></div>
   <div class="qsave"><span class="save-label">Saves →</span><span class="save-field">relationshipStatus</span></div>
-  <div class="qbranches"><div class="branch-item">→ Saves:</div><div class="branch-item">→ Skip if: parent already revealed this in a prior message (e.g., &quot;my wife and I&quot;, &quot;I'm single&quot;, &quot;just me&quot;, &quot;two dads&quot;, &quot;my husband and I&quot;)</div><div class="branch-item">→ NOTE: The shortcut rule (parent's first message) does NOT bypass D0a. The parent must have explicitly stated their status in a prior message to skip it.</div></div>
+  <div class="qbranches"><div class="branch-item">→ Saves:</div><div class="branch-item">→ Skip if: parent already revealed this in a prior message (e.g., &quot;my wife and I&quot;, &quot;I'm single&quot;, &quot;just me&quot;, &quot;two dads&quot;, &quot;my husband and I&quot;)</div><div class="branch-item">→ NOTE: If there is a MANDATORY SKIP DIRECTIVE in the system prompt referencing D0a or &quot;solo or with a partner&quot;, ALWAYS obey it - it means the parent already answered. Otherwise, the parent must have explicitly stated their status in a prior message to skip it.</div></div>
   
 </div>
 <div class="q-arrow">▼</div>
