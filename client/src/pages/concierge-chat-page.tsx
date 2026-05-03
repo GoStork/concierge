@@ -3436,6 +3436,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               if (p0tag && p0tag.index !== undefined) {
                 earlyQuickReplyRef.current = { tagPos: p0tag.index, options: p0tag[1].split("|").map((s: string) => s.trim()), multiSelect: !!p0ms };
               }
+              // Greeting is done - re-enable auto-scroll so phase0 follows the text as it types
+              userNearBottom.current = true;
               startTypingAnimation(phase0Id);
             }
           };
@@ -3452,6 +3454,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           if (p0tag && p0tag.index !== undefined) {
             earlyQuickReplyRef.current = { tagPos: p0tag.index, options: p0tag[1].split("|").map((s: string) => s.trim()), multiSelect: !!p0ms };
           }
+          userNearBottom.current = true;
           startTypingAnimation(phase0Id);
         }
         // Phase 0 ends with an engagement question - wait for the parent to respond.
