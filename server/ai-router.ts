@@ -88,7 +88,7 @@ async function callTier1Gemini(
 
 // Post-process Gemini Tier 1 output: inject [[QUICK_REPLY:...]] tags for known
 // questions when Gemini drops them. Only fires when no [[QUICK_REPLY:]] is present.
-function injectMissingQuickReplies(content: string): string {
+function injectMissingQuickReplies(content: string, ctx: { isSolo?: boolean } = {}): string {
   if (/\[\[QUICK_REPLY:/.test(content) || /\[\[MULTI_SELECT:/.test(content)) return content;
 
   // Ordered from most specific to least specific
@@ -139,8 +139,12 @@ function injectMissingQuickReplies(content: string): string {
 
   for (const [pattern, tag] of patterns) {
     if (pattern.test(content)) {
-      console.log(`[Tier1 QR inject] Pattern matched, injecting: ${tag.slice(0, 60)}`);
-      return content.trimEnd() + " " + tag;
+      // Strip "My partner's" option for solo users
+      const finalTag = ctx.isSolo
+        ? tag.replace(/\|?My partner'?s(\|)?/g, "$1").replace(/\[\[QUICK_REPLY:\|/, "[[QUICK_REPLY:")
+        : tag;
+      console.log(`[Tier1 QR inject] Pattern matched, injecting: ${finalTag.slice(0, 60)}`);
+      return content.trimEnd() + " " + finalTag;
     }
   }
   return content;
@@ -2288,9 +2292,11 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       skipDirectives.push("DO NOT ask about egg source (Step 2) - already known: using egg donor.");
     }
 
-    // Sperm source: skip if already saved
+    // Sperm source: skip if already saved; strip partner option for solo users
     if (profile?.spermSource) {
       skipDirectives.push(`DO NOT ask about sperm source (Step 3) - already saved: ${profile.spermSource}.`);
+    } else if (sessionSaysSolo || (isGayMale && !sessionAnswered(/with a partner|as a couple/i, AFFIRM))) {
+      skipDirectives.push("DO NOT offer 'my partner's' as a sperm source option - this parent is solo and has no partner. Only offer: My own / Donor sperm.");
     }
 
     // Carrier: skip if already saved or context is obvious
@@ -2404,11 +2410,15 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
 
     // D0a/D0b: skip if identity/relationship already known
     if (profile?.sameSexCouple != null) {
-      skipDirectives.push(`DO NOT ask D0b (same-sex or opposite-sex couple) - already saved: ${profile.sameSexCouple ? "same-sex couple" : "opposite-sex couple"}.`);
+      skipDirectives.push(`DO NOT ask D0b or "do you identify as LGBTQ+?" or "same-sex or opposite-sex?" - already saved: ${profile.sameSexCouple ? "same-sex couple" : "opposite-sex couple"}.`);
+    } else if (sessionSaysLgbtq || userRecord?.sexualOrientation === "Gay") {
+      skipDirectives.push(`DO NOT ask D0b or "do you identify as LGBTQ+?" - already known from this session: Yes, LGBTQ+.`);
     }
     const effectiveRelationship = sessionSaysSolo ? "Single" : userRecord?.relationshipStatus;
-    if (effectiveRelationship) {
-      skipDirectives.push(`DO NOT ask D0a (solo or with partner) - already known: ${effectiveRelationship}.`);
+    if (effectiveRelationship === "Single" || sessionSaysSolo) {
+      skipDirectives.push(`DO NOT ask D0a or "are you going on this journey solo or with a partner?" - the parent ALREADY said they are solo earlier in this conversation. NEVER ask this again.`);
+    } else if (effectiveRelationship) {
+      skipDirectives.push(`DO NOT ask D0a or "are you going on this journey solo or with a partner?" - already known: ${effectiveRelationship}.`);
     }
 
     const skipRulesPreamble = skipDirectives.length > 0 ? `
@@ -2979,7 +2989,7 @@ CRITICAL OVERRIDES - these override everything else:
         const tier1Messages = messages.filter((m: any) => m.role !== "system");
         finalContent = await callTier1Gemini(tier1SystemPrompt, tier1Messages, sse);
         if (!finalContent) finalContent = "I'm sorry, I couldn't process that.";
-        finalContent = injectMissingQuickReplies(finalContent);
+        finalContent = injectMissingQuickReplies(finalContent, { isSolo: sessionSaysSolo || (isGayMale && !sessionAnswered(/with a partner|as a couple/i, AFFIRM)) });
       }
     }
 

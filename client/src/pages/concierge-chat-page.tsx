@@ -3763,6 +3763,26 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       if (o === "yes") return "Yes, I am LGBTQ+";
       if (o === "no") return "No, I'm not LGBTQ+";
     }
+    // Sperm source options
+    if (/sperm/i.test(q)) {
+      const past = /did you use|used/i.test(q);
+      if (/^my own$/i.test(o)) return past ? "I used my own sperm" : "I'll be using my own sperm";
+      if (/^my partner'?s$/i.test(o)) return past ? "We used my partner's sperm" : "We'll be using my partner's sperm";
+      if (/^donor sperm$/i.test(o)) return past ? "I used donor sperm" : "I'll be using donor sperm";
+    }
+    // Egg source options
+    if (/egg/i.test(q) && !/egg donor/i.test(q)) {
+      const past = /were the eggs|did you use/i.test(q);
+      if (/^my own eggs$/i.test(o)) return past ? "The eggs were my own" : "I'll be using my own eggs";
+      if (/^my partner'?s eggs$/i.test(o)) return past ? "We used my partner's eggs" : "We'll be using my partner's eggs";
+      if (/^donor eggs$/i.test(o)) return past ? "We used donor eggs" : "We'll be using donor eggs";
+    }
+    // Carrier options
+    if (/carr(y|ying|ier)|pregnancy/i.test(q)) {
+      if (/^me$/i.test(o)) return "I will carry the pregnancy myself";
+      if (/^my partner'?s?$/i.test(o)) return "My partner will carry the pregnancy";
+      if (/surrogate/i.test(o)) return "A gestational surrogate will carry the pregnancy";
+    }
     // "I need help finding one" / "I already have one" - add subject from question
     if (/egg donor/i.test(q)) {
       if (/need help/i.test(o)) return "I need help finding an egg donor";
