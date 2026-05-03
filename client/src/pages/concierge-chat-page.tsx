@@ -3731,10 +3731,64 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     typingStreamingIdRef.current = null;
   };
 
-  const handleSend = () => sendMessage(input);
+  const handleSend = () => {
+    const trimmed = input.trim();
+    // Expand bare numbers after embryo-count question
+    const lastAiMsg = [...messages].reverse().find(m => m.role === "assistant")?.content ?? "";
+    if (/how many embryo/i.test(lastAiMsg) && /^\d+$/.test(trimmed)) {
+      sendMessage(`I have ${trimmed} frozen embryos`);
+    } else {
+      sendMessage(trimmed || input);
+    }
+  };
 
-  const handleQuickReply = (text: string) => {
-    sendMessage(text);
+  // Expands a short quick-reply option into a self-contained sentence so the
+  // AI chat history always has meaningful context instead of bare "Yes"/"No".
+  const expandQuickReply = (option: string, aiMessage: string): string => {
+    const q = aiMessage.toLowerCase();
+    const o = option.toLowerCase().trim();
+
+    // PGT-A tested
+    if (/pgt-?a/i.test(q)) {
+      if (o === "yes") return "Yes, my embryos have been PGT-A tested";
+      if (o === "no") return "No, my embryos haven't been PGT-A tested";
+      if (/not sure/i.test(o)) return "I'm not sure if my embryos have been PGT-A tested";
+    }
+    // Frozen embryos (Step 1)
+    if (/frozen embryos/i.test(q)) {
+      if (/^yes/i.test(o)) return "Yes, I already have frozen embryos";
+      if (/^no/i.test(o)) return "No, I don't have frozen embryos yet";
+      if (/working/i.test(o)) return "I'm working on creating embryos";
+    }
+    // LGBTQ
+    if (/lgbtq/i.test(q)) {
+      if (o === "yes") return "Yes, I am LGBTQ+";
+      if (o === "no") return "No, I'm not LGBTQ+";
+    }
+    // "I need help finding one" / "I already have one" - add subject from question
+    if (/egg donor/i.test(q)) {
+      if (/need help/i.test(o)) return "I need help finding an egg donor";
+      if (/already have/i.test(o)) return "I already have an egg donor";
+    }
+    if (/sperm donor/i.test(q)) {
+      if (/need help/i.test(o)) return "I need help finding a sperm donor";
+      if (/already have/i.test(o)) return "I already have a sperm donor";
+    }
+    if (/surrogate/i.test(q)) {
+      if (/need help/i.test(o)) return "I need help finding a surrogate";
+      if (/already have/i.test(o)) return "I already have a surrogate";
+    }
+    if (/clinic/i.test(q)) {
+      if (/need help/i.test(o)) return "I need help finding a fertility clinic";
+      if (/already have/i.test(o)) return "I already have a fertility clinic";
+    }
+
+    // Already descriptive (e.g. "My own eggs", "Donor sperm", "A gestational surrogate")
+    return option;
+  };
+
+  const handleQuickReply = (text: string, aiMessage = "") => {
+    sendMessage(expandQuickReply(text, aiMessage));
   };
 
   const handleTalkToTeam = () => {
@@ -4309,7 +4363,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                               return next;
                             });
                           } else {
-                            handleQuickReply(qr);
+                            handleQuickReply(qr, msg.content ?? "");
                           }
                         }}
                         disabled={sending}
