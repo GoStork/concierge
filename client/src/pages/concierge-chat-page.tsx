@@ -2937,7 +2937,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         });
       }
       if (msgs.length > 0) {
-        const parsed: ChatMessage[] = msgs.map((m: any) => {
+        const parsed: ChatMessage[] = msgs.map((m: any, idx: number) => {
           const extras = m.uiCardData || {};
           return {
             id: m.id,
@@ -2949,6 +2949,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             prepDoc: extras.prepDoc,
             consultationCard: extras.consultationCard,
             agreementCard: extras.agreementCard,
+            // Restore quick replies for the last message so buttons reappear on navigation
+            quickReplies: idx === msgs.length - 1 ? extras.quickReplies : undefined,
             uiCardType: m.uiCardType,
             uiCardData: m.uiCardData,
             deliveredAt: m.deliveredAt,
@@ -3007,7 +3009,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               const msgs = data.messages;
               setSessionTitle(data.session.title || null);
               if (data.session.providerName) setProviderChatName(data.session.providerName);
-              const parsed: ChatMessage[] = msgs.map((m: any) => {
+              const parsed: ChatMessage[] = msgs.map((m: any, idx: number) => {
                 const extras = m.uiCardData || {};
                 return {
                   id: m.id,
@@ -3018,6 +3020,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   matchCards: extras.matchCards,
                   prepDoc: extras.prepDoc,
                   consultationCard: extras.consultationCard,
+                  quickReplies: idx === msgs.length - 1 ? extras.quickReplies : undefined,
                   uiCardType: m.uiCardType,
                   uiCardData: m.uiCardData,
                   deliveredAt: m.deliveredAt,

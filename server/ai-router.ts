@@ -88,7 +88,7 @@ async function callTier1Gemini(
 
 // Post-process Gemini Tier 1 output: inject [[QUICK_REPLY:...]] tags for known
 // questions when Gemini drops them. Only fires when no [[QUICK_REPLY:]] is present.
-function injectMissingQuickReplies(content: string, ctx: { isSolo?: boolean } = {}): string {
+function injectMissingQuickReplies(content: string, ctx: { isSolo?: boolean; isMale?: boolean } = {}): string {
   if (/\[\[QUICK_REPLY:/.test(content) || /\[\[MULTI_SELECT:/.test(content)) return content;
 
   // Ordered from most specific to least specific
@@ -127,7 +127,7 @@ function injectMissingQuickReplies(content: string, ctx: { isSolo?: boolean } = 
     // Step 2/3 - help finding donor or surrogate
     [/(need help finding|already have) (an? )?(egg|sperm) donor/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
     [/do you need help finding a surrogate/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
-    // Step 4 - carrier: check for "partner" first, then fall back to solo
+    // Step 4 - carrier: "Me" is only valid for female parents; male parents always need a surrogate
     [/who.*(carry|carrying).*\bpartner\b/i, "[[QUICK_REPLY:Me|My partner|A gestational surrogate]]"],
     [/who.*(is |will |would )?(carry|carrying|carry the)/i, "[[QUICK_REPLY:Me|A gestational surrogate]]"],
     // Cycle intake
@@ -139,10 +139,15 @@ function injectMissingQuickReplies(content: string, ctx: { isSolo?: boolean } = 
 
   for (const [pattern, tag] of patterns) {
     if (pattern.test(content)) {
+      let finalTag = tag;
       // Strip "My partner's" option for solo users
-      const finalTag = ctx.isSolo
-        ? tag.replace(/\|?My partner'?s(\|)?/g, "$1").replace(/\[\[QUICK_REPLY:\|/, "[[QUICK_REPLY:")
-        : tag;
+      if (ctx.isSolo) {
+        finalTag = finalTag.replace(/\|?My partner'?s(\|)?/g, "$1").replace(/\[\[QUICK_REPLY:\|/, "[[QUICK_REPLY:");
+      }
+      // Strip "Me" from carrier options for male parents (men cannot carry a pregnancy)
+      if (ctx.isMale && /carr(y|ying|ier)/i.test(content)) {
+        finalTag = finalTag.replace(/\|?Me\b(\|)?/g, "$1").replace(/\[\[QUICK_REPLY:\|/, "[[QUICK_REPLY:");
+      }
       console.log(`[Tier1 QR inject] Pattern matched, injecting: ${finalTag.slice(0, 60)}`);
       return content.trimEnd() + " " + finalTag;
     }
@@ -2989,7 +2994,10 @@ CRITICAL OVERRIDES - these override everything else:
         const tier1Messages = messages.filter((m: any) => m.role !== "system");
         finalContent = await callTier1Gemini(tier1SystemPrompt, tier1Messages, sse);
         if (!finalContent) finalContent = "I'm sorry, I couldn't process that.";
-        finalContent = injectMissingQuickReplies(finalContent, { isSolo: sessionSaysSolo || (isGayMale && !sessionAnswered(/with a partner|as a couple/i, AFFIRM)) });
+        finalContent = injectMissingQuickReplies(finalContent, {
+          isSolo: sessionSaysSolo || (isGayMale && !sessionAnswered(/with a partner|as a couple/i, AFFIRM)),
+          isMale: sessionSaysMan || isGayMale,
+        });
       }
     }
 
@@ -3335,16 +3343,45 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           }
         }
 
-        // Has embryos
-        if (extractedProfile?.hasEmbryos == null) {
+        // Has embryos - check uses !hasEmbryos because the schema default is false (not null)
+        if (!extractedProfile?.hasEmbryos) {
           const embryoCountMatch = msg.match(/\b(\d+)\s*(frozen\s+)?embryos?\b/);
           if (embryoCountMatch) {
             autoProfileData.hasEmbryos = true;
             autoProfileData.embryoCount = parseInt(embryoCountMatch[1], 10);
-          } else if (/\bhave (frozen )?embryos?\b|\bwe have embryos?\b/.test(msg)) {
+          } else if (/\bhave (frozen )?embryos?\b|\bwe have embryos?\b|\bi already have frozen embryos\b/.test(msg)) {
             autoProfileData.hasEmbryos = true;
           } else if (/\bno (frozen )?embryos?\b|\bdon't have embryos?\b/.test(msg)) {
             autoProfileData.hasEmbryos = false;
+          }
+        }
+
+        // Sperm source from expanded quick reply sentences
+        if (!extractedProfile?.spermSource) {
+          if (/\bi used my own sperm\b|\bi'?ll be using my own sperm\b|\bmy own sperm\b/.test(msg)) {
+            autoProfileData.spermSource = "My own";
+          } else if (/\bi used donor sperm\b|\bi'?ll be using donor sperm\b|\bdonor sperm\b/.test(msg)) {
+            autoProfileData.spermSource = "Donor";
+          } else if (/\bmy partner'?s sperm\b/.test(msg)) {
+            autoProfileData.spermSource = "Partner's";
+          }
+        }
+
+        // Egg source from expanded quick reply sentences
+        if (!extractedProfile?.eggSource) {
+          if (/\bmy own eggs?\b|\bi'?ll be using my own eggs?\b/.test(msg)) {
+            autoProfileData.eggSource = "own_eggs";
+          } else if (/\bdonor eggs?\b|\bi'?ll be using donor eggs?\b/.test(msg)) {
+            autoProfileData.eggSource = "donor";
+          }
+        }
+
+        // Carrier from expanded quick reply sentences
+        if (!extractedProfile?.carrier) {
+          if (/\bi will carry the pregnancy myself\b/.test(msg)) {
+            autoProfileData.carrier = "me";
+          } else if (/\ba gestational surrogate will carry\b/.test(msg)) {
+            autoProfileData.carrier = "gestational surrogate";
           }
         }
 
@@ -3383,6 +3420,15 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         }
 
         // Persist what we found
+        // Deterministic inference for gay/solo males - these are always true regardless of what they say
+        const detectedMale = /\bi('m| am) (a )?m[ae]n\b|\bsolo man\b|\bsingle man\b|\btwo dads\b/i.test(msg)
+          || autoUserData.gender === "I'm a man"
+          || (userRecord.gender === "I'm a man");
+        if (detectedMale && userRecord.parentAccountId) {
+          if (!extractedProfile?.eggSource) autoProfileData.eggSource = autoProfileData.eggSource || "donor";
+          if (!extractedProfile?.carrier) autoProfileData.carrier = autoProfileData.carrier || "gestational surrogate";
+        }
+
         if (Object.keys(autoUserData).length > 0) {
           await prisma.user.update({ where: { id: userId }, data: autoUserData });
           console.log(`[AUTO-EXTRACT] Saved user fields for ${userId}:`, autoUserData);
@@ -3859,6 +3905,11 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       const isSoloUser = sessionSaysSolo || (isGayMale && !sessionAnswered(/with a partner|as a couple/i, AFFIRM));
       if (isSoloUser) {
         quickReplies = quickReplies.filter((r) => !/^my partner'?s/i.test(r));
+      }
+      // Strip "Me" from carrier options for male parents (men cannot carry a pregnancy)
+      const isMaleParent = sessionSaysMan || isGayMale;
+      if (isMaleParent && /carr(y|ying|ier)|pregnancy/i.test(finalContent)) {
+        quickReplies = quickReplies.filter((r) => !/^me$/i.test(r));
       }
       finalContent = finalContent.replace(/\[\[QUICK_REPLY:.*?\]\]/g, "").trim();
     }
