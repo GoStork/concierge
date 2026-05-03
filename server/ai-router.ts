@@ -127,8 +127,11 @@ function injectMissingQuickReplies(content: string): string {
     // Step 2 - egg source (future tense, female speaker)
     [/what.*plan for eggs.*using your own.*considering a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]"],
     [/thinking of using your own.*considering a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]"],
-    // Step 3 - sperm source (past tense, straight male: no "My partner's")
+    // Step 3 - sperm source (past tense, straight/solo male: no "My partner's")
     [/for sperm.*did you use your own or a sperm donor/i, "[[QUICK_REPLY:My own|Donor sperm]]"],
+    [/was the sperm your own or from a donor/i, "[[QUICK_REPLY:My own|Donor sperm]]"],
+    [/sperm.*was it your own.*from a donor/i, "[[QUICK_REPLY:My own|Donor sperm]]"],
+    [/did you use your own sperm.*donor sperm/i, "[[QUICK_REPLY:My own|Donor sperm]]"],
     // Step 3 - sperm source (past tense, gay couple: includes "My partner's")
     [/for sperm.*did you use your own.*partner.*sperm donor/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm]]"],
     [/sperm.*your own.*partner.*donor sperm/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm]]"],
@@ -2270,11 +2273,22 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // --- PHASE 2: BIOLOGICAL BASELINE SKIP DIRECTIVES ---
 
     // Embryos: skip if already answered in DB or if context makes it obvious
+    const sessionHasEmbryos = /\b\d+\s*(frozen\s+)?embryo|have\s+(frozen\s+)?embryos?|already\s+have\s+(frozen\s+)?embryos?/i.test(allUserMessages);
+    const confirmedHasEmbryos = profile?.hasEmbryos === true || sessionHasEmbryos;
+
     if (profile?.hasEmbryos === true) {
-      skipDirectives.push(`DO NOT ask about frozen embryos (Step 1) - already saved: YES, ${profile.embryoCount ?? "unknown"} embryos, PGT-A tested: ${profile.embryosTested === true ? "yes" : "unknown"}.`);
+      skipDirectives.push(
+        `DO NOT ask about frozen embryos (Step 1) - already saved: YES, ${profile.embryoCount ?? "unknown"} embryos, PGT-A tested: ${profile.embryosTested === true ? "yes" : "unknown"}.` +
+        ` CRITICAL: Parent ALREADY HAS embryos - use PAST TENSE for Steps 2, 3, 4 (e.g., "was the sperm your own or from a donor?" NOT "will you be working with a sperm donor?").`
+      );
+    } else if (sessionHasEmbryos) {
+      skipDirectives.push(
+        `DO NOT ask about frozen embryos (Step 1) - parent said they already have embryos in this session.` +
+        ` CRITICAL: Parent ALREADY HAS embryos - use PAST TENSE for Steps 2, 3, 4 (e.g., "was the sperm your own or from a donor?" NOT "will you be working with a sperm donor?").`
+      );
     } else if (profile?.hasEmbryos === false) {
       skipDirectives.push("DO NOT ask about frozen embryos (Step 1) - already saved: NO embryos.");
-    } else if (needsEggDonor || (isGayMale && !(/have.*embryo|frozen\s*embryo|embryos/i.test(allUserMessages)))) {
+    } else if (needsEggDonor || (isGayMale && !sessionHasEmbryos)) {
       skipDirectives.push("DO NOT ask about frozen embryos (Step 1) - parent needs an egg donor, so they do not have embryos yet.");
     }
 
