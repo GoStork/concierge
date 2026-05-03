@@ -3739,6 +3739,24 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     const q = aiMessage.toLowerCase();
     const o = option.toLowerCase().trim();
 
+    // Solo or partner identity question
+    if (/solo.*partner|partner.*solo|journey solo|on your own.*with a partner/i.test(q)) {
+      if (/^solo$/i.test(o)) return "I'm going on this journey solo";
+      if (/^with a partner$/i.test(o)) return "I'm going on this journey with a partner";
+    }
+    // Gender question
+    if (/are you a woman or a man|woman or.*man|man or.*woman/i.test(q)) {
+      if (/^a woman$/i.test(o) || o === "i'm the woman") return "I am a woman";
+      if (/^a man$/i.test(o) || o === "i'm the man") return "I am a man";
+    }
+    // Service type selection
+    if (/what are you looking for|help with today/i.test(q)) {
+      if (/^surrogacy$/i.test(o)) return "I'm looking for surrogacy help";
+      if (/^egg donation$/i.test(o)) return "I'm looking for egg donation help";
+      if (/^sperm donation$/i.test(o)) return "I'm looking for sperm donation help";
+      if (/^ivf clinics?$/i.test(o)) return "I'm looking for an IVF clinic";
+    }
+
     // Embryo count (number cards)
     if (/how many embryos/i.test(q)) {
       if (o === "1") return "I have 1 frozen embryo";

@@ -2473,7 +2473,7 @@ When the parent asks a follow-up question about a specific egg donor (eye color,
     if (skipDirectives.length > 0) {
       messages.push({
         role: "system" as const,
-        content: `These Phase 2 baseline questions have already been answered - do not ask them again:\n${skipDirectives.map(d => "- " + d).join("\n")}\nDo not mention or acknowledge skipping. Continue with the normal conversation flow.`,
+        content: `MANDATORY SKIP RULES - these questions have already been answered and must NEVER be asked again:\n${skipDirectives.map(d => "- " + d).join("\n")}\nThese apply to ALL phases and ALL match cycles (Phase 1, Phase 2, Cycle A, B, C, D). Do not mention or acknowledge skipping. Continue with the normal conversation flow.`,
       });
     }
 
@@ -3855,6 +3855,11 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     const qrMatch = finalContent.match(/\[\[QUICK_REPLY:(.*?)\]\]/);
     if (qrMatch) {
       quickReplies = qrMatch[1].split("|").map((s: string) => s.trim());
+      // Strip "My partner's" option for solo users even when the AI itself wrote the tag
+      const isSoloUser = sessionSaysSolo || (isGayMale && !sessionAnswered(/with a partner|as a couple/i, AFFIRM));
+      if (isSoloUser) {
+        quickReplies = quickReplies.filter((r) => !/^my partner'?s/i.test(r));
+      }
       finalContent = finalContent.replace(/\[\[QUICK_REPLY:.*?\]\]/g, "").trim();
     }
 

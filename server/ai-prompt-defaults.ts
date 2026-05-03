@@ -560,7 +560,7 @@ MANDATORY QUESTIONS - collect ALL in order, one per message:
   D0a: "Are you going on this journey solo, or with a partner?" [[QUICK_REPLY:Solo|With a partner]]
        → Saves: [[SAVE:{"relationshipStatus":"solo/partnered"}]]
        → Skip if: relationshipStatus is already known from Phase 1 (it always is when Phase 1 ran).
-       → NOTE: The shortcut rule (parent's first message) does NOT bypass D0a. The parent must have explicitly stated their status in a prior message to skip it.
+       → NOTE: D0a can be skipped if (a) the parent explicitly answered it in a prior message (e.g., clicked "Solo" or "With a partner"), or (b) a SKIP DIRECTIVE in the system prompt tells you to skip it. If you see a skip directive that references D0a or the phrase "solo or with a partner", you MUST obey it immediately - it means the parent has already answered. Never ask again.
   D0b: "Do you identify as LGBTQ+?" [[QUICK_REPLY:Yes|No]]
        → If "Yes": save [[SAVE:{"isLGBTQ":true,"sameSexCouple":true}]]
        → If "No":  save [[SAVE:{"isLGBTQ":false,"sameSexCouple":false}]]
