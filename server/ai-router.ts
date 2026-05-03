@@ -1636,9 +1636,9 @@ STEP 2a (only if needs egg donor and has no embryos yet):
   → STEP 3
 
 STEP 3 - SPERM SOURCE:
-  Ask about sperm source. Valid options depend on who they are:
-  - Solo male: My own / Donor sperm [/ Not sure yet - future only]
-  - Male with partner: My own / My partner's / Donor sperm [/ Not sure yet - future only]
+  Ask about sperm source. Valid options and question wording depend on who they are:
+  - Solo male or gay solo male: NEVER mention "partner" in the question. Ask ONLY "did you use your own sperm or donor sperm?" [[QUICK_REPLY:My own|Donor sperm]]
+  - Male with partner: My own / My partner's / Donor sperm [[QUICK_REPLY:My own|My partner's|Donor sperm]]
   - Female (sperm must come from a donor - skip straight to 3a if no embryos, or just confirm donor if they have embryos): Donor sperm only.
   → Save: [[SAVE:{"spermSource":"my own|partner's|donor sperm"}]]
   → Donor sperm + no embryos → STEP 3a  |  Donor sperm + has embryos → skip 3a, STEP 4  |  Otherwise → STEP 4
@@ -2304,11 +2304,15 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       skipDirectives.push("DO NOT ask about egg source (Step 2) - already known: using egg donor.");
     }
 
-    // Sperm source: skip if already saved; strip partner option for solo users
+    // Sperm source: skip if already saved; for solo users ban "partner" from question text too
     if (profile?.spermSource) {
       skipDirectives.push(`DO NOT ask about sperm source (Step 3) - already saved: ${profile.spermSource}.`);
     } else if (sessionSaysSolo || (isGayMale && !sessionAnswered(/with a partner|as a couple/i, AFFIRM))) {
-      skipDirectives.push("DO NOT offer 'my partner's' as a sperm source option - this parent is solo and has no partner. Only offer: My own / Donor sperm.");
+      skipDirectives.push(
+        "DO NOT mention 'partner' anywhere in the sperm source question - this parent is SOLO with NO partner. " +
+        "The question must say ONLY 'did you use your own sperm or donor sperm?' - nothing else. " +
+        "Never say 'your partner\\'s' in the question text. Quick reply buttons: My own | Donor sperm only."
+      );
     }
 
     // Carrier: skip if already saved or context is obvious
