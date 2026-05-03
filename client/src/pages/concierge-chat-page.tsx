@@ -2596,6 +2596,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const typingStreamingIdRef = useRef<string | null>(null);
   const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const typingOnDoneRef = useRef<(() => void) | null>(null);
+  // Early quick-reply detection: populated as soon as the complete [[QUICK_REPLY:...]] tag
+  // appears in the stream buffer so buttons can show the moment the question text is done
+  const earlyQuickReplyRef = useRef<{ tagPos: number; options: string[]; multiSelect: boolean } | null>(null);
 
   const { data: sessionBookings } = useQuery<any[]>({
     queryKey: ["/api/chat-session", sessionId, "bookings"],
@@ -3562,6 +3565,20 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 startTypingAnimation(streamingId);
               }
               typingRawRef.current += delta;
+              // Detect [[QUICK_REPLY:...]] or [[MULTI_SELECT:...]] as soon as the complete tag
+              // lands in the buffer - record position so the animation can show buttons immediately
+              if (!earlyQuickReplyRef.current) {
+                const msTagMatch = typingRawRef.current.match(/\[\[MULTI_SELECT:(.*?)\]\]/);
+                const qrTagMatch = typingRawRef.current.match(/\[\[QUICK_REPLY:(.*?)\]\]/);
+                const tagMatch = msTagMatch || qrTagMatch;
+                if (tagMatch && tagMatch.index !== undefined) {
+                  earlyQuickReplyRef.current = {
+                    tagPos: tagMatch.index,
+                    options: tagMatch[1].split("|").map(s => s.trim()),
+                    multiSelect: !!msTagMatch,
+                  };
+                }
+              }
             }
           } else if (event.type === "done") {
             const data = event;
@@ -3688,6 +3705,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         if (typingOnDoneRef.current) {
           const cb = typingOnDoneRef.current;
           typingOnDoneRef.current = null;
+          earlyQuickReplyRef.current = null;
           clearInterval(typingIntervalRef.current!);
           typingIntervalRef.current = null;
           typingStreamingIdRef.current = null;
@@ -3705,7 +3723,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       const displayContent = stripStreamingTags(typingRawRef.current.slice(0, newDisplayed));
       const sid = typingStreamingIdRef.current;
       if (sid) {
-        setMessages(prev => prev.map(m => m.id === sid ? { ...m, content: displayContent } : m));
+        // Apply early quick replies the moment the cursor passes the tag position
+        const eqr = earlyQuickReplyRef.current;
+        if (eqr && newDisplayed >= eqr.tagPos) {
+          earlyQuickReplyRef.current = null;
+          setMessages(prev => prev.map(m => m.id === sid ? { ...m, content: displayContent, quickReplies: eqr.options, multiSelect: eqr.multiSelect } : m));
+        } else {
+          setMessages(prev => prev.map(m => m.id === sid ? { ...m, content: displayContent } : m));
+        }
       }
       // Scroll to keep up with new text appearing, but only instant (no smooth)
       // to avoid the stacked-smooth-scroll overshoot problem
@@ -3718,6 +3743,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
   const stopTypingAnimation = (flush: boolean) => {
     typingOnDoneRef.current = null;
+    earlyQuickReplyRef.current = null;
     if (typingIntervalRef.current) {
       clearInterval(typingIntervalRef.current);
       typingIntervalRef.current = null;
