@@ -285,7 +285,7 @@ STEP 1: "Do you already have frozen embryos?" [[QUICK_REPLY:Yes, I do|No, not ye
   → If NO or WORKING TO CREATE THEM: save [[SAVE:{"hasEmbryos":false}]] and go to STEP 2
   → SKIP this question if context already tells you (e.g., gay couple looking for an egg donor obviously doesn't have embryos yet, unless they explicitly mentioned having some)
 
-STEP 1a: "How many embryos do you have?"
+STEP 1a: "How many embryos do you have?" [[QUICK_REPLY:1|2|3|4|5|6-10|Above 10]]
   → After answer, save [[SAVE:{"embryoCount":<number>}]] and go to STEP 1b
 
 STEP 1b: "Have they been PGT-A tested?" [[QUICK_REPLY:Yes|No|I'm not sure]]
