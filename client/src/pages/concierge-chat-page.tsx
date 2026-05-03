@@ -3490,6 +3490,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     if (!text.trim() && !hasFiles) return;
     if (sending || sendingRef.current || showCurationRef.current) return;
 
+    // User just sent a message - they want to see the AI response, so scroll with it
+    userNearBottom.current = true;
+
     // If curation is awaiting parent confirmation, show their message and start animation
     if (curationAwaitingRef.current) {
       const now = new Date().toISOString();
