@@ -388,64 +388,114 @@ function esc(s) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function chipsHTML(options, type = 'qr') {
-  if (!options || !options.length) return '';
-  const cls = type === 'ms' ? 'chip chip-ms' : 'chip';
-  return `<div class="chips">${options.map(o => `<span class="${cls}">${esc(o)}</span>`).join('')}</div>`;
+// Extract a short destination label from a branch text line
+function extractDest(branchText) {
+  const m = branchText.match(/(?:go to|proceed to|skip to|start with|enter)\s+(STEP\s+\d+[a-zA-Z]*|[A-D]\d+[a-zA-Z]*|PROGRESSIVE MATCH CYCLES|PHASE\s+\d)/i);
+  if (m) return m[1].toUpperCase();
+  if (/PROGRESSIVE MATCH CYCLES/i.test(branchText)) return 'MATCH CYCLES';
+  if (/proceed to match cycles/i.test(branchText)) return 'MATCH CYCLES';
+  return null;
+}
+
+// Try to pair each quickReply with the branch that describes it
+function pairBranches(quickReplies, branches) {
+  if (!quickReplies || !quickReplies.length) return [];
+  return quickReplies.map(reply => {
+    const rLow = reply.toLowerCase().replace(/[^a-z0-9 ]/g, '');
+    // Try direct substring match first
+    let matched = branches.find(b => {
+      const bLow = b.toLowerCase();
+      return bLow.includes(`"${reply.toLowerCase()}"`) || bLow.includes(rLow.slice(0, 10));
+    });
+    // Fallback: keyword match for common yes/no patterns
+    if (!matched) {
+      if (/^yes/i.test(reply))         matched = branches.find(b => /\byes\b|\bif yes\b/i.test(b));
+      else if (/^no[,\s]/i.test(reply) || reply.toLowerCase() === 'no') matched = branches.find(b => /\bno\b|\bif no\b/i.test(b));
+      else if (/already have/i.test(reply)) matched = branches.find(b => /already have/i.test(b));
+      else if (/need help|finding/i.test(reply)) matched = branches.find(b => /need|finding/i.test(b));
+      else if (/solo/i.test(reply))    matched = branches.find(b => /solo/i.test(b));
+      else if (/partner/i.test(reply)) matched = branches.find(b => /partner/i.test(b));
+    }
+    const dest = matched ? extractDest(matched) : null;
+    return { reply, dest };
+  });
 }
 
 function renderQuestion(q, idx) {
-  const labelBadge = q.label
-    ? `<span class="qlabel">${esc(q.label)}</span>`
-    : `<span class="qlabel qlabel-unlabeled">Q${idx + 1}</span>`;
+  const isStep  = !!q.label;
+  const isMulti = !!q.multiSelect;
+  const nodeColor = isMulti ? 'multi' : (isStep ? 'step' : 'anon');
 
-  const hasText    = q.text && q.text.length > 3;
-  const textHTML   = hasText ? `<div class="qtext">${esc(q.text)}</div>` : '';
+  const labelHTML = q.label
+    ? `<span class="nlabel nlabel-${nodeColor}">${esc(q.label)}</span>`
+    : `<span class="nlabel nlabel-anon">Q${idx + 1}</span>`;
 
-  const optionsHTML = (q.quickReplies ? chipsHTML(q.quickReplies, 'qr') : '')
-                    + (q.multiSelect  ? chipsHTML(q.multiSelect,  'ms') : '');
+  const textHTML = (q.text && q.text.length > 3)
+    ? `<div class="nquestion">${esc(q.text)}</div>`
+    : '';
 
-  const branchesHTML = q.branches.length
-    ? `<div class="qbranches">${q.branches.map(b => `<div class="branch-item">→ ${esc(b)}</div>`).join('')}</div>`
+  const saveHTML = (q.saveFields && q.saveFields.length)
+    ? `<div class="nsave">${q.saveFields.map(f => `<span class="nsave-field">${esc(f)}</span>`).join('')}</div>`
     : '';
 
   const skipHTML = q.skipConditions.length
-    ? `<div class="qskip">${q.skipConditions.map(s => `<span>Skip if: ${esc(s)}</span>`).join('')}</div>`
+    ? `<div class="nskip">${q.skipConditions.map(s => `<span class="nskip-pill">skip if: ${esc(s)}</span>`).join('')}</div>`
     : '';
 
-  const saveHTML = q.saveFields && q.saveFields.length
-    ? `<div class="qsave"><span class="save-label">Saves →</span>${q.saveFields.map(f => `<span class="save-field">${esc(f)}</span>`).join('')}</div>`
-    : '';
+  // Build the branch fork from answers
+  const opts   = q.quickReplies || q.multiSelect;
+  const paired = opts ? pairBranches(opts, q.branches) : [];
+  const chipType = isMulti ? 'multi' : 'qr';
 
-  const nodeClass = q.multiSelect ? 'q-card q-multi' : (q.label ? 'q-card q-step' : 'q-card q-anon');
+  let branchHTML = '';
+  if (paired.length) {
+    const branchItems = paired.map(({ reply, dest }) => `
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-${chipType}">${esc(reply)}</div>
+        ${dest ? `<div class="fork-dest">→ ${esc(dest)}</div>` : ''}
+      </div>`).join('');
+    branchHTML = `<div class="fork-row">${branchItems}</div>`;
+  } else if (q.branches.length) {
+    // No chips but has branch logic - show as compact list
+    const items = q.branches.map(b => `<div class="nbranch-item">${esc(b)}</div>`).join('');
+    branchHTML = `<div class="nbranches">${items}</div>`;
+  }
 
   return `
-<div class="${nodeClass}">
-  <div class="q-header">${labelBadge}${textHTML}</div>
-  ${optionsHTML}
-  ${saveHTML}
-  ${branchesHTML}
-  ${skipHTML}
+<div class="tree-node">
+  <div class="node-box node-${nodeColor}">
+    <div class="node-hdr">${labelHTML}${textHTML}</div>
+    ${saveHTML}
+    ${skipHTML}
+  </div>
+  ${branchHTML}
 </div>`;
 }
 
 function renderSection(section, depth = 0) {
-  const hTag  = depth === 0 ? 'h3' : 'h4';
-  const qHTML = section.questions.map((q, i) => renderQuestion(q, i)).join('\n<div class="q-arrow">▼</div>\n');
+  const hTag = depth === 0 ? 'h3' : 'h4';
+  const qHTML = section.questions
+    .map((q, i) => renderQuestion(q, i))
+    .join('\n<div class="tree-connector"></div>\n');
 
   return `
 <div class="subsection depth-${depth}">
   <${hTag} class="sub-title">${esc(section.title)}</${hTag}>
-  ${qHTML || '<div class="empty-section">No user-facing questions in this section - rules and logic only.</div>'}
+  <div class="tree-flow">
+    ${qHTML || '<div class="empty-section">No user-facing questions in this section - rules and logic only.</div>'}
+  </div>
 </div>`;
 }
 
 function renderTab(tab) {
   const directQHTML = tab.questions.length
-    ? tab.questions.map((q, i) => renderQuestion(q, i)).join('\n<div class="q-arrow">▼</div>\n')
+    ? tab.questions.map((q, i) => renderQuestion(q, i)).join('\n<div class="tree-connector"></div>\n')
     : '';
   const subHTML = tab.subsections.map(s => renderSection(s, 1)).join('\n');
   const hasContent = directQHTML || subHTML;
+  // Show persona banner on Phase 2 (biological baseline) tab
+  const showPersonas = /phase.*2|biological/i.test(tab.id + tab.title);
 
   return `
 <div id="${esc(tab.id)}" class="section">
@@ -453,17 +503,40 @@ function renderTab(tab) {
     <h2>${esc(tab.title)}</h2>
     ${tab.description ? `<p>${esc(tab.description)}</p>` : ''}
   </div>
+  ${showPersonas ? personaBannerHTML() : ''}
   <div class="tab-content">
-    ${directQHTML}
+    ${directQHTML ? `<div class="tree-flow">${directQHTML}</div>` : ''}
     ${subHTML}
     ${!hasContent ? '<div class="empty-section">No questions found in this section.</div>' : ''}
   </div>
 </div>`;
 }
 
+
 // ─────────────────────────────────────────────
 // 6. STATIC TABS (Onboarding + Overview)
 // ─────────────────────────────────────────────
+
+const PERSONAS = [
+  { icon: '👨', label: 'Solo Man',       bio: 'Sperm: own/donor\nEggs: always donor\nCarrier: always surrogate' },
+  { icon: '👩', label: 'Solo Woman',     bio: 'Sperm: always donor\nEggs: own/donor\nCarrier: self or surrogate' },
+  { icon: '👨‍👨‍👦', label: 'Two Dads',      bio: 'Sperm: Partner A/B/donor\nEggs: always donor\nCarrier: always surrogate' },
+  { icon: '👩‍👩‍👦', label: 'Two Moms',      bio: 'Sperm: always donor\nEggs: A/B/donor\nCarrier: A/B/surrogate' },
+  { icon: '👫', label: 'A Man & Woman',  bio: 'Sperm: own/donor\nEggs: own/donor\nCarrier: partner or surrogate' },
+];
+
+function personaBannerHTML() {
+  return `
+<div class="persona-banner">
+  <div class="persona-banner-title">Family types - biology reference (from FERTILITY BIOLOGY prompt section)</div>
+  ${PERSONAS.map((p, i) => `
+  <div class="persona-card${i === 0 ? ' active' : ''}" onclick="selectPersona(this)">
+    <div class="persona-icon">${p.icon}</div>
+    <div class="persona-label">${p.label}</div>
+    <div class="persona-bio">${p.bio.replace(/\n/g, '<br>')}</div>
+  </div>`).join('')}
+</div>`;
+}
 
 function overviewTab(tabs) {
   const cards = [
@@ -478,6 +551,7 @@ function overviewTab(tabs) {
     <h2>Full Flow Overview</h2>
     <p>All user-facing questions discovered automatically from <code>server/ai-prompt-defaults.ts</code>. Questions in order. Phases skip based on context.</p>
   </div>
+  ${personaBannerHTML()}
   <div class="cards">
     ${cards.map(c => `<div class="card"><span class="ctag ${esc(c.tag)}">${esc(c.label)}</span><h4>${esc(c.title)}</h4><p>${esc(c.body)}</p></div>`).join('\n    ')}
   </div>
@@ -498,12 +572,14 @@ function onboardingTab() {
       { label: 'Screen 5', text: 'Enter the code you received', opts: [], note: '6-digit OTP. Loops on invalid.', saves: [] },
       { label: 'Screen 6', text: 'Create your account', opts: [], note: 'Email + Password. Error if email exists.', saves: ['email', 'password'] },
     ].map((s, i) => `
-    ${i > 0 ? '<div class="q-arrow">▼</div>' : ''}
-    <div class="q-card q-step">
-      <div class="q-header"><span class="qlabel">${s.label}</span><div class="qtext">${s.text}</div></div>
-      ${s.opts.length ? chipsHTML(s.opts) : ''}
-      ${s.saves.length ? `<div class="qsave"><span class="save-label">Saves →</span>${s.saves.map(f => `<span class="save-field">${f}</span>`).join('')}</div>` : ''}
-      ${s.note ? `<div class="qbranches"><div class="branch-item">${s.note}</div></div>` : ''}
+    ${i > 0 ? '<div class="tree-connector"></div>' : ''}
+    <div class="tree-node">
+      <div class="node-box node-step">
+        <div class="node-hdr"><span class="nlabel nlabel-step">${s.label}</span><div class="nquestion">${s.text}</div></div>
+        ${s.saves.length ? `<div class="nsave">${s.saves.map(f => `<span class="nsave-field">${f}</span>`).join('')}</div>` : ''}
+        ${s.note ? `<div class="nbranches"><div class="nbranch-item">${s.note}</div></div>` : ''}
+      </div>
+      ${s.opts.length ? `<div class="fork-row">${s.opts.map(o => `<div class="fork-branch"><div class="fork-line"></div><div class="fork-chip fork-chip-qr">${o}</div></div>`).join('')}</div>` : ''}
     </div>`).join('')}
     </div>
   </div>
@@ -522,60 +598,112 @@ function countQuestions(tab) {
 
 const CSS = `
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d0d12;color:#e5e7eb;min-height:100vh}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0a10;color:#e5e7eb;min-height:100vh}
 code{font-family:monospace;font-size:11px;background:#1a1a24;padding:1px 5px;border-radius:3px;color:#a78bfa}
-header{background:#111118;border-bottom:1px solid #252535;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+
+/* ── HEADER */
+header{background:#111118;border-bottom:1px solid #1e1e2e;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
 header h1{font-size:17px;font-weight:700;color:#fff}
 header p{font-size:11px;color:#6b7280;margin-top:2px}
 .gen-badge{background:#162b1f;color:#34d399;font-size:10px;font-weight:700;padding:4px 10px;border-radius:4px;border:1px solid #34d399;white-space:nowrap;flex-shrink:0;margin-left:16px}
-nav{background:#111118;border-bottom:1px solid #252535;padding:0 28px;display:flex;gap:2px;overflow-x:auto}
+
+/* ── NAV */
+nav{background:#111118;border-bottom:1px solid #1e1e2e;padding:0 28px;display:flex;gap:2px;overflow-x:auto}
 nav button{background:none;border:none;padding:10px 13px;font-size:12px;font-weight:500;color:#6b7280;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:color .12s}
 nav button:hover{color:#d1d5db}
 nav button.active{color:#a78bfa;border-bottom-color:#a78bfa}
-.legend{display:flex;flex-wrap:wrap;gap:14px;padding:9px 28px;background:#111118;border-bottom:1px solid #252535}
+.stat{font-size:11px;color:#6b7280;margin-left:6px;font-weight:normal}
+
+/* ── LEGEND */
+.legend{display:flex;flex-wrap:wrap;gap:14px;padding:9px 28px;background:#111118;border-bottom:1px solid #1e1e2e}
 .li{display:flex;align-items:center;gap:6px;font-size:11px;color:#9ca3af}
-.ls{width:14px;height:10px;border-radius:2px}
-main{padding:24px 28px;max-width:1300px;margin:0 auto}
+.ls{width:12px;height:12px;border-radius:3px}
+
+/* ── LAYOUT */
+main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
 .section{display:none}.section.active{display:block}
-.sec-hdr{margin-bottom:20px}
-.sec-hdr h2{font-size:19px;font-weight:700;color:#f3f4f6;margin-bottom:4px}
+.sec-hdr{margin-bottom:24px}
+.sec-hdr h2{font-size:20px;font-weight:700;color:#f3f4f6;margin-bottom:4px}
 .sec-hdr p{font-size:13px;color:#6b7280;line-height:1.5}
-.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-bottom:20px}
-.card{background:#111118;border:1px solid #252535;border-radius:10px;padding:12px 15px}
-.ctag{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:2px 7px;border-radius:3px;margin-bottom:6px}
+
+/* ── OVERVIEW CARDS */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:24px}
+.card{background:#111118;border:1px solid #1e1e2e;border-radius:10px;padding:14px 16px}
+.ctag{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:2px 7px;border-radius:3px;margin-bottom:8px}
 .t-ob{background:#1e3a5f;color:#60a5fa}.t-phase{background:#2d1b4e;color:#a78bfa}.t-ru{background:#3b1f1f;color:#f87171}
-.card h4{font-size:13px;font-weight:600;color:#e5e7eb;margin-bottom:3px}.card p{font-size:12px;color:#9ca3af;line-height:1.4}
-/* ── FLOW LAYOUT */
-.tab-content{display:flex;flex-direction:column;gap:0}
-.subsection{margin-bottom:24px}
-.subsection.depth-1{background:#111118;border:1px solid #252535;border-radius:10px;padding:18px 20px;margin-bottom:16px}
-.sub-title{font-size:13px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #252535}
-.q-arrow{display:flex;justify-content:center;align-items:center;height:22px;color:#4b5563;font-size:11px;position:relative}
-.q-arrow::before{content:'';position:absolute;top:0;bottom:0;left:50%;width:2px;background:#252535;transform:translateX(-50%)}
-.q-arrow span{position:relative;z-index:1;background:#0d0d12;padding:0 4px}
-/* ── QUESTION CARDS */
-.q-card{border-radius:8px;padding:12px 14px;margin:0 auto;width:100%;max-width:680px;border-left-width:4px;border-left-style:solid}
-.q-step{background:#162b1f;border-color:#34d399;border-top-color:#252535;border-right-color:#252535;border-bottom-color:#252535}
-.q-multi{background:#1e1535;border-color:#a78bfa;border-top-color:#252535;border-right-color:#252535;border-bottom-color:#252535}
-.q-anon{background:#12181e;border-color:#3b82f6;border-top-color:#252535;border-right-color:#252535;border-bottom-color:#252535}
-.q-header{display:flex;align-items:flex-start;gap:10px;margin-bottom:6px}
-.qlabel{flex-shrink:0;font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:4px;background:#1a3a2a;color:#34d399;margin-top:1px;white-space:nowrap}
-.qlabel-unlabeled{background:#1e2a3a;color:#60a5fa}
-.q-multi .qlabel{background:#2d1b4e;color:#a78bfa}
-.qtext{font-size:13px;font-weight:600;color:#e5e7eb;line-height:1.4}
-.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
-.chip{background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.25);border-radius:20px;padding:3px 9px;font-size:11px;color:#6ee7b7}
-.chip-ms{background:rgba(167,139,250,.1);border-color:rgba(167,139,250,.25);color:#c4b5fd}
-.qbranches{margin-top:8px;display:flex;flex-direction:column;gap:3px}
-.branch-item{font-size:11px;color:#9ca3af;padding-left:8px;border-left:2px solid #252535;line-height:1.5}
-.qskip{margin-top:6px;display:flex;flex-wrap:wrap;gap:4px}
-.qskip span{font-size:10px;background:#2a1515;color:#f87171;padding:2px 8px;border-radius:4px;border:1px solid rgba(248,113,113,.2)}
-.qsave{margin-top:7px;display:flex;flex-wrap:wrap;align-items:center;gap:5px}
-.save-label{font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;flex-shrink:0}
-.save-field{font-size:11px;font-family:monospace;background:#1a1220;color:#f0abfc;padding:2px 8px;border-radius:4px;border:1px solid rgba(240,171,252,.25)}
-.empty-section{font-size:12px;color:#4b5563;padding:12px;text-align:center;border:1px dashed #252535;border-radius:6px}
-/* ── STAT BADGE */
-.stat{font-size:11px;color:#6b7280;margin-left:8px;font-weight:normal}
+.card h4{font-size:13px;font-weight:600;color:#e5e7eb;margin-bottom:4px}.card p{font-size:12px;color:#9ca3af;line-height:1.4}
+
+/* ── PERSONA BANNER */
+.persona-banner{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:32px;padding:18px 20px;background:#0f0f1a;border:1px solid #1e1e2e;border-radius:12px}
+.persona-banner-title{width:100%;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.persona-card{display:flex;flex-direction:column;align-items:center;gap:8px;flex:1;min-width:120px;padding:14px 10px;background:#111118;border:1px solid #252535;border-radius:10px;cursor:pointer;transition:border-color .15s,background .15s}
+.persona-card:hover{border-color:#4b5563;background:#161622}
+.persona-card.active{border-color:#a78bfa;background:#1a1535}
+.persona-icon{font-size:26px;line-height:1}
+.persona-label{font-size:12px;font-weight:600;color:#d1d5db;text-align:center;line-height:1.3}
+.persona-bio{font-size:10px;color:#6b7280;text-align:center;line-height:1.4}
+
+/* ── SUBSECTION */
+.tab-content{display:flex;flex-direction:column;gap:20px}
+.subsection{margin-bottom:8px}
+.subsection.depth-1{background:#0f0f1a;border:1px solid #1e1e2e;border-radius:12px;padding:20px 24px;margin-bottom:4px}
+.sub-title{font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.08em;margin-bottom:18px;padding-bottom:10px;border-bottom:1px solid #1e1e2e}
+
+/* ── TREE FLOW */
+.tree-flow{display:flex;flex-direction:column;align-items:center;gap:0}
+
+/* ── CONNECTOR between nodes */
+.tree-connector{width:2px;height:28px;background:linear-gradient(to bottom,#2a2a3e,#3a3a52);margin:0 auto;flex-shrink:0}
+
+/* ── NODE */
+.tree-node{display:flex;flex-direction:column;align-items:center;width:100%}
+
+.node-box{width:100%;max-width:520px;border-radius:12px;padding:14px 18px;position:relative;border:1.5px solid}
+.node-step {background:#0e2018;border-color:#34d399}
+.node-multi{background:#130e28;border-color:#a78bfa}
+.node-anon {background:#0c1520;border-color:#3b82f6}
+
+.node-hdr{display:flex;align-items:flex-start;gap:10px;margin-bottom:0}
+.nquestion{font-size:13px;font-weight:600;color:#e5e7eb;line-height:1.45;flex:1}
+
+/* ── NODE LABEL BADGE */
+.nlabel{flex-shrink:0;font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:5px;margin-top:1px;white-space:nowrap}
+.nlabel-step {background:#0d3320;color:#34d399;border:1px solid rgba(52,211,153,.3)}
+.nlabel-multi{background:#1d1040;color:#a78bfa;border:1px solid rgba(167,139,250,.3)}
+.nlabel-anon {background:#0d1e30;color:#60a5fa;border:1px solid rgba(96,165,250,.3)}
+
+/* ── SAVE FIELDS */
+.nsave{display:flex;flex-wrap:wrap;gap:4px;margin-top:9px}
+.nsave-field{font-size:10px;font-family:monospace;background:#1a0e28;color:#e879f9;padding:2px 8px;border-radius:4px;border:1px solid rgba(232,121,249,.2)}
+
+/* ── SKIP PILL */
+.nskip{margin-top:8px;display:flex;flex-wrap:wrap;gap:4px}
+.nskip-pill{font-size:10px;background:#200e0e;color:#f87171;padding:2px 8px;border-radius:4px;border:1px solid rgba(248,113,113,.2)}
+
+/* ── BRANCH LOGIC (no chips, just text) */
+.nbranches{margin-top:10px;border-top:1px solid rgba(255,255,255,.05);padding-top:8px;display:flex;flex-direction:column;gap:3px}
+.nbranch-item{font-size:11px;color:#6b7280;padding-left:10px;border-left:2px solid #252535;line-height:1.5}
+
+/* ── FORK ROW (answer chips that branch) */
+.fork-row{display:flex;justify-content:center;gap:0;position:relative;width:100%;max-width:520px}
+
+/* horizontal bar connecting branch tops */
+.fork-row::before{content:'';position:absolute;top:0;left:16px;right:16px;height:2px;background:linear-gradient(to right,transparent,#2a2a3e 20%,#2a2a3e 80%,transparent)}
+
+/* ── INDIVIDUAL BRANCH */
+.fork-branch{display:flex;flex-direction:column;align-items:center;flex:1;min-width:80px;padding:0 4px}
+
+/* vertical stem from bar down to chip */
+.fork-line{width:2px;height:20px;background:#2a2a3e;flex-shrink:0}
+
+.fork-chip{font-size:11px;font-weight:500;padding:5px 10px;border-radius:20px;text-align:center;line-height:1.3;white-space:normal;word-break:break-word;max-width:120px}
+.fork-chip-qr {background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.25);color:#6ee7b7}
+.fork-chip-multi{background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.25);color:#c4b5fd}
+
+.fork-dest{font-size:10px;color:#4b5563;margin-top:5px;font-family:monospace;font-weight:600;letter-spacing:.03em}
+
+/* ── EMPTY */
+.empty-section{font-size:12px;color:#4b5563;padding:16px;text-align:center;border:1px dashed #1e1e2e;border-radius:8px}
 `;
 
 // ─────────────────────────────────────────────
@@ -637,10 +765,11 @@ function generate() {
   ${navButtons}
 </nav>
 <div class="legend">
-  <div class="li"><div class="ls" style="background:#162b1f;border:1px solid #34d399"></div>Question with quick replies</div>
-  <div class="li"><div class="ls" style="background:#1e1535;border:1px solid #a78bfa"></div>Multi-select question</div>
-  <div class="li"><div class="ls" style="background:#12181e;border:1px solid #3b82f6"></div>Open-ended question</div>
-  <div class="li"><div class="ls" style="background:#2a1515;border:1px solid #f87171"></div>Skip condition</div>
+  <div class="li"><div class="ls" style="background:#0e2018;border:1.5px solid #34d399"></div>Question with quick replies</div>
+  <div class="li"><div class="ls" style="background:#130e28;border:1.5px solid #a78bfa"></div>Multi-select question</div>
+  <div class="li"><div class="ls" style="background:#0c1520;border:1.5px solid #3b82f6"></div>Open-ended question</div>
+  <div class="li"><div class="ls" style="background:#200e0e;border:1.5px solid #f87171"></div>Skip condition</div>
+  <div class="li"><div class="ls" style="background:#1a0e28;border:1.5px solid #e879f9"></div>Saves to profile</div>
 </div>
 <main>
 ${sectionHTML}
@@ -651,6 +780,10 @@ function show(id, btn) {
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   btn.classList.add('active');
+}
+function selectPersona(el) {
+  el.closest('.persona-banner').querySelectorAll('.persona-card').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
 }
 </script>
 </body>

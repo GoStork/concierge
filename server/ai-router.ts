@@ -88,7 +88,7 @@ async function callTier1Gemini(
 
 // Post-process Gemini Tier 1 output: inject [[QUICK_REPLY:...]] tags for known
 // questions when Gemini drops them. Only fires when no [[QUICK_REPLY:]] is present.
-function injectMissingQuickReplies(content: string, ctx: { isSolo?: boolean; isMale?: boolean } = {}): string {
+function injectMissingQuickReplies(content: string): string {
   if (/\[\[QUICK_REPLY:/.test(content) || /\[\[MULTI_SELECT:/.test(content)) return content;
 
   // Ordered from most specific to least specific
@@ -108,7 +108,6 @@ function injectMissingQuickReplies(content: string, ctx: { isSolo?: boolean; isM
     [/do you already have a fertility clinic.*need help finding one/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
     [/need help finding.*fertility clinic.*already have one/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
     [/do you already have frozen embryos/i, "[[QUICK_REPLY:Yes, I do|No, not yet|Working to create them]]"],
-    [/how many embryos/i, "[[QUICK_REPLY:1|2|3|4|5|6-10|Above 10]]"],
     [/have they been pgt-?a tested/i, "[[QUICK_REPLY:Yes|No|I'm not sure]]"],
     // Step 1c - egg donor conflict (has embryos but registered for egg donation)
     [/fresh egg donor.*existing embryos/i, "[[QUICK_REPLY:Create new embryos with a donor|Use my existing embryos]]"],
@@ -118,18 +117,31 @@ function injectMissingQuickReplies(content: string, ctx: { isSolo?: boolean; isM
     [/donor sperm.*existing embryos/i, "[[QUICK_REPLY:Create new embryos with donor sperm|Use my existing embryos]]"],
     // Phase 1 - which partner is speaking (straight couple)
     [/are you the woman or the man/i, "[[QUICK_REPLY:I'm the woman|I'm the man]]"],
-    // Step 2 - egg source: check for "partner" first (more specific), then fall back to solo
-    [/\begg(s)?\b.*\bpartner\b.*(donor|own)/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs]]"],
-    [/\begg(s)?\b.*(your own|own eggs).*(donor|egg donor)/i, "[[QUICK_REPLY:My own eggs|Donor eggs]]"],
-    // Step 3 - sperm source: check for "partner" first, then fall back to solo
-    [/\bsperm\b.*\bpartner\b.*(donor|own)/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm]]"],
-    [/\bsperm\b.*(your own|own sperm).*(donor|sperm donor)/i, "[[QUICK_REPLY:My own|Donor sperm]]"],
-    // Step 2/3 - help finding donor or surrogate
-    [/(need help finding|already have) (an? )?(egg|sperm) donor/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
+    // Step 2 - egg source (past tense, straight male: no "My own eggs")
+    [/were the eggs your partner's or from a donor/i, "[[QUICK_REPLY:My partner's eggs|Donor eggs]]"],
+    // Step 2 - egg source (past tense, female speaker: includes "My own eggs")
+    [/were the eggs yours.*partner.*from a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs]]"],
+    [/eggs yours.*partner.*from a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs]]"],
+    // Step 2 - egg source (future tense, straight male: no "My own eggs")
+    [/plan for eggs.*partner.*own eggs.*considering a donor/i, "[[QUICK_REPLY:My partner's eggs|Donor eggs|I'm not sure yet]]"],
+    // Step 2 - egg source (future tense, female speaker)
+    [/what.*plan for eggs.*using your own.*considering a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]"],
+    [/thinking of using your own.*considering a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]"],
+    // Step 3 - sperm source (past tense, straight male: no "My partner's")
+    [/for sperm.*did you use your own or a sperm donor/i, "[[QUICK_REPLY:My own|Donor sperm]]"],
+    // Step 3 - sperm source (past tense, gay couple: includes "My partner's")
+    [/for sperm.*did you use your own.*partner.*sperm donor/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm]]"],
+    [/sperm.*your own.*partner.*donor sperm/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm]]"],
+    // Step 3 - sperm source (future tense, straight male: no "My partner's")
+    [/for sperm.*will you be using your own or a sperm donor/i, "[[QUICK_REPLY:My own|Donor sperm|Not sure yet]]"],
+    // Step 3 - sperm source (future tense, gay couple)
+    [/for sperm.*will you be using.*still deciding/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]"],
+    [/sperm.*own.*partner.*donor.*still deciding/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]"],
+    [/do you need help finding an egg donor/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
+    [/do you need help finding a sperm donor/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
     [/do you need help finding a surrogate/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
-    // Step 4 - carrier: "Me" is only valid for female parents; male parents always need a surrogate
-    [/who.*(carry|carrying).*\bpartner\b/i, "[[QUICK_REPLY:Me|My partner|A gestational surrogate]]"],
-    [/who.*(is |will |would )?(carry|carrying|carry the)/i, "[[QUICK_REPLY:Me|A gestational surrogate]]"],
+    [/who is.*planning to carry the pregnancy/i, "[[QUICK_REPLY:Me|My partner|A gestational surrogate]]"],
+    [/who is carrying the pregnancy/i, "[[QUICK_REPLY:Me|My partner|A gestational surrogate]]"],
     // Cycle intake
     [/are you hoping for twins/i, "[[QUICK_REPLY:Yes|No]]"],
     [/are you hoping to have twins.*singleton/i, "[[QUICK_REPLY:Hoping for twins|Singleton only|No preference]]"],
@@ -139,17 +151,8 @@ function injectMissingQuickReplies(content: string, ctx: { isSolo?: boolean; isM
 
   for (const [pattern, tag] of patterns) {
     if (pattern.test(content)) {
-      let finalTag = tag;
-      // Strip "My partner's" option for solo users
-      if (ctx.isSolo) {
-        finalTag = finalTag.replace(/\|?My partner'?s(\|)?/g, "$1").replace(/\[\[QUICK_REPLY:\|/, "[[QUICK_REPLY:");
-      }
-      // Strip "Me" from carrier options for male parents (men cannot carry a pregnancy)
-      if (ctx.isMale && /carr(y|ying|ier)/i.test(content)) {
-        finalTag = finalTag.replace(/\|?Me\b(\|)?/g, "$1").replace(/\[\[QUICK_REPLY:\|/, "[[QUICK_REPLY:");
-      }
-      console.log(`[Tier1 QR inject] Pattern matched, injecting: ${finalTag.slice(0, 60)}`);
-      return content.trimEnd() + " " + finalTag;
+      console.log(`[Tier1 QR inject] Pattern matched, injecting: ${tag.slice(0, 60)}`);
+      return content.trimEnd() + " " + tag;
     }
   }
   return content;
@@ -1592,75 +1595,135 @@ If the parent's FIRST message (or any early message) explicitly states what they
 This shortcut applies whenever the parent's intent is clear. Only use the full STEP 1-5 flow when the parent starts with a vague message like "hello" or "I need help" without specifying what service they need.
 
 STANDARD FLOW (use only when the parent hasn't specified a service):
-Follow this question flow in order. Ask ONE question per message. Acknowledge the answer briefly, then move to the next unanswered step.
+You MUST follow the question flow below in EXACT order. Ask ONE question per message. Do NOT combine multiple questions into one message. Do NOT re-order steps. After the user answers each question, acknowledge briefly and move to the NEXT step. Track which step you are on internally.
 
-CRITICAL - READ THE CONVERSATION BEFORE ASKING ANYTHING:
-Scan the entire chat history before each step. If the answer is already there - stated explicitly or implied by the parent's situation - skip that step silently. Do NOT announce skips.
+FERTILITY BIOLOGY - WHAT IS BIOLOGICALLY POSSIBLE FOR EACH FAMILY TYPE:
+Before asking any question, identify the parent's family type from the conversation and apply ONLY the valid options below. Never offer an option that is biologically impossible for this family type.
 
-Common skip examples:
-- Gay male couple or single male: eggs always from a donor, always need a surrogate - skip Steps 1 (unless they mention prior embryos), 2, 4.
-- Parent said "I need an egg donor": skip Step 2 AND 2a.
-- Parent said "I already have a surrogate": skip Step 4 AND 4a.
-- Parent mentioned having embryos: skip Step 1.
+Solo Man (single male, gay solo man):
+  - Sperm: His own OR Donor sperm
+  - Eggs: ALWAYS from a donor - no other option exists. NEVER ask about egg source.
+  - Gestation: ALWAYS a gestational surrogate - no other option exists. NEVER ask who will carry.
+  Questions to ask: sperm source only. Skip egg source and carrier entirely.
 
-STEP 1: Ask if they already have frozen embryos. [[QUICK_REPLY:Yes, I do|No, not yet|Working to create them]]
-  → YES → STEP 1a  |  NO or working on it → STEP 2
+Two Dads (gay male couple):
+  - Sperm: Partner A, Partner B, or Donor
+  - Eggs: ALWAYS from a donor - no other option exists. NEVER ask about egg source.
+  - Gestation: ALWAYS a gestational surrogate - no other option exists. NEVER ask who will carry.
+  Questions to ask: whose sperm (Partner A / Partner B / Donor). Skip egg source and carrier entirely.
 
-STEP 1a: Ask how many embryos they have. → STEP 1b
+Solo Woman (single female):
+  - Sperm: ALWAYS from a donor - no other option exists. NEVER ask about sperm source.
+  - Eggs: Her own OR Donor eggs
+  - Gestation: Herself OR a gestational surrogate
+  Questions to ask: egg source, then carrier.
 
-STEP 1b: Ask if the embryos have been PGT-A tested. [[QUICK_REPLY:Yes|No|I'm not sure]]  → STEP 2
+Two Moms (lesbian couple):
+  - Sperm: ALWAYS from a donor - no other option exists. NEVER ask about sperm source.
+  - Eggs: Partner A (traditional), Partner B (reciprocal IVF), or Third-party donor
+  - Gestation: Partner A, Partner B, or a gestational surrogate
+  Questions to ask: which partner's eggs (or donor), then who carries.
 
-STEPS 2-4 - BIOLOGICAL BASELINE:
-You already have all the context you need from the conversation. Use it naturally.
+Man and Woman (heterosexual couple):
+  - Sperm: His own OR Donor
+  - Eggs: Her own OR Donor
+  - Gestation: Female partner OR gestational surrogate
+  Questions to ask: egg source, sperm source, carrier.
 
-TENSE comes from context - do not apply a rule mechanically:
-- If the parent already HAS embryos, the egg and sperm decisions were already made - ask about what they did, not what they plan to do.
-- If they do NOT have embryos yet, ask about their plans.
+CRITICAL - SKIP QUESTIONS ALREADY ANSWERED BY CONTEXT:
+Before asking ANY question, check if the parent already provided the answer - either explicitly in a previous message OR implicitly from their situation (use FERTILITY BIOLOGY above). If the answer is already known, SKIP the question entirely and move to the next unanswered step. Examples:
+- Parent said "gay couple, need egg donor and surrogate and IVF clinic" - you already know: no embryos (needs egg donor), will use egg donor (gay couple), needs help finding one (said "need egg donor"), will use surrogate (gay couple), needs help finding one (said "need surrogate"), needs a clinic. SKIP Steps 1, 2, 2a, 3, 4, 4a entirely. Go straight to Step 5 (clinic).
+- Gay male couple or single male: they CANNOT have embryos from their own eggs, eggs MUST come from a donor, and they WILL need a surrogate. SKIP Step 1 (embryos - unless they might have embryos from a prior cycle, which they would mention), SKIP Step 2 (egg source - always donor), SKIP Step 4 (carrier - always surrogate). Only ask 2a (need help finding egg donor?) and 4a (need help finding surrogate?) IF not already answered.
+- Parent says "I need help finding an egg donor" - SKIP both Step 2 AND Step 2a (both answered).
+- Parent says "I already have a surrogate" - SKIP both Step 4 AND Step 4a (both answered).
+- Parent mentions they have embryos ("we have 3 frozen embryos") - SKIP Step 1, go to 1a/1b.
+When skipping, do NOT announce what you're skipping. Just naturally move to the next unanswered question.
 
-OPTIONS come from biology - never offer impossible choices:
-- Male parent: cannot use "my own eggs". Solo male: no "my partner's" option for anything.
-- Female parent: cannot use "my own sperm". Solo female: no "my partner's" option.
-- Gay male / single male: eggs always from a donor (skip Step 2), always need a surrogate (skip Step 4).
-- Lesbian / single female: sperm always from a donor.
+STEP 1: "Do you already have frozen embryos?" [[QUICK_REPLY:Yes, I do|No, not yet|Working to create them]]
+  → If YES: go to STEP 1a
+  → If NO: go to STEP 2
+  → If WORKING TO CREATE THEM: acknowledge warmly, go to STEP 2
+  → SKIP this question if context already tells you (e.g., gay couple looking for an egg donor obviously doesn't have embryos yet, unless they explicitly mentioned having some)
 
-Always include [[QUICK_REPLY]] with only the biologically valid options for this parent.
+STEP 1a: "How many embryos do you have?"
+  → After answer, go to STEP 1b
 
-STEP 2 - EGG SOURCE:
-  Gay/solo male: SKIP THIS STEP ENTIRELY. Never ask. Egg source is always donor - save [[SAVE:{"eggSource":"donor"}]] and proceed to Step 3. Do NOT ask "were the eggs from a donor?" - this is forbidden for male parents.
-  Female parent: Ask which eggs they're using/used. Valid options: My own eggs / My partner's eggs (if partnered) / Donor eggs [/ I'm not sure yet - future only].
-  → Save: [[SAVE:{"eggSource":"my own eggs|partner's eggs|donor eggs"}]]
-  → Donor eggs + no embryos → STEP 2a  |  Donor eggs + has embryos → skip 2a, STEP 3  |  Otherwise → STEP 3
+STEP 1b: "Have they been PGT-A tested?" [[QUICK_REPLY:Yes|No|I'm not sure]]
+  → After answer, go to STEP 2
 
-STEP 2a (only if needs egg donor and has no embryos yet):
-  Ask if they need help finding an egg donor or already have one. [[QUICK_REPLY:I need help finding one|I already have one]]
-  → STEP 3
+CRITICAL CONTEXT RULES FOR STEPS 2-4:
+You MUST adapt questions based on TWO factors:
+1. TENSE: If parent HAS embryos → past tense (decisions already made). If NOT → future tense (decisions ahead).
+2. GENDER & SEXUAL ORIENTATION: You know the parent's gender and orientation from their profile. NEVER offer biologically impossible options:
+   - A MALE parent cannot use "my own eggs" - eggs come from either their female partner or an egg donor.
+   - A FEMALE parent cannot use "my own sperm" - sperm comes from either their male partner or a sperm donor.
+   - A GAY MALE couple: eggs MUST come from a donor, sperm is from one of them. They WILL need a surrogate (they cannot carry).
+   - A LESBIAN couple: sperm MUST come from a donor, eggs can be from one of them. One of them CAN carry.
+   - A SINGLE MALE: eggs MUST come from a donor, sperm is his. He WILL need a surrogate.
+   - A SINGLE FEMALE: sperm MUST come from a donor, eggs can be hers. She CAN carry.
+   - A STRAIGHT COUPLE: eggs can be from the female partner or a donor, sperm can be from the male partner or a donor. The female partner CAN carry.
+   Adjust the question wording AND the quick reply options accordingly. If a donor is the ONLY option (e.g., eggs for a gay male couple), acknowledge that naturally instead of asking - e.g., "Since you'll need an egg donor, do you need help finding one or do you already have one?"
 
-STEP 3 - SPERM SOURCE:
-  Ask about sperm source. Valid options and question wording depend on who they are:
-  - Solo male or gay solo male: NEVER mention "partner" in the question. Ask ONLY "did you use your own sperm or donor sperm?" [[QUICK_REPLY:My own|Donor sperm]]
-  - Male with partner: My own / My partner's / Donor sperm [[QUICK_REPLY:My own|My partner's|Donor sperm]]
-  - Female (sperm must come from a donor - skip straight to 3a if no embryos, or just confirm donor if they have embryos): Donor sperm only.
-  → Save: [[SAVE:{"spermSource":"my own|partner's|donor sperm"}]]
-  → Donor sperm + no embryos → STEP 3a  |  Donor sperm + has embryos → skip 3a, STEP 4  |  Otherwise → STEP 4
+STEP 2 - EGGS:
+  Refer to FERTILITY BIOLOGY above first. Only ask if egg source has more than one valid option for this parent type.
+  NEVER ask a male parent about egg source - eggs always come from a donor for male parents. Save donor silently and move to STEP 2a.
+  Adapt based on gender/orientation:
+  - If parent is MALE (gay or single): Eggs MUST come from a donor. SKIP Step 2 entirely. Save [[SAVE:{"eggSource":"donor eggs"}]] silently, go to STEP 2a.
+  - If parent is FEMALE (or has a female partner who could provide eggs):
+    - If HAS embryos (past tense): "For those embryos, were the eggs yours/your partner's or from a donor?" [[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs]]
+    - If does NOT have embryos (future tense): "What's your plan for eggs - are you thinking of using your own/your partner's, or are you considering a donor?" [[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]
+  - If SINGLE (no partner): do NOT offer "My partner's eggs" option in quick replies.
+  → IMMEDIATELY save the egg source: [[SAVE:{"eggSource":"[answer: my own eggs / partner's eggs / donor eggs]"}]]
+  → If DONOR EGGS AND parent does NOT have embryos: go to STEP 2a
+  → If DONOR EGGS AND parent already HAS embryos: SKIP step 2a (the donor was already used to create the embryos, no need to find one now). Go to STEP 3.
+  → Otherwise: go to STEP 3
 
-STEP 3a (only if needs sperm donor and has no embryos yet):
-  Ask if they need help finding a sperm donor or already have one. [[QUICK_REPLY:I need help finding one|I already have one]]
-  → STEP 4
+STEP 2a (ONLY if parent does NOT have embryos and needs a donor): "Do you need help finding an egg donor, or do you already have one?" [[QUICK_REPLY:I need help finding one|I already have one]]
+  SKIP if the parent already said they need one (e.g., "I need an egg donor") or already have one.
+  → After answer, go to STEP 3
+
+STEP 3 - SPERM:
+  Refer to FERTILITY BIOLOGY above first. Only ask if sperm source has more than one valid option for this parent type.
+  NEVER mention "partner" in the question or options if the parent is SOLO (no partner exists).
+  Adapt based on gender/orientation:
+  - If parent is FEMALE (lesbian or single): Sperm must come from a donor - only one option exists. Skip the question, go to STEP 3a (only if they do NOT already have embryos).
+  - If parent is SOLO MALE: Ask ONLY "did you use your own sperm or donor sperm?" - no mention of "partner" anywhere. [[QUICK_REPLY:My own|Donor sperm]]
+  - If parent is MALE WITH PARTNER (gay couple or straight couple):
+    - If HAS embryos (past tense): "And for sperm, did you use your own, your partner's, or donor sperm?" [[QUICK_REPLY:My own|My partner's|Donor sperm]]
+    - If does NOT have embryos (future tense): "And for sperm, will you be using your own, your partner's, or donor sperm?" [[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]
+  → IMMEDIATELY save the sperm source: [[SAVE:{"spermSource":"[answer: my own / partner's / donor sperm]"}]]
+  → If DONOR SPERM AND parent does NOT have embryos: go to STEP 3a
+  → If DONOR SPERM AND parent already HAS embryos: SKIP step 3a (the donor was already used to create the embryos, no need to find one now). Go to STEP 4.
+  → Otherwise: go to STEP 4
+
+STEP 3a (ONLY if parent does NOT have embryos and needs a donor): "Do you need help finding a sperm donor, or do you already have one?" [[QUICK_REPLY:I need help finding one|I already have one]]
+  → After answer, go to STEP 4
 
 STEP 4 - CARRIER:
-  Gay/solo male or gay couple: SKIP THIS STEP ENTIRELY. Never ask. Carrier is always a gestational surrogate. Save [[SAVE:{"carrier":"gestational surrogate"}]] silently and skip to Step 4a. NEVER ask "who is carrying the pregnancy?" for a male parent - it is forbidden.
-  Female parent: Ask who will carry the pregnancy. Valid options: Me / My partner (if partnered) / A gestational surrogate.
-  → Save: [[SAVE:{"carrier":"me|my partner|gestational surrogate"}]]
-  → Gestational surrogate → STEP 4a  |  Otherwise → STEP 5
+  Refer to FERTILITY BIOLOGY above first. Only ask if carrier has more than one valid option for this parent type.
+  NEVER ask a male parent who will carry - they cannot. Save gestational surrogate silently and move to STEP 4a.
+  Adapt based on gender/orientation:
+  - If parent is MALE (gay or single): They CANNOT carry - a surrogate is the ONLY option. SKIP Step 4 entirely. Save [[SAVE:{"carrier":"gestational surrogate"}]] silently, go to STEP 4a.
+  - If parent is FEMALE (or has a female partner who could carry):
+    - If HAS embryos (past tense): "And who is carrying the pregnancy?" [[QUICK_REPLY:Me|My partner|A gestational surrogate]]
+    - If does NOT have embryos (future tense): "And who is planning to carry the pregnancy?" [[QUICK_REPLY:Me|My partner|A gestational surrogate]]
+  - If SINGLE (no partner): do NOT offer "My partner" option in quick replies.
+  → IMMEDIATELY save the carrier: [[SAVE:{"carrier":"[answer: me / my partner / gestational surrogate]"}]]
+  → If GESTATIONAL SURROGATE: go to STEP 4a
+  → Otherwise: go to STEP 5
 
-STEP 4a:
-  Ask if they need help finding a surrogate or already have one. [[QUICK_REPLY:I need help finding one|I already have one]]
-  → STEP 5
+STEP 4a: "Do you need help finding a surrogate, or do you already have one?" [[QUICK_REPLY:I need help finding one|I already have one]]
+  SKIP if the parent already said they need one (e.g., "I need a surrogate") or already have one.
+  → After answer, go to STEP 5
 
-CHAIN-SKIP RULE: If the parent's answer implicitly covers the follow-up question, skip it.
-- "I need a surrogate" answers both Step 4 and Step 4a - skip to Step 5.
-- "I already have an egg donor" answers both Step 2 and Step 2a - skip to Step 3.
-Apply to all paired steps (2/2a, 3/3a, 4/4a).
+INTELLIGENCE RULE - DO NOT ASK REDUNDANT QUESTIONS (CRITICAL):
+If the parent's answer already covers the NEXT question too, SKIP IT. Do not ask a question the parent already answered. Examples:
+- Parent says "yes, I need one" to "will you be working with a gestational surrogate?" - this ALSO answers "do you need help finding one?" (they said they NEED one). Skip Step 4a, go to Step 5.
+- Parent says "I need help finding a surrogate" - skip BOTH Step 4 and Step 4a, they answered both.
+- Parent says "I already have a donor" - skip "do you need help finding one?" since they already have one.
+- Parent says "no, we'll carry ourselves" - skip Step 4a entirely since no surrogate is needed.
+Apply this logic to ALL steps (2/2a, 3/3a, 4/4a): if the answer to the current question implicitly answers the follow-up, skip the follow-up.
+This also applies if the user circles back after the conversation - treat their statement as both the answer to "do you need one?" AND "do you need help finding one?" and skip to the deep dive.
 
 STEP 5: "Now that I have a clear picture of your family-building journey - do you also need help finding a fertility clinic, or do you already have one?" [[QUICK_REPLY:I need help finding one|I already have one]]
   → This is the ONLY service question you need to ask here. You already know from STEPS 2-4 whether they need an egg donor and/or surrogate (based on their answers and whether they said "I need help finding one" in steps 2a, 3a, 4a).
@@ -2190,64 +2253,18 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
 ` : "";
 
     // Dynamically analyze chat history to build concrete skip directives
-    // allUserMessages: what the USER explicitly said (used for identity/intent signals)
-    // sessionAnswered: detects when the AI asked a question and the user gave a short yes/no answer
-    const fullHistory = [...chatHistory, { role: "user", content: userMessage }];
-    const allUserMessages = fullHistory.filter((m: any) => m.role === "user").map((m: any) => (m.content || "").toLowerCase()).join(" ");
-
-    const AFFIRM = /^(yes|yeah|yep|yup|i do|i need one|i need help|correct|sure|absolutely|definitely|that's right|right|ok|okay)\b/i;
-    const DENY = /^(no|nope|not yet|i don't|i do not|i haven't|not at the moment)\b/i;
-    const ALREADY_HAVE = /^(i already have|i have one|already have|i have it|we already have|we have one)\b/i;
-
-    // Checks if user answered [userRe] right after the AI said something matching [aiRe]
-    const sessionAnswered = (aiRe: RegExp, userRe: RegExp): boolean =>
-      fullHistory.some((m: any, idx: number) => {
-        if (m.role !== "user" || idx === 0) return false;
-        const prevAi = fullHistory[idx - 1];
-        return prevAi?.role === "assistant" && aiRe.test(prevAi.content || "") && userRe.test((m.content || "").trim());
-      });
-
+    const allUserMessages = chatHistory.filter(m => m.role === "user").map(m => (m.content || "").toLowerCase()).join(" ") + " " + userMessage.toLowerCase();
     const skipDirectives: string[] = [];
 
-    // Session-level identity signals - scan user messages only (AI uses "you", not "I")
-    const sessionSaysSolo = /\bsolo\b|\bsingle\b|\bon my own\b|\bjust me\b/i.test(allUserMessages);
-    const sessionSaysLgbtq = /\blgbtq[a+]?\b|\bi('m| am) gay\b|\bi identify as\b/i.test(allUserMessages);
-    const sessionSaysMan = /\bsolo man\b|\bsingle man\b|\bi('m| am) (a )?man\b|\bi('m| am) male\b/i.test(allUserMessages);
-
-    // Persist session-level signals to DB immediately so profile stays current
-    if (sessionSaysSolo && userRecord?.relationshipStatus !== "Single") {
-      prisma.user.update({ where: { id: userId }, data: { relationshipStatus: "Single" } }).catch(() => {});
-    }
-    if (sessionSaysLgbtq && userRecord?.sexualOrientation !== "Gay") {
-      prisma.user.update({ where: { id: userId }, data: { sexualOrientation: "Gay" } }).catch(() => {});
-    }
-    if (sessionSaysMan && userRecord?.gender !== "I'm a man") {
-      prisma.user.update({ where: { id: userId }, data: { gender: "I'm a man" } }).catch(() => {});
-    }
-
-    // Service signals: user's explicit statements + Q&A pair detection
-    const mentionsEggDonor = /egg\s*donor|need.*egg|donor\s*egg/i.test(allUserMessages)
-      || sessionAnswered(/egg donor|help finding.*egg/i, AFFIRM);
-    const hasEggDonor = /have.*egg\s*donor|already.*egg\s*donor|egg\s*donor.*already/i.test(allUserMessages)
-      || sessionAnswered(/egg donor|already have.*egg/i, ALREADY_HAVE);
-    const mentionsSurrogate = /surrogate|surrogacy|need.*surrogate/i.test(allUserMessages)
-      || sessionAnswered(/surrogate|gestational carrier/i, AFFIRM);
-    const hasSurrogate = /have.*surrogate|already.*surrogate|surrogate.*already/i.test(allUserMessages)
-      || sessionAnswered(/surrogate|already have.*surrogate/i, ALREADY_HAVE);
-    const mentionsClinic = /ivf\s*clinic|fertility\s*clinic|need.*clinic|clinic/i.test(allUserMessages)
-      || sessionAnswered(/fertility clinic|ivf clinic|help finding.*clinic/i, AFFIRM);
-    const hasClinic = /have.*clinic|already.*clinic|clinic.*already/i.test(allUserMessages)
-      || sessionAnswered(/fertility clinic|already have.*clinic/i, ALREADY_HAVE);
-    const mentionsSpermDonor = /sperm\s*donor|need.*sperm/i.test(allUserMessages)
-      || sessionAnswered(/sperm donor|help finding.*sperm/i, AFFIRM);
-    const hasSpermDonor = /have.*sperm\s*donor|already.*sperm/i.test(allUserMessages)
-      || sessionAnswered(/sperm donor|already have.*sperm/i, ALREADY_HAVE);
-
-    const dbIsMale = /^(i'm a )?man$/i.test(userRecord?.gender || "") || (userRecord?.gender || "").toLowerCase() === "male";
-    const dbIsNonStraight = userRecord?.sexualOrientation ? !["straight", "heterosexual"].includes(userRecord.sexualOrientation.toLowerCase()) : false;
-    const dbIsSingle = userRecord?.relationshipStatus === "Single";
-    const isGayMale = /gay\s*(couple|man|male|men|dad|father)|two\s*dad|two\s*men|single\s*(man|male|dad|father|guy)|solo\s*(man|male|dad|father)|lgbtq[a+]?/i.test(allUserMessages)
-      || (dbIsMale && (dbIsNonStraight || dbIsSingle));
+    const mentionsEggDonor = /egg\s*donor|need.*egg|donor\s*egg/i.test(allUserMessages);
+    const hasEggDonor = /have.*egg\s*donor|already.*egg\s*donor|egg\s*donor.*already/i.test(allUserMessages);
+    const mentionsSurrogate = /surrogate|surrogacy|need.*surrogate/i.test(allUserMessages);
+    const hasSurrogate = /have.*surrogate|already.*surrogate|surrogate.*already/i.test(allUserMessages);
+    const mentionsClinic = /ivf\s*clinic|fertility\s*clinic|need.*clinic|clinic/i.test(allUserMessages);
+    const hasClinic = /have.*clinic|already.*clinic|clinic.*already/i.test(allUserMessages);
+    const mentionsSpermDonor = /sperm\s*donor|need.*sperm/i.test(allUserMessages);
+    const hasSpermDonor = /have.*sperm\s*donor|already.*sperm/i.test(allUserMessages);
+    const isGayMale = /gay\s*(couple|man|male|men|dad|father)|two\s*dad|two\s*men|single\s*(man|male|dad|father|guy)/i.test(allUserMessages);
 
     // Also check saved profile DB fields - these are the most reliable signal
     const profileServices: string[] = profile?.interestedServices || [];
@@ -2259,7 +2276,7 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     const profileNeedsClinic = profileServices.includes("Fertility Clinic") || profile?.needsClinic === true;
     const profileAlreadyHasClinic = profile?.needsClinic === false;
 
-    // Combined signals (DB profile takes precedence over session scan)
+    // Combined signals (DB profile takes precedence over regex chat scan)
     const needsEggDonor = mentionsEggDonor || profileNeedsEggDonor;
     const alreadyHasEggDonor = hasEggDonor || profileAlreadyHasEggDonor;
     const needsSurrogate = mentionsSurrogate || profileNeedsSurrogate;
@@ -2269,63 +2286,31 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
 
     // --- PHASE 2: BIOLOGICAL BASELINE SKIP DIRECTIVES ---
 
-    // Embryos: DB profile, explicit user statement, or Q&A pair (user says "yes" to AI's embryo question)
-    const sessionMentionsEmbryos = /\b\d+\s*(frozen\s+)?embryo|have\s+(frozen\s+)?embryos?|already\s+have\s+(frozen\s+)?embryos?/i.test(allUserMessages);
-    const sessionHasEmbryos = sessionMentionsEmbryos || sessionAnswered(/frozen embryos/i, new RegExp(`${AFFIRM.source}|i have|i've got`, "i"));
-    const confirmedHasEmbryos = profile?.hasEmbryos === true || sessionHasEmbryos;
-
+    // Embryos: skip if already answered in DB or if context makes it obvious
     if (profile?.hasEmbryos === true) {
-      skipDirectives.push(
-        `DO NOT ask about frozen embryos (Step 1) - already saved: YES, ${profile.embryoCount ?? "unknown"} embryos, PGT-A tested: ${profile.embryosTested === true ? "yes" : "unknown"}.` +
-        ` CRITICAL: Parent ALREADY HAS embryos - use PAST TENSE for Steps 2, 3, 4 (e.g., "was the sperm your own or from a donor?" NOT "will you be working with a sperm donor?").`
-      );
-    } else if (sessionHasEmbryos) {
-      skipDirectives.push(
-        `DO NOT ask about frozen embryos (Step 1) - parent said they already have embryos in this session.` +
-        ` CRITICAL: Parent ALREADY HAS embryos - use PAST TENSE for Steps 2, 3, 4 (e.g., "was the sperm your own or from a donor?" NOT "will you be working with a sperm donor?").`
-      );
+      skipDirectives.push(`DO NOT ask about frozen embryos (Step 1) - already saved: YES, ${profile.embryoCount ?? "unknown"} embryos, PGT-A tested: ${profile.embryosTested === true ? "yes" : "unknown"}.`);
     } else if (profile?.hasEmbryos === false) {
       skipDirectives.push("DO NOT ask about frozen embryos (Step 1) - already saved: NO embryos.");
-    } else if (needsEggDonor || (isGayMale && !sessionHasEmbryos)) {
+    } else if (needsEggDonor || (isGayMale && !(/have.*embryo|frozen\s*embryo|embryos/i.test(allUserMessages)))) {
       skipDirectives.push("DO NOT ask about frozen embryos (Step 1) - parent needs an egg donor, so they do not have embryos yet.");
     }
 
     // Egg source: skip if already saved or context is obvious
     if (profile?.eggSource) {
       skipDirectives.push(`DO NOT ask about egg source (Step 2) - already saved: ${profile.eggSource}.`);
-    } else if (isGayMale) {
-      skipDirectives.push(
-        "DO NOT ask about egg source (Step 2). NEVER ask 'were the eggs from a donor?', " +
-        "'did you use donor eggs?', or any equivalent question about egg origin. " +
-        "This parent is a gay/solo male - egg source is biologically ALWAYS donor eggs. " +
-        "There is nothing to ask. Go straight to Step 3 (sperm source)."
-      );
-    } else if (needsEggDonor || alreadyHasEggDonor) {
+    } else if (isGayMale || needsEggDonor || alreadyHasEggDonor) {
       skipDirectives.push("DO NOT ask about egg source (Step 2) - already known: using egg donor.");
     }
 
-    // Sperm source: skip if already saved; for solo users ban "partner" from question text too
+    // Sperm source: skip if already saved
     if (profile?.spermSource) {
       skipDirectives.push(`DO NOT ask about sperm source (Step 3) - already saved: ${profile.spermSource}.`);
-    } else if (sessionSaysSolo || (isGayMale && !sessionAnswered(/with a partner|as a couple/i, AFFIRM))) {
-      skipDirectives.push(
-        "DO NOT mention 'partner' anywhere in the sperm source question - this parent is SOLO with NO partner. " +
-        "The question must say ONLY 'did you use your own sperm or donor sperm?' - nothing else. " +
-        "Never say 'your partner\\'s' in the question text. Quick reply buttons: My own | Donor sperm only."
-      );
     }
 
     // Carrier: skip if already saved or context is obvious
     if (profile?.carrier) {
       skipDirectives.push(`DO NOT ask about carrier/who will carry (Step 4) - already saved: ${profile.carrier}.`);
-    } else if (isGayMale) {
-      skipDirectives.push(
-        "DO NOT ask about carrier (Step 4). NEVER ask 'who is carrying the pregnancy?', " +
-        "'who will carry?', or any equivalent question. This parent is a gay/solo male - " +
-        "carrier is ALWAYS a gestational surrogate by biology. There is nothing to ask. " +
-        "Skip Step 4 and Step 4a entirely - go directly to Step 5."
-      );
-    } else if (needsSurrogate || alreadyHasSurrogate) {
+    } else if (isGayMale || needsSurrogate || alreadyHasSurrogate) {
       skipDirectives.push("DO NOT ask about carrier/who will carry (Step 4) - already known: using surrogate.");
     }
 
@@ -2433,15 +2418,10 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
 
     // D0a/D0b: skip if identity/relationship already known
     if (profile?.sameSexCouple != null) {
-      skipDirectives.push(`DO NOT ask D0b or "do you identify as LGBTQ+?" or "same-sex or opposite-sex?" - already saved: ${profile.sameSexCouple ? "same-sex couple" : "opposite-sex couple"}.`);
-    } else if (sessionSaysLgbtq || userRecord?.sexualOrientation === "Gay") {
-      skipDirectives.push(`DO NOT ask D0b or "do you identify as LGBTQ+?" - already known from this session: Yes, LGBTQ+.`);
+      skipDirectives.push(`DO NOT ask D0b (same-sex or opposite-sex couple) - already saved: ${profile.sameSexCouple ? "same-sex couple" : "opposite-sex couple"}.`);
     }
-    const effectiveRelationship = sessionSaysSolo ? "Single" : userRecord?.relationshipStatus;
-    if (effectiveRelationship === "Single" || sessionSaysSolo) {
-      skipDirectives.push(`DO NOT ask D0a or "are you going on this journey solo or with a partner?" - the parent ALREADY said they are solo earlier in this conversation. NEVER ask this again.`);
-    } else if (effectiveRelationship) {
-      skipDirectives.push(`DO NOT ask D0a or "are you going on this journey solo or with a partner?" - already known: ${effectiveRelationship}.`);
+    if (userRecord?.relationshipStatus) {
+      skipDirectives.push(`DO NOT ask D0a (solo or with partner) - already saved: ${userRecord.relationshipStatus}.`);
     }
 
     const skipRulesPreamble = skipDirectives.length > 0 ? `
@@ -2496,7 +2476,7 @@ When the parent asks a follow-up question about a specific egg donor (eye color,
     if (skipDirectives.length > 0) {
       messages.push({
         role: "system" as const,
-        content: `MANDATORY SKIP RULES - these questions have already been answered and must NEVER be asked again:\n${skipDirectives.map(d => "- " + d).join("\n")}\nThese apply to ALL phases and ALL match cycles (Phase 1, Phase 2, Cycle A, B, C, D). Do not mention or acknowledge skipping. Continue with the normal conversation flow.`,
+        content: `These Phase 2 baseline questions have already been answered - do not ask them again:\n${skipDirectives.map(d => "- " + d).join("\n")}\nDo not mention or acknowledge skipping. Continue with the normal conversation flow.`,
       });
     }
 
@@ -3012,10 +2992,7 @@ CRITICAL OVERRIDES - these override everything else:
         const tier1Messages = messages.filter((m: any) => m.role !== "system");
         finalContent = await callTier1Gemini(tier1SystemPrompt, tier1Messages, sse);
         if (!finalContent) finalContent = "I'm sorry, I couldn't process that.";
-        finalContent = injectMissingQuickReplies(finalContent, {
-          isSolo: sessionSaysSolo || (isGayMale && !sessionAnswered(/with a partner|as a couple/i, AFFIRM)),
-          isMale: sessionSaysMan || isGayMale,
-        });
+        finalContent = injectMissingQuickReplies(finalContent);
       }
     }
 
@@ -3311,42 +3288,37 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         const autoUserData: any = {};
         const autoProfileData: any = {};
 
-        // Relationship status - always update when user actively states it
-        if (/\bi('m| am) single\b|^single$|\bsolo\b|\bon my own\b|\bjust me\b/.test(msg)) {
-          autoUserData.relationshipStatus = "Single";
-        } else if (!userRecord.relationshipStatus) {
-          if (/\bi('m| am) married\b|\bmy (husband|wife)\b|\bwe('re| are) married\b/.test(msg)) {
+        // Relationship status
+        if (!userRecord.relationshipStatus) {
+          if (/\bi('m| am) single\b|^single$|\bsolo\b|\bon my own\b|\bjust me\b/.test(msg)) {
+            autoUserData.relationshipStatus = "Single";
+          } else if (/\bi('m| am) married\b|\bmy (husband|wife)\b|\bwe('re| are) married\b/.test(msg)) {
             autoUserData.relationshipStatus = "Married";
           } else if (/\bwith (a |my )?partner\b|\bi have a partner\b|\bwe('re| are) (a couple|partnered)\b/.test(msg)) {
             autoUserData.relationshipStatus = "Partnered";
           }
         }
 
-        // Sexual orientation - always update when user actively states it
-        if (/\bi('m| am) gay\b|\btwo dads\b|\bgay (couple|man|male)\b|\blgbtq[a+]?\b|\bqueer\b/.test(msg)) {
-          autoUserData.sexualOrientation = "Gay";
-        } else if (/\bi('m| am) lesbian\b|\btwo moms\b|\btwo mothers\b|\blesbian (couple|woman)\b/.test(msg)) {
-          autoUserData.sexualOrientation = "Lesbian";
-        } else if (/\bi('m| am) bi(sexual)?\b/.test(msg)) {
-          autoUserData.sexualOrientation = "Bi";
-        } else if (!userRecord.sexualOrientation) {
-          if (/\bi('m| am) (straight|heterosexual)\b/.test(msg)) {
+        // Sexual orientation
+        if (!userRecord.sexualOrientation) {
+          if (/\bi('m| am) gay\b|\btwo dads\b|\bgay (couple|man|male)\b/.test(msg)) {
+            autoUserData.sexualOrientation = "Gay";
+          } else if (/\bi('m| am) lesbian\b|\btwo moms\b|\btwo mothers\b|\blesbian (couple|woman)\b/.test(msg)) {
+            autoUserData.sexualOrientation = "Lesbian";
+          } else if (/\bi('m| am) (straight|heterosexual)\b/.test(msg)) {
             autoUserData.sexualOrientation = "Straight";
+          } else if (/\bi('m| am) bi(sexual)?\b/.test(msg)) {
+            autoUserData.sexualOrientation = "Bi";
           }
         }
 
-        // Gender - always update when user actively states it
-        if (/\bi('m| am) (a )?wom[ae]n\b|\bi('m| am) female\b|\bas a woman\b|\bsingle (mom|mother|woman)\b|\bsolo (mom|mother|woman)\b/.test(msg)) {
-          autoUserData.gender = "I'm a woman";
-        } else if (/\bi('m| am) (a )?m[ae]n\b|\bi('m| am) male\b|\bas a man\b|\bsingle (dad|father|man)\b|\bsolo (man|male|dad|father)\b|\btwo dads\b/.test(msg)) {
-          autoUserData.gender = "I'm a man";
-        }
-
-        // Context-aware LGBTQ save: if last AI message asked about LGBTQ+ and user says yes
-        const lastAiMsg = [...chatHistory].reverse().find((m: any) => m.role === "assistant")?.content || "";
-        if (/lgbtq|identify as/i.test(lastAiMsg) && /^(yes|yeah|yep|yup|i do|i am|correct|that's right)$/i.test(msg)) {
-          autoUserData.sexualOrientation = "Gay";
-          autoUserData.relationshipStatus = autoUserData.relationshipStatus || (dbIsSingle ? "Single" : undefined);
+        // Gender
+        if (!userRecord.gender) {
+          if (/\bi('m| am) (a )?wom[ae]n\b|\bi('m| am) female\b|\bas a woman\b|\bsingle (mom|mother|woman)\b/.test(msg)) {
+            autoUserData.gender = "I'm a woman";
+          } else if (/\bi('m| am) (a )?m[ae]n\b|\bi('m| am) male\b|\bas a man\b|\bsingle (dad|father|man)\b|\btwo dads\b/.test(msg)) {
+            autoUserData.gender = "I'm a man";
+          }
         }
 
         // Same-sex couple
@@ -3361,45 +3333,16 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           }
         }
 
-        // Has embryos - check uses !hasEmbryos because the schema default is false (not null)
-        if (!extractedProfile?.hasEmbryos) {
+        // Has embryos
+        if (extractedProfile?.hasEmbryos == null) {
           const embryoCountMatch = msg.match(/\b(\d+)\s*(frozen\s+)?embryos?\b/);
           if (embryoCountMatch) {
             autoProfileData.hasEmbryos = true;
             autoProfileData.embryoCount = parseInt(embryoCountMatch[1], 10);
-          } else if (/\bhave (frozen )?embryos?\b|\bwe have embryos?\b|\bi already have frozen embryos\b/.test(msg)) {
+          } else if (/\bhave (frozen )?embryos?\b|\bwe have embryos?\b/.test(msg)) {
             autoProfileData.hasEmbryos = true;
           } else if (/\bno (frozen )?embryos?\b|\bdon't have embryos?\b/.test(msg)) {
             autoProfileData.hasEmbryos = false;
-          }
-        }
-
-        // Sperm source from expanded quick reply sentences
-        if (!extractedProfile?.spermSource) {
-          if (/\bi used my own sperm\b|\bi'?ll be using my own sperm\b|\bmy own sperm\b/.test(msg)) {
-            autoProfileData.spermSource = "My own";
-          } else if (/\bi used donor sperm\b|\bi'?ll be using donor sperm\b|\bdonor sperm\b/.test(msg)) {
-            autoProfileData.spermSource = "Donor";
-          } else if (/\bmy partner'?s sperm\b/.test(msg)) {
-            autoProfileData.spermSource = "Partner's";
-          }
-        }
-
-        // Egg source from expanded quick reply sentences
-        if (!extractedProfile?.eggSource) {
-          if (/\bmy own eggs?\b|\bi'?ll be using my own eggs?\b/.test(msg)) {
-            autoProfileData.eggSource = "own_eggs";
-          } else if (/\bdonor eggs?\b|\bi'?ll be using donor eggs?\b/.test(msg)) {
-            autoProfileData.eggSource = "donor";
-          }
-        }
-
-        // Carrier from expanded quick reply sentences
-        if (!extractedProfile?.carrier) {
-          if (/\bi will carry the pregnancy myself\b/.test(msg)) {
-            autoProfileData.carrier = "me";
-          } else if (/\ba gestational surrogate will carry\b/.test(msg)) {
-            autoProfileData.carrier = "gestational surrogate";
           }
         }
 
@@ -3438,15 +3381,6 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         }
 
         // Persist what we found
-        // Deterministic inference for gay/solo males - these are always true regardless of what they say
-        const detectedMale = /\bi('m| am) (a )?m[ae]n\b|\bsolo man\b|\bsingle man\b|\btwo dads\b/i.test(msg)
-          || autoUserData.gender === "I'm a man"
-          || (userRecord.gender === "I'm a man");
-        if (detectedMale && userRecord.parentAccountId) {
-          if (!extractedProfile?.eggSource) autoProfileData.eggSource = autoProfileData.eggSource || "donor";
-          if (!extractedProfile?.carrier) autoProfileData.carrier = autoProfileData.carrier || "gestational surrogate";
-        }
-
         if (Object.keys(autoUserData).length > 0) {
           await prisma.user.update({ where: { id: userId }, data: autoUserData });
           console.log(`[AUTO-EXTRACT] Saved user fields for ${userId}:`, autoUserData);
@@ -3919,16 +3853,6 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     const qrMatch = finalContent.match(/\[\[QUICK_REPLY:(.*?)\]\]/);
     if (qrMatch) {
       quickReplies = qrMatch[1].split("|").map((s: string) => s.trim());
-      // Strip "My partner's" option for solo users even when the AI itself wrote the tag
-      const isSoloUser = sessionSaysSolo || (isGayMale && !sessionAnswered(/with a partner|as a couple/i, AFFIRM));
-      if (isSoloUser) {
-        quickReplies = quickReplies.filter((r) => !/^my partner'?s/i.test(r));
-      }
-      // Strip "Me" from carrier options for male parents (men cannot carry a pregnancy)
-      const isMaleParent = sessionSaysMan || isGayMale;
-      if (isMaleParent && /carr(y|ying|ier)|pregnancy/i.test(finalContent)) {
-        quickReplies = quickReplies.filter((r) => !/^me$/i.test(r));
-      }
       finalContent = finalContent.replace(/\[\[QUICK_REPLY:.*?\]\]/g, "").trim();
     }
 
