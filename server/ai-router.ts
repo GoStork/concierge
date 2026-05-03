@@ -2180,10 +2180,26 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
 ` : "";
 
     // Dynamically analyze chat history to build concrete skip directives
-    const allUserMessages = chatHistory.filter(m => m.role === "user").map(m => (m.content || "").toLowerCase()).join(" ") + " " + userMessage.toLowerCase();
+    // allUserMessages: what the USER explicitly said (used for identity/intent signals)
+    // sessionAnswered: detects when the AI asked a question and the user gave a short yes/no answer
+    const fullHistory = [...chatHistory, { role: "user", content: userMessage }];
+    const allUserMessages = fullHistory.filter((m: any) => m.role === "user").map((m: any) => (m.content || "").toLowerCase()).join(" ");
+
+    const AFFIRM = /^(yes|yeah|yep|yup|i do|i need one|i need help|correct|sure|absolutely|definitely|that's right|right|ok|okay)\b/i;
+    const DENY = /^(no|nope|not yet|i don't|i do not|i haven't|not at the moment)\b/i;
+    const ALREADY_HAVE = /^(i already have|i have one|already have|i have it|we already have|we have one)\b/i;
+
+    // Checks if user answered [userRe] right after the AI said something matching [aiRe]
+    const sessionAnswered = (aiRe: RegExp, userRe: RegExp): boolean =>
+      fullHistory.some((m: any, idx: number) => {
+        if (m.role !== "user" || idx === 0) return false;
+        const prevAi = fullHistory[idx - 1];
+        return prevAi?.role === "assistant" && aiRe.test(prevAi.content || "") && userRe.test((m.content || "").trim());
+      });
+
     const skipDirectives: string[] = [];
 
-    // Session-level identity signals - these OVERRIDE stale DB profile values
+    // Session-level identity signals - scan user messages only (AI uses "you", not "I")
     const sessionSaysSolo = /\bsolo\b|\bsingle\b|\bon my own\b|\bjust me\b/i.test(allUserMessages);
     const sessionSaysLgbtq = /\blgbtq[a+]?\b|\bi('m| am) gay\b|\bi identify as\b/i.test(allUserMessages);
     const sessionSaysMan = /\bsolo man\b|\bsingle man\b|\bi('m| am) (a )?man\b|\bi('m| am) male\b/i.test(allUserMessages);
@@ -2199,14 +2215,24 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       prisma.user.update({ where: { id: userId }, data: { gender: "I'm a man" } }).catch(() => {});
     }
 
-    const mentionsEggDonor = /egg\s*donor|need.*egg|donor\s*egg/i.test(allUserMessages);
-    const hasEggDonor = /have.*egg\s*donor|already.*egg\s*donor|egg\s*donor.*already/i.test(allUserMessages);
-    const mentionsSurrogate = /surrogate|surrogacy|need.*surrogate/i.test(allUserMessages);
-    const hasSurrogate = /have.*surrogate|already.*surrogate|surrogate.*already/i.test(allUserMessages);
-    const mentionsClinic = /ivf\s*clinic|fertility\s*clinic|need.*clinic|clinic/i.test(allUserMessages);
-    const hasClinic = /have.*clinic|already.*clinic|clinic.*already/i.test(allUserMessages);
-    const mentionsSpermDonor = /sperm\s*donor|need.*sperm/i.test(allUserMessages);
-    const hasSpermDonor = /have.*sperm\s*donor|already.*sperm/i.test(allUserMessages);
+    // Service signals: user's explicit statements + Q&A pair detection
+    const mentionsEggDonor = /egg\s*donor|need.*egg|donor\s*egg/i.test(allUserMessages)
+      || sessionAnswered(/egg donor|help finding.*egg/i, AFFIRM);
+    const hasEggDonor = /have.*egg\s*donor|already.*egg\s*donor|egg\s*donor.*already/i.test(allUserMessages)
+      || sessionAnswered(/egg donor|already have.*egg/i, ALREADY_HAVE);
+    const mentionsSurrogate = /surrogate|surrogacy|need.*surrogate/i.test(allUserMessages)
+      || sessionAnswered(/surrogate|gestational carrier/i, AFFIRM);
+    const hasSurrogate = /have.*surrogate|already.*surrogate|surrogate.*already/i.test(allUserMessages)
+      || sessionAnswered(/surrogate|already have.*surrogate/i, ALREADY_HAVE);
+    const mentionsClinic = /ivf\s*clinic|fertility\s*clinic|need.*clinic|clinic/i.test(allUserMessages)
+      || sessionAnswered(/fertility clinic|ivf clinic|help finding.*clinic/i, AFFIRM);
+    const hasClinic = /have.*clinic|already.*clinic|clinic.*already/i.test(allUserMessages)
+      || sessionAnswered(/fertility clinic|already have.*clinic/i, ALREADY_HAVE);
+    const mentionsSpermDonor = /sperm\s*donor|need.*sperm/i.test(allUserMessages)
+      || sessionAnswered(/sperm donor|help finding.*sperm/i, AFFIRM);
+    const hasSpermDonor = /have.*sperm\s*donor|already.*sperm/i.test(allUserMessages)
+      || sessionAnswered(/sperm donor|already have.*sperm/i, ALREADY_HAVE);
+
     const dbIsMale = /^(i'm a )?man$/i.test(userRecord?.gender || "") || (userRecord?.gender || "").toLowerCase() === "male";
     const dbIsNonStraight = userRecord?.sexualOrientation ? !["straight", "heterosexual"].includes(userRecord.sexualOrientation.toLowerCase()) : false;
     const dbIsSingle = userRecord?.relationshipStatus === "Single";
@@ -2223,7 +2249,7 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     const profileNeedsClinic = profileServices.includes("Fertility Clinic") || profile?.needsClinic === true;
     const profileAlreadyHasClinic = profile?.needsClinic === false;
 
-    // Combined signals (DB profile takes precedence over regex chat scan)
+    // Combined signals (DB profile takes precedence over session scan)
     const needsEggDonor = mentionsEggDonor || profileNeedsEggDonor;
     const alreadyHasEggDonor = hasEggDonor || profileAlreadyHasEggDonor;
     const needsSurrogate = mentionsSurrogate || profileNeedsSurrogate;
@@ -2233,16 +2259,9 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
 
     // --- PHASE 2: BIOLOGICAL BASELINE SKIP DIRECTIVES ---
 
-    // Embryos: skip if already answered in DB or if context makes it obvious
-    // Also detect when user answered "yes" to the AI's embryo question (user may never say the word "embryo")
+    // Embryos: DB profile, explicit user statement, or Q&A pair (user says "yes" to AI's embryo question)
     const sessionMentionsEmbryos = /\b\d+\s*(frozen\s+)?embryo|have\s+(frozen\s+)?embryos?|already\s+have\s+(frozen\s+)?embryos?/i.test(allUserMessages);
-    const embryoQuestionAffirmed = chatHistory.some((m: any, idx: number) => {
-      if (m.role !== "user") return false;
-      const prevAi = [...chatHistory].slice(0, idx).reverse().find((p: any) => p.role === "assistant");
-      return prevAi && /frozen embryos/i.test(prevAi.content || "") &&
-        /^(yes|yes,? i do|i do|yep|yeah|correct|i have|i've got)\b/i.test((m.content || "").trim());
-    });
-    const sessionHasEmbryos = sessionMentionsEmbryos || embryoQuestionAffirmed;
+    const sessionHasEmbryos = sessionMentionsEmbryos || sessionAnswered(/frozen embryos/i, new RegExp(`${AFFIRM.source}|i have|i've got`, "i"));
     const confirmedHasEmbryos = profile?.hasEmbryos === true || sessionHasEmbryos;
 
     if (profile?.hasEmbryos === true) {
