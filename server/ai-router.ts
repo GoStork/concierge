@@ -2234,7 +2234,15 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // --- PHASE 2: BIOLOGICAL BASELINE SKIP DIRECTIVES ---
 
     // Embryos: skip if already answered in DB or if context makes it obvious
-    const sessionHasEmbryos = /\b\d+\s*(frozen\s+)?embryo|have\s+(frozen\s+)?embryos?|already\s+have\s+(frozen\s+)?embryos?/i.test(allUserMessages);
+    // Also detect when user answered "yes" to the AI's embryo question (user may never say the word "embryo")
+    const sessionMentionsEmbryos = /\b\d+\s*(frozen\s+)?embryo|have\s+(frozen\s+)?embryos?|already\s+have\s+(frozen\s+)?embryos?/i.test(allUserMessages);
+    const embryoQuestionAffirmed = chatHistory.some((m: any, idx: number) => {
+      if (m.role !== "user") return false;
+      const prevAi = [...chatHistory].slice(0, idx).reverse().find((p: any) => p.role === "assistant");
+      return prevAi && /frozen embryos/i.test(prevAi.content || "") &&
+        /^(yes|yes,? i do|i do|yep|yeah|correct|i have|i've got)\b/i.test((m.content || "").trim());
+    });
+    const sessionHasEmbryos = sessionMentionsEmbryos || embryoQuestionAffirmed;
     const confirmedHasEmbryos = profile?.hasEmbryos === true || sessionHasEmbryos;
 
     if (profile?.hasEmbryos === true) {
