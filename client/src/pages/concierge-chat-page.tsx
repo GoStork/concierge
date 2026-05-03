@@ -3490,8 +3490,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     if (!text.trim() && !hasFiles) return;
     if (sending || sendingRef.current || showCurationRef.current) return;
 
-    // User just sent a message - they want to see the AI response, so scroll with it
+    // User just sent a message - they want to follow the AI response.
+    // forceScrollRef bypasses userNearBottom (which smooth-scroll intermediate events can reset).
     userNearBottom.current = true;
+    forceScrollRef.current = true;
 
     // If curation is awaiting parent confirmation, show their message and start animation
     if (curationAwaitingRef.current) {
@@ -3686,8 +3688,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
             if (typingIntervalRef.current) {
               // Animation still running - defer finalMsg until queue drains
-              typingOnDoneRef.current = applyFinalMsg;
+              typingOnDoneRef.current = () => { forceScrollRef.current = false; applyFinalMsg(); };
             } else {
+              forceScrollRef.current = false;
               applyFinalMsg();
             }
           } else if (event.type === "error") {
