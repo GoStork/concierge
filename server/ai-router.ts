@@ -108,6 +108,7 @@ function injectMissingQuickReplies(content: string): string {
     [/do you already have a fertility clinic.*need help finding one/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
     [/need help finding.*fertility clinic.*already have one/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
     [/do you already have frozen embryos/i, "[[QUICK_REPLY:Yes, I do|No, not yet|Working to create them]]"],
+    [/how many embryos/i, "[[QUICK_REPLY:1|2|3|4|5|6-10|Above 10]]"],
     [/have they been pgt-?a tested/i, "[[QUICK_REPLY:Yes|No|I'm not sure]]"],
     // Step 1c - egg donor conflict (has embryos but registered for egg donation)
     [/fresh egg donor.*existing embryos/i, "[[QUICK_REPLY:Create new embryos with a donor|Use my existing embryos]]"],

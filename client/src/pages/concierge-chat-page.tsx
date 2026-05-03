@@ -3731,16 +3731,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     typingStreamingIdRef.current = null;
   };
 
-  const handleSend = () => {
-    const trimmed = input.trim();
-    // Expand bare numbers after embryo-count question
-    const lastAiMsg = [...messages].reverse().find(m => m.role === "assistant")?.content ?? "";
-    if (/how many embryo/i.test(lastAiMsg) && /^\d+$/.test(trimmed)) {
-      sendMessage(`I have ${trimmed} frozen embryos`);
-    } else {
-      sendMessage(trimmed || input);
-    }
-  };
+  const handleSend = () => sendMessage(input.trim() || input);
 
   // Expands a short quick-reply option into a self-contained sentence so the
   // AI chat history always has meaningful context instead of bare "Yes"/"No".
@@ -3748,6 +3739,13 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     const q = aiMessage.toLowerCase();
     const o = option.toLowerCase().trim();
 
+    // Embryo count (number cards)
+    if (/how many embryos/i.test(q)) {
+      if (o === "1") return "I have 1 frozen embryo";
+      if (/^\d+$/.test(o)) return `I have ${o} frozen embryos`;
+      if (o === "6-10") return "I have between 6 and 10 frozen embryos";
+      if (/above 10/i.test(o)) return "I have more than 10 frozen embryos";
+    }
     // PGT-A tested
     if (/pgt-?a/i.test(q)) {
       if (o === "yes") return "Yes, my embryos have been PGT-A tested";
