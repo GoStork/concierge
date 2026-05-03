@@ -4269,7 +4269,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       data-testid={`chat-message-${msg.role}-${i}`}
                     >
                       <div
-                        className={`relative max-w-[80%] overflow-hidden px-3.5 pt-2 pb-[22px] text-[17px] leading-[1.35] font-ui ${
+                        className={`relative max-w-[80%] overflow-hidden px-3.5 pt-2 pb-[22px] font-ui ${
                           isOwnMessage
                             ? "text-primary-foreground chat-bubble-dark"
                             : isOtherParent
@@ -4279,6 +4279,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                             : "text-foreground"
                         }`}
                         style={{
+                          fontSize: "19px",
+                          lineHeight: "1.35",
                           borderRadius: `${brand?.borderRadius ?? 1}rem`,
                           ...(isOwnMessage
                             ? { backgroundColor: brandColor }
@@ -4591,7 +4593,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={sending || parentUploading}
-              className="flex-1 h-9 !text-[17px] font-ui rounded-full"
+              className="flex-1 h-9 font-ui rounded-full"
+              style={{ fontSize: "17px" }}
               data-testid="input-concierge-message"
             />
             <Button
