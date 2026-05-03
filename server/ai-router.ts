@@ -128,10 +128,7 @@ function injectMissingQuickReplies(content: string): string {
     [/what.*plan for eggs.*using your own.*considering a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]"],
     [/thinking of using your own.*considering a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]"],
     // Step 3 - sperm source (past tense, straight/solo male: no "My partner's")
-    [/for sperm.*did you use your own or a sperm donor/i, "[[QUICK_REPLY:My own|Donor sperm]]"],
-    [/was the sperm your own or from a donor/i, "[[QUICK_REPLY:My own|Donor sperm]]"],
-    [/sperm.*was it your own.*from a donor/i, "[[QUICK_REPLY:My own|Donor sperm]]"],
-    [/did you use your own sperm.*donor sperm/i, "[[QUICK_REPLY:My own|Donor sperm]]"],
+    [/did you use your own sperm or donor sperm/i, "[[QUICK_REPLY:My own|Donor sperm]]"],
     // Step 3 - sperm source (past tense, gay couple: includes "My partner's")
     [/for sperm.*did you use your own.*partner.*sperm donor/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm]]"],
     [/sperm.*your own.*partner.*donor sperm/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm]]"],
@@ -1655,9 +1652,12 @@ STEP 2a (ONLY if parent does NOT have embryos and needs a donor): "Do you need h
 STEP 3 - SPERM:
   Adapt based on gender/orientation:
   - If parent is FEMALE (lesbian or single): Sperm must come from a donor. Skip the "my own" option entirely. Say: "For the sperm source, will you be working with a sperm donor?" or if they have embryos: "For those embryos, was the sperm from a donor?" Then go to STEP 3a (only if they do NOT already have embryos).
-  - If parent is MALE (or has a male partner who could provide sperm):
-    - If HAS embryos (past tense): "And for sperm, did you use your own/your partner's or donor sperm?" [[QUICK_REPLY:My own|My partner's|Donor sperm]]
-    - If does NOT have embryos (future tense): "And for sperm, will you be using your own/your partner's, donor sperm, or are you still deciding?" [[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]
+  - If parent is a SOLO MALE (no partner):
+    - If HAS embryos (past tense): "Did you use your own sperm or donor sperm?" [[QUICK_REPLY:My own|Donor sperm]]
+    - If does NOT have embryos (future tense): "Will you be using your own sperm or donor sperm?" [[QUICK_REPLY:My own|Donor sperm|Not sure yet]]
+  - If parent is MALE with a partner (gay couple, straight couple where male is speaking):
+    - If HAS embryos (past tense): "Did you use your own sperm, your partner's, or donor sperm?" [[QUICK_REPLY:My own|My partner's|Donor sperm]]
+    - If does NOT have embryos (future tense): "Will you be using your own sperm, your partner's, donor sperm, or are you still deciding?" [[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]
   → IMMEDIATELY save the sperm source: [[SAVE:{"spermSource":"[answer: my own / partner's / donor sperm]"}]]
   → If DONOR SPERM AND parent does NOT have embryos: go to STEP 3a
   → If DONOR SPERM AND parent already HAS embryos: SKIP step 3a (the donor was already used to create the embryos, no need to find one now). Go to STEP 4.
