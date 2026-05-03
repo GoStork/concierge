@@ -25,7 +25,7 @@ import {
   buildSidebarSections,
   type SidebarSection,
 } from "@/components/marketplace/swipe-mappers";
-import { Loader2, Send, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2 } from "lucide-react";
+import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2 } from "lucide-react";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -4269,7 +4269,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       data-testid={`chat-message-${msg.role}-${i}`}
                     >
                       <div
-                        className={`relative max-w-[80%] overflow-hidden px-4 pt-2.5 pb-6 text-base leading-relaxed font-ui ${
+                        className={`relative max-w-[80%] overflow-hidden px-3.5 pt-2 pb-[22px] text-[17px] leading-[1.35] font-ui ${
                           isOwnMessage
                             ? "text-primary-foreground chat-bubble-dark"
                             : isOtherParent
@@ -4548,7 +4548,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="border-t px-4 py-3" data-testid="concierge-input-area">
+        <div className="border-t px-3 py-2" data-testid="concierge-input-area">
           {stagedFiles.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-2">
               {stagedFiles.map((file, i) => (
@@ -4562,7 +4562,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               ))}
             </div>
           )}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <input
               ref={parentFileInputRef}
               type="file"
@@ -4575,7 +4575,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             <Button
               variant="ghost"
               size="sm"
-              className="h-10 w-10 p-0 shrink-0 rounded-full"
+              className="h-8 w-8 p-0 shrink-0 rounded-full"
               style={{ color: brandColor }}
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
@@ -4583,7 +4583,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               disabled={parentUploading}
               data-testid="btn-attach"
             >
-              {parentUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
+              {parentUploading ? <Loader2 className="w-[18px] h-[18px] animate-spin" /> : <Paperclip className="w-[18px] h-[18px]" />}
             </Button>
             <Input
               placeholder={`Message ${providerInChat && providerChatName ? providerChatName : (aiName || "AI Concierge")}...`}
@@ -4591,21 +4591,21 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={sending || parentUploading}
-              className="flex-1 !text-base font-ui rounded-full"
+              className="flex-1 h-9 !text-[17px] font-ui rounded-full"
               data-testid="input-concierge-message"
             />
             <Button
               size="sm"
               onClick={handleSend}
               disabled={(!input.trim() && stagedFiles.length === 0) || sending || parentUploading}
-              className="h-10 w-10 p-0 rounded-full text-primary-foreground shrink-0"
+              className="h-8 w-8 p-0 rounded-full text-primary-foreground shrink-0"
               style={{ backgroundColor: brandColor }}
               data-testid="btn-send-message"
             >
               {(sending || parentUploading) ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-[18px] h-[18px] animate-spin" />
               ) : (
-                <Send className="w-4 h-4" />
+                <ArrowUp className="w-[18px] h-[18px]" strokeWidth={2.5} />
               )}
             </Button>
           </div>
