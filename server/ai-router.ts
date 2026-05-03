@@ -134,6 +134,8 @@ function injectMissingQuickReplies(content: string): string {
     [/sperm.*your own.*partner.*donor sperm/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm]]"],
     // Step 3 - sperm source (future tense, straight male: no "My partner's")
     [/for sperm.*will you be using your own or a sperm donor/i, "[[QUICK_REPLY:My own|Donor sperm|Not sure yet]]"],
+    [/sperm source.*will you be working with a sperm donor/i, "[[QUICK_REPLY:My own|Donor sperm|Not sure yet]]"],
+    [/will you be working with a sperm donor/i, "[[QUICK_REPLY:My own|Donor sperm|Not sure yet]]"],
     // Step 3 - sperm source (future tense, gay couple)
     [/for sperm.*will you be using.*still deciding/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]"],
     [/sperm.*own.*partner.*donor.*still deciding/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]"],
@@ -2217,6 +2219,22 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     const allUserMessages = chatHistory.filter(m => m.role === "user").map(m => (m.content || "").toLowerCase()).join(" ") + " " + userMessage.toLowerCase();
     const skipDirectives: string[] = [];
 
+    // Session-level identity signals - these OVERRIDE stale DB profile values
+    const sessionSaysSolo = /\bsolo\b|\bsingle\b|\bon my own\b|\bjust me\b/i.test(allUserMessages);
+    const sessionSaysLgbtq = /\blgbtq[a+]?\b|\bi('m| am) gay\b|\bi identify as\b/i.test(allUserMessages);
+    const sessionSaysMan = /\bsolo man\b|\bsingle man\b|\bi('m| am) (a )?man\b|\bi('m| am) male\b/i.test(allUserMessages);
+
+    // Persist session-level signals to DB immediately so profile stays current
+    if (sessionSaysSolo && userRecord?.relationshipStatus !== "Single") {
+      prisma.user.update({ where: { id: userId }, data: { relationshipStatus: "Single" } }).catch(() => {});
+    }
+    if (sessionSaysLgbtq && userRecord?.sexualOrientation !== "Gay") {
+      prisma.user.update({ where: { id: userId }, data: { sexualOrientation: "Gay" } }).catch(() => {});
+    }
+    if (sessionSaysMan && userRecord?.gender !== "I'm a man") {
+      prisma.user.update({ where: { id: userId }, data: { gender: "I'm a man" } }).catch(() => {});
+    }
+
     const mentionsEggDonor = /egg\s*donor|need.*egg|donor\s*egg/i.test(allUserMessages);
     const hasEggDonor = /have.*egg\s*donor|already.*egg\s*donor|egg\s*donor.*already/i.test(allUserMessages);
     const mentionsSurrogate = /surrogate|surrogacy|need.*surrogate/i.test(allUserMessages);
@@ -2385,8 +2403,9 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     if (profile?.sameSexCouple != null) {
       skipDirectives.push(`DO NOT ask D0b (same-sex or opposite-sex couple) - already saved: ${profile.sameSexCouple ? "same-sex couple" : "opposite-sex couple"}.`);
     }
-    if (userRecord?.relationshipStatus) {
-      skipDirectives.push(`DO NOT ask D0a (solo or with partner) - already saved: ${userRecord.relationshipStatus}.`);
+    const effectiveRelationship = sessionSaysSolo ? "Single" : userRecord?.relationshipStatus;
+    if (effectiveRelationship) {
+      skipDirectives.push(`DO NOT ask D0a (solo or with partner) - already known: ${effectiveRelationship}.`);
     }
 
     const skipRulesPreamble = skipDirectives.length > 0 ? `
