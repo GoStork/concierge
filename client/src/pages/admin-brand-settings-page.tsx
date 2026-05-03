@@ -1983,6 +1983,67 @@ export function BrandSettingsForm({
             })()}
           </Card>
 
+          <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
+            <div className="flex items-center gap-2">
+              <MessageCircle className="w-5 h-5 text-primary" />
+              <h2 className="font-display text-lg font-semibold">Chat Bubble & Input Styling</h2>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Control font sizes, padding, and dimensions for chat message bubbles and the message input field.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Bubble Font Size</Label>
+                  <span className="text-sm text-muted-foreground">{form.chatBubbleFontSize ?? 17}px</span>
+                </div>
+                <Slider min={13} max={24} step={1} value={[form.chatBubbleFontSize ?? 17]} onValueChange={([v]) => updateField("chatBubbleFontSize", v)} disabled={formDisabled} />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Bubble Line Height</Label>
+                  <span className="text-sm text-muted-foreground">{form.chatBubbleLineHeight ?? 1.35}</span>
+                </div>
+                <Slider min={1.1} max={2.0} step={0.05} value={[form.chatBubbleLineHeight ?? 1.35]} onValueChange={([v]) => updateField("chatBubbleLineHeight", v)} disabled={formDisabled} />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Bubble Horizontal Padding</Label>
+                  <span className="text-sm text-muted-foreground">{form.chatBubblePaddingX ?? 14}px</span>
+                </div>
+                <Slider min={8} max={28} step={1} value={[form.chatBubblePaddingX ?? 14]} onValueChange={([v]) => updateField("chatBubblePaddingX", v)} disabled={formDisabled} />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Bubble Top Padding</Label>
+                  <span className="text-sm text-muted-foreground">{form.chatBubblePaddingY ?? 8}px</span>
+                </div>
+                <Slider min={4} max={20} step={1} value={[form.chatBubblePaddingY ?? 8]} onValueChange={([v]) => updateField("chatBubblePaddingY", v)} disabled={formDisabled} />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Bubble Max Width</Label>
+                  <span className="text-sm text-muted-foreground">{form.chatBubbleMaxWidth ?? 80}%</span>
+                </div>
+                <Slider min={50} max={95} step={5} value={[form.chatBubbleMaxWidth ?? 80]} onValueChange={([v]) => updateField("chatBubbleMaxWidth", v)} disabled={formDisabled} />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Input Font Size</Label>
+                  <span className="text-sm text-muted-foreground">{form.chatInputFontSize ?? 17}px</span>
+                </div>
+                <Slider min={13} max={22} step={1} value={[form.chatInputFontSize ?? 17]} onValueChange={([v]) => updateField("chatInputFontSize", v)} disabled={formDisabled} />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Input Height</Label>
+                  <span className="text-sm text-muted-foreground">{form.chatInputHeight ?? 36}px</span>
+                </div>
+                <Slider min={28} max={56} step={2} value={[form.chatInputHeight ?? 36]} onValueChange={([v]) => updateField("chatInputHeight", v)} disabled={formDisabled} />
+              </div>
+            </div>
+          </Card>
+
           <Card className="rounded-[var(--container-radius)] p-6 space-y-8">
             <div className="flex items-center gap-2">
               <LayoutTemplate className="w-5 h-5 text-primary" />

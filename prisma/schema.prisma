@@ -841,6 +841,15 @@ model SiteSettings {
   sliderValueSize            Int?
   sliderThumbSize            Int?
 
+  // Chat bubble & input styling
+  chatBubbleFontSize         Int?
+  chatBubbleLineHeight       Float?
+  chatBubblePaddingX         Int?
+  chatBubblePaddingY         Int?
+  chatBubbleMaxWidth         Int?
+  chatInputFontSize          Int?
+  chatInputHeight            Int?
+
   // Onboarding intro page images (per service type)
   onboardingClinicImageUrl   String?
   onboardingEggDonorImageUrl String?
@@ -947,6 +956,16 @@ model ProviderBrandSettings {
   drawerHandleWidth          Int?
   sliderValueSize            Int?
   sliderThumbSize            Int?
+
+  // Chat bubble & input styling
+  chatBubbleFontSize         Int?
+  chatBubbleLineHeight       Float?
+  chatBubblePaddingX         Int?
+  chatBubblePaddingY         Int?
+  chatBubbleMaxWidth         Int?
+  chatInputFontSize          Int?
+  chatInputHeight            Int?
+
   provider                   Provider @relation(fields: [providerId], references: [id])
 }
 

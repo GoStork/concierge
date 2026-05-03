@@ -87,6 +87,13 @@ export interface BrandSettings {
   drawerHandleWidth: number;
   sliderValueSize: number;
   sliderThumbSize: number;
+  chatBubbleFontSize: number;
+  chatBubbleLineHeight: number;
+  chatBubblePaddingX: number;
+  chatBubblePaddingY: number;
+  chatBubbleMaxWidth: number;
+  chatInputFontSize: number;
+  chatInputHeight: number;
   onboardingClinicImageUrl: string | null;
   onboardingEggDonorImageUrl: string | null;
   onboardingSurrogateImageUrl: string | null;
@@ -169,6 +176,13 @@ export const BRAND_DEFAULTS: BrandSettings = {
   drawerHandleWidth: 60,
   sliderValueSize: 22,
   sliderThumbSize: 24,
+  chatBubbleFontSize: 17,
+  chatBubbleLineHeight: 1.35,
+  chatBubblePaddingX: 14,
+  chatBubblePaddingY: 8,
+  chatBubbleMaxWidth: 80,
+  chatInputFontSize: 17,
+  chatInputHeight: 36,
   onboardingClinicImageUrl: null,
   onboardingEggDonorImageUrl: null,
   onboardingSurrogateImageUrl: null,
@@ -340,6 +354,13 @@ export function applyBrandToDocument(settings: BrandSettings) {
   root.style.setProperty("--drawer-handle-width", `${settings.drawerHandleWidth ?? 60}px`);
   root.style.setProperty("--slider-value-size", `${settings.sliderValueSize ?? 22}px`);
   root.style.setProperty("--slider-thumb-size", `${settings.sliderThumbSize ?? 24}px`);
+  root.style.setProperty("--chat-bubble-font-size", `${settings.chatBubbleFontSize ?? 17}px`);
+  root.style.setProperty("--chat-bubble-line-height", String(settings.chatBubbleLineHeight ?? 1.35));
+  root.style.setProperty("--chat-bubble-px", `${settings.chatBubblePaddingX ?? 14}px`);
+  root.style.setProperty("--chat-bubble-py", `${settings.chatBubblePaddingY ?? 8}px`);
+  root.style.setProperty("--chat-bubble-max-width", `${settings.chatBubbleMaxWidth ?? 80}%`);
+  root.style.setProperty("--chat-input-font-size", `${settings.chatInputFontSize ?? 17}px`);
+  root.style.setProperty("--chat-input-height", `${settings.chatInputHeight ?? 36}px`);
 
   const fonts = [settings.headingFont, settings.bodyFont];
   const uniqueFonts = [...new Set(fonts)];
