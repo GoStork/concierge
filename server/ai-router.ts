@@ -1626,8 +1626,8 @@ OPTIONS come from biology - never offer impossible choices:
 Always include [[QUICK_REPLY]] with only the biologically valid options for this parent.
 
 STEP 2 - EGG SOURCE:
-  Skip if already known (male parent - always donor eggs).
-  Ask which eggs they're using/used. Valid options for female parent: My own eggs / My partner's eggs (if partnered) / Donor eggs [/ I'm not sure yet - future only].
+  Gay/solo male: SKIP THIS STEP ENTIRELY. Never ask. Egg source is always donor - save [[SAVE:{"eggSource":"donor"}]] and proceed to Step 3. Do NOT ask "were the eggs from a donor?" - this is forbidden for male parents.
+  Female parent: Ask which eggs they're using/used. Valid options: My own eggs / My partner's eggs (if partnered) / Donor eggs [/ I'm not sure yet - future only].
   → Save: [[SAVE:{"eggSource":"my own eggs|partner's eggs|donor eggs"}]]
   → Donor eggs + no embryos → STEP 2a  |  Donor eggs + has embryos → skip 2a, STEP 3  |  Otherwise → STEP 3
 
@@ -2293,7 +2293,14 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // Egg source: skip if already saved or context is obvious
     if (profile?.eggSource) {
       skipDirectives.push(`DO NOT ask about egg source (Step 2) - already saved: ${profile.eggSource}.`);
-    } else if (isGayMale || needsEggDonor || alreadyHasEggDonor) {
+    } else if (isGayMale) {
+      skipDirectives.push(
+        "DO NOT ask about egg source (Step 2). NEVER ask 'were the eggs from a donor?', " +
+        "'did you use donor eggs?', or any equivalent question about egg origin. " +
+        "This parent is a gay/solo male - egg source is biologically ALWAYS donor eggs. " +
+        "There is nothing to ask. Go straight to Step 3 (sperm source)."
+      );
+    } else if (needsEggDonor || alreadyHasEggDonor) {
       skipDirectives.push("DO NOT ask about egg source (Step 2) - already known: using egg donor.");
     }
 
