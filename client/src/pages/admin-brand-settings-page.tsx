@@ -1994,10 +1994,17 @@ export function BrandSettingsForm({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Bubble Font Size</Label>
-                  <span className="text-sm text-muted-foreground">{form.chatBubbleFontSize ?? 17}px</span>
+                  <Label className="text-sm font-medium">Bubble Font Size (Mobile)</Label>
+                  <span className="text-sm text-muted-foreground">{form.chatBubbleFontSize ?? 21}px</span>
                 </div>
-                <Slider min={13} max={24} step={1} value={[form.chatBubbleFontSize ?? 17]} onValueChange={([v]) => updateField("chatBubbleFontSize", v)} disabled={formDisabled} />
+                <Slider min={13} max={28} step={1} value={[form.chatBubbleFontSize ?? 21]} onValueChange={([v]) => updateField("chatBubbleFontSize", v)} disabled={formDisabled} />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Bubble Font Size (Desktop)</Label>
+                  <span className="text-sm text-muted-foreground">{form.chatBubbleFontSizeDesktop ?? 15}px</span>
+                </div>
+                <Slider min={13} max={24} step={1} value={[form.chatBubbleFontSizeDesktop ?? 15]} onValueChange={([v]) => updateField("chatBubbleFontSizeDesktop", v)} disabled={formDisabled} />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -2050,10 +2057,17 @@ export function BrandSettingsForm({
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Input Font Size</Label>
+                  <Label className="text-sm font-medium">Input Font Size (Mobile)</Label>
                   <span className="text-sm text-muted-foreground">{form.chatInputFontSize ?? 17}px</span>
                 </div>
                 <Slider min={13} max={22} step={1} value={[form.chatInputFontSize ?? 17]} onValueChange={([v]) => updateField("chatInputFontSize", v)} disabled={formDisabled} />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Input Font Size (Desktop)</Label>
+                  <span className="text-sm text-muted-foreground">{form.chatInputFontSizeDesktop ?? 15}px</span>
+                </div>
+                <Slider min={13} max={20} step={1} value={[form.chatInputFontSizeDesktop ?? 15]} onValueChange={([v]) => updateField("chatInputFontSizeDesktop", v)} disabled={formDisabled} />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">

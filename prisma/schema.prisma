@@ -844,6 +844,7 @@ model SiteSettings {
 
   // Chat bubble & input styling
   chatBubbleFontSize         Int?
+  chatBubbleFontSizeDesktop  Int?
   chatBubbleLineHeight       Float?
   chatBubblePaddingX         Int?
   chatBubblePaddingY         Int?
@@ -852,6 +853,7 @@ model SiteSettings {
   chatTimestampFontSize      Int?
   chatTimestampOpacity       Float?
   chatInputFontSize          Int?
+  chatInputFontSizeDesktop   Int?
   chatInputHeight            Int?
 
   // Onboarding intro page images (per service type)
@@ -964,6 +966,7 @@ model ProviderBrandSettings {
 
   // Chat bubble & input styling
   chatBubbleFontSize         Int?
+  chatBubbleFontSizeDesktop  Int?
   chatBubbleLineHeight       Float?
   chatBubblePaddingX         Int?
   chatBubblePaddingY         Int?
@@ -972,6 +975,7 @@ model ProviderBrandSettings {
   chatTimestampFontSize      Int?
   chatTimestampOpacity       Float?
   chatInputFontSize          Int?
+  chatInputFontSizeDesktop   Int?
   chatInputHeight            Int?
 
   provider                   Provider @relation(fields: [providerId], references: [id])

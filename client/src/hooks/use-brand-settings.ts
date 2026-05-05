@@ -89,6 +89,7 @@ export interface BrandSettings {
   sliderValueSize: number;
   sliderThumbSize: number;
   chatBubbleFontSize: number;
+  chatBubbleFontSizeDesktop: number;
   chatBubbleLineHeight: number;
   chatBubblePaddingX: number;
   chatBubblePaddingY: number;
@@ -97,6 +98,7 @@ export interface BrandSettings {
   chatTimestampFontSize: number;
   chatTimestampOpacity: number;
   chatInputFontSize: number;
+  chatInputFontSizeDesktop: number;
   chatInputHeight: number;
   onboardingClinicImageUrl: string | null;
   onboardingEggDonorImageUrl: string | null;
@@ -182,6 +184,7 @@ export const BRAND_DEFAULTS: BrandSettings = {
   sliderValueSize: 22,
   sliderThumbSize: 24,
   chatBubbleFontSize: 21,
+  chatBubbleFontSizeDesktop: 15,
   chatBubbleLineHeight: 1.35,
   chatBubblePaddingX: 16,
   chatBubblePaddingY: 11,
@@ -190,6 +193,7 @@ export const BRAND_DEFAULTS: BrandSettings = {
   chatTimestampFontSize: 11,
   chatTimestampOpacity: 0.45,
   chatInputFontSize: 17,
+  chatInputFontSizeDesktop: 15,
   chatInputHeight: 36,
   onboardingClinicImageUrl: null,
   onboardingEggDonorImageUrl: null,
@@ -377,12 +381,12 @@ export function applyBrandToDocument(settings: BrandSettings) {
   root.style.setProperty("--chat-input-font-size", `${settings.chatInputFontSize ?? 17}px`);
   root.style.setProperty("--chat-input-height", `${settings.chatInputHeight ?? 36}px`);
 
-  // On desktop browsers (min-width: 768px), cap chat font sizes to avoid
-  // mobile-optimized sizes looking oversized on large screens.
+  // On desktop browsers (min-width: 768px), use the explicit desktop sizes
+  // configured in Brand Settings (separate from the mobile sizes).
   const chatBubbleSize = settings.chatBubbleFontSize ?? 21;
   const chatInputSize = settings.chatInputFontSize ?? 17;
-  const desktopBubbleSize = Math.min(chatBubbleSize, 15);
-  const desktopInputSize = Math.min(chatInputSize, 15);
+  const desktopBubbleSize = settings.chatBubbleFontSizeDesktop ?? 15;
+  const desktopInputSize = settings.chatInputFontSizeDesktop ?? 15;
   let responsiveStyle = document.getElementById("brand-chat-responsive") as HTMLStyleElement | null;
   if (!responsiveStyle) {
     responsiveStyle = document.createElement("style");
