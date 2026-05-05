@@ -4096,10 +4096,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 </div>
               </div>
               <div className="flex-1 min-w-0">
-                <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>
+                <h2 className="text-[17px] font-ui" style={{ fontWeight: 600 }}>
                   {providerInChat && providerChatName ? providerChatName : (aiName || "AI Concierge")}
                 </h2>
-                <p className="text-[11px] font-ui text-muted-foreground truncate" data-testid="chat-subject-label">
+                <p className="text-[13px] font-ui text-muted-foreground truncate" data-testid="chat-subject-label">
                   {providerInChat && sessionTitle ? sessionTitle : "AI Concierge Chat"}
                 </p>
               </div>
