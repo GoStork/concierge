@@ -201,6 +201,8 @@ export const BRAND_DEFAULTS: BrandSettings = {
   onboardingSpermDonorImageUrl: null,
 };
 
+export const SYSTEM_FONT_STACK = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif';
+
 export function hexToHsl(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
@@ -270,11 +272,10 @@ export function applyBrandToDocument(settings: BrandSettings) {
     }
   }
 
-  root.style.setProperty("--font-display", `'${settings.headingFont}'`);
-  // Don't quote font stacks or system font keywords (they must not be wrapped in single quotes)
-  const bodyFontCss = settings.bodyFont.includes(",") || settings.bodyFont.startsWith("-")
-    ? settings.bodyFont
-    : `'${settings.bodyFont}'`;
+  const isSystemFont = (f: string) => f.includes(",") || f.startsWith("-");
+  const headingFontCss = isSystemFont(settings.headingFont) ? settings.headingFont : `'${settings.headingFont}'`;
+  const bodyFontCss = isSystemFont(settings.bodyFont) ? settings.bodyFont : `'${settings.bodyFont}'`;
+  root.style.setProperty("--font-display", headingFontCss);
   root.style.setProperty("--font-body", bodyFontCss);
 
   root.style.fontSize = `${settings.baseFontSize}px`;
@@ -399,20 +400,23 @@ export function applyBrandToDocument(settings: BrandSettings) {
   // Remove any previously injected media query style (no longer needed).
   document.getElementById("brand-chat-responsive")?.remove();
 
-  const fonts = [settings.headingFont, settings.bodyFont];
-  const uniqueFonts = [...new Set(fonts)];
+  // Only load Google Fonts for non-system fonts
+  const googleFonts = [...new Set([settings.headingFont, settings.bodyFont])].filter(f => !isSystemFont(f));
   const existingLink = document.getElementById("brand-google-fonts");
-  const families = uniqueFonts.map(f => `family=${f.replace(/ /g, "+")}:wght@400;500;600;700`).join("&");
-  const href = `https://fonts.googleapis.com/css2?${families}&display=swap`;
-
-  if (existingLink) {
-    (existingLink as HTMLLinkElement).href = href;
+  if (googleFonts.length > 0) {
+    const families = googleFonts.map(f => `family=${f.replace(/ /g, "+")}:wght@400;500;600;700`).join("&");
+    const href = `https://fonts.googleapis.com/css2?${families}&display=swap`;
+    if (existingLink) {
+      (existingLink as HTMLLinkElement).href = href;
+    } else {
+      const link = document.createElement("link");
+      link.id = "brand-google-fonts";
+      link.rel = "stylesheet";
+      link.href = href;
+      document.head.appendChild(link);
+    }
   } else {
-    const link = document.createElement("link");
-    link.id = "brand-google-fonts";
-    link.rel = "stylesheet";
-    link.href = href;
-    document.head.appendChild(link);
+    existingLink?.remove();
   }
 
   if (settings.faviconUrl) {

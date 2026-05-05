@@ -64,6 +64,22 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, SpermIcon } from "@/components/icons/marketplace-icons";
+import { SYSTEM_FONT_STACK } from "@/hooks/use-brand-settings";
+
+const SYSTEM_FONT_VALUE = "__system__";
+
+function toFontSelectValue(font: string) {
+  return font.includes(",") || font.startsWith("-") ? SYSTEM_FONT_VALUE : font;
+}
+
+function fromFontSelectValue(v: string) {
+  return v === SYSTEM_FONT_VALUE ? SYSTEM_FONT_STACK : v;
+}
+
+function fontPreviewStyle(font: string): React.CSSProperties {
+  const isSystem = font.includes(",") || font.startsWith("-");
+  return { fontFamily: isSystem ? font : `'${font}', sans-serif` };
+}
 
 const GOOGLE_FONTS = [
   "DM Sans",
@@ -1439,7 +1455,7 @@ function HeaderNavPreview({ form, previewMode, setPreviewMode }: { form: BrandSe
   const getNavStyle = (idx: number): CSSProperties => {
     const isActive = idx === activeIdx;
     const isHovered = idx === hoveredIdx;
-    const base: CSSProperties = { fontFamily: `'${form.bodyFont}', sans-serif` };
+    const base: CSSProperties = fontPreviewStyle(form.bodyFont);
 
     if (isPill) {
       if (isActive) {
@@ -1511,7 +1527,7 @@ function HeaderNavPreview({ form, previewMode, setPreviewMode }: { form: BrandSe
             <h1
               className="font-bold text-lg leading-none"
               style={{
-                fontFamily: `'${form.headingFont}', serif`,
+                ...fontPreviewStyle(form.headingFont),
                 color: previewMode === "dark" ? "hsl(var(--foreground))" : form.primaryColor,
               }}
             >
@@ -1529,7 +1545,7 @@ function HeaderNavPreview({ form, previewMode, setPreviewMode }: { form: BrandSe
             <h1
               className="font-bold text-lg leading-none"
               style={{
-                fontFamily: `'${form.headingFont}', serif`,
+                ...fontPreviewStyle(form.headingFont),
                 color: previewMode === "dark" ? "hsl(var(--foreground))" : form.primaryColor,
               }}
             >
@@ -2383,11 +2399,12 @@ export function BrandSettingsForm({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Heading Font</Label>
-                  <Select value={form.headingFont} onValueChange={(v) => updateField("headingFont", v)} disabled={formDisabled}>
+                  <Select value={toFontSelectValue(form.headingFont)} onValueChange={(v) => updateField("headingFont", fromFontSelectValue(v))} disabled={formDisabled}>
                     <SelectTrigger data-testid="select-heading-font">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={SYSTEM_FONT_VALUE}>System (SF Pro / Roboto / Segoe UI)</SelectItem>
                       {GOOGLE_FONTS.map((f) => (
                         <SelectItem key={f} value={f}>{f}</SelectItem>
                       ))}
@@ -2396,11 +2413,12 @@ export function BrandSettingsForm({
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Body Font</Label>
-                  <Select value={form.bodyFont} onValueChange={(v) => updateField("bodyFont", v)} disabled={formDisabled}>
+                  <Select value={toFontSelectValue(form.bodyFont)} onValueChange={(v) => updateField("bodyFont", fromFontSelectValue(v))} disabled={formDisabled}>
                     <SelectTrigger data-testid="select-body-font">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={SYSTEM_FONT_VALUE}>System (SF Pro / Roboto / Segoe UI)</SelectItem>
                       {GOOGLE_FONTS.map((f) => (
                         <SelectItem key={f} value={f}>{f}</SelectItem>
                       ))}
@@ -2626,7 +2644,7 @@ export function BrandSettingsForm({
                 <h2
                   className="text-2xl"
                   style={{
-                    fontFamily: `'${form.headingFont}', serif`,
+                    ...fontPreviewStyle(form.headingFont),
                     fontWeight: Number(form.headingWeight),
                     lineHeight: form.headingLineHeight,
                     letterSpacing: form.letterSpacing === "tight" ? "-0.025em" : form.letterSpacing === "wide" ? "0.025em" : "0em",
@@ -2638,7 +2656,7 @@ export function BrandSettingsForm({
                 <p
                   className="text-muted-foreground"
                   style={{
-                    fontFamily: `'${form.bodyFont}', sans-serif`,
+                    ...fontPreviewStyle(form.bodyFont),
                     fontSize: `${form.baseFontSize}px`,
                     fontWeight: Number(form.baseBodyWeight),
                     lineHeight: form.bodyLineHeight,
@@ -3307,13 +3325,13 @@ export function BrandSettingsForm({
                   <div>
                     <p
                       className="text-sm font-heading"
-                      style={{ fontFamily: `'${form.headingFont}', serif` }}
+                      style={{ ...fontPreviewStyle(form.headingFont) }}
                     >
                       Sample Card
                     </p>
                     <p
                       className="text-xs text-muted-foreground"
-                      style={{ fontFamily: `'${form.bodyFont}', sans-serif` }}
+                      style={{ ...fontPreviewStyle(form.bodyFont) }}
                     >
                       Subtitle text preview
                     </p>
@@ -3321,7 +3339,7 @@ export function BrandSettingsForm({
                 </div>
                 <p
                   className="text-sm text-muted-foreground"
-                  style={{ fontFamily: `'${form.bodyFont}', sans-serif`, lineHeight: form.lineHeight }}
+                  style={{ ...fontPreviewStyle(form.bodyFont), lineHeight: form.lineHeight }}
                 >
                   This card shows how your brand looks across various UI elements.
                 </p>
