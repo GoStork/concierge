@@ -2029,6 +2029,13 @@ export function BrandSettingsForm({
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Bubble Corner Radius</Label>
+                  <span className="text-sm text-muted-foreground">{form.chatBubbleRadius ?? 20}px</span>
+                </div>
+                <Slider min={4} max={32} step={1} value={[form.chatBubbleRadius ?? 20]} onValueChange={([v]) => updateField("chatBubbleRadius", v)} disabled={formDisabled} />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
                   <Label className="text-sm font-medium">Input Font Size</Label>
                   <span className="text-sm text-muted-foreground">{form.chatInputFontSize ?? 17}px</span>
                 </div>

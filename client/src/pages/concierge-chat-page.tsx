@@ -4281,7 +4281,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                         style={{
                           fontSize: "var(--chat-bubble-font-size, 17px)",
                           lineHeight: "var(--chat-bubble-line-height, 1.35)",
-                          borderRadius: `${brand?.borderRadius ?? 1}rem`,
+                          borderRadius: "var(--chat-bubble-radius, 20px)",
                           paddingLeft: "var(--chat-bubble-px, 14px)",
                           paddingRight: "var(--chat-bubble-px, 14px)",
                           paddingTop: "var(--chat-bubble-py, 10px)",

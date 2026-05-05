@@ -847,6 +847,7 @@ model SiteSettings {
   chatBubblePaddingX         Int?
   chatBubblePaddingY         Int?
   chatBubbleMaxWidth         Int?
+  chatBubbleRadius           Int?
   chatInputFontSize          Int?
   chatInputHeight            Int?
 
@@ -963,6 +964,7 @@ model ProviderBrandSettings {
   chatBubblePaddingX         Int?
   chatBubblePaddingY         Int?
   chatBubbleMaxWidth         Int?
+  chatBubbleRadius           Int?
   chatInputFontSize          Int?
   chatInputHeight            Int?
 
