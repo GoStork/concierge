@@ -177,10 +177,10 @@ export const BRAND_DEFAULTS: BrandSettings = {
   sliderValueSize: 22,
   sliderThumbSize: 24,
   chatBubbleFontSize: 17,
-  chatBubbleLineHeight: 1.35,
+  chatBubbleLineHeight: 1.3,
   chatBubblePaddingX: 14,
-  chatBubblePaddingY: 8,
-  chatBubbleMaxWidth: 80,
+  chatBubblePaddingY: 10,
+  chatBubbleMaxWidth: 75,
   chatInputFontSize: 17,
   chatInputHeight: 36,
   onboardingClinicImageUrl: null,
@@ -259,7 +259,11 @@ export function applyBrandToDocument(settings: BrandSettings) {
   }
 
   root.style.setProperty("--font-display", `'${settings.headingFont}'`);
-  root.style.setProperty("--font-body", `'${settings.bodyFont}'`);
+  // Don't quote font stacks or system font keywords (they must not be wrapped in single quotes)
+  const bodyFontCss = settings.bodyFont.includes(",") || settings.bodyFont.startsWith("-")
+    ? settings.bodyFont
+    : `'${settings.bodyFont}'`;
+  root.style.setProperty("--font-body", bodyFontCss);
 
   root.style.fontSize = `${settings.baseFontSize}px`;
   root.style.setProperty("--line-height-base", String(settings.lineHeight));

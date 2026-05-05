@@ -4265,11 +4265,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       </div>
                     )}
                     <div
-                      className={`flex ${alignRight ? "justify-end" : "justify-start"}`}
+                      className={`flex flex-col ${alignRight ? "items-end" : "items-start"}`}
                       data-testid={`chat-message-${msg.role}-${i}`}
                     >
                       <div
-                        className={`relative overflow-hidden font-ui ${
+                        className={`overflow-hidden font-ui ${
                           isOwnMessage
                             ? "text-primary-foreground chat-bubble-dark"
                             : isOtherParent
@@ -4284,8 +4284,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                           borderRadius: `${brand?.borderRadius ?? 1}rem`,
                           paddingLeft: "var(--chat-bubble-px, 14px)",
                           paddingRight: "var(--chat-bubble-px, 14px)",
-                          paddingTop: "var(--chat-bubble-py, 8px)",
-                          paddingBottom: "22px",
+                          paddingTop: "var(--chat-bubble-py, 10px)",
+                          paddingBottom: "var(--chat-bubble-py, 10px)",
                           maxWidth: "var(--chat-bubble-max-width, 80%)",
                           ...(isOwnMessage
                             ? { backgroundColor: brandColor }
@@ -4327,20 +4327,18 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                             );
                           })}
                         </span>
-                        {msg.createdAt && (
-                          <>
-                            <span
-                              className="absolute bottom-1.5 right-3 whitespace-nowrap select-none flex items-center gap-0.5"
-                              style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55 }}
-                            >
-                              {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
-                              {alignRight && (
-                                <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />
-                              )}
-                            </span>
-                          </>
-                        )}
                       </div>
+                      {msg.createdAt && (
+                        <span
+                          className="whitespace-nowrap select-none flex items-center gap-0.5 mt-0.5 px-1"
+                          style={{ fontSize: "11px", lineHeight: "16px", opacity: 0.45 }}
+                        >
+                          {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                          {alignRight && (
+                            <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />
+                          )}
+                        </span>
+                      )}
                     </div>
                   </>
                 );
