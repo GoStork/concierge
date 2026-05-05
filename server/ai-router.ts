@@ -131,14 +131,16 @@ function injectMissingQuickReplies(content: string): string {
     // Step 2 - egg source (future tense, female speaker)
     [/what.*plan for eggs.*using your own.*considering a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]"],
     [/thinking of using your own.*considering a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]"],
-    // Step 3 - sperm source (past tense, straight male: no "My partner's")
+    // Step 3 - sperm source (past tense, any phrasing - covers "For those embryos, did you use...")
+    [/did you use your own sperm or a sperm donor/i, "[[QUICK_REPLY:My own|Donor sperm]]"],
+    [/did you use your own.*partner.*sperm donor/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm]]"],
     [/for sperm.*did you use your own or a sperm donor/i, "[[QUICK_REPLY:My own|Donor sperm]]"],
-    // Step 3 - sperm source (past tense, gay couple: includes "My partner's")
     [/for sperm.*did you use your own.*partner.*sperm donor/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm]]"],
     [/sperm.*your own.*partner.*donor sperm/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm]]"],
-    // Step 3 - sperm source (future tense, straight male: no "My partner's")
+    // Step 3 - sperm source (future tense)
+    [/will you be using your own sperm or a sperm donor/i, "[[QUICK_REPLY:My own|Donor sperm|Not sure yet]]"],
+    [/will you be using your own.*partner.*sperm donor/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]"],
     [/for sperm.*will you be using your own or a sperm donor/i, "[[QUICK_REPLY:My own|Donor sperm|Not sure yet]]"],
-    // Step 3 - sperm source (future tense, gay couple)
     [/for sperm.*will you be using.*still deciding/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]"],
     [/sperm.*own.*partner.*donor.*still deciding/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]"],
     [/do you need help finding an egg donor/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
@@ -2975,6 +2977,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         mcpClient
       );
       finalContent = tier2Result.content || "I'm sorry, I couldn't process that.";
+      finalContent = injectMissingQuickReplies(finalContent);
     } else {
       // Tier 1: Gemini 2.5 Flash - MINIMAL prompt, Phase 0-2 only, no matching
       // Extract only the Phase 0 + conversation flow section from the DB prompt
