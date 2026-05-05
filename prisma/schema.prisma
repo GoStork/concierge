@@ -848,6 +848,8 @@ model SiteSettings {
   chatBubblePaddingY         Int?
   chatBubbleMaxWidth         Int?
   chatBubbleRadius           Int?
+  chatTimestampFontSize      Int?
+  chatTimestampOpacity       Float?
   chatInputFontSize          Int?
   chatInputHeight            Int?
 
@@ -965,6 +967,8 @@ model ProviderBrandSettings {
   chatBubblePaddingY         Int?
   chatBubbleMaxWidth         Int?
   chatBubbleRadius           Int?
+  chatTimestampFontSize      Int?
+  chatTimestampOpacity       Float?
   chatInputFontSize          Int?
   chatInputHeight            Int?
 

@@ -2036,6 +2036,20 @@ export function BrandSettingsForm({
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Timestamp Font Size</Label>
+                  <span className="text-sm text-muted-foreground">{form.chatTimestampFontSize ?? 11}px</span>
+                </div>
+                <Slider min={8} max={16} step={1} value={[form.chatTimestampFontSize ?? 11]} onValueChange={([v]) => updateField("chatTimestampFontSize", v)} disabled={formDisabled} />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Timestamp Opacity</Label>
+                  <span className="text-sm text-muted-foreground">{Math.round((form.chatTimestampOpacity ?? 0.45) * 100)}%</span>
+                </div>
+                <Slider min={0.1} max={1} step={0.05} value={[form.chatTimestampOpacity ?? 0.45]} onValueChange={([v]) => updateField("chatTimestampOpacity", v)} disabled={formDisabled} />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
                   <Label className="text-sm font-medium">Input Font Size</Label>
                   <span className="text-sm text-muted-foreground">{form.chatInputFontSize ?? 17}px</span>
                 </div>

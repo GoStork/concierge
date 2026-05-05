@@ -93,6 +93,8 @@ export interface BrandSettings {
   chatBubblePaddingY: number;
   chatBubbleMaxWidth: number;
   chatBubbleRadius: number;
+  chatTimestampFontSize: number;
+  chatTimestampOpacity: number;
   chatInputFontSize: number;
   chatInputHeight: number;
   onboardingClinicImageUrl: string | null;
@@ -183,6 +185,8 @@ export const BRAND_DEFAULTS: BrandSettings = {
   chatBubblePaddingY: 10,
   chatBubbleMaxWidth: 75,
   chatBubbleRadius: 20,
+  chatTimestampFontSize: 11,
+  chatTimestampOpacity: 0.45,
   chatInputFontSize: 17,
   chatInputHeight: 36,
   onboardingClinicImageUrl: null,
@@ -366,6 +370,8 @@ export function applyBrandToDocument(settings: BrandSettings) {
   root.style.setProperty("--chat-bubble-py", `${settings.chatBubblePaddingY ?? 8}px`);
   root.style.setProperty("--chat-bubble-max-width", `${settings.chatBubbleMaxWidth ?? 80}%`);
   root.style.setProperty("--chat-bubble-radius", `${settings.chatBubbleRadius ?? 20}px`);
+  root.style.setProperty("--chat-timestamp-font-size", `${settings.chatTimestampFontSize ?? 11}px`);
+  root.style.setProperty("--chat-timestamp-opacity", String(settings.chatTimestampOpacity ?? 0.45));
   root.style.setProperty("--chat-input-font-size", `${settings.chatInputFontSize ?? 17}px`);
   root.style.setProperty("--chat-input-height", `${settings.chatInputHeight ?? 36}px`);
 
