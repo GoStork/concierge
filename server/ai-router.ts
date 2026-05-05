@@ -2336,7 +2336,17 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     }
 
     // Egg donor help (Step 2a): skip if already answered in DB or from chat
-    if (needsEggDonor && !alreadyHasEggDonor) {
+    // IMPORTANT: When hasEmbryos=true, the parent already used an egg donor in the past.
+    // Step 1c (conflict resolution) must run first to determine if they want a NEW egg donor or will use existing embryos.
+    // Never pre-confirm "they DO need an egg donor" when hasEmbryos=true - that directive overrides prompt rules and causes the bug.
+    if (profile?.hasEmbryos === true && needsEggDonor && !alreadyHasEggDonor) {
+      skipDirectives.push(
+        "Parent already HAS frozen embryos AND registered for egg donation. " +
+        "DO NOT pre-confirm they need a new egg donor. " +
+        "You MUST ask Step 1c (conflict resolution: create new embryos with a donor, or use existing embryos?) first. " +
+        "Only after Step 1c confirms they want a new donor should you run Match Cycle B."
+      );
+    } else if (needsEggDonor && !alreadyHasEggDonor) {
       skipDirectives.push(
         "DO NOT ask if they need help finding an egg donor (Step 2a) - already confirmed: they DO need an egg donor. " +
         "When you reach Phase 3, MUST run Match Cycle B (Egg Donor)."
