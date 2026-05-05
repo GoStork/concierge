@@ -370,7 +370,22 @@ export function applyBrandToDocument(settings: BrandSettings) {
   root.style.setProperty("--drawer-handle-width", `${settings.drawerHandleWidth ?? 60}px`);
   root.style.setProperty("--slider-value-size", `${settings.sliderValueSize ?? 22}px`);
   root.style.setProperty("--slider-thumb-size", `${settings.sliderThumbSize ?? 24}px`);
-  root.style.setProperty("--chat-bubble-font-size", `${settings.chatBubbleFontSize ?? 21}px`);
+  // Detect phone/tablet vs desktop via UA string.
+  // iPadOS 13+ reports itself as "Macintosh" in the UA, so maxTouchPoints > 1
+  // is the only reliable way to identify it as a touch device.
+  const ua = navigator.userAgent;
+  const isMobileOrTablet =
+    /Android|webOS|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua) ||
+    /iPad/i.test(ua) ||
+    (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
+  const chatBubbleSize = isMobileOrTablet
+    ? (settings.chatBubbleFontSize ?? 21)
+    : (settings.chatBubbleFontSizeDesktop ?? 15);
+  const chatInputSize = isMobileOrTablet
+    ? (settings.chatInputFontSize ?? 17)
+    : (settings.chatInputFontSizeDesktop ?? 15);
+
+  root.style.setProperty("--chat-bubble-font-size", `${chatBubbleSize}px`);
   root.style.setProperty("--chat-bubble-line-height", String(settings.chatBubbleLineHeight ?? 1.35));
   root.style.setProperty("--chat-bubble-px", `${settings.chatBubblePaddingX ?? 16}px`);
   root.style.setProperty("--chat-bubble-py", `${settings.chatBubblePaddingY ?? 11}px`);
@@ -378,27 +393,11 @@ export function applyBrandToDocument(settings: BrandSettings) {
   root.style.setProperty("--chat-bubble-radius", `${settings.chatBubbleRadius ?? 20}px`);
   root.style.setProperty("--chat-timestamp-font-size", `${settings.chatTimestampFontSize ?? 11}px`);
   root.style.setProperty("--chat-timestamp-opacity", String(settings.chatTimestampOpacity ?? 0.45));
-  root.style.setProperty("--chat-input-font-size", `${settings.chatInputFontSize ?? 17}px`);
+  root.style.setProperty("--chat-input-font-size", `${chatInputSize}px`);
   root.style.setProperty("--chat-input-height", `${settings.chatInputHeight ?? 36}px`);
 
-  // On desktop browsers (min-width: 768px), use the explicit desktop sizes
-  // configured in Brand Settings (separate from the mobile sizes).
-  const chatBubbleSize = settings.chatBubbleFontSize ?? 21;
-  const chatInputSize = settings.chatInputFontSize ?? 17;
-  const desktopBubbleSize = settings.chatBubbleFontSizeDesktop ?? 15;
-  const desktopInputSize = settings.chatInputFontSizeDesktop ?? 15;
-  let responsiveStyle = document.getElementById("brand-chat-responsive") as HTMLStyleElement | null;
-  if (!responsiveStyle) {
-    responsiveStyle = document.createElement("style");
-    responsiveStyle.id = "brand-chat-responsive";
-    document.head.appendChild(responsiveStyle);
-  }
-  responsiveStyle.textContent = `@media (min-width: 768px) {
-  :root {
-    --chat-bubble-font-size: ${desktopBubbleSize}px !important;
-    --chat-input-font-size: ${desktopInputSize}px !important;
-  }
-}`;
+  // Remove any previously injected media query style (no longer needed).
+  document.getElementById("brand-chat-responsive")?.remove();
 
   const fonts = [settings.headingFont, settings.bodyFont];
   const uniqueFonts = [...new Set(fonts)];
