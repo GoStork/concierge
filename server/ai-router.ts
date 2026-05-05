@@ -2995,6 +2995,8 @@ USER CONTEXT (introduction phase only):
 - Parent name: ${tier1Name}
 - Services they registered interest in: ${tier1Services}
 
+${skipRulesPreamble}
+
 CRITICAL FORMATTING RULE - COPY QUESTIONS VERBATIM:
 The conversation_flow below contains exact question text including [[QUICK_REPLY:...]] tags. You MUST output those questions EXACTLY as written - copy the full text including the [[QUICK_REPLY:...]] part. Do NOT paraphrase or reword questions. Do NOT drop the [[QUICK_REPLY:...]] tags.
 
@@ -3015,12 +3017,12 @@ YOUR ONLY VALID NEXT ACTION RIGHT NOW:
 Deliver the GoStork introduction (PATH A from conversation_flow above). Then end EXACTLY with:
 "Do you have any questions about GoStork and how we can help you?" [[QUICK_REPLY:I understand, let's get started|I have a few questions]]
 
-CRITICAL OVERRIDES - these override everything else:
-1. IGNORE all profile data about "already has clinic/egg donor/surrogate" - that is irrelevant right now
-2. DO NOT ask about sperm donor preferences yet - that comes AFTER Phase 0
-3. DO NOT output [[MATCH_CARD]], [[CURATION]], or any matching content
-4. DO NOT skip the education message under ANY circumstances
-5. The education message is MANDATORY before any matching can begin`;
+PHASE 0 OVERRIDES (apply ONLY while delivering the GoStork education intro - not after):
+1. DO NOT ask about sperm donor preferences yet - that comes AFTER Phase 0
+2. DO NOT output [[MATCH_CARD]], [[CURATION]], or any matching content
+3. DO NOT skip the education message under ANY circumstances
+4. The education message is MANDATORY before any matching can begin
+NOTE: Once Phase 0 is complete, the MANDATORY QUESTIONS YOU MUST NOT ASK block above takes full effect - honor all skip directives.`;
 
       // Human escalation: bypass Gemini entirely and return the correct response
       const humanRequestRegexT1 = /talk to (?:a )?(?:real|human|actual) person|talk to (?:the )?gostork team|speak (?:to|with) (?:a )?human|connect me with (?:a )?(?:human|person|someone)|i want (?:a )?human|i'd like to talk to a real person|just want to speak to (?:a )?human|want to talk to (?:a )?human/i;
