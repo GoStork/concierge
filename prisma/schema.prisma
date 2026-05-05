@@ -780,6 +780,7 @@ model SiteSettings {
   headingFont                String   @default("Playfair Display")
   bodyFont                   String   @default("DM Sans")
   baseFontSize               Int      @default(16)
+  nativeBodyFont             String?
   lineHeight                 Float    @default(1.5)
   typeScaleRatio             Float    @default(1.25)
   smallTextSize              Int      @default(14)
@@ -903,6 +904,7 @@ model ProviderBrandSettings {
   bodyFont                   String   @default("DM Sans")
   baseFontSize               Int      @default(16)
   lineHeight                 Float    @default(1.5)
+  nativeBodyFont             String?
   typeScaleRatio             Float    @default(1.25)
   smallTextSize              Int      @default(14)
   baseBodyWeight             String   @default("400")

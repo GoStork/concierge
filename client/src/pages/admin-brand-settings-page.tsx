@@ -2398,6 +2398,23 @@ export function BrandSettingsForm({
 
             <div className="space-y-2">
               <div className="flex items-center gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Native App Font</span>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Native Body Font (iOS / Android)</Label>
+                <Input
+                  value={form.nativeBodyFont ?? ""}
+                  onChange={(e) => updateField("nativeBodyFont", e.target.value || null)}
+                  placeholder="System"
+                  disabled={formDisabled}
+                  data-testid="input-native-body-font"
+                />
+                <p className="text-xs text-muted-foreground">React Native font family name. Use "System" for the device default (SF Pro on iOS, Roboto on Android). Leave blank to inherit.</p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5">
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Size & Scale</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

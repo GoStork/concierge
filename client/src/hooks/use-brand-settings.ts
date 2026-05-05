@@ -30,6 +30,7 @@ export interface BrandSettings {
   errorColor: string;
   headingFont: string;
   bodyFont: string;
+  nativeBodyFont: string | null;
   baseFontSize: number;
   lineHeight: number;
   typeScaleRatio: number;
@@ -122,6 +123,7 @@ export const BRAND_DEFAULTS: BrandSettings = {
   errorColor: "#ef4444",
   headingFont: "Playfair Display",
   bodyFont: "DM Sans",
+  nativeBodyFont: null,
   baseFontSize: 16,
   lineHeight: 1.5,
   typeScaleRatio: 1.25,
@@ -179,7 +181,7 @@ export const BRAND_DEFAULTS: BrandSettings = {
   drawerHandleWidth: 60,
   sliderValueSize: 22,
   sliderThumbSize: 24,
-  chatBubbleFontSize: 19,
+  chatBubbleFontSize: 21,
   chatBubbleLineHeight: 1.35,
   chatBubblePaddingX: 16,
   chatBubblePaddingY: 11,
@@ -364,7 +366,7 @@ export function applyBrandToDocument(settings: BrandSettings) {
   root.style.setProperty("--drawer-handle-width", `${settings.drawerHandleWidth ?? 60}px`);
   root.style.setProperty("--slider-value-size", `${settings.sliderValueSize ?? 22}px`);
   root.style.setProperty("--slider-thumb-size", `${settings.sliderThumbSize ?? 24}px`);
-  root.style.setProperty("--chat-bubble-font-size", `${settings.chatBubbleFontSize ?? 19}px`);
+  root.style.setProperty("--chat-bubble-font-size", `${settings.chatBubbleFontSize ?? 21}px`);
   root.style.setProperty("--chat-bubble-line-height", String(settings.chatBubbleLineHeight ?? 1.35));
   root.style.setProperty("--chat-bubble-px", `${settings.chatBubblePaddingX ?? 16}px`);
   root.style.setProperty("--chat-bubble-py", `${settings.chatBubblePaddingY ?? 11}px`);
