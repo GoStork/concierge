@@ -4291,14 +4291,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                             : "text-foreground"
                         }`}
                         style={{
-                          fontSize: "var(--chat-bubble-font-size, 17px)",
+                          fontSize: "var(--chat-bubble-font-size, 19px)",
                           lineHeight: "var(--chat-bubble-line-height, 1.35)",
                           borderRadius: "var(--chat-bubble-radius, 20px)",
-                          paddingLeft: "var(--chat-bubble-px, 14px)",
-                          paddingRight: "var(--chat-bubble-px, 14px)",
-                          paddingTop: "var(--chat-bubble-py, 10px)",
-                          paddingBottom: "var(--chat-bubble-py, 10px)",
-                          maxWidth: "var(--chat-bubble-max-width, 80%)",
+                          paddingLeft: "var(--chat-bubble-px, 16px)",
+                          paddingRight: "var(--chat-bubble-px, 16px)",
+                          paddingTop: "var(--chat-bubble-py, 11px)",
+                          paddingBottom: "var(--chat-bubble-py, 11px)",
+                          maxWidth: "var(--chat-bubble-max-width, 85%)",
                           ...(isOwnMessage
                             ? { backgroundColor: brandColor }
                             : isOtherParent

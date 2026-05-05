@@ -179,11 +179,11 @@ export const BRAND_DEFAULTS: BrandSettings = {
   drawerHandleWidth: 60,
   sliderValueSize: 22,
   sliderThumbSize: 24,
-  chatBubbleFontSize: 17,
-  chatBubbleLineHeight: 1.3,
-  chatBubblePaddingX: 14,
-  chatBubblePaddingY: 10,
-  chatBubbleMaxWidth: 75,
+  chatBubbleFontSize: 19,
+  chatBubbleLineHeight: 1.35,
+  chatBubblePaddingX: 16,
+  chatBubblePaddingY: 11,
+  chatBubbleMaxWidth: 85,
   chatBubbleRadius: 20,
   chatTimestampFontSize: 11,
   chatTimestampOpacity: 0.45,
@@ -364,11 +364,11 @@ export function applyBrandToDocument(settings: BrandSettings) {
   root.style.setProperty("--drawer-handle-width", `${settings.drawerHandleWidth ?? 60}px`);
   root.style.setProperty("--slider-value-size", `${settings.sliderValueSize ?? 22}px`);
   root.style.setProperty("--slider-thumb-size", `${settings.sliderThumbSize ?? 24}px`);
-  root.style.setProperty("--chat-bubble-font-size", `${settings.chatBubbleFontSize ?? 17}px`);
+  root.style.setProperty("--chat-bubble-font-size", `${settings.chatBubbleFontSize ?? 19}px`);
   root.style.setProperty("--chat-bubble-line-height", String(settings.chatBubbleLineHeight ?? 1.35));
-  root.style.setProperty("--chat-bubble-px", `${settings.chatBubblePaddingX ?? 14}px`);
-  root.style.setProperty("--chat-bubble-py", `${settings.chatBubblePaddingY ?? 8}px`);
-  root.style.setProperty("--chat-bubble-max-width", `${settings.chatBubbleMaxWidth ?? 80}%`);
+  root.style.setProperty("--chat-bubble-px", `${settings.chatBubblePaddingX ?? 16}px`);
+  root.style.setProperty("--chat-bubble-py", `${settings.chatBubblePaddingY ?? 11}px`);
+  root.style.setProperty("--chat-bubble-max-width", `${settings.chatBubbleMaxWidth ?? 85}%`);
   root.style.setProperty("--chat-bubble-radius", `${settings.chatBubbleRadius ?? 20}px`);
   root.style.setProperty("--chat-timestamp-font-size", `${settings.chatTimestampFontSize ?? 11}px`);
   root.style.setProperty("--chat-timestamp-opacity", String(settings.chatTimestampOpacity ?? 0.45));
