@@ -1,0 +1,10 @@
+ALTER TABLE "SiteSettings" ADD COLUMN IF NOT EXISTS "chatBubbleFontSize" INTEGER;
+ALTER TABLE "SiteSettings" ADD COLUMN IF NOT EXISTS "chatBubbleLineHeight" FLOAT;
+ALTER TABLE "SiteSettings" ADD COLUMN IF NOT EXISTS "chatBubblePaddingX" INTEGER;
+ALTER TABLE "SiteSettings" ADD COLUMN IF NOT EXISTS "chatBubblePaddingY" INTEGER;
+ALTER TABLE "SiteSettings" ADD COLUMN IF NOT EXISTS "chatBubbleMaxWidth" INTEGER;
+ALTER TABLE "SiteSettings" ADD COLUMN IF NOT EXISTS "chatBubbleRadius" INTEGER;
+ALTER TABLE "SiteSettings" ADD COLUMN IF NOT EXISTS "chatTimestampFontSize" INTEGER;
+ALTER TABLE "SiteSettings" ADD COLUMN IF NOT EXISTS "chatTimestampOpacity" FLOAT;
+ALTER TABLE "SiteSettings" ADD COLUMN IF NOT EXISTS "chatInputFontSize" INTEGER;
+ALTER TABLE "SiteSettings" ADD COLUMN IF NOT EXISTS "chatInputHeight" INTEGER;

@@ -4592,7 +4592,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 w-8 p-0 shrink-0 rounded-full"
+              className="h-9 w-9 p-0 shrink-0 rounded-full"
               style={{ color: brandColor }}
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
@@ -4626,7 +4626,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               size="sm"
               onClick={handleSend}
               disabled={(!input.trim() && stagedFiles.length === 0) || sending || parentUploading}
-              className="h-8 w-8 p-0 rounded-full text-primary-foreground shrink-0"
+              className="h-9 w-9 p-0 rounded-full text-primary-foreground shrink-0"
               style={{ backgroundColor: brandColor }}
               data-testid="btn-send-message"
             >
