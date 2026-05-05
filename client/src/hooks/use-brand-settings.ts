@@ -377,6 +377,25 @@ export function applyBrandToDocument(settings: BrandSettings) {
   root.style.setProperty("--chat-input-font-size", `${settings.chatInputFontSize ?? 17}px`);
   root.style.setProperty("--chat-input-height", `${settings.chatInputHeight ?? 36}px`);
 
+  // On desktop browsers (min-width: 768px), cap chat font sizes to avoid
+  // mobile-optimized sizes looking oversized on large screens.
+  const chatBubbleSize = settings.chatBubbleFontSize ?? 21;
+  const chatInputSize = settings.chatInputFontSize ?? 17;
+  const desktopBubbleSize = Math.min(chatBubbleSize, 15);
+  const desktopInputSize = Math.min(chatInputSize, 15);
+  let responsiveStyle = document.getElementById("brand-chat-responsive") as HTMLStyleElement | null;
+  if (!responsiveStyle) {
+    responsiveStyle = document.createElement("style");
+    responsiveStyle.id = "brand-chat-responsive";
+    document.head.appendChild(responsiveStyle);
+  }
+  responsiveStyle.textContent = `@media (min-width: 768px) {
+  :root {
+    --chat-bubble-font-size: ${desktopBubbleSize}px !important;
+    --chat-input-font-size: ${desktopInputSize}px !important;
+  }
+}`;
+
   const fonts = [settings.headingFont, settings.bodyFont];
   const uniqueFonts = [...new Set(fonts)];
   const existingLink = document.getElementById("brand-google-fonts");
