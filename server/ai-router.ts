@@ -1443,6 +1443,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       if (userRecord.relationshipStatus) parts.push(`Relationship status: ${userRecord.relationshipStatus}.`);
       else parts.push(`Relationship status: not yet collected (ask in Phase 1).`);
       if (profile?.sameSexCouple != null) parts.push(`Same-sex couple: ${profile.sameSexCouple ? "yes" : "no"}.`);
+      if (profile?.isLGBTQ != null) parts.push(`LGBTQ+: ${profile.isLGBTQ ? "yes" : "no"}.`);
       if (userRecord.partnerFirstName) {
         let partnerInfo = `Partner's name: ${userRecord.partnerFirstName}`;
         if (userRecord.partnerAge) partnerInfo += `, age ${userRecord.partnerAge}`;
@@ -2268,7 +2269,18 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     const hasClinic = /have.*clinic|already.*clinic|clinic.*already/i.test(allUserMessages);
     const mentionsSpermDonor = /sperm\s*donor|need.*sperm/i.test(allUserMessages);
     const hasSpermDonor = /have.*sperm\s*donor|already.*sperm/i.test(allUserMessages);
-    const isGayMale = /gay\s*(couple|man|male|men|dad|father)|two\s*dad|two\s*men|single\s*(man|male|dad|father|guy)/i.test(allUserMessages);
+    // Detect gay male from chat text OR from DB profile (gender=male + LGBTQ/Gay orientation).
+    // "Solo man" + "Yes" to LGBTQ+ does not match the regex, so we must also check the DB.
+    const genderLower = (userRecord?.gender || "").toLowerCase();
+    const isMaleGender = genderLower.includes("male") || genderLower.includes("man");
+    const isGayMaleFromDB =
+      isMaleGender &&
+      ((userRecord?.sexualOrientation || "").toLowerCase() === "gay" ||
+        profile?.isLGBTQ === true ||
+        profile?.sameSexCouple === true);
+    const isGayMale =
+      /gay\s*(couple|man|male|men|dad|father)|two\s*dad|two\s*men|single\s*(man|male|dad|father|guy)/i.test(allUserMessages) ||
+      isGayMaleFromDB;
 
     // Also check saved profile DB fields - these are the most reliable signal
     const profileServices: string[] = profile?.interestedServices || [];
@@ -2431,8 +2443,20 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     }
 
     // D0a/D0b: skip if identity/relationship already known
-    if (profile?.sameSexCouple != null) {
-      skipDirectives.push(`DO NOT ask D0b (same-sex or opposite-sex couple) - already saved: ${profile.sameSexCouple ? "same-sex couple" : "opposite-sex couple"}.`);
+    // D0b is the "Do you identify as LGBTQ+?" question (Phase 1 Q2 and Cycle D D0b are the same question).
+    // Use isLGBTQ when known; fall back to sameSexCouple inference only for couples.
+    if (profile?.isLGBTQ != null) {
+      skipDirectives.push(
+        `DO NOT ask the LGBTQ+ identity question (Phase 1 Q2 / D0b) - already saved: isLGBTQ=${profile.isLGBTQ}. Never ask it again.`
+      );
+    } else if (profile?.sameSexCouple === true) {
+      skipDirectives.push(
+        `DO NOT ask the LGBTQ+ identity question (D0b) - already known: parent is in a same-sex couple, they are LGBTQ+.`
+      );
+    } else if (profile?.sameSexCouple === false && (userRecord?.relationshipStatus || "").toLowerCase() === "coupled") {
+      skipDirectives.push(
+        `DO NOT ask the LGBTQ+ identity question (D0b) - already known: parent is in an opposite-sex couple, not LGBTQ+.`
+      );
     }
     if (userRecord?.relationshipStatus) {
       skipDirectives.push(`DO NOT ask D0a (solo or with partner) - already saved: ${userRecord.relationshipStatus}.`);
@@ -3434,7 +3458,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         // Needs flags
         "needsSurrogate", "needsEggDonor", "needsClinic",
         // Family type
-        "sameSexCouple",
+        "sameSexCouple", "isLGBTQ",
         // Clinic preferences
         "clinicReason", "clinicPriority", "clinicAgeGroup", "clinicPriorityTags",
         "currentClinicName",
@@ -3463,7 +3487,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
 
       const booleanProfileFields = [
         "hasEmbryos", "embryosTested", "needsSurrogate", "needsEggDonor", "needsClinic",
-        "isFirstIvf", "sameSexCouple",
+        "isFirstIvf", "sameSexCouple", "isLGBTQ",
         "surrogateCovidVaccinated", "surrogateSelectiveReduction", "surrogateInternationalParents",
         "spermDonorCovidVaccinated",
       ];
