@@ -3130,6 +3130,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   // Force-scroll during phase0 animation regardless of userNearBottom (phase0 starts at top so
   // the scroll event handler immediately sets userNearBottom=false before the first tick fires).
   const forceScrollRef = useRef(false);
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const scrollToBottom = useRef((behavior?: "smooth") => {
     if (messagesEndRef.current) {
       const container = messagesEndRef.current.closest('[data-testid="concierge-messages"]') as HTMLElement | null;
@@ -4014,6 +4015,17 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     }
   };
 
+  useEffect(() => {
+    const el = chatInputRef.current;
+    if (!el) return;
+    if (!input) {
+      el.style.height = "";
+      return;
+    }
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, [input]);
+
   return (
     <>
       {showCuration && (
@@ -4269,7 +4281,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       data-testid={`chat-message-${msg.role}-${i}`}
                     >
                       <div
-                        className={`overflow-hidden font-ui ${
+                        className={`overflow-hidden ${
                           isOwnMessage
                             ? "text-primary-foreground chat-bubble-dark"
                             : isOtherParent
@@ -4567,7 +4579,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               ))}
             </div>
           )}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-end gap-1.5">
             <input
               ref={parentFileInputRef}
               type="file"
@@ -4590,14 +4602,24 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             >
               {parentUploading ? <Loader2 className="w-[18px] h-[18px] animate-spin" /> : <Paperclip className="w-[18px] h-[18px]" />}
             </Button>
-            <Input
+            <textarea
+              ref={chatInputRef}
+              rows={1}
               placeholder={`Message ${providerInChat && providerChatName ? providerChatName : (aiName || "AI Concierge")}...`}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={sending || parentUploading}
-              className="flex-1 rounded-full font-ui"
-              style={{ fontSize: "var(--chat-input-font-size, 17px)", height: "var(--chat-input-height, 36px)" }}
+              className="flex-1 border border-input bg-background text-foreground placeholder:text-muted-foreground rounded-full resize-none overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:opacity-50"
+              style={{
+                fontSize: "var(--chat-input-font-size, 17px)",
+                minHeight: "var(--chat-input-height, 36px)",
+                lineHeight: "1.35",
+                paddingTop: "9px",
+                paddingBottom: "9px",
+                paddingLeft: "14px",
+                paddingRight: "14px",
+              }}
               data-testid="input-concierge-message"
             />
             <Button
