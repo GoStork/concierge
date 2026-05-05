@@ -2434,14 +2434,22 @@ export function BrandSettingsForm({
               </div>
               <div className="space-y-1.5">
                 <Label className="text-sm font-medium">Native Body Font (iOS / Android)</Label>
-                <Input
-                  value={form.nativeBodyFont ?? ""}
-                  onChange={(e) => updateField("nativeBodyFont", e.target.value || null)}
-                  placeholder="System"
+                <Select
+                  value={form.nativeBodyFont ?? SYSTEM_FONT_VALUE}
+                  onValueChange={(v) => updateField("nativeBodyFont", v === SYSTEM_FONT_VALUE ? null : v)}
                   disabled={formDisabled}
                   data-testid="input-native-body-font"
-                />
-                <p className="text-xs text-muted-foreground">React Native font family name. Use "System" for the device default (SF Pro on iOS, Roboto on Android). Leave blank to inherit.</p>
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={SYSTEM_FONT_VALUE}>System (SF Pro on iOS, Roboto on Android)</SelectItem>
+                    {GOOGLE_FONTS.map((f) => (
+                      <SelectItem key={f} value={f}>{f}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
