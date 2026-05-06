@@ -2360,7 +2360,16 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // IMPORTANT: When hasEmbryos=true, the parent already used an egg donor in the past.
     // Step 1c (conflict resolution) must run first to determine if they want a NEW egg donor or will use existing embryos.
     // Never pre-confirm "they DO need an egg donor" when hasEmbryos=true - that directive overrides prompt rules and causes the bug.
-    if (effectivelyHasEmbryos && needsEggDonor && !alreadyHasEggDonor) {
+    // Issue 2: A MALE parent with embryos who did NOT register for egg donation never needs Step 1c or a new egg donor.
+    if (isMaleGender && effectivelyHasEmbryos && !profileNeedsEggDonor) {
+      skipDirectives.push(
+        "SKIP Step 1c, Step 2 (egg source), and Step 2a (egg donor help) ENTIRELY. " +
+        "This parent is a MALE parent with EXISTING frozen embryos who DID NOT register for egg donation. " +
+        "His embryos were already created using a donor egg in the PAST - no new egg donor is needed. " +
+        "DO NOT ask about egg donors. DO NOT say 'since you'll need an egg donor' or 'you used a donor'. " +
+        "Proceed directly to Step 3 (sperm source)."
+      );
+    } else if (effectivelyHasEmbryos && needsEggDonor && !alreadyHasEggDonor) {
       skipDirectives.push(
         "Parent already HAS frozen embryos AND registered for egg donation. " +
         "DO NOT pre-confirm they need a new egg donor. DO NOT say 'since you'll need an egg donor'. " +
@@ -2377,11 +2386,22 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       skipDirectives.push("DO NOT ask if they need help finding an egg donor (Step 2a) - already saved: they already have one. Skip Match Cycle B entirely.");
     }
 
-    // Surrogate help (Step 4a): skip if already answered in DB or from chat
+    // Issue 4: Past tense enforcement when parent already has embryos
+    if (effectivelyHasEmbryos) {
+      skipDirectives.push(
+        "TENSE RULE: This parent ALREADY HAS frozen embryos. ALL biological baseline questions about egg/sperm source " +
+        "MUST use PAST TENSE. Examples: 'For those embryos, did you use your own sperm...' (NOT 'will you be using'). " +
+        "NEVER use future tense for egg source, sperm source, or any question about how those embryos were created."
+      );
+    }
+
+    // Surrogate help (Step 4a): skip if already answered in DB or from chat (Issue 6: strengthen)
     if (needsSurrogate && !alreadyHasSurrogate) {
       skipDirectives.push(
-        "DO NOT ask if they need help finding a surrogate (Step 4a) - already confirmed: they DO need a surrogate. " +
-        "When you reach Phase 3, MUST run Match Cycle D (Surrogate)."
+        "SKIP Step 4a ENTIRELY - DO NOT ask 'do you need help finding a surrogate?' under any circumstances. " +
+        "The parent already confirmed they need a surrogate (from services registration or this conversation). " +
+        "This question is already answered. Jump directly past Step 4a to the next step. " +
+        "When matching begins, MUST run Match Cycle D (Surrogate)."
       );
     }
     if (alreadyHasSurrogate) {
@@ -3046,6 +3066,24 @@ NOTE: Once Phase 0 is complete, the MANDATORY QUESTIONS YOU MUST NOT ASK block a
       }
     }
 
+    // Issue 3: Strip "My partner's" from sperm source quick replies for solo (no-partner) parents.
+    // A solo male has no partner - offering "My partner's" as a sperm option is biologically impossible.
+    // Detects solo status from DB relationship status OR from chat text.
+    const isSoloParent = (userRecord?.relationshipStatus || "").toLowerCase() === "single" ||
+      /\bsolo\b|\bsingle\b|\bjust me\b|\bon my own\b|\bby myself\b/i.test(allUserMessages);
+    if (isMaleGender && isSoloParent && /My partner/i.test(finalContent)) {
+      finalContent = finalContent.replace(
+        /\[\[QUICK_REPLY:([^\]]*)\]\]/g,
+        (_match: string, options: string) => {
+          if (options.includes("My partner")) {
+            const filtered = options.split("|").filter((o: string) => !o.trim().startsWith("My partner")).join("|");
+            return `[[QUICK_REPLY:${filtered}]]`;
+          }
+          return _match;
+        }
+      );
+    }
+
     // One-way door: [[CURATION]] in response permanently activates Tier 2
     if (!useTier2 && finalContent.includes("[[CURATION]]")) {
       prisma.aiChatSession.update({
@@ -3362,12 +3400,14 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           }
         }
 
-        // Gender
+        // Gender - also handles single-word quick reply responses ("A man", "A woman")
         if (!userRecord.gender) {
-          if (/\bi('m| am) (a )?wom[ae]n\b|\bi('m| am) female\b|\bas a woman\b|\bsingle (mom|mother|woman)\b/.test(msg)) {
+          if (/\bi('m| am) (a )?wom[ae]n\b|\bi('m| am) female\b|\bas a woman\b|\bsingle (mom|mother|woman)\b|^a woman$|^woman$|^female$/i.test(msg)) {
             autoUserData.gender = "I'm a woman";
-          } else if (/\bi('m| am) (a )?m[ae]n\b|\bi('m| am) male\b|\bas a man\b|\bsingle (dad|father|man)\b|\btwo dads\b/.test(msg)) {
+          } else if (/\bi('m| am) (a )?m[ae]n\b|\bi('m| am) male\b|\bas a man\b|\bsingle (dad|father|man)\b|\btwo dads\b|^a man$|^man$|^male$/i.test(msg)) {
             autoUserData.gender = "I'm a man";
+          } else if (/^non.?binary$|^i'm non.?binary$/i.test(msg)) {
+            autoUserData.gender = "I'm non-binary";
           }
         }
 
@@ -3383,7 +3423,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           }
         }
 
-        // Has embryos
+        // Has embryos - also handle "Yes, I do" quick reply (must be in embryo context via hasEmbryos==null guard)
         if (extractedProfile?.hasEmbryos == null) {
           const embryoCountMatch = msg.match(/\b(\d+)\s*(frozen\s+)?embryos?\b/);
           if (embryoCountMatch) {
@@ -3394,6 +3434,41 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           } else if (/\bno (frozen )?embryos?\b|\bdon't have embryos?\b/.test(msg)) {
             autoProfileData.hasEmbryos = false;
           }
+        }
+
+        // Embryo count update even when hasEmbryos is already true
+        if (extractedProfile?.hasEmbryos === true && extractedProfile?.embryoCount == null) {
+          const embryoCountUpdateMatch = msg.match(/\b(\d+)\s*(frozen\s+)?embryos?\b|^(\d+)$|^(\d+)\s*\+?$/);
+          if (embryoCountUpdateMatch) {
+            const count = parseInt(embryoCountUpdateMatch[1] || embryoCountUpdateMatch[3] || embryoCountUpdateMatch[4], 10);
+            if (!isNaN(count) && count > 0 && count <= 50) {
+              autoProfileData.embryoCount = count;
+            }
+          }
+        }
+
+        // PGT-A tested - extract from context-aware patterns
+        if (extractedProfile?.hasEmbryos === true && extractedProfile?.embryosTested == null) {
+          if (/\byes\b.*pgt|pgt.*\byes\b|they.?ve been tested|all.*tested|pgt.?a tested|tested.*pgt.?a|yes.*tested/i.test(msg)) {
+            autoProfileData.embryosTested = true;
+          } else if (/\bno\b.*pgt|pgt.*\bno\b|not.*tested|haven.t.*tested|not pgt/i.test(msg)) {
+            autoProfileData.embryosTested = false;
+          }
+        }
+
+        // Sperm source - extract from parent's direct statement
+        if (extractedProfile?.spermSource == null) {
+          if (/^my own$|^my own sperm$|\bi used my own sperm|\busing my own sperm|\bmy (own )?sperm\b/i.test(msg)) {
+            autoProfileData.spermSource = "My own";
+          } else if (/^donor sperm$|^a sperm donor$|^sperm donor$|\bi used donor sperm|\busing donor sperm/i.test(msg)) {
+            autoProfileData.spermSource = "Donor sperm";
+          }
+        }
+
+        // Carrier - gay males and solo males ALWAYS need a gestational surrogate (no other option)
+        // Straight males with a female partner may have their partner carry - don't auto-set for them
+        if (extractedProfile?.carrier == null && isMaleGender && (isGayMale || isSoloParent)) {
+          autoProfileData.carrier = "gestational surrogate";
         }
 
         // Needs
