@@ -33,7 +33,7 @@ export default function OnboardingAiReadyPage() {
   };
 
   return (
-    <div className="fixed inset-0 bg-background flex flex-col items-center justify-between py-12 px-6" data-testid="onboarding-ai-ready">
+    <div className="fixed inset-0 bg-background flex flex-col items-center justify-between py-12 px-6 overflow-y-auto" data-testid="onboarding-ai-ready">
       <div className="max-w-md w-full flex flex-col items-center flex-1">
         {/* Selected avatar */}
         <div className="flex justify-center mb-4">
