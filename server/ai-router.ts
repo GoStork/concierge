@@ -3447,12 +3447,18 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           }
         }
 
-        // PGT-A tested - extract from context-aware patterns
+        // PGT-A tested - extract from context-aware patterns or bare Yes/No after AI asked about PGT-A
         if (extractedProfile?.hasEmbryos === true && extractedProfile?.embryosTested == null) {
           if (/\byes\b.*pgt|pgt.*\byes\b|they.?ve been tested|all.*tested|pgt.?a tested|tested.*pgt.?a|yes.*tested/i.test(msg)) {
             autoProfileData.embryosTested = true;
           } else if (/\bno\b.*pgt|pgt.*\bno\b|not.*tested|haven.t.*tested|not pgt/i.test(msg)) {
             autoProfileData.embryosTested = false;
+          } else if (/^(yes|yeah|yep|yup|correct|they have|they are|they were|they've been)$/i.test(msg) || /^(no|nope|not yet|they haven't|they have not)$/i.test(msg)) {
+            // Bare affirmative/negative - check if the last AI message was about PGT-A testing
+            const lastAiMsg = [...chatHistory].reverse().find(m => m.role === "assistant");
+            if (lastAiMsg && /pgt.?a|genetically tested|chromosomally tested|preimplantation/i.test(lastAiMsg.content || "")) {
+              autoProfileData.embryosTested = /^(yes|yeah|yep|yup|correct|they have|they are|they were|they've been)$/i.test(msg);
+            }
           }
         }
 
@@ -3462,6 +3468,12 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             autoProfileData.spermSource = "My own";
           } else if (/^donor sperm$|^a sperm donor$|^sperm donor$|\bi used donor sperm|\busing donor sperm/i.test(msg)) {
             autoProfileData.spermSource = "Donor sperm";
+          } else if (/^donor$/i.test(msg)) {
+            // Bare "Donor" quick reply - check if last AI message was about sperm source
+            const lastAiMsgSperm = [...chatHistory].reverse().find(m => m.role === "assistant");
+            if (lastAiMsgSperm && /sperm source|whose sperm|your (own )?sperm|sperm donor/i.test(lastAiMsgSperm.content || "")) {
+              autoProfileData.spermSource = "Donor sperm";
+            }
           }
         }
 
@@ -3603,6 +3615,12 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           } else {
             profileData[resolvedKey] = value;
           }
+        } else if (key === "gender") {
+          const gRaw = String(value).toLowerCase().trim().replace(/^i'm\s+/, "").replace(/^a\s+/, "");
+          if (gRaw === "man" || gRaw === "male") userData.gender = "I'm a man";
+          else if (gRaw === "woman" || gRaw === "female") userData.gender = "I'm a woman";
+          else if (gRaw === "non-binary" || gRaw === "nonbinary") userData.gender = "I'm non-binary";
+          else userData.gender = String(value);
         } else if (allowedUserFields.includes(key)) {
           userData[key] = value;
         } else if (key === "birthYear") {
