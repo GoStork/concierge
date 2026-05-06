@@ -2336,7 +2336,11 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     if (profile?.carrier) {
       skipDirectives.push(`DO NOT ask about carrier/who will carry (Step 4) - already saved: ${profile.carrier}.`);
     } else if (isMaleGender || isGayMale || needsSurrogate || alreadyHasSurrogate) {
-      skipDirectives.push("DO NOT ask about carrier/who will carry (Step 4) - already known: a male parent cannot carry; the carrier is a gestational surrogate.");
+      skipDirectives.push(
+        "FORBIDDEN: DO NOT ask 'who will carry the pregnancy' or 'who is planning to carry' or any carrier question (Step 4). " +
+        "This parent is using a gestational surrogate - it is the ONLY option. NEVER offer 'Me' or 'My partner' as carrier options. " +
+        "Save carrier silently as gestational surrogate: [[SAVE:{\"carrier\":\"gestational surrogate\"}]] and proceed directly to Step 4a."
+      );
     }
 
     // Clinic: skip if already answered in DB or from chat
@@ -3093,6 +3097,44 @@ NOTE: Once Phase 0 is complete, the MANDATORY QUESTIONS YOU MUST NOT ASK block a
           return _match;
         }
       );
+    }
+
+    // Post-processor: strip carrier question ("who will carry") for male parents or parents registered for surrogacy.
+    // A male parent cannot carry - the answer is always "a gestational surrogate", so asking is pointless.
+    const parentNeedsSurrogate = needsSurrogate || alreadyHasSurrogate || profile?.needsSurrogate === true || isMaleGender || isGayMale;
+    if (parentNeedsSurrogate) {
+      // Detect carrier question by its text pattern and strip entire sentence + quick reply
+      const carrierQuestionPattern = /[^.!?]*(?:who(?:'s| is| will be| would be| was| are)?(?:\s+\w+)?\s+(?:planning\s+to\s+)?(?:carry(?:ing)?|carrier)|who(?:'s| is) (?:going to|planning to) (?:carry|be the carrier))[^.!?]*[.!?]?\s*\[\[QUICK_REPLY:[^\]]*\]\]/gi;
+      if (carrierQuestionPattern.test(finalContent)) {
+        // Auto-save carrier silently then strip the question
+        try {
+          if (userRecord?.parentAccountId && profile) {
+            await prisma.intendedParentProfile.update({
+              where: { parentAccountId: userRecord.parentAccountId },
+              data: { carrier: "gestational surrogate" },
+            });
+            console.log(`[CARRIER POST-PROC] Auto-saved carrier=gestational surrogate for ${userRecord.parentAccountId}`);
+          }
+        } catch (e) {
+          console.error("[CARRIER POST-PROC] Failed to auto-save carrier:", e);
+        }
+        finalContent = finalContent.replace(carrierQuestionPattern, "").trim();
+      } else {
+        // Fallback: if a quick reply contains "surrogate" and "Me"/"My partner", strip the invalid options
+        finalContent = finalContent.replace(
+          /\[\[QUICK_REPLY:([^\]]*)\]\]/g,
+          (_match: string, options: string) => {
+            const opts = options.split("|").map((o: string) => o.trim());
+            const hasSurrogate = opts.some((o: string) => /surrogate/i.test(o));
+            const hasInvalid = opts.some((o: string) => /^me$/i.test(o) || /my partner/i.test(o));
+            if (hasSurrogate && hasInvalid) {
+              const filtered = opts.filter((o: string) => !/^me$/i.test(o) && !/my partner/i.test(o)).join("|");
+              return filtered ? `[[QUICK_REPLY:${filtered}]]` : "";
+            }
+            return _match;
+          }
+        );
+      }
     }
 
     // One-way door: [[CURATION]] in response permanently activates Tier 2
