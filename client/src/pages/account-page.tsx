@@ -147,6 +147,8 @@ function AccountTab() {
       return res.json();
     },
     enabled: !!(user && ((user as any).roles || []).includes("PARENT")),
+    refetchOnMount: "always",
+    staleTime: 0,
   });
 
   const surrogateCountriesQuery = useQuery<string[]>({
