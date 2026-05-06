@@ -86,6 +86,31 @@ async function callTier1Gemini(
   return fullText;
 }
 
+// Normalize biological baseline field values to match account-page dropdown option values exactly.
+// These must match the string arrays in account-page.tsx: eggSourceOptions, spermSourceOptions, carrierOptions.
+function normalizeCarrier(val: string): string {
+  const v = val.toLowerCase().trim().replace(/^a\s+/, "");
+  if (v.includes("gestational") || v === "surrogate") return "Gestational surrogate";
+  if (v === "me" || v === "self" || v === "self carrying" || v === "myself" || v === "carrying myself") return "Self carrying";
+  if (v.includes("partner") || v.includes("spouse")) return "My partner";
+  return val;
+}
+function normalizeEggSource(val: string): string {
+  const v = val.toLowerCase().trim().replace(/^a\s+/, "");
+  if (v.includes("donor egg") || v.includes("egg donor") || v === "donor eggs" || v === "egg donor") return "Egg donor";
+  if (v.includes("own egg") || v === "her own" || v === "my own eggs" || v === "own eggs") return "Own eggs";
+  if (v.includes("donated embryo") || v.includes("embryo donation")) return "Donated embryos";
+  return val;
+}
+function normalizeSpermSource(val: string): string {
+  const v = val.toLowerCase().trim().replace(/^a\s+/, "");
+  if (v.includes("sperm donor") || v === "donor sperm" || v === "sperm donor") return "Sperm donor";
+  if (v === "my own" || v === "my sperm" || v.includes("own sperm") || v === "his own") return "My sperm";
+  if (v === "known donor") return "Known donor";
+  if (v.includes("partner") || v.includes("spouse")) return "Partner/Spouse";
+  return val;
+}
+
 // Post-process Gemini Tier 1 output: inject [[QUICK_REPLY:...]] tags for known
 // questions when Gemini drops them. Only fires when no [[QUICK_REPLY:]] is present.
 function injectMissingQuickReplies(content: string): string {
@@ -1430,12 +1455,12 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         inf.needsEggDonor = true;
       }
       if (registeredForSpermDonor && curSpermSource == null && !hasEmbryos) {
-        inf.spermSource = "donor sperm";
+        inf.spermSource = "Sperm donor";
       }
 
       // --- SOLO MAN / TWO DADS (gender=male) ---
       if (genderIsMale) {
-        if (curEggSource == null) inf.eggSource = "donor eggs";
+        if (curEggSource == null) inf.eggSource = "Egg donor";
         if (curCarrier == null && !inf.carrier) inf.carrier = "Gestational surrogate";
         if (curNeedsSurrogate == null && !inf.needsSurrogate) inf.needsSurrogate = true;
         if (curNeedsEggDonor == null && !inf.needsEggDonor && !hasEmbryos) inf.needsEggDonor = true;
@@ -1447,12 +1472,12 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
       // --- SOLO WOMAN (female + single) ---
       if (genderIsFemale && isSingle && curSpermSource == null && !inf.spermSource) {
-        inf.spermSource = "donor sperm";
+        inf.spermSource = "Sperm donor";
       }
 
       // --- TWO MOMS (lesbian orientation) ---
       if (orientationIsLesbian) {
-        if (curSpermSource == null && !inf.spermSource) inf.spermSource = "donor sperm";
+        if (curSpermSource == null && !inf.spermSource) inf.spermSource = "Sperm donor";
         if (curIsLGBTQ == null) inf.isLGBTQ = true;
         if (curSameSexCouple == null && !isSingle) inf.sameSexCouple = true;
       }
@@ -3617,14 +3642,13 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         // Sperm source - extract from parent's direct statement
         if (extractedProfile?.spermSource == null) {
           if (/^my own$|^my own sperm$|\bi used my own sperm|\busing my own sperm|\bmy (own )?sperm\b/i.test(msg)) {
-            autoProfileData.spermSource = "My own";
+            autoProfileData.spermSource = "My sperm";
           } else if (/^donor sperm$|^a sperm donor$|^sperm donor$|\bi used donor sperm|\busing donor sperm/i.test(msg)) {
-            autoProfileData.spermSource = "Donor sperm";
+            autoProfileData.spermSource = "Sperm donor";
           } else if (/^donor$/i.test(msg)) {
-            // Bare "Donor" quick reply - check if last AI message was about sperm source
             const lastAiMsgSperm = [...chatHistory].reverse().find(m => m.role === "assistant");
             if (lastAiMsgSperm && /sperm source|whose sperm|your (own )?sperm|sperm donor/i.test(lastAiMsgSperm.content || "")) {
-              autoProfileData.spermSource = "Donor sperm";
+              autoProfileData.spermSource = "Sperm donor";
             }
           }
         }
@@ -3765,12 +3789,11 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             const num = parseInt(String(value), 10);
             if (!isNaN(num) && num >= 0) profileData[resolvedKey] = num;
           } else if (resolvedKey === "carrier") {
-            // Normalize carrier to match account-page dropdown option values exactly
-            const cRaw = String(value).toLowerCase().trim().replace(/^a\s+/, "");
-            if (cRaw.includes("gestational") || cRaw === "surrogate") profileData.carrier = "Gestational surrogate";
-            else if (cRaw === "me" || cRaw === "self" || cRaw === "self carrying" || cRaw === "myself") profileData.carrier = "Self carrying";
-            else if (cRaw.includes("partner")) profileData.carrier = "My partner";
-            else profileData.carrier = String(value);
+            profileData.carrier = normalizeCarrier(String(value));
+          } else if (resolvedKey === "eggSource") {
+            profileData.eggSource = normalizeEggSource(String(value));
+          } else if (resolvedKey === "spermSource") {
+            profileData.spermSource = normalizeSpermSource(String(value));
           } else {
             profileData[resolvedKey] = value;
           }
