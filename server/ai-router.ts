@@ -1463,7 +1463,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
       // --- BIOLOGICAL BASELINE (Phase 2) ---
       if (profile?.hasEmbryos === true) {
-        parts.push(`Has frozen embryos: YES (count: ${profile.embryoCount ?? "unknown"}, PGT-A tested: ${profile.embryosTested === true ? "yes" : profile.embryosTested === false ? "no" : "unknown"}) - do NOT ask about embryos again.`);
+        parts.push(`Has frozen embryos: YES (count: ${profile.embryoCount ?? "unknown"}, PGT-A tested: ${profile.embryosTested === true ? "yes" : profile.embryosTested === false ? "no" : "unknown"}) - do NOT ask about embryos again. CRITICAL: because embryos already exist, the sperm and eggs were already used - do NOT ask "Do you need help finding a sperm donor?" or "Do you need help finding an egg donor?" - SKIP Step 2a and Step 3a entirely.`);
       } else if (profile?.hasEmbryos === false) {
         parts.push(`Has frozen embryos: NO - do NOT ask about embryos again.`);
       }
@@ -2409,7 +2409,18 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     }
 
     // Sperm donor help (Step 3a): skip if already answered in DB or from chat
-    if (needsSpermDonor && !alreadyHasSpermDonor) {
+    // CRITICAL: if the parent already HAS embryos, Step 3a is moot - the sperm was already used to create them.
+    // Even if they registered for Sperm Donor service, do NOT ask "do you need help finding a sperm donor?"
+    // when they already have existing embryos. This overrides profileNeedsSpermDonor.
+    if (effectivelyHasEmbryos) {
+      skipDirectives.push(
+        "SKIP Step 3a ENTIRELY - DO NOT ask 'Do you need help finding a sperm donor?' under any circumstances. " +
+        "This parent already HAS frozen embryos. The sperm was already used to CREATE those embryos. " +
+        "This question is irrelevant - no new sperm donor is needed for existing embryos. " +
+        "Even if they registered for Sperm Donor service, that was before intake revealed they have embryos. " +
+        "Proceed directly to Step 4 (carrier / surrogate)."
+      );
+    } else if (needsSpermDonor && !alreadyHasSpermDonor) {
       skipDirectives.push(
         "DO NOT ask about sperm source (Step 3) or if they need help finding a sperm donor (Step 3a) - already confirmed: they DO need a sperm donor. " +
         "When you reach Phase 3, MUST run Match Cycle C (Sperm Donor)."
