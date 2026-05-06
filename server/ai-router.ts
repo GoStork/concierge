@@ -105,8 +105,8 @@ function injectMissingQuickReplies(content: string): string {
     [/on your own.*with a partner/i, "[[QUICK_REPLY:Solo|With a partner|As a couple]]"],
     [/are you on this journey solo/i, "[[QUICK_REPLY:Solo|With a partner]]"],
     // Phase 2 biological baseline
-    [/do you already have a fertility clinic.*need help finding one/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
-    [/need help finding.*fertility clinic.*already have one/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
+    [/do you already have a fertility clinic.*need help finding one/i, "[[QUICK_REPLY:I need help finding a clinic|I already have a clinic]]"],
+    [/need help finding.*fertility clinic.*already have one/i, "[[QUICK_REPLY:I need help finding a clinic|I already have a clinic]]"],
     [/do you already have frozen embryos/i, "[[QUICK_REPLY:Yes, I do|No, not yet|Working to create them]]"],
     [/have they been pgt-?a tested/i, "[[QUICK_REPLY:Yes|No|I'm not sure]]"],
     [/how many embryos do you have/i, "[[QUICK_REPLY:1|2|3|4+|Not sure]]"],
@@ -143,9 +143,9 @@ function injectMissingQuickReplies(content: string): string {
     [/for sperm.*will you be using your own or a sperm donor/i, "[[QUICK_REPLY:My own|Donor sperm|Not sure yet]]"],
     [/for sperm.*will you be using.*still deciding/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]"],
     [/sperm.*own.*partner.*donor.*still deciding/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]"],
-    [/do you need help finding an egg donor/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
-    [/do you need help finding a sperm donor/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
-    [/do you need help finding a surrogate/i, "[[QUICK_REPLY:I need help finding one|I already have one]]"],
+    [/do you need help finding an egg donor/i, "[[QUICK_REPLY:I need help finding an egg donor|I already have an egg donor]]"],
+    [/do you need help finding a sperm donor/i, "[[QUICK_REPLY:I need help finding a sperm donor|I already have a sperm donor]]"],
+    [/do you need help finding a surrogate/i, "[[QUICK_REPLY:I need help finding a surrogate|I already have a surrogate]]"],
     [/who is.*planning to carry the pregnancy/i, "[[QUICK_REPLY:Me|My partner|A gestational surrogate]]"],
     [/who is carrying the pregnancy/i, "[[QUICK_REPLY:Me|My partner|A gestational surrogate]]"],
     // Cycle intake
