@@ -1423,7 +1423,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
       // --- SERVICE REGISTRATIONS (any persona, no gender required) ---
       if (registeredForSurrogate) {
-        if (curCarrier == null) inf.carrier = "gestational surrogate";
+        if (curCarrier == null) inf.carrier = "Gestational surrogate";
         if (curNeedsSurrogate == null) inf.needsSurrogate = true;
       }
       if (registeredForEggDonor && curNeedsEggDonor == null && !hasEmbryos) {
@@ -1436,7 +1436,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       // --- SOLO MAN / TWO DADS (gender=male) ---
       if (genderIsMale) {
         if (curEggSource == null) inf.eggSource = "donor eggs";
-        if (curCarrier == null && !inf.carrier) inf.carrier = "gestational surrogate";
+        if (curCarrier == null && !inf.carrier) inf.carrier = "Gestational surrogate";
         if (curNeedsSurrogate == null && !inf.needsSurrogate) inf.needsSurrogate = true;
         if (curNeedsEggDonor == null && !inf.needsEggDonor && !hasEmbryos) inf.needsEggDonor = true;
       }
@@ -3210,7 +3210,7 @@ NOTE: Once Phase 0 is complete, the MANDATORY QUESTIONS YOU MUST NOT ASK block a
           if (userRecord?.parentAccountId && profile) {
             await prisma.intendedParentProfile.update({
               where: { parentAccountId: userRecord.parentAccountId },
-              data: { carrier: "gestational surrogate" },
+              data: { carrier: "Gestational surrogate" },
             });
             console.log(`[CARRIER POST-PROC] Auto-saved carrier=gestational surrogate for ${userRecord.parentAccountId}`);
           }
@@ -3632,7 +3632,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         // Carrier - gay males and solo males ALWAYS need a gestational surrogate (no other option)
         // Straight males with a female partner may have their partner carry - don't auto-set for them
         if (extractedProfile?.carrier == null && isMaleGender && (isGayMale || isSoloParent)) {
-          autoProfileData.carrier = "gestational surrogate";
+          autoProfileData.carrier = "Gestational surrogate";
         }
 
         // Needs
@@ -3764,6 +3764,13 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           } else if (integerProfileFields.includes(resolvedKey)) {
             const num = parseInt(String(value), 10);
             if (!isNaN(num) && num >= 0) profileData[resolvedKey] = num;
+          } else if (resolvedKey === "carrier") {
+            // Normalize carrier to match account-page dropdown option values exactly
+            const cRaw = String(value).toLowerCase().trim().replace(/^a\s+/, "");
+            if (cRaw.includes("gestational") || cRaw === "surrogate") profileData.carrier = "Gestational surrogate";
+            else if (cRaw === "me" || cRaw === "self" || cRaw === "self carrying" || cRaw === "myself") profileData.carrier = "Self carrying";
+            else if (cRaw.includes("partner")) profileData.carrier = "My partner";
+            else profileData.carrier = String(value);
           } else {
             profileData[resolvedKey] = value;
           }
