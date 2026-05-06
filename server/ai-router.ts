@@ -1381,6 +1381,59 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
     const profile = (userRecord as any)?.parentAccount?.intendedParentProfile;
 
+    // --- IMMEDIATE PROFILE INFERENCE ---
+    // Save logically-implied fields to DB the moment we know them, without waiting for the AI to ask.
+    // This ensures skip directives and userContextBlock always see the correct state.
+    if (profile && userRecord?.parentAccountId) {
+      const registeredServices: string[] = profile?.interestedServices || [];
+      const genderVal = (userRecord.gender || "").toLowerCase();
+      const genderIsMale = genderVal.includes("male") || genderVal.includes("man");
+      const orientationVal = (userRecord.sexualOrientation || "").toLowerCase();
+      const orientationIsGay = orientationVal === "gay" || orientationVal === "lesbian";
+      const registeredForSurrogate = registeredServices.includes("Surrogate");
+      const registeredForEggDonor = registeredServices.includes("Egg Donor");
+
+      const inferredData: Record<string, any> = {};
+
+      // Any parent registered for Surrogate → carrier is a gestational surrogate, needsSurrogate=true
+      if (registeredForSurrogate) {
+        if (profile.carrier == null) inferredData.carrier = "gestational surrogate";
+        if (profile.needsSurrogate == null) inferredData.needsSurrogate = true;
+      }
+
+      // Male parent → egg source is always donor eggs (males have no eggs)
+      if (genderIsMale) {
+        if (profile.eggSource == null) inferredData.eggSource = "donor eggs";
+        // Male parent cannot carry → gestational surrogate (even without service registration)
+        if (profile.carrier == null && !inferredData.carrier) inferredData.carrier = "gestational surrogate";
+      }
+
+      // Gay/lesbian + male = gay male couple or solo gay male → also needs surrogate and egg donor
+      if (genderIsMale && orientationIsGay) {
+        if (profile.eggSource == null && !inferredData.eggSource) inferredData.eggSource = "donor eggs";
+        if (profile.needsSurrogate == null && !inferredData.needsSurrogate) inferredData.needsSurrogate = true;
+      }
+
+      // Parent registered for Egg Donor → needsEggDonor=true (only if they don't already have embryos)
+      if (registeredForEggDonor && profile.needsEggDonor == null && profile.hasEmbryos !== true) {
+        inferredData.needsEggDonor = true;
+      }
+
+      if (Object.keys(inferredData).length > 0) {
+        try {
+          await prisma.intendedParentProfile.update({
+            where: { parentAccountId: userRecord.parentAccountId },
+            data: inferredData,
+          });
+          // Update local profile object so the rest of this request sees the inferred fields
+          Object.assign(profile, inferredData);
+          console.log(`[INFERENCE] Auto-saved inferred profile fields for ${userRecord.parentAccountId}:`, inferredData);
+        } catch (e) {
+          console.error("[INFERENCE] Failed to save inferred profile fields:", e);
+        }
+      }
+    }
+
     // Kick off clinic lookup in parallel with synchronous context-building below
     const clinicLookupPromise = (profile?.needsClinic === false && profile?.currentClinicName)
       ? prisma.provider.findFirst({
