@@ -1382,19 +1382,21 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     const profile = (userRecord as any)?.parentAccount?.intendedParentProfile;
 
     // --- IMMEDIATE PROFILE INFERENCE ---
-    // For each persona, save all logically-implied fields to DB immediately from registration
-    // data and known biological facts, without waiting for the AI to ask.
+    // Save logically-implied fields to DB from service registration and known biology.
+    // CRITICAL: does NOT require profile != null - Surrogate registration alone is enough.
+    // Uses upsert so it works even if no IntendedParentProfile record exists yet.
     //
     // Persona rules:
-    //   Solo Man:   egg=donor, carrier=surrogate, needsSurrogate=true, needsEggDonor=true
-    //   Two Dads:   egg=donor, carrier=surrogate, needsSurrogate=true, needsEggDonor=true, sameSexCouple=true, isLGBTQ=true
-    //   Solo Woman: sperm=donor (no male partner)
-    //   Two Moms:   sperm=donor (no male partner), sameSexCouple=true, isLGBTQ=true
-    //   Any+Surrogate registration: carrier=surrogate, needsSurrogate=true
-    //   Any+EggDonor registration: needsEggDonor=true (if no embryos)
+    //   Any+Surrogate registration: carrier=surrogate, needsSurrogate=true  (no gender needed)
+    //   Any+EggDonor registration:  needsEggDonor=true (if no embryos)
     //   Any+SpermDonor registration: sperm=donor (if no embryos)
-    if (profile && userRecord?.parentAccountId) {
-      const registeredServices: string[] = profile?.interestedServices || [];
+    //   Solo Man / Two Dads (gender=male): egg=donor, carrier=surrogate, needsSurrogate, needsEggDonor
+    //   Gay male:  isLGBTQ=true, sameSexCouple=true (if not single)
+    //   Solo Woman (female+single): sperm=donor
+    //   Two Moms (lesbian): sperm=donor, isLGBTQ=true, sameSexCouple=true (if not single)
+    if (userRecord?.parentAccountId) {
+      const parentAccountId = userRecord.parentAccountId;
+      const registeredServices: string[] = (profile?.interestedServices || []) as string[];
       const genderVal = (userRecord.gender || "").toLowerCase();
       const genderIsMale = genderVal.includes("male") || genderVal.includes("man");
       const genderIsFemale = genderVal.includes("female") || genderVal.includes("woman");
@@ -1406,66 +1408,74 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       const registeredForSurrogate = registeredServices.includes("Surrogate");
       const registeredForEggDonor = registeredServices.includes("Egg Donor");
       const registeredForSpermDonor = registeredServices.includes("Sperm Donor");
-      const hasEmbryos = profile.hasEmbryos === true;
+      const hasEmbryos = profile?.hasEmbryos === true;
+
+      // Read current values via optional chaining - null profile means all fields unset
+      const curCarrier = profile?.carrier ?? null;
+      const curEggSource = profile?.eggSource ?? null;
+      const curSpermSource = profile?.spermSource ?? null;
+      const curNeedsSurrogate = profile?.needsSurrogate ?? null;
+      const curNeedsEggDonor = profile?.needsEggDonor ?? null;
+      const curIsLGBTQ = profile?.isLGBTQ ?? null;
+      const curSameSexCouple = profile?.sameSexCouple ?? null;
 
       const inf: Record<string, any> = {};
 
-      // --- SOLO MAN / TWO DADS ---
-      // Male parents have no eggs and cannot carry - both are always inferred.
-      if (genderIsMale) {
-        if (profile.eggSource == null) inf.eggSource = "donor eggs";
-        if (profile.carrier == null) inf.carrier = "gestational surrogate";
-        if (profile.needsSurrogate == null) inf.needsSurrogate = true;
-        if (profile.needsEggDonor == null && !hasEmbryos) inf.needsEggDonor = true;
-      }
-
-      // Gay male (Two Dads or Solo Gay Man) → same-sex couple flags
-      if (genderIsMale && orientationIsGay) {
-        if (profile.isLGBTQ == null) inf.isLGBTQ = true;
-        if (profile.sameSexCouple == null && !isSingle) inf.sameSexCouple = true;
-      }
-
-      // --- SOLO WOMAN ---
-      // Single female has no male partner - sperm always comes from a donor.
-      if (genderIsFemale && isSingle) {
-        if (profile.spermSource == null) inf.spermSource = "donor sperm";
-      }
-
-      // --- TWO MOMS ---
-      // Lesbian orientation means no male partner - sperm always comes from a donor.
-      if (orientationIsLesbian) {
-        if (profile.spermSource == null) inf.spermSource = "donor sperm";
-        if (profile.isLGBTQ == null) inf.isLGBTQ = true;
-        if (profile.sameSexCouple == null && !isSingle) inf.sameSexCouple = true;
-      }
-
-      // --- SERVICE REGISTRATIONS (any persona) ---
-      // Registered for Surrogate → carrier is gestational surrogate, needsSurrogate=true
+      // --- SERVICE REGISTRATIONS (any persona, no gender required) ---
       if (registeredForSurrogate) {
-        if (profile.carrier == null && !inf.carrier) inf.carrier = "gestational surrogate";
-        if (profile.needsSurrogate == null && !inf.needsSurrogate) inf.needsSurrogate = true;
+        if (curCarrier == null) inf.carrier = "gestational surrogate";
+        if (curNeedsSurrogate == null) inf.needsSurrogate = true;
       }
-
-      // Registered for Egg Donor and no embryos yet → needsEggDonor=true
-      if (registeredForEggDonor && profile.needsEggDonor == null && !inf.needsEggDonor && !hasEmbryos) {
+      if (registeredForEggDonor && curNeedsEggDonor == null && !hasEmbryos) {
         inf.needsEggDonor = true;
       }
-
-      // Registered for Sperm Donor and no embryos yet → sperm source will be donor
-      if (registeredForSpermDonor && profile.spermSource == null && !inf.spermSource && !hasEmbryos) {
+      if (registeredForSpermDonor && curSpermSource == null && !hasEmbryos) {
         inf.spermSource = "donor sperm";
+      }
+
+      // --- SOLO MAN / TWO DADS (gender=male) ---
+      if (genderIsMale) {
+        if (curEggSource == null) inf.eggSource = "donor eggs";
+        if (curCarrier == null && !inf.carrier) inf.carrier = "gestational surrogate";
+        if (curNeedsSurrogate == null && !inf.needsSurrogate) inf.needsSurrogate = true;
+        if (curNeedsEggDonor == null && !inf.needsEggDonor && !hasEmbryos) inf.needsEggDonor = true;
+      }
+      if (genderIsMale && orientationIsGay) {
+        if (curIsLGBTQ == null) inf.isLGBTQ = true;
+        if (curSameSexCouple == null && !isSingle) inf.sameSexCouple = true;
+      }
+
+      // --- SOLO WOMAN (female + single) ---
+      if (genderIsFemale && isSingle && curSpermSource == null && !inf.spermSource) {
+        inf.spermSource = "donor sperm";
+      }
+
+      // --- TWO MOMS (lesbian orientation) ---
+      if (orientationIsLesbian) {
+        if (curSpermSource == null && !inf.spermSource) inf.spermSource = "donor sperm";
+        if (curIsLGBTQ == null) inf.isLGBTQ = true;
+        if (curSameSexCouple == null && !isSingle) inf.sameSexCouple = true;
       }
 
       if (Object.keys(inf).length > 0) {
         try {
-          await prisma.intendedParentProfile.update({
-            where: { parentAccountId: userRecord.parentAccountId },
-            data: inf,
+          await prisma.intendedParentProfile.upsert({
+            where: { parentAccountId },
+            update: inf,
+            create: { parentAccountId, ...inf },
           });
-          Object.assign(profile, inf);
-          console.log(`[INFERENCE] Auto-saved inferred profile fields for ${userRecord.parentAccountId}:`, inf);
+          if (profile) {
+            Object.assign(profile, inf);
+          } else {
+            // Profile didn't exist - patch userRecord so rest of this request sees the data
+            const syntheticProfile = { ...inf, parentAccountId, interestedServices: registeredServices };
+            if ((userRecord as any).parentAccount) {
+              (userRecord as any).parentAccount.intendedParentProfile = syntheticProfile;
+            }
+          }
+          console.log(`[INFERENCE] Auto-saved for ${parentAccountId}:`, inf);
         } catch (e) {
-          console.error("[INFERENCE] Failed to save inferred profile fields:", e);
+          console.error("[INFERENCE] Failed:", e);
         }
       }
     }
