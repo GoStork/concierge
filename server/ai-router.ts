@@ -2304,12 +2304,18 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
 
     // --- PHASE 2: BIOLOGICAL BASELINE SKIP DIRECTIVES ---
 
+    // Detect embryo possession from chat history as well as DB (chat answers may not be saved to DB yet)
+    const chatMentionsHavingEmbryos = /(?:have|has|got)\s+(?:\d+\s+)?(?:frozen\s+)?embryo|yes[,.]?\s+(?:my\s+)?embryo|already\s+have\s+(?:\d+\s+)?(?:frozen\s+)?embryo|i\s+have\s+(?:\d+\s+)?(?:frozen\s+)?embryo/i.test(allUserMessages);
+    const effectivelyHasEmbryos = profile?.hasEmbryos === true || chatMentionsHavingEmbryos;
+
     // Embryos: skip if already answered in DB or if context makes it obvious
     if (profile?.hasEmbryos === true) {
       skipDirectives.push(`DO NOT ask about frozen embryos (Step 1) - already saved: YES, ${profile.embryoCount ?? "unknown"} embryos, PGT-A tested: ${profile.embryosTested === true ? "yes" : "unknown"}.`);
     } else if (profile?.hasEmbryos === false) {
       skipDirectives.push("DO NOT ask about frozen embryos (Step 1) - already saved: NO embryos.");
-    } else if (needsEggDonor || (isGayMale && !(/have.*embryo|frozen\s*embryo|embryos/i.test(allUserMessages)))) {
+    } else if (chatMentionsHavingEmbryos) {
+      skipDirectives.push("DO NOT ask about frozen embryos (Step 1) - parent already confirmed in this conversation they have frozen embryos.");
+    } else if (needsEggDonor || (isGayMale && !chatMentionsHavingEmbryos)) {
       skipDirectives.push("DO NOT ask about frozen embryos (Step 1) - parent needs an egg donor, so they do not have embryos yet.");
     }
 
@@ -2325,11 +2331,12 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       skipDirectives.push(`DO NOT ask about sperm source (Step 3) - already saved: ${profile.spermSource}.`);
     }
 
-    // Carrier: skip if already saved or context is obvious
+    // Carrier: skip if already saved or context is obvious.
+    // ANY male parent cannot carry - isMaleGender alone is sufficient, no LGBTQ detection needed.
     if (profile?.carrier) {
       skipDirectives.push(`DO NOT ask about carrier/who will carry (Step 4) - already saved: ${profile.carrier}.`);
-    } else if (isGayMale || needsSurrogate || alreadyHasSurrogate) {
-      skipDirectives.push("DO NOT ask about carrier/who will carry (Step 4) - already known: using surrogate.");
+    } else if (isMaleGender || isGayMale || needsSurrogate || alreadyHasSurrogate) {
+      skipDirectives.push("DO NOT ask about carrier/who will carry (Step 4) - already known: a male parent cannot carry; the carrier is a gestational surrogate.");
     }
 
     // Clinic: skip if already answered in DB or from chat
@@ -2353,11 +2360,11 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // IMPORTANT: When hasEmbryos=true, the parent already used an egg donor in the past.
     // Step 1c (conflict resolution) must run first to determine if they want a NEW egg donor or will use existing embryos.
     // Never pre-confirm "they DO need an egg donor" when hasEmbryos=true - that directive overrides prompt rules and causes the bug.
-    if (profile?.hasEmbryos === true && needsEggDonor && !alreadyHasEggDonor) {
+    if (effectivelyHasEmbryos && needsEggDonor && !alreadyHasEggDonor) {
       skipDirectives.push(
         "Parent already HAS frozen embryos AND registered for egg donation. " +
-        "DO NOT pre-confirm they need a new egg donor. " +
-        "You MUST ask Step 1c (conflict resolution: create new embryos with a donor, or use existing embryos?) first. " +
+        "DO NOT pre-confirm they need a new egg donor. DO NOT say 'since you'll need an egg donor'. " +
+        "You MUST ask Step 1c (conflict resolution: use existing embryos, or create new ones with a fresh donor?) first. " +
         "Only after Step 1c confirms they want a new donor should you run Match Cycle B."
       );
     } else if (needsEggDonor && !alreadyHasEggDonor) {
