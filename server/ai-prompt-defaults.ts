@@ -301,7 +301,7 @@ STEP 1b: "Have they been PGT-A tested?" [[QUICK_REPLY:Yes|No|I'm not sure]]
   → If NOT SURE: go to STEP 1c (if applicable) or STEP 2 (do not save embryosTested)
 
 STEP 1c - EGG DONOR CONFLICT RESOLUTION (ONLY if parent has embryos AND registered for egg donation at the start):
-"You mentioned you're looking for an egg donor, but you already have frozen embryos. Just to confirm - are you looking to create new embryos with a fresh egg donor, or will you be using your existing embryos?" [[QUICK_REPLY:Create new embryos with a donor|Use my existing embryos]]
+"I see you already have frozen embryos - and you're also registered for egg donation (which makes sense, since you likely used a donor when creating them). Just to clarify your goals: are you planning to use your existing embryos, or are you also looking to create new embryos with a fresh donor?" [[QUICK_REPLY:Use my existing embryos|Create new embryos with a fresh donor]]
   → If "Create new embryos with a donor": save [[SAVE:{"needsEggDonor":true}]] and go to STEP 2 (will reach STEP 2a naturally)
   → If "Use my existing embryos": save [[SAVE:{"needsEggDonor":false}]] and SKIP Step 2 AND Step 2a entirely - go directly to STEP 3
   SKIP this step if: the parent did NOT register for egg donation, OR they already clarified this earlier in the conversation.
