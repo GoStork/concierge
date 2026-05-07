@@ -3755,7 +3755,20 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         const eqr = earlyQuickReplyRef.current;
         if (eqr && newDisplayed >= eqr.tagPos) {
           earlyQuickReplyRef.current = null;
-          setMessages(prev => prev.map(m => m.id === sid ? { ...m, content: displayContent, quickReplies: eqr.options, multiSelect: eqr.multiSelect } : m));
+          // Normalize sense-check options early (before server normalization arrives) so
+          // verbose AI-generated labels like "Yes, I'm looking into surrogacy" on a
+          // "Does that make sense so far?" message are collapsed to the correct buttons.
+          const fullRawLc = typingRawRef.current.toLowerCase();
+          const isSenseCheck = /does that make sense|make sense so far/.test(fullRawLc);
+          const normalizedOptions = isSenseCheck
+            ? eqr.options.map((opt: string) => {
+                const o = opt.toLowerCase().trim();
+                if (/^yes[,! ]|^yeah\b|^sure\b|^correct\b|^exactly\b|^that'?s right/i.test(o) || (/^yes,\s+/i.test(o) && opt.length > 15)) return "Yes, makes sense!";
+                if (/^no[,! ]|^nope\b|^i have a question|^i have questions|^not quite|^not really/i.test(o)) return "I have a question";
+                return opt;
+              })
+            : eqr.options;
+          setMessages(prev => prev.map(m => m.id === sid ? { ...m, content: displayContent, quickReplies: normalizedOptions, multiSelect: eqr.multiSelect } : m));
         } else {
           setMessages(prev => prev.map(m => m.id === sid ? { ...m, content: displayContent } : m));
         }
@@ -3796,6 +3809,13 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const expandQuickReply = (option: string, aiMessage: string): string => {
     const q = aiMessage.toLowerCase();
     const o = option.toLowerCase().trim();
+
+    // Sense-check question (Phase 0 "Does that make sense so far?"): collapse verbose
+    // AI-generated options to simple confirmations so the wrong intent is never sent.
+    if (/does that make sense|make sense so far/i.test(q)) {
+      if (/^(yes|yeah|sure|correct|exactly|that'?s right)\b/i.test(o) || (/^yes,\s+/i.test(o) && option.length > 15)) return "Yes, makes sense!";
+      if (/^(no\b|nope\b|i have a question|i have questions|not quite|not really)/i.test(o)) return "I have a question";
+    }
 
     // Solo or partner identity question
     if (/solo.*partner|partner.*solo|journey solo|on your own.*with a partner/i.test(q)) {
