@@ -3155,6 +3155,42 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       // Strip the full userContextBlock from Tier 1 - it contains matching state that confuses Gemini
       const tier1Name = userRecord?.firstName || userRecord?.name?.split(" ")[0] || "there";
       const tier1Services = services.join(" and ") || "fertility services";
+
+      // Detect whether Phase 0 has already been completed so we can give the AI the right instruction.
+      // Phase 0 is done when the parent has sent at least one message AFTER the Phase 0 AI content
+      // appeared in the history (i.e., Phase 0 was shown and the parent has responded to it).
+      const phase0AiMsgIdx = chatHistory.findIndex(m =>
+        m.role === "assistant" && (
+          /Before we dive in, let me give you a quick picture/i.test(m.content || "") ||
+          /Where are you in your journey right now/i.test(m.content || "") ||
+          /Do you have any questions about GoStork/i.test(m.content || "")
+        )
+      );
+      const phase0Done = phase0AiMsgIdx !== -1 &&
+        chatHistory.some((m, idx) => idx > phase0AiMsgIdx && m.role === "user");
+
+      const phase0Section = phase0Done
+        ? `=== PHASE 0 COMPLETE - CONTINUE WITH INTAKE ===
+The GoStork introduction has already been shown to the parent and they have responded. Phase 0 is DONE.
+Your job now: continue the conversation naturally based on the parent's current message.
+- Answer any questions they have about GoStork or the process
+- Then proceed with intake questions from the conversation_flow above
+- Do NOT re-deliver or summarize Phase 0
+- Honor all MANDATORY QUESTIONS YOU MUST NOT ASK skip directives above`
+        : `=== MANDATORY PHASE 0 FLOW - CANNOT BE SKIPPED ===
+The greeting was already sent. The parent just confirmed their services ("Yes, that's right").
+
+YOUR ONLY VALID NEXT ACTION RIGHT NOW:
+Deliver the GoStork introduction (PATH A from conversation_flow above). Then end EXACTLY with:
+"Do you have any questions about GoStork and how we can help you?" [[QUICK_REPLY:I understand, let's get started|I have a few questions]]
+
+PHASE 0 OVERRIDES (apply ONLY while delivering the GoStork education intro - not after):
+1. DO NOT ask about sperm donor preferences yet - that comes AFTER Phase 0
+2. DO NOT output [[MATCH_CARD]], [[CURATION]], or any matching content
+3. DO NOT skip the education message under ANY circumstances
+4. The education message is MANDATORY before any matching can begin
+NOTE: Once Phase 0 is complete, the MANDATORY QUESTIONS YOU MUST NOT ASK block above takes full effect - honor all skip directives.`;
+
       const tier1SystemPrompt = `You are ${matchmaker?.name || "Adam"}, the AI concierge for GoStork, a fertility marketplace.
 ${matchmaker?.personalityPrompt ? `YOUR PERSONA: ${matchmaker.personalityPrompt}\n` : ""}
 USER CONTEXT (introduction phase only):
@@ -3176,19 +3212,7 @@ SAVE FORMAT: Use [[SAVE:{"field":"value"}]] to save stated preferences immediate
 
 ${conversationFlow}
 
-=== MANDATORY PHASE 0 FLOW - CANNOT BE SKIPPED ===
-The greeting was already sent. The parent just confirmed their services ("Yes, that's right").
-
-YOUR ONLY VALID NEXT ACTION RIGHT NOW:
-Deliver the GoStork introduction (PATH A from conversation_flow above). Then end EXACTLY with:
-"Do you have any questions about GoStork and how we can help you?" [[QUICK_REPLY:I understand, let's get started|I have a few questions]]
-
-PHASE 0 OVERRIDES (apply ONLY while delivering the GoStork education intro - not after):
-1. DO NOT ask about sperm donor preferences yet - that comes AFTER Phase 0
-2. DO NOT output [[MATCH_CARD]], [[CURATION]], or any matching content
-3. DO NOT skip the education message under ANY circumstances
-4. The education message is MANDATORY before any matching can begin
-NOTE: Once Phase 0 is complete, the MANDATORY QUESTIONS YOU MUST NOT ASK block above takes full effect - honor all skip directives.`;
+${phase0Section}`;
 
       // Human escalation: bypass Gemini entirely and return the correct response
       const humanRequestRegexT1 = /talk to (?:a )?(?:real|human|actual) person|talk to (?:the )?gostork team|speak (?:to|with) (?:a )?human|connect me with (?:a )?(?:human|person|someone)|i want (?:a )?human|i'd like to talk to a real person|just want to speak to (?:a )?human|want to talk to (?:a )?human/i;
@@ -3199,7 +3223,13 @@ NOTE: Once Phase 0 is complete, the MANDATORY QUESTIONS YOU MUST NOT ASK block a
       } else {
         // Pass only non-system messages to Tier 1 - the tier1SystemPrompt is the sole system context
         const tier1Messages = messages.filter((m: any) => m.role !== "system");
-        finalContent = await callTier1Gemini(tier1SystemPrompt, tier1Messages, sse);
+        try {
+          finalContent = await callTier1Gemini(tier1SystemPrompt, tier1Messages, sse);
+        } catch (tier1Error: any) {
+          console.error("[Tier1] Gemini failed, providing fallback:", tier1Error?.message);
+          finalContent = "I had a brief connection hiccup - could you send that again?";
+          sse.sendToken(finalContent);
+        }
         if (!finalContent) finalContent = "I'm sorry, I couldn't process that.";
         finalContent = injectMissingQuickReplies(finalContent);
       }
@@ -4181,6 +4211,17 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       finalContent = finalContent.replace(/\[\[QUICK_REPLY:.*?\]\]/g, "").trim();
     }
 
+    // Normalize verbose quick-reply options for simple sense-check / confirmation questions.
+    // The AI sometimes generates "Yes, I'm looking into surrogacy" instead of "Yes, makes sense!"
+    if (quickReplies.length > 0 && /does that make sense|make sense so far|does that all make sense/i.test(finalContent)) {
+      quickReplies = quickReplies.map((opt: string) => {
+        if (/^yes[,!]?\s*$/i.test(opt) || /^yes,?\s+(that\s+)?makes?\s+sense/i.test(opt) || (/^yes,\s+/i.test(opt) && opt.length > 20)) return "Yes, makes sense!";
+        if (/^no[,!]?\s*$/i.test(opt) || /^i\s+have\s+a?\s+question/i.test(opt) || /^i\s+have\s+questions/i.test(opt)) return "I have a question";
+        return opt;
+      });
+      console.log("[QR NORMALIZE] Normalized sense-check quick replies:", quickReplies);
+    }
+
     // Fallback: if AI forgot to include [[QUICK_REPLY:...]], inject known options for
     // recognised Phase 1/2 questions based on content pattern matching
     if (quickReplies.length === 0 && finalContent.trim().endsWith("?")) {
@@ -4213,6 +4254,29 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     if (finalContent.includes("[[CURATION]]")) {
       showCuration = true;
       finalContent = finalContent.replace(/\[\[CURATION\]\]/g, "").trim();
+    }
+
+    // Post-processor: Detect summary/confirmation messages ("just to confirm your preferences
+    // before I search for surrogates:...") that are missing the mandatory question + quick replies.
+    // The AI should always end curation summaries with a question and [[CURATION]], but sometimes
+    // forgets both. Inject them so the conversation never dead-ends silently.
+    if (quickReplies.length === 0 && /just to confirm|to confirm your preferences|let me confirm/i.test(finalContent)) {
+      const isForSurrogate = /surrogate/i.test(finalContent);
+      const isForEggDonor = /egg donor/i.test(finalContent);
+      const isForSpermDonor = /sperm donor/i.test(finalContent);
+      const serviceLabel = isForSurrogate ? "surrogates" : isForEggDonor ? "egg donors" : isForSpermDonor ? "sperm donors" : "matches";
+      if (!showCuration) {
+        showCuration = true;
+        prisma.aiChatSession.update({
+          where: { id: currentSessionId },
+          data: { tier2Active: true },
+        }).catch((e: any) => console.error("[CONFIRM POST-PROC] Failed to activate tier2:", e));
+      }
+      if (!finalContent.trimEnd().endsWith("?")) {
+        finalContent = `${finalContent.trimEnd()} Are you ready to see your ${serviceLabel}?`;
+      }
+      quickReplies = ["Yes, let's go!", "Let me adjust my preferences"];
+      console.log("[CONFIRM POST-PROC] Injected CURATION + quick replies for confirmation summary");
     }
 
     let matchCards: any[] = [];
@@ -4973,12 +5037,39 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     });
   } catch (error: any) {
     console.error("AI Router Error:", error);
-    // If SSE was already started, send error via SSE; otherwise fall back to JSON
+    // Try to recover gracefully by saving a fallback AI message and sending {type: "done"}
+    // instead of the error banner, so the conversation doesn't dead-end.
+    const fallbackSessionId = req.body?.sessionId;
     try {
-      res.write(`data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`);
-      res.end();
+      if (fallbackSessionId) {
+        const fallbackContent = "I ran into a brief connection issue - could you send that again?";
+        const fallbackMsg = await prisma.aiChatMessage.create({
+          data: {
+            sessionId: fallbackSessionId,
+            role: "assistant",
+            content: fallbackContent,
+            senderType: "ai",
+          },
+        });
+        const now = new Date();
+        const donePayload = JSON.stringify({
+          type: "done",
+          sessionId: fallbackSessionId,
+          userMessageId: null,
+          userMessageDeliveredAt: now.toISOString(),
+          userMessageReadAt: now.toISOString(),
+          message: fallbackMsg,
+          quickReplies: ["Try again"],
+        });
+        res.write(`data: ${donePayload}\n\n`);
+        res.end();
+      } else {
+        res.write(`data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`);
+        res.end();
+      }
     } catch {
       if (!res.headersSent) res.status(500).json({ error: error.message });
+      else res.end();
     }
   }
 });
