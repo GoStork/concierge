@@ -3471,20 +3471,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     })();
   }, [selectedMatchmaker, user, greetingSet, sessionLoaded, sessionId, existingSessionId, donorIdParam, donorTypeParam]);
 
-  if (!effectiveMatchmakerId && !existingSessionId && !sessionId && sessionLoaded) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center" data-testid="concierge-no-matchmaker">
-        <Sparkles className="w-12 h-12 text-muted-foreground mb-4" />
-        <h2 className="font-display text-xl font-semibold mb-2">No Matchmaker Selected</h2>
-        <p className="text-muted-foreground text-sm mb-4">
-          Please choose an AI guide to start your concierge experience.
-        </p>
-        <Button onClick={() => navigate("/account/concierge")} data-testid="btn-go-select-matchmaker">
-          Choose a Concierge
-        </Button>
-      </div>
-    );
-  }
+  const noMatchmakerYet = !effectiveMatchmakerId && !existingSessionId && !sessionId && sessionLoaded;
 
   const sendMessage = async (text: string) => {
     const hasFiles = stagedFiles.length > 0;
@@ -4045,6 +4032,21 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }, [input]);
+
+  if (noMatchmakerYet) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center" data-testid="concierge-no-matchmaker">
+        <Sparkles className="w-12 h-12 text-muted-foreground mb-4" />
+        <h2 className="font-display text-xl font-semibold mb-2">No Matchmaker Selected</h2>
+        <p className="text-muted-foreground text-sm mb-4">
+          Please choose an AI guide to start your concierge experience.
+        </p>
+        <Button onClick={() => navigate("/account/concierge")} data-testid="btn-go-select-matchmaker">
+          Choose a Concierge
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <>
