@@ -1946,6 +1946,7 @@ function ProgramsView({
 }) {
   const { toast } = useToast();
   const [expandedProgramId, setExpandedProgramId] = useState<string | null>(null);
+  const autoExpandedRef = useRef(false);
   const [isAddingProgram, setIsAddingProgram] = useState(false);
   const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
   const [formName, setFormName] = useState("");
@@ -1965,13 +1966,15 @@ function ProgramsView({
 
   const programs = Array.isArray(programsQuery.data) ? programsQuery.data : [];
 
-  // Auto-expand the first program with a pending review when admin lands on this tab
+  // Auto-expand the first program with a pending review when admin lands on this tab.
+  // Uses a ref so collapsing manually never re-triggers the auto-expand.
   useEffect(() => {
-    if (!isAdminView || expandedProgramId) return;
+    if (!isAdminView || autoExpandedRef.current || programs.length === 0) return;
+    autoExpandedRef.current = true;
     const pending = programs.find((p) => p.latestSheetStatus === "PENDING");
     if (pending) setExpandedProgramId(pending.id);
     else if (programs.length === 1) setExpandedProgramId(programs[0].id);
-  }, [isAdminView, programs.length, expandedProgramId]);
+  }, [isAdminView, programs.length]);
 
   const invalidatePrograms = () => queryClient.invalidateQueries({ queryKey: programsQueryKey });
 
