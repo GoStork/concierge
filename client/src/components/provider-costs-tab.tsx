@@ -1362,6 +1362,18 @@ function SingleCostsTab({
       {!displaySheet && !effectiveEditing && !parentId && displayItems.length > 0 && (
         <div className="flex items-center gap-3 flex-wrap" data-testid="sheet-status-bar-empty">
           <Badge className="bg-muted text-muted-foreground border-border">No submission yet</Badge>
+          <div className="flex-1" />
+          {isAdminView && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={startEditingFromTemplate}
+              data-testid="btn-admin-edit-costs"
+            >
+              <Pencil className="w-3.5 h-3.5 mr-1" />
+              Edit Costs
+            </Button>
+          )}
         </div>
       )}
 
