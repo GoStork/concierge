@@ -670,7 +670,7 @@ function SingleCostsTab({
 
   const triggerAutoSave = useCallback(() => {
     if (!isEditing) return;
-    if (isAdminView) return;
+    if (isAdminView && !isDirty) return;
     const items = editItemsRef.current;
     if (!items || items.length === 0) return;
     if (autoSavePendingTimerRef.current) clearTimeout(autoSavePendingTimerRef.current);
@@ -679,7 +679,7 @@ function SingleCostsTab({
       setAutoSaveStatus("saving");
       saveDraftMutationRef.current.mutate(editItemsRef.current);
     }, 500);
-  }, [isEditing]);
+  }, [isEditing, isAdminView, isDirty]);
 
   const createQuoteMutation = useMutation({
     mutationFn: async () => {
@@ -938,7 +938,7 @@ function SingleCostsTab({
 
     if (draftSheet && draftSheet.items && draftSheet.items.length > 0) {
       setEditItems(mergeWithTpl(filterBySubType(draftSheet.items.map(mapSheetItem))));
-      if (!isAdminView) setIsEditing(true);
+      setIsEditing(true);
     } else if (pendingSheet && pendingSheet.items && pendingSheet.items.length > 0) {
       setEditItems(mergeWithTpl(filterBySubType(pendingSheet.items.map(mapSheetItem))));
       if (!isAdminView) setIsEditing(true);
