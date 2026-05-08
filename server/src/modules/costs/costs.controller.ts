@@ -342,17 +342,20 @@ export class CostsController {
 
     const user = this.getUserFromRequest(req);
     const isAdmin = user?.roles?.includes("GOSTORK_ADMIN") ?? false;
-    const result = await this.costsService.submitCostSheet(body.providerId, body.items || [], body.sheetId, body.providerTypeId, body.subType, body.programId, isAdmin);
+    const submitted = await this.costsService.submitCostSheet(body.providerId, body.items || [], body.sheetId, body.providerTypeId, body.subType, body.programId);
+
+    if (isAdmin) {
+      const approved = await this.costsService.approveSheet((submitted as any).id);
+      return approved;
+    }
 
     const provider = await this.prisma.provider.findUnique({ where: { id: body.providerId } });
     const providerName = provider?.name || "Unknown Provider";
 
-    if (isAdmin) return result;
-
     this.notifications.sendCostSheetSubmitted({
       providerName,
       providerId: body.providerId,
-      version: (result as any)?.version || 1,
+      version: (submitted as any)?.version || 1,
       submitterEmail: user?.email || "",
       submitterName: user?.name || "Provider",
     }).catch((err) => this.logger.warn(`Failed to send submit notification: ${err.message}`));
@@ -366,15 +369,15 @@ export class CostsController {
         payload: {
           providerName,
           providerId: body.providerId,
-          version: (result as any)?.version || 1,
-          sheetId: (result as any)?.id,
+          version: (submitted as any)?.version || 1,
+          sheetId: (submitted as any)?.id,
         },
         targetUserIds: admins.map((a) => a.id),
         actorUserId: user?.id,
       });
     }).catch((err) => this.logger.warn(`Failed to emit cost sheet SSE: ${err.message}`));
 
-    return result;
+    return submitted;
   }
 
   @Post("approve/:sheetId")
@@ -460,9 +463,7 @@ export class CostsController {
     const sheet = await this.costsService.getSheet(sheetId);
     if (!sheet) throw new HttpException("Sheet not found", HttpStatus.NOT_FOUND);
     this.assertProviderOrAdmin(req, sheet.providerId);
-    const user = this.getUserFromRequest(req);
-    const isAdmin = user?.roles?.includes("GOSTORK_ADMIN") ?? false;
-    return this.costsService.updateSheetItems(sheetId, body.items || [], isAdmin);
+    return this.costsService.updateSheetItems(sheetId, body.items || []);
   }
 
   @Post("save-draft")
