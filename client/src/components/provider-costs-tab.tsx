@@ -670,6 +670,7 @@ function SingleCostsTab({
 
   const triggerAutoSave = useCallback(() => {
     if (!isEditing) return;
+    if (isAdminView) return;
     const items = editItemsRef.current;
     if (!items || items.length === 0) return;
     if (autoSavePendingTimerRef.current) clearTimeout(autoSavePendingTimerRef.current);

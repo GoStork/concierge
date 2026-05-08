@@ -340,11 +340,14 @@ export class CostsController {
       }
     }
 
-    const result = await this.costsService.submitCostSheet(body.providerId, body.items || [], body.sheetId, body.providerTypeId, body.subType, body.programId);
-
     const user = this.getUserFromRequest(req);
+    const isAdmin = user?.roles?.includes("GOSTORK_ADMIN") ?? false;
+    const result = await this.costsService.submitCostSheet(body.providerId, body.items || [], body.sheetId, body.providerTypeId, body.subType, body.programId, isAdmin);
+
     const provider = await this.prisma.provider.findUnique({ where: { id: body.providerId } });
     const providerName = provider?.name || "Unknown Provider";
+
+    if (isAdmin) return result;
 
     this.notifications.sendCostSheetSubmitted({
       providerName,
@@ -457,7 +460,9 @@ export class CostsController {
     const sheet = await this.costsService.getSheet(sheetId);
     if (!sheet) throw new HttpException("Sheet not found", HttpStatus.NOT_FOUND);
     this.assertProviderOrAdmin(req, sheet.providerId);
-    return this.costsService.updateSheetItems(sheetId, body.items || []);
+    const user = this.getUserFromRequest(req);
+    const isAdmin = user?.roles?.includes("GOSTORK_ADMIN") ?? false;
+    return this.costsService.updateSheetItems(sheetId, body.items || [], isAdmin);
   }
 
   @Post("save-draft")

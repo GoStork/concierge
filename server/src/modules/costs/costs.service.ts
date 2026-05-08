@@ -306,6 +306,7 @@ export class CostsService {
     providerTypeId?: string,
     subType?: string,
     programId?: string,
+    autoApprove?: boolean,
   ) {
     const versionWhere: any = { providerId, parentClientId: null };
     if (programId) {
@@ -374,6 +375,10 @@ export class CostsService {
           sortOrder: item.sortOrder ?? idx,
         })),
       });
+    }
+
+    if (autoApprove) {
+      return this.approveSheet(sheet.id);
     }
 
     return this.getSheet(sheet.id);
@@ -507,6 +512,7 @@ export class CostsService {
       sortOrder?: number;
       templateFieldId?: string | null;
     }>,
+    autoApprove?: boolean,
   ) {
     const sheet = await this.prisma.providerCostSheet.findUnique({ where: { id: sheetId } });
     if (sheet && (sheet.status === "APPROVED" || sheet.status === "ARCHIVED")) {
@@ -533,6 +539,10 @@ export class CostsService {
           sortOrder: item.sortOrder ?? idx,
         })),
       });
+    }
+
+    if (autoApprove) {
+      return this.approveSheet(sheetId);
     }
 
     return this.getSheet(sheetId);
