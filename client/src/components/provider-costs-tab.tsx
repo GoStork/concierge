@@ -596,7 +596,7 @@ function SingleCostsTab({
       invalidateAll();
       setIsDirty(false);
       if (isAdminView) setIsEditing(false);
-      toast({ title: "Cost sheet submitted for review", variant: "success" });
+      toast({ title: isAdminView ? "Cost sheet saved and approved" : "Cost sheet submitted for review", variant: "success" });
     },
     onError: (err: any) => {
       toast({ title: "Submit failed", description: err.message, variant: "destructive" });
@@ -1800,7 +1800,10 @@ function SingleCostsTab({
           <Button
             onClick={() => {
               if (autoSavePendingTimerRef.current) { clearTimeout(autoSavePendingTimerRef.current); autoSavePendingTimerRef.current = null; }
-              if (displaySheet && displaySheet.status !== "APPROVED") {
+              if (isAdminView) {
+                const existingSheetId = displaySheet && displaySheet.status !== "APPROVED" ? displaySheet.id : undefined;
+                submitMutation.mutate({ items: editItems, sheetId: existingSheetId });
+              } else if (displaySheet && displaySheet.status !== "APPROVED") {
                 updateMutation.mutate({ sheetId: displaySheet.id, items: editItems });
               } else {
                 submitMutation.mutate({ items: editItems, sheetId: undefined });
