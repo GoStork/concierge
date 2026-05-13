@@ -1212,12 +1212,14 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
     // If a GoStork human concierge has joined and not yet concluded, silence the AI
     if (currentSession?.humanJoinedAt && !currentSession.humanConcludedAt) {
-      return res.json({
+      const sse = setupSSE(res);
+      sse.sendDone({
         message: { id: null, content: "", senderType: "ai", role: "assistant" },
         sessionId: currentSessionId,
         userMessageId: savedUserMsg?.id,
         skipAiResponse: true,
       });
+      return;
     }
 
     if (currentSession?.providerJoinedAt && currentSession.status === "PROVIDER_JOINED") {
@@ -1302,7 +1304,8 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         }
       }
 
-      return res.json({
+      const sse = setupSSE(res);
+      sse.sendDone({
         message: { id: null, content: "", senderType: "ai", role: "assistant" },
         sessionId: currentSessionId,
         userMessageId: savedUserMsg.id,
@@ -1310,6 +1313,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         skipAiResponse: true,
         humanNeeded: humanEscalationTriggered,
       });
+      return;
     }
 
     // Set up SSE streaming - all AI responses from here forward use SSE
