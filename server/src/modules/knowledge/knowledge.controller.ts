@@ -144,20 +144,30 @@ export class KnowledgeController {
   @Post("bulk-sync")
   @UseGuards(SessionOrJwtGuard)
   @ApiBearerAuth()
-  @ApiOperation({
-    summary: "Admin: Sync all provider websites (rate-limited)",
-  })
+  @ApiOperation({ summary: "Admin: Start background bulk sync of all provider websites" })
   async bulkSync(@Req() req: Request) {
     const user = req.user as any;
     const roles: string[] = user.roles || [];
     if (!roles.includes("GOSTORK_ADMIN")) {
       throw new ForbiddenException("Only GoStork admins can bulk sync");
     }
+    const jobId = this.knowledgeService.startBulkSyncJob();
+    return { jobId, status: "running" };
+  }
 
-    const result =
-      await this.knowledgeService.bulkSyncProviderWebsites();
-
-    return result;
+  @Get("bulk-sync/:jobId")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Admin: Poll background bulk sync job status" })
+  async bulkSyncStatus(@Param("jobId") jobId: string, @Req() req: Request) {
+    const user = req.user as any;
+    const roles: string[] = user.roles || [];
+    if (!roles.includes("GOSTORK_ADMIN")) {
+      throw new ForbiddenException("Only GoStork admins can view sync status");
+    }
+    const job = this.knowledgeService.getBulkSyncJob(jobId);
+    if (!job) throw new BadRequestException("Job not found");
+    return job;
   }
 
   @Get("rules")

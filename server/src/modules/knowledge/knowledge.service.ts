@@ -1,11 +1,26 @@
 import { Injectable, Inject } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { randomUUID } from "crypto";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
+type BulkSyncJob = {
+  status: "running" | "done" | "error";
+  current: number;
+  total: number;
+  currentName: string;
+  synced: number;
+  failed: number;
+  errors: string[];
+  startedAt: string;
+  completedAt?: string;
+};
+
 @Injectable()
 export class KnowledgeService {
+  private bulkSyncJobs = new Map<string, BulkSyncJob>();
+
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async generateEmbedding(text: string): Promise<number[]> {
@@ -305,5 +320,42 @@ export class KnowledgeService {
     }
 
     return { synced, failed, errors };
+  }
+
+  startBulkSyncJob(): string {
+    const jobId = randomUUID();
+    const job: BulkSyncJob = {
+      status: "running",
+      current: 0,
+      total: 0,
+      currentName: "",
+      synced: 0,
+      failed: 0,
+      errors: [],
+      startedAt: new Date().toISOString(),
+    };
+    this.bulkSyncJobs.set(jobId, job);
+
+    this.bulkSyncProviderWebsites((current, total, name) => {
+      job.current = current;
+      job.total = total;
+      job.currentName = name;
+    }).then((result) => {
+      job.status = "done";
+      job.synced = result.synced;
+      job.failed = result.failed;
+      job.errors = result.errors;
+      job.completedAt = new Date().toISOString();
+    }).catch((e: any) => {
+      job.status = "error";
+      job.errors = [e.message];
+      job.completedAt = new Date().toISOString();
+    });
+
+    return jobId;
+  }
+
+  getBulkSyncJob(jobId: string): BulkSyncJob | null {
+    return this.bulkSyncJobs.get(jobId) ?? null;
   }
 }

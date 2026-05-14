@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -85,8 +85,8 @@ export default function AdminKnowledgeTab() {
   const { toast } = useToast();
   const [showNewRule, setShowNewRule] = useState(false);
   const [editingRule, setEditingRule] = useState<string | null>(null);
-  const [bulkSyncRunning, setBulkSyncRunning] = useState(false);
-  const [bulkSyncResult, setBulkSyncResult] = useState<any>(null);
+  const [bulkSyncJob, setBulkSyncJob] = useState<any>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const rulesQuery = useQuery<any[]>({
     queryKey: ["/api/knowledge/rules"],
@@ -136,21 +136,39 @@ export default function AdminKnowledgeTab() {
     },
   });
 
+  const stopPolling = () => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  };
+
+  useEffect(() => () => stopPolling(), []);
+
   const handleBulkSync = async () => {
-    setBulkSyncRunning(true);
-    setBulkSyncResult(null);
+    setBulkSyncJob({ status: "running", current: 0, total: 0, currentName: "", synced: 0, failed: 0, errors: [] });
+    stopPolling();
     try {
       const res = await apiRequest("POST", "/api/knowledge/bulk-sync");
-      const data = await res.json();
-      setBulkSyncResult(data);
-      toast({
-        title: "Bulk Sync Complete",
-        description: `${data.synced} synced, ${data.failed} failed`,
-      });
+      const { jobId } = await res.json();
+
+      pollRef.current = setInterval(async () => {
+        try {
+          const statusRes = await apiRequest("GET", `/api/knowledge/bulk-sync/${jobId}`);
+          const job = await statusRes.json();
+          setBulkSyncJob(job);
+          if (job.status === "done" || job.status === "error") {
+            stopPolling();
+            toast({
+              title: job.status === "done" ? "Sync Complete" : "Sync Error",
+              description: job.status === "done"
+                ? `${job.synced} providers synced, ${job.failed} failed`
+                : job.errors?.[0] || "Unknown error",
+              variant: job.status === "done" ? "default" : "destructive",
+            });
+          }
+        } catch { stopPolling(); }
+      }, 2000);
     } catch (err: any) {
-      toast({ title: "Bulk Sync Failed", description: err.message, variant: "destructive" });
-    } finally {
-      setBulkSyncRunning(false);
+      setBulkSyncJob(null);
+      toast({ title: "Failed to start sync", description: err.message, variant: "destructive" });
     }
   };
 
@@ -181,33 +199,51 @@ export default function AdminKnowledgeTab() {
           </div>
           <Button
             onClick={handleBulkSync}
-            disabled={bulkSyncRunning}
+            disabled={bulkSyncJob?.status === "running"}
             data-testid="button-bulk-sync"
           >
-            {bulkSyncRunning ? (
-              <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Syncing All Providers...</>
+            {bulkSyncJob?.status === "running" ? (
+              <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Syncing...</>
             ) : (
               <><Globe className="w-4 h-4 mr-2" /> Sync All Providers</>
             )}
           </Button>
         </div>
-        {bulkSyncResult && (
+        {bulkSyncJob && (
           <div className="mt-3 p-3 rounded-[var(--radius)] bg-muted/50 text-sm space-y-1" data-testid="text-bulk-sync-result">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-[hsl(var(--brand-success))]" />
-              <span>{bulkSyncResult.synced} providers synced successfully</span>
-            </div>
-            {bulkSyncResult.failed > 0 && (
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-destructive" />
-                <span>{bulkSyncResult.failed} failed</span>
+            {bulkSyncJob.status === "running" ? (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>
+                  {bulkSyncJob.total > 0
+                    ? `Syncing ${bulkSyncJob.current} / ${bulkSyncJob.total} - ${bulkSyncJob.currentName}`
+                    : "Starting..."}
+                </span>
               </div>
-            )}
-            {bulkSyncResult.errors?.length > 0 && (
-              <div className="mt-2 text-xs text-muted-foreground space-y-0.5">
-                {bulkSyncResult.errors.map((e: string, i: number) => (
-                  <p key={i}>• {e}</p>
-                ))}
+            ) : bulkSyncJob.status === "done" ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-[hsl(var(--brand-success))]" />
+                  <span>{bulkSyncJob.synced} providers synced successfully</span>
+                </div>
+                {bulkSyncJob.failed > 0 && (
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-destructive" />
+                    <span>{bulkSyncJob.failed} failed</span>
+                  </div>
+                )}
+                {bulkSyncJob.errors?.length > 0 && (
+                  <div className="mt-2 text-xs text-muted-foreground space-y-0.5">
+                    {bulkSyncJob.errors.map((e: string, i: number) => (
+                      <p key={i}>- {e}</p>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="flex items-center gap-2 text-destructive">
+                <AlertCircle className="w-4 h-4" />
+                <span>{bulkSyncJob.errors?.[0] || "Sync failed"}</span>
               </div>
             )}
           </div>
