@@ -18,16 +18,16 @@ import {
 import { Request, Response } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { BillingService } from "./billing.service";
-import { PrismaService } from "../prisma/prisma.service";
 import * as braintreeService from "../../../braintree-service";
+import { prisma } from "../../../db";
 
 @Controller()
 export class BillingController {
   private readonly logger = new Logger(BillingController.name);
+  private readonly db = prisma;
 
   constructor(
     @Inject(BillingService) private readonly billingService: BillingService,
-    @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
   // ─── Admin: invoice list + stats ──────────────────────────────────────────
@@ -166,7 +166,7 @@ export class BillingController {
     const user = req.user as any;
     if (!user?.roles?.includes("GOSTORK_ADMIN")) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
 
-    const config = await this.prisma.referralFeeConfig.findUnique({
+    const config = await this.db.referralFeeConfig.findUnique({
       where: { providerId },
     });
     if (!config) throw new HttpException("Not found", HttpStatus.NOT_FOUND);
@@ -187,7 +187,7 @@ export class BillingController {
     const { feeType, flatAmount, percentage, isActive, notes, depositMilestone, averageClearanceDays } = body;
 
     // Upsert fee config
-    const config = await this.prisma.referralFeeConfig.upsert({
+    const config = await this.db.referralFeeConfig.upsert({
       where: { providerId },
       create: { providerId, feeType, flatAmount, percentage, isActive: isActive ?? true, notes },
       update: { feeType, flatAmount, percentage, isActive: isActive ?? true, notes, updatedAt: new Date() },
@@ -195,7 +195,7 @@ export class BillingController {
 
     // Also update provider-level surrogacy settings if provided
     if (depositMilestone !== undefined || averageClearanceDays !== undefined) {
-      await this.prisma.provider.update({
+      await this.db.provider.update({
         where: { id: providerId },
         data: {
           ...(depositMilestone !== undefined ? { depositMilestone } : {}),
@@ -215,7 +215,7 @@ export class BillingController {
     const { invoiceId, cleared } = body;
     if (!invoiceId) throw new HttpException("invoiceId required", HttpStatus.BAD_REQUEST);
 
-    const inv = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    const inv = await this.db.invoice.findUnique({ where: { id: invoiceId } });
     if (!inv) throw new HttpException("Invoice not found", HttpStatus.NOT_FOUND);
 
     if (cleared) {

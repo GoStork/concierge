@@ -1,6 +1,6 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from "@nestjs/common";
-import { PrismaService } from "../prisma/prisma.service";
+import { Injectable, Inject, Logger, NotFoundException, BadRequestException } from "@nestjs/common";
 import { NotificationService } from "../notifications/notification.service";
+import { prisma as prismaClient } from "../../../db";
 
 function getBaseUrl(): string {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
@@ -31,9 +31,10 @@ function resolveServiceType(providerTypeName: string | undefined): string {
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
 
+  private readonly prisma = prismaClient;
+
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly notificationService: NotificationService,
+    @Inject(NotificationService) private readonly notificationService: NotificationService,
   ) {}
 
   // ─── Fee computation ────────────────────────────────────────────────────────
