@@ -7,7 +7,12 @@ import { prisma } from "./db";
 import path from "path";
 import { isUserOnline } from "./online-tracker";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// Lazy getter - reads env var at call time, not at module load time
+function getAnthropicClient(): Anthropic {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set in environment");
+  return new Anthropic({ apiKey });
+}
 const geminiAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 // -------------------------------------------------------------------------
@@ -245,7 +250,7 @@ async function callTier2Claude(
 
     if (!toolCallsExecuted) {
       // First call - non-streaming to detect tool use
-      const response = await anthropic.messages.create({
+      const response = await getAnthropicClient().messages.create({
         model: "claude-sonnet-4-6",
         max_tokens: 4096,
         // @ts-ignore
@@ -292,7 +297,7 @@ async function callTier2Claude(
       }
     } else {
       // After tool calls - true streaming
-      const stream = await anthropic.messages.stream({
+      const stream = await getAnthropicClient().messages.stream({
         model: "claude-sonnet-4-6",
         max_tokens: 4096,
         // @ts-ignore
@@ -350,7 +355,7 @@ async function claudeRetry(messages: any[]): Promise<string> {
     conversationMsgs = conversationMsgs.slice(1);
   }
   if (!conversationMsgs.length) return "";
-  const res = await anthropic.messages.create({
+  const res = await getAnthropicClient().messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 1024,
     ...(systemMsg ? { system: systemMsg.content } : {}),
