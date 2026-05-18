@@ -18,7 +18,7 @@ import {
 import { Request, Response } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { BillingService } from "./billing.service";
-import * as braintreeService from "../../../braintree-service";
+import * as stripeService from "../../../stripe-service";
 import { prisma } from "../../../db";
 
 @Controller()
@@ -234,98 +234,118 @@ export class BillingController {
     return { success: true };
   }
 
-  // ─── Braintree client token (for Drop-in UI) ────────────────────────────
+  // ─── Stripe: publishable key (for frontend Stripe Elements) ────────────────
 
-  @Get("api/billing/braintree-token")
-  async getBraintreeToken() {
-    if (!braintreeService.isBraintreeConfigured()) {
-      return { clientToken: "sandbox_token_placeholder" };
-    }
-    const clientToken = await braintreeService.generateClientToken();
-    return { clientToken };
+  @Get("api/billing/stripe-key")
+  getStripePublishableKey() {
+    return { publishableKey: stripeService.getPublishableKey() };
   }
 
-  // ─── Submit payment (parent pays from payment page) ───────────────────────
+  // ─── Stripe: create PaymentIntent (parent payment page) ──────────────────
 
-  @Post("api/billing/submit-payment")
-  async submitPayment(@Body() body: { paymentToken: string; nonce: string }, @Res() res: Response) {
+  @Post("api/billing/create-payment-intent")
+  async createPaymentIntent(@Body() body: { paymentToken: string }, @Res() res: Response) {
     try {
-      const { paymentToken, nonce } = body;
-      if (!paymentToken || !nonce) {
-        return res.status(400).json({ message: "paymentToken and nonce are required" });
-      }
-
-      const invoice = await this.billingService.getInvoiceByToken(paymentToken);
+      const invoice = await this.billingService.getInvoiceByToken(body.paymentToken);
       if (!invoice) return res.status(404).json({ message: "Invoice not found" });
       if (invoice.status === "PAID") return res.status(400).json({ message: "Invoice already paid" });
-      if (invoice.status === "EXPIRED") return res.status(400).json({ message: "Payment link has expired" });
 
-      if (!braintreeService.isBraintreeConfigured()) {
-        // Dev/sandbox mode - simulate payment success
-        this.logger.warn("Braintree not configured - simulating payment success for development");
-        const mockTxId = `mock_${Date.now()}`;
-        await this.billingService.handleBraintreeWebhook(mockTxId, "settled");
-        // We need to update the invoice directly since mock won't match a real transaction
-        await this.billingService.adminMarkPaid(invoice.id, "system", "Simulated payment (Braintree not configured)");
-        return res.json({ success: true, transactionId: mockTxId });
+      if (!stripeService.isStripeConfigured()) {
+        // Mock mode - no Stripe keys yet
+        return res.json({ clientSecret: `mock_secret_${Date.now()}`, mock: true });
       }
 
-      // Charge or authorize based on invoice type
-      const isClearanceFlow = invoice.medicalClearanceStatus === "PENDING" ||
-        (invoice.status === "AWAITING_PAYMENT" && invoice.braintreeAuthorizationId);
+      const isClearanceFlow = invoice.medicalClearanceStatus === "PENDING";
 
-      if (isClearanceFlow) {
-        // AT_CLEARANCE: authorize-only
-        const { authorizationId } = await braintreeService.authorizeOnly({
-          paymentMethodNonce: nonce,
-          amountCents: invoice.serviceAmount,
-          invoiceId: invoice.id,
-          description: `GoStork deposit - ${invoice.providerName}`,
-          customerEmail: invoice.parentUser?.email,
-          customerName: invoice.parentUser?.name || undefined,
-        });
-        await this.billingService.placeAuthorization(invoice.id, authorizationId);
-      } else {
-        // AT_MATCH: immediate charge
-        const { transactionId } = await braintreeService.chargePaymentMethod({
-          paymentMethodNonce: nonce,
-          amountCents: invoice.serviceAmount,
-          invoiceId: invoice.id,
-          description: `GoStork payment - ${invoice.providerName}`,
-          customerEmail: invoice.parentUser?.email,
-          customerName: invoice.parentUser?.name || undefined,
-        });
-        await this.billingService.handleBraintreeWebhook(transactionId, "settled");
-      }
+      const { clientSecret, paymentIntentId } = await stripeService.createPaymentIntent({
+        amountCents: invoice.serviceAmount,
+        currency: invoice.currency || "USD",
+        invoiceId: invoice.id,
+        paymentToken: invoice.paymentToken,
+        description: `GoStork - ${invoice.providerName} - ${invoice.serviceType}`,
+        captureMethod: isClearanceFlow ? "manual" : "automatic",
+        receiptEmail: (invoice as any).parentUser?.email,
+      });
 
-      return res.json({ success: true });
+      // Store the PaymentIntent ID on the invoice for later capture/void
+      await this.db.invoice.update({
+        where: { id: invoice.id },
+        data: { braintreeAuthorizationId: paymentIntentId }, // reusing field for Stripe PI ID
+      });
+
+      return res.json({ clientSecret, paymentIntentId });
     } catch (error: any) {
-      this.logger.error(`Payment submission error: ${error.message}`);
-      return res.status(400).json({ message: error.message || "Payment failed" });
+      this.logger.error(`Create PaymentIntent error: ${error.message}`);
+      return res.status(500).json({ message: error.message });
     }
   }
 
-  // ─── Braintree webhook ───────────────────────────────────────────────────
+  // ─── Stripe: mock payment success (dev only, no Stripe keys) ─────────────
 
-  @Post("api/webhooks/braintree")
-  async braintreeWebhook(@Req() req: Request, @Res() res: Response) {
+  @Post("api/billing/mock-payment-success")
+  async mockPaymentSuccess(@Body() body: { paymentToken: string }, @Res() res: Response) {
+    if (process.env.NODE_ENV !== "development") {
+      return res.status(403).json({ message: "Not available in production" });
+    }
+    const invoice = await this.billingService.getInvoiceByToken(body.paymentToken);
+    if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+    await this.billingService.adminMarkPaid(invoice.id, "system", "Simulated payment (Stripe not configured)");
+    return res.json({ success: true });
+  }
+
+  // ─── Stripe webhook ───────────────────────────────────────────────────────
+
+  @Post("api/webhooks/stripe")
+  async stripeWebhook(@Req() req: Request, @Res() res: Response) {
     try {
-      const { bt_signature, bt_payload } = req.body;
+      const sig = req.headers["stripe-signature"] as string;
+      if (!sig) return res.status(400).json({ error: "Missing stripe-signature header" });
 
-      if (!bt_signature || !bt_payload) {
-        return res.status(400).json({ error: "Missing webhook payload" });
+      const event = stripeService.constructWebhookEvent(req.body, sig);
+      const parsed = stripeService.parseWebhookEvent(event);
+
+      if (parsed) {
+        this.logger.log(`Stripe webhook: ${event.type} | invoice: ${parsed.invoiceId}`);
+
+        if (parsed.status === "succeeded" && parsed.invoiceId) {
+          await this.billingService.handleStripeWebhook(parsed.paymentIntentId, "succeeded");
+        } else if (parsed.status === "authorized" && parsed.invoiceId) {
+          // AT_CLEARANCE: funds held, update invoice to AUTHORIZED
+          await this.billingService.handleStripeWebhook(parsed.paymentIntentId, "authorized");
+        } else if (parsed.status === "canceled" && parsed.invoiceId) {
+          await this.billingService.handleStripeWebhook(parsed.paymentIntentId, "canceled");
+        }
       }
 
-      // Braintree webhook verification + parsing happens in braintree-service
-      // For now, log and handle known event types
-      this.logger.log(`Braintree webhook received`);
-
-      // The actual transaction processing is done via braintree-service
-      // which is called from routes.ts or chat-router.ts
       res.status(200).json({ received: true });
     } catch (error: any) {
-      this.logger.error(`Braintree webhook error: ${error.message}`);
-      res.status(200).json({ received: true }); // Always 200 to Braintree
+      this.logger.error(`Stripe webhook error: ${error.message}`);
+      res.status(400).json({ error: error.message }); // 400 so Stripe retries
     }
+  }
+
+  // ─── Confirm clearance (AT_CLEARANCE) ────────────────────────────────────
+  // Overrides the existing confirmClearance endpoint to use Stripe capture/void
+  @Post("api/billing/confirm-clearance-stripe")
+  @UseGuards(SessionOrJwtGuard)
+  async confirmClearanceStripe(@Req() req: Request, @Body() body: { invoiceId: string; cleared: boolean }) {
+    const { invoiceId, cleared } = body;
+    if (!invoiceId) throw new HttpException("invoiceId required", HttpStatus.BAD_REQUEST);
+
+    const inv = await this.db.invoice.findUnique({ where: { id: invoiceId } });
+    if (!inv) throw new HttpException("Invoice not found", HttpStatus.NOT_FOUND);
+
+    const paymentIntentId = inv.braintreeAuthorizationId; // stores Stripe PI ID
+    if (!paymentIntentId) throw new HttpException("No payment authorization on file", HttpStatus.BAD_REQUEST);
+
+    if (cleared) {
+      const { transactionId } = await stripeService.capturePaymentIntent(paymentIntentId);
+      await this.billingService.captureAuthorization(invoiceId, transactionId);
+    } else {
+      await stripeService.voidPaymentIntent(paymentIntentId);
+      await this.billingService.voidAuthorization(invoiceId);
+    }
+
+    return { success: true };
   }
 }

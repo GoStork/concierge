@@ -525,13 +525,38 @@ export class BillingService {
   // ─── Braintree webhook handler ───────────────────────────────────────────────
 
   async handleBraintreeWebhook(transactionId: string, status: string) {
-    if (!["settled", "settlement_confirmed"].includes(status)) return;
+    return this.handleStripeWebhook(transactionId, status === "settled" ? "succeeded" : status);
+  }
 
-    const invoice = await this.prisma.invoice.findFirst({
-      where: { braintreeTransactionId: transactionId },
+  async handleStripeWebhook(paymentIntentId: string, status: string) {
+    if (status === "authorized") {
+      // AT_CLEARANCE: funds held, mark invoice as AUTHORIZED
+      const invoice = await this.prisma.invoice.findFirst({
+        where: { braintreeAuthorizationId: paymentIntentId },
+      });
+      if (!invoice) return;
+      if (invoice.status === "AUTHORIZED") return;
+      await this.prisma.invoice.update({
+        where: { id: invoice.id },
+        data: { status: "AUTHORIZED", authorizedAt: new Date(), paymentMethod: "CARD" },
+      });
+      this.logger.log(`Invoice ${invoice.id} AUTHORIZED via Stripe (AT_CLEARANCE)`);
+      return;
+    }
+
+    if (!["succeeded"].includes(status)) return;
+
+    // Try to find by transaction ID first, then by authorization/PI ID
+    let invoice = await this.prisma.invoice.findFirst({
+      where: { braintreeTransactionId: paymentIntentId },
     });
     if (!invoice) {
-      this.logger.warn(`No invoice found for Braintree transaction ${transactionId}`);
+      invoice = await this.prisma.invoice.findFirst({
+        where: { braintreeAuthorizationId: paymentIntentId },
+      });
+    }
+    if (!invoice) {
+      this.logger.warn(`No invoice found for Stripe PaymentIntent ${paymentIntentId}`);
       return;
     }
 
@@ -539,11 +564,17 @@ export class BillingService {
 
     await this.prisma.invoice.update({
       where: { id: invoice.id },
-      data: { status: "PAID", paidAt: new Date(), paymentMethod: "CARD" },
+      data: {
+        status: "PAID",
+        paidAt: new Date(),
+        paymentMethod: "CARD",
+        braintreeTransactionId: paymentIntentId,
+        capturedAt: new Date(),
+      },
     });
 
     await this.notifyAdminInvoicePaid(invoice.id);
-    this.logger.log(`Invoice ${invoice.id} marked PAID via Braintree webhook`);
+    this.logger.log(`Invoice ${invoice.id} marked PAID via Stripe`);
   }
 
   // ─── Admin notifications on payment ─────────────────────────────────────────
