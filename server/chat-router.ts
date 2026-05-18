@@ -1682,7 +1682,9 @@ chatRouter.delete("/api/admin/reset-all-chats", requireAuth, async (req, res) =>
   if (!isAdminUser(req.user)) return res.status(403).json({ message: "Forbidden" });
   try {
     // Delete in dependency order - preserve interestedServices on profiles (set during registration)
-    const [agreements, silentQueries, messages, sessions, bookings, notifications, profiles] = await prisma.$transaction([
+    const [invoiceReminders, invoices, agreements, silentQueries, messages, sessions, bookings, notifications, profiles] = await prisma.$transaction([
+      prisma.invoiceReminder.deleteMany({}),
+      prisma.invoice.deleteMany({}),
       prisma.agreement.deleteMany({}),
       prisma.silentQuery.deleteMany({}),
       prisma.aiChatMessage.deleteMany({}),
