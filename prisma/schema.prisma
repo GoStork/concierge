@@ -1270,16 +1270,17 @@ model Agreement {
 // ==========================================
 
 model ReferralFeeConfig {
-  id          String    @id @default(uuid())
-  providerId  String    @unique
-  feeType     String    // "FLAT" | "PERCENTAGE"
-  flatAmount  Decimal?  // in cents (e.g. 50000 = $500.00)
-  percentage  Decimal?  // e.g. 5.0 = 5%
-  currency    String    @default("USD")
-  isActive    Boolean   @default(true)
-  notes       String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                    String    @id @default(uuid())
+  providerId            String    @unique
+  feeType               String    // "FLAT" | "PERCENTAGE"
+  flatAmount            Decimal?  // in cents (e.g. 50000 = $500.00)
+  percentage            Decimal?  // e.g. 5.0 = 5%
+  defaultServiceAmount  Decimal?  // default first payment in cents - admin can override per invoice
+  currency              String    @default("USD")
+  isActive              Boolean   @default(true)
+  notes                 String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   provider  Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
   invoices  Invoice[]

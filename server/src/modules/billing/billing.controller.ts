@@ -184,13 +184,13 @@ export class BillingController {
     const user = req.user as any;
     if (!user?.roles?.includes("GOSTORK_ADMIN")) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
 
-    const { feeType, flatAmount, percentage, isActive, notes, depositMilestone, averageClearanceDays } = body;
+    const { feeType, flatAmount, percentage, defaultServiceAmount, isActive, notes, depositMilestone, averageClearanceDays } = body;
 
     // Upsert fee config
     const config = await this.db.referralFeeConfig.upsert({
       where: { providerId },
-      create: { providerId, feeType, flatAmount, percentage, isActive: isActive ?? true, notes },
-      update: { feeType, flatAmount, percentage, isActive: isActive ?? true, notes, updatedAt: new Date() },
+      create: { providerId, feeType, flatAmount, percentage, defaultServiceAmount: defaultServiceAmount ?? null, isActive: isActive ?? true, notes },
+      update: { feeType, flatAmount, percentage, defaultServiceAmount: defaultServiceAmount ?? null, isActive: isActive ?? true, notes, updatedAt: new Date() },
     });
 
     // Also update provider-level surrogacy settings if provided

@@ -49,8 +49,9 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
 
   // ── Form state ──────────────────────────────────────────────────────────
   const [feeType, setFeeType] = useState<"FLAT" | "PERCENTAGE">("PERCENTAGE");
-  const [flatAmount, setFlatAmount] = useState("");      // dollars
-  const [percentage, setPercentage] = useState("");      // e.g. "10"
+  const [flatAmount, setFlatAmount] = useState("");            // dollars
+  const [percentage, setPercentage] = useState("");            // e.g. "10"
+  const [defaultServiceAmount, setDefaultServiceAmount] = useState(""); // dollars
   const [notes, setNotes] = useState("");
   const [depositMilestone, setDepositMilestone] = useState<"AT_MATCH" | "AT_CLEARANCE">("AT_MATCH");
   const [averageClearanceDays, setAverageClearanceDays] = useState("21");
@@ -60,9 +61,18 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
       setFeeType(feeConfig.feeType || "PERCENTAGE");
       setFlatAmount(feeConfig.flatAmount ? String(Number(feeConfig.flatAmount) / 100) : "");
       setPercentage(feeConfig.percentage ? String(feeConfig.percentage) : "");
+      setDefaultServiceAmount(feeConfig.defaultServiceAmount ? String(Number(feeConfig.defaultServiceAmount) / 100) : "");
       setNotes(feeConfig.notes || "");
     }
   }, [feeConfig]);
+
+  // ── Live split preview ───────────────────────────────────────────────────
+  const previewServiceCents = Math.round((parseFloat(defaultServiceAmount) || 0) * 100);
+  const previewFeeCents = feeType === "FLAT"
+    ? Math.round((parseFloat(flatAmount) || 0) * 100)
+    : Math.round(previewServiceCents * ((parseFloat(percentage) || 0) / 100));
+  const previewPayoutCents = Math.max(0, previewServiceCents - previewFeeCents);
+  const showPreview = previewServiceCents > 0 && (feeType === "FLAT" ? parseFloat(flatAmount) > 0 : parseFloat(percentage) > 0);
 
   // ── Save fee config ─────────────────────────────────────────────────────
   const saveMutation = useMutation({
@@ -72,6 +82,7 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
         notes,
         flatAmount: feeType === "FLAT" ? Math.round(parseFloat(flatAmount) * 100) : null,
         percentage: feeType === "PERCENTAGE" ? parseFloat(percentage) : null,
+        defaultServiceAmount: defaultServiceAmount ? Math.round(parseFloat(defaultServiceAmount) * 100) : null,
         isActive: true,
       };
 
@@ -162,6 +173,43 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
               onChange={e => setFlatAmount(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">GoStork keeps this fixed dollar amount regardless of service cost</p>
+          </div>
+        )}
+
+        {/* Default first payment */}
+        <div className="space-y-1.5">
+          <Label>Default First Payment ($) <span className="text-muted-foreground font-normal">(optional)</span></Label>
+          <Input
+            type="number"
+            min="0"
+            step="100"
+            placeholder="e.g. 10000"
+            value={defaultServiceAmount}
+            onChange={e => setDefaultServiceAmount(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            The standard amount collected from the parent. Pre-fills the invoice - admin or agency can override per invoice.
+          </p>
+        </div>
+
+        {/* Live split preview */}
+        {showPreview && (
+          <div className="rounded-lg border p-4 space-y-2" style={{ background: "hsl(var(--muted) / 0.4)" }}>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Payment Split Preview</p>
+            <div className="space-y-1.5 text-sm">
+              <div className="flex justify-between">
+                <span>Parent pays</span>
+                <span className="font-semibold">{formatCents(previewServiceCents)}</span>
+              </div>
+              <div className="flex justify-between" style={{ color: "hsl(var(--brand-success))" }}>
+                <span>GoStork keeps ({feeType === "PERCENTAGE" ? `${percentage}%` : "flat"})</span>
+                <span className="font-semibold">{formatCents(previewFeeCents)}</span>
+              </div>
+              <div className="flex justify-between border-t pt-1.5 font-semibold">
+                <span>Provider receives</span>
+                <span>{formatCents(previewPayoutCents)}</span>
+              </div>
+            </div>
           </div>
         )}
 
