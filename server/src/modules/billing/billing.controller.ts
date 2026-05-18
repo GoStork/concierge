@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Param,
   Query,
   Body,
@@ -171,6 +172,7 @@ export class BillingController {
     return config;
   }
 
+  @Put("api/admin/providers/:providerId/fee-config")
   @Patch("api/admin/providers/:providerId/fee-config")
   @UseGuards(SessionOrJwtGuard)
   async upsertProviderFeeConfig(
