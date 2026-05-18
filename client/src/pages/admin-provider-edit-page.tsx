@@ -20,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import MembersTable from "@/components/members-table";
 import ProfileDatabasePanel from "@/components/profile-database-panel";
 import ProviderCostsTab from "@/components/provider-costs-tab";
+import { ProviderBillingTab } from "@/components/provider-billing-tab";
 import { BrandSettingsForm } from "@/pages/admin-brand-settings-page";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
@@ -114,7 +115,7 @@ type ScrapedData = {
   teamMembers: ScrapedTeamMember[];
 };
 
-const VALID_TABS = ["profile", "users", "egg-donors", "surrogates", "sperm-donors", "costs", "branding"];
+const VALID_TABS = ["profile", "users", "egg-donors", "surrogates", "sperm-donors", "costs", "branding", "billing"];
 
 export default function AdminProviderEditPage() {
   const { id } = useParams<{ id: string }>();
@@ -685,6 +686,9 @@ export default function AdminProviderEditPage() {
           <TabsTrigger value="costs" className={tabTriggerClass} data-testid="tab-edit-costs">
             <DollarSign className="w-4 h-4 mr-1.5 inline" />
             Costs
+          </TabsTrigger>
+          <TabsTrigger value="billing" className={tabTriggerClass} data-testid="tab-edit-billing">
+            Billing
           </TabsTrigger>
           <TabsTrigger value="branding" className={tabTriggerClass} data-testid="tab-edit-branding">
             <Palette className="w-4 h-4 mr-1.5 inline" />
@@ -1423,6 +1427,17 @@ export default function AdminProviderEditPage() {
 
         <TabsContent value="branding">
           <ProviderBrandingTab providerId={provider.id} brandingEnabled={provider.brandingEnabled ?? false} provider={provider} />
+        </TabsContent>
+
+        <TabsContent value="billing">
+          <ProviderBillingTab
+            providerId={provider.id}
+            providerTypeName={
+              (provider.services || [])
+                .find((s: any) => s.status === "APPROVED")?.providerType?.name ||
+              (provider.services || [])[0]?.providerType?.name || ""
+            }
+          />
         </TabsContent>
       </Tabs>
     </div>

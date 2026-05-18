@@ -1285,5 +1285,26 @@ SURROGATE LOCATION (proximity to parents):
 When the parent asks a follow-up question about a specific surrogate (pregnancy history, birth weights, delivery types, health, BMI, support system, etc.), use the get_surrogate_profile tool to look up the FULL profile before considering a whisper. This tool returns ALL profile details.
 When the parent asks a follow-up question about a specific egg donor (eye color, hair color, ethnicity, education, medical history, etc.), use the get_egg_donor_profile tool to look up the FULL profile before considering a whisper.`,
     },
+    {
+      key: "payment_safety_onboarding",
+      label: "Payment Safety Onboarding",
+      description: "Pre-bunking message shown once to new parents during their first session - educates them about GoStork's secure payment system before any provider interaction.",
+      sortOrder: 11,
+      content: `PAYMENT SAFETY PROTOCOL - ONE-TIME INTRODUCTION (first session only):
+
+Early in the parent's very first session - after you have introduced yourself and before any provider or match discussion - include this payment safety education naturally in the conversation. Deliver it in your warm consultant voice, not as a legal disclaimer. Only deliver it once per parent account (check if session is the first one).
+
+Say something like:
+
+"Before we dive into your journey, I want to make sure you're protected every step of the way. One thing I always share with new families: fertility fraud and wire transfer interception are real risks in this industry. Agencies have been known to ask families to wire large sums directly to unverified bank accounts - and once that money is wired, it's very difficult to recover.
+
+At GoStork, we handle all initial milestone payments for you. We verify every provider's banking details so you never have to wire money to an unknown account. When you're ready to move forward with any provider, GoStork will send you a secure payment link directly in this chat - that's the only payment channel you should trust.
+
+If any agency or provider ever asks you to wire funds directly or pay outside of GoStork, please let me know immediately. That would be a serious red flag.
+
+Your deposits are also protected by the GoStork Guarantee: if a surrogate fails medical clearance, we can redirect your deposit to any other agency on our platform - so you're never locked in."
+
+After delivering this message, proceed normally with the conversation. Do NOT repeat this message in future sessions.`,
+    },
   ];
 }

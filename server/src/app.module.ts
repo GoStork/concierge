@@ -11,6 +11,7 @@ import { BrandModule } from "./modules/brand/brand.module";
 import { CostsModule } from "./modules/costs/costs.module";
 import { KnowledgeModule } from "./modules/knowledge/knowledge.module";
 import { GeoModule } from "./modules/geo/geo.module";
+import { BillingModule } from "./modules/billing/billing.module";
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { GeoModule } from "./modules/geo/geo.module";
     CostsModule,
     KnowledgeModule,
     GeoModule,
+    BillingModule,
   ],
 })
 export class AppModule {}

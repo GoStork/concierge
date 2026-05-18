@@ -19,7 +19,10 @@ export type NotificationChannel =
   | "cost_sheet_rejected"
   | "human_escalation"
   | "agreement_ready"
-  | "agreement_signed";
+  | "agreement_signed"
+  | "invoice_payment_request"
+  | "invoice_reminder"
+  | "invoice_paid_admin";
 
 
 const TWILIO_TEMPLATES = {
@@ -1932,6 +1935,135 @@ export class NotificationService implements OnModuleInit {
     if (!response.ok) {
       const text = await response.text();
       throw new Error(`Twilio error: ${response.status} - ${text}`);
+    }
+  }
+
+  // ─── Billing notifications ──────────────────────────────────────────────────
+
+  async sendPaymentRequestNotification(params: {
+    parentUserId: string;
+    parentName: string;
+    parentEmail: string;
+    parentPhone?: string | null;
+    providerName: string;
+    serviceType: string;
+    serviceAmountFormatted: string;
+    referralFeeFormatted: string;
+    paymentUrl: string;
+    invoiceId: string;
+    sessionId: string;
+    dueAt?: Date | null;
+  }) {
+    const brandData = await this.getBrandData();
+    const firstName = getFirstName(params.parentName) || "there";
+    const providerName = this.escapeHtml(params.providerName);
+    const subject = `Payment Request - ${params.providerName} via GoStork`;
+    const urgencyNote = params.dueAt
+      ? `<strong>Please complete payment by ${new Date(params.dueAt).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} to secure your match.</strong>`
+      : "";
+
+    const html = buildBrandedEmail(brandData, {
+      title: "Payment Request",
+      greeting: `Hi ${esc(firstName)}, you have a payment request from <strong>${providerName}</strong> via GoStork.`,
+      body: urgencyNote,
+      detailRows: [
+        { label: "Provider",      value: params.providerName },
+        { label: "Service",       value: params.serviceType },
+        { label: "Total Amount",  value: params.serviceAmountFormatted },
+        { label: "GoStork Deposit Protection", value: "Included - your funds are protected" },
+      ],
+      alertBox: params.dueAt ? { text: `Time-sensitive: payment required by ${new Date(params.dueAt).toLocaleString()}`, type: "warning" as const } : undefined,
+      buttons: [{ label: "Pay Now Securely", url: params.paymentUrl }],
+    });
+
+    await this.dispatchNotification({
+      userId: params.parentUserId,
+      type: "EMAIL",
+      channel: "invoice_payment_request",
+      recipient: params.parentEmail,
+      subject,
+      body: html,
+    });
+
+    // SMS
+    if (params.parentPhone) {
+      const smsBody = params.dueAt
+        ? `Hi ${firstName}, your payment of ${params.serviceAmountFormatted} for ${params.providerName} is due soon. Pay securely via GoStork: ${params.paymentUrl}`
+        : `Hi ${firstName}, you have a payment request of ${params.serviceAmountFormatted} from ${params.providerName}. Pay securely via GoStork: ${params.paymentUrl}`;
+      await this.sendRawSms(params.parentPhone, smsBody).catch(e =>
+        this.logger.error(`Failed to send payment request SMS: ${e.message}`),
+      );
+    }
+  }
+
+  async sendInvoiceReminderNotification(params: {
+    parentUserId: string;
+    parentEmail: string;
+    parentPhone?: string | null;
+    providerName: string;
+    paymentUrl: string;
+    reminderType: string;
+    invoiceId: string;
+  }) {
+    let smsBody = "";
+    if (params.reminderType === "4h_remaining") {
+      smsBody = `Urgent: Only 4 hours left to secure your surrogate match with ${params.providerName}. Pay now: ${params.paymentUrl}`;
+    } else if (params.reminderType === "1h_remaining") {
+      smsBody = `Last chance: 1 hour remaining to reserve your match with ${params.providerName}. Pay now: ${params.paymentUrl}`;
+    } else if (params.reminderType === "expired") {
+      smsBody = `Your 24-hour hold with ${params.providerName} has expired. Contact GoStork to explore next steps.`;
+    }
+
+    if (smsBody && params.parentPhone) {
+      await this.sendRawSms(params.parentPhone, smsBody).catch(e =>
+        this.logger.error(`Failed to send reminder SMS (${params.reminderType}): ${e.message}`),
+      );
+    }
+  }
+
+  async sendInvoicePaidAdminNotification(params: {
+    invoiceId: string;
+    parentName: string;
+    providerName: string;
+    serviceType: string;
+    serviceAmountFormatted: string;
+    referralFeeFormatted: string;
+    providerPayoutFormatted: string;
+    sessionId: string;
+  }) {
+    const brandData = await this.getBrandData();
+    const admins = await this.prisma.user.findMany({
+      where: { roles: { has: "GOSTORK_ADMIN" } },
+      select: { id: true, email: true },
+    });
+
+    const billingUrl = `${getBaseUrl()}/admin/billing`;
+    const subject = `Payment Received - ${params.providerName} (${params.serviceAmountFormatted})`;
+    const html = buildBrandedEmail(brandData, {
+      title: "Payment Received",
+      greeting: `A parent has completed their payment for <strong>${esc(params.providerName)}</strong>.`,
+      body: "",
+      detailRows: [
+        { label: "Parent",          value: params.parentName },
+        { label: "Provider",        value: params.providerName },
+        { label: "Service",         value: params.serviceType },
+        { label: "Total Collected", value: params.serviceAmountFormatted },
+        { label: "GoStork Fee",     value: params.referralFeeFormatted },
+        { label: "Provider Payout", value: params.providerPayoutFormatted },
+      ],
+      alertBox: { text: `Action required: initiate provider payout of ${params.providerPayoutFormatted} to ${params.providerName}.`, type: "warning" as const },
+      buttons: [{ label: "View in Billing Dashboard", url: billingUrl }],
+    });
+
+    for (const admin of admins) {
+      await this.dispatchNotification({
+        userId: admin.id,
+        type: "EMAIL",
+        channel: "invoice_paid_admin",
+        recipient: admin.email,
+        subject,
+        body: html,
+      });
     }
   }
 }

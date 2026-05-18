@@ -1962,10 +1962,27 @@ chatRouter.post("/api/agreements/generate-from-template", requireAuth, async (re
   try {
     const session = await prisma.aiChatSession.findUnique({
       where: { id: sessionId },
-      select: { id: true, userId: true, providerId: true },
+      include: { provider: { select: { pandaDocTemplateId: true } } },
     });
     if (!session) return res.status(404).json({ message: "Session not found" });
     if (session.providerId !== user.providerId) return res.status(403).json({ message: "Not authorized for this session" });
+
+    // GoStork payment gate: if this provider uses PandaDoc agreements, a paid invoice is required first.
+    // This ensures GoStork collects its referral fee before the legal contract is executed.
+    if (session.provider?.pandaDocTemplateId) {
+      const paidInvoice = await prisma.invoice.findFirst({
+        where: {
+          sessionId: session.id,
+          status: { in: ["PAID", "AUTHORIZED"] }, // AUTHORIZED = AT_CLEARANCE pre-auth placed
+        },
+      });
+      if (!paidInvoice) {
+        return res.status(402).json({
+          code: "PAYMENT_REQUIRED",
+          message: "Payment must be completed before the agreement can be sent for signature. Please complete your GoStork payment first.",
+        });
+      }
+    }
 
     const agreement = await generateAgreementFromTemplate({
       providerId: user.providerId,
@@ -2231,6 +2248,84 @@ chatRouter.get("/api/agreements/:id/download", requireAuth, async (req, res) => 
     res.send(buffer);
   } catch (e: any) {
     console.error("[Agreement download]", e.message);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// Parent confirms readiness to move forward (clicks "Yes, I'm Ready" in chat)
+// Notifies GoStork admin to prepare the invoice, or auto-creates if cost sheet exists
+chatRouter.post("/api/billing/parent-confirm-ready", requireAuth, async (req, res) => {
+  try {
+    const user = req.user as any;
+    const { sessionId } = req.body;
+
+    if (!sessionId) return res.status(400).json({ message: "sessionId is required" });
+
+    const session = await prisma.aiChatSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        provider: {
+          include: {
+            referralFeeConfig: true,
+            services: { include: { providerType: true }, take: 1 },
+          },
+        },
+      },
+    });
+
+    if (!session) return res.status(404).json({ message: "Session not found" });
+    if (session.userId !== user.id && session.user?.parentAccountId !== user.parentAccountId) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    // Check if invoice already exists for this session
+    const existing = await prisma.invoice.findFirst({
+      where: { sessionId: session.id, status: { notIn: ["EXPIRED", "CANCELLED"] } },
+    });
+    if (existing) {
+      return res.json({ message: "Payment already in progress", invoiceId: existing.id, paymentToken: existing.paymentToken });
+    }
+
+    // Post a confirmation message to the chat
+    await prisma.aiChatMessage.create({
+      data: {
+        sessionId: session.id,
+        role: "assistant",
+        content: `Thank you for letting us know! We're preparing your payment invoice now. Our team will send it to you shortly.`,
+        senderType: "system",
+        senderName: "GoStork",
+      },
+    });
+
+    // Notify all GoStork admins so they can create the invoice (or it auto-creates if cost sheet available)
+    const admins = await prisma.user.findMany({
+      where: { roles: { has: "GOSTORK_ADMIN" } },
+      select: { id: true },
+    });
+    const providerName = session.provider?.name || "the provider";
+    const providerTypeName = session.provider?.services?.[0]?.providerType?.name || "";
+
+    for (const admin of admins) {
+      await prisma.inAppNotification.create({
+        data: {
+          userId: admin.id,
+          eventType: "PARENT_READY_TO_PROCEED",
+          payload: {
+            sessionId: session.id,
+            parentUserId: user.id,
+            parentName: user.name || user.email,
+            providerName,
+            providerType: providerTypeName,
+            message: `${user.name || user.email} is ready to move forward with ${providerName}. Create an invoice in the billing dashboard.`,
+            billingUrl: `/admin/billing`,
+          },
+        },
+      });
+    }
+
+    res.json({ success: true, message: "Confirmed. GoStork will send your invoice shortly." });
+  } catch (e: any) {
+    console.error("[parent-confirm-ready]", e.message);
     res.status(500).json({ message: e.message });
   }
 });

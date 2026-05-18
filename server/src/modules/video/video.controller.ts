@@ -24,6 +24,7 @@ import { VideoService } from "./video.service";
 import { NotificationService } from "../notifications/notification.service";
 import { BookingEventsService } from "../calendar/booking-events.service";
 import { CalendarController } from "../calendar/calendar.controller";
+import { BillingService } from "../billing/billing.service";
 import { hasProviderRole } from "../../../../shared/roles";
 
 @ApiTags("Video")
@@ -38,6 +39,7 @@ export class VideoController {
     @Inject(NotificationService) private readonly notificationService: NotificationService,
     @Inject(BookingEventsService) private readonly bookingEvents: BookingEventsService,
     @Inject(CalendarController) private readonly calendarController: CalendarController,
+    @Inject(BillingService) private readonly billingService: BillingService,
   ) {}
 
   private async isParentAccountMember(userId: string, bookingParentUserId: string | null): Promise<boolean> {
@@ -883,6 +885,123 @@ export class VideoController {
         },
       },
     }).catch(() => { /* non-critical */ });
+
+    // --- 4. GoStork Billing: post readiness prompt in provider session ---
+    // Determine if this is a "decision call" that should trigger the payment flow
+    await this.firePostCallBillingPrompt({
+      bookingId: booking.id,
+      parentUserId,
+      providerEntity,
+    }).catch(err => this.logger.error(`Post-call billing prompt failed: ${err.message}`));
+  }
+
+  private async firePostCallBillingPrompt(params: {
+    bookingId: string;
+    parentUserId: string;
+    providerEntity: { id: string; name: string } | null;
+  }) {
+    const { bookingId, parentUserId, providerEntity } = params;
+    if (!providerEntity) return;
+
+    // Get the booking with meetingSubtype to determine if this is a decision call
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      select: { meetingSubtype: true },
+    });
+
+    // Get provider type
+    const provider = await this.prisma.provider.findUnique({
+      where: { id: providerEntity.id },
+      include: {
+        services: { include: { providerType: true }, take: 1 },
+        referralFeeConfig: { select: { isActive: true } },
+      },
+    });
+    if (!provider) return;
+
+    // Only trigger if provider has a fee config set up - otherwise GoStork admin needs to configure first
+    if (!provider.referralFeeConfig?.isActive) {
+      this.logger.log(`Skipping billing prompt for ${providerEntity.name} - no active referral fee config`);
+      return;
+    }
+
+    const providerTypeName = provider.services[0]?.providerType?.name || "";
+    const isSurrogacyAgency = providerTypeName === "Surrogacy Agency";
+
+    // Find the provider session (PROVIDER_JOINED) for this parent + provider
+    const providerSession = await this.prisma.aiChatSession.findFirst({
+      where: {
+        userId: parentUserId,
+        providerId: providerEntity.id,
+        status: "PROVIDER_JOINED",
+      },
+      select: { id: true },
+    });
+    if (!providerSession) return;
+
+    // Check if there's already a pending or paid invoice for this session
+    const existingInvoice = await this.prisma.invoice.findFirst({
+      where: {
+        sessionId: providerSession.id,
+        status: { notIn: ["EXPIRED", "CANCELLED"] },
+      },
+    });
+    if (existingInvoice) return; // Already in payment flow
+
+    // Determine if this is a decision call
+    let isDecisionCall = false;
+    let isMatchCall = false;
+    let dueAt: Date | undefined;
+
+    if (booking?.meetingSubtype === "DOCTOR_CONSULTATION") {
+      // IVF Clinic - this IS the decision call
+      isDecisionCall = true;
+    } else if (isSurrogacyAgency) {
+      // For surrogacy: check if it was a 3-party call (Match Call) by looking at attendee count
+      // or by meetingSubtype === "MATCH_CALL"
+      if (booking?.meetingSubtype === "MATCH_CALL") {
+        isDecisionCall = true;
+        isMatchCall = true;
+      } else {
+        // Any call with surrogacy agency is a potential decision call (call 1 prompt is harmless)
+        isDecisionCall = true;
+        isMatchCall = false;
+      }
+    } else {
+      // Egg Donor Agency, Egg Bank, Sperm Bank - any call is the decision call
+      isDecisionCall = true;
+    }
+
+    if (!isDecisionCall) return;
+
+    // For AT_MATCH surrogacy - set 24h deadline
+    if (isSurrogacyAgency && isMatchCall && provider.depositMilestone === "AT_MATCH") {
+      dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    }
+
+    // Post readiness prompt in the provider session chat
+    await this.billingService.postReadinessPromptToChat({
+      sessionId: providerSession.id,
+      providerName: providerEntity.name,
+      providerType: providerTypeName,
+      isMatchCall,
+      dueAt,
+    });
+
+    // Schedule follow-up reminders
+    if (isSurrogacyAgency && isMatchCall && dueAt) {
+      // 24h countdown reminders - but we don't have an invoice yet, schedule after parent confirms
+      // The countdown gets scheduled when the invoice is created (after parent clicks "Yes")
+    } else {
+      // Non-surrogacy: schedule 24h/48h/72h gentle follow-ups
+      this.billingService.scheduleFollowUpReminders({
+        sessionId: providerSession.id,
+        providerName: providerEntity.name,
+        providerType: providerTypeName,
+      });
+    }
+
+    this.logger.log(`Post-call billing readiness prompt sent to session ${providerSession.id} for ${providerEntity.name}`);
   }
 
 

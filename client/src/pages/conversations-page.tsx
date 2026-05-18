@@ -106,6 +106,9 @@ interface ProviderSession {
 }
 
 import type { SessionDetail } from "@/components/chat";
+import { InvoiceCard } from "@/components/invoice-card";
+import { ReadinessPromptCard } from "@/components/readiness-prompt-card";
+import { ClearanceTrackerCard } from "@/components/clearance-tracker-card";
 
 // Sub-components (InlineSuggestTimeForm, InlineBookingNotification, WhisperProfileCard,
 // SpecialMessageCard, InlineVideoOverlay, ConversationsShell, ChatMessageList, ChatInputBar,
@@ -497,6 +500,35 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
           </div>
           <Download className="w-4 h-4 text-muted-foreground shrink-0" />
         </a>
+      </div>
+    );
+  }
+
+  if (msg.uiCardType === "invoice") {
+    return (
+      <div className="mt-1">
+        <InvoiceCard data={data} isParent={viewerRole === "parent"} />
+      </div>
+    );
+  }
+
+  if (msg.uiCardType === "readiness_prompt") {
+    return (
+      <div className="mt-1">
+        <ReadinessPromptCard
+          data={data}
+          sessionId={msg.sessionId}
+          messageContent={msg.content}
+          isParent={viewerRole === "parent"}
+        />
+      </div>
+    );
+  }
+
+  if (msg.uiCardType === "clearance_tracker") {
+    return (
+      <div className="mt-1">
+        <ClearanceTrackerCard data={data} isParent={viewerRole === "parent"} />
       </div>
     );
   }

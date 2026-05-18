@@ -7,9 +7,9 @@ import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { queryClient } from "@/lib/queryClient";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { 
-  LogOut, 
-  Baby, 
-  User, 
+  LogOut,
+  Baby,
+  User,
   LayoutDashboard,
   Search,
   Building2,
@@ -19,7 +19,8 @@ import {
   Calendar,
   RefreshCw,
   MessageCircle,
-  Headphones
+  Headphones,
+  DollarSign
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -600,6 +601,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         })) : []),
     { show: !isParentOnly && !isAdmin, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats', badge: totalUnread },
     { show: isAdmin, to: '/admin/providers', icon: Building2, label: 'Providers', mobileLabel: 'Providers' },
+    { show: isAdmin, to: '/admin/billing', icon: DollarSign, label: 'Billing', mobileLabel: 'Billing' },
     { show: isAdmin, to: '/admin/concierge-monitor', icon: Headphones, label: 'Concierge', mobileLabel: 'Concierge', badge: conciergeUnread },
     { show: isAdmin || isProvider, to: '/users', icon: Users, label: 'Parents', mobileLabel: 'Parents' },
     { show: !((user as any).parentAccountRole === 'VIEWER'), to: '/calendar', icon: Calendar, label: 'Meetings', mobileLabel: 'Meetings' },

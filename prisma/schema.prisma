@@ -59,6 +59,9 @@ model Provider {
   surrogacyStayAfterBirthMonths        Int?
   surrogacyBirthCertificateListing     Json?
   surrogacySurrogateRemovableFromCert  Boolean?
+  // Billing settings
+  depositMilestone     String?  // "AT_MATCH" | "AT_CLEARANCE" (surrogacy agencies only)
+  averageClearanceDays Int?     // used for AT_CLEARANCE milestone scheduling
   eggDonors            EggDonor[]
   agreements           Agreement[]
   eggDonorSyncConfig   EggDonorSyncConfig?
@@ -80,6 +83,9 @@ model Provider {
   chatSessions         AiChatSession[]
   syncLogs             SyncLog[]
   profileEmbedding     Unsupported("vector(768)")?
+  referralFeeConfig    ReferralFeeConfig?
+  invoices             Invoice[]
+  bankAccount          ProviderBankAccount?
 }
 
 model ProviderType {
@@ -231,6 +237,7 @@ model User {
   aiChatSessions        AiChatSession[]
   silentQueries         SilentQuery[]          @relation("SilentQueryParent")
   agreements            Agreement[]
+  invoices              Invoice[]
 }
 
 model UserDonorPreference {
@@ -415,6 +422,7 @@ model Booking {
   scheduledAt          DateTime
   duration             Int
   meetingType          String         @default("video")
+  meetingSubtype       String?        // "DOCTOR_CONSULTATION" | "MATCH_CALL" | null
   status               String         @default("PENDING")
   meetingUrl           String?
   notes                String?
@@ -1009,6 +1017,7 @@ model AiChatSession {
   messages      AiChatMessage[]
   silentQueries SilentQuery[]
   agreements    Agreement[]
+  invoices      Invoice[]
   user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   provider      Provider?       @relation(fields: [providerId], references: [id])
 
@@ -1241,6 +1250,7 @@ model Agreement {
   signerStatus        Json?         // { "email": { completed: boolean, completedAt: string|null, role: string|null, firstName: string|null, lastName: string|null } }
   guestSigningTokens  Json?         // { "token": "email" } - one-time tokens for non-GoStork signers
   signerOrder         Json?         // [{ email, name, userId, guestToken, signingOrder, notified }] ordered list for sequential notifications
+  invoiceId           String?       @unique  // GoStork payment gate - must be PAID before agreement can be signed
   signedAt            DateTime?
   rejectedAt          DateTime?
   createdAt           DateTime      @default(now())
@@ -1249,8 +1259,121 @@ model Agreement {
   provider            Provider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
   parentUser          User          @relation(fields: [parentUserId], references: [id], onDelete: Cascade)
   session             AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  invoice             Invoice?      @relation(fields: [invoiceId], references: [id])
 
   @@index([providerId])
   @@index([parentUserId])
   @@index([sessionId])
+}
+// ==========================================
+// BILLING & PAYMENT MODELS
+// ==========================================
+
+model ReferralFeeConfig {
+  id          String    @id @default(uuid())
+  providerId  String    @unique
+  feeType     String    // "FLAT" | "PERCENTAGE"
+  flatAmount  Decimal?  // in cents (e.g. 50000 = $500.00)
+  percentage  Decimal?  // e.g. 5.0 = 5%
+  currency    String    @default("USD")
+  isActive    Boolean   @default(true)
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  provider  Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  invoices  Invoice[]
+}
+
+model Invoice {
+  id                   String   @id @default(uuid())
+  paymentToken         String   @unique @default(uuid())
+  providerId           String
+  parentUserId         String
+  sessionId            String
+  referralFeeConfigId  String?
+
+  // Amounts stored in cents to avoid floating point issues
+  serviceAmount        Int
+  referralFeeAmount    Int
+  providerPayoutAmount Int
+  currency             String   @default("USD")
+
+  // Invoice metadata shown to parent
+  serviceType          String   // "IVF Treatment" | "Egg Donation" | "Sperm Donation" | "Surrogacy"
+  providerName         String   // snapshot at invoice creation time
+  description          String?
+  dueAt                DateTime? // 24h for surrogacy AT_MATCH, null otherwise
+
+  // Status: AWAITING_PAYMENT | AUTHORIZED | PAID | CLEARANCE_FAILED | EXPIRED | CANCELLED | REFUNDED
+  status               String   @default("AWAITING_PAYMENT")
+  paymentMethod        String?  // "CARD" | "ACH"
+
+  // Braintree
+  braintreeTransactionId    String?  @unique
+  braintreeAuthorizationId  String?  // AT_CLEARANCE: pre-auth ID before capture
+  braintreePaymentLinkUrl   String?
+
+  // GoStork Guarantee / Escrow
+  isProtected                  Boolean  @default(true)
+  medicalClearanceStatus       String?  // null | "PENDING" | "CLEARED" | "FAILED"
+  clearanceConfirmedAt         DateTime?
+  creditTransferredToInvoiceId String?
+
+  // Dwolla (Phase 2 - ACH)
+  dwollaPaymentTransferUrl  String?
+  dwollaPayoutTransferUrl   String?
+
+  // Timestamps
+  authorizedAt      DateTime?
+  capturedAt        DateTime?
+  paidAt            DateTime?
+  payoutInitiatedAt DateTime?
+  payoutCompletedAt DateTime?
+
+  adminNotes     String?
+  manualOverride Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  provider          Provider           @relation(fields: [providerId], references: [id])
+  parentUser        User               @relation(fields: [parentUserId], references: [id])
+  session           AiChatSession      @relation(fields: [sessionId], references: [id])
+  referralFeeConfig ReferralFeeConfig? @relation(fields: [referralFeeConfigId], references: [id])
+  reminders         InvoiceReminder[]
+  agreement         Agreement?
+
+  @@index([providerId])
+  @@index([parentUserId])
+  @@index([sessionId])
+  @@index([status])
+  @@index([paymentToken])
+}
+
+model InvoiceReminder {
+  id           String   @id @default(uuid())
+  invoiceId    String
+  sentAt       DateTime @default(now())
+  channel      String   // "chat" | "email" | "sms"
+  reminderType String   // "initial" | "followup_24h" | "followup_48h" | "followup_72h" | "12h_remaining" | "4h_remaining" | "1h_remaining" | "expired" | "clearance_day14" | "clearance_day21"
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model ProviderBankAccount {
+  id                    String    @id @default(uuid())
+  providerId            String    @unique
+  dwollaCustomerId      String?
+  dwollaFundingSourceId String?
+  bankName              String?
+  accountLast4          String?
+  accountType           String?   // "checking" | "savings"
+  status                String    @default("PENDING") // PENDING | VERIFIED | SUSPENDED
+  verifiedAt            DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 }

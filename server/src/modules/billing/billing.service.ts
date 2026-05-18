@@ -1,0 +1,737 @@
+import { Injectable, Logger, NotFoundException, BadRequestException } from "@nestjs/common";
+import { PrismaService } from "../prisma/prisma.service";
+import { NotificationService } from "../notifications/notification.service";
+
+function getBaseUrl(): string {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
+  if (process.env.NODE_ENV === "development") {
+    const port = process.env.PORT || 5001;
+    return `http://localhost:${port}`;
+  }
+  return "https://app.gostork.com";
+}
+
+function formatCents(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+// Maps provider type names to human-readable service types
+function resolveServiceType(providerTypeName: string | undefined): string {
+  if (!providerTypeName) return "Fertility Service";
+  const name = providerTypeName.toLowerCase();
+  if (name.includes("ivf") || name.includes("clinic")) return "IVF Treatment";
+  if (name.includes("egg donor")) return "Egg Donation";
+  if (name.includes("sperm")) return "Sperm Donation";
+  if (name.includes("surrogacy")) return "Surrogacy";
+  if (name.includes("egg bank")) return "Egg Donation";
+  return "Fertility Service";
+}
+
+@Injectable()
+export class BillingService {
+  private readonly logger = new Logger(BillingService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationService: NotificationService,
+  ) {}
+
+  // ─── Fee computation ────────────────────────────────────────────────────────
+
+  computeFee(
+    config: { feeType: string; flatAmount: any; percentage: any },
+    serviceAmountCents: number,
+  ): { referralFeeAmount: number; providerPayoutAmount: number } {
+    let referralFeeAmount = 0;
+    if (config.feeType === "FLAT") {
+      referralFeeAmount = Math.round(Number(config.flatAmount) || 0);
+    } else if (config.feeType === "PERCENTAGE") {
+      const pct = Number(config.percentage) || 0;
+      referralFeeAmount = Math.round((serviceAmountCents * pct) / 100);
+    }
+    // Clamp so we never take more than the full service amount
+    referralFeeAmount = Math.min(referralFeeAmount, serviceAmountCents);
+    const providerPayoutAmount = serviceAmountCents - referralFeeAmount;
+    return { referralFeeAmount, providerPayoutAmount };
+  }
+
+  // ─── Invoice creation ───────────────────────────────────────────────────────
+
+  async createInvoice(params: {
+    sessionId: string;
+    providerId: string;
+    parentUserId: string;
+    serviceAmountCents: number;
+    description?: string;
+    dueAt?: Date;
+  }) {
+    const { sessionId, providerId, parentUserId, serviceAmountCents, description, dueAt } = params;
+
+    // Get provider + type info for service label
+    const provider = await this.prisma.provider.findUnique({
+      where: { id: providerId },
+      include: {
+        referralFeeConfig: true,
+        services: { include: { providerType: true }, take: 1 },
+      },
+    });
+    if (!provider) throw new NotFoundException("Provider not found");
+
+    const feeConfig = provider.referralFeeConfig;
+    if (!feeConfig || !feeConfig.isActive) {
+      throw new BadRequestException(
+        "No active referral fee configured for this provider. GoStork admin must set up billing before payment can be requested.",
+      );
+    }
+
+    const { referralFeeAmount, providerPayoutAmount } = this.computeFee(feeConfig, serviceAmountCents);
+    const providerTypeName = provider.services[0]?.providerType?.name;
+    const serviceType = resolveServiceType(providerTypeName);
+
+    const invoice = await this.prisma.invoice.create({
+      data: {
+        providerId,
+        parentUserId,
+        sessionId,
+        referralFeeConfigId: feeConfig.id,
+        serviceAmount: serviceAmountCents,
+        referralFeeAmount,
+        providerPayoutAmount,
+        serviceType,
+        providerName: provider.name,
+        description: description || null,
+        dueAt: dueAt || null,
+        status: "AWAITING_PAYMENT",
+        isProtected: true,
+      },
+    });
+
+    this.logger.log(
+      `Invoice ${invoice.id} created: ${formatCents(serviceAmountCents)} service, ${formatCents(referralFeeAmount)} GoStork fee, ${formatCents(providerPayoutAmount)} provider payout`,
+    );
+
+    return invoice;
+  }
+
+  // ─── Send payment notifications to parent ──────────────────────────────────
+
+  async sendPaymentNotificationsToParent(invoiceId: string) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { parentUser: true },
+    });
+    if (!invoice) throw new NotFoundException("Invoice not found");
+
+    const base = getBaseUrl();
+    const paymentUrl = `${base}/pay/${invoice.paymentToken}`;
+    const parentName = invoice.parentUser.name || invoice.parentUser.firstName || "there";
+
+    // 1. Post in-chat invoice card (primary delivery channel)
+    await this.prisma.aiChatMessage.create({
+      data: {
+        sessionId: invoice.sessionId,
+        role: "assistant",
+        content: `A payment request has been sent to you for your service with ${invoice.providerName}. Please complete payment to continue your journey.`,
+        senderType: "system",
+        senderName: "GoStork",
+        uiCardType: "invoice",
+        uiCardData: {
+          invoiceId: invoice.id,
+          paymentToken: invoice.paymentToken,
+          paymentUrl,
+          providerName: invoice.providerName,
+          serviceType: invoice.serviceType,
+          serviceAmount: invoice.serviceAmount,
+          referralFeeAmount: invoice.referralFeeAmount,
+          providerPayoutAmount: invoice.providerPayoutAmount,
+          currency: invoice.currency,
+          status: invoice.status,
+          isProtected: invoice.isProtected,
+          dueAt: invoice.dueAt?.toISOString() || null,
+          description: invoice.description,
+        },
+      },
+    });
+
+    // 2. Email + SMS via notification service
+    await this.notificationService.sendPaymentRequestNotification({
+      parentUserId: invoice.parentUserId,
+      parentName,
+      parentEmail: invoice.parentUser.email,
+      parentPhone: invoice.parentUser.mobileNumber,
+      providerName: invoice.providerName,
+      serviceType: invoice.serviceType,
+      serviceAmountFormatted: formatCents(invoice.serviceAmount),
+      referralFeeFormatted: formatCents(invoice.referralFeeAmount),
+      paymentUrl,
+      invoiceId: invoice.id,
+      sessionId: invoice.sessionId,
+      dueAt: invoice.dueAt || null,
+    });
+
+    // Track that initial notification was sent
+    await this.prisma.invoiceReminder.create({
+      data: { invoiceId: invoice.id, channel: "chat", reminderType: "initial" },
+    });
+
+    return invoice;
+  }
+
+  // ─── Post readiness prompt in chat after video call ends ────────────────────
+
+  async postReadinessPromptToChat(params: {
+    sessionId: string;
+    providerName: string;
+    providerType: string;
+    isMatchCall: boolean; // true for surrogacy match calls
+    dueAt?: Date;         // for surrogacy 24h countdown
+  }) {
+    const { sessionId, providerName, providerType, isMatchCall, dueAt } = params;
+
+    let content = "";
+    let buttonLabel = "Yes, I'm Ready";
+
+    if (providerType === "Surrogacy Agency" && isMatchCall) {
+      const deadline = dueAt
+        ? new Date(dueAt).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+        : "within 24 hours";
+      content = `Your match call is complete! ${providerName} has reserved this surrogate exclusively for you until ${deadline}. Confirm your deposit now to secure your match - after the deadline, she may be matched with another family.`;
+      buttonLabel = "Reserve Now - Pay Deposit";
+    } else if (providerType === "IVF Clinic") {
+      content = `How did your consultation with ${providerName} go? Are you ready to move forward and begin your fertility treatment?`;
+    } else if (providerType === "Egg Donor Agency" || providerType === "Egg Bank") {
+      content = `How did your consultation with ${providerName} go? Are you ready to move forward and begin the matching process?`;
+    } else if (providerType === "Sperm Bank") {
+      content = `How did your consultation with ${providerName} go? Are you ready to move forward with your selected donor?`;
+    } else {
+      content = `How did your session with ${providerName} go? Are you ready to move forward?`;
+    }
+
+    await this.prisma.aiChatMessage.create({
+      data: {
+        sessionId,
+        role: "assistant",
+        content,
+        senderType: "system",
+        senderName: "GoStork",
+        uiCardType: "readiness_prompt",
+        uiCardData: {
+          providerName,
+          providerType,
+          isMatchCall,
+          dueAt: dueAt?.toISOString() || null,
+          buttonLabel,
+          yesAction: "CONFIRM_READY",
+          noAction: "NOT_YET",
+        },
+      },
+    });
+  }
+
+  // ─── Schedule surrogacy 24h countdown reminders ─────────────────────────────
+
+  scheduleCountdownReminders(invoiceId: string, dueAt: Date) {
+    const now = Date.now();
+    const due = dueAt.getTime();
+    const reminders: { label: string; fireAt: number; reminderType: string }[] = [
+      { label: "12h remaining", fireAt: due - 12 * 60 * 60 * 1000, reminderType: "12h_remaining" },
+      { label: "4h remaining",  fireAt: due - 4  * 60 * 60 * 1000, reminderType: "4h_remaining"  },
+      { label: "1h remaining",  fireAt: due - 1  * 60 * 60 * 1000, reminderType: "1h_remaining"  },
+      { label: "expired",       fireAt: due,                        reminderType: "expired"        },
+    ];
+
+    for (const r of reminders) {
+      const delay = r.fireAt - now;
+      if (delay > 0) {
+        setTimeout(() => this.sendCountdownReminder(invoiceId, r.reminderType), delay);
+        this.logger.log(`Scheduled ${r.label} reminder for invoice ${invoiceId} in ${Math.round(delay / 60000)}m`);
+      }
+    }
+  }
+
+  private async sendCountdownReminder(invoiceId: string, reminderType: string) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { parentUser: true },
+    });
+    if (!invoice || invoice.status !== "AWAITING_PAYMENT") return;
+
+    const base = getBaseUrl();
+    const paymentUrl = `${base}/pay/${invoice.paymentToken}`;
+    let content = "";
+
+    if (reminderType === "12h_remaining") {
+      content = `Reminder: You have 12 hours left to secure your surrogate match with ${invoice.providerName}. Don't miss your window!`;
+    } else if (reminderType === "4h_remaining") {
+      content = `Urgent: Only 4 hours left to reserve your surrogate match with ${invoice.providerName}.`;
+    } else if (reminderType === "1h_remaining") {
+      content = `Last chance: 1 hour remaining to secure your match with ${invoice.providerName}.`;
+    } else if (reminderType === "expired") {
+      content = `Your 24-hour hold has expired. The surrogate from ${invoice.providerName} is now available to other families. Please contact GoStork if you would like to explore other matches.`;
+      // Mark invoice expired
+      await this.prisma.invoice.update({ where: { id: invoiceId }, data: { status: "EXPIRED" } });
+    }
+
+    if (content) {
+      await this.prisma.aiChatMessage.create({
+        data: {
+          sessionId: invoice.sessionId,
+          role: "assistant",
+          content,
+          senderType: "system",
+          senderName: "GoStork",
+          uiCardType: reminderType === "expired" ? "text" : "invoice",
+          uiCardData: reminderType !== "expired" ? {
+            invoiceId: invoice.id,
+            paymentToken: invoice.paymentToken,
+            paymentUrl,
+            status: invoice.status,
+            dueAt: invoice.dueAt?.toISOString() || null,
+          } : null,
+        },
+      });
+
+      await this.prisma.invoiceReminder.create({
+        data: { invoiceId, channel: "chat", reminderType },
+      });
+
+      // Also send email/SMS for urgent reminders
+      if (["4h_remaining", "1h_remaining", "expired"].includes(reminderType)) {
+        await this.notificationService.sendInvoiceReminderNotification({
+          parentUserId: invoice.parentUserId,
+          parentEmail: invoice.parentUser.email,
+          parentPhone: invoice.parentUser.mobileNumber,
+          providerName: invoice.providerName,
+          paymentUrl,
+          reminderType,
+          invoiceId,
+        });
+      }
+    }
+  }
+
+  // ─── Schedule follow-up reminders (for non-surrogacy readiness prompts) ─────
+
+  scheduleFollowUpReminders(params: {
+    sessionId: string;
+    providerName: string;
+    providerType: string;
+  }) {
+    const delays = [
+      { hours: 24,  reminderType: "followup_24h" },
+      { hours: 48,  reminderType: "followup_48h" },
+      { hours: 72,  reminderType: "followup_72h" },
+    ];
+
+    for (const d of delays) {
+      setTimeout(async () => {
+        // Check if session already has a paid invoice - if so skip
+        const paid = await this.prisma.invoice.findFirst({
+          where: { sessionId: params.sessionId, status: "PAID" },
+        });
+        if (paid) return;
+
+        // Also check if readiness prompt was already answered positively
+        // (invoice in any non-expired state means parent responded)
+        const activeInvoice = await this.prisma.invoice.findFirst({
+          where: { sessionId: params.sessionId, status: { not: "EXPIRED" } },
+        });
+        if (activeInvoice) return;
+
+        await this.prisma.aiChatMessage.create({
+          data: {
+            sessionId: params.sessionId,
+            role: "assistant",
+            content: `Just following up - are you ready to move forward with ${params.providerName}? We're here to help whenever you're ready.`,
+            senderType: "system",
+            senderName: "GoStork",
+            uiCardType: "readiness_prompt",
+            uiCardData: {
+              providerName: params.providerName,
+              providerType: params.providerType,
+              isMatchCall: false,
+              dueAt: null,
+              buttonLabel: "Yes, I'm Ready",
+              yesAction: "CONFIRM_READY",
+              noAction: "NOT_YET",
+            },
+          },
+        });
+      }, d.hours * 60 * 60 * 1000);
+    }
+  }
+
+  // ─── Schedule clearance follow-up check-ins (AT_CLEARANCE flow) ─────────────
+
+  scheduleClearanceFollowUps(invoiceId: string, averageClearanceDays: number) {
+    const checkInDays = [
+      Math.max(1, averageClearanceDays - 7),
+      averageClearanceDays,
+      averageClearanceDays + 7,
+    ];
+
+    for (const day of checkInDays) {
+      const delay = day * 24 * 60 * 60 * 1000;
+      const reminderType = `clearance_day${day}`;
+      setTimeout(() => this.sendClearanceCheckIn(invoiceId, reminderType), delay);
+      this.logger.log(`Scheduled clearance check-in at day ${day} for invoice ${invoiceId}`);
+    }
+  }
+
+  private async sendClearanceCheckIn(invoiceId: string, reminderType: string) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { parentUser: true },
+    });
+    if (!invoice || invoice.status !== "AUTHORIZED") return;
+
+    const content = `Just checking in on your journey with ${invoice.providerName}. Has your surrogate passed her medical screening? Please let us know so we can process your payment and move to the next step.`;
+
+    await this.prisma.aiChatMessage.create({
+      data: {
+        sessionId: invoice.sessionId,
+        role: "assistant",
+        content,
+        senderType: "system",
+        senderName: "GoStork",
+        uiCardType: "clearance_tracker",
+        uiCardData: {
+          invoiceId: invoice.id,
+          providerName: invoice.providerName,
+          medicalClearanceStatus: invoice.medicalClearanceStatus,
+          confirmAction: "CONFIRM_CLEARANCE",
+          failAction: "REPORT_CLEARANCE_FAILURE",
+        },
+      },
+    });
+
+    await this.prisma.invoiceReminder.create({
+      data: { invoiceId, channel: "chat", reminderType },
+    });
+  }
+
+  // ─── Braintree authorization / capture / void (AT_CLEARANCE flow) ───────────
+
+  async placeAuthorization(invoiceId: string, authorizationId: string) {
+    await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        status: "AUTHORIZED",
+        braintreeAuthorizationId: authorizationId,
+        authorizedAt: new Date(),
+        medicalClearanceStatus: "PENDING",
+      },
+    });
+
+    // Post clearance tracker card in chat
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { parentUser: true },
+    });
+    if (invoice) {
+      await this.prisma.aiChatMessage.create({
+        data: {
+          sessionId: invoice.sessionId,
+          role: "assistant",
+          content: `Your funds are now securely held in GoStork's vault. We will release them to ${invoice.providerName} once the surrogate passes her medical clearance. If clearance fails, your hold is instantly canceled at no cost. Your match is protected by the GoStork Guarantee.`,
+          senderType: "system",
+          senderName: "GoStork",
+          uiCardType: "clearance_tracker",
+          uiCardData: {
+            invoiceId: invoice.id,
+            providerName: invoice.providerName,
+            medicalClearanceStatus: "PENDING",
+            isProtected: true,
+            confirmAction: "CONFIRM_CLEARANCE",
+            failAction: "REPORT_CLEARANCE_FAILURE",
+          },
+        },
+      });
+    }
+
+    this.logger.log(`Invoice ${invoiceId} authorized (pre-auth placed)`);
+  }
+
+  async captureAuthorization(invoiceId: string, transactionId: string) {
+    await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        status: "PAID",
+        braintreeTransactionId: transactionId,
+        capturedAt: new Date(),
+        paidAt: new Date(),
+        medicalClearanceStatus: "CLEARED",
+        clearanceConfirmedAt: new Date(),
+      },
+    });
+    this.logger.log(`Invoice ${invoiceId} captured - PAID`);
+    await this.notifyAdminInvoicePaid(invoiceId);
+  }
+
+  async voidAuthorization(invoiceId: string) {
+    await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        status: "CLEARANCE_FAILED",
+        medicalClearanceStatus: "FAILED",
+        clearanceConfirmedAt: new Date(),
+      },
+    });
+
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { parentUser: true },
+    });
+    if (invoice) {
+      await this.prisma.aiChatMessage.create({
+        data: {
+          sessionId: invoice.sessionId,
+          role: "assistant",
+          content: `We're sorry to hear that your surrogate did not pass medical clearance. Your card hold has been fully released - no charges were made. Because you paid through GoStork, your deposit is protected by the GoStork Guarantee. You can apply your deposit to any other agency on the GoStork platform. Our team will reach out to help you with your next steps.`,
+          senderType: "system",
+          senderName: "GoStork",
+          uiCardType: "text",
+          uiCardData: null,
+        },
+      });
+
+      // Notify admin to handle GoStork Guarantee redirect
+      const admins = await this.prisma.user.findMany({
+        where: { roles: { has: "GOSTORK_ADMIN" } },
+        select: { id: true },
+      });
+      for (const admin of admins) {
+        await this.prisma.inAppNotification.create({
+          data: {
+            userId: admin.id,
+            eventType: "CLEARANCE_FAILED",
+            payload: {
+              invoiceId: invoice.id,
+              parentName: invoice.parentUser.name,
+              parentUserId: invoice.parentUserId,
+              providerName: invoice.providerName,
+              amount: formatCents(invoice.serviceAmount),
+              message: `GoStork Guarantee activated: ${invoice.parentUser.name || "Parent"}'s surrogate from ${invoice.providerName} failed medical clearance. Deposit of ${formatCents(invoice.serviceAmount)} ready to redirect.`,
+            },
+          },
+        });
+      }
+    }
+
+    this.logger.log(`Invoice ${invoiceId} voided - clearance failed`);
+  }
+
+  // ─── Braintree webhook handler ───────────────────────────────────────────────
+
+  async handleBraintreeWebhook(transactionId: string, status: string) {
+    if (!["settled", "settlement_confirmed"].includes(status)) return;
+
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { braintreeTransactionId: transactionId },
+    });
+    if (!invoice) {
+      this.logger.warn(`No invoice found for Braintree transaction ${transactionId}`);
+      return;
+    }
+
+    if (invoice.status === "PAID") return; // idempotent
+
+    await this.prisma.invoice.update({
+      where: { id: invoice.id },
+      data: { status: "PAID", paidAt: new Date(), paymentMethod: "CARD" },
+    });
+
+    await this.notifyAdminInvoicePaid(invoice.id);
+    this.logger.log(`Invoice ${invoice.id} marked PAID via Braintree webhook`);
+  }
+
+  // ─── Admin notifications on payment ─────────────────────────────────────────
+
+  private async notifyAdminInvoicePaid(invoiceId: string) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { parentUser: true },
+    });
+    if (!invoice) return;
+
+    const admins = await this.prisma.user.findMany({
+      where: { roles: { has: "GOSTORK_ADMIN" } },
+      select: { id: true },
+    });
+
+    for (const admin of admins) {
+      await this.prisma.inAppNotification.create({
+        data: {
+          userId: admin.id,
+          eventType: "INVOICE_PAID",
+          payload: {
+            invoiceId: invoice.id,
+            parentName: invoice.parentUser.name || invoice.parentUser.email,
+            parentUserId: invoice.parentUserId,
+            providerName: invoice.providerName,
+            serviceType: invoice.serviceType,
+            serviceAmount: formatCents(invoice.serviceAmount),
+            referralFee: formatCents(invoice.referralFeeAmount),
+            providerPayout: formatCents(invoice.providerPayoutAmount),
+            message: `Payment received: ${formatCents(invoice.serviceAmount)} from ${invoice.parentUser.name || invoice.parentUser.email} for ${invoice.providerName}. GoStork fee: ${formatCents(invoice.referralFeeAmount)}. Provider payout due: ${formatCents(invoice.providerPayoutAmount)}.`,
+          },
+        },
+      });
+    }
+
+    await this.notificationService.sendInvoicePaidAdminNotification({
+      invoiceId: invoice.id,
+      parentName: invoice.parentUser.name || invoice.parentUser.email,
+      providerName: invoice.providerName,
+      serviceType: invoice.serviceType,
+      serviceAmountFormatted: formatCents(invoice.serviceAmount),
+      referralFeeFormatted: formatCents(invoice.referralFeeAmount),
+      providerPayoutFormatted: formatCents(invoice.providerPayoutAmount),
+      sessionId: invoice.sessionId,
+    });
+  }
+
+  // ─── Admin overrides ─────────────────────────────────────────────────────────
+
+  async adminMarkPaid(invoiceId: string, adminUserId: string, notes: string) {
+    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) throw new NotFoundException("Invoice not found");
+
+    const updated = await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        status: "PAID",
+        paidAt: new Date(),
+        manualOverride: true,
+        adminNotes: notes,
+      },
+    });
+
+    this.logger.log(`Invoice ${invoiceId} manually marked PAID by admin ${adminUserId}`);
+    await this.notifyAdminInvoicePaid(invoiceId);
+    return updated;
+  }
+
+  async adminInitiatePayout(invoiceId: string, adminUserId: string) {
+    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) throw new NotFoundException("Invoice not found");
+    if (invoice.status !== "PAID") throw new BadRequestException("Invoice must be PAID before initiating payout");
+
+    await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: { payoutInitiatedAt: new Date() },
+    });
+
+    // Phase 2: trigger Dwolla transfer here. For now, just log and notify.
+    this.logger.log(`Payout initiated for invoice ${invoiceId} by admin ${adminUserId} - manual transfer required: ${formatCents(invoice.providerPayoutAmount)} to ${invoice.providerName}`);
+
+    // Notify admin team with exact transfer details
+    const admins = await this.prisma.user.findMany({
+      where: { roles: { has: "GOSTORK_ADMIN" } },
+      select: { id: true },
+    });
+    for (const admin of admins) {
+      await this.prisma.inAppNotification.create({
+        data: {
+          userId: admin.id,
+          eventType: "PAYOUT_INITIATED",
+          payload: {
+            invoiceId: invoice.id,
+            providerName: invoice.providerName,
+            amount: formatCents(invoice.providerPayoutAmount),
+            message: `Payout initiated: transfer ${formatCents(invoice.providerPayoutAmount)} to ${invoice.providerName}`,
+          },
+        },
+      });
+    }
+  }
+
+  // ─── Queries ─────────────────────────────────────────────────────────────────
+
+  async getInvoicesForAdmin(filters: {
+    status?: string;
+    providerId?: string;
+    dateFrom?: Date;
+    dateTo?: Date;
+    page?: number;
+    pageSize?: number;
+  }) {
+    const { status, providerId, dateFrom, dateTo, page = 1, pageSize = 25 } = filters;
+    const where: any = {};
+    if (status && status !== "all") where.status = status;
+    if (providerId) where.providerId = providerId;
+    if (dateFrom || dateTo) {
+      where.createdAt = {};
+      if (dateFrom) where.createdAt.gte = dateFrom;
+      if (dateTo) where.createdAt.lte = dateTo;
+    }
+
+    const [invoices, total] = await Promise.all([
+      this.prisma.invoice.findMany({
+        where,
+        include: {
+          parentUser: { select: { id: true, name: true, email: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.invoice.count({ where }),
+    ]);
+
+    // Aggregate stats
+    const stats = await this.prisma.invoice.aggregate({
+      where: { status: "PAID" },
+      _sum: { serviceAmount: true, referralFeeAmount: true, providerPayoutAmount: true },
+    });
+
+    const pendingStats = await this.prisma.invoice.aggregate({
+      where: { status: { in: ["AWAITING_PAYMENT", "AUTHORIZED"] } },
+      _sum: { serviceAmount: true },
+    });
+
+    return {
+      invoices,
+      total,
+      page,
+      pageSize,
+      totalRevenue: stats._sum.serviceAmount || 0,
+      totalGoStorkFees: stats._sum.referralFeeAmount || 0,
+      totalProviderPayouts: stats._sum.providerPayoutAmount || 0,
+      pendingAmount: pendingStats._sum.serviceAmount || 0,
+    };
+  }
+
+  async getInvoiceByToken(paymentToken: string) {
+    return this.prisma.invoice.findUnique({
+      where: { paymentToken },
+      include: {
+        parentUser: { select: { id: true, name: true, email: true } },
+      },
+    });
+  }
+
+  async getInvoicesForParent(parentUserId: string) {
+    return this.prisma.invoice.findMany({
+      where: { parentUserId },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  async getInvoicesForProvider(providerId: string) {
+    return this.prisma.invoice.findMany({
+      where: { providerId },
+      include: {
+        parentUser: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  // ─── Stub: QuickBooks sync ───────────────────────────────────────────────────
+
+  async syncToQuickBooks(invoiceId: string) {
+    // Phase 2: connect to QBO API and create Payment + Expense records
+    this.logger.log(`QuickBooks sync pending for invoice ${invoiceId} (Phase 2 - not yet implemented)`);
+  }
+}
