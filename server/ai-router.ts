@@ -3330,6 +3330,30 @@ ${phase0Section}`;
     // Detects solo status from DB relationship status OR from chat text.
     const isSoloParent = (userRecord?.relationshipStatus || "").toLowerCase() === "single" ||
       /\bsolo\b|\bsingle\b|\bjust me\b|\bon my own\b|\bby myself\b/i.test(allUserMessages);
+    // Post-processor: strip sperm question for solo woman or lesbian couple.
+    // A solo woman or lesbian couple ALWAYS uses a sperm donor - asking is wrong.
+    const parentIsFemaleSolo = isFemaleGender && isSoloSkip;
+    const parentIsLesbian = isLesbianOrientation;
+    if ((parentIsFemaleSolo || parentIsLesbian) && profile?.spermSource !== "My own") {
+      const spermQuestionPattern = /[^.!?]*(?:will you be using your own(?: sperm)?(?:,| or)?(?: your partner(?:'s)?)?(?:,| or)? (?:a )?sperm donor|for sperm[^.!?]*)[^.!?]*[.!?]?\s*\[\[QUICK_REPLY:[^\]]*\]\]/gi;
+      if (spermQuestionPattern.test(finalContent)) {
+        // Auto-save sperm donor silently and strip the question
+        try {
+          if (userRecord?.parentAccountId) {
+            await prisma.intendedParentProfile.upsert({
+              where: { parentAccountId: userRecord.parentAccountId },
+              update: { spermSource: "Sperm donor" },
+              create: { parentAccountId: userRecord.parentAccountId, spermSource: "Sperm donor" },
+            });
+          }
+        } catch {}
+        finalContent = finalContent.replace(spermQuestionPattern, "").trim();
+        // Also remove any stray QUICK_REPLY with sperm options
+        finalContent = finalContent.replace(/\[\[QUICK_REPLY:[^\]]*(?:my own|donor sperm|sperm donor)[^\]]*\]\]/gi, "").trim();
+        console.log("[POST-PROC] Stripped sperm question for solo woman/lesbian - auto-saved Sperm donor");
+      }
+    }
+
     if (isMaleGender && isSoloParent && /My partner/i.test(finalContent)) {
       finalContent = finalContent.replace(
         /\[\[QUICK_REPLY:([^\]]*)\]\]/g,
