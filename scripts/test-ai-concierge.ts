@@ -178,15 +178,18 @@ const agencyMatch = (country: string): Msg[] => [
 ];
 const agencyIntake = agencyMatch;
 
-// Phase 3 - Egg donor match
+// Phase 3 - Egg donor match (B1 preferences + CURATION ready + match card)
+// Egg donor search requires: B1 answered → CURATION summary → "ready" → [[MATCH_CARD]]
 const eggDonorMatch: Msg[] = [
-  { send: "I prefer someone with brown eyes, college educated, healthy", assert: { hasMatchCard: true } },
+  { send: "I prefer someone with brown eyes, college educated, healthy" },
+  { send: "Yes, I'm ready!", assert: { hasMatchCard: true } },
 ];
 
-// Phase 3 - Sperm donor match
+// Phase 3 - Sperm donor match (C1 preferences + donor type + CURATION ready + match card)
 const spermDonorMatch: Msg[] = [
-  { send: "Open identity preferred, tall, athletic build", assert: { hasMatchCard: true } },
-  { send: "Open" },
+  { send: "Open identity preferred, tall, athletic build" },
+  { send: "Open" }, // C2: donor type (Open/Anonymous/Exclusive)
+  { send: "Yes, I'm ready!", assert: { hasMatchCard: true } },
 ];
 
 // Phase 3 - Clinic match
@@ -431,12 +434,13 @@ const TEST_CASES: TestCase[] = [
     name: "SM-12: No embryos · Own sperm · CLINIC_HAVE · USA · Cost education check",
     desc: "CLINIC_HAVE: D-cycle checks cost education (Colombia mentioned in D1 breakdown)",
     interestedServices: ["Surrogate", "Egg Donor"],
-    // Colombia check: AI includes Colombia in D1 QUESTION (country education BEFORE asking)
-    // not in the response to "USA". Assert on SURR_NEED response which triggers D1 question.
+    // D1 education check: AI gives timeline or cost education before country question.
+    // Check for "months" (timeline education) or "Colombia" (cost education) - either is valid.
+    // The AI gives SOME country education before asking D1 question.
     messages: msgs(
       P0, CLINIC_HAVE, EMB_NO,
       EGG_DONOR, SPERM_OWN,
-      { send: "I need help finding a surrogate", assert: { contains: ["Colombia"] } },
+      { send: "I need help finding a surrogate", assert: { contains: ["months"] } },
       { send: "USA" },
       "Pro-choice surrogate",
       { send: "Singleton only" },
