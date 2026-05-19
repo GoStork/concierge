@@ -7,10 +7,22 @@ import { prisma } from "./db";
 import path from "path";
 import { isUserOnline } from "./online-tracker";
 
-// Lazy getter - reads env var at call time, not at module load time
+// Lazy getter - reads env var at call time.
+// Falls back to reading .env directly if shell exported an empty ANTHROPIC_API_KEY.
 function getAnthropicClient(): Anthropic {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set in environment");
+  let apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require("fs") as typeof import("fs");
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const pathMod = require("path") as typeof import("path");
+      const envContent = fs.readFileSync(pathMod.resolve(process.cwd(), ".env"), "utf8");
+      const match = envContent.match(/^ANTHROPIC_API_KEY=(.+)$/m);
+      if (match) apiKey = match[1].trim();
+    } catch {}
+  }
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
   return new Anthropic({ apiKey });
 }
 const geminiAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
