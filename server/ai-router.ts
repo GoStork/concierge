@@ -277,9 +277,10 @@ async function callTier2Claude(
     if (!toolCallsExecuted) {
       // First call - non-streaming to detect tool use.
       // Tool call detection only needs ~256 tokens (just the tool_use block).
-      // Reducing from 4096 to 512 cuts this call time by ~8x.
+      // AI_TEST_MODE=1: use Haiku (5-10x faster) for test runs
+      const tier2Model = process.env.AI_TEST_MODE === "1" ? "claude-haiku-4-5" : "claude-sonnet-4-6";
       const response = await getAnthropicClient().messages.create({
-        model: "claude-sonnet-4-6",
+        model: tier2Model,
         max_tokens: hasTools ? 512 : 2048, // 512 if tools (just detect tool call), 2048 if no tools
         // @ts-ignore
         system: systemWithCache,
@@ -332,7 +333,7 @@ async function callTier2Claude(
       // After tool calls - true streaming.
       // Match card + intro text fits in ~1500 tokens. Reduced from 4096 for speed.
       const stream = await getAnthropicClient().messages.stream({
-        model: "claude-sonnet-4-6",
+        model: tier2Model, // haiku in test mode, sonnet in production
         max_tokens: 1500,
         // @ts-ignore
         system: systemWithCache,
