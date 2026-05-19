@@ -280,16 +280,15 @@ const TEST_CASES: TestCase[] = [
 
   {
     id: "SM-03", persona: "solo-man",
-    name: "SM-03: No embryos · Already has surrogate · Needs egg donor · CLINIC_HAVE",
-    desc: "CLINIC_HAVE: AI asks sperm source BEFORE egg source for solo man - fixed message order",
+    name: "SM-03: No embryos · Own sperm · Already has surrogate · CLINIC_HAVE · Egg donor match",
+    desc: "CLINIC_HAVE: Step 2 egg source SKIPPED for solo man (always donor). Sperm → has surrogate → egg donor B-cycle",
     interestedServices: ["Egg Donor"],
-    // AI asks Step 3 (sperm source) BEFORE Step 2 (egg source) for solo man
-    // Correct order: SPERM_OWN first, then EGG_DONOR
+    // For solo man: Step 2 (egg source) is ALWAYS skipped (eggs always from donor).
+    // Do NOT include EGG_DONOR message - it goes to the wrong question (Step 3 sperm)
     messages: msgs(
       P0, I_SOLO_MAN_STRAIGHT, CLINIC_HAVE, EMB_NO,
-      SPERM_OWN,    // Step 3: sperm source (AI asks this first for solo man)
-      EGG_DONOR,    // Step 2: egg source (asked after sperm for solo man flow)
-      SURR_HAVE,    // Step 4a: already has surrogate
+      SPERM_OWN,   // Step 3: sperm source (own)
+      SURR_HAVE,   // Step 4a: already has surrogate → egg donor B-cycle starts
       ...eggDonorMatch,
     ),
     db: [
