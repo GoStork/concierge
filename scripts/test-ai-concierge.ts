@@ -52,7 +52,7 @@ async function getDB() {
 const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:5001";
 const REPORT_DIR = path.join(process.cwd(), "scripts", "test-results");
 const TEST_PASSWORD = "TestPass123!";
-const MSG_TIMEOUT_MS = 240_000; // 4 min - Tier2 Claude calls with tool use can be slow
+const MSG_TIMEOUT_MS = 360_000; // 6 min - Tier2 Claude calls with tool use can be slow, especially for egg/sperm donor searches
 const DELAY_BETWEEN_MSGS_MS = 600;
 
 // CLI filters
