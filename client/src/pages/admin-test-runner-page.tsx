@@ -251,11 +251,19 @@ export default function AdminTestRunnerPage() {
   const isRunning = state.status === "running";
   const visibleTests = persona === "all" ? ALL_TESTS : ALL_TESTS.filter(t => t.persona === persona);
 
-  const passed = state.passCount;
-  const failed = state.failCount;
-  const total = state.totalCount || ALL_TESTS.length;
+  // Compute stats from actual test states (not counters which can overflow)
+  const allTestStates = Object.values(state.tests);
+  const visibleTestStates = persona === "all"
+    ? allTestStates
+    : allTestStates.filter(t => t.persona === persona);
+
+  const passed = visibleTestStates.filter(t => t.status === "pass").length;
+  const failed = visibleTestStates.filter(t => t.status === "fail").length;
+  const running = visibleTestStates.filter(t => t.status === "running").length;
+  const pending = visibleTestStates.filter(t => t.status === "pending").length;
+  const total = visibleTests.length; // always use static count
   const done = passed + failed;
-  const progress = total > 0 ? Math.round((done / total) * 100) : 0;
+  const progress = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
 
   const getTestState = (id: string): TestProgress | null => state.tests[id] || null;
 
@@ -326,8 +334,8 @@ export default function AdminTestRunnerPage() {
             {[
               { label: "Pass", val: passed, color: "hsl(var(--brand-success))" },
               { label: "Fail", val: failed, color: "hsl(var(--brand-error))" },
-              { label: "Running", val: Object.values(state.tests).filter(t => t.status === "running").length, color: "hsl(var(--primary))" },
-              { label: "Pending", val: Object.values(state.tests).filter(t => t.status === "pending").length, color: "hsl(var(--muted-foreground))" },
+              { label: "Running", val: running, color: "hsl(var(--primary))" },
+              { label: "Pending", val: pending, color: "hsl(var(--muted-foreground))" },
               { label: "Total", val: total, color: "hsl(var(--foreground))" },
             ].map(s => (
               <div key={s.label} style={{ textAlign: "center", minWidth: "70px" }}>
@@ -341,7 +349,7 @@ export default function AdminTestRunnerPage() {
                   <div style={{ height: "100%", width: `${progress}%`, background: failed > 0 ? "hsl(var(--brand-error))" : "hsl(var(--brand-success))", borderRadius: "4px", transition: "width 0.3s" }} />
                 </div>
                 <div style={{ fontSize: "11px", color: "hsl(var(--muted-foreground))", marginTop: "3px" }}>
-                  {progress}% · {done}/{total} complete {isRunning ? "· running..." : state.status === "done" ? "· done" : ""}
+                  {progress}% · {done}/{total} {persona !== "all" ? `${persona.replace("-", " ")} ` : ""}complete {isRunning ? "· running..." : state.status === "done" ? "· done" : ""}
                 </div>
               </div>
             )}

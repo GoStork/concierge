@@ -69,6 +69,12 @@ export class TestRunnerService {
   }
 
   private emit(event: SSEEvent) {
+    // Always recompute pass/fail from actual test states (never trust incremental counters)
+    const tests = Object.values(this.state.tests);
+    this.state.passCount = tests.filter(t => t.status === "pass").length;
+    this.state.failCount = tests.filter(t => t.status === "fail").length;
+    this.state.totalCount = tests.length;
+
     const json = JSON.stringify(event);
     for (const sub of this.subscribers) {
       try { sub(json); } catch {}
