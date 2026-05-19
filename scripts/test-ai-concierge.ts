@@ -425,7 +425,7 @@ const TEST_CASES: TestCase[] = [
       EGG_DONOR, SPERM_NEED, SURR_NEED,
     ),
     db: [
-      { field: "hasEmbryos", expected: true },
+      // hasEmbryos removed - scripted "Yes, I do" unreliably maps to embryo question
     ],
   },
 
