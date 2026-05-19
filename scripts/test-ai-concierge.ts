@@ -53,7 +53,7 @@ const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:5001";
 const REPORT_DIR = path.join(process.cwd(), "scripts", "test-results");
 const TEST_PASSWORD = "TestPass123!";
 const MSG_TIMEOUT_MS = 120_000; // 2 min per message max
-const DELAY_BETWEEN_MSGS_MS = 200; // 200ms between messages - Tier1 Gemini is fast
+const DELAY_BETWEEN_MSGS_MS = 600;
 
 // CLI filters
 const args = process.argv.slice(2);
@@ -163,11 +163,10 @@ const SURR_HAVE = ["I already have a surrogate"];
 // which service runs first (clinic may run before surrogate). Match card is
 // asserted inside clinicMatch or eggDonorMatch instead.
 const surrogateMatch = (country: string, termination: string, twins: string): Msg[] => [
-  { send: country },      // D1 country - Tier1 fast
-  { send: termination },  // D2 termination - Tier1 fast
-  { send: twins },        // D3 twins - Tier1 fast
-  // "Yes, I'm ready!" removed - triggers Tier2 (Claude + tool use = slow)
-  // Match card testing is done in separate smoke tests
+  { send: country },
+  { send: termination },
+  { send: twins },
+  { send: "Yes, I'm ready!" },
 ];
 
 // Alias kept for clarity
@@ -175,7 +174,8 @@ const surrogateIntake = surrogateMatch;
 
 // Phase 3 - Agency match (international - Colombia/Mexico)
 const agencyMatch = (country: string): Msg[] => [
-  { send: country },  // D1 country - Tier1 fast (no "ready" = no Tier2 trigger)
+  { send: country },
+  { send: "Yes, I'm ready!" },
 ];
 const agencyIntake = agencyMatch;
 
@@ -502,6 +502,7 @@ const TEST_CASES: TestCase[] = [
       { send: "I'll be using my own eggs", assert: noSpermQ },
       CARRIER_ME,
       SPERM_NEED,
+      ...spermDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
@@ -520,6 +521,7 @@ const TEST_CASES: TestCase[] = [
       EMB_NO,
       { send: "I'll be using my own eggs", assert: noSpermQ },
       CARRIER_ME, SPERM_HAVE,
+      ...clinicMatch,
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
@@ -538,6 +540,8 @@ const TEST_CASES: TestCase[] = [
       EMB_NO,
       { send: "I need help finding an egg donor", assert: noSpermQ },
       CARRIER_ME, SPERM_NEED,
+      ...eggDonorMatch,
+      ...spermDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
@@ -557,6 +561,8 @@ const TEST_CASES: TestCase[] = [
       EMB_NO,
       { send: "I already have an egg donor", assert: noSpermQ },
       CARRIER_ME, SPERM_NEED,
+      ...clinicMatch,
+      ...spermDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
@@ -576,6 +582,7 @@ const TEST_CASES: TestCase[] = [
       { send: "I'll be using my own eggs", assert: noSpermQ },
       CARRIER_SURROGATE, SURR_NEED,
       ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
+      ...spermDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
@@ -595,6 +602,8 @@ const TEST_CASES: TestCase[] = [
       EMB_NO,
       { send: "I'll be using my own eggs", assert: noSpermQ },
       CARRIER_SURROGATE, SURR_HAVE,
+      ...clinicMatch,
+      ...spermDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
@@ -614,6 +623,8 @@ const TEST_CASES: TestCase[] = [
       { send: "I need help finding an egg donor", assert: noSpermQ },
       CARRIER_SURROGATE, SURR_NEED,
       ...surrogateMatch("USA", "Pro-choice surrogate", "Hoping for twins"),
+      ...eggDonorMatch,
+      ...spermDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
@@ -634,6 +645,8 @@ const TEST_CASES: TestCase[] = [
       { send: "I need help finding an egg donor", assert: noSpermQ },
       CARRIER_SURROGATE, SURR_NEED,
       ...agencyMatch("Colombia"),
+      ...eggDonorMatch,
+      ...spermDonorMatch,
     ),
     db: [
       // needsSurrogate removed - requires full Tier2 CURATION cycle
@@ -690,6 +703,7 @@ const TEST_CASES: TestCase[] = [
       EGG_DONOR,
       CARRIER_SURROGATE, SURR_NEED,
       ...surrogateMatch("USA", "Pro-choice surrogate", "No preference"),
+      ...eggDonorMatch,
     ),
     db: [
       // hasEmbryos removed - scripted messages unreliable
@@ -725,6 +739,7 @@ const TEST_CASES: TestCase[] = [
       { send: "I need help finding an egg donor", assert: noSpermQ },
       CARRIER_SURROGATE, SURR_NEED,
       ...agencyMatch("Mexico"),
+      ...eggDonorMatch,
     ),
     db: [
       // needsSurrogate removed - requires full Tier2 CURATION cycle
@@ -742,6 +757,8 @@ const TEST_CASES: TestCase[] = [
       CLINIC_NEED, EMB_NO,
       { send: "I'll be using my own eggs", assert: noSpermQ },
       CARRIER_ME, SPERM_NEED,
+      ...clinicMatch,
+      ...spermDonorMatch,
     ),
     db: [
       { field: "isLGBTQ", expected: true },
@@ -766,6 +783,7 @@ const TEST_CASES: TestCase[] = [
       { send: "I need help finding an egg donor", assert: noCarrierQ },
       SPERM_OWN, SURR_NEED,
       ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
+      ...eggDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "My sperm" },
@@ -785,6 +803,7 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_DADS, CLINIC_NEED, EMB_NO,
       EGG_DONOR, SPERM_PART, SURR_NEED,
       ...surrogateMatch("USA", "Pro-choice surrogate", "Hoping for twins"),
+      ...eggDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "My partner's sperm" },
@@ -801,6 +820,8 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_DADS, CLINIC_NEED, EMB_NO,
       EGG_DONOR, SPERM_DONOR, SPERM_NEED, SURR_NEED,
       ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
+      ...eggDonorMatch,
+      ...spermDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
@@ -817,6 +838,7 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_DADS, CLINIC_HAVE, EMB_NO,
       EGG_DONOR, SPERM_DONOR, SPERM_HAVE, SURR_NEED,
       ...agencyMatch("Colombia"),
+      ...eggDonorMatch,
     ),
     db: [
       // needsSurrogate removed - requires full Tier2 CURATION cycle
@@ -848,6 +870,8 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_TWO_DADS, CLINIC_NEED, EMB_NO,
       EGG_DONOR, SPERM_OWN, SURR_HAVE,
+      ...clinicMatch,
+      ...eggDonorMatch,
     ),
     db: [
       { field: "needsSurrogate", expected: false },
@@ -918,6 +942,7 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_DADS, CLINIC_HAVE, EMB_NO,
       EGG_DONOR, SPERM_PART, SURR_NEED,
       ...agencyMatch("Mexico"),
+      ...eggDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "My partner's sperm" },
@@ -973,6 +998,8 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
       { send: "My own eggs", assert: noSpermQ },
       CARRIER_ME, SPERM_NEED,
+      ...clinicMatch,
+      ...spermDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
@@ -992,6 +1019,7 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
       { send: "My own eggs", assert: noSpermQ },
       CARRIER_ME, SPERM_HAVE,
+      ...clinicMatch,
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
@@ -1008,6 +1036,8 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
       { send: "My partner's eggs", assert: noSpermQ },
       CARRIER_ME, SPERM_NEED,
+      ...clinicMatch,
+      ...spermDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
@@ -1025,6 +1055,9 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
       { send: "I need help finding an egg donor", assert: noSpermQ },
       CARRIER_ME, SPERM_NEED,
+      ...clinicMatch,
+      ...eggDonorMatch,
+      ...spermDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
@@ -1042,6 +1075,7 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_MOMS, CLINIC_HAVE, EMB_NO,
       { send: "I already have an egg donor", assert: noSpermQ },
       CARRIER_ME, SPERM_NEED,
+      ...spermDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
@@ -1058,6 +1092,8 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
       { send: "My own eggs", assert: noSpermQ },
       CARRIER_PARTNER, SPERM_NEED,
+      ...clinicMatch,
+      ...spermDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
@@ -1075,6 +1111,8 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
       { send: "My partner's eggs", assert: noSpermQ },
       CARRIER_PARTNER, SPERM_NEED,
+      ...clinicMatch,
+      ...spermDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
@@ -1093,6 +1131,7 @@ const TEST_CASES: TestCase[] = [
       { send: "My own eggs", assert: noSpermQ },
       CARRIER_SURROGATE, SURR_NEED,
       ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
+      ...spermDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
@@ -1112,6 +1151,8 @@ const TEST_CASES: TestCase[] = [
       { send: "I need help finding an egg donor", assert: noSpermQ },
       CARRIER_SURROGATE, SURR_NEED,
       ...surrogateMatch("USA", "Pro-choice surrogate", "Hoping for twins"),
+      ...eggDonorMatch,
+      ...spermDonorMatch,
     ),
     db: [
       // needsSurrogate removed - requires full Tier2 CURATION cycle
@@ -1129,6 +1170,7 @@ const TEST_CASES: TestCase[] = [
       { send: "My partner's eggs", assert: noSpermQ },
       CARRIER_SURROGATE, SURR_NEED,
       ...agencyMatch("Colombia"),
+      ...spermDonorMatch,
     ),
     db: [
       { field: "eggSource", expected: "My partner's eggs" },
@@ -1146,6 +1188,7 @@ const TEST_CASES: TestCase[] = [
       ...EMB_YES("2", "Yes"),
       { send: "My own eggs", assert: noSpermQ },
       CARRIER_PARTNER,
+      ...spermDonorMatch,
     ),
     db: [
       // hasEmbryos removed - scripted messages unreliable
@@ -1182,6 +1225,9 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
       { send: "I need help finding an egg donor", assert: noSpermQ },
       CARRIER_SURROGATE, SURR_HAVE,
+      ...clinicMatch,
+      ...eggDonorMatch,
+      ...spermDonorMatch,
     ),
     db: [
       { field: "needsSurrogate", expected: false },
@@ -1203,6 +1249,7 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
       "My own eggs", "My partner's", CARRIER_ME,
+      ...clinicMatch,
     ),
     db: [
       { field: "eggSource", expected: "Own eggs" },
@@ -1219,6 +1266,7 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_MW_MAN, CLINIC_NEED, EMB_NO,
       "My partner's eggs", "My own", CARRIER_PARTNER,
+      ...clinicMatch,
     ),
     db: [
       { field: "eggSource", expected: "My partner's eggs" },
@@ -1235,6 +1283,8 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
       EGG_DONOR, "My partner's", CARRIER_ME,
+      ...clinicMatch,
+      ...eggDonorMatch,
     ),
     db: [
       { field: "eggSource", expected: "Egg donor" },
@@ -1252,6 +1302,7 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_MW_MAN, CLINIC_NEED, EMB_NO,
       EGG_HAVE, "My own", CARRIER_PARTNER,
+      ...clinicMatch,
     ),
     db: [
       { field: "eggSource", expected: "Egg donor" },
@@ -1268,6 +1319,8 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
       "My own eggs", SPERM_DONOR, CARRIER_ME, SPERM_NEED,
+      ...clinicMatch,
+      ...spermDonorMatch,
     ),
     db: [
       { field: "eggSource", expected: "Own eggs" },
@@ -1299,6 +1352,9 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
       EGG_DONOR, SPERM_DONOR, CARRIER_ME, SPERM_NEED,
+      ...clinicMatch,
+      ...eggDonorMatch,
+      ...spermDonorMatch,
     ),
     db: [
       { field: "eggSource", expected: "Egg donor" },
@@ -1316,6 +1372,7 @@ const TEST_CASES: TestCase[] = [
       P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
       "My own eggs", "My partner's", CARRIER_SURROGATE, SURR_NEED,
       ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
+      ...clinicMatch,
     ),
     db: [
       { field: "eggSource", expected: "Own eggs" },
@@ -1350,6 +1407,8 @@ const TEST_CASES: TestCase[] = [
       P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
       EGG_DONOR, "My partner's", CARRIER_SURROGATE, SURR_NEED,
       ...surrogateMatch("USA", "Pro-choice surrogate", "No preference"),
+      ...clinicMatch,
+      ...eggDonorMatch,
     ),
     db: [
       { field: "eggSource", expected: "Egg donor" },
@@ -1365,6 +1424,8 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
       "My own eggs", SPERM_DONOR, CARRIER_SURROGATE, SURR_HAVE, SPERM_NEED,
+      ...clinicMatch,
+      ...spermDonorMatch,
     ),
     db: [
       { field: "needsSurrogate", expected: false },
@@ -1381,6 +1442,9 @@ const TEST_CASES: TestCase[] = [
       P0, I_MW_MAN, CLINIC_NEED, EMB_NO,
       EGG_DONOR, SPERM_DONOR, CARRIER_SURROGATE, SPERM_NEED, SURR_NEED,
       ...surrogateMatch("USA", "Pro-life surrogate", "Singleton only"),
+      ...clinicMatch,
+      ...eggDonorMatch,
+      ...spermDonorMatch,
     ),
     db: [
       { field: "eggSource", expected: "Egg donor" },
@@ -1398,6 +1462,8 @@ const TEST_CASES: TestCase[] = [
       P0, I_MW_WOMAN, CLINIC_HAVE, EMB_NO,
       EGG_DONOR, SPERM_DONOR, CARRIER_SURROGATE, SPERM_NEED, SURR_NEED,
       ...agencyMatch("Colombia"),
+      ...eggDonorMatch,
+      ...spermDonorMatch,
     ),
     db: [
       // needsSurrogate removed - requires full Tier2 CURATION cycle
@@ -1413,6 +1479,7 @@ const TEST_CASES: TestCase[] = [
       P0, I_MW_WOMAN, CLINIC_NEED,
       ...EMB_YES("2", "Yes"),
       "My own eggs", "My partner's", CARRIER_ME,
+      ...clinicMatch,
     ),
     db: [
       // hasEmbryos removed - scripted messages unreliable
@@ -1449,6 +1516,7 @@ const TEST_CASES: TestCase[] = [
       ...EMB_YES("2", "Yes"),
       EMB_CONFLICT_USE,
       "My partner's", CARRIER_ME,
+      ...clinicMatch,
     ),
     db: [
       // hasEmbryos removed - scripted messages unreliable
@@ -1468,6 +1536,8 @@ const TEST_CASES: TestCase[] = [
       EMB_CONFLICT_NEW,
       EGG_DONOR, "My partner's", CARRIER_SURROGATE, SURR_NEED,
       ...surrogateMatch("USA", "Pro-choice surrogate", "No preference"),
+      ...clinicMatch,
+      ...eggDonorMatch,
     ),
     db: [
       // hasEmbryos removed - scripted messages unreliable
@@ -1487,6 +1557,7 @@ const TEST_CASES: TestCase[] = [
       "My own eggs",
       SPERM_CONFLICT_USE,
       CARRIER_ME,
+      ...clinicMatch,
     ),
     db: [
       // hasEmbryos removed - scripted messages unreliable
@@ -1503,6 +1574,8 @@ const TEST_CASES: TestCase[] = [
       P0, I_MW_MAN, CLINIC_NEED, EMB_NO,
       EGG_DONOR, "My own", CARRIER_SURROGATE, SURR_NEED,
       ...agencyMatch("Mexico"),
+      ...clinicMatch,
+      ...eggDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "My sperm" },
