@@ -3337,8 +3337,11 @@ ${phase0Section}`;
     const parentIsFemaleSolo = isFemaleGender && isSoloSkip;
     const parentIsLesbian = isLesbianOrientation;
     if ((parentIsFemaleSolo || parentIsLesbian) && profile?.spermSource !== "My own") {
-      const spermQuestionPattern = /[^.!?]*(?:will you be using your own(?: sperm)?(?:,| or)?(?: your partner(?:'s)?)?(?:,| or)? (?:a )?sperm donor|for sperm[^.!?]*)[^.!?]*[.!?]?\s*\[\[QUICK_REPLY:[^\]]*\]\]/gi;
-      if (spermQuestionPattern.test(finalContent)) {
+      // Pattern: matches sperm source questions WITH OR WITHOUT QR buttons
+      // Tier1 (Gemini) sometimes generates without QR buttons so we can't require them
+      const spermQuestionPattern = /[^.!?]*(?:will you be using your own(?: sperm)?(?:,| or)?(?: your partner(?:'s)?)?(?:,| or)? (?:a )?sperm donor|for sperm[^.!?]*|sperm[^.!?]*will you be)[^.!?]*[.!?]?(?:\s*\[\[QUICK_REPLY:[^\]]*\]\])?/gi;
+      const hasSpermQ = /will you be using your own(?: sperm)?|for sperm[^.!?]*(?:your own|donor)|sperm.*your own or a|using your own or a sperm/i.test(finalContent);
+      if (hasSpermQ) {
         // Auto-save sperm donor silently and strip the question
         try {
           if (userRecord?.parentAccountId) {
