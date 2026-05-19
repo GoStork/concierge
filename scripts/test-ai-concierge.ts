@@ -1,14 +1,22 @@
 /**
- * GoStork AI Concierge Automated Test Suite
+ * GoStork AI Concierge - Comprehensive Automated Test Suite
  *
- * Tests all biological permutations for every parent persona.
- * Creates throwaway users per test, deletes them after.
- * Generates an HTML report at scripts/test-results/report-<timestamp>.html
+ * 72 test cases covering all 5 personas and every biological permutation
+ * derived from the decision tree (decision-tree.html).
  *
  * Usage:
  *   TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-ai-concierge.ts
+ *   TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-ai-concierge.ts --persona=solo-man
+ *   TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-ai-concierge.ts --id=SM-01
  *
- * Requires the GoStork server to be running.
+ * Assertions per response:
+ *   - contains: text that MUST appear
+ *   - notContains: text that MUST NOT appear (wrong question for this persona)
+ *   - hasQR: must have at least one quick-reply button
+ *   - hasMatchCard: must have a rendered match card
+ *
+ * DB assertions after full flow:
+ *   - Verifies spermSource, eggSource, carrier, needsSurrogate, etc. match expected values
  */
 
 import * as fs from "fs";
@@ -20,983 +28,1835 @@ import { prisma } from "../server/db";
 const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:5001";
 const REPORT_DIR = path.join(__dirname, "test-results");
 const TEST_PASSWORD = "TestPass123!";
-const TIMEOUT_MS = 90_000; // 90s per message (Claude can be slow)
-const ADMIN_EMAIL = "eran.amir@gostork.com";
-const ADMIN_PASSWORD = process.env.TEST_ADMIN_PASSWORD || "";
+const MSG_TIMEOUT_MS = 90_000;
+const DELAY_BETWEEN_MSGS_MS = 600;
+
+// CLI filters
+const args = process.argv.slice(2);
+const filterPersona = args.find(a => a.startsWith("--persona="))?.split("=")[1];
+const filterId = args.find(a => a.startsWith("--id="))?.split("=")[1];
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface MessageAssertion {
-  /** Index of the AI message being asserted (0 = first AI response) */
-  aiMsgIndex: number;
-  contains?: string[];         // AI response must contain ALL of these
-  notContains?: string[];      // AI response must NOT contain any of these
-  hasQuickReplies?: boolean;   // must have at least one QR button
-  hasMatchCard?: boolean;      // must have a [[MATCH_CARD]] or rendered card
-  noQuickRepliesFor?: string[]; // none of these sperm/carrier options should appear
+interface Msg {
+  send: string;
+  /** Assertions on the AI response to THIS message */
+  assert?: {
+    contains?: string[];
+    notContains?: string[];
+    hasQR?: boolean;
+    hasMatchCard?: boolean;
+  };
 }
 
-interface DBAssertion {
+interface DBAssert {
   field: string;
   expected: string | boolean | number | null;
 }
 
-interface TestMessage {
-  send: string;               // message to send
-  assertions?: MessageAssertion; // optional assertions on THIS ai response
-}
-
 interface TestCase {
   id: string;
-  name: string;
   persona: string;
-  description: string;
-  /** Registered services the user signs up for */
+  name: string;
+  desc: string;
   interestedServices: string[];
-  /** Messages to send in order */
-  messages: TestMessage[];
-  /** DB field assertions after all messages complete */
-  dbAssertions: DBAssertion[];
+  messages: Msg[];
+  db: DBAssert[];
+}
+
+interface TurnResult {
+  content: string;
+  quickReplies: string[];
+  hasMatchCard: boolean;
+  sessionId: string | null;
 }
 
 interface TestResult {
-  testCase: TestCase;
+  tc: TestCase;
   passed: boolean;
   errors: string[];
-  transcript: { role: "user" | "ai"; content: string; assertions?: string[] }[];
+  transcript: { role: "user" | "ai"; content: string; notes?: string[] }[];
   durationMs: number;
-  userId?: string;
 }
 
-// ─── Test Case Definitions ────────────────────────────────────────────────────
+// ─── Common message blocks (composable) ─────────────────────────────────────
+
+const P0 = ["Yes, that's right", "Yes, makes sense!", "I understand, let's get started"];
+
+// Phase 1 identity openers
+const I_SOLO_MAN_STRAIGHT = ["Solo man", "No, I'm not LGBTQ+"];
+const I_SOLO_MAN_GAY      = ["Solo man", "Yes, I identify as LGBTQ+"];
+const I_SOLO_WOMAN        = ["Solo woman", "No, I'm not LGBTQ+"];
+const I_TWO_DADS          = ["Two dads"];
+const I_TWO_MOMS          = ["Two moms"];
+const I_MW_WOMAN          = ["A woman and a man", "No, we're not LGBTQ+"];  // woman speaking
+const I_MW_MAN            = ["A woman and a man", "No, we're not LGBTQ+"];  // man speaking (same answer, different framing perspective tested via DB assertions)
+
+// Step 0 - Clinic
+const CLINIC_NEED  = ["I need help finding a clinic"];
+const CLINIC_HAVE  = ["I already have a fertility clinic", "My IVF Clinic"];
+
+// Step 1 - Embryos
+const EMB_NO       = ["No, I don't have frozen embryos"];
+const EMB_WIP      = ["Working to create them"];
+const EMB_YES      = (count: string, tested: "Yes" | "No" | "I'm not sure") =>
+  [`Yes, I have ${count} frozen embryos`, count, tested];
+
+// Step 1c - Embryo conflict (registered for egg donation but has embryos)
+const EMB_CONFLICT_USE    = ["Use my existing embryos"];
+const EMB_CONFLICT_NEW    = ["Create new embryos with a fresh egg donor"];
+
+// Step 2 - Egg source
+const EGG_OWN     = ["I'll be using my own eggs"];
+const EGG_PARTNER = ["My partner's eggs"];
+const EGG_DONOR   = ["I need help finding an egg donor"];
+const EGG_HAVE    = ["I already have an egg donor"];
+
+// Step 3 - Sperm source
+const SPERM_OWN    = ["My own"];
+const SPERM_PART   = ["My partner's"];
+const SPERM_DONOR  = ["Donor sperm"];
+const SPERM_NEED   = ["I need help finding a sperm donor"];
+const SPERM_HAVE   = ["I already have a sperm donor"];
+
+// Step 3b - Sperm conflict (has embryos but registered for sperm donation)
+const SPERM_CONFLICT_USE  = ["Use my existing embryos"];
+const SPERM_CONFLICT_NEW  = ["Create new embryos with donor sperm"];
+
+// Step 4 - Carrier
+const CARRIER_ME       = ["I'll carry the pregnancy myself"];
+const CARRIER_PARTNER  = ["My partner will carry the pregnancy"];
+const CARRIER_SURROGATE = ["A gestational surrogate will carry the pregnancy"];
+
+// Step 4a - Surrogate help
+const SURR_NEED = ["I need help finding a surrogate"];
+const SURR_HAVE = ["I already have a surrogate"];
+
+// Phase 3 - Surrogate match cycle (D1-D3)
+const surrogateMatch = (country: string, termination: string, twins: string): Msg[] => [
+  { send: country },
+  { send: termination },
+  {
+    send: twins,
+    assert: { hasQR: true },
+  },
+  {
+    send: "Yes, I'm ready!",
+    assert: { hasMatchCard: true },
+  },
+];
+
+// Phase 3 - Agency match (international only - Colombia/Mexico)
+const agencyMatch = (country: string): Msg[] => [
+  { send: country },
+  { send: "Yes, I'm ready!", assert: { hasMatchCard: true } },
+];
+
+// Phase 3 - Egg donor match
+const eggDonorMatch: Msg[] = [
+  { send: "I prefer someone with brown eyes, college educated, healthy", assert: { hasMatchCard: true } },
+];
+
+// Phase 3 - Sperm donor match
+const spermDonorMatch: Msg[] = [
+  { send: "Open identity preferred, tall, athletic build", assert: { hasMatchCard: true } },
+  { send: "Open" },
+];
+
+// Phase 3 - Clinic match
+const clinicMatch: Msg[] = [
+  { send: "35" },  // A1 age
+  { send: "No" },  // A2 partner age (skip)
+  { send: "No" },  // A3 twins
+  { send: "First time" },  // A4 IVF experience
+  { send: "Success rates", assert: { hasMatchCard: true } }, // A5 priorities
+];
+
+// Helper: build assertions that certain sperm questions never appear
+const noSpermQ = { notContains: ["will you be using your own sperm", "for sperm, will you", "sperm donor or your own"] };
+const noEggQ   = { notContains: ["what's your plan for eggs", "using your own eggs or", "egg source"] };
+const noCarrierQ = { notContains: ["who will carry", "who is planning to carry", "who is carrying the pregnancy"] };
+
+// Helper to build messages from arrays (flattens strings into Msg objects)
+function msgs(...blocks: (string | string[] | Msg | Msg[])[]): Msg[] {
+  const result: Msg[] = [];
+  for (const block of blocks) {
+    if (typeof block === "string") {
+      result.push({ send: block });
+    } else if (Array.isArray(block)) {
+      for (const item of block) {
+        if (typeof item === "string") result.push({ send: item });
+        else result.push(item);
+      }
+    } else {
+      result.push(block as Msg);
+    }
+  }
+  return result;
+}
+
+// ─── Test Case Definitions - 72 total ────────────────────────────────────────
 
 const TEST_CASES: TestCase[] = [
+
   // ══════════════════════════════════════════════════════════
-  // SOLO MAN
+  // SOLO MAN (14 cases: SM-01 → SM-14)
+  // Rules: egg=always donor (skip Q), carrier=always surrogate (skip Q)
+  //        Ask: sperm source, sperm donor help, surrogate help, D1/D2/D3
   // ══════════════════════════════════════════════════════════
+
   {
-    id: "solo-man-own-sperm",
-    name: "Solo Man - Own Sperm + Donor Egg + Surrogate",
-    persona: "Solo Man",
-    description: "Single man using his own sperm, donor egg, gestational surrogate",
+    id: "SM-01", persona: "solo-man",
+    name: "SM-01: No embryos · Own sperm · Needs all services · USA · Pro-choice · Singleton",
+    desc: "Most common solo man path - own sperm, needs egg donor + clinic + surrogate",
     interestedServices: ["Surrogate", "Egg Donor"],
-    messages: [
-      { send: "Yes, that's right" },
-      { send: "Yes, makes sense!" },
-      { send: "I understand, let's get started" },
-      { send: "Solo man", assertions: { aiMsgIndex: 0, notContains: ["who will carry", "Are you hoping to carry"] } },
-      { send: "No, I'm not LGBTQ+" },
-      { send: "I need help finding a clinic" },
-      { send: "No, I don't have frozen embryos" },
-      {
-        send: "I need help finding an egg donor",
-        assertions: {
-          aiMsgIndex: 0,
-          notContains: ["sperm source", "will you be using your own sperm", "your partner's"],
-        },
-      },
-      { send: "My own" }, // sperm source
-      { send: "I need help finding a surrogate" },
-      { send: "USA" },
-      { send: "Pro-choice surrogate" },
-      { send: "Singleton only" },
-      {
-        send: "Yes, I'm ready!",
-        assertions: { aiMsgIndex: 0, hasMatchCard: true },
-      },
-    ],
-    dbAssertions: [
+    messages: msgs(
+      P0, I_SOLO_MAN_STRAIGHT, CLINIC_NEED, EMB_NO,
+      { send: "I need help finding an egg donor", assert: noSpermQ },
+      SPERM_OWN,
+      SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
+    ),
+    db: [
       { field: "spermSource", expected: "My sperm" },
       { field: "eggSource", expected: "Egg donor" },
       { field: "carrier", expected: "Gestational surrogate" },
       { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "SM-02", persona: "solo-man",
+    name: "SM-02: No embryos · Own sperm · Already has egg donor · USA · Pro-life · Twins",
+    desc: "Solo man with existing egg donor - egg match cycle skipped, surrogate only",
+    interestedServices: ["Surrogate"],
+    messages: msgs(
+      P0, I_SOLO_MAN_STRAIGHT, CLINIC_NEED, EMB_NO,
+      EGG_HAVE, SPERM_OWN, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-life surrogate", "Hoping for twins"),
+    ),
+    db: [
+      { field: "spermSource", expected: "My sperm" },
+      { field: "needsEggDonor", expected: false },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "SM-03", persona: "solo-man",
+    name: "SM-03: No embryos · Own sperm · Already has surrogate · Needs egg donor",
+    desc: "Solo man with existing surrogate - Phase 3 surrogate cycle skipped entirely",
+    interestedServices: ["Egg Donor"],
+    messages: msgs(
+      P0, I_SOLO_MAN_STRAIGHT, CLINIC_NEED, EMB_NO,
+      EGG_DONOR, SPERM_OWN, SURR_HAVE,
+      ...eggDonorMatch,
+    ),
+    db: [
+      { field: "spermSource", expected: "My sperm" },
+      { field: "needsEggDonor", expected: true },
+      { field: "needsSurrogate", expected: false },
+    ],
+  },
+
+  {
+    id: "SM-04", persona: "solo-man",
+    name: "SM-04: No embryos · Donor sperm · All services · USA · No preference",
+    desc: "Solo man embryo donation - needs sperm donor + egg donor + clinic + surrogate",
+    interestedServices: ["Surrogate", "Egg Donor", "Sperm Donor"],
+    messages: msgs(
+      P0, I_SOLO_MAN_STRAIGHT, CLINIC_NEED, EMB_NO,
+      EGG_DONOR, SPERM_DONOR, SPERM_NEED, SURR_NEED,
+      ...surrogateMatch("USA", "No preference", "No preference"),
+    ),
+    db: [
+      { field: "spermSource", expected: "Sperm donor" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "SM-05", persona: "solo-man",
+    name: "SM-05: No embryos · Donor sperm · Already has sperm donor · Colombia",
+    desc: "Solo man already has sperm donor - sperm match cycle skipped, Colombia international",
+    interestedServices: ["Surrogate", "Egg Donor"],
+    messages: msgs(
+      P0, I_SOLO_MAN_STRAIGHT, CLINIC_HAVE, EMB_NO,
+      EGG_DONOR, SPERM_DONOR, SPERM_HAVE, SURR_NEED,
+      ...agencyMatch("Colombia"),
+    ),
+    db: [
+      { field: "spermSource", expected: "Sperm donor" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "SM-06", persona: "solo-man",
+    name: "SM-06: No embryos · Donor sperm · Needs all · Mexico",
+    desc: "Solo man Mexico international path - searches surrogacy agencies (no D2 termination)",
+    interestedServices: ["Surrogate", "Egg Donor", "Sperm Donor"],
+    messages: msgs(
+      P0, I_SOLO_MAN_STRAIGHT, CLINIC_NEED, EMB_NO,
+      EGG_DONOR, SPERM_DONOR, SPERM_NEED, SURR_NEED,
+      ...agencyMatch("Mexico"),
+    ),
+    db: [
+      { field: "spermSource", expected: "Sperm donor" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "SM-07", persona: "solo-man",
+    name: "SM-07: No embryos · Own sperm · Mixed USA + Colombia",
+    desc: "Solo man selects both USA and Colombia - Path C mixed routing",
+    interestedServices: ["Surrogate", "Egg Donor"],
+    messages: msgs(
+      P0, I_SOLO_MAN_STRAIGHT, CLINIC_NEED, EMB_NO,
+      EGG_DONOR, SPERM_OWN, SURR_NEED,
+      { send: "USA, Colombia" },
+      { send: "Pro-choice surrogate" },
+      { send: "No preference", assert: { hasMatchCard: true } },
+    ),
+    db: [
+      { field: "spermSource", expected: "My sperm" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "SM-08", persona: "solo-man",
+    name: "SM-08: Has embryos (2, PGT-A tested) · Own sperm · Already has egg donor · Needs surrogate · USA",
+    desc: "Solo man with existing tested embryos - past-tense egg/sperm questions",
+    interestedServices: ["Surrogate"],
+    messages: msgs(
+      P0, I_SOLO_MAN_STRAIGHT, CLINIC_NEED,
+      ...EMB_YES("2", "Yes"), "I already have an egg donor",
+      "My own", SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
+    ),
+    db: [
+      { field: "hasEmbryos", expected: true },
+      { field: "spermSource", expected: "My sperm" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "SM-09", persona: "solo-man",
+    name: "SM-09: Has embryos (1, not tested) · Ship to Colombia · Already has clinic",
+    desc: "Solo man ships existing embryos internationally to Colombia",
+    interestedServices: ["Surrogate"],
+    messages: msgs(
+      P0, I_SOLO_MAN_STRAIGHT, CLINIC_HAVE,
+      ...EMB_YES("1", "No"), "I already have an egg donor",
+      "My own", SURR_NEED,
+      ...agencyMatch("Colombia"),
+    ),
+    db: [
+      { field: "hasEmbryos", expected: true },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "SM-10", persona: "solo-man",
+    name: "SM-10: Has embryos · Registered sperm donor · Step 3b → Use existing embryos",
+    desc: "Step 3b conflict: registered for sperm donation but has embryos - uses existing",
+    interestedServices: ["Surrogate", "Sperm Donor"],
+    messages: msgs(
+      P0, I_SOLO_MAN_STRAIGHT, CLINIC_NEED,
+      ...EMB_YES("3", "Yes"),
+      SPERM_CONFLICT_USE,
+      SURR_NEED,
+      ...surrogateMatch("USA", "No preference", "Singleton only"),
+    ),
+    db: [
+      { field: "hasEmbryos", expected: true },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "SM-11", persona: "solo-man",
+    name: "SM-11: Has embryos · Registered sperm donor · Step 3b → Create new embryos",
+    desc: "Step 3b conflict: creates new embryos with fresh sperm donor",
+    interestedServices: ["Surrogate", "Egg Donor", "Sperm Donor"],
+    messages: msgs(
+      P0, I_SOLO_MAN_STRAIGHT, CLINIC_NEED,
+      ...EMB_YES("2", "Yes"),
+      EMB_CONFLICT_NEW,
+      EGG_DONOR, SPERM_NEED, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
+    ),
+    db: [
+      { field: "hasEmbryos", expected: true },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "SM-12", persona: "solo-man",
+    name: "SM-12: No embryos · Own sperm · Needs all · USA · Surrogate age preference stated",
+    desc: "Age advisory fires when parent states max surrogate age (under 36)",
+    interestedServices: ["Surrogate", "Egg Donor"],
+    messages: msgs(
+      P0, I_SOLO_MAN_STRAIGHT, CLINIC_NEED, EMB_NO,
+      EGG_DONOR, SPERM_OWN, SURR_NEED,
+      { send: "USA", assert: { contains: ["150,000", "65,000"] } },
+      "Pro-choice surrogate",
+      "not older than 30",
+      { send: "Yes, confirm under 30", assert: { hasMatchCard: true } },
+    ),
+    db: [
+      { field: "spermSource", expected: "My sperm" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "SM-13", persona: "solo-man",
+    name: "SM-13: LGBTQ+ · No embryos · Own sperm · Needs all · USA · Twins",
+    desc: "Gay solo man - isLGBTQ=true, openToSameSexCouple filter on surrogate search",
+    interestedServices: ["Surrogate", "Egg Donor"],
+    messages: msgs(
+      P0, I_SOLO_MAN_GAY, CLINIC_NEED, EMB_NO,
+      EGG_DONOR, SPERM_OWN, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "Hoping for twins"),
+    ),
+    db: [
+      { field: "isLGBTQ", expected: true },
+      { field: "spermSource", expected: "My sperm" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "SM-14", persona: "solo-man",
+    name: "SM-14: No embryos · Already has clinic · Donor sperm · Needs egg donor + surrogate · Colombia",
+    desc: "Solo man with clinic already - clinic match cycle skipped",
+    interestedServices: ["Surrogate", "Egg Donor", "Sperm Donor"],
+    messages: msgs(
+      P0, I_SOLO_MAN_STRAIGHT, CLINIC_HAVE, EMB_NO,
+      EGG_DONOR, SPERM_DONOR, SPERM_NEED, SURR_NEED,
+      ...agencyMatch("Colombia"),
+    ),
+    db: [
+      { field: "spermSource", expected: "Sperm donor" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  // ══════════════════════════════════════════════════════════
+  // SOLO WOMAN (14 cases: SW-01 → SW-14)
+  // Rules: sperm=always donor (NEVER ask), ask egg source, ask carrier
+  // ══════════════════════════════════════════════════════════
+
+  {
+    id: "SW-01", persona: "solo-woman",
+    name: "SW-01: No embryos · Own eggs · Self carry · Needs sperm donor · Has clinic",
+    desc: "Simplest solo woman path - IUI/IVF with own eggs, self-carry, sperm donor",
+    interestedServices: ["Sperm Donor"],
+    messages: msgs(
+      P0, I_SOLO_WOMAN, CLINIC_HAVE,
+      EMB_NO,
+      { send: "I'll be using my own eggs", assert: noSpermQ },
+      CARRIER_ME,
+      SPERM_NEED,
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "spermSource", expected: "Sperm donor" },
+      { field: "eggSource", expected: "My eggs" },
+      { field: "carrier", expected: "Me" },
+    ],
+  },
+
+  {
+    id: "SW-02", persona: "solo-woman",
+    name: "SW-02: No embryos · Own eggs · Self carry · Already has sperm donor · Needs clinic",
+    desc: "Solo woman already has sperm donor - sperm match cycle entirely skipped",
+    interestedServices: [],
+    messages: msgs(
+      P0, I_SOLO_WOMAN, CLINIC_NEED,
+      EMB_NO,
+      { send: "I'll be using my own eggs", assert: noSpermQ },
+      CARRIER_ME, SPERM_HAVE,
+      ...clinicMatch,
+    ),
+    db: [
+      { field: "spermSource", expected: "Sperm donor" },
+      { field: "eggSource", expected: "My eggs" },
+      { field: "carrier", expected: "Me" },
+    ],
+  },
+
+  {
+    id: "SW-03", persona: "solo-woman",
+    name: "SW-03: No embryos · Donor eggs · Self carry · Needs egg donor + sperm donor · Has clinic",
+    desc: "Embryo donation - solo woman with donor eggs and donor sperm, self-carry",
+    interestedServices: ["Egg Donor", "Sperm Donor"],
+    messages: msgs(
+      P0, I_SOLO_WOMAN, CLINIC_HAVE,
+      EMB_NO,
+      { send: "I need help finding an egg donor", assert: noSpermQ },
+      CARRIER_ME, SPERM_NEED,
+      ...eggDonorMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "spermSource", expected: "Sperm donor" },
+      { field: "eggSource", expected: "Egg donor" },
+      { field: "carrier", expected: "Me" },
       { field: "needsEggDonor", expected: true },
     ],
   },
+
   {
-    id: "solo-man-donor-sperm",
-    name: "Solo Man - Donor Sperm + Donor Egg + Surrogate (Embryo Donation)",
-    persona: "Solo Man",
-    description: "Embryo donation - both sperm and egg from donors, gestational surrogate",
-    interestedServices: ["Surrogate", "Egg Donor", "Sperm Donor"],
-    messages: [
-      { send: "Yes, that's right" },
-      { send: "Yes, makes sense!" },
-      { send: "I understand, let's get started" },
-      { send: "Solo man" },
-      { send: "No, I'm not LGBTQ+" },
-      { send: "I need help finding a clinic" },
-      { send: "No, I don't have frozen embryos" },
-      { send: "I need help finding an egg donor" },
-      { send: "Donor sperm" },
-      { send: "I need help finding a surrogate" },
-      { send: "USA" },
-      { send: "Pro-choice surrogate" },
-      { send: "Singleton only" },
-      { send: "Yes, I'm ready!", assertions: { aiMsgIndex: 0, hasMatchCard: true } },
-    ],
-    dbAssertions: [
+    id: "SW-04", persona: "solo-woman",
+    name: "SW-04: No embryos · Donor eggs · Already has egg donor · Self carry · Needs sperm donor · Needs clinic",
+    desc: "Solo woman already has egg donor - egg match cycle skipped",
+    interestedServices: ["Sperm Donor"],
+    messages: msgs(
+      P0, I_SOLO_WOMAN, CLINIC_NEED,
+      EMB_NO,
+      { send: "I already have an egg donor", assert: noSpermQ },
+      CARRIER_ME, SPERM_NEED,
+      ...clinicMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
       { field: "spermSource", expected: "Sperm donor" },
       { field: "eggSource", expected: "Egg donor" },
-      { field: "carrier", expected: "Gestational surrogate" },
+      { field: "needsEggDonor", expected: false },
     ],
   },
 
-  // ══════════════════════════════════════════════════════════
-  // SOLO WOMAN
-  // ══════════════════════════════════════════════════════════
   {
-    id: "solo-woman-self-carry-own-eggs",
-    name: "Solo Woman - Self Carry + Own Eggs + Sperm Donor",
-    persona: "Solo Woman",
-    description: "Single woman carrying herself, using her own eggs and donor sperm",
-    interestedServices: ["Sperm Donor"],
-    messages: [
-      { send: "Yes, that's right" },
-      { send: "Yes, makes sense!" },
-      { send: "I understand, let's get started" },
-      {
-        send: "Solo woman",
-        assertions: {
-          aiMsgIndex: 0,
-          notContains: ["will you be using your own sperm", "sperm donor or your own", "for sperm"],
-        },
-      },
-      { send: "No, I'm not LGBTQ+" },
-      { send: "I already have a fertility clinic" },
-      { send: "IVF Clinic Test" },
-      { send: "No, I don't have frozen embryos" },
-      {
-        send: "I'll be using my own eggs",
-        assertions: {
-          aiMsgIndex: 0,
-          notContains: ["will you be using your own sperm", "for sperm", "sperm donor"],
-        },
-      },
-      // Sperm question should be SKIPPED - next should be about carrier or sperm donor help
-      { send: "I'll carry the pregnancy myself" },
-      { send: "I need help finding a sperm donor" },
-      { send: "Yes, I'm ready!", assertions: { aiMsgIndex: 0, hasMatchCard: true } },
-    ],
-    dbAssertions: [
-      { field: "spermSource", expected: "Sperm donor" },
-      { field: "eggSource", expected: "My eggs" },
-      { field: "carrier", expected: "Me" },
-    ],
-  },
-  {
-    id: "solo-woman-self-carry-donor-eggs",
-    name: "Solo Woman - Self Carry + Donor Eggs + Sperm Donor",
-    persona: "Solo Woman",
-    description: "Single woman carrying herself, using donor eggs and donor sperm (embryo donation)",
-    interestedServices: ["Egg Donor", "Sperm Donor"],
-    messages: [
-      { send: "Yes, that's right" },
-      { send: "Yes, makes sense!" },
-      { send: "I understand, let's get started" },
-      { send: "Solo woman" },
-      { send: "No, I'm not LGBTQ+" },
-      { send: "I already have a fertility clinic" },
-      { send: "IVF Clinic Test" },
-      { send: "No, I don't have frozen embryos" },
-      {
-        send: "I need help finding an egg donor",
-        assertions: {
-          aiMsgIndex: 0,
-          notContains: ["will you be using your own sperm", "for sperm"],
-        },
-      },
-      { send: "I'll carry the pregnancy myself" },
-      { send: "I need help finding a sperm donor" },
-      { send: "Yes, I'm ready!", assertions: { aiMsgIndex: 0, hasMatchCard: true } },
-    ],
-    dbAssertions: [
-      { field: "spermSource", expected: "Sperm donor" },
-      { field: "eggSource", expected: "Egg donor" },
-      { field: "carrier", expected: "Me" },
-    ],
-  },
-  {
-    id: "solo-woman-surrogate-own-eggs",
-    name: "Solo Woman - Surrogate + Own Eggs + Sperm Donor",
-    persona: "Solo Woman",
-    description: "Single woman using surrogate, her own eggs, and donor sperm",
+    id: "SW-05", persona: "solo-woman",
+    name: "SW-05: No embryos · Own eggs · Surrogate · Needs surrogate + sperm donor + clinic · USA · Pro-choice · Singleton",
+    desc: "Solo woman with surrogate - all services needed",
     interestedServices: ["Surrogate", "Sperm Donor"],
-    messages: [
-      { send: "Yes, that's right" },
-      { send: "Yes, makes sense!" },
-      { send: "I understand, let's get started" },
-      { send: "Solo woman" },
-      { send: "No, I'm not LGBTQ+" },
-      { send: "I already have a fertility clinic" },
-      { send: "IVF Clinic Test" },
-      { send: "No, I don't have frozen embryos" },
-      {
-        send: "I'll be using my own eggs",
-        assertions: {
-          aiMsgIndex: 0,
-          notContains: ["will you be using your own sperm", "for sperm"],
-        },
-      },
-      { send: "A gestational surrogate will carry the pregnancy" },
-      { send: "I need help finding a surrogate" },
-      { send: "USA" },
-      { send: "Pro-choice surrogate" },
-      { send: "Singleton only" },
-      { send: "Yes, I'm ready!", assertions: { aiMsgIndex: 0, hasMatchCard: true } },
-    ],
-    dbAssertions: [
+    messages: msgs(
+      P0, I_SOLO_WOMAN, CLINIC_NEED,
+      EMB_NO,
+      { send: "I'll be using my own eggs", assert: noSpermQ },
+      CARRIER_SURROGATE, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
+      ...spermDonorMatch,
+    ),
+    db: [
       { field: "spermSource", expected: "Sperm donor" },
       { field: "eggSource", expected: "My eggs" },
       { field: "carrier", expected: "Gestational surrogate" },
       { field: "needsSurrogate", expected: true },
     ],
   },
-  {
-    id: "solo-woman-surrogate-donor-eggs",
-    name: "Solo Woman - Surrogate + Donor Eggs + Sperm Donor",
-    persona: "Solo Woman",
-    description: "Single woman using surrogate, donor eggs, and donor sperm",
-    interestedServices: ["Surrogate", "Egg Donor", "Sperm Donor"],
-    messages: [
-      { send: "Yes, that's right" },
-      { send: "Yes, makes sense!" },
-      { send: "I understand, let's get started" },
-      { send: "Solo woman" },
-      { send: "No, I'm not LGBTQ+" },
-      { send: "I already have a fertility clinic" },
-      { send: "IVF Clinic Test" },
-      { send: "No, I don't have frozen embryos" },
-      {
-        send: "I need help finding an egg donor",
-        assertions: {
-          aiMsgIndex: 0,
-          notContains: ["will you be using your own sperm", "for sperm"],
-        },
-      },
-      { send: "A gestational surrogate will carry the pregnancy" },
-      { send: "I need help finding a surrogate" },
-      { send: "USA" },
-      { send: "Pro-choice surrogate" },
-      { send: "Singleton only" },
-      { send: "Yes, I'm ready!", assertions: { aiMsgIndex: 0, hasMatchCard: true } },
-    ],
-    dbAssertions: [
-      { field: "spermSource", expected: "Sperm donor" },
-      { field: "eggSource", expected: "Egg donor" },
-      { field: "carrier", expected: "Gestational surrogate" },
-    ],
-  },
 
-  // ══════════════════════════════════════════════════════════
-  // MAN & WOMAN COUPLE
-  // ══════════════════════════════════════════════════════════
   {
-    id: "mw-couple-female-carries-own-eggs-own-sperm",
-    name: "Man & Woman - Female Carries + Her Eggs + His Sperm",
-    persona: "Man & Woman Couple",
-    description: "Opposite-sex couple, female partner carries, uses her eggs and his sperm",
-    interestedServices: [],
-    messages: [
-      { send: "Yes, that's right" },
-      { send: "Yes, makes sense!" },
-      { send: "I understand, let's get started" },
-      { send: "A woman and a man" },
-      { send: "No, we're not LGBTQ+" },
-      { send: "I need help finding a clinic" },
-      { send: "No, we don't have frozen embryos" },
-      { send: "Her own eggs" },
-      { send: "His own" },
-      { send: "She will carry the pregnancy" },
-      { send: "Yes, I'm ready!", assertions: { aiMsgIndex: 0, hasMatchCard: true } },
-    ],
-    dbAssertions: [
-      { field: "spermSource", expected: "My partner's sperm" },
-      { field: "eggSource", expected: "My eggs" },
-      { field: "carrier", expected: "Me" },
-    ],
-  },
-  {
-    id: "mw-couple-female-carries-donor-eggs-own-sperm",
-    name: "Man & Woman - Female Carries + Donor Eggs + His Sperm",
-    persona: "Man & Woman Couple",
-    description: "Opposite-sex couple, female carries, donor eggs, his sperm",
-    interestedServices: ["Egg Donor"],
-    messages: [
-      { send: "Yes, that's right" },
-      { send: "Yes, makes sense!" },
-      { send: "I understand, let's get started" },
-      { send: "A woman and a man" },
-      { send: "No, we're not LGBTQ+" },
-      { send: "I need help finding a clinic" },
-      { send: "No, we don't have frozen embryos" },
-      { send: "I need help finding an egg donor" },
-      { send: "His own" },
-      { send: "She will carry the pregnancy" },
-      { send: "Yes, I'm ready!", assertions: { aiMsgIndex: 0, hasMatchCard: true } },
-    ],
-    dbAssertions: [
-      { field: "spermSource", expected: "My partner's sperm" },
-      { field: "eggSource", expected: "Egg donor" },
-      { field: "carrier", expected: "Me" },
-    ],
-  },
-  {
-    id: "mw-couple-female-carries-own-eggs-donor-sperm",
-    name: "Man & Woman - Female Carries + Her Eggs + Donor Sperm",
-    persona: "Man & Woman Couple",
-    description: "Opposite-sex couple, female carries, her own eggs, donor sperm",
+    id: "SW-06", persona: "solo-woman",
+    name: "SW-06: No embryos · Own eggs · Already has surrogate · Needs sperm donor · Needs clinic",
+    desc: "Solo woman already has surrogate - surrogate Phase 3 entirely skipped",
     interestedServices: ["Sperm Donor"],
-    messages: [
-      { send: "Yes, that's right" },
-      { send: "Yes, makes sense!" },
-      { send: "I understand, let's get started" },
-      { send: "A woman and a man" },
-      { send: "No, we're not LGBTQ+" },
-      { send: "I need help finding a clinic" },
-      { send: "No, we don't have frozen embryos" },
-      { send: "Her own eggs" },
-      { send: "Donor sperm" },
-      { send: "She will carry the pregnancy" },
-      { send: "Yes, I'm ready!", assertions: { aiMsgIndex: 0, hasMatchCard: true } },
-    ],
-    dbAssertions: [
+    messages: msgs(
+      P0, I_SOLO_WOMAN, CLINIC_NEED,
+      EMB_NO,
+      { send: "I'll be using my own eggs", assert: noSpermQ },
+      CARRIER_SURROGATE, SURR_HAVE,
+      ...clinicMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
       { field: "spermSource", expected: "Sperm donor" },
       { field: "eggSource", expected: "My eggs" },
-      { field: "carrier", expected: "Me" },
+      { field: "needsSurrogate", expected: false },
     ],
   },
+
   {
-    id: "mw-couple-surrogate-own-eggs-own-sperm",
-    name: "Man & Woman - Surrogate + Her Eggs + His Sperm",
-    persona: "Man & Woman Couple",
-    description: "Opposite-sex couple using surrogate with their own genetics",
-    interestedServices: ["Surrogate"],
-    messages: [
-      { send: "Yes, that's right" },
-      { send: "Yes, makes sense!" },
-      { send: "I understand, let's get started" },
-      { send: "A woman and a man" },
-      { send: "No, we're not LGBTQ+" },
-      { send: "I need help finding a clinic" },
-      { send: "No, we don't have frozen embryos" },
-      { send: "Her own eggs" },
-      { send: "His own" },
-      { send: "A gestational surrogate will carry the pregnancy" },
-      { send: "I need help finding a surrogate" },
-      { send: "USA" },
-      { send: "Pro-choice surrogate" },
-      { send: "Singleton only" },
-      { send: "Yes, I'm ready!", assertions: { aiMsgIndex: 0, hasMatchCard: true } },
-    ],
-    dbAssertions: [
-      { field: "spermSource", expected: "My partner's sperm" },
-      { field: "eggSource", expected: "My eggs" },
+    id: "SW-07", persona: "solo-woman",
+    name: "SW-07: No embryos · Donor eggs · Surrogate · Needs all three · USA · Pro-choice · Twins",
+    desc: "Solo woman full embryo donation + surrogate - all services run",
+    interestedServices: ["Surrogate", "Egg Donor", "Sperm Donor"],
+    messages: msgs(
+      P0, I_SOLO_WOMAN, CLINIC_HAVE,
+      EMB_NO,
+      { send: "I need help finding an egg donor", assert: noSpermQ },
+      CARRIER_SURROGATE, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "Hoping for twins"),
+      ...eggDonorMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "spermSource", expected: "Sperm donor" },
+      { field: "eggSource", expected: "Egg donor" },
       { field: "carrier", expected: "Gestational surrogate" },
       { field: "needsSurrogate", expected: true },
     ],
   },
+
   {
-    id: "mw-couple-surrogate-donor-eggs-donor-sperm",
-    name: "Man & Woman - Surrogate + Donor Eggs + Donor Sperm",
-    persona: "Man & Woman Couple",
-    description: "Opposite-sex couple using surrogate and full embryo donation",
+    id: "SW-08", persona: "solo-woman",
+    name: "SW-08: No embryos · Donor eggs · Surrogate · All services · Colombia",
+    desc: "Solo woman Colombia path - agency search instead of individual surrogate",
     interestedServices: ["Surrogate", "Egg Donor", "Sperm Donor"],
-    messages: [
-      { send: "Yes, that's right" },
-      { send: "Yes, makes sense!" },
-      { send: "I understand, let's get started" },
-      { send: "A woman and a man" },
-      { send: "No, we're not LGBTQ+" },
-      { send: "I need help finding a clinic" },
-      { send: "No, we don't have frozen embryos" },
-      { send: "I need help finding an egg donor" },
-      { send: "Donor sperm" },
-      { send: "A gestational surrogate will carry the pregnancy" },
-      { send: "I need help finding a surrogate" },
-      { send: "USA" },
-      { send: "Pro-choice surrogate" },
-      { send: "Singleton only" },
-      { send: "Yes, I'm ready!", assertions: { aiMsgIndex: 0, hasMatchCard: true } },
+    messages: msgs(
+      P0, I_SOLO_WOMAN, CLINIC_NEED,
+      EMB_NO,
+      { send: "I need help finding an egg donor", assert: noSpermQ },
+      CARRIER_SURROGATE, SURR_NEED,
+      ...agencyMatch("Colombia"),
+      ...eggDonorMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "needsSurrogate", expected: true },
     ],
-    dbAssertions: [
+  },
+
+  {
+    id: "SW-09", persona: "solo-woman",
+    name: "SW-09: Has embryos (2, tested) · Own eggs · Self carry · Has clinic",
+    desc: "Solo woman with existing tested embryos, self-carry - past-tense questions",
+    interestedServices: [],
+    messages: msgs(
+      P0, I_SOLO_WOMAN, CLINIC_HAVE,
+      ...EMB_YES("2", "Yes"),
+      { send: "My own eggs", assert: noSpermQ },
+      CARRIER_ME,
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "hasEmbryos", expected: true },
+      { field: "eggSource", expected: "My eggs" },
+      { field: "carrier", expected: "Me" },
+    ],
+  },
+
+  {
+    id: "SW-10", persona: "solo-woman",
+    name: "SW-10: Has embryos · Step 1c fires · Uses existing · Surrogate · USA · Pro-life",
+    desc: "Step 1c: registered for egg donation but has embryos - uses existing embryos",
+    interestedServices: ["Surrogate", "Egg Donor"],
+    messages: msgs(
+      P0, I_SOLO_WOMAN, CLINIC_NEED,
+      ...EMB_YES("3", "Yes"),
+      EMB_CONFLICT_USE,
+      CARRIER_SURROGATE, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-life surrogate", "Singleton only"),
+    ),
+    db: [
+      { field: "hasEmbryos", expected: true },
+      { field: "needsEggDonor", expected: false },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "SW-11", persona: "solo-woman",
+    name: "SW-11: Has embryos · Step 1c → Create new embryos · Surrogate · USA",
+    desc: "Step 1c: creates new embryos with fresh egg donor, needs surrogate",
+    interestedServices: ["Surrogate", "Egg Donor"],
+    messages: msgs(
+      P0, I_SOLO_WOMAN, CLINIC_NEED,
+      ...EMB_YES("2", "Yes"),
+      EMB_CONFLICT_NEW,
+      EGG_DONOR,
+      CARRIER_SURROGATE, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "No preference"),
+      ...eggDonorMatch,
+    ),
+    db: [
+      { field: "hasEmbryos", expected: true },
+      { field: "needsEggDonor", expected: true },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "SW-12", persona: "solo-woman",
+    name: "SW-12: No embryos · Own eggs · Surrogate · USA · No preference termination + twins",
+    desc: "Solo woman verifying no-preference answers on D2 and D3",
+    interestedServices: ["Surrogate", "Sperm Donor"],
+    messages: msgs(
+      P0, I_SOLO_WOMAN, CLINIC_NEED, EMB_NO,
+      { send: "I'll be using my own eggs", assert: noSpermQ },
+      CARRIER_SURROGATE, SURR_NEED,
+      ...surrogateMatch("USA", "No preference", "No preference"),
+    ),
+    db: [
       { field: "spermSource", expected: "Sperm donor" },
-      { field: "eggSource", expected: "Egg donor" },
-      { field: "carrier", expected: "Gestational surrogate" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "SW-13", persona: "solo-woman",
+    name: "SW-13: No embryos · Donor eggs · Surrogate · Mexico",
+    desc: "Solo woman Mexico path - international agency card, D2 termination skipped",
+    interestedServices: ["Surrogate", "Egg Donor", "Sperm Donor"],
+    messages: msgs(
+      P0, I_SOLO_WOMAN, CLINIC_HAVE, EMB_NO,
+      { send: "I need help finding an egg donor", assert: noSpermQ },
+      CARRIER_SURROGATE, SURR_NEED,
+      ...agencyMatch("Mexico"),
+      ...eggDonorMatch,
+    ),
+    db: [
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "SW-14", persona: "solo-woman",
+    name: "SW-14: LGBTQ+ · No embryos · Own eggs · Self carry · Sperm donor · Needs clinic",
+    desc: "LGBTQ+ solo woman - isLGBTQ saved, otherwise same flow",
+    interestedServices: ["Sperm Donor"],
+    messages: msgs(
+      P0,
+      ["Solo woman", "Yes, I identify as LGBTQ+"],
+      CLINIC_NEED, EMB_NO,
+      { send: "I'll be using my own eggs", assert: noSpermQ },
+      CARRIER_ME, SPERM_NEED,
+      ...clinicMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "isLGBTQ", expected: true },
+      { field: "spermSource", expected: "Sperm donor" },
+      { field: "carrier", expected: "Me" },
     ],
   },
 
   // ══════════════════════════════════════════════════════════
-  // TWO DADS
+  // TWO DADS (12 cases: TD-01 → TD-12)
+  // Rules: egg=always donor (skip Q), carrier=always surrogate (skip Q)
+  //        Ask: sperm source (my own / partner's / donor), surrogate help, D1/D2/D3
   // ══════════════════════════════════════════════════════════
+
   {
-    id: "two-dads-own-sperm",
-    name: "Two Dads - Donor Egg + His Own Sperm + Surrogate",
-    persona: "Two Dads",
-    description: "Gay male couple, one partner's sperm, donor egg, gestational surrogate",
+    id: "TD-01", persona: "two-dads",
+    name: "TD-01: No embryos · My own sperm · Needs egg donor + surrogate · Has clinic · USA · Pro-choice · Singleton",
+    desc: "Base two-dads path - own sperm, USA surrogate",
     interestedServices: ["Surrogate", "Egg Donor"],
-    messages: [
-      { send: "Yes, that's right" },
-      { send: "Yes, makes sense!" },
-      { send: "I understand, let's get started" },
-      { send: "Two dads" },
-      { send: "I need help finding a clinic" },
-      { send: "No, we don't have frozen embryos" },
-      {
-        send: "I need help finding an egg donor",
-        assertions: {
-          aiMsgIndex: 0,
-          notContains: ["will you be using your own eggs", "egg source"],
-        },
-      },
-      { send: "My own" },
-      { send: "I need help finding a surrogate" },
-      { send: "USA" },
-      { send: "Pro-choice surrogate" },
-      { send: "Singleton only" },
-      { send: "Yes, I'm ready!", assertions: { aiMsgIndex: 0, hasMatchCard: true } },
-    ],
-    dbAssertions: [
+    messages: msgs(
+      P0, I_TWO_DADS, CLINIC_HAVE, EMB_NO,
+      { send: "I need help finding an egg donor", assert: noCarrierQ },
+      SPERM_OWN, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
+      ...eggDonorMatch,
+    ),
+    db: [
       { field: "spermSource", expected: "My sperm" },
       { field: "eggSource", expected: "Egg donor" },
       { field: "carrier", expected: "Gestational surrogate" },
+      { field: "isLGBTQ", expected: true },
+      { field: "sameSexCouple", expected: true },
     ],
   },
+
   {
-    id: "two-dads-partner-sperm",
-    name: "Two Dads - Donor Egg + Partner Sperm + Surrogate",
-    persona: "Two Dads",
-    description: "Gay male couple, partner's sperm, donor egg, gestational surrogate",
+    id: "TD-02", persona: "two-dads",
+    name: "TD-02: No embryos · Partner's sperm · Needs all · USA · Pro-choice · Twins",
+    desc: "Two dads with partner's sperm - verifies partner's sperm option available",
     interestedServices: ["Surrogate", "Egg Donor"],
-    messages: [
-      { send: "Yes, that's right" },
-      { send: "Yes, makes sense!" },
-      { send: "I understand, let's get started" },
-      { send: "Two dads" },
-      { send: "I need help finding a clinic" },
-      { send: "No, we don't have frozen embryos" },
-      { send: "I need help finding an egg donor" },
-      { send: "My partner's" },
-      { send: "I need help finding a surrogate" },
-      { send: "USA" },
-      { send: "Pro-choice surrogate" },
-      { send: "Singleton only" },
-      { send: "Yes, I'm ready!", assertions: { aiMsgIndex: 0, hasMatchCard: true } },
-    ],
-    dbAssertions: [
+    messages: msgs(
+      P0, I_TWO_DADS, CLINIC_NEED, EMB_NO,
+      EGG_DONOR, SPERM_PART, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "Hoping for twins"),
+      ...eggDonorMatch,
+    ),
+    db: [
       { field: "spermSource", expected: "My partner's sperm" },
-      { field: "eggSource", expected: "Egg donor" },
-      { field: "carrier", expected: "Gestational surrogate" },
+      { field: "needsSurrogate", expected: true },
     ],
   },
+
   {
-    id: "two-dads-donor-sperm",
-    name: "Two Dads - Donor Egg + Donor Sperm + Surrogate (Embryo Donation)",
-    persona: "Two Dads",
-    description: "Gay male couple, full embryo donation, gestational surrogate",
+    id: "TD-03", persona: "two-dads",
+    name: "TD-03: No embryos · Donor sperm · All services · USA · Pro-choice · Singleton",
+    desc: "Two dads embryo donation - all donor, all services",
     interestedServices: ["Surrogate", "Egg Donor", "Sperm Donor"],
-    messages: [
-      { send: "Yes, that's right" },
-      { send: "Yes, makes sense!" },
-      { send: "I understand, let's get started" },
-      { send: "Two dads" },
-      { send: "I need help finding a clinic" },
-      { send: "No, we don't have frozen embryos" },
-      { send: "I need help finding an egg donor" },
-      { send: "Donor sperm" },
-      { send: "I need help finding a surrogate" },
-      { send: "USA" },
-      { send: "Pro-choice surrogate" },
-      { send: "Singleton only" },
-      { send: "Yes, I'm ready!", assertions: { aiMsgIndex: 0, hasMatchCard: true } },
-    ],
-    dbAssertions: [
+    messages: msgs(
+      P0, I_TWO_DADS, CLINIC_NEED, EMB_NO,
+      EGG_DONOR, SPERM_DONOR, SPERM_NEED, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
+      ...eggDonorMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
       { field: "spermSource", expected: "Sperm donor" },
-      { field: "eggSource", expected: "Egg donor" },
-      { field: "carrier", expected: "Gestational surrogate" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "TD-04", persona: "two-dads",
+    name: "TD-04: No embryos · Donor sperm · Already has sperm donor · Needs egg donor + surrogate · Colombia",
+    desc: "Two dads already have sperm donor - sperm match skipped, Colombia international",
+    interestedServices: ["Surrogate", "Egg Donor"],
+    messages: msgs(
+      P0, I_TWO_DADS, CLINIC_HAVE, EMB_NO,
+      EGG_DONOR, SPERM_DONOR, SPERM_HAVE, SURR_NEED,
+      ...agencyMatch("Colombia"),
+      ...eggDonorMatch,
+    ),
+    db: [
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "TD-05", persona: "two-dads",
+    name: "TD-05: No embryos · My own sperm · Already has egg donor · USA · Pro-life · No preference twins",
+    desc: "Two dads with existing egg donor - egg match skipped, pro-life surrogate",
+    interestedServices: ["Surrogate"],
+    messages: msgs(
+      P0, I_TWO_DADS, CLINIC_NEED, EMB_NO,
+      EGG_HAVE, SPERM_OWN, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-life surrogate", "No preference"),
+    ),
+    db: [
+      { field: "spermSource", expected: "My sperm" },
+      { field: "needsEggDonor", expected: false },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "TD-06", persona: "two-dads",
+    name: "TD-06: No embryos · My own sperm · Needs egg donor · Already has surrogate",
+    desc: "Two dads already have surrogate - Phase 3 D-cycle skipped entirely",
+    interestedServices: ["Egg Donor"],
+    messages: msgs(
+      P0, I_TWO_DADS, CLINIC_NEED, EMB_NO,
+      EGG_DONOR, SPERM_OWN, SURR_HAVE,
+      ...clinicMatch,
+      ...eggDonorMatch,
+    ),
+    db: [
+      { field: "needsSurrogate", expected: false },
+      { field: "needsEggDonor", expected: true },
+    ],
+  },
+
+  {
+    id: "TD-07", persona: "two-dads",
+    name: "TD-07: Has embryos (2, tested) · My own sperm · Needs surrogate · USA",
+    desc: "Two dads with existing tested embryos - past-tense sperm question",
+    interestedServices: ["Surrogate"],
+    messages: msgs(
+      P0, I_TWO_DADS, CLINIC_NEED,
+      ...EMB_YES("2", "Yes"),
+      "My own", SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
+    ),
+    db: [
+      { field: "hasEmbryos", expected: true },
+      { field: "spermSource", expected: "My sperm" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "TD-08", persona: "two-dads",
+    name: "TD-08: Has embryos (3) · Partner's sperm · Needs surrogate · Colombia",
+    desc: "Two dads ship existing embryos with partner's sperm to Colombia",
+    interestedServices: ["Surrogate"],
+    messages: msgs(
+      P0, I_TWO_DADS, CLINIC_HAVE,
+      ...EMB_YES("3", "Yes"),
+      "My partner's", SURR_NEED,
+      ...agencyMatch("Colombia"),
+    ),
+    db: [
+      { field: "hasEmbryos", expected: true },
+      { field: "spermSource", expected: "My partner's sperm" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "TD-09", persona: "two-dads",
+    name: "TD-09: Has embryos · Registered sperm donor · Step 3b → Use existing",
+    desc: "Step 3b conflict for two dads - chooses to use existing embryos",
+    interestedServices: ["Surrogate", "Sperm Donor"],
+    messages: msgs(
+      P0, I_TWO_DADS, CLINIC_NEED,
+      ...EMB_YES("2", "Yes"),
+      SPERM_CONFLICT_USE,
+      SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
+    ),
+    db: [
+      { field: "hasEmbryos", expected: true },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "TD-10", persona: "two-dads",
+    name: "TD-10: No embryos · Partner's sperm · Needs egg donor + surrogate · Mexico",
+    desc: "Two dads Mexico international path with partner's sperm",
+    interestedServices: ["Surrogate", "Egg Donor"],
+    messages: msgs(
+      P0, I_TWO_DADS, CLINIC_HAVE, EMB_NO,
+      EGG_DONOR, SPERM_PART, SURR_NEED,
+      ...agencyMatch("Mexico"),
+      ...eggDonorMatch,
+    ),
+    db: [
+      { field: "spermSource", expected: "My partner's sperm" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "TD-11", persona: "two-dads",
+    name: "TD-11: No embryos · My own sperm · Mixed USA + Colombia · Twins",
+    desc: "Two dads Path C mixed countries with twins preference",
+    interestedServices: ["Surrogate", "Egg Donor"],
+    messages: msgs(
+      P0, I_TWO_DADS, CLINIC_NEED, EMB_NO,
+      EGG_DONOR, SPERM_OWN, SURR_NEED,
+      { send: "USA, Colombia" },
+      { send: "Pro-choice surrogate" },
+      { send: "Hoping for twins", assert: { hasMatchCard: true } },
+    ),
+    db: [
+      { field: "spermSource", expected: "My sperm" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "TD-12", persona: "two-dads",
+    name: "TD-12: No embryos · Donor sperm · All services · USA · No preference",
+    desc: "Two dads embryo donation with all no-preference answers",
+    interestedServices: ["Surrogate", "Egg Donor", "Sperm Donor"],
+    messages: msgs(
+      P0, I_TWO_DADS, CLINIC_NEED, EMB_NO,
+      EGG_DONOR, SPERM_DONOR, SPERM_NEED, SURR_NEED,
+      ...surrogateMatch("USA", "No preference", "No preference"),
+    ),
+    db: [
+      { field: "spermSource", expected: "Sperm donor" },
+      { field: "needsSurrogate", expected: true },
     ],
   },
 
   // ══════════════════════════════════════════════════════════
-  // TWO MOMS (representative - one direction)
+  // TWO MOMS (13 cases: TM-01 → TM-13)
+  // Rules: sperm=always donor (NEVER ask), ask egg source, ask carrier (me/partner/surrogate)
   // ══════════════════════════════════════════════════════════
+
   {
-    id: "two-moms-partner-a-carries-own-eggs",
-    name: "Two Moms - Partner A Carries + Her Own Eggs + Donor Sperm",
-    persona: "Two Moms",
-    description: "Lesbian couple, Partner A carries using her own eggs and donor sperm",
+    id: "TM-01", persona: "two-moms",
+    name: "TM-01: No embryos · Partner A eggs · Partner A carries (traditional) · Needs sperm donor · Needs clinic",
+    desc: "Simplest two-moms path: same person provides eggs and carries",
     interestedServices: ["Sperm Donor"],
-    messages: [
-      { send: "Yes, that's right" },
-      { send: "Yes, makes sense!" },
-      { send: "I understand, let's get started" },
-      {
-        send: "Two moms",
-        assertions: {
-          aiMsgIndex: 0,
-          notContains: ["will you be using your own sperm", "for sperm", "sperm donor or your own"],
-        },
-      },
-      { send: "I need help finding a clinic" },
-      { send: "No, we don't have frozen embryos" },
-      { send: "Her own eggs" },
-      { send: "She will carry the pregnancy" },
-      { send: "I need help finding a sperm donor" },
-      { send: "Yes, I'm ready!", assertions: { aiMsgIndex: 0, hasMatchCard: true } },
-    ],
-    dbAssertions: [
+    messages: msgs(
+      P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
+      { send: "My own eggs", assert: noSpermQ },
+      CARRIER_ME, SPERM_NEED,
+      ...clinicMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
       { field: "spermSource", expected: "Sperm donor" },
       { field: "eggSource", expected: "My eggs" },
       { field: "carrier", expected: "Me" },
       { field: "isLGBTQ", expected: true },
+      { field: "sameSexCouple", expected: true },
     ],
   },
+
   {
-    id: "two-moms-reciprocal-ivf",
-    name: "Two Moms - Reciprocal IVF (Partner A Carries + Partner B Eggs + Donor Sperm)",
-    persona: "Two Moms",
-    description: "Lesbian couple, reciprocal IVF - Partner A carries, Partner B provides eggs",
-    interestedServices: ["Sperm Donor"],
-    messages: [
-      { send: "Yes, that's right" },
-      { send: "Yes, makes sense!" },
-      { send: "I understand, let's get started" },
-      { send: "Two moms" },
-      { send: "I need help finding a clinic" },
-      { send: "No, we don't have frozen embryos" },
-      { send: "My partner's eggs" },
-      { send: "She will carry the pregnancy" },
-      { send: "I need help finding a sperm donor" },
-      { send: "Yes, I'm ready!", assertions: { aiMsgIndex: 0, hasMatchCard: true } },
+    id: "TM-02", persona: "two-moms",
+    name: "TM-02: No embryos · Partner A eggs · Partner A carries · Already has sperm donor · Needs clinic",
+    desc: "Two moms already have sperm donor - sperm match cycle skipped",
+    interestedServices: [],
+    messages: msgs(
+      P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
+      { send: "My own eggs", assert: noSpermQ },
+      CARRIER_ME, SPERM_HAVE,
+      ...clinicMatch,
+    ),
+    db: [
+      { field: "spermSource", expected: "Sperm donor" },
+      { field: "carrier", expected: "Me" },
     ],
-    dbAssertions: [
+  },
+
+  {
+    id: "TM-03", persona: "two-moms",
+    name: "TM-03: No embryos · Partner B eggs · Partner A carries (Reciprocal IVF) · Needs sperm donor · Needs clinic",
+    desc: "Reciprocal IVF: Partner A carries, Partner B provides eggs",
+    interestedServices: ["Sperm Donor"],
+    messages: msgs(
+      P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
+      { send: "My partner's eggs", assert: noSpermQ },
+      CARRIER_ME, SPERM_NEED,
+      ...clinicMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
       { field: "spermSource", expected: "Sperm donor" },
       { field: "eggSource", expected: "My partner's eggs" },
       { field: "carrier", expected: "Me" },
     ],
   },
+
   {
-    id: "two-moms-surrogate",
-    name: "Two Moms - Surrogate + Partner A Eggs + Donor Sperm",
-    persona: "Two Moms",
-    description: "Lesbian couple using surrogate with one partner's eggs and donor sperm",
-    interestedServices: ["Surrogate", "Sperm Donor"],
-    messages: [
-      { send: "Yes, that's right" },
-      { send: "Yes, makes sense!" },
-      { send: "I understand, let's get started" },
-      { send: "Two moms" },
-      { send: "I need help finding a clinic" },
-      { send: "No, we don't have frozen embryos" },
-      { send: "Her own eggs" },
-      { send: "A gestational surrogate will carry the pregnancy" },
-      { send: "I need help finding a surrogate" },
-      { send: "USA" },
-      { send: "Pro-choice surrogate" },
-      { send: "Singleton only" },
-      { send: "Yes, I'm ready!", assertions: { aiMsgIndex: 0, hasMatchCard: true } },
+    id: "TM-04", persona: "two-moms",
+    name: "TM-04: No embryos · Donor eggs · Partner A carries · Needs egg donor + sperm donor · Needs clinic",
+    desc: "Two moms with third-party egg donor, self-carry - embryo donation path",
+    interestedServices: ["Egg Donor", "Sperm Donor"],
+    messages: msgs(
+      P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
+      { send: "I need help finding an egg donor", assert: noSpermQ },
+      CARRIER_ME, SPERM_NEED,
+      ...clinicMatch,
+      ...eggDonorMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "spermSource", expected: "Sperm donor" },
+      { field: "eggSource", expected: "Egg donor" },
+      { field: "needsEggDonor", expected: true },
     ],
-    dbAssertions: [
+  },
+
+  {
+    id: "TM-05", persona: "two-moms",
+    name: "TM-05: No embryos · Donor eggs · Already has egg donor · Partner A carries · Needs sperm donor · Has clinic",
+    desc: "Two moms already have egg donor - egg match skipped",
+    interestedServices: ["Sperm Donor"],
+    messages: msgs(
+      P0, I_TWO_MOMS, CLINIC_HAVE, EMB_NO,
+      { send: "I already have an egg donor", assert: noSpermQ },
+      CARRIER_ME, SPERM_NEED,
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "spermSource", expected: "Sperm donor" },
+      { field: "needsEggDonor", expected: false },
+    ],
+  },
+
+  {
+    id: "TM-06", persona: "two-moms",
+    name: "TM-06: No embryos · Partner A eggs · Partner B carries · Needs sperm donor · Needs clinic",
+    desc: "Partner B carries with Partner A's eggs - carrier = My partner",
+    interestedServices: ["Sperm Donor"],
+    messages: msgs(
+      P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
+      { send: "My own eggs", assert: noSpermQ },
+      CARRIER_PARTNER, SPERM_NEED,
+      ...clinicMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "spermSource", expected: "Sperm donor" },
+      { field: "eggSource", expected: "My eggs" },
+      { field: "carrier", expected: "My partner" },
+    ],
+  },
+
+  {
+    id: "TM-07", persona: "two-moms",
+    name: "TM-07: No embryos · Partner B eggs · Partner B carries (both) · Needs sperm donor · Needs clinic",
+    desc: "Partner B provides eggs AND carries - full partner path",
+    interestedServices: ["Sperm Donor"],
+    messages: msgs(
+      P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
+      { send: "My partner's eggs", assert: noSpermQ },
+      CARRIER_PARTNER, SPERM_NEED,
+      ...clinicMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "spermSource", expected: "Sperm donor" },
+      { field: "eggSource", expected: "My partner's eggs" },
+      { field: "carrier", expected: "My partner" },
+    ],
+  },
+
+  {
+    id: "TM-08", persona: "two-moms",
+    name: "TM-08: No embryos · Partner A eggs · Surrogate carries · Needs surrogate + sperm donor + clinic · USA · Pro-choice · Singleton",
+    desc: "Two moms using surrogate with own eggs",
+    interestedServices: ["Surrogate", "Sperm Donor"],
+    messages: msgs(
+      P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
+      { send: "My own eggs", assert: noSpermQ },
+      CARRIER_SURROGATE, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
+      ...spermDonorMatch,
+    ),
+    db: [
       { field: "spermSource", expected: "Sperm donor" },
       { field: "eggSource", expected: "My eggs" },
       { field: "carrier", expected: "Gestational surrogate" },
       { field: "needsSurrogate", expected: true },
     ],
   },
-];
+
+  {
+    id: "TM-09", persona: "two-moms",
+    name: "TM-09: No embryos · Donor eggs · Surrogate carries · All services · USA · Twins",
+    desc: "Two moms all-donor + surrogate with twins preference",
+    interestedServices: ["Surrogate", "Egg Donor", "Sperm Donor"],
+    messages: msgs(
+      P0, I_TWO_MOMS, CLINIC_HAVE, EMB_NO,
+      { send: "I need help finding an egg donor", assert: noSpermQ },
+      CARRIER_SURROGATE, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "Hoping for twins"),
+      ...eggDonorMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "needsSurrogate", expected: true },
+      { field: "needsEggDonor", expected: true },
+    ],
+  },
+
+  {
+    id: "TM-10", persona: "two-moms",
+    name: "TM-10: No embryos · Partner B eggs · Surrogate carries · Colombia · Needs sperm donor · Has clinic",
+    desc: "Two moms reciprocal IVF eggs + surrogate + Colombia",
+    interestedServices: ["Surrogate", "Sperm Donor"],
+    messages: msgs(
+      P0, I_TWO_MOMS, CLINIC_HAVE, EMB_NO,
+      { send: "My partner's eggs", assert: noSpermQ },
+      CARRIER_SURROGATE, SURR_NEED,
+      ...agencyMatch("Colombia"),
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "eggSource", expected: "My partner's eggs" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "TM-11", persona: "two-moms",
+    name: "TM-11: Has embryos (2, tested) · Partner A eggs · Partner B carries · Has clinic",
+    desc: "Two moms with existing tested embryos, partner carries",
+    interestedServices: [],
+    messages: msgs(
+      P0, I_TWO_MOMS, CLINIC_HAVE,
+      ...EMB_YES("2", "Yes"),
+      { send: "My own eggs", assert: noSpermQ },
+      CARRIER_PARTNER,
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "hasEmbryos", expected: true },
+      { field: "eggSource", expected: "My eggs" },
+      { field: "carrier", expected: "My partner" },
+    ],
+  },
+
+  {
+    id: "TM-12", persona: "two-moms",
+    name: "TM-12: Has embryos · Step 1c fires · Uses existing · Surrogate · USA · Pro-choice",
+    desc: "Step 1c for two moms: registered for egg donation + has embryos → use existing",
+    interestedServices: ["Surrogate", "Egg Donor"],
+    messages: msgs(
+      P0, I_TWO_MOMS, CLINIC_NEED,
+      ...EMB_YES("2", "Yes"),
+      EMB_CONFLICT_USE,
+      CARRIER_SURROGATE, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
+    ),
+    db: [
+      { field: "hasEmbryos", expected: true },
+      { field: "needsEggDonor", expected: false },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "TM-13", persona: "two-moms",
+    name: "TM-13: No embryos · Donor eggs · Surrogate carries · Already has surrogate · Needs sperm donor + clinic",
+    desc: "Two moms already have surrogate - Phase 3 D-cycle skipped",
+    interestedServices: ["Egg Donor", "Sperm Donor"],
+    messages: msgs(
+      P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
+      { send: "I need help finding an egg donor", assert: noSpermQ },
+      CARRIER_SURROGATE, SURR_HAVE,
+      ...clinicMatch,
+      ...eggDonorMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "needsSurrogate", expected: false },
+      { field: "needsEggDonor", expected: true },
+    ],
+  },
+
+  // ══════════════════════════════════════════════════════════
+  // MAN & WOMAN COUPLE (19 cases: MW-01 → MW-19)
+  // Most permutations: egg source (own/partner's/donor), sperm source (own/partner's/donor)
+  //                   carrier (partner/surrogate), embryos y/n, both speakers
+  // ══════════════════════════════════════════════════════════
+
+  {
+    id: "MW-01", persona: "man-woman",
+    name: "MW-01: No embryos · Her eggs · His sperm · She carries · Needs clinic (Woman speaking)",
+    desc: "Simplest MW path - own genetics, self-carry, clinic only",
+    interestedServices: [],
+    messages: msgs(
+      P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
+      "My own eggs", "My partner's", CARRIER_ME,
+      ...clinicMatch,
+    ),
+    db: [
+      { field: "eggSource", expected: "My eggs" },
+      { field: "spermSource", expected: "My partner's sperm" },
+      { field: "carrier", expected: "Me" },
+    ],
+  },
+
+  {
+    id: "MW-02", persona: "man-woman",
+    name: "MW-02: No embryos · Her eggs · His sperm · She carries · Needs clinic (Man speaking)",
+    desc: "Same biology as MW-01 but man is speaking - verifies correct option framing (no 'my own eggs' offered)",
+    interestedServices: [],
+    messages: msgs(
+      P0, I_MW_MAN, CLINIC_NEED, EMB_NO,
+      "My partner's eggs", "My own", CARRIER_PARTNER,
+      ...clinicMatch,
+    ),
+    db: [
+      { field: "eggSource", expected: "My partner's eggs" },
+      { field: "spermSource", expected: "My sperm" },
+      { field: "carrier", expected: "My partner" },
+    ],
+  },
+
+  {
+    id: "MW-03", persona: "man-woman",
+    name: "MW-03: No embryos · Donor eggs · His sperm · She carries · Needs egg donor + clinic (Woman speaking)",
+    desc: "MW couple with donor eggs, self-carry",
+    interestedServices: ["Egg Donor"],
+    messages: msgs(
+      P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
+      EGG_DONOR, "My partner's", CARRIER_ME,
+      ...clinicMatch,
+      ...eggDonorMatch,
+    ),
+    db: [
+      { field: "eggSource", expected: "Egg donor" },
+      { field: "spermSource", expected: "My partner's sperm" },
+      { field: "carrier", expected: "Me" },
+      { field: "needsEggDonor", expected: true },
+    ],
+  },
+
+  {
+    id: "MW-04", persona: "man-woman",
+    name: "MW-04: No embryos · Donor eggs · His sperm · She carries · Already has egg donor · Needs clinic (Man speaking)",
+    desc: "Already has egg donor - egg match skipped, man speaking",
+    interestedServices: [],
+    messages: msgs(
+      P0, I_MW_MAN, CLINIC_NEED, EMB_NO,
+      EGG_HAVE, "My own", CARRIER_PARTNER,
+      ...clinicMatch,
+    ),
+    db: [
+      { field: "eggSource", expected: "Egg donor" },
+      { field: "spermSource", expected: "My sperm" },
+      { field: "needsEggDonor", expected: false },
+    ],
+  },
+
+  {
+    id: "MW-05", persona: "man-woman",
+    name: "MW-05: No embryos · Her eggs · Donor sperm · She carries · Needs sperm donor + clinic (Woman speaking)",
+    desc: "MW couple with donor sperm, her own eggs, self-carry",
+    interestedServices: ["Sperm Donor"],
+    messages: msgs(
+      P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
+      "My own eggs", SPERM_DONOR, CARRIER_ME, SPERM_NEED,
+      ...clinicMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "eggSource", expected: "My eggs" },
+      { field: "spermSource", expected: "Sperm donor" },
+      { field: "carrier", expected: "Me" },
+    ],
+  },
+
+  {
+    id: "MW-06", persona: "man-woman",
+    name: "MW-06: No embryos · Her eggs · Donor sperm · She carries · Already has sperm donor · Has clinic (Man speaking)",
+    desc: "Already has sperm donor + clinic - no match cycles at all",
+    interestedServices: [],
+    messages: msgs(
+      P0, I_MW_MAN, CLINIC_HAVE, EMB_NO,
+      "My partner's eggs", SPERM_DONOR, CARRIER_PARTNER, SPERM_HAVE,
+    ),
+    db: [
+      { field: "eggSource", expected: "My partner's eggs" },
+      { field: "spermSource", expected: "Sperm donor" },
+    ],
+  },
+
+  {
+    id: "MW-07", persona: "man-woman",
+    name: "MW-07: No embryos · Donor eggs · Donor sperm · She carries · All services (Woman speaking)",
+    desc: "Full embryo donation, self-carry for MW couple",
+    interestedServices: ["Egg Donor", "Sperm Donor"],
+    messages: msgs(
+      P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
+      EGG_DONOR, SPERM_DONOR, CARRIER_ME, SPERM_NEED,
+      ...clinicMatch,
+      ...eggDonorMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "eggSource", expected: "Egg donor" },
+      { field: "spermSource", expected: "Sperm donor" },
+      { field: "carrier", expected: "Me" },
+    ],
+  },
+
+  {
+    id: "MW-08", persona: "man-woman",
+    name: "MW-08: No embryos · Her eggs · His sperm · Surrogate carries · USA · Pro-choice · Singleton (Woman speaking)",
+    desc: "MW couple own genetics with surrogate",
+    interestedServices: ["Surrogate"],
+    messages: msgs(
+      P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
+      "My own eggs", "My partner's", CARRIER_SURROGATE, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
+      ...clinicMatch,
+    ),
+    db: [
+      { field: "eggSource", expected: "My eggs" },
+      { field: "spermSource", expected: "My partner's sperm" },
+      { field: "carrier", expected: "Gestational surrogate" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "MW-09", persona: "man-woman",
+    name: "MW-09: No embryos · Her eggs · His sperm · Surrogate carries · USA · Twins · Has clinic (Man speaking)",
+    desc: "MW couple with surrogate + twins, man speaking",
+    interestedServices: ["Surrogate"],
+    messages: msgs(
+      P0, I_MW_MAN, CLINIC_HAVE, EMB_NO,
+      "My partner's eggs", "My own", CARRIER_SURROGATE, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "Hoping for twins"),
+    ),
+    db: [
+      { field: "spermSource", expected: "My sperm" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "MW-10", persona: "man-woman",
+    name: "MW-10: No embryos · Donor eggs · His sperm · Surrogate carries · Needs egg + surrogate + clinic · USA · No preference (Woman speaking)",
+    desc: "MW couple donor eggs with surrogate, no preference answers",
+    interestedServices: ["Surrogate", "Egg Donor"],
+    messages: msgs(
+      P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
+      EGG_DONOR, "My partner's", CARRIER_SURROGATE, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "No preference"),
+      ...clinicMatch,
+      ...eggDonorMatch,
+    ),
+    db: [
+      { field: "eggSource", expected: "Egg donor" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "MW-11", persona: "man-woman",
+    name: "MW-11: No embryos · Her eggs · Donor sperm · Already has surrogate · Needs sperm donor + clinic (Woman speaking)",
+    desc: "MW couple already has surrogate - Phase 3 D-cycle skipped",
+    interestedServices: ["Sperm Donor"],
+    messages: msgs(
+      P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
+      "My own eggs", SPERM_DONOR, CARRIER_SURROGATE, SURR_HAVE, SPERM_NEED,
+      ...clinicMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "needsSurrogate", expected: false },
+      { field: "spermSource", expected: "Sperm donor" },
+    ],
+  },
+
+  {
+    id: "MW-12", persona: "man-woman",
+    name: "MW-12: No embryos · Donor eggs · Donor sperm · Surrogate · All services · USA · Pro-life · Singleton (Man speaking)",
+    desc: "All-donor + surrogate for MW couple, pro-life termination, man speaking",
+    interestedServices: ["Surrogate", "Egg Donor", "Sperm Donor"],
+    messages: msgs(
+      P0, I_MW_MAN, CLINIC_NEED, EMB_NO,
+      EGG_DONOR, SPERM_DONOR, CARRIER_SURROGATE, SPERM_NEED, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-life surrogate", "Singleton only"),
+      ...clinicMatch,
+      ...eggDonorMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "eggSource", expected: "Egg donor" },
+      { field: "spermSource", expected: "Sperm donor" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "MW-13", persona: "man-woman",
+    name: "MW-13: No embryos · Donor eggs · Donor sperm · Surrogate · Colombia (Woman speaking)",
+    desc: "MW couple Colombia international path - all donor services",
+    interestedServices: ["Surrogate", "Egg Donor", "Sperm Donor"],
+    messages: msgs(
+      P0, I_MW_WOMAN, CLINIC_HAVE, EMB_NO,
+      EGG_DONOR, SPERM_DONOR, CARRIER_SURROGATE, SPERM_NEED, SURR_NEED,
+      ...agencyMatch("Colombia"),
+      ...eggDonorMatch,
+      ...spermDonorMatch,
+    ),
+    db: [
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "MW-14", persona: "man-woman",
+    name: "MW-14: Has embryos (2, tested) · Her eggs · His sperm · She carries · Needs clinic (Woman speaking)",
+    desc: "MW couple with existing tested embryos, self-carry - past-tense questions, clinic only",
+    interestedServices: [],
+    messages: msgs(
+      P0, I_MW_WOMAN, CLINIC_NEED,
+      ...EMB_YES("2", "Yes"),
+      "My own eggs", "My partner's", CARRIER_ME,
+      ...clinicMatch,
+    ),
+    db: [
+      { field: "hasEmbryos", expected: true },
+      { field: "eggSource", expected: "My eggs" },
+      { field: "spermSource", expected: "My partner's sperm" },
+      { field: "carrier", expected: "Me" },
+    ],
+  },
+
+  {
+    id: "MW-15", persona: "man-woman",
+    name: "MW-15: Has embryos (4, tested) · Her eggs · His sperm · Surrogate carries · USA · Pro-choice (Man speaking)",
+    desc: "MW couple with existing embryos, using surrogate, man speaking",
+    interestedServices: ["Surrogate"],
+    messages: msgs(
+      P0, I_MW_MAN, CLINIC_NEED,
+      ...EMB_YES("4", "Yes"),
+      "My partner's eggs", "My own", CARRIER_SURROGATE, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
+    ),
+    db: [
+      { field: "hasEmbryos", expected: true },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "MW-16", persona: "man-woman",
+    name: "MW-16: Has embryos · Step 1c fires → Use existing embryos · She carries · Needs clinic (Woman speaking)",
+    desc: "Step 1c for MW: registered for egg donation + has embryos → uses existing",
+    interestedServices: ["Egg Donor"],
+    messages: msgs(
+      P0, I_MW_WOMAN, CLINIC_NEED,
+      ...EMB_YES("2", "Yes"),
+      EMB_CONFLICT_USE,
+      "My partner's", CARRIER_ME,
+      ...clinicMatch,
+    ),
+    db: [
+      { field: "hasEmbryos", expected: true },
+      { field: "needsEggDonor", expected: false },
+      { field: "carrier", expected: "Me" },
+    ],
+  },
+
+  {
+    id: "MW-17", persona: "man-woman",
+    name: "MW-17: Has embryos · Step 1c → Create new embryos · Surrogate · USA (Woman speaking)",
+    desc: "Step 1c MW: creates new embryos with fresh donor, uses surrogate",
+    interestedServices: ["Surrogate", "Egg Donor"],
+    messages: msgs(
+      P0, I_MW_WOMAN, CLINIC_NEED,
+      ...EMB_YES("2", "Yes"),
+      EMB_CONFLICT_NEW,
+      EGG_DONOR, "My partner's", CARRIER_SURROGATE, SURR_NEED,
+      ...surrogateMatch("USA", "Pro-choice surrogate", "No preference"),
+      ...clinicMatch,
+      ...eggDonorMatch,
+    ),
+    db: [
+      { field: "hasEmbryos", expected: true },
+      { field: "needsEggDonor", expected: true },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+  {
+    id: "MW-18", persona: "man-woman",
+    name: "MW-18: Has embryos · Step 3b fires → Use existing · She carries · Needs clinic (Woman speaking)",
+    desc: "Step 3b MW: registered for sperm donation + has embryos → use existing",
+    interestedServices: ["Sperm Donor"],
+    messages: msgs(
+      P0, I_MW_WOMAN, CLINIC_NEED,
+      ...EMB_YES("2", "Yes"),
+      "My own eggs",
+      SPERM_CONFLICT_USE,
+      CARRIER_ME,
+      ...clinicMatch,
+    ),
+    db: [
+      { field: "hasEmbryos", expected: true },
+      { field: "carrier", expected: "Me" },
+    ],
+  },
+
+  {
+    id: "MW-19", persona: "man-woman",
+    name: "MW-19: No embryos · Donor eggs · His sperm · Surrogate carries · Mexico (Man speaking)",
+    desc: "MW couple Mexico international path, man speaking",
+    interestedServices: ["Surrogate", "Egg Donor"],
+    messages: msgs(
+      P0, I_MW_MAN, CLINIC_NEED, EMB_NO,
+      EGG_DONOR, "My own", CARRIER_SURROGATE, SURR_NEED,
+      ...agencyMatch("Mexico"),
+      ...clinicMatch,
+      ...eggDonorMatch,
+    ),
+    db: [
+      { field: "spermSource", expected: "My sperm" },
+      { field: "eggSource", expected: "Egg donor" },
+      { field: "needsSurrogate", expected: true },
+    ],
+  },
+
+]; // end TEST_CASES
+
+// ─── Apply CLI filters ────────────────────────────────────────────────────────
+
+function getTestsToRun(): TestCase[] {
+  let cases = TEST_CASES;
+  if (filterId) cases = cases.filter(t => t.id === filterId);
+  if (filterPersona) cases = cases.filter(t => t.persona === filterPersona);
+  return cases;
+}
 
 // ─── HTTP Helpers ─────────────────────────────────────────────────────────────
 
 async function createTestUser(testId: string): Promise<{ userId: string; cookie: string }> {
-  const email = `test-${testId}-${Date.now()}@gostork-test.com`;
-  const name = `Test ${testId}`;
-
-  // Register
+  const email = `test-${testId.toLowerCase()}-${Date.now()}@gostork-test.com`;
   const regRes = await fetch(`${BASE_URL}/api/users`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password: TEST_PASSWORD, name }),
+    body: JSON.stringify({ email, password: TEST_PASSWORD, name: `Test ${testId}` }),
   });
-  if (!regRes.ok) {
-    throw new Error(`Failed to register user: ${await regRes.text()}`);
-  }
+  if (!regRes.ok) throw new Error(`Register failed: ${await regRes.text()}`);
   const user = await regRes.json();
 
-  // Login
   const loginRes = await fetch(`${BASE_URL}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password: TEST_PASSWORD }),
   });
-  if (!loginRes.ok) throw new Error(`Failed to login: ${await loginRes.text()}`);
-
+  if (!loginRes.ok) throw new Error(`Login failed: ${await loginRes.text()}`);
   const cookie = loginRes.headers.get("set-cookie") || "";
   return { userId: user.id, cookie };
 }
 
 async function deleteTestUser(userId: string): Promise<void> {
   try {
-    // Delete all related data then the user via Prisma directly
     await prisma.aiChatMessage.deleteMany({ where: { session: { userId } } });
     await prisma.aiChatSession.deleteMany({ where: { userId } });
-    const account = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
-    if (account?.parentAccountId) {
-      await prisma.intendedParentProfile.deleteMany({ where: { parentAccountId: account.parentAccountId } });
-      await prisma.parentAccount.deleteMany({ where: { id: account.parentAccountId } });
+    const u = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
+    if (u?.parentAccountId) {
+      await prisma.intendedParentProfile.deleteMany({ where: { parentAccountId: u.parentAccountId } });
+      await prisma.parentAccount.deleteMany({ where: { id: u.parentAccountId } }).catch(() => {});
     }
     await prisma.user.delete({ where: { id: userId } });
   } catch (e: any) {
-    console.warn(`  [CLEANUP] Failed to delete user ${userId}: ${e.message}`);
+    console.warn(`  [cleanup] Failed for ${userId}: ${e.message}`);
   }
 }
 
-async function sendChatMessage(cookie: string, message: string, sessionId: string | null): Promise<{
-  content: string;
-  newSessionId: string | null;
-  quickReplies: string[];
-  hasMatchCard: boolean;
-}> {
-  const body: any = { message };
+async function sendMessage(cookie: string, message: string, sessionId: string | null): Promise<TurnResult> {
+  const body: Record<string, unknown> = { message };
   if (sessionId) body.sessionId = sessionId;
 
-  const response = await fetch(`${BASE_URL}/api/ai-concierge/chat`, {
+  const res = await fetch(`${BASE_URL}/api/ai-concierge/chat`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Cookie: cookie,
-    },
+    headers: { "Content-Type": "application/json", Cookie: cookie },
     body: JSON.stringify(body),
   });
+  if (!res.ok) throw new Error(`Chat API ${res.status}: ${await res.text()}`);
 
-  if (!response.ok) {
-    throw new Error(`Chat API error ${response.status}: ${await response.text()}`);
-  }
-
-  const contentType = response.headers.get("content-type") || "";
-
-  // Handle SSE streaming
+  const contentType = res.headers.get("content-type") || "";
   if (contentType.includes("text/event-stream")) {
-    const text = await response.text();
-    const lines = text.split("\n");
-    let fullContent = "";
-    let newSessionId: string | null = null;
-    let quickReplies: string[] = [];
-    let hasMatchCard = false;
-
-    for (const line of lines) {
+    const text = await res.text();
+    let content = "", newSid: string | null = null, qr: string[] = [], hasCard = false;
+    for (const line of text.split("\n")) {
       if (!line.startsWith("data: ")) continue;
       try {
-        const data = JSON.parse(line.slice(6));
-        if (data.type === "token") {
-          fullContent += data.delta;
-        } else if (data.type === "done") {
-          if (data.sessionId) newSessionId = data.sessionId;
-          if (data.quickReplies) quickReplies = data.quickReplies;
-          if (data.matchCards && data.matchCards.length > 0) hasMatchCard = true;
-          if (data.message?.content) {
-            fullContent = data.message.content;
-          }
+        const d = JSON.parse(line.slice(6));
+        if (d.type === "token") content += d.delta;
+        else if (d.type === "done") {
+          newSid = d.sessionId || newSid;
+          qr = d.quickReplies || [];
+          hasCard = !!(d.matchCards?.length);
+          if (d.message?.content) content = d.message.content;
         }
       } catch {}
     }
-
-    // Also check content for match card tags
-    if (/\[\[MATCH_CARD:/i.test(fullContent)) hasMatchCard = true;
-
-    return { content: fullContent, newSessionId, quickReplies, hasMatchCard };
+    if (/\[\[MATCH_CARD:/i.test(content)) hasCard = true;
+    return { content, quickReplies: qr, hasMatchCard: hasCard, sessionId: newSid };
   }
-
-  // JSON response
-  const data = await response.json();
+  const d = await res.json();
   return {
-    content: data.message?.content || data.content || "",
-    newSessionId: data.sessionId || null,
-    quickReplies: data.quickReplies || [],
-    hasMatchCard: !!(data.matchCards?.length),
+    content: d.message?.content || "",
+    quickReplies: d.quickReplies || [],
+    hasMatchCard: !!(d.matchCards?.length),
+    sessionId: d.sessionId || null,
   };
 }
 
-async function getProfileFromDB(userId: string): Promise<Record<string, any> | null> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { parentAccountId: true },
-  });
-  if (!user?.parentAccountId) return null;
-
-  const profile = await prisma.intendedParentProfile.findUnique({
-    where: { parentAccountId: user.parentAccountId },
-  });
-  return profile as any;
+async function getProfile(userId: string): Promise<Record<string, unknown> | null> {
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
+  if (!u?.parentAccountId) return null;
+  return (await prisma.intendedParentProfile.findUnique({ where: { parentAccountId: u.parentAccountId } })) as Record<string, unknown> | null;
 }
 
-// ─── Test Runner ──────────────────────────────────────────────────────────────
+function sleep(ms: number): Promise<void> { return new Promise(r => setTimeout(r, ms)); }
 
-async function runTestCase(tc: TestCase): Promise<TestResult> {
-  const startTime = Date.now();
+async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`TIMEOUT: ${label}`)), ms))]);
+}
+
+// ─── Run one test case ────────────────────────────────────────────────────────
+
+async function runTest(tc: TestCase): Promise<TestResult> {
+  const start = Date.now();
   const errors: string[] = [];
   const transcript: TestResult["transcript"] = [];
   let userId: string | undefined;
-  let aiMsgCount = 0;
 
   try {
-    // 1. Create user
     const { userId: uid, cookie } = await createTestUser(tc.id);
     userId = uid;
-
-    // 2. Run conversation
     let sessionId: string | null = null;
+    let aiMsgIdx = 0;
 
-    for (let i = 0; i < tc.messages.length; i++) {
-      const step = tc.messages[i];
-
+    for (const step of tc.messages) {
       transcript.push({ role: "user", content: step.send });
 
-      const result = await withTimeout(
-        sendChatMessage(cookie, step.send, sessionId),
-        TIMEOUT_MS,
-        `Message "${step.send}" timed out after ${TIMEOUT_MS / 1000}s`
+      const turn = await withTimeout(
+        sendMessage(cookie, step.send, sessionId),
+        MSG_TIMEOUT_MS,
+        `"${step.send.slice(0, 40)}"`
       );
+      if (turn.sessionId) sessionId = turn.sessionId;
 
-      if (result.newSessionId) sessionId = result.newSessionId;
-
-      const assertionNotes: string[] = [];
-
-      // Run assertions if specified
-      if (step.assertions && step.assertions.aiMsgIndex === 0) {
-        const content = result.content.toLowerCase();
-
-        // Check contains
-        for (const required of step.assertions.contains || []) {
-          if (!content.includes(required.toLowerCase())) {
-            errors.push(`[${tc.id}] Msg #${i} "${step.send}": response missing required text "${required}"`);
-            assertionNotes.push(`FAIL: missing "${required}"`);
-          } else {
-            assertionNotes.push(`PASS: contains "${required}"`);
-          }
+      const notes: string[] = [];
+      const a = step.assert;
+      if (a) {
+        const lc = turn.content.toLowerCase();
+        for (const req of a.contains || []) {
+          if (!lc.includes(req.toLowerCase())) {
+            errors.push(`[${tc.id}] msg "${step.send.slice(0, 30)}": missing "${req}"`);
+            notes.push(`FAIL: missing "${req}"`);
+          } else notes.push(`PASS: contains "${req}"`);
         }
-
-        // Check not contains
-        for (const forbidden of step.assertions.notContains || []) {
-          if (content.includes(forbidden.toLowerCase())) {
-            errors.push(`[${tc.id}] Msg #${i} "${step.send}": response should NOT contain "${forbidden}"`);
-            assertionNotes.push(`FAIL: contains forbidden "${forbidden}"`);
-          } else {
-            assertionNotes.push(`PASS: not contains "${forbidden}"`);
-          }
+        for (const bad of a.notContains || []) {
+          if (lc.includes(bad.toLowerCase())) {
+            errors.push(`[${tc.id}] msg "${step.send.slice(0, 30)}": MUST NOT contain "${bad}"`);
+            notes.push(`FAIL: forbidden "${bad}"`);
+          } else notes.push(`PASS: no "${bad}"`);
         }
-
-        // Check QR buttons
-        if (step.assertions.hasQuickReplies === true && result.quickReplies.length === 0) {
-          errors.push(`[${tc.id}] Msg #${i} "${step.send}": expected quick reply buttons but got none`);
-          assertionNotes.push(`FAIL: no quick reply buttons`);
+        if (a.hasQR === true && turn.quickReplies.length === 0) {
+          errors.push(`[${tc.id}] msg "${step.send.slice(0, 30)}": expected quick replies, got none`);
+          notes.push("FAIL: no QR buttons");
+        } else if (turn.quickReplies.length > 0) {
+          notes.push(`PASS: QR [${turn.quickReplies.slice(0, 3).join(", ")}${turn.quickReplies.length > 3 ? "..." : ""}]`);
         }
-        if (step.assertions.hasQuickReplies !== false && result.quickReplies.length > 0) {
-          assertionNotes.push(`PASS: has QR buttons: [${result.quickReplies.join(", ")}]`);
-        }
-
-        // Check match card
-        if (step.assertions.hasMatchCard === true && !result.hasMatchCard) {
-          errors.push(`[${tc.id}] Msg #${i} "${step.send}": expected a match card but none appeared`);
-          assertionNotes.push(`FAIL: no match card`);
-        }
-        if (step.assertions.hasMatchCard === true && result.hasMatchCard) {
-          assertionNotes.push(`PASS: match card rendered`);
+        if (a.hasMatchCard === true && !turn.hasMatchCard) {
+          errors.push(`[${tc.id}] msg "${step.send.slice(0, 30)}": expected match card, got none`);
+          notes.push("FAIL: no match card");
+        } else if (a.hasMatchCard === true && turn.hasMatchCard) {
+          notes.push("PASS: match card rendered");
         }
       }
 
-      transcript.push({
-        role: "ai",
-        content: result.content,
-        assertions: assertionNotes.length > 0 ? assertionNotes : undefined,
-      });
-
-      aiMsgCount++;
-
-      // Small delay between messages to avoid overwhelming the server
-      await sleep(500);
+      transcript.push({ role: "ai", content: turn.content, notes: notes.length ? notes : undefined });
+      aiMsgIdx++;
+      await sleep(DELAY_BETWEEN_MSGS_MS);
     }
 
-    // 3. DB assertions
-    const profile = await getProfileFromDB(userId);
-    for (const dbA of tc.dbAssertions) {
-      const actual = profile?.[dbA.field];
-      const matches = typeof dbA.expected === "boolean"
-        ? actual === dbA.expected
-        : typeof dbA.expected === "number"
-          ? Number(actual) === dbA.expected
-          : dbA.expected === null
-            ? actual == null
-            : String(actual || "").toLowerCase().includes(String(dbA.expected).toLowerCase());
-
-      if (!matches) {
-        errors.push(`[${tc.id}] DB field "${dbA.field}": expected "${dbA.expected}" but got "${actual}"`);
+    // DB assertions
+    const profile = await getProfile(userId);
+    for (const dba of tc.db) {
+      const actual = profile?.[dba.field];
+      const ok = dba.expected === null
+        ? actual == null
+        : typeof dba.expected === "boolean"
+          ? actual === dba.expected
+          : String(actual || "").toLowerCase().includes(String(dba.expected).toLowerCase());
+      if (!ok) {
+        errors.push(`[${tc.id}] DB ${dba.field}: expected "${dba.expected}", got "${actual}"`);
       }
     }
-
   } catch (e: any) {
-    errors.push(`[${tc.id}] Unexpected error: ${e.message}`);
+    errors.push(`[${tc.id}] ERROR: ${e.message}`);
   } finally {
-    // 4. Cleanup
     if (userId) await deleteTestUser(userId);
   }
 
-  return {
-    testCase: tc,
-    passed: errors.length === 0,
-    errors,
-    transcript,
-    durationMs: Date.now() - startTime,
-    userId,
-  };
+  return { tc, passed: errors.length === 0, errors, transcript, durationMs: Date.now() - start };
 }
 
-// ─── Utilities ────────────────────────────────────────────────────────────────
+// ─── HTML Report ──────────────────────────────────────────────────────────────
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(r => setTimeout(r, ms));
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(label)), ms)),
-  ]);
-}
-
-// ─── HTML Report Generator ────────────────────────────────────────────────────
-
-function generateHtmlReport(results: TestResult[]): string {
+function buildReport(results: TestResult[]): string {
   const passed = results.filter(r => r.passed).length;
   const failed = results.filter(r => !r.passed).length;
-  const totalMs = results.reduce((a, r) => a + r.durationMs, 0);
+  const totalSec = (results.reduce((a, r) => a + r.durationMs, 0) / 1000).toFixed(0);
+
+  const byPersona: Record<string, TestResult[]> = {};
+  for (const r of results) {
+    (byPersona[r.tc.persona] ??= []).push(r);
+  }
+
+  const personaSummary = Object.entries(byPersona).map(([p, rs]) => {
+    const pPassed = rs.filter(r => r.passed).length;
+    const color = pPassed === rs.length ? "#155724" : "#721c24";
+    return `<div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:10px 16px;min-width:140px;text-align:center">
+      <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.05em">${esc(p.replace(/-/g, " "))}</div>
+      <div style="font-size:22px;font-weight:bold;color:${color};margin:4px 0">${pPassed}/${rs.length}</div>
+    </div>`;
+  }).join("");
 
   const rows = results.map(r => {
-    const statusBg = r.passed ? "#d4edda" : "#f8d7da";
-    const statusColor = r.passed ? "#155724" : "#721c24";
-    const statusText = r.passed ? "PASS" : "FAIL";
-
-    const transcriptHtml = r.transcript.map(msg => {
-      const isUser = msg.role === "user";
-      const bg = isUser ? "#e3f2fd" : "#f5f5f5";
-      const label = isUser ? "Parent" : "AI";
-      const assertionsHtml = msg.assertions
-        ? `<div style="margin-top:4px;font-size:11px">${msg.assertions.map(a => {
-            const ok = a.startsWith("PASS");
-            return `<span style="color:${ok ? "#155724" : "#721c24"};background:${ok ? "#d4edda" : "#f8d7da"};padding:1px 4px;border-radius:3px;margin:1px;display:inline-block">${a}</span>`;
-          }).join(" ")}</div>`
-        : "";
-
-      return `<div style="margin:4px 0;padding:8px;background:${bg};border-radius:6px">
-        <strong style="font-size:11px;color:#666">${label}</strong>
-        <div style="margin-top:2px;font-size:13px;white-space:pre-wrap">${escHtml(msg.content.slice(0, 500))}${msg.content.length > 500 ? "…" : ""}</div>
-        ${assertionsHtml}
+    const bg = r.passed ? "#d4edda" : "#f8d7da";
+    const fc = r.passed ? "#155724" : "#721c24";
+    const transcript = r.transcript.map(m => {
+      const isUser = m.role === "user";
+      const notesHtml = m.notes?.map(n => {
+        const ok = n.startsWith("PASS");
+        return `<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:${ok ? "#d4edda" : "#f8d7da"};color:${ok ? "#155724" : "#721c24"};margin:1px;display:inline-block">${esc(n)}</span>`;
+      }).join("") || "";
+      return `<div style="margin:3px 0;padding:6px 10px;background:${isUser ? "#e3f2fd" : "#f5f5f5"};border-radius:5px;font-size:12px">
+        <strong>${isUser ? "Parent" : "AI"}</strong>: ${esc((m.content || "").slice(0, 300))}${m.content.length > 300 ? "…" : ""}
+        ${notesHtml ? `<div style="margin-top:3px">${notesHtml}</div>` : ""}
       </div>`;
     }).join("");
 
-    const errorsHtml = r.errors.length > 0
-      ? `<div style="margin-top:8px">${r.errors.map(e => `<div style="color:#721c24;font-size:12px;padding:3px 0">⚠ ${escHtml(e)}</div>`).join("")}</div>`
-      : "";
+    const errHtml = r.errors.map(e => `<div style="color:#721c24;font-size:11px;padding:2px 0">⚠ ${esc(e)}</div>`).join("");
 
-    return `
-      <div style="border:1px solid #ddd;border-radius:8px;margin-bottom:16px;overflow:hidden">
-        <div style="background:${statusBg};padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
-          <div>
-            <span style="font-weight:bold;color:${statusColor}">[${statusText}]</span>
-            <span style="font-size:15px;font-weight:600;margin-left:8px">${escHtml(r.testCase.name)}</span>
-            <div style="font-size:12px;color:#666;margin-top:2px">${escHtml(r.testCase.description)}</div>
-          </div>
-          <div style="text-align:right;font-size:12px;color:#666">
-            <div><strong>Persona:</strong> ${escHtml(r.testCase.persona)}</div>
-            <div><strong>Duration:</strong> ${(r.durationMs / 1000).toFixed(1)}s</div>
-            <div><strong>Messages:</strong> ${r.testCase.messages.length}</div>
-          </div>
+    return `<div style="border:1px solid #ddd;border-radius:8px;margin-bottom:12px;overflow:hidden">
+      <div style="background:${bg};padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <span style="font-weight:bold;color:${fc}">${r.passed ? "✓" : "✗"} ${esc(r.tc.id)}</span>
+          <span style="margin-left:8px;font-size:13px;font-weight:600">${esc(r.tc.name.replace(r.tc.id + ": ", ""))}</span>
+          <div style="font-size:11px;color:#666;margin-top:2px">${esc(r.tc.desc)}</div>
         </div>
-        ${errorsHtml ? `<div style="padding:8px 16px;background:#fff3cd">${errorsHtml}</div>` : ""}
-        <details style="padding:0 16px 12px">
-          <summary style="cursor:pointer;padding:8px 0;font-size:13px;color:#444">View conversation transcript</summary>
-          <div style="margin-top:8px">${transcriptHtml}</div>
-        </details>
+        <div style="text-align:right;font-size:11px;color:#666;white-space:nowrap;margin-left:16px">
+          <div>${(r.durationMs / 1000).toFixed(1)}s · ${r.tc.messages.length} msgs</div>
+        </div>
       </div>
-    `;
+      ${errHtml ? `<div style="background:#fff3cd;padding:6px 14px">${errHtml}</div>` : ""}
+      <details style="padding:0 14px 10px">
+        <summary style="cursor:pointer;padding:6px 0;font-size:12px;color:#555">Conversation transcript</summary>
+        <div style="margin-top:6px">${transcript}</div>
+      </details>
+    </div>`;
   }).join("");
 
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>GoStork AI Concierge Test Report</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 1000px; margin: 0 auto; padding: 24px; background: #fafafa; }
-    h1 { color: #1a472a; }
-    .summary { display:flex;gap:16px;margin:16px 0;flex-wrap:wrap; }
-    .stat { background:#fff;border:1px solid #ddd;border-radius:8px;padding:12px 20px;text-align:center; }
-    .stat-num { font-size:32px;font-weight:bold; }
-    .stat-label { font-size:12px;color:#666;margin-top:2px; }
-  </style>
-</head>
-<body>
-  <h1>GoStork AI Concierge Test Report</h1>
-  <div style="color:#666;font-size:13px">Generated: ${new Date().toLocaleString()}</div>
-  <div class="summary">
-    <div class="stat"><div class="stat-num" style="color:#155724">${passed}</div><div class="stat-label">Passed</div></div>
-    <div class="stat"><div class="stat-num" style="color:#721c24">${failed}</div><div class="stat-label">Failed</div></div>
-    <div class="stat"><div class="stat-num">${results.length}</div><div class="stat-label">Total</div></div>
-    <div class="stat"><div class="stat-num">${(totalMs / 1000 / 60).toFixed(1)}m</div><div class="stat-label">Total Time</div></div>
-    <div class="stat"><div class="stat-num" style="color:${failed === 0 ? "#155724" : "#721c24"}">${Math.round((passed / results.length) * 100)}%</div><div class="stat-label">Pass Rate</div></div>
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>GoStork AI Concierge Tests - ${new Date().toLocaleDateString()}</title>
+  <style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:1100px;margin:0 auto;padding:24px;background:#fafafa}</style>
+  </head><body>
+  <h1 style="color:#1a472a;margin-bottom:4px">GoStork AI Concierge Test Report</h1>
+  <div style="color:#666;font-size:12px;margin-bottom:20px">Generated: ${new Date().toLocaleString()} · ${results.length} tests · ${totalSec}s total</div>
+  <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+    <div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:10px 20px;text-align:center;min-width:100px">
+      <div style="font-size:32px;font-weight:bold;color:#155724">${passed}</div><div style="font-size:11px;color:#666">PASSED</div>
+    </div>
+    <div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:10px 20px;text-align:center;min-width:100px">
+      <div style="font-size:32px;font-weight:bold;color:#721c24">${failed}</div><div style="font-size:11px;color:#666">FAILED</div>
+    </div>
+    <div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:10px 20px;text-align:center;min-width:100px">
+      <div style="font-size:32px;font-weight:bold;color:${failed === 0 ? "#155724" : "#721c24"}">${Math.round(passed / results.length * 100)}%</div><div style="font-size:11px;color:#666">PASS RATE</div>
+    </div>
+    ${personaSummary}
   </div>
   ${rows}
-</body>
-</html>`;
-}
-
-function escHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  </body></html>`;
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log(`\n🧪 GoStork AI Concierge Test Suite`);
-  console.log(`   Base URL: ${BASE_URL}`);
-  console.log(`   Test cases: ${TEST_CASES.length}`);
-  console.log(`   Running in parallel...\n`);
-
-  // Verify server is up
-  try {
-    const ping = await fetch(`${BASE_URL}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: "x", password: "x" }) });
-    if (ping.status === 0) throw new Error("no response");
-  } catch {
-    console.error(`❌ Cannot reach server at ${BASE_URL}. Is it running?`);
+  const toRun = getTestsToRun();
+  if (toRun.length === 0) {
+    console.error("No test cases match the filter. Check --id= or --persona=");
     process.exit(1);
   }
 
-  // Run all tests in parallel
-  const startTime = Date.now();
-  const results = await Promise.all(TEST_CASES.map(tc => {
-    console.log(`  ▶ Starting: ${tc.id}`);
-    return runTestCase(tc).then(result => {
-      const icon = result.passed ? "✅" : "❌";
-      console.log(`  ${icon} ${result.passed ? "PASS" : "FAIL"}: ${tc.id} (${(result.durationMs / 1000).toFixed(1)}s)`);
-      if (!result.passed) {
-        result.errors.forEach(e => console.log(`     ${e}`));
-      }
-      return result;
+  console.log(`\n🧪 GoStork AI Concierge Test Suite`);
+  console.log(`   Base URL: ${BASE_URL}`);
+  console.log(`   Running: ${toRun.length} of ${TEST_CASES.length} test cases`);
+  if (filterPersona) console.log(`   Persona filter: ${filterPersona}`);
+  if (filterId) console.log(`   ID filter: ${filterId}`);
+  console.log(`   Running in parallel...\n`);
+
+  // Verify server
+  try {
+    await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "x", password: "x" }),
     });
-  }));
+  } catch {
+    console.error(`❌ Cannot reach ${BASE_URL} - is the server running?`);
+    process.exit(1);
+  }
+
+  const start = Date.now();
+  const results = await Promise.all(toRun.map(tc =>
+    runTest(tc).then(r => {
+      const icon = r.passed ? "✅" : "❌";
+      console.log(`  ${icon} ${r.tc.id} ${r.passed ? "PASS" : "FAIL"} (${(r.durationMs / 1000).toFixed(1)}s)`);
+      if (!r.passed) r.errors.forEach(e => console.log(`     ${e}`));
+      return r;
+    })
+  ));
 
   const passed = results.filter(r => r.passed).length;
   const failed = results.filter(r => !r.passed).length;
-  const totalSec = ((Date.now() - startTime) / 1000).toFixed(1);
-
   console.log(`\n${"─".repeat(60)}`);
-  console.log(`Results: ${passed} passed, ${failed} failed (${totalSec}s total)`);
+  console.log(`Results: ${passed} passed, ${failed} failed (${((Date.now() - start) / 1000).toFixed(0)}s total)\n`);
 
-  // Generate HTML report
   if (!fs.existsSync(REPORT_DIR)) fs.mkdirSync(REPORT_DIR, { recursive: true });
-  const reportPath = path.join(REPORT_DIR, `report-${new Date().toISOString().replace(/[:.]/g, "-")}.html`);
-  fs.writeFileSync(reportPath, generateHtmlReport(results));
-  console.log(`\n📄 HTML report: ${reportPath}`);
-  console.log(`   Open with: open "${reportPath}"\n`);
+  const reportFile = path.join(REPORT_DIR, `report-${new Date().toISOString().replace(/[:.]/g, "-")}.html`);
+  fs.writeFileSync(reportFile, buildReport(results));
+  console.log(`📄 HTML report: ${reportFile}`);
+  console.log(`   Open: open "${reportFile}"\n`);
 
   process.exit(failed > 0 ? 1 : 0);
 }
