@@ -1632,12 +1632,17 @@ async function createTestUser(testId: string, interestedServices: string[]): Pro
       await db.user.update({ where: { id: user.id }, data: { parentAccountId } });
     }
 
-    // Upsert IntendedParentProfile with the test services
+    // Upsert IntendedParentProfile with the test services + a default location so clinic search works
     await db.intendedParentProfile.upsert({
       where: { parentAccountId },
       update: { interestedServices },
       create: { parentAccountId, interestedServices },
     });
+    // Also set location on the User record so clinic search has state/city filters
+    await db.user.update({
+      where: { id: user.id },
+      data: { state: "California", city: "Los Angeles" },
+    }).catch(() => {}); // ignore if location fields don't exist on User
   } catch (e: any) {
     console.warn(`  [setup] Profile setup failed: ${e.message}`);
   }

@@ -2656,7 +2656,7 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     }
     if (userRecord?.partnerAge) {
       skipDirectives.push(`DO NOT ask for the partner's age (A2) - already saved: ${userRecord.partnerAge} years old.`);
-    } else if (isSoloParent || isSoloSkip) {
+    } else if (isSoloSkip || (userRecord?.relationshipStatus || "").toLowerCase() === "single" || /\bsolo\b|\bsingle\b|\bjust me\b|\bon my own\b/i.test(allUserMessages)) {
       skipDirectives.push("DO NOT ask for the partner's age (A2) - this parent is solo/single and has no partner.");
     }
 
@@ -3374,8 +3374,11 @@ ${phase0Section}`;
     if ((parentIsFemaleSolo || parentIsLesbian) && profile?.spermSource !== "My own") {
       // Pattern: matches sperm source questions WITH OR WITHOUT QR buttons
       // Tier1 (Gemini) sometimes generates without QR buttons so we can't require them
-      const spermQuestionPattern = /[^.!?]*(?:will you be using your own(?: sperm)?(?:,| or)?(?: your partner(?:'s)?)?(?:,| or)? (?:a )?sperm donor|for sperm[^.!?]*|sperm[^.!?]*will you be)[^.!?]*[.!?]?(?:\s*\[\[QUICK_REPLY:[^\]]*\]\])?/gi;
-      const hasSpermQ = /will you be using your own(?: sperm)?|for sperm[^.!?]*(?:your own|donor)|sperm.*your own or a|using your own or a sperm/i.test(finalContent);
+      // IMPORTANT: Only strip SPERM SOURCE questions (Step 3: "will you use your own sperm or a donor?")
+      // Do NOT strip SPERM DONOR HELP questions (Step 3a: "do you need help finding a sperm donor?")
+      // Step 3a is still needed for solo women to indicate if they have a donor or need to find one.
+      const spermQuestionPattern = /[^.!?]*(?:will you be using your own(?: sperm)?(?:,| or)?(?: your partner(?:'s)?)?(?:,| or)? (?:a )?sperm donor|(?:and )?for sperm[,\s]*will you be|sperm[^.!?]*will you be using|using your own or a sperm)[^.!?]*[.!?]?(?:\s*\[\[QUICK_REPLY:[^\]]*\]\])?/gi;
+      const hasSpermQ = /will you be using your own(?: sperm)?(?:\s*or a sperm donor|,|\s*your partner)|\bfor sperm[,\s]*will you be\b|sperm.*will you be using.*own|using your own or a sperm/i.test(finalContent);
       if (hasSpermQ) {
         // Auto-save sperm donor silently and strip the question
         try {
@@ -4022,6 +4025,12 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }
 
       finalContent = finalContent.replace(/\[\[SAVE:.*?\]\]/g, "").trim();
+      // If stripping SAVE tags left us with empty content, add a neutral bridging message
+      // so the parent always gets a response
+      if (!finalContent) {
+        finalContent = "Got it! Let's continue.";
+        console.log("[POST-PROC] Added bridging after SAVE-only response left empty content");
+      }
     }
 
     let sendPrepDoc = false;
