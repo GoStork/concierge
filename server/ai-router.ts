@@ -2517,6 +2517,10 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       skipDirectives.push(`DO NOT ask about egg source (Step 2) - already saved: ${profile.eggSource}.`);
     } else if (isGayMale || needsEggDonor || alreadyHasEggDonor) {
       skipDirectives.push("DO NOT ask about egg source (Step 2) - already known: using egg donor.");
+    } else if (isFemaleGender && !profile?.eggSource) {
+      // Female parent with unknown egg source - must ask Step 2 explicitly.
+      // This prevents the AI from incorrectly assuming "donor eggs" for solo women who may use their own eggs.
+      skipDirectives.push("DO NOT assume or infer egg source - it has not been confirmed yet. You MUST ask Step 2 (egg source question) before proceeding to Step 2a.");
     }
 
     // Sperm source: skip if already saved OR biologically obvious from gender/orientation
@@ -2652,6 +2656,8 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     }
     if (userRecord?.partnerAge) {
       skipDirectives.push(`DO NOT ask for the partner's age (A2) - already saved: ${userRecord.partnerAge} years old.`);
+    } else if (isSoloParent || isSoloSkip) {
+      skipDirectives.push("DO NOT ask for the partner's age (A2) - this parent is solo/single and has no partner.");
     }
 
     // --- PHASE 3: MATCH CYCLE SKIP DIRECTIVES (preferences already saved) ---
