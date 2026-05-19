@@ -21,12 +21,29 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import * as dotenv from "dotenv";
+import { PrismaClient } from "@prisma/client";
 
-// Load .env before importing prisma (DATABASE_URL required)
-dotenv.config({ path: path.resolve(__dirname, "../.env"), override: true });
+// ESM hoisting means dotenv.config() can't run before imports.
+// Instead, read DATABASE_URL directly from .env if not already in the environment.
+function ensureEnv() {
+  const envPath = path.resolve(__dirname, "../.env");
+  const content = fs.readFileSync(envPath, "utf8");
+  const needed = ["DATABASE_URL", "ANTHROPIC_API_KEY"];
+  for (const key of needed) {
+    if (!process.env[key] || process.env[key] === "") {
+      const match = content.match(new RegExp(`^${key}=([^\\r\\n]+)`, "m"));
+      if (match) process.env[key] = match[1].trim().replace(/^"(.*)"$/, "$1");
+    }
+  }
+}
+ensureEnv();
 
-import { prisma } from "../server/db";
+// Lazy prisma client - created after DATABASE_URL is set above
+let _db: PrismaClient | null = null;
+function getDB(): PrismaClient {
+  if (!_db) _db = new PrismaClient();
+  return _db;
+}
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -1586,14 +1603,14 @@ async function createTestUser(testId: string): Promise<{ userId: string; cookie:
 
 async function deleteTestUser(userId: string): Promise<void> {
   try {
-    await prisma.aiChatMessage.deleteMany({ where: { session: { userId } } });
-    await prisma.aiChatSession.deleteMany({ where: { userId } });
-    const u = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
+    await getDB().aiChatMessage.deleteMany({ where: { session: { userId } } });
+    await getDB().aiChatSession.deleteMany({ where: { userId } });
+    const u = await getDB().user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
     if (u?.parentAccountId) {
-      await prisma.intendedParentProfile.deleteMany({ where: { parentAccountId: u.parentAccountId } });
-      await prisma.parentAccount.deleteMany({ where: { id: u.parentAccountId } }).catch(() => {});
+      await getDB().intendedParentProfile.deleteMany({ where: { parentAccountId: u.parentAccountId } });
+      await getDB().parentAccount.deleteMany({ where: { id: u.parentAccountId } }).catch(() => {});
     }
-    await prisma.user.delete({ where: { id: userId } });
+    await getDB().user.delete({ where: { id: userId } });
   } catch (e: any) {
     console.warn(`  [cleanup] Failed for ${userId}: ${e.message}`);
   }
@@ -1640,9 +1657,9 @@ async function sendMessage(cookie: string, message: string, sessionId: string | 
 }
 
 async function getProfile(userId: string): Promise<Record<string, unknown> | null> {
-  const u = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
+  const u = await getDB().user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
   if (!u?.parentAccountId) return null;
-  return (await prisma.intendedParentProfile.findUnique({ where: { parentAccountId: u.parentAccountId } })) as Record<string, unknown> | null;
+  return (await getDB().intendedParentProfile.findUnique({ where: { parentAccountId: u.parentAccountId } })) as Record<string, unknown> | null;
 }
 
 function sleep(ms: number): Promise<void> { return new Promise(r => setTimeout(r, ms)); }
