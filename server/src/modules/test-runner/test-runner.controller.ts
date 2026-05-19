@@ -6,6 +6,7 @@ import {
   Body,
   Req,
   Res,
+  Inject,
   HttpException,
   HttpStatus,
   UseGuards,
@@ -19,12 +20,17 @@ import { TestRunnerService } from "./test-runner.service";
 export class TestRunnerController {
   private readonly logger = new Logger(TestRunnerController.name);
 
-  constructor(private readonly testRunnerService: TestRunnerService) {}
+  constructor(
+    @Inject(TestRunnerService) private readonly testRunnerService: TestRunnerService,
+  ) {}
 
   private assertAdmin(req: Request): void {
     const user = req.user as any;
-    if (!user?.roles?.includes("GOSTORK_ADMIN")) {
-      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    this.logger.log(`assertAdmin check: userId=${user?.id}, roles=${JSON.stringify(user?.roles)}, role=${user?.role}`);
+    // Support both 'roles' array and legacy 'role' string
+    const isAdmin = user?.roles?.includes("GOSTORK_ADMIN") || user?.role === "GOSTORK_ADMIN";
+    if (!isAdmin) {
+      throw new HttpException("Forbidden - Admin only", HttpStatus.FORBIDDEN);
     }
   }
 
