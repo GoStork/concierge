@@ -2639,23 +2639,19 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       skipDirectives.push("DO NOT ask about sperm source (Step 3) or if they need help finding a sperm donor (Step 3a) - already saved: they already have one. Skip Match Cycle C entirely.");
     }
 
-    // isFirstIvf (A4): skip if already saved
+    // isFirstIvf (A4): skip only if already saved - always ask for new parents regardless of egg source
     if (profile?.isFirstIvf != null) {
       skipDirectives.push(`DO NOT ask if this is their first IVF journey (A4) - already saved: ${profile.isFirstIvf ? "first time" : "done IVF before"}.`);
-    } else if (needsEggDonor || alreadyHasEggDonor || isGayMale) {
-      skipDirectives.push("DO NOT ask if this is their first IVF journey (A4) - using donor eggs, irrelevant for clinic matching.");
     }
 
-    // Age for clinic (A1/A2): skip if already saved in User model or if using donor eggs
+    // Age for clinic (A1/A2): skip only if already saved - always ask age for clinic matching
+    // Age affects uterine receptivity and overall IVF success rates even with donor eggs
     if (userRecord?.dateOfBirth) {
       const savedAge = Math.floor((Date.now() - new Date(userRecord.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
       skipDirectives.push(`DO NOT ask for the parent's age (A1) - already saved: ${savedAge} years old.`);
     }
     if (userRecord?.partnerAge) {
       skipDirectives.push(`DO NOT ask for the partner's age (A2) - already saved: ${userRecord.partnerAge} years old.`);
-    }
-    if (!userRecord?.dateOfBirth && (needsEggDonor || alreadyHasEggDonor || isGayMale)) {
-      skipDirectives.push("DO NOT ask for the parent's or partner's age for clinic matching (A1/A2) - using donor eggs, age does not affect donor egg success rates.");
     }
 
     // --- PHASE 3: MATCH CYCLE SKIP DIRECTIVES (preferences already saved) ---
@@ -3150,29 +3146,38 @@ The parent's message was: "${userMessage}"`,
     });
     const needsTools = hasEnteredMatchingPhase || shouldTriggerScheduling || isDonorInquiryMode;
 
-    // Detect if the AI just asked B1 (egg donor preferences) and the user is now answering it.
-    // In this case, the ONLY valid next action is [[CURATION]] - not a search, not a text list.
-    // NOTE: regex must NOT match curation summary messages (e.g. "you're looking for an egg donor who is...")
-    // so we only match patterns from the actual B1 question text.
+    // Detect if the AI just asked B1/C1/C2/A5 and the user is now answering it.
+    // In each case, the ONLY valid next action is [[CURATION]] - not a search, not a text list.
+    // NOTE: regex must NOT match curation summary messages.
     const conversationMessages = messages.filter(m => m.role === "user" || m.role === "assistant");
     const lastAiMsg = [...conversationMessages].reverse().find(m => m.role === "assistant");
     const lastAiContent = typeof lastAiMsg?.content === "string" ? lastAiMsg.content : "";
-    const justAnsweredB1 = /what matters most.*egg donor|egg donor.*preferences|specific preferences.*egg donor|qualities.*egg donor|preferences.*in an egg donor/i.test(lastAiContent);
-    // Check ALL history for [[CURATION]] - not just messages after lastAiMsg (which is always the last message).
+    // Check ALL history for [[CURATION]] - not just messages after lastAiMsg.
     const curationAlreadySent = conversationMessages.some(
       m => m.role === "assistant" && typeof m.content === "string" && m.content.includes("[[CURATION]]")
     );
-    if (justAnsweredB1 && !curationAlreadySent) {
+    // B1: egg donor preferences
+    const justAnsweredB1 = /what matters most.*egg donor|egg donor.*preferences|specific preferences.*egg donor|qualities.*egg donor|preferences.*in an egg donor/i.test(lastAiContent);
+    // C2: sperm donor type (open/anonymous/exclusive) - comes after C1 preferences
+    const justAnsweredC2 = /open.*donor.*anonymous.*exclusive|anonymous.*open.*exclusive|exclusive.*open.*anonymous|prefer.*open donor|prefer.*anonymous|prefer.*exclusive|open.*identity.*donor|donor type|identity donor|anonymous donor/i.test(lastAiContent) && /open|anonymous|exclusive|no preference/i.test(userMessage);
+    // C1: sperm donor broad preferences (only if C2 not already asked)
+    const justAnsweredC1 = !justAnsweredC2 && /what matters most.*sperm donor|sperm donor.*preferences|broad preferences.*sperm|looking for.*sperm donor|tell me.*sperm donor preferences/i.test(lastAiContent);
+    // A5: clinic priorities question
+    const justAnsweredA5 = /what.*most important.*choosing.*clinic|matters most.*clinic|clinic.*priorities|priority.*clinic/i.test(lastAiContent);
+
+    if ((justAnsweredB1 || justAnsweredC1 || justAnsweredC2 || justAnsweredA5) && !curationAlreadySent) {
+      const serviceName = justAnsweredB1 ? "egg donor" : (justAnsweredC1 || justAnsweredC2) ? "sperm donor" : "clinic";
+      const searchTool = justAnsweredB1 ? "search_egg_donors" : (justAnsweredC1 || justAnsweredC2) ? "search_sperm_donors" : "search_clinics";
       messages.push({
         role: "system" as const,
         content: `MANDATORY NEXT ACTION - NO EXCEPTIONS:
-The parent just answered the egg donor preference question (B1). Your ONLY valid next response is a [[CURATION]] summary message.
-- Do NOT call any search tools (search_egg_donors or any other tool).
-- Do NOT list any donors - not as text, not as numbers, not in any format.
+The parent just answered a key ${serviceName} matching question. Your ONLY valid next response is a [[CURATION]] summary message.
+- Do NOT call any search tools (${searchTool} or any other tool).
+- Do NOT list any ${serviceName}s - not as text, not as numbers, not in any format.
 - Do NOT show any [[MATCH_CARD]].
 - ONLY send: a warm 1-2 sentence summary of their preferences, ending with "Ready to see your matches?" and [[CURATION]] at the very end.
-Example: "Here's what I have: you're looking for an egg donor with [preferences]. Shall I find your perfect matches now? [[CURATION]]"
-After you send this, wait for the parent to reply. The system will then auto-send "ready" and ONLY THEN can you call search_egg_donors and show ONE [[MATCH_CARD]].`,
+Example: "Here's what I have: you're looking for a ${serviceName} with [preferences]. Shall I find your perfect matches now? [[CURATION]]"
+After you send this, wait for the parent to reply. The system will then auto-send "ready" and ONLY THEN can you call ${searchTool} and show ONE [[MATCH_CARD]].`,
       });
     }
 
