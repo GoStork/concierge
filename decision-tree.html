@@ -118,7 +118,7 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
 <header>
   <div>
     <h1>GoStork &mdash; Question Decision Tree</h1>
-    <p>Auto-generated from <code>server/ai-prompt-defaults.ts</code> &mdash; May 3, 2026, 06:33 PM &mdash; 60 questions discovered</p>
+    <p>Auto-generated from <code>server/ai-prompt-defaults.ts</code> &mdash; May 18, 2026, 09:53 PM &mdash; 61 questions discovered</p>
   </div>
   <span class="gen-badge">&#9889; Live from source</span>
 </header>
@@ -127,7 +127,7 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
   <button onclick="show('onboarding',this)">Onboarding</button>
   <button onclick="show('phase-0',this)">AI Intro (Phase 0)<span class="stat">5q</span></button>
   <button onclick="show('phase-1-identity-opener',this)">Phase 1: Identity Opener<span class="stat">7q</span></button>
-  <button onclick="show('phase-2-biological-baseline-asked-once-shared-across-all-providers',this)">Phase 2: Biological Baseline (Asked Once, Shared Across All Providers)<span class="stat">29q</span></button>
+  <button onclick="show('phase-2-biological-baseline-asked-once-shared-across-all-providers',this)">Phase 2: Biological Baseline (Asked Once, Shared Across All Providers)<span class="stat">30q</span></button>
   <button onclick="show('phase-3-progressive-match-cycles',this)">Phase 3: Progressive Match Cycles<span class="stat">19q</span></button>
   <button onclick="show('phase-4-wrap-up',this)">Phase 4: Wrap-Up<span class="stat">0q</span></button>
 </nav>
@@ -179,7 +179,7 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
     <div class="card"><span class="ctag t-ob">Onboarding</span><h4>6 screens before chat</h4><p>Service selection, name, location, phone, OTP, account creation. Not in ai-prompt-defaults.ts.</p></div>
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>AI Intro (Phase 0)</h4><p>5 user-facing questions</p></div>
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 1: Identity Opener</h4><p>7 user-facing questions</p></div>
-    <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 2: Biological Baseline (Asked Once, Shared Across All Providers)</h4><p>29 user-facing questions</p></div>
+    <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 2: Biological Baseline (Asked Once, Shared Across All Providers)</h4><p>30 user-facing questions</p></div>
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 3: Progressive Match Cycles</h4><p>19 user-facing questions</p></div>
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 4: Wrap-Up</h4><p>0 user-facing questions</p></div>
     <div class="card"><span class="ctag t-ru">Key Rule</span><h4>One question per message</h4><p>Never ask multiple questions in a single AI message. Wait for a response before the next.</p></div>
@@ -290,7 +290,27 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
     
 <div class="tree-node">
   <div class="node-box node-anon">
-    <div class="node-hdr"><span class="nlabel nlabel-anon">Q1</span><div class="nquestion">Do you have any questions about GoStork and how we can help you?</div></div>
+    <div class="node-hdr"><span class="nlabel nlabel-anon">Q1</span><div class="nquestion">Does that make sense so far?</div></div>
+    
+    
+  </div>
+  <div class="fork-row">
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">Yes, makes sense!</div>
+        
+      </div>
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">I have a question</div>
+        
+      </div></div>
+</div>
+<div class="tree-connector"></div>
+
+<div class="tree-node">
+  <div class="node-box node-anon">
+    <div class="node-hdr"><span class="nlabel nlabel-anon">Q2</span><div class="nquestion">Do you have any questions about GoStork and how we can help you?&quot;</div></div>
     
     
   </div>
@@ -341,31 +361,11 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
         
       </div></div>
 </div>
-<div class="tree-connector"></div>
-
-<div class="tree-node">
-  <div class="node-box node-anon">
-    <div class="node-hdr"><span class="nlabel nlabel-anon">Q2</span><div class="nquestion">Do you have any questions about GoStork and how we can help you?</div></div>
-    
-    
-  </div>
-  <div class="fork-row">
-      <div class="fork-branch">
-        <div class="fork-line"></div>
-        <div class="fork-chip fork-chip-qr">I understand, let's get started</div>
-        
-      </div>
-      <div class="fork-branch">
-        <div class="fork-line"></div>
-        <div class="fork-chip fork-chip-qr">I have a few questions</div>
-        
-      </div></div>
-</div>
   </div>
 </div>
 
 <div class="subsection depth-1">
-  <h4 class="sub-title">AFTER THE ENGAGEMENT QUESTION (both paths)</h4>
+  <h4 class="sub-title">AFTER THE FINAL ENGAGEMENT QUESTION (both paths)</h4>
   <div class="tree-flow">
     <div class="empty-section">No user-facing questions in this section - rules and logic only.</div>
   </div>
@@ -611,12 +611,12 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
   <div class="fork-row">
       <div class="fork-branch">
         <div class="fork-line"></div>
-        <div class="fork-chip fork-chip-qr">I need help finding one</div>
+        <div class="fork-chip fork-chip-qr">I need help finding a clinic</div>
         <div class="fork-dest">→ STEP 1</div>
       </div>
       <div class="fork-branch">
         <div class="fork-line"></div>
-        <div class="fork-chip fork-chip-qr">I already have one</div>
+        <div class="fork-chip fork-chip-qr">I already have a clinic</div>
         
       </div></div>
 </div>
@@ -663,7 +663,42 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
     <div class="nsave"><span class="nsave-field">embryoCount</span></div>
     
   </div>
-  <div class="nbranches"><div class="nbranch-item">After answer, save  and go to STEP 1b</div></div>
+  <div class="fork-row">
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">1</div>
+        <div class="fork-dest">→ STEP 1B</div>
+      </div>
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">2</div>
+        
+      </div>
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">3</div>
+        
+      </div>
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">4</div>
+        
+      </div>
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">5</div>
+        
+      </div>
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">6-10</div>
+        
+      </div>
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">Above 10</div>
+        
+      </div></div>
 </div>
 <div class="tree-connector"></div>
 
@@ -694,20 +729,20 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
 
 <div class="tree-node">
   <div class="node-box node-step">
-    <div class="node-hdr"><span class="nlabel nlabel-step">STEP 1C</span><div class="nquestion">You mentioned you're looking for an egg donor, but you already have frozen embryos. Just to confirm - are you looking to create new embryos with a fresh egg donor, or will you be using your existing embryos?</div></div>
+    <div class="node-hdr"><span class="nlabel nlabel-step">STEP 1C</span><div class="nquestion">You mentioned you already have frozen embryos - and you're also registered for egg donation (which makes sense, since you likely used a donor when creating them). Just to clarify your goals: are you planning to use your existing embryos, or are you also looking to create new embryos with a fresh donor?</div></div>
     <div class="nsave"><span class="nsave-field">needsEggDonor</span><span class="nsave-field">eggSource</span><span class="nsave-field">carrier</span></div>
     <div class="nskip"><span class="nskip-pill">skip if: this step if: the parent did NOT register for egg donation, OR they already clarified this earlier in the conversation.</span></div>
   </div>
   <div class="fork-row">
       <div class="fork-branch">
         <div class="fork-line"></div>
-        <div class="fork-chip fork-chip-qr">Create new embryos with a donor</div>
-        <div class="fork-dest">→ STEP 2</div>
+        <div class="fork-chip fork-chip-qr">Use my existing embryos</div>
+        
       </div>
       <div class="fork-branch">
         <div class="fork-line"></div>
-        <div class="fork-chip fork-chip-qr">Use my existing embryos</div>
-        
+        <div class="fork-chip fork-chip-qr">Create new embryos with a fresh donor</div>
+        <div class="fork-dest">→ STEP 2</div>
       </div></div>
 </div>
 <div class="tree-connector"></div>
@@ -866,12 +901,12 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
   <div class="fork-row">
       <div class="fork-branch">
         <div class="fork-line"></div>
-        <div class="fork-chip fork-chip-qr">I need help finding one</div>
+        <div class="fork-chip fork-chip-qr">I need help finding an egg donor</div>
         <div class="fork-dest">→ STEP 3</div>
       </div>
       <div class="fork-branch">
         <div class="fork-line"></div>
-        <div class="fork-chip fork-chip-qr">I already have one</div>
+        <div class="fork-chip fork-chip-qr">I already have an egg donor</div>
         <div class="fork-dest">→ STEP 3</div>
       </div></div>
 </div>
@@ -899,7 +934,7 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
 
 <div class="tree-node">
   <div class="node-box node-step">
-    <div class="node-hdr"><span class="nlabel nlabel-step">STEP 3</span><div class="nquestion">did you use your own sperm or donor sperm?</div></div>
+    <div class="node-hdr"><span class="nlabel nlabel-step">STEP 3</span><div class="nquestion">For those embryos, did you use your own sperm or a sperm donor?</div></div>
     
     
   </div>
@@ -919,7 +954,27 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
 
 <div class="tree-node">
   <div class="node-box node-anon">
-    <div class="node-hdr"><span class="nlabel nlabel-anon">Q16</span><div class="nquestion">And for sperm, did you use your own, your partner's, or a sperm donor?</div></div>
+    <div class="node-hdr"><span class="nlabel nlabel-anon">Q16</span><div class="nquestion">For sperm, will you be using your own or a sperm donor?</div></div>
+    <div class="nsave"><span class="nsave-field">spermSource</span></div>
+    
+  </div>
+  <div class="fork-row">
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">My own</div>
+        
+      </div>
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">Donor sperm</div>
+        
+      </div></div>
+</div>
+<div class="tree-connector"></div>
+
+<div class="tree-node">
+  <div class="node-box node-anon">
+    <div class="node-hdr"><span class="nlabel nlabel-anon">Q17</span><div class="nquestion">And for sperm, did you use your own, your partner's, or a sperm donor?</div></div>
     <div class="nsave"><span class="nsave-field">spermSource</span></div>
     
   </div>
@@ -944,7 +999,7 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
 
 <div class="tree-node">
   <div class="node-box node-anon">
-    <div class="node-hdr"><span class="nlabel nlabel-anon">Q17</span><div class="nquestion">And for sperm, will you be using your own, your partner's, or a sperm donor?</div></div>
+    <div class="node-hdr"><span class="nlabel nlabel-anon">Q18</span><div class="nquestion">And for sperm, will you be using your own, your partner's, or a sperm donor?</div></div>
     <div class="nsave"><span class="nsave-field">spermSource</span></div>
     
   </div>
@@ -974,7 +1029,7 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
 
 <div class="tree-node">
   <div class="node-box node-anon">
-    <div class="node-hdr"><span class="nlabel nlabel-anon">Q18</span><div class="nquestion">And for sperm, did you use your own or a sperm donor?</div></div>
+    <div class="node-hdr"><span class="nlabel nlabel-anon">Q19</span><div class="nquestion">And for sperm, did you use your own or a sperm donor?</div></div>
     <div class="nsave"><span class="nsave-field">spermSource</span></div>
     
   </div>
@@ -994,7 +1049,7 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
 
 <div class="tree-node">
   <div class="node-box node-anon">
-    <div class="node-hdr"><span class="nlabel nlabel-anon">Q19</span><div class="nquestion">And for sperm, will you be using your own or a sperm donor?</div></div>
+    <div class="node-hdr"><span class="nlabel nlabel-anon">Q20</span><div class="nquestion">And for sperm, will you be using your own or a sperm donor?</div></div>
     <div class="nsave"><span class="nsave-field">spermSource</span></div>
     
   </div>
@@ -1026,12 +1081,12 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
   <div class="fork-row">
       <div class="fork-branch">
         <div class="fork-line"></div>
-        <div class="fork-chip fork-chip-qr">I need help finding one</div>
+        <div class="fork-chip fork-chip-qr">I need help finding a sperm donor</div>
         
       </div>
       <div class="fork-branch">
         <div class="fork-line"></div>
-        <div class="fork-chip fork-chip-qr">I already have one</div>
+        <div class="fork-chip fork-chip-qr">I already have a sperm donor</div>
         
       </div></div>
 </div>
@@ -1059,7 +1114,7 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
 
 <div class="tree-node">
   <div class="node-box node-anon">
-    <div class="node-hdr"><span class="nlabel nlabel-anon">Q22</span><div class="nquestion">And who is planning to carry the pregnancy?</div></div>
+    <div class="node-hdr"><span class="nlabel nlabel-anon">Q23</span><div class="nquestion">And who is planning to carry the pregnancy?</div></div>
     <div class="nsave"><span class="nsave-field">carrier</span></div>
     
   </div>
@@ -1079,32 +1134,7 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
 
 <div class="tree-node">
   <div class="node-box node-anon">
-    <div class="node-hdr"><span class="nlabel nlabel-anon">Q23</span><div class="nquestion">And who is carrying the pregnancy?</div></div>
-    <div class="nsave"><span class="nsave-field">carrier</span></div>
-    
-  </div>
-  <div class="fork-row">
-      <div class="fork-branch">
-        <div class="fork-line"></div>
-        <div class="fork-chip fork-chip-qr">Me</div>
-        
-      </div>
-      <div class="fork-branch">
-        <div class="fork-line"></div>
-        <div class="fork-chip fork-chip-qr">My partner</div>
-        
-      </div>
-      <div class="fork-branch">
-        <div class="fork-line"></div>
-        <div class="fork-chip fork-chip-qr">A gestational surrogate</div>
-        
-      </div></div>
-</div>
-<div class="tree-connector"></div>
-
-<div class="tree-node">
-  <div class="node-box node-anon">
-    <div class="node-hdr"><span class="nlabel nlabel-anon">Q24</span><div class="nquestion">And who is planning to carry the pregnancy?</div></div>
+    <div class="node-hdr"><span class="nlabel nlabel-anon">Q24</span><div class="nquestion">And who is carrying the pregnancy?</div></div>
     <div class="nsave"><span class="nsave-field">carrier</span></div>
     
   </div>
@@ -1129,7 +1159,32 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
 
 <div class="tree-node">
   <div class="node-box node-anon">
-    <div class="node-hdr"><span class="nlabel nlabel-anon">Q25</span><div class="nquestion">If SINGLE: do NOT offer &quot;My partner&quot; option. Use .</div></div>
+    <div class="node-hdr"><span class="nlabel nlabel-anon">Q25</span><div class="nquestion">And who is planning to carry the pregnancy?</div></div>
+    <div class="nsave"><span class="nsave-field">carrier</span></div>
+    
+  </div>
+  <div class="fork-row">
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">Me</div>
+        
+      </div>
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">My partner</div>
+        
+      </div>
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">A gestational surrogate</div>
+        
+      </div></div>
+</div>
+<div class="tree-connector"></div>
+
+<div class="tree-node">
+  <div class="node-box node-anon">
+    <div class="node-hdr"><span class="nlabel nlabel-anon">Q26</span><div class="nquestion">If SINGLE: do NOT offer &quot;My partner&quot; option. Use .</div></div>
     <div class="nsave"><span class="nsave-field">carrier</span></div>
     
   </div>
@@ -1156,12 +1211,12 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
   <div class="fork-row">
       <div class="fork-branch">
         <div class="fork-line"></div>
-        <div class="fork-chip fork-chip-qr">I need help finding one</div>
+        <div class="fork-chip fork-chip-qr">I need help finding a surrogate</div>
         <div class="fork-dest">→ PROGRESSIVE MATCH CYCLES</div>
       </div>
       <div class="fork-branch">
         <div class="fork-line"></div>
-        <div class="fork-chip fork-chip-qr">I already have one</div>
+        <div class="fork-chip fork-chip-qr">I already have a surrogate</div>
         <div class="fork-dest">→ PROGRESSIVE MATCH CYCLES</div>
       </div></div>
 </div>
@@ -1169,7 +1224,7 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
 
 <div class="tree-node">
   <div class="node-box node-anon">
-    <div class="node-hdr"><span class="nlabel nlabel-anon">Q27</span><div class="nquestion">Do you already have frozen embryos?</div></div>
+    <div class="node-hdr"><span class="nlabel nlabel-anon">Q28</span><div class="nquestion">Do you already have frozen embryos?</div></div>
     
     
   </div>
@@ -1194,7 +1249,7 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
 
 <div class="tree-node">
   <div class="node-box node-anon">
-    <div class="node-hdr"><span class="nlabel nlabel-anon">Q28</span><div class="nquestion">Do you need help finding an egg donor, or do you already have one?</div></div>
+    <div class="node-hdr"><span class="nlabel nlabel-anon">Q29</span><div class="nquestion">Do you need help finding an egg donor, or do you already have one?</div></div>
     
     
   </div>
@@ -1214,7 +1269,7 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
 
 <div class="tree-node">
   <div class="node-box node-anon">
-    <div class="node-hdr"><span class="nlabel nlabel-anon">Q29</span><div class="nquestion">Do you need help finding a surrogate, or do you already have one?</div></div>
+    <div class="node-hdr"><span class="nlabel nlabel-anon">Q30</span><div class="nquestion">Do you need help finding a surrogate, or do you already have one?</div></div>
     
     
   </div>
