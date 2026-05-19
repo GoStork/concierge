@@ -180,29 +180,31 @@ const agencyMatch = (country: string): Msg[] => [
 const agencyIntake = agencyMatch;
 
 // Phase 3 - Egg donor match
-// Flow: CURATION summary fired → parent says ready → Tier2 asks B1 → parent gives prefs → [[MATCH_CARD]]
-// "Yes, I'm ready!" MUST come first (triggers Tier2 which asks B1), THEN preferences.
+// Flow: Tier1 asks B1 → parent answers → injection forces CURATION → parent sends "ready" → match card
+// B1 answer comes FIRST (Tier1 already asked it), then "ready" triggers the forced search injection.
 const eggDonorMatch: Msg[] = [
-  { send: "Yes, I'm ready!" },  // response to CURATION → Tier2 activates → asks B1
-  { send: "I prefer someone with brown eyes, college educated, healthy", assert: { hasMatchCard: true } },
+  { send: "I prefer someone with brown eyes, college educated, healthy" },  // B1 answer to Tier1 question
+  { send: "ready", assert: { hasMatchCard: true } },  // CURATION fired → forced injection → search → match card
 ];
 
-// Phase 3 - Sperm donor match (C1 preferences + donor type + CURATION ready + match card)
+// Phase 3 - Sperm donor match
+// Flow: Tier1 asks C1 → parent answers → Tier1 asks C2 → parent answers → CURATION → "ready" → match card
+// C1/C2 answers come FIRST (Tier1 already asked them), then "ready" triggers the forced search injection.
 const spermDonorMatch: Msg[] = [
-  { send: "Yes, I'm ready!" },  // CURATION response → Tier2 activates → asks C1
-  { send: "Open identity preferred, tall, athletic build" },  // C1 answer
-  { send: "Open", assert: { hasMatchCard: true } },  // C2 donor type → match card
+  { send: "Open identity preferred, tall, athletic build" },  // C1 answer (Tier1 asks first)
+  { send: "Open" },  // C2 donor type answer
+  { send: "ready", assert: { hasMatchCard: true } },  // CURATION fired → forced injection → match card
 ];
 
 // Phase 3 - Clinic match
-// CURATION → ready → Tier2 asks A1 → age → partner age → twins → IVF exp → priorities → match card
+// Flow: Tier1 asks A1 (age) → A3 (twins, A2 skipped for singles) → A4 (IVF exp) → A5 (priorities)
+// → CURATION fires → parent sends "ready" → forced injection → search → match card
 const clinicMatch: Msg[] = [
-  { send: "Yes, I\'m ready!" },  // CURATION response → Tier2 activates → asks A1
-  { send: "35" },  // A1 age
-  { send: "No" },  // A2 partner age (skip)
-  { send: "No" },  // A3 twins
+  { send: "35" },  // A1 age (Tier1 asks)
+  { send: "No" },  // A3 twins (A2 partner age skipped for solo parents)
   { send: "First time" },  // A4 IVF experience
-  { send: "Success rates", assert: { hasMatchCard: true } },  // A5 → match card
+  { send: "Success rates" },  // A5 priorities → CURATION fires after this
+  { send: "ready", assert: { hasMatchCard: true } },  // CURATION → forced injection → match card
 ];
 
 // Helper: build assertions that certain sperm questions never appear
@@ -1882,6 +1884,20 @@ function buildReport(results: TestResult[]): string {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
+// ─── Dashboard event reporting ────────────────────────────────────────────────
+// Reports test progress to the dashboard server so any running CLI instance
+// shows up in the dashboard at /admin/test-runner (fire-and-forget, non-blocking)
+
+async function reportToDashboard(event: Record<string, unknown>): Promise<void> {
+  try {
+    await fetch(`${BASE_URL}/api/admin/test-runner/event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(event),
+    });
+  } catch {} // Non-fatal - dashboard reporting is best-effort
+}
+
 async function main() {
   const toRun = getTestsToRun();
   if (toRun.length === 0) {
@@ -1895,6 +1911,15 @@ async function main() {
   if (filterPersona) console.log(`   Persona filter: ${filterPersona}`);
   if (filterId) console.log(`   ID filter: ${filterId}`);
   console.log(`   Mode: ${sequential ? "sequential (--sequential)" : "parallel"}\n`);
+
+  // Register run with dashboard (non-blocking)
+  reportToDashboard({
+    type: "run_start",
+    filter: filterPersona || filterId,
+    totalCount: toRun.length,
+    testIds: toRun.map(t => t.id),
+    source: "cli",
+  });
 
   // Verify server
   try {
@@ -1910,31 +1935,43 @@ async function main() {
   const start = Date.now();
   let results: TestResult[];
 
+  const reportResult = (r: TestResult) => {
+    const icon = r.passed ? "✅" : "❌";
+    console.log(`  ${icon} ${r.tc.id} ${r.passed ? "PASS" : "FAIL"} (${(r.durationMs / 1000).toFixed(1)}s)`);
+    if (!r.passed) r.errors.forEach(e => console.log(`     ${e}`));
+    // Report to dashboard (fire-and-forget)
+    reportToDashboard({
+      type: r.passed ? "test_pass" : "test_fail",
+      id: r.tc.id,
+      persona: r.tc.persona,
+      name: r.tc.name,
+      durationMs: r.durationMs,
+      errors: r.errors,
+    });
+  };
+
   if (sequential) {
-    // Run one at a time to avoid Anthropic rate limits and server overload
     results = [];
     for (const tc of toRun) {
+      console.log(`  ▶ Starting: ${tc.id}`);
+      reportToDashboard({ type: "test_start", id: tc.id });
       const r = await runTest(tc);
-      const icon = r.passed ? "✅" : "❌";
-      console.log(`  ${icon} ${r.tc.id} ${r.passed ? "PASS" : "FAIL"} (${(r.durationMs / 1000).toFixed(1)}s)`);
-      if (!r.passed) r.errors.forEach(e => console.log(`     ${e}`));
+      reportResult(r);
       results.push(r);
     }
   } else {
-    results = await Promise.all(toRun.map(tc =>
-      runTest(tc).then(r => {
-        const icon = r.passed ? "✅" : "❌";
-        console.log(`  ${icon} ${r.tc.id} ${r.passed ? "PASS" : "FAIL"} (${(r.durationMs / 1000).toFixed(1)}s)`);
-        if (!r.passed) r.errors.forEach(e => console.log(`     ${e}`));
-        return r;
-      })
-    ));
+    results = await Promise.all(toRun.map(tc => {
+      console.log(`  ▶ Starting: ${tc.id}`);
+      reportToDashboard({ type: "test_start", id: tc.id });
+      return runTest(tc).then(r => { reportResult(r); return r; });
+    }));
   }
 
   const passed = results.filter(r => r.passed).length;
   const failed = results.filter(r => !r.passed).length;
   console.log(`\n${"─".repeat(60)}`);
   console.log(`Results: ${passed} passed, ${failed} failed (${((Date.now() - start) / 1000).toFixed(0)}s total)\n`);
+  reportToDashboard({ type: "run_done", passCount: passed, failCount: failed, durationMs: Date.now() - start, exitCode: failed > 0 ? 1 : 0 });
 
   if (!fs.existsSync(REPORT_DIR)) fs.mkdirSync(REPORT_DIR, { recursive: true });
   const reportFile = path.join(REPORT_DIR, `report-${new Date().toISOString().replace(/[:.]/g, "-")}.html`);

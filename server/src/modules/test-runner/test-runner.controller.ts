@@ -107,4 +107,14 @@ export class TestRunnerController {
     this.testRunnerService.clearResults();
     return { ok: true };
   }
+
+  // ─── POST /api/admin/test-runner/event (NO auth - CLI reports here) ────────
+  // Any running CLI process posts events here; the service broadcasts to SSE.
+  // No auth required since this is localhost-only (CLI runs on same machine).
+
+  @Post("api/admin/test-runner/event")
+  receiveCliEvent(@Body() event: Record<string, unknown>) {
+    this.testRunnerService.receiveCliEvent(event);
+    return { ok: true };
+  }
 }

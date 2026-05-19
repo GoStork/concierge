@@ -259,4 +259,95 @@ export class TestRunnerService {
     };
     this.emit({ type: "state", state: this.state });
   }
+
+  // ─── Receive events from CLI process ────────────────────────────────────────
+  // The CLI script POSTs events here so any running CLI shows in the dashboard.
+
+  receiveCliEvent(event: Record<string, unknown>): void {
+    const type = event.type as string;
+
+    if (type === "run_start") {
+      // CLI started a new run - initialize state
+      const testIds = (event.testIds as string[]) || [];
+      const tests: Record<string, any> = {};
+      for (const id of testIds) {
+        const meta = ALL_TEST_META.find(t => t.id === id);
+        tests[id] = {
+          id,
+          persona: meta?.persona || "",
+          name: meta?.name || id,
+          status: "pending",
+          currentMessage: 0,
+          totalMessages: meta?.messageCount || 10,
+          errors: [],
+          durationMs: 0,
+        };
+      }
+      this.state = {
+        runId: `cli-${Date.now()}`,
+        startedAt: new Date().toISOString(),
+        status: "running",
+        filter: event.filter as string | undefined,
+        tests,
+        passCount: 0,
+        failCount: 0,
+        totalCount: testIds.length,
+        log: [`[CLI] Test run started: ${testIds.length} tests`],
+      };
+      this.emit({ type: "state", state: this.state });
+
+    } else if (type === "test_start") {
+      const id = event.id as string;
+      if (this.state.tests[id]) {
+        this.state.tests[id].status = "running";
+        this.state.log.push(`  ▶ Starting: ${id}`);
+        this.emit({ type: "test_start", id });
+        this.emit({ type: "log", line: `  ▶ Starting: ${id}` });
+      }
+
+    } else if (type === "test_pass") {
+      const id = event.id as string;
+      const dur = event.durationMs as number || 0;
+      if (this.state.tests[id]) {
+        this.state.tests[id].status = "pass";
+        this.state.tests[id].durationMs = dur;
+        this.state.passCount++;
+        const line = `  ✅ ${id} PASS (${(dur / 1000).toFixed(1)}s)`;
+        this.state.log.push(line);
+        this.emit({ type: "test_done", id, status: "pass", durationMs: dur, errors: [] });
+        this.emit({ type: "log", line });
+      }
+
+    } else if (type === "test_fail") {
+      const id = event.id as string;
+      const dur = event.durationMs as number || 0;
+      const errors = (event.errors as string[]) || [];
+      if (this.state.tests[id]) {
+        this.state.tests[id].status = "fail";
+        this.state.tests[id].durationMs = dur;
+        this.state.tests[id].errors = errors;
+        this.state.failCount++;
+        const line = `  ❌ ${id} FAIL (${(dur / 1000).toFixed(1)}s)`;
+        this.state.log.push(line, ...errors.map(e => `     ${e}`));
+        this.emit({ type: "test_done", id, status: "fail", durationMs: dur, errors });
+        this.emit({ type: "log", line });
+        errors.forEach(e => this.emit({ type: "log", line: `     [${id}] ${e}` }));
+      }
+
+    } else if (type === "run_done") {
+      this.state.status = "done";
+      this.state.endedAt = new Date().toISOString();
+      this.state.passCount = event.passCount as number || this.state.passCount;
+      this.state.failCount = event.failCount as number || this.state.failCount;
+      const line = `Results: ${this.state.passCount} passed, ${this.state.failCount} failed`;
+      this.state.log.push(line);
+      this.emit({ type: "run_done", passCount: this.state.passCount, failCount: this.state.failCount, durationMs: event.durationMs as number || 0, exitCode: event.exitCode as number || 0 });
+      this.emit({ type: "log", line });
+    }
+  }
 }
+
+// ─── Test metadata lookup ─────────────────────────────────────────────────────
+
+import { TEST_CASES as ALL_TEST_META_RAW } from "./test-cases";
+const ALL_TEST_META = ALL_TEST_META_RAW;
