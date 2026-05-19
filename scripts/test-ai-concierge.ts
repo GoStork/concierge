@@ -1609,7 +1609,10 @@ async function createTestUser(testId: string, interestedServices: string[]): Pro
     body: JSON.stringify({ email, password: TEST_PASSWORD }),
   });
   if (!loginRes.ok) throw new Error(`Login failed: ${await loginRes.text()}`);
-  const cookie = loginRes.headers.get("set-cookie") || "";
+  // Prefer JWT Bearer token (works without session cookies); fall back to session cookie
+  const loginBody = await loginRes.json();
+  const jwtToken = loginBody?.token;
+  const cookie = jwtToken ? `Bearer ${jwtToken}` : (loginRes.headers.get("set-cookie") || "");
 
   // Create ParentAccount + IntendedParentProfile with interestedServices.
   // New users have no parentAccountId (created during onboarding) - we create it here
@@ -1661,9 +1664,12 @@ async function sendMessage(cookie: string, message: string, sessionId: string | 
   const body: Record<string, unknown> = { message };
   if (sessionId) body.sessionId = sessionId;
 
+  const authHeaders: Record<string, string> = cookie.startsWith("Bearer ")
+    ? { Authorization: cookie }
+    : { Cookie: cookie };
   const res = await fetch(`${BASE_URL}/api/ai-concierge/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Cookie: cookie },
+    headers: { "Content-Type": "application/json", ...authHeaders },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`Chat API ${res.status}: ${await res.text()}`);

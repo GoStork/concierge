@@ -7,6 +7,7 @@ import { prisma } from "./db";
 import path from "path";
 import fs from "fs";
 import { isUserOnline } from "./online-tracker";
+import jwt from "jsonwebtoken";
 
 // Lazy getter - reads env var at call time.
 // Falls back to reading .env directly if shell exported an empty ANTHROPIC_API_KEY.
@@ -394,6 +395,29 @@ async function claudeRetry(messages: any[]): Promise<string> {
 }
 
 export const aiRouter = Router();
+
+// JWT Bearer token middleware - allows tests and mobile clients to authenticate
+// without a session cookie. Falls back gracefully to Passport session auth.
+aiRouter.use(async (req: any, _res: any, next: any) => {
+  if (!req.isAuthenticated?.()) {
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith("Bearer ")) {
+      try {
+        const token = authHeader.slice(7);
+        const secret = process.env.JWT_SECRET || "dev-jwt-secret-change-me";
+        const payload = jwt.verify(token, secret) as any;
+        if (payload?.sub) {
+          const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+          if (user && !user.isDisabled) {
+            req.user = user;
+            req.isAuthenticated = () => true;
+          }
+        }
+      } catch { /* invalid token - continue unauthenticated */ }
+    }
+  }
+  next();
+});
 
 // Cache MCP tools list - refreshed every 5 minutes instead of every message
 let cachedOpenAiTools: any[] = [];
