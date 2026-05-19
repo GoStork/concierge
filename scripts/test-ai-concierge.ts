@@ -28,8 +28,6 @@ import * as path from "path";
   const envPath = path.resolve(process.cwd(), ".env");
   const content = fs.readFileSync(envPath, "utf8");
   const needed = ["DATABASE_URL", "DIRECT_URL", "ANTHROPIC_API_KEY"];
-  // Enable fast mode for tests (Haiku instead of Sonnet for Tier2)
-  if (!process.env.AI_TEST_MODE) process.env.AI_TEST_MODE = "1";
   for (const key of needed) {
     if (!process.env[key] || process.env[key] === "") {
       const match = content.match(new RegExp(`^${key}=([^\\r\\n]+)`, "m"));

@@ -137,7 +137,7 @@ export class TestRunnerService {
 
     const proc = spawn("npx", args, {
       cwd: process.cwd(),
-      env: { ...process.env, AI_TEST_MODE: "1" }, // Use Haiku for Tier2 in tests (5-10x faster than Sonnet)
+      env: { ...process.env },
       stdio: ["ignore", "pipe", "pipe"],
     });
 
