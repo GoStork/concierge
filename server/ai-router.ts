@@ -3158,14 +3158,17 @@ The parent's message was: "${userMessage}"`,
     const conversationMessages = messages.filter(m => m.role === "user" || m.role === "assistant");
     const lastAiMsg = [...conversationMessages].reverse().find(m => m.role === "assistant");
     const lastAiContent = typeof lastAiMsg?.content === "string" ? lastAiMsg.content : "";
-    // Check ALL history for [[CURATION]] - not just messages after lastAiMsg.
-    const curationAlreadySent = conversationMessages.some(
+    // Check if CURATION was already sent. Use the session's tier2Active flag as the primary signal
+    // (most reliable) since [[CURATION]] tags are stripped from stored content.
+    // Fall back to scanning chat history for CURATION text patterns in case tier2Active is unavailable.
+    const curationAlreadySent = !!(currentSession?.tier2Active) || conversationMessages.some(
       m => m.role === "assistant" && typeof m.content === "string" && m.content.includes("[[CURATION]]")
     );
     // B1: egg donor preferences
     const justAnsweredB1 = /what matters most.*egg donor|egg donor.*preferences|specific preferences.*egg donor|qualities.*egg donor|preferences.*in an egg donor/i.test(lastAiContent);
     // C2: sperm donor type (open/anonymous/exclusive) - comes after C1 preferences
-    const justAnsweredC2 = /open.*donor.*anonymous.*exclusive|anonymous.*open.*exclusive|exclusive.*open.*anonymous|prefer.*open donor|prefer.*anonymous|prefer.*exclusive|open.*identity.*donor|donor type|identity donor|anonymous donor/i.test(lastAiContent) && /open|anonymous|exclusive|no preference/i.test(userMessage);
+    // Pattern must match when AI ASKED the C2 question, not just mentioned donor types in a summary
+    const justAnsweredC2 = /prefer.*open.*donor.*anonymous|prefer.*anonymous.*exclusive|open.*anonymous.*exclusive|would you prefer.*open|would you prefer.*anonymous|open donor.*anonymous donor|prefer an open|anonymous donor.*exclusive/i.test(lastAiContent) && /\b(open|anonymous|exclusive|no preference)\b/i.test(userMessage);
     // C1: sperm donor broad preferences (only if C2 not already asked)
     const justAnsweredC1 = !justAnsweredC2 && /what matters most.*sperm donor|sperm donor.*preferences|broad preferences.*sperm|looking for.*sperm donor|tell me.*sperm donor preferences/i.test(lastAiContent);
     // A5: clinic priorities question
@@ -4426,7 +4429,10 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     // before I search for surrogates:...") that are missing the mandatory question + quick replies.
     // The AI should always end curation summaries with a question and [[CURATION]], but sometimes
     // forgets both. Inject them so the conversation never dead-ends silently.
-    if (quickReplies.length === 0 && /just to confirm|to confirm your preferences|let me confirm/i.test(finalContent)) {
+    // CRITICAL: Only fire for match-cycle summaries (containing service-specific content),
+    // NOT for generic Phase 2 confirmations like "let me confirm you don't have embryos".
+    const isMatchCycleSummary = /surrogate|egg donor|sperm donor|ivf clinic|fertility clinic/i.test(finalContent);
+    if (quickReplies.length === 0 && isMatchCycleSummary && /just to confirm|to confirm your preferences|let me confirm/i.test(finalContent)) {
       const isForSurrogate = /surrogate/i.test(finalContent);
       const isForEggDonor = /egg donor/i.test(finalContent);
       const isForSpermDonor = /sperm donor/i.test(finalContent);
