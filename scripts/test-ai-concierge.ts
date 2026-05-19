@@ -21,28 +21,30 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { PrismaClient } from "@prisma/client";
 
-// ESM hoisting means dotenv.config() can't run before imports.
-// Instead, read DATABASE_URL directly from .env if not already in the environment.
-function ensureEnv() {
+// ESM hoisting means dotenv.config() can't run before static imports.
+// Read all needed env vars directly from .env SYNCHRONOUSLY before anything else.
+(function ensureEnv() {
   const envPath = path.resolve(process.cwd(), ".env");
   const content = fs.readFileSync(envPath, "utf8");
-  const needed = ["DATABASE_URL", "ANTHROPIC_API_KEY"];
+  const needed = ["DATABASE_URL", "DIRECT_URL", "ANTHROPIC_API_KEY"];
   for (const key of needed) {
     if (!process.env[key] || process.env[key] === "") {
       const match = content.match(new RegExp(`^${key}=([^\\r\\n]+)`, "m"));
-      if (match) process.env[key] = match[1].trim().replace(/^"(.*)"$/, "$1");
+      if (match) {
+        const val = match[1].trim();
+        process.env[key] = val.startsWith('"') ? val.slice(1, -1) : val;
+      }
     }
   }
-}
-ensureEnv();
+})();
 
-// Lazy prisma client - created after DATABASE_URL is set above
-let _db: PrismaClient | null = null;
-function getDB(): PrismaClient {
-  if (!_db) _db = new PrismaClient();
-  return _db;
+// Use dynamic import for server/db so it runs AFTER env vars are set above.
+// Plain new PrismaClient() won't work - the app uses @prisma/adapter-pg.
+let _dbModule: any = null;
+async function getDB() {
+  if (!_dbModule) _dbModule = await import("../server/db.js");
+  return _dbModule.prisma;
 }
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -1603,14 +1605,14 @@ async function createTestUser(testId: string): Promise<{ userId: string; cookie:
 
 async function deleteTestUser(userId: string): Promise<void> {
   try {
-    await getDB().aiChatMessage.deleteMany({ where: { session: { userId } } });
-    await getDB().aiChatSession.deleteMany({ where: { userId } });
-    const u = await getDB().user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
+    await (await getDB()).aiChatMessage.deleteMany({ where: { session: { userId } } });
+    await (await getDB()).aiChatSession.deleteMany({ where: { userId } });
+    const u = await (await getDB()).user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
     if (u?.parentAccountId) {
-      await getDB().intendedParentProfile.deleteMany({ where: { parentAccountId: u.parentAccountId } });
-      await getDB().parentAccount.deleteMany({ where: { id: u.parentAccountId } }).catch(() => {});
+      await (await getDB()).intendedParentProfile.deleteMany({ where: { parentAccountId: u.parentAccountId } });
+      await (await getDB()).parentAccount.deleteMany({ where: { id: u.parentAccountId } }).catch(() => {});
     }
-    await getDB().user.delete({ where: { id: userId } });
+    await (await getDB()).user.delete({ where: { id: userId } });
   } catch (e: any) {
     console.warn(`  [cleanup] Failed for ${userId}: ${e.message}`);
   }
@@ -1657,9 +1659,9 @@ async function sendMessage(cookie: string, message: string, sessionId: string | 
 }
 
 async function getProfile(userId: string): Promise<Record<string, unknown> | null> {
-  const u = await getDB().user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
+  const u = await (await getDB()).user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
   if (!u?.parentAccountId) return null;
-  return (await getDB().intendedParentProfile.findUnique({ where: { parentAccountId: u.parentAccountId } })) as Record<string, unknown> | null;
+  return (await (await getDB()).intendedParentProfile.findUnique({ where: { parentAccountId: u.parentAccountId } })) as Record<string, unknown> | null;
 }
 
 function sleep(ms: number): Promise<void> { return new Promise(r => setTimeout(r, ms)); }
