@@ -59,6 +59,7 @@ const DELAY_BETWEEN_MSGS_MS = 600;
 const args = process.argv.slice(2);
 const filterPersona = args.find(a => a.startsWith("--persona="))?.split("=")[1];
 const filterId = args.find(a => a.startsWith("--id="))?.split("=")[1];
+const sequential = args.includes("--sequential"); // Run tests one at a time (slower but avoids rate limits)
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -277,11 +278,15 @@ const TEST_CASES: TestCase[] = [
   {
     id: "SM-03", persona: "solo-man",
     name: "SM-03: No embryos · Already has surrogate · Needs egg donor · CLINIC_HAVE",
-    desc: "CLINIC_HAVE + egg donor: Phase 1 identity asked, surrogate skipped, egg donor match runs",
+    desc: "CLINIC_HAVE: AI asks sperm source BEFORE egg source for solo man - fixed message order",
     interestedServices: ["Egg Donor"],
+    // AI asks Step 3 (sperm source) BEFORE Step 2 (egg source) for solo man
+    // Correct order: SPERM_OWN first, then EGG_DONOR
     messages: msgs(
       P0, I_SOLO_MAN_STRAIGHT, CLINIC_HAVE, EMB_NO,
-      EGG_DONOR, SPERM_OWN, SURR_HAVE,
+      SPERM_OWN,    // Step 3: sperm source (AI asks this first for solo man)
+      EGG_DONOR,    // Step 2: egg source (asked after sperm for solo man flow)
+      SURR_HAVE,    // Step 4a: already has surrogate
       ...eggDonorMatch,
     ),
     db: [
@@ -426,12 +431,13 @@ const TEST_CASES: TestCase[] = [
     name: "SM-12: No embryos · Own sperm · CLINIC_HAVE · USA · Cost education check",
     desc: "CLINIC_HAVE: D-cycle checks cost education (Colombia mentioned in D1 breakdown)",
     interestedServices: ["Surrogate", "Egg Donor"],
-    // NOTE: No Phase 1 identity - AI may skip it when services+carrier already inferred
-    // Cost assertion uses "Colombia" as indicator that country education was delivered
+    // Colombia check: AI includes Colombia in D1 QUESTION (country education BEFORE asking)
+    // not in the response to "USA". Assert on SURR_NEED response which triggers D1 question.
     messages: msgs(
       P0, CLINIC_HAVE, EMB_NO,
-      EGG_DONOR, SPERM_OWN, SURR_NEED,
-      { send: "USA", assert: { contains: ["Colombia"] } },
+      EGG_DONOR, SPERM_OWN,
+      { send: "I need help finding a surrogate", assert: { contains: ["Colombia"] } },
+      { send: "USA" },
       "Pro-choice surrogate",
       { send: "Singleton only" },
       { send: "Yes, I'm ready!", assert: { hasMatchCard: true } },
@@ -1877,7 +1883,7 @@ async function main() {
   console.log(`   Running: ${toRun.length} of ${TEST_CASES.length} test cases`);
   if (filterPersona) console.log(`   Persona filter: ${filterPersona}`);
   if (filterId) console.log(`   ID filter: ${filterId}`);
-  console.log(`   Running in parallel...\n`);
+  console.log(`   Mode: ${sequential ? "sequential (--sequential)" : "parallel"}\n`);
 
   // Verify server
   try {
@@ -1891,14 +1897,28 @@ async function main() {
   }
 
   const start = Date.now();
-  const results = await Promise.all(toRun.map(tc =>
-    runTest(tc).then(r => {
+  let results: TestResult[];
+
+  if (sequential) {
+    // Run one at a time to avoid Anthropic rate limits and server overload
+    results = [];
+    for (const tc of toRun) {
+      const r = await runTest(tc);
       const icon = r.passed ? "✅" : "❌";
       console.log(`  ${icon} ${r.tc.id} ${r.passed ? "PASS" : "FAIL"} (${(r.durationMs / 1000).toFixed(1)}s)`);
       if (!r.passed) r.errors.forEach(e => console.log(`     ${e}`));
-      return r;
-    })
-  ));
+      results.push(r);
+    }
+  } else {
+    results = await Promise.all(toRun.map(tc =>
+      runTest(tc).then(r => {
+        const icon = r.passed ? "✅" : "❌";
+        console.log(`  ${icon} ${r.tc.id} ${r.passed ? "PASS" : "FAIL"} (${(r.durationMs / 1000).toFixed(1)}s)`);
+        if (!r.passed) r.errors.forEach(e => console.log(`     ${e}`));
+        return r;
+      })
+    ));
+  }
 
   const passed = results.filter(r => r.passed).length;
   const failed = results.filter(r => !r.passed).length;
