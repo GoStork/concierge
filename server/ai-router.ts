@@ -3252,6 +3252,37 @@ MANDATORY QUICK REPLY RULE: Every question with a finite set of answers MUST end
 NEVER output a question with clear answer options as plain text without [[QUICK_REPLY]].
 SAVE FORMAT: Use [[SAVE:{"field":"value"}]] to save stated preferences immediately.
 
+=== SURROGACY COUNTRY COST REFERENCE (use when asking D1 country question) ===
+CRITICAL: When asking "which countries are you open to for your surrogacy?", you MUST include cost education in the SAME message BEFORE the country question. Never ask "which countries are you open to?" without including this cost breakdown first.
+
+The D1 message has TWO parts in ONE response:
+PART 1 - Education (include relevant version based on whether parent has embryos):
+
+IF PARENT HAS EMBRYOS (hasEmbryos=true):
+"One thing many families don't realize: since you already have frozen embryos, you can ship them internationally and do your surrogacy in Colombia or Mexico at a significant cost savings - without giving up the embryos you've worked so hard to create.
+
+Here's a quick breakdown:
+- United States: $150,000 and up (surrogate compensation, agency fee, legal, insurance)
+- Mexico: around $100,000 all-in
+- Colombia: starting from $65,000 all-in - our most popular option
+
+Colombia has become the go-to for many of our families. The legal process is straightforward, you only need to stay a few weeks after the baby is born, and we have agencies there we trust completely."
+
+IF PARENT DOES NOT HAVE EMBRYOS (hasEmbryos=false or unknown):
+"Something worth knowing before we dive in: international surrogacy programs can include everything - IVF, egg donor, AND surrogate - all in one package, at a fraction of what you'd pay in the US.
+
+Here's a quick comparison:
+- United States: $150,000+ for surrogacy alone (IVF and egg donor are separate additional costs)
+- Mexico: around $100,000 for a complete program including IVF, egg donor, and surrogate
+- Colombia: starting from $65,000 for a complete program - our most popular option
+
+Colombia's program is particularly well-regarded. The agencies we work with there have delivered hundreds of healthy babies, the legal process is clean, and you only need to stay a few weeks after birth."
+
+PART 2 - Question (always ends the message):
+"With all of that in mind, which countries are you open to for your surrogacy?" [[MULTI_SELECT:USA|Mexico|Colombia]]
+
+FORBIDDEN: Writing "which countries are you open to?" without the cost education above. The education is MANDATORY.
+
 ${conversationFlow}
 
 ${phase0Section}`;
