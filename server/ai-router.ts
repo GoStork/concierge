@@ -283,8 +283,6 @@ async function callTier2Claude(
         system: systemWithCache,
         messages: currentMessages,
         ...(hasTools ? { tools: anthropicTools } : {}),
-        // When forceToolUse is true (e.g. parent said "ready"), require the model to call a tool
-        ...(hasTools && forceToolUse ? { tool_choice: { type: "any" } as any } : {}),
       });
 
       if (response.stop_reason === "tool_use") {
@@ -3215,7 +3213,8 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       content: `ABSOLUTE OUTPUT RULES (enforced every response):
 1. MATCH_CARD MANDATORY: Whenever you mention, describe, or recommend a specific donor, surrogate, or clinic - you MUST use [[MATCH_CARD:{...}]]. Plain-text-only profile descriptions (e.g., "Donor #5596 - Age 20, Brown hair...") are STRICTLY FORBIDDEN.
 2. ONE PROFILE PER MESSAGE: Never list multiple profiles in one message. ONE [[MATCH_CARD]] only, then stop and wait.
-3. CURATION BEFORE SEARCH: After collecting preferences (B1 for egg donors, D1-D3 for surrogates), you MUST send [[CURATION]] first. Only call search tools AFTER receiving "ready". If the parent already said "ready" and [[CURATION]] was already sent, call search tools immediately - do NOT send [[CURATION]] again.`,
+3. CURATION BEFORE SEARCH: After collecting preferences (B1 for egg donors, D1-D3 for surrogates), you MUST send [[CURATION]] first. Only call search tools AFTER receiving "ready". If the parent already said "ready" and [[CURATION]] was already sent, call search tools immediately - do NOT send [[CURATION]] again.
+4. NEVER FABRICATE: NEVER describe a specific clinic, donor, or surrogate from your training data. You MUST call the relevant MCP search tool first. Any clinic/donor/surrogate description without a prior tool call is FORBIDDEN.`,
     });
 
     // -------------------------------------------------------------------------
@@ -3382,6 +3381,27 @@ ${phase0Section}`;
     const parentIsFemaleSolo = isFemaleGender && isSoloSkip;
     const parentIsLesbian = isLesbianOrientation;
     if ((parentIsFemaleSolo || parentIsLesbian) && profile?.spermSource !== "My own") {
+      // CRITICAL: Extract and apply [[SAVE:...]] tags from finalContent BEFORE stripping the sperm Q,
+      // because the strip pattern `[^.!?]*` can capture and remove SAVE tags that precede the question.
+      // We process the SAVE tags early here so the data is not lost when the question is stripped.
+      if (/will you be using your own(?: sperm)?(?:\s*or a sperm donor|,|\s*your partner)|\bfor sperm[,\s]*will you be\b|sperm.*will you be using.*own|using your own or a sperm/i.test(finalContent)) {
+        const earlyMatchesSave = [...finalContent.matchAll(/\[\[SAVE:(.*?)\]\]/g)];
+        for (const esm of earlyMatchesSave) {
+          try {
+            const earlyData = JSON.parse(esm[1]);
+            if (Object.keys(earlyData).length > 0 && userRecord?.parentAccountId) {
+              await prisma.intendedParentProfile.upsert({
+                where: { parentAccountId: userRecord.parentAccountId },
+                update: earlyData,
+                create: { parentAccountId: userRecord.parentAccountId, ...earlyData },
+              });
+              // Update local profile cache
+              if (profile) Object.assign(profile, earlyData);
+              console.log(`[EARLY-SAVE] Saved profile data before sperm Q strip:`, Object.keys(earlyData));
+            }
+          } catch {}
+        }
+      }
       // Pattern: matches sperm source questions WITH OR WITHOUT QR buttons
       // Tier1 (Gemini) sometimes generates without QR buttons so we can't require them
       // IMPORTANT: Only strip SPERM SOURCE questions (Step 3: "will you use your own sperm or a donor?")
