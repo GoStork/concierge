@@ -2810,6 +2810,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       // Finalize AI response bubble - defer until typing animation drains
       if (aiData?.message?.content) {
         const aiMsgId = aiData.message.id;
+        // Register the message ID immediately so the polling loop doesn't add a duplicate
+        // while the typing animation is still running (which defers finalizeUploadBubble)
+        if (aiMsgId) knownMessageIds.current.add(aiMsgId);
         const finalizeUploadBubble = () => {
           setMessages(prev => prev.map(m => {
             if (m.id !== `${streamingUploadId}-ai`) return m;
@@ -2825,7 +2828,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               senderName: aiData.message.senderName,
             };
           }).filter(Boolean));
-          if (aiData.message.id) knownMessageIds.current.add(aiData.message.id);
         };
         if (typingIntervalRef.current) {
           typingOnDoneRef.current = finalizeUploadBubble;
