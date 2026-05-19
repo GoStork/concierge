@@ -26,7 +26,8 @@ export class TestRunnerController {
 
   private assertAdmin(req: Request): void {
     const user = req.user as any;
-    this.logger.log(`assertAdmin check: userId=${user?.id}, roles=${JSON.stringify(user?.roles)}, role=${user?.role}`);
+    // Debug: always visible in logs
+    console.log(`[TestRunner] assertAdmin: id=${user?.id}, roles=${JSON.stringify(user?.roles)}, role=${user?.role}, isAuth=${(req as any).isAuthenticated?.()}`);
     // Support both 'roles' array and legacy 'role' string
     const isAdmin = user?.roles?.includes("GOSTORK_ADMIN") || user?.role === "GOSTORK_ADMIN";
     if (!isAdmin) {
