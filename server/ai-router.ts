@@ -3844,7 +3844,8 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           } else if (resolvedKey === "spermSource") {
             profileData.spermSource = normalizeSpermSource(String(value));
           } else {
-            profileData[resolvedKey] = value;
+            // Ensure string fields are actually strings - AI sometimes saves arrays
+            profileData[resolvedKey] = Array.isArray(value) ? value.join(",") : String(value);
           }
         } else if (key === "gender") {
           const gRaw = String(value).toLowerCase().trim().replace(/^i'm\s+/, "").replace(/^a\s+/, "");
