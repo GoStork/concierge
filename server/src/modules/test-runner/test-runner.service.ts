@@ -44,7 +44,7 @@ function saveState(state: RunnerState): void {
 export class TestRunnerService {
   private readonly logger = new Logger(TestRunnerService.name);
   private subscribers = new Set<(json: string) => void>();
-  private childProcess: ChildProcess | null = null;
+  private childProcesses = new Map<string, ChildProcess>(); // runId → process
 
   // Load persisted state on startup so results survive server restarts
   private state: RunnerState = loadPersistedState() ?? {
@@ -85,19 +85,15 @@ export class TestRunnerService {
   // ─── Run control ────────────────────────────────────────────────────────────
 
   startRun(filter?: string): { started: boolean; message: string } {
-    if (this.state.status === "running") {
-      return { started: false, message: "A run is already in progress. Stop it first." };
-    }
-
-    // Reset state
-    const runId = Date.now().toString();
+    // Allow parallel runs per persona - no blocking
+    const runId = `${filter || "all"}-${Date.now()}`;
     const matchingTests = filter
       ? TEST_CASES.filter(tc => tc.persona === filter || tc.id === filter)
       : TEST_CASES;
 
-    const tests: Record<string, TestProgress> = {};
+    // Merge new tests into existing state (preserves other persona results)
     for (const tc of matchingTests) {
-      tests[tc.id] = {
+      this.state.tests[tc.id] = {
         id: tc.id,
         persona: tc.persona,
         name: tc.name,
@@ -108,18 +104,11 @@ export class TestRunnerService {
         durationMs: 0,
       };
     }
-
-    this.state = {
-      runId,
-      startedAt: new Date().toISOString(),
-      status: "running",
-      filter,
-      tests,
-      passCount: 0,
-      failCount: 0,
-      totalCount: matchingTests.length,
-      log: [],
-    };
+    this.state.status = "running";
+    this.state.runId = runId;
+    if (!this.state.startedAt) this.state.startedAt = new Date().toISOString();
+    this.state.totalCount = Object.keys(this.state.tests).length;
+    this.state.log.push(`[${filter || "all"}] Starting ${matchingTests.length} tests...`);
 
     this.emit({ type: "state", state: this.state });
 
@@ -135,13 +124,15 @@ export class TestRunnerService {
     }
 
     this.logger.log(`Spawning test runner: npx ${args.join(" ")}`);
+    this.childProcesses.set(runId, null as any); // placeholder
 
-    this.childProcess = spawn("npx", args, {
+    const proc = spawn("npx", args, {
       cwd: process.cwd(),
       env: { ...process.env },
       stdio: ["ignore", "pipe", "pipe"],
     });
 
+    this.childProcesses.set(runId, proc);
     let buffer = "";
     let currentTestId: string | null = null;
 
@@ -232,14 +223,17 @@ export class TestRunnerService {
       }
     };
 
-    this.childProcess.stdout?.on("data", onData);
-    this.childProcess.stderr?.on("data", onData);
+    proc.stdout?.on("data", onData);
+    proc.stderr?.on("data", onData);
 
-    this.childProcess.on("close", (code) => {
+    proc.on("close", (code) => {
       if (buffer.trim()) processLine(buffer.trim());
-      this.state.status = "done";
-      this.state.endedAt = new Date().toISOString();
-      this.childProcess = null;
+      this.childProcesses.delete(runId);
+      // Only mark done if no other processes running
+      if (this.childProcesses.size === 0) {
+        this.state.status = "done";
+        this.state.endedAt = new Date().toISOString();
+      }
       this.emit({
         type: "run_done",
         passCount: this.state.passCount,
@@ -250,9 +244,10 @@ export class TestRunnerService {
       this.logger.log(`Test run complete: ${this.state.passCount} passed, ${this.state.failCount} failed`);
     });
 
-    this.childProcess.on("error", (err) => {
+    proc.on("error", (err) => {
       this.logger.error(`Test runner error: ${err.message}`);
-      this.state.status = "done";
+      this.childProcesses.delete(runId);
+      if (this.childProcesses.size === 0) this.state.status = "done";
       this.emit({ type: "error", message: err.message });
     });
 
@@ -260,9 +255,11 @@ export class TestRunnerService {
   }
 
   stopRun(): { stopped: boolean } {
-    if (this.childProcess) {
-      this.childProcess.kill("SIGTERM");
-      this.childProcess = null;
+    if (this.childProcesses.size > 0) {
+      for (const [, proc] of this.childProcesses) {
+        try { proc?.kill("SIGTERM"); } catch {}
+      }
+      this.childProcesses.clear();
       this.state.status = "done";
       this.state.endedAt = new Date().toISOString();
       this.emit({ type: "run_stopped" });
