@@ -114,7 +114,10 @@ export class TestRunnerService {
 
     // Spawn the CLI script
     const scriptPath = path.resolve(process.cwd(), "scripts", "test-ai-concierge.ts");
-    const args = ["tsx", scriptPath, "--sequential"];
+    // No --sequential: run tests in parallel so all N tests run at once
+    // Sequential would mean each test waits for the previous: N × 5min = hours
+    // Parallel: all tests run simultaneously, suite finishes in ~5-10min total
+    const args = ["tsx", scriptPath];
     if (filter) {
       if (TEST_CASES.find(tc => tc.id === filter)) {
         args.push(`--id=${filter}`);
