@@ -202,6 +202,10 @@ function injectMissingQuickReplies(content: string): string {
     [/are you hoping to have twins.*singleton/i, "[[QUICK_REPLY:Hoping for twins|Singleton only|No preference]]"],
     [/first ivf journey.*done ivf before/i, "[[QUICK_REPLY:First time|I've done IVF before]]"],
     [/termination if medically necessary/i, "[[QUICK_REPLY:Pro-choice surrogate|Pro-life surrogate|No preference]]"],
+    // CURATION summary confirmation - "Does that sound right / correct and are you ready?"
+    [/does that (?:sound right|all sound correct|sound correct).*ready/i, "[[QUICK_REPLY:Yes, I'm ready!|Let me correct something]]"],
+    [/ready to see some (?:surrogate|donor|clinic|match)/i, "[[QUICK_REPLY:Yes, show me matches!|Not yet]]"],
+    [/shall i find your (?:perfect )?matches/i, "[[QUICK_REPLY:Yes, find my matches!|I have a question first]]"],
   ];
 
   for (const [pattern, tag] of patterns) {
