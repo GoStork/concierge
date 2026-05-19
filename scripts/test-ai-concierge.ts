@@ -234,15 +234,18 @@ const TEST_CASES: TestCase[] = [
     id: "SM-01", persona: "solo-man",
     name: "SM-01: No embryos · Own sperm · Needs all services · USA · Pro-choice · Singleton",
     desc: "Most common solo man path - own sperm, needs egg donor + clinic + surrogate. Order: Clinic → Egg Donor → Surrogate",
-    interestedServices: ["Surrogate", "Egg Donor"],
+    interestedServices: ["Surrogate", "Egg Donor", "Fertility Clinic"],
     messages: msgs(
       P0, I_SOLO_MAN_STRAIGHT, CLINIC_NEED, EMB_NO,
       "I need help finding an egg donor",
       SPERM_OWN,
       SURR_NEED,
+      // D1/D2/D3 + ready. interestedServices preset ensures clinic→egg donor→surrogate order.
       ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
-      ...clinicMatch,      // Clinic runs first → match card asserted here ✓
-      ...eggDonorMatch,    // Egg donor second → match card asserted here ✓
+      // Clinic match cycle (runs first due to interestedServices including "Fertility Clinic")
+      ...clinicMatch,
+      // Egg donor match cycle (second)
+      ...eggDonorMatch,
     ),
     db: [
       { field: "spermSource", expected: "My sperm" },
@@ -1586,7 +1589,7 @@ function getTestsToRun(): TestCase[] {
 
 // ─── HTTP Helpers ─────────────────────────────────────────────────────────────
 
-async function createTestUser(testId: string): Promise<{ userId: string; cookie: string }> {
+async function createTestUser(testId: string, interestedServices: string[]): Promise<{ userId: string; cookie: string }> {
   const email = `test-${testId.toLowerCase()}-${Date.now()}@gostork-test.com`;
   const regRes = await fetch(`${BASE_URL}/api/users`, {
     method: "POST",
@@ -1603,6 +1606,24 @@ async function createTestUser(testId: string): Promise<{ userId: string; cookie:
   });
   if (!loginRes.ok) throw new Error(`Login failed: ${await loginRes.text()}`);
   const cookie = loginRes.headers.get("set-cookie") || "";
+
+  // Set interestedServices on the user's profile so progressive match cycles run in the right order.
+  if (interestedServices.length > 0) {
+    try {
+      const dbUser = await (await getDB()).user.findUnique({
+        where: { id: user.id },
+        select: { parentAccountId: true },
+      });
+      if (dbUser?.parentAccountId) {
+        await (await getDB()).intendedParentProfile.upsert({
+          where: { parentAccountId: dbUser.parentAccountId },
+          update: { interestedServices },
+          create: { parentAccountId: dbUser.parentAccountId, interestedServices },
+        });
+      }
+    } catch {} // Non-fatal - test still runs without preset services
+  }
+
   return { userId: user.id, cookie };
 }
 
@@ -1682,7 +1703,7 @@ async function runTest(tc: TestCase): Promise<TestResult> {
   let userId: string | undefined;
 
   try {
-    const { userId: uid, cookie } = await createTestUser(tc.id);
+    const { userId: uid, cookie } = await createTestUser(tc.id, tc.interestedServices);
     userId = uid;
     let sessionId: string | null = null;
     let aiMsgIdx = 0;
