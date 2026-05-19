@@ -52,7 +52,7 @@ async function getDB() {
 const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:5001";
 const REPORT_DIR = path.join(process.cwd(), "scripts", "test-results");
 const TEST_PASSWORD = "TestPass123!";
-const MSG_TIMEOUT_MS = 90_000;
+const MSG_TIMEOUT_MS = 150_000; // 2.5 min - Tier2 Claude calls can be slow
 const DELAY_BETWEEN_MSGS_MS = 600;
 
 // CLI filters
@@ -1607,21 +1607,30 @@ async function createTestUser(testId: string, interestedServices: string[]): Pro
   if (!loginRes.ok) throw new Error(`Login failed: ${await loginRes.text()}`);
   const cookie = loginRes.headers.get("set-cookie") || "";
 
-  // Set interestedServices on the user's profile so progressive match cycles run in the right order.
-  if (interestedServices.length > 0) {
-    try {
-      const dbUser = await (await getDB()).user.findUnique({
-        where: { id: user.id },
-        select: { parentAccountId: true },
-      });
-      if (dbUser?.parentAccountId) {
-        await (await getDB()).intendedParentProfile.upsert({
-          where: { parentAccountId: dbUser.parentAccountId },
-          update: { interestedServices },
-          create: { parentAccountId: dbUser.parentAccountId, interestedServices },
-        });
-      }
-    } catch {} // Non-fatal - test still runs without preset services
+  // Create ParentAccount + IntendedParentProfile with interestedServices.
+  // New users have no parentAccountId (created during onboarding) - we create it here
+  // so the AI's progressive match cycles run in the correct order.
+  try {
+    const db = await getDB();
+    let parentAccountId = (await db.user.findUnique({
+      where: { id: user.id }, select: { parentAccountId: true }
+    }))?.parentAccountId;
+
+    if (!parentAccountId) {
+      // Create ParentAccount and link to user
+      const account = await db.parentAccount.create({ data: {} });
+      parentAccountId = account.id;
+      await db.user.update({ where: { id: user.id }, data: { parentAccountId } });
+    }
+
+    // Upsert IntendedParentProfile with the test services
+    await db.intendedParentProfile.upsert({
+      where: { parentAccountId },
+      update: { interestedServices },
+      create: { parentAccountId, interestedServices },
+    });
+  } catch (e: any) {
+    console.warn(`  [setup] Profile setup failed: ${e.message}`);
   }
 
   return { userId: user.id, cookie };
@@ -1629,14 +1638,16 @@ async function createTestUser(testId: string, interestedServices: string[]): Pro
 
 async function deleteTestUser(userId: string): Promise<void> {
   try {
-    await (await getDB()).aiChatMessage.deleteMany({ where: { session: { userId } } });
-    await (await getDB()).aiChatSession.deleteMany({ where: { userId } });
-    const u = await (await getDB()).user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
+    const db = await getDB();
+    await db.aiChatMessage.deleteMany({ where: { session: { userId } } });
+    await db.aiChatSession.deleteMany({ where: { userId } });
+    const u = await db.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
     if (u?.parentAccountId) {
-      await (await getDB()).intendedParentProfile.deleteMany({ where: { parentAccountId: u.parentAccountId } });
-      await (await getDB()).parentAccount.deleteMany({ where: { id: u.parentAccountId } }).catch(() => {});
+      await db.intendedParentProfile.deleteMany({ where: { parentAccountId: u.parentAccountId } });
+      await db.journeyPreferences.deleteMany({ where: { parentAccountId: u.parentAccountId } }).catch(() => {});
+      await db.parentAccount.delete({ where: { id: u.parentAccountId } }).catch(() => {});
     }
-    await (await getDB()).user.delete({ where: { id: userId } });
+    await db.user.delete({ where: { id: userId } });
   } catch (e: any) {
     console.warn(`  [cleanup] Failed for ${userId}: ${e.message}`);
   }
