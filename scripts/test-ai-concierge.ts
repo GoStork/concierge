@@ -189,18 +189,20 @@ const eggDonorMatch: Msg[] = [
 
 // Phase 3 - Sperm donor match (C1 preferences + donor type + CURATION ready + match card)
 const spermDonorMatch: Msg[] = [
-  { send: "Open identity preferred, tall, athletic build" },
-  { send: "Open" }, // C2: donor type (Open/Anonymous/Exclusive)
-  { send: "Yes, I'm ready!", assert: { hasMatchCard: true } },
+  { send: "Yes, I'm ready!" },  // CURATION response → Tier2 activates → asks C1
+  { send: "Open identity preferred, tall, athletic build" },  // C1 answer
+  { send: "Open", assert: { hasMatchCard: true } },  // C2 donor type → match card
 ];
 
 // Phase 3 - Clinic match
+// CURATION → ready → Tier2 asks A1 → age → partner age → twins → IVF exp → priorities → match card
 const clinicMatch: Msg[] = [
+  { send: "Yes, I\'m ready!" },  // CURATION response → Tier2 activates → asks A1
   { send: "35" },  // A1 age
   { send: "No" },  // A2 partner age (skip)
   { send: "No" },  // A3 twins
   { send: "First time" },  // A4 IVF experience
-  { send: "Success rates", assert: { hasMatchCard: true } }, // A5 priorities
+  { send: "Success rates", assert: { hasMatchCard: true } },  // A5 → match card
 ];
 
 // Helper: build assertions that certain sperm questions never appear
