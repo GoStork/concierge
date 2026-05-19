@@ -21,6 +21,11 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import * as dotenv from "dotenv";
+
+// Load .env before importing prisma (DATABASE_URL required)
+dotenv.config({ path: path.resolve(__dirname, "../.env"), override: true });
+
 import { prisma } from "../server/db";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
