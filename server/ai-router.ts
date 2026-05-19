@@ -12,13 +12,22 @@ import { isUserOnline } from "./online-tracker";
 // Falls back to reading .env directly if shell exported an empty ANTHROPIC_API_KEY.
 function getAnthropicClient(): Anthropic {
   let apiKey = process.env.ANTHROPIC_API_KEY;
+  console.log(`[ANTHROPIC] env key: ${apiKey ? "SET (length " + apiKey.length + ")" : "EMPTY/MISSING"}`);
   if (!apiKey) {
     try {
       const envPath = path.resolve(process.cwd(), ".env");
+      console.log(`[ANTHROPIC] Falling back to reading: ${envPath}`);
       const envContent = fs.readFileSync(envPath, "utf8");
       const match = envContent.match(/^ANTHROPIC_API_KEY=([^\r\n]+)/m);
-      if (match) apiKey = match[1].trim();
-    } catch (e) {}
+      if (match) {
+        apiKey = match[1].trim();
+        console.log(`[ANTHROPIC] Fallback key found, length: ${apiKey.length}`);
+      } else {
+        console.log(`[ANTHROPIC] Fallback: no match found in .env`);
+      }
+    } catch (e: any) {
+      console.log(`[ANTHROPIC] Fallback failed: ${e.message}`);
+    }
   }
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
   return new Anthropic({ apiKey });
