@@ -2441,7 +2441,7 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     const orientationLower = (userRecord?.sexualOrientation || "").toLowerCase();
     const isLesbianOrientation = orientationLower === "lesbian";
     const relationshipLower = (userRecord?.relationshipStatus || "").toLowerCase();
-    const isSoloParent = relationshipLower === "single" || relationshipLower === "solo";
+    const isSoloSkip = relationshipLower === "single" || relationshipLower === "solo";
     const isGayMaleFromDB =
       isMaleGender &&
       ((userRecord?.sexualOrientation || "").toLowerCase() === "gay" ||
@@ -2496,7 +2496,7 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // Sperm source: skip if already saved OR biologically obvious from gender/orientation
     if (profile?.spermSource) {
       skipDirectives.push(`DO NOT ask about sperm source (Step 3) - already saved: ${profile.spermSource}.`);
-    } else if (isFemaleGender && isSoloParent) {
+    } else if (isFemaleGender && isSoloSkip) {
       // Solo woman ALWAYS uses a sperm donor - no other option exists
       skipDirectives.push(
         `DO NOT ask about sperm source (Step 3) - solo woman always uses a sperm donor. ` +
