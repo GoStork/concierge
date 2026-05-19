@@ -1,5 +1,7 @@
 import "reflect-metadata";
-import "dotenv/config";
+// Use override:true so .env values always win over shell env vars (e.g. empty ANTHROPIC_API_KEY in shell)
+import * as dotenv from "dotenv";
+dotenv.config({ override: true });
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import passport from "passport";
