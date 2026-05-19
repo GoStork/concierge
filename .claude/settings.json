@@ -1,0 +1,69 @@
+{
+  "enabledMcpjsonServers": ["gostork-db"],
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "fp=$(jq -r '.tool_input.file_path // empty'); echo \"$fp\" | grep -q 'ai-prompt-defaults.ts' && node scripts/generate-decision-tree.mjs && git add decision-tree.html || true",
+            "statusMessage": "Regenerating decision tree..."
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(tail -50 server/*.log)",
+      "Read(//Users/eranamir/Documents/GitHub/concierge/**)",
+      "Bash(ps -p 10885 -o lstart=)",
+      "Bash(node -e \"require\\(''pdf-parse''\\)\")",
+      "Bash(npm install:*)",
+      "Bash(find /Users/eranamir/Documents/GitHub/concierge/client -name *.png -o -name *.jpg -o -name *.svg)",
+      "Bash(grep -r \"type.*=.*file\" client/src/pages/*.tsx)",
+      "Bash(while read:*)",
+      "Bash(do sed:*)",
+      "Bash(find /Users/eranamir/Documents/GitHub/concierge/server -type f \\\\\\(-name *ai* -o -name *flow* -o -name *plan* -o -name *question* \\\\\\))",
+      "Bash(find /Users/eranamir/Documents/GitHub/concierge/server -type f \\\\\\(-name *chat* -o -name *conversation* -o -name *message* -o -name *session* \\\\\\))",
+      "Bash(git fetch:*)",
+      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")",
+      "Bash(wc -l client/src/components/chat/*.ts client/src/components/chat/*.tsx client/src/pages/admin-concierge-monitor.tsx client/src/pages/conversations-page.tsx)",
+      "Bash(git worktree:*)",
+      "Bash(find /Users/eranamir/Documents/GitHub/concierge/server -type f -name *.ts)",
+      "Bash(git commit:*)",
+      "Bash(need help finding one?\" - skip the follow-up. Applied to all step:*)",
+      "Bash(and surrogate and IVF clinic\"\\), the AI now skips questions whose answers:*)",
+      "Bash(clinic\" wasn''t being parsed for skip directives.:*)",
+      "Bash(conversation\"\\) ignoring prompt instructions. Now the server overrides:*)",
+      "Bash(and ivf clinic\"\\).:*)",
+      "Bash(grep -r \"daily\\\\|video.*call\\\\|startVideo\" /Users/eranamir/Documents/GitHub/concierge/client/src --include=*.tsx --include=*.ts)",
+      "Bash(grep -r \"calendar\\\\|booking.*link\\\\|schedule.*link\" /Users/eranamir/Documents/GitHub/concierge/client/src/components/chat --include=*.tsx --include=*.ts)",
+      "Bash(grep -r \"calendar_share\\\\|video_invite\" /Users/eranamir/Documents/GitHub/concierge/server --include=*.ts)",
+      "Bash(grep -r \"bookingUrl\\\\|calendar.*share\" /Users/eranamir/Documents/GitHub/concierge/server --include=*.ts)",
+      "Bash(grep -r \"share.*calendar\\\\|send.*booking\\\\|booking.*slug\" /Users/eranamir/Documents/GitHub/concierge/server --include=*.ts)",
+      "Read(//Users/eranamir/Library/Application Support/Code/User/globalStorage/github.copilot-chat/plan-agent/**)",
+      "Read(//Users/eranamir/Library/Application Support/Code/User/globalStorage/github.copilot-chat/ask-agent/**)",
+      "Read(//Users/eranamir/Library/Application Support/Code/User/globalStorage/github.copilot-chat/explore-agent/**)",
+      "Bash(grep -n \"allowedHosts\\\\|403\\\\|forbidden\" /Users/eranamir/Documents/GitHub/concierge/node_modules/vite/dist/node/chunks/dep-*.js)",
+      "Bash(find /Users/eranamir/Documents/GitHub/concierge -path node_modules -prune -o -name \"*.ts\" -type f -exec grep -l \"interface.*Filter\\\\|type.*Filter\" {})",
+      "Bash(- Add height matching logic using existing parseHeightToInches helper)",
+      "Bash(- Show \"Height X''Y\"\" label in Matched Preferences and Physical Traits card sections:*)",
+      "Bash(grep -E \"\\\\.\\(tsx|ts|jsx|js\\)$\")",
+      "Bash(grep -r \"@nestjs/schedule\\\\|bull\\\\|@bull\\\\|agenda\\\\|bee-queue\" /Users/eranamir/Documents/GitHub/concierge --exclude-dir=node_modules --exclude-dir=.claude --include=*.json --include=*.ts)",
+      "Bash(npm uninstall:*)",
+      "Bash(grep -n \"CONSULTATION_BOOKED\" /Users/eranamir/Documents/GitHub/concierge/server/*.ts)",
+      "Bash(grep -r \"SAVE\\\\|save.*action\\\\|heart.*action\" /Users/eranamir/Documents/GitHub/concierge/client/src --include=*.tsx --include=*.ts)",
+      "Bash(grep -rn \"savedProfile\\\\|SavedProfile\" /Users/eranamir/Documents/GitHub/concierge/server --include=*.ts)",
+      "Bash(ls /Users/eranamir/Documents/GitHub/concierge/.env*)",
+      "Bash(find /Users/eranamir/Documents/GitHub/concierge -name *.prisma -o -name schema.prisma)",
+      "Bash(node -e ':*)"
+    ],
+    "additionalDirectories": [
+      "/Users/eranamir/Library/Application Support/Code/User/globalStorage/github.copilot-chat/explore-agent",
+      "/Users/eranamir/Documents/GitHub/concierge"
+    ]
+  }
+}
