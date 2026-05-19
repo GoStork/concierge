@@ -298,30 +298,46 @@ export class TestRunnerService {
 
     } else if (type === "test_start") {
       const id = event.id as string;
-      if (this.state.tests[id]) {
-        this.state.tests[id].status = "running";
-        this.state.log.push(`  ▶ Starting: ${id}`);
-        this.emit({ type: "test_start", id });
-        this.emit({ type: "log", line: `  ▶ Starting: ${id}` });
+      // Auto-add test if not already registered (e.g. separate CLI invocation)
+      if (!this.state.tests[id]) {
+        const meta = ALL_TEST_META.find(t => t.id === id);
+        this.state.tests[id] = { id, persona: meta?.persona || "", name: meta?.name || id, status: "pending", currentMessage: 0, totalMessages: meta?.messageCount || 10, errors: [], durationMs: 0 };
+        this.state.totalCount = Math.max(this.state.totalCount, Object.keys(this.state.tests).length);
+        if (this.state.status !== "running") { this.state.status = "running"; this.state.startedAt = this.state.startedAt || new Date().toISOString(); }
       }
+      this.state.tests[id].status = "running";
+      const line = `  ▶ Starting: ${id}`;
+      this.state.log.push(line);
+      this.emit({ type: "test_start", id });
+      this.emit({ type: "log", line });
 
     } else if (type === "test_pass") {
       const id = event.id as string;
       const dur = event.durationMs as number || 0;
-      if (this.state.tests[id]) {
-        this.state.tests[id].status = "pass";
-        this.state.tests[id].durationMs = dur;
-        this.state.passCount++;
-        const line = `  ✅ ${id} PASS (${(dur / 1000).toFixed(1)}s)`;
-        this.state.log.push(line);
-        this.emit({ type: "test_done", id, status: "pass", durationMs: dur, errors: [] });
-        this.emit({ type: "log", line });
+      // Auto-add if not registered
+      if (!this.state.tests[id]) {
+        const meta = ALL_TEST_META.find(t => t.id === id);
+        this.state.tests[id] = { id, persona: meta?.persona || "", name: meta?.name || id, status: "pending", currentMessage: 0, totalMessages: meta?.messageCount || 10, errors: [], durationMs: 0 };
+        this.state.totalCount = Math.max(this.state.totalCount, Object.keys(this.state.tests).length);
       }
+      this.state.tests[id].status = "pass";
+      this.state.tests[id].durationMs = dur;
+      this.state.passCount++;
+      const line = `  ✅ ${id} PASS (${(dur / 1000).toFixed(1)}s)`;
+      this.state.log.push(line);
+      this.emit({ type: "test_done", id, status: "pass", durationMs: dur, errors: [] });
+      this.emit({ type: "log", line });
 
     } else if (type === "test_fail") {
       const id = event.id as string;
       const dur = event.durationMs as number || 0;
       const errors = (event.errors as string[]) || [];
+      // Auto-add if not registered
+      if (!this.state.tests[id]) {
+        const meta = ALL_TEST_META.find(t => t.id === id);
+        this.state.tests[id] = { id, persona: meta?.persona || "", name: meta?.name || id, status: "pending", currentMessage: 0, totalMessages: meta?.messageCount || 10, errors: [], durationMs: 0 };
+        this.state.totalCount = Math.max(this.state.totalCount, Object.keys(this.state.tests).length);
+      }
       if (this.state.tests[id]) {
         this.state.tests[id].status = "fail";
         this.state.tests[id].durationMs = dur;
