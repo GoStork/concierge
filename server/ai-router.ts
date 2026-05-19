@@ -222,7 +222,7 @@ async function callTier2Claude(
   openAiTools: any[],
   sse: SSEHandle,
   mcpClientRef: Client | null
-): Promise<{ content: string; toolCallsExecuted: boolean }> {
+): Promise<{ content: string; toolCallsExecuted: boolean; searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] }> {
   // Collect all inline system messages (injected throughout the messages array) and
   // append them to the main system prompt, since Anthropic only supports system content
   // in the top-level "system" field - not as role:"system" entries in the messages array.
@@ -263,6 +263,7 @@ async function callTier2Claude(
 
   let currentMessages = [...anthropicMessages];
   let toolCallsExecuted = false;
+  const searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] = [];
 
   while (true) {
     const hasTools = anthropicTools.length > 0;
@@ -291,6 +292,11 @@ async function callTier2Claude(
               });
               const resultText = (toolResult.content as any)?.[0]?.text || JSON.stringify(toolResult);
               toolResults.push({ type: "tool_result", tool_use_id: block.id, content: resultText });
+              // Track search tool results for fallback MATCH_CARD injection
+              const searchTools = ["search_surrogates", "search_egg_donors", "search_sperm_donors", "search_clinics"];
+              if (searchTools.includes(block.name)) {
+                searchToolResults.push({ toolName: block.name, resultText, toolArgs: block.input });
+              }
             } catch (e: any) {
               toolResults.push({ type: "tool_result", tool_use_id: block.id, content: `Error: ${e.message}`, is_error: true });
             }
@@ -312,7 +318,7 @@ async function callTier2Claude(
           sse.sendToken(word + " ");
           await new Promise((r) => setTimeout(r, 0));
         }
-        return { content: text, toolCallsExecuted: false };
+        return { content: text, toolCallsExecuted: false, searchToolResults };
       }
     } else {
       // After tool calls - true streaming
@@ -332,7 +338,7 @@ async function callTier2Claude(
           sse.sendToken(text);
         }
       }
-      return { content: fullText, toolCallsExecuted: true };
+      return { content: fullText, toolCallsExecuted: true, searchToolResults };
     }
   }
 }
@@ -3172,6 +3178,10 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       );
       finalContent = tier2Result.content || "I'm sorry, I couldn't process that.";
       finalContent = injectMissingQuickReplies(finalContent);
+      // Populate lastSearchToolResults from Tier2 tool calls for fallback MATCH_CARD injection
+      if (tier2Result.searchToolResults.length > 0) {
+        lastSearchToolResults.push(...tier2Result.searchToolResults);
+      }
     } else {
       // Tier 1: Gemini 2.5 Flash - MINIMAL prompt, Phase 0-2 only, no matching
       // Extract only the Phase 0 + conversation flow section from the DB prompt
