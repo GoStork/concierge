@@ -697,7 +697,7 @@ const TEST_CASES: TestCase[] = [
     desc: "Step 1c: creates new embryos with fresh egg donor, needs surrogate",
     interestedServices: ["Surrogate", "Egg Donor"],
     messages: msgs(
-      P0, I_SOLO_WOMAN, CLINIC_NEED,
+      P0, I_SOLO_WOMAN, CLINIC_HAVE,  // Already has clinic so clinic match cycle is skipped
       ...EMB_YES("2", "Yes"),
       EMB_CONFLICT_NEW,
       EGG_DONOR,

@@ -226,7 +226,8 @@ async function callTier2Claude(
   messages: any[],
   openAiTools: any[],
   sse: SSEHandle,
-  mcpClientRef: Client | null
+  mcpClientRef: Client | null,
+  forceToolUse = false
 ): Promise<{ content: string; toolCallsExecuted: boolean; searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] }> {
   // Collect all inline system messages (injected throughout the messages array) and
   // append them to the main system prompt, since Anthropic only supports system content
@@ -282,6 +283,8 @@ async function callTier2Claude(
         system: systemWithCache,
         messages: currentMessages,
         ...(hasTools ? { tools: anthropicTools } : {}),
+        // When forceToolUse is true (e.g. parent said "ready"), require the model to call a tool
+        ...(hasTools && forceToolUse ? { tool_choice: { type: "any" } as any } : {}),
       });
 
       if (response.stop_reason === "tool_use") {
@@ -3230,12 +3233,16 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
 
     if (useTier2) {
       // Tier 2: Claude Sonnet 4.6 with full prompt + caching + tools
+      // Force tool use when parent says "ready" after CURATION - prevents AI from fabricating match results.
+      // Only force if no match cards have been shown yet in this session (otherwise Tier2 handles it naturally).
+      const forceToolUseForSearch = userSaidReady && curationAlreadySent && needsTools && presentedProviderIds.size === 0;
       const tier2Result = await callTier2Claude(
         systemPromptForTiers,
         messages,
         needsTools && openAiTools.length > 0 ? openAiTools : [],
         sse,
-        mcpClient
+        mcpClient,
+        forceToolUseForSearch
       );
       finalContent = tier2Result.content || "I'm sorry, I couldn't process that.";
       finalContent = injectMissingQuickReplies(finalContent);
@@ -4437,10 +4444,16 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     // before I search for surrogates:...") that are missing the mandatory question + quick replies.
     // The AI should always end curation summaries with a question and [[CURATION]], but sometimes
     // forgets both. Inject them so the conversation never dead-ends silently.
-    // CRITICAL: Only fire for match-cycle summaries (containing service-specific content),
-    // NOT for generic Phase 2 confirmations like "let me confirm you don't have embryos".
+    // CRITICAL: Only fire for ACTUAL CURATION summaries that list collected preferences.
+    // NOT for Phase 3 intake questions that just happen to say "confirm" before asking A1/B1/etc.
+    // A true CURATION summary: summarizes multiple preferences AND asks if parent is ready.
     const isMatchCycleSummary = /surrogate|egg donor|sperm donor|ivf clinic|fertility clinic/i.test(finalContent);
-    if (quickReplies.length === 0 && isMatchCycleSummary && /just to confirm|to confirm your preferences|let me confirm/i.test(finalContent)) {
+    // Require the summary to actually contain preference descriptions (not just ask one question)
+    const looksLikeCurationSummary = (
+      /\b(you're looking for|here's what i have|you've mentioned|you'd like|looking for a|your preference[s]?|to summarize|let me summarize|you want)\b/i.test(finalContent) &&
+      /\b(ready|shall i|want me to|can i|would you like|ready to see)\b/i.test(finalContent)
+    );
+    if (quickReplies.length === 0 && isMatchCycleSummary && looksLikeCurationSummary && /just to confirm|to confirm your preferences|let me confirm|just to recap/i.test(finalContent)) {
       const isForSurrogate = /surrogate/i.test(finalContent);
       const isForEggDonor = /egg donor/i.test(finalContent);
       const isForSpermDonor = /sperm donor/i.test(finalContent);
