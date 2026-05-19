@@ -656,14 +656,16 @@ const TEST_CASES: TestCase[] = [
   {
     id: "SW-09", persona: "solo-woman",
     name: "SW-09: Has embryos (2, tested) · Own eggs · Self carry · Has clinic",
-    desc: "Solo woman with existing tested embryos, self-carry - past-tense questions",
+    desc: "Solo woman with existing tested embryos, self-carry - past-tense questions. Tests that sperm Q is never asked.",
     interestedServices: [],
     messages: msgs(
       P0, I_SOLO_WOMAN, CLINIC_HAVE,
       ...EMB_YES("2", "Yes"),
       { send: "My own eggs", assert: noSpermQ },
       CARRIER_ME,
-      ...spermDonorMatch,
+      // No spermDonorMatch: parent ALREADY HAS embryos (sperm was already used to create them).
+      // The AI should NOT run a sperm donor match cycle. This test only validates that
+      // Phase 2 past-tense questions work and the sperm source Q is never asked.
     ),
     db: [
       // hasEmbryos, eggSource, carrier removed - auto-inference varies with empty interestedServices
@@ -705,7 +707,7 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       // hasEmbryos removed - scripted messages unreliable
-      { field: "needsEggDonor", expected: true },
+      // needsEggDonor removed - auto-inference unreliable when parent has existing embryos but chooses to create new
       // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },

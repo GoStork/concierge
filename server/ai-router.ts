@@ -3845,10 +3845,18 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           }
         }
 
-        // Carrier - gay males and solo males ALWAYS need a gestational surrogate (no other option)
-        // Straight males with a female partner may have their partner carry - don't auto-set for them
-        if (extractedProfile?.carrier == null && isMaleGender && (isGayMale || isSoloParent)) {
-          autoProfileData.carrier = "Gestational surrogate";
+        // Carrier - extract from user message text first (most reliable signal)
+        if (extractedProfile?.carrier == null) {
+          if (/\bi('ll| will| am| plan to)? (carry|be carrying|be the carrier|carry the pregnancy)\b/i.test(msg) ||
+              /\bcarrying (it|the pregnancy|myself|the baby)\b/i.test(msg) ||
+              /\bi'll carry\b/i.test(msg)) {
+            autoProfileData.carrier = "Self";
+          } else if (/\bgestational surrogate\b|\ba surrogate\b|\bsurrogate will carry\b/i.test(msg)) {
+            autoProfileData.carrier = "Gestational surrogate";
+          } else if (isMaleGender && (isGayMale || isSoloParent)) {
+            // Gay males and solo males ALWAYS need a gestational surrogate (no other option)
+            autoProfileData.carrier = "Gestational surrogate";
+          }
         }
 
         // Needs
