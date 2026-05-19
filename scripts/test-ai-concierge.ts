@@ -26,7 +26,7 @@ import { PrismaClient } from "@prisma/client";
 // ESM hoisting means dotenv.config() can't run before imports.
 // Instead, read DATABASE_URL directly from .env if not already in the environment.
 function ensureEnv() {
-  const envPath = path.resolve(__dirname, "../.env");
+  const envPath = path.resolve(process.cwd(), ".env");
   const content = fs.readFileSync(envPath, "utf8");
   const needed = ["DATABASE_URL", "ANTHROPIC_API_KEY"];
   for (const key of needed) {
@@ -48,7 +48,7 @@ function getDB(): PrismaClient {
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:5001";
-const REPORT_DIR = path.join(__dirname, "test-results");
+const REPORT_DIR = path.join(process.cwd(), "scripts", "test-results");
 const TEST_PASSWORD = "TestPass123!";
 const MSG_TIMEOUT_MS = 90_000;
 const DELAY_BETWEEN_MSGS_MS = 600;
