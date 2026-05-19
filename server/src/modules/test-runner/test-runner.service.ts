@@ -350,6 +350,20 @@ export class TestRunnerService {
         errors.forEach(e => this.emit({ type: "log", line: `     [${id}] ${e}` }));
       }
 
+    } else if (type === "test_progress") {
+      const id = event.id as string;
+      if (!this.state.tests[id]) {
+        const meta = ALL_TEST_META.find(t => t.id === id);
+        this.state.tests[id] = { id, persona: meta?.persona || "", name: meta?.name || id, status: "running", currentMessage: 0, totalMessages: meta?.messageCount || 10, errors: [], durationMs: 0 };
+      }
+      const t = this.state.tests[id];
+      if (event.currentMessage) t.currentMessage = event.currentMessage as number;
+      if (event.totalMessages) t.totalMessages = event.totalMessages as number;
+      if (event.lastUserMsg) t.lastUserMsg = event.lastUserMsg as string;
+      if (event.lastAiSnippet) t.lastAiSnippet = event.lastAiSnippet as string;
+      if (event.status) t.currentStatus = event.status as string;
+      this.emit({ type: "test_progress", id, currentMessage: t.currentMessage, totalMessages: t.totalMessages, lastUserMsg: t.lastUserMsg, lastAiSnippet: t.lastAiSnippet, currentStatus: t.currentStatus });
+
     } else if (type === "run_done") {
       this.state.status = "done";
       this.state.endedAt = new Date().toISOString();

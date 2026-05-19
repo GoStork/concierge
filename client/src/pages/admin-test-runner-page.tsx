@@ -16,6 +16,9 @@ interface TestProgress {
   totalMessages: number;
   errors: string[];
   durationMs: number;
+  lastUserMsg?: string;
+  lastAiSnippet?: string;
+  currentStatus?: string;
 }
 
 interface RunnerState {
@@ -436,16 +439,22 @@ export default function AdminTestRunnerPage() {
                   </div>
                 </div>
 
-                {/* Progress bar (running only) */}
-                {status === "running" && ts && ts.totalMessages > 0 && (
-                  <div style={{ marginTop: "6px", height: "3px", background: "hsl(var(--muted))", borderRadius: "2px", overflow: "hidden" }}>
-                    <div style={{
-                      height: "100%",
-                      width: `${Math.round((ts.currentMessage / ts.totalMessages) * 100)}%`,
-                      background: "hsl(var(--primary))",
-                      borderRadius: "2px",
-                      transition: "width 0.3s",
-                    }} />
+                {/* Progress bar + live status (running only) */}
+                {status === "running" && ts && (
+                  <div style={{ marginTop: "6px" }}>
+                    {ts.totalMessages > 0 && (
+                      <div style={{ height: "3px", background: "hsl(var(--muted))", borderRadius: "2px", overflow: "hidden", marginBottom: "4px" }}>
+                        <div style={{ height: "100%", width: `${Math.round(((ts.currentMessage || 0) / ts.totalMessages) * 100)}%`, background: "hsl(var(--primary))", borderRadius: "2px", transition: "width 0.3s" }} />
+                      </div>
+                    )}
+                    {ts.lastUserMsg && (
+                      <div style={{ fontSize: "10px", color: "hsl(var(--muted-foreground))", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {ts.currentStatus === "testing" ? "→ " : "← "}{ts.currentStatus === "testing" ? ts.lastUserMsg : ts.lastAiSnippet || ts.lastUserMsg}
+                      </div>
+                    )}
+                    <div style={{ fontSize: "10px", color: "hsl(var(--muted-foreground))" }}>
+                      Msg {ts.currentMessage || 0}/{ts.totalMessages || tc.messageCount}
+                    </div>
                   </div>
                 )}
               </div>

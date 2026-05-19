@@ -1732,8 +1732,19 @@ async function runTest(tc: TestCase): Promise<TestResult> {
     let sessionId: string | null = null;
     let aiMsgIdx = 0;
 
-    for (const step of tc.messages) {
+    for (let msgIdx = 0; msgIdx < tc.messages.length; msgIdx++) {
+      const step = tc.messages[msgIdx];
       transcript.push({ role: "user", content: step.send });
+
+      // Report per-message progress to dashboard
+      reportToDashboard({
+        type: "test_progress",
+        id: tc.id,
+        currentMessage: msgIdx + 1,
+        totalMessages: tc.messages.length,
+        lastUserMsg: step.send.slice(0, 60),
+        status: "testing",
+      });
 
       const turn = await withTimeout(
         sendMessage(cookie, step.send, sessionId),
@@ -1741,6 +1752,16 @@ async function runTest(tc: TestCase): Promise<TestResult> {
         `"${step.send.slice(0, 40)}"`
       );
       if (turn.sessionId) sessionId = turn.sessionId;
+
+      // Report AI snippet to dashboard
+      reportToDashboard({
+        type: "test_progress",
+        id: tc.id,
+        currentMessage: msgIdx + 1,
+        totalMessages: tc.messages.length,
+        lastAiSnippet: turn.content.slice(0, 80),
+        status: "got_response",
+      });
 
       const notes: string[] = [];
       const a = step.assert;

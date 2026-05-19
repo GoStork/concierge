@@ -10,6 +10,9 @@ export interface TestProgress {
   errors: string[];
   durationMs: number;
   startedAt?: number;
+  lastUserMsg?: string;     // last message sent to AI
+  lastAiSnippet?: string;   // first 80 chars of AI response
+  currentStatus?: string;   // "testing" | "got_response"
 }
 
 export interface RunnerState {
