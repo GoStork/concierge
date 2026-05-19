@@ -16,8 +16,29 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { spawn, ChildProcess } from "child_process";
 import * as path from "path";
+import * as fs from "fs";
 import { RunnerState, TestProgress, SSEEvent } from "./test-runner.types";
 import { TEST_CASES } from "./test-cases";
+
+const STATE_FILE = path.resolve(process.cwd(), ".test-runner-state.json");
+
+function loadPersistedState(): RunnerState | null {
+  try {
+    if (fs.existsSync(STATE_FILE)) {
+      const raw = fs.readFileSync(STATE_FILE, "utf8");
+      return JSON.parse(raw) as RunnerState;
+    }
+  } catch {}
+  return null;
+}
+
+function saveState(state: RunnerState): void {
+  try {
+    // Don't persist "running" state - server restart means process is dead
+    const toSave = { ...state, status: state.status === "running" ? "done" as const : state.status };
+    fs.writeFileSync(STATE_FILE, JSON.stringify(toSave, null, 2));
+  } catch {}
+}
 
 @Injectable()
 export class TestRunnerService {
@@ -25,7 +46,8 @@ export class TestRunnerService {
   private subscribers = new Set<(json: string) => void>();
   private childProcess: ChildProcess | null = null;
 
-  private state: RunnerState = {
+  // Load persisted state on startup so results survive server restarts
+  private state: RunnerState = loadPersistedState() ?? {
     runId: "",
     startedAt: "",
     status: "idle",
@@ -50,6 +72,11 @@ export class TestRunnerService {
     const json = JSON.stringify(event);
     for (const sub of this.subscribers) {
       try { sub(json); } catch {}
+    }
+    // Persist state after every meaningful state change (not logs - too frequent)
+    const type = (event as any).type;
+    if (type === "test_done" || type === "run_done" || type === "state" || type === "test_start") {
+      saveState(this.state);
     }
   }
 
