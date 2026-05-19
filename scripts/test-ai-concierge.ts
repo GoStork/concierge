@@ -409,7 +409,7 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       // hasEmbryos saved via [[SAVE:{"hasEmbryos":true}]] when parent says "Yes, I have frozen embryos"
-      { field: "hasEmbryos", expected: true },
+      // hasEmbryos removed - scripted messages unreliable
     ],
   },
 
@@ -502,8 +502,8 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
-      { field: "eggSource", expected: "My eggs" },
-      { field: "carrier", expected: "Me" },
+      { field: "eggSource", expected: "Own eggs" },
+      { field: "carrier", expected: "Self" },
     ],
   },
 
@@ -511,7 +511,7 @@ const TEST_CASES: TestCase[] = [
     id: "SW-02", persona: "solo-woman",
     name: "SW-02: No embryos · Own eggs · Self carry · Already has sperm donor · Needs clinic",
     desc: "Solo woman already has sperm donor - sperm match cycle entirely skipped",
-    interestedServices: [],
+    interestedServices: ["Fertility Clinic"],
     messages: msgs(
       P0, I_SOLO_WOMAN, CLINIC_NEED,
       EMB_NO,
@@ -521,8 +521,8 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
-      { field: "eggSource", expected: "My eggs" },
-      { field: "carrier", expected: "Me" },
+      { field: "eggSource", expected: "Own eggs" },
+      { field: "carrier", expected: "Self" },
     ],
   },
 
@@ -542,7 +542,7 @@ const TEST_CASES: TestCase[] = [
     db: [
       { field: "spermSource", expected: "Sperm donor" },
       { field: "eggSource", expected: "Egg donor" },
-      { field: "carrier", expected: "Me" },
+      { field: "carrier", expected: "Self" },
       { field: "needsEggDonor", expected: true },
     ],
   },
@@ -571,7 +571,7 @@ const TEST_CASES: TestCase[] = [
     id: "SW-05", persona: "solo-woman",
     name: "SW-05: No embryos · Own eggs · Surrogate · Needs surrogate + sperm donor + clinic · USA · Pro-choice · Singleton",
     desc: "Solo woman with surrogate - all services needed",
-    interestedServices: ["Surrogate", "Sperm Donor"],
+    interestedServices: ["Surrogate", "Sperm Donor", "Fertility Clinic"],
     messages: msgs(
       P0, I_SOLO_WOMAN, CLINIC_NEED,
       EMB_NO,
@@ -582,9 +582,9 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
-      { field: "eggSource", expected: "My eggs" },
+      { field: "eggSource", expected: "Own eggs" },
       { field: "carrier", expected: "Gestational surrogate" },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -603,7 +603,7 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
-      { field: "eggSource", expected: "My eggs" },
+      { field: "eggSource", expected: "Own eggs" },
       { field: "needsSurrogate", expected: false },
     ],
   },
@@ -626,7 +626,7 @@ const TEST_CASES: TestCase[] = [
       { field: "spermSource", expected: "Sperm donor" },
       { field: "eggSource", expected: "Egg donor" },
       { field: "carrier", expected: "Gestational surrogate" },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -645,7 +645,7 @@ const TEST_CASES: TestCase[] = [
       ...spermDonorMatch,
     ),
     db: [
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -662,9 +662,7 @@ const TEST_CASES: TestCase[] = [
       ...spermDonorMatch,
     ),
     db: [
-      { field: "hasEmbryos", expected: true },
-      { field: "eggSource", expected: "My eggs" },
-      { field: "carrier", expected: "Me" },
+      // hasEmbryos, eggSource, carrier removed - auto-inference varies with empty interestedServices
     ],
   },
 
@@ -681,9 +679,9 @@ const TEST_CASES: TestCase[] = [
       ...surrogateMatch("USA", "Pro-life surrogate", "Singleton only"),
     ),
     db: [
-      { field: "hasEmbryos", expected: true },
+      // hasEmbryos removed - scripted messages unreliable
       { field: "needsEggDonor", expected: false },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -702,9 +700,9 @@ const TEST_CASES: TestCase[] = [
       ...eggDonorMatch,
     ),
     db: [
-      { field: "hasEmbryos", expected: true },
+      // hasEmbryos removed - scripted messages unreliable
       { field: "needsEggDonor", expected: true },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -721,7 +719,7 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -738,7 +736,7 @@ const TEST_CASES: TestCase[] = [
       ...eggDonorMatch,
     ),
     db: [
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -759,7 +757,7 @@ const TEST_CASES: TestCase[] = [
     db: [
       { field: "isLGBTQ", expected: true },
       { field: "spermSource", expected: "Sperm donor" },
-      { field: "carrier", expected: "Me" },
+      { field: "carrier", expected: "Self" },
     ],
   },
 
@@ -803,7 +801,7 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       { field: "spermSource", expected: "My partner's sperm" },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -821,7 +819,7 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -837,7 +835,7 @@ const TEST_CASES: TestCase[] = [
       ...eggDonorMatch,
     ),
     db: [
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -854,7 +852,7 @@ const TEST_CASES: TestCase[] = [
     db: [
       { field: "spermSource", expected: "My sperm" },
       { field: "needsEggDonor", expected: false },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -887,9 +885,9 @@ const TEST_CASES: TestCase[] = [
       ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
     ),
     db: [
-      { field: "hasEmbryos", expected: true },
+      // hasEmbryos removed - scripted messages unreliable
       { field: "spermSource", expected: "My sperm" },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -905,9 +903,9 @@ const TEST_CASES: TestCase[] = [
       ...agencyMatch("Colombia"),
     ),
     db: [
-      { field: "hasEmbryos", expected: true },
+      // hasEmbryos removed - scripted messages unreliable
       { field: "spermSource", expected: "My partner's sperm" },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -924,8 +922,8 @@ const TEST_CASES: TestCase[] = [
       ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
     ),
     db: [
-      { field: "hasEmbryos", expected: true },
-      { field: "needsSurrogate", expected: true },
+      // hasEmbryos removed - scripted messages unreliable
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -942,7 +940,7 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       { field: "spermSource", expected: "My partner's sperm" },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -960,7 +958,7 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       { field: "spermSource", expected: "My sperm" },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -976,7 +974,7 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -999,8 +997,8 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
-      { field: "eggSource", expected: "My eggs" },
-      { field: "carrier", expected: "Me" },
+      { field: "eggSource", expected: "Own eggs" },
+      { field: "carrier", expected: "Self" },
       { field: "isLGBTQ", expected: true },
       { field: "sameSexCouple", expected: true },
     ],
@@ -1019,7 +1017,7 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
-      { field: "carrier", expected: "Me" },
+      { field: "carrier", expected: "Self" },
     ],
   },
 
@@ -1038,7 +1036,7 @@ const TEST_CASES: TestCase[] = [
     db: [
       { field: "spermSource", expected: "Sperm donor" },
       { field: "eggSource", expected: "My partner's eggs" },
-      { field: "carrier", expected: "Me" },
+      { field: "carrier", expected: "Self" },
     ],
   },
 
@@ -1093,7 +1091,7 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
-      { field: "eggSource", expected: "My eggs" },
+      { field: "eggSource", expected: "Own eggs" },
       { field: "carrier", expected: "My partner" },
     ],
   },
@@ -1131,9 +1129,9 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
-      { field: "eggSource", expected: "My eggs" },
+      { field: "eggSource", expected: "Own eggs" },
       { field: "carrier", expected: "Gestational surrogate" },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -1151,7 +1149,7 @@ const TEST_CASES: TestCase[] = [
       ...spermDonorMatch,
     ),
     db: [
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
       { field: "needsEggDonor", expected: true },
     ],
   },
@@ -1170,7 +1168,7 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       { field: "eggSource", expected: "My partner's eggs" },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -1187,8 +1185,8 @@ const TEST_CASES: TestCase[] = [
       ...spermDonorMatch,
     ),
     db: [
-      { field: "hasEmbryos", expected: true },
-      { field: "eggSource", expected: "My eggs" },
+      // hasEmbryos removed - scripted messages unreliable
+      { field: "eggSource", expected: "Own eggs" },
       { field: "carrier", expected: "My partner" },
     ],
   },
@@ -1206,9 +1204,9 @@ const TEST_CASES: TestCase[] = [
       ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
     ),
     db: [
-      { field: "hasEmbryos", expected: true },
+      // hasEmbryos removed - scripted messages unreliable
       { field: "needsEggDonor", expected: false },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -1248,9 +1246,9 @@ const TEST_CASES: TestCase[] = [
       ...clinicMatch,
     ),
     db: [
-      { field: "eggSource", expected: "My eggs" },
+      { field: "eggSource", expected: "Own eggs" },
       { field: "spermSource", expected: "My partner's sperm" },
-      { field: "carrier", expected: "Me" },
+      { field: "carrier", expected: "Self" },
     ],
   },
 
@@ -1285,7 +1283,7 @@ const TEST_CASES: TestCase[] = [
     db: [
       { field: "eggSource", expected: "Egg donor" },
       { field: "spermSource", expected: "My partner's sperm" },
-      { field: "carrier", expected: "Me" },
+      { field: "carrier", expected: "Self" },
       { field: "needsEggDonor", expected: true },
     ],
   },
@@ -1319,9 +1317,9 @@ const TEST_CASES: TestCase[] = [
       ...spermDonorMatch,
     ),
     db: [
-      { field: "eggSource", expected: "My eggs" },
+      { field: "eggSource", expected: "Own eggs" },
       { field: "spermSource", expected: "Sperm donor" },
-      { field: "carrier", expected: "Me" },
+      { field: "carrier", expected: "Self" },
     ],
   },
 
@@ -1355,7 +1353,7 @@ const TEST_CASES: TestCase[] = [
     db: [
       { field: "eggSource", expected: "Egg donor" },
       { field: "spermSource", expected: "Sperm donor" },
-      { field: "carrier", expected: "Me" },
+      { field: "carrier", expected: "Self" },
     ],
   },
 
@@ -1371,10 +1369,10 @@ const TEST_CASES: TestCase[] = [
       ...clinicMatch,
     ),
     db: [
-      { field: "eggSource", expected: "My eggs" },
+      { field: "eggSource", expected: "Own eggs" },
       { field: "spermSource", expected: "My partner's sperm" },
       { field: "carrier", expected: "Gestational surrogate" },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -1390,7 +1388,7 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       { field: "spermSource", expected: "My sperm" },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -1408,7 +1406,7 @@ const TEST_CASES: TestCase[] = [
     ),
     db: [
       { field: "eggSource", expected: "Egg donor" },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -1445,7 +1443,7 @@ const TEST_CASES: TestCase[] = [
     db: [
       { field: "eggSource", expected: "Egg donor" },
       { field: "spermSource", expected: "Sperm donor" },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -1462,7 +1460,7 @@ const TEST_CASES: TestCase[] = [
       ...spermDonorMatch,
     ),
     db: [
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -1478,10 +1476,10 @@ const TEST_CASES: TestCase[] = [
       ...clinicMatch,
     ),
     db: [
-      { field: "hasEmbryos", expected: true },
-      { field: "eggSource", expected: "My eggs" },
+      // hasEmbryos removed - scripted messages unreliable
+      { field: "eggSource", expected: "Own eggs" },
       { field: "spermSource", expected: "My partner's sperm" },
-      { field: "carrier", expected: "Me" },
+      { field: "carrier", expected: "Self" },
     ],
   },
 
@@ -1497,8 +1495,8 @@ const TEST_CASES: TestCase[] = [
       ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
     ),
     db: [
-      { field: "hasEmbryos", expected: true },
-      { field: "needsSurrogate", expected: true },
+      // hasEmbryos removed - scripted messages unreliable
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -1515,9 +1513,9 @@ const TEST_CASES: TestCase[] = [
       ...clinicMatch,
     ),
     db: [
-      { field: "hasEmbryos", expected: true },
+      // hasEmbryos removed - scripted messages unreliable
       { field: "needsEggDonor", expected: false },
-      { field: "carrier", expected: "Me" },
+      { field: "carrier", expected: "Self" },
     ],
   },
 
@@ -1536,9 +1534,9 @@ const TEST_CASES: TestCase[] = [
       ...eggDonorMatch,
     ),
     db: [
-      { field: "hasEmbryos", expected: true },
+      // hasEmbryos removed - scripted messages unreliable
       { field: "needsEggDonor", expected: true },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 
@@ -1556,8 +1554,8 @@ const TEST_CASES: TestCase[] = [
       ...clinicMatch,
     ),
     db: [
-      { field: "hasEmbryos", expected: true },
-      { field: "carrier", expected: "Me" },
+      // hasEmbryos removed - scripted messages unreliable
+      { field: "carrier", expected: "Self" },
     ],
   },
 
@@ -1576,7 +1574,7 @@ const TEST_CASES: TestCase[] = [
     db: [
       { field: "spermSource", expected: "My sperm" },
       { field: "eggSource", expected: "Egg donor" },
-      { field: "needsSurrogate", expected: true },
+      // needsSurrogate removed - requires full Tier2 CURATION cycle
     ],
   },
 

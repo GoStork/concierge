@@ -2441,7 +2441,9 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     const orientationLower = (userRecord?.sexualOrientation || "").toLowerCase();
     const isLesbianOrientation = orientationLower === "lesbian";
     const relationshipLower = (userRecord?.relationshipStatus || "").toLowerCase();
-    const isSoloSkip = relationshipLower === "single" || relationshipLower === "solo";
+    // isSoloSkip: true if parent is solo/single - by relationshipStatus OR by gender containing "solo"
+    // (AI sometimes saves "solo woman" in gender field without separate relationshipStatus)
+    const isSoloSkip = relationshipLower === "single" || relationshipLower === "solo" || genderLower.includes("solo");
     const isGayMaleFromDB =
       isMaleGender &&
       ((userRecord?.sexualOrientation || "").toLowerCase() === "gay" ||
