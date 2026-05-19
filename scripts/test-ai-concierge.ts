@@ -1681,7 +1681,8 @@ async function sendMessage(cookie: string, message: string, sessionId: string | 
           newSid = d.sessionId || newSid;
           qr = d.quickReplies || [];
           hasCard = !!(d.matchCards?.length);
-          if (d.message?.content) content = d.message.content;
+          // Use post-processed content (even empty string = sperm Q was stripped by server)
+          if (d.message !== undefined && d.message !== null) content = d.message.content || "";
         }
       } catch {}
     }

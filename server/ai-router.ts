@@ -3355,6 +3355,8 @@ ${phase0Section}`;
         finalContent = finalContent.replace(spermQuestionPattern, "").trim();
         // Also remove any stray QUICK_REPLY with sperm options
         finalContent = finalContent.replace(/\[\[QUICK_REPLY:[^\]]*(?:my own|donor sperm|sperm donor)[^\]]*\]\]/gi, "").trim();
+        // If entire content was the sperm question, provide a bridging acknowledgment
+        if (!finalContent) finalContent = "Got it! Let's continue.";
         console.log("[POST-PROC] Stripped sperm question for solo woman/lesbian - auto-saved Sperm donor");
       }
     }
