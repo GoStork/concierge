@@ -1995,7 +1995,7 @@ async function main() {
     for (let i = 0; i < toRun.length; i += BATCH_SIZE) {
       const batch = toRun.slice(i, i + BATCH_SIZE);
       const batchResults = await Promise.all(batch.map(tc => {
-        console.log(\`  ▶ Starting: \${tc.id}\`);
+        console.log(`  ▶ Starting: ${tc.id}`);
         reportToDashboard({ type: "test_start", id: tc.id });
         return runTest(tc).then(r => { reportResult(r); return r; });
       }));
