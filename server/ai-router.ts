@@ -2437,6 +2437,11 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // "Solo man" + "Yes" to LGBTQ+ does not match the regex, so we must also check the DB.
     const genderLower = (userRecord?.gender || "").toLowerCase();
     const isMaleGender = genderLower.includes("male") || genderLower.includes("man");
+    const isFemaleGender = genderLower.includes("female") || genderLower.includes("woman");
+    const orientationLower = (userRecord?.sexualOrientation || "").toLowerCase();
+    const isLesbianOrientation = orientationLower === "lesbian";
+    const relationshipLower = (userRecord?.relationshipStatus || "").toLowerCase();
+    const isSoloParent = relationshipLower === "single" || relationshipLower === "solo";
     const isGayMaleFromDB =
       isMaleGender &&
       ((userRecord?.sexualOrientation || "").toLowerCase() === "gay" ||
@@ -2488,9 +2493,21 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       skipDirectives.push("DO NOT ask about egg source (Step 2) - already known: using egg donor.");
     }
 
-    // Sperm source: skip if already saved
+    // Sperm source: skip if already saved OR biologically obvious from gender/orientation
     if (profile?.spermSource) {
       skipDirectives.push(`DO NOT ask about sperm source (Step 3) - already saved: ${profile.spermSource}.`);
+    } else if (isFemaleGender && isSoloParent) {
+      // Solo woman ALWAYS uses a sperm donor - no other option exists
+      skipDirectives.push(
+        `DO NOT ask about sperm source (Step 3) - solo woman always uses a sperm donor. ` +
+        `Save silently: [[SAVE:{"spermSource":"Sperm donor"}]] and skip to the next question.`
+      );
+    } else if (isLesbianOrientation) {
+      // Lesbian couple ALWAYS uses a sperm donor
+      skipDirectives.push(
+        `DO NOT ask about sperm source (Step 3) - lesbian couple always uses a sperm donor. ` +
+        `Save silently: [[SAVE:{"spermSource":"Sperm donor"}]] and skip to the next question.`
+      );
     }
 
     // Carrier: skip if already saved or context is obvious.
