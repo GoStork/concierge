@@ -20,7 +20,8 @@ import {
   RefreshCw,
   MessageCircle,
   Headphones,
-  DollarSign
+  DollarSign,
+  FlaskConical
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -603,6 +604,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     { show: isAdmin, to: '/admin/providers', icon: Building2, label: 'Providers', mobileLabel: 'Providers' },
     { show: isAdmin, to: '/admin/billing', icon: DollarSign, label: 'Billing', mobileLabel: 'Billing' },
     { show: isAdmin, to: '/admin/concierge-monitor', icon: Headphones, label: 'Concierge', mobileLabel: 'Concierge', badge: conciergeUnread },
+    { show: isAdmin, to: '/admin/test-runner', icon: FlaskConical, label: 'Test Runner', mobileLabel: 'Tests' },
     { show: isAdmin || isProvider, to: '/users', icon: Users, label: 'Parents', mobileLabel: 'Parents' },
     { show: !((user as any).parentAccountRole === 'VIEWER'), to: '/calendar', icon: Calendar, label: 'Meetings', mobileLabel: 'Meetings' },
     { show: true, to: '/account', icon: User, label: 'Profile', mobileLabel: 'Profile', mobileOnly: true },

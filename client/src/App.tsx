@@ -54,6 +54,7 @@ import AgreementsGuestSigningPage from "@/pages/agreements-guest-signing-page";
 import PaymentPage from "@/pages/payment-page";
 import AdminBillingPage from "@/pages/admin-billing-page";
 import MyInvoicesPage from "@/pages/my-invoices-page";
+import AdminTestRunnerPage from "@/pages/admin-test-runner-page";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -166,6 +167,7 @@ function AppRoutes() {
         <Route path="/admin/billing" element={<ProtectedRoute><AdminBillingPage /></ProtectedRoute>} />
         <Route path="/my/invoices" element={<ProtectedRoute><MyInvoicesPage /></ProtectedRoute>} />
         <Route path="/admin/concierge-monitor" element={<ProtectedRoute><AdminConciergeMonitor /></ProtectedRoute>} />
+        <Route path="/admin/test-runner" element={<ProtectedRoute><AdminTestRunnerPage /></ProtectedRoute>} />
         <Route path="/provider/conversations" element={<Navigate to="/chat" replace />} />
         <Route path="/admin/branding" element={<Navigate to="/account/branding" replace />} />
         <Route path="/account/*" element={<ProtectedRoute><AccountPage /></ProtectedRoute>} />

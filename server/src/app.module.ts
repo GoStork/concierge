@@ -12,6 +12,7 @@ import { CostsModule } from "./modules/costs/costs.module";
 import { KnowledgeModule } from "./modules/knowledge/knowledge.module";
 import { GeoModule } from "./modules/geo/geo.module";
 import { BillingModule } from "./modules/billing/billing.module";
+import { TestRunnerModule } from "./modules/test-runner/test-runner.module";
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { BillingModule } from "./modules/billing/billing.module";
     KnowledgeModule,
     GeoModule,
     BillingModule,
+    TestRunnerModule,
   ],
 })
 export class AppModule {}
