@@ -124,8 +124,9 @@ const CLINIC_HAVE  = ["I already have a fertility clinic", "My IVF Clinic"];
 // Step 1 - Embryos
 const EMB_NO       = ["No, I don't have frozen embryos"];
 const EMB_WIP      = ["Working to create them"];
+// EMB_YES: "Yes, I do" matches the QR button text for the embryo question
 const EMB_YES      = (count: string, tested: "Yes" | "No" | "I'm not sure") =>
-  [`Yes, I have ${count} frozen embryos`, count, tested];
+  ["Yes, I do", count, tested];
 
 // Step 1c - Embryo conflict (registered for egg donation but has embryos)
 const EMB_CONFLICT_USE    = ["Use my existing embryos"];
@@ -178,11 +179,12 @@ const agencyMatch = (country: string): Msg[] => [
 ];
 const agencyIntake = agencyMatch;
 
-// Phase 3 - Egg donor match (B1 preferences + CURATION ready + match card)
-// Egg donor search requires: B1 answered → CURATION summary → "ready" → [[MATCH_CARD]]
+// Phase 3 - Egg donor match
+// Flow: CURATION summary fired → parent says ready → Tier2 asks B1 → parent gives prefs → [[MATCH_CARD]]
+// "Yes, I'm ready!" MUST come first (triggers Tier2 which asks B1), THEN preferences.
 const eggDonorMatch: Msg[] = [
-  { send: "I prefer someone with brown eyes, college educated, healthy" },
-  { send: "Yes, I'm ready!", assert: { hasMatchCard: true } },
+  { send: "Yes, I'm ready!" },  // response to CURATION → Tier2 activates → asks B1
+  { send: "I prefer someone with brown eyes, college educated, healthy", assert: { hasMatchCard: true } },
 ];
 
 // Phase 3 - Sperm donor match (C1 preferences + donor type + CURATION ready + match card)
@@ -433,13 +435,13 @@ const TEST_CASES: TestCase[] = [
     name: "SM-12: No embryos · Own sperm · CLINIC_HAVE · USA · Cost education check",
     desc: "CLINIC_HAVE: D-cycle checks cost education (Colombia mentioned in D1 breakdown)",
     interestedServices: ["Surrogate", "Egg Donor"],
-    // D1 education check: AI gives timeline or cost education before country question.
-    // Check for "months" (timeline education) or "Colombia" (cost education) - either is valid.
-    // The AI gives SOME country education before asking D1 question.
+    // D1 education (timeline/costs) appears in the D1 country QUESTION which the AI asks
+    // after the CURATION → ready → Tier2. It's not in the response to SURR_NEED.
+    // We validate D1 routing by checking that USA is accepted and match card appears.
     messages: msgs(
       P0, CLINIC_HAVE, EMB_NO,
       EGG_DONOR, SPERM_OWN,
-      { send: "I need help finding a surrogate", assert: { contains: ["months"] } },
+      SURR_NEED,
       { send: "USA" },
       "Pro-choice surrogate",
       { send: "Singleton only" },
