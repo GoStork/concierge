@@ -5,6 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { prisma } from "./db";
 import path from "path";
+import fs from "fs";
 import { isUserOnline } from "./online-tracker";
 
 // Lazy getter - reads env var at call time.
@@ -13,14 +14,11 @@ function getAnthropicClient(): Anthropic {
   let apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const fs = require("fs") as typeof import("fs");
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const pathMod = require("path") as typeof import("path");
-      const envContent = fs.readFileSync(pathMod.resolve(process.cwd(), ".env"), "utf8");
-      const match = envContent.match(/^ANTHROPIC_API_KEY=(.+)$/m);
+      const envPath = path.resolve(process.cwd(), ".env");
+      const envContent = fs.readFileSync(envPath, "utf8");
+      const match = envContent.match(/^ANTHROPIC_API_KEY=([^\r\n]+)/m);
       if (match) apiKey = match[1].trim();
-    } catch {}
+    } catch (e) {}
   }
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
   return new Anthropic({ apiKey });
