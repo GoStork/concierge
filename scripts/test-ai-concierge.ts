@@ -52,7 +52,7 @@ async function getDB() {
 const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:5001";
 const REPORT_DIR = path.join(process.cwd(), "scripts", "test-results");
 const TEST_PASSWORD = "TestPass123!";
-const MSG_TIMEOUT_MS = 120_000; // 2 min per message max
+const MSG_TIMEOUT_MS = 180_000; // 3 min - Tier2 with tool use needs time, but batch-5 prevents rate limiting
 const DELAY_BETWEEN_MSGS_MS = 600;
 
 // CLI filters
@@ -1988,11 +1988,19 @@ async function main() {
       results.push(r);
     }
   } else {
-    results = await Promise.all(toRun.map(tc => {
-      console.log(`  ▶ Starting: ${tc.id}`);
-      reportToDashboard({ type: "test_start", id: tc.id });
-      return runTest(tc).then(r => { reportResult(r); return r; });
-    }));
+    // Run in batches of 5 to avoid overwhelming the server and AI API rate limits.
+    // Full parallel (14 at once) causes Gemini/Anthropic rate limiting → timeouts.
+    const BATCH_SIZE = 5;
+    results = [];
+    for (let i = 0; i < toRun.length; i += BATCH_SIZE) {
+      const batch = toRun.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(batch.map(tc => {
+        console.log(\`  ▶ Starting: \${tc.id}\`);
+        reportToDashboard({ type: "test_start", id: tc.id });
+        return runTest(tc).then(r => { reportResult(r); return r; });
+      }));
+      results.push(...batchResults);
+    }
   }
 
   const passed = results.filter(r => r.passed).length;
