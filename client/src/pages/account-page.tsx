@@ -1452,195 +1452,163 @@ function ProfileSection({ title, editing, data, fields, forceShow, onEdit, onSav
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
         {activeFields.map((f) => {
           const raw = data?.[f.key];
-          if (editing) {
-            if (f.type === "yesno") {
-              return (
-                <div key={f.key} className="space-y-2">
-                  <Label>{f.label}</Label>
-                  <Select value={f.value} onValueChange={f.setter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="true">Yes</SelectItem>
-                      <SelectItem value="false">No</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              );
-            }
-            if (f.type === "select") {
-              return (
-                <div key={f.key} className="space-y-2">
-                  <Label>{f.label}</Label>
-                  <Select value={f.value || "__none__"} onValueChange={v => f.setter(v === "__none__" ? "" : v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">-- Not specified --</SelectItem>
-                      {(f.options || []).map(opt => (
-                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              );
-            }
-            if (f.type === "multiselect") {
-              const selected = f.value ? f.value.split(",").map(s => s.trim().toLowerCase()).filter(Boolean) : [];
-              const toggle = (opt: string) => {
-                const key = opt.toLowerCase();
-                const next = selected.includes(key)
-                  ? selected.filter(s => s !== key)
-                  : [...selected, key];
-                f.setter(next.join(","));
-              };
-              return (
-                <div key={f.key} className="space-y-2 md:col-span-2">
-                  <Label>{f.label}</Label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(f.options || []).map(opt => {
-                      const isSelected = selected.includes(opt.toLowerCase());
-                      return (
-                        <button
-                          key={opt}
-                          type="button"
-                          onClick={() => toggle(opt)}
-                          className={`px-3 py-1 text-sm rounded-full border transition-colors font-ui ${
-                            isSelected
-                              ? "bg-primary text-primary-foreground border-primary"
-                              : "bg-background text-foreground border-border hover:bg-secondary/60"
-                          }`}
-                        >
-                          {opt}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            }
-            if (f.type === "range") {
-              const min = f.rangeMin ?? 0;
-              const max = f.rangeMax ?? 100;
-              const step = f.rangeStep ?? 1;
-              const parts = f.value ? f.value.split(",") : [];
-              const lo = parts[0] ? Number(parts[0]) : min;
-              const hi = parts[1] ? Number(parts[1]) : max;
-              const fmt = f.formatValue ?? ((v: number) => f.rangeUnit === "$" ? `$${v.toLocaleString()}` : String(v));
-              return (
-                <div key={f.key} className="space-y-3 md:col-span-2">
-                  <div className="flex items-center justify-between">
-                    <Label>{f.label}</Label>
-                    <span className="text-sm font-ui text-muted-foreground">{fmt(lo)} - {fmt(hi)}</span>
-                  </div>
-                  <Slider
-                    min={min} max={max} step={step}
-                    value={[lo, hi]}
-                    onValueChange={([a, b]) => f.setter(`${a},${b}`)}
-                  />
-                </div>
-              );
-            }
-            if (f.type === "singleslider") {
-              const min = f.rangeMin ?? 0;
-              const max = f.rangeMax ?? 10;
-              const step = f.rangeStep ?? 1;
-              const current = f.value !== "" ? Number(f.value) : max;
-              const fmt = f.formatValue ?? ((v: number) => String(v));
-              const isAtMax = current >= max;
-              return (
-                <div key={f.key} className="space-y-3 md:col-span-2">
-                  <div className="flex items-center justify-between">
-                    <Label>{f.label}</Label>
-                    <span className="text-sm font-ui text-muted-foreground">
-                      {isAtMax ? "Any" : `Up to ${fmt(current)}`}
-                    </span>
-                  </div>
-                  <Slider
-                    min={min} max={max} step={step}
-                    value={[current]}
-                    onValueChange={([v]) => f.setter(v >= max ? "" : String(v))}
-                  />
-                </div>
-              );
-            }
-            if (f.type === "textarea") {
-              return (
-                <div key={f.key} className="space-y-2 md:col-span-2">
-                  <Label>{f.label}</Label>
-                  <textarea
-                    value={f.value}
-                    onChange={e => f.setter(e.target.value)}
-                    placeholder={`Enter ${f.label.toLowerCase()}`}
-                    rows={3}
-                    className="w-full px-3 py-2 text-sm rounded-[var(--radius)] border border-border bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                </div>
-              );
-            }
+          const isDisabled = !editing;
+
+          // Unified value: f.value when editing, raw data converted to string when viewing
+          const effectiveValue = editing
+            ? f.value
+            : (() => {
+                if (raw == null || raw === "") return "";
+                if (f.type === "yesno") return raw === true || raw === "true" ? "true" : raw === false || raw === "false" ? "false" : "";
+                return String(raw);
+              })();
+          const effectiveSetter: (v: string) => void = editing ? f.setter : () => {};
+
+          // In view mode, skip fields with no value unless forceShow is set
+          if (isDisabled && !forceShow && (effectiveValue === "" || effectiveValue == null)) return null;
+
+          if (f.type === "yesno") {
             return (
               <div key={f.key} className="space-y-2">
                 <Label>{f.label}</Label>
-                <Input
-                  type={f.type === "number" ? "number" : "text"}
-                  value={f.value}
-                  onChange={e => f.setter(e.target.value)}
-                  placeholder={`Enter ${f.label.toLowerCase()}`}
-                  min={f.type === "number" ? 0 : undefined}
+                <Select value={effectiveValue} onValueChange={effectiveSetter} disabled={isDisabled}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">Yes</SelectItem>
+                    <SelectItem value="false">No</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            );
+          }
+          if (f.type === "select") {
+            return (
+              <div key={f.key} className="space-y-2">
+                <Label>{f.label}</Label>
+                <Select value={effectiveValue || "__none__"} onValueChange={v => effectiveSetter(v === "__none__" ? "" : v)} disabled={isDisabled}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">-- Not specified --</SelectItem>
+                    {(f.options || []).map(opt => (
+                      <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            );
+          }
+          if (f.type === "multiselect") {
+            const selected = effectiveValue ? effectiveValue.split(",").map(s => s.trim().toLowerCase()).filter(Boolean) : [];
+            const toggle = (opt: string) => {
+              const key = opt.toLowerCase();
+              const next = selected.includes(key)
+                ? selected.filter(s => s !== key)
+                : [...selected, key];
+              effectiveSetter(next.join(","));
+            };
+            return (
+              <div key={f.key} className="space-y-2 md:col-span-2">
+                <Label>{f.label}</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {(f.options || []).map(opt => {
+                    const isSelected = selected.includes(opt.toLowerCase());
+                    return (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={isDisabled ? undefined : () => toggle(opt)}
+                        disabled={isDisabled}
+                        className={`px-3 py-1 text-sm rounded-full border transition-colors font-ui ${
+                          isSelected
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-background text-foreground border-border"
+                        } ${isDisabled ? "opacity-60 cursor-default" : "hover:bg-secondary/60"}`}
+                      >
+                        {opt}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          }
+          if (f.type === "range") {
+            const min = f.rangeMin ?? 0;
+            const max = f.rangeMax ?? 100;
+            const step = f.rangeStep ?? 1;
+            const parts = effectiveValue ? effectiveValue.split(",") : [];
+            const lo = parts[0] ? Number(parts[0]) : min;
+            const hi = parts[1] ? Number(parts[1]) : max;
+            const fmt = f.formatValue ?? ((v: number) => f.rangeUnit === "$" ? `$${v.toLocaleString()}` : String(v));
+            return (
+              <div key={f.key} className="space-y-3 md:col-span-2">
+                <div className="flex items-center justify-between">
+                  <Label>{f.label}</Label>
+                  <span className="text-sm font-ui text-muted-foreground">{fmt(lo)} - {fmt(hi)}</span>
+                </div>
+                <Slider
+                  min={min} max={max} step={step}
+                  value={[lo, hi]}
+                  onValueChange={isDisabled ? undefined : ([a, b]) => effectiveSetter(`${a},${b}`)}
+                  disabled={isDisabled}
                 />
               </div>
             );
           }
-          // View mode - show value or placeholder when forceShow is set
-          const isWide = f.type === "multiselect" || f.type === "range" || f.type === "singleslider" || f.type === "textarea";
-          const rawDisplay = f.display
-            ? f.display(raw, data)
-            : f.type === "yesno"
-              ? (raw === true || raw === "true" ? "Yes" : raw === false || raw === "false" ? "No" : null)
-              : (raw != null && raw !== "" ? String(raw) : null);
-          // Apply title case to select / yesno / multiselect values (not free text or placeholders)
-          const display = (rawDisplay && (f.type === "select" || f.type === "yesno" || f.type === "multiselect"))
-            ? rawDisplay.split(",").map(s => s.trim().replace(/\b\w/g, c => c.toUpperCase())).join(", ")
-            : rawDisplay;
-          if (!display && !forceShow) return null;
-          const displayText = display ?? "-- Not specified --";
-          if (f.type === "range") {
-            const parts = (display ?? "").split(",");
-            const lo = parts[0] ? Number(parts[0]) : null;
-            const hi = parts[1] ? Number(parts[1]) : null;
-            const fmt = f.formatValue ?? ((v: number) => f.rangeUnit === "$" ? `$${v.toLocaleString()}` : String(v));
-            const rangeLabel = lo != null && hi != null ? `${fmt(lo)} - ${fmt(hi)}` : displayText;
+          if (f.type === "singleslider") {
+            const min = f.rangeMin ?? 0;
+            const max = f.rangeMax ?? 10;
+            const step = f.rangeStep ?? 1;
+            const current = effectiveValue !== "" ? Number(effectiveValue) : max;
+            const fmt = f.formatValue ?? ((v: number) => String(v));
+            const isAtMax = current >= max;
             return (
-              <div key={f.key} className="space-y-1 md:col-span-2">
-                <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">{f.label}</label>
-                <p className="text-sm font-ui">{rangeLabel}</p>
+              <div key={f.key} className="space-y-3 md:col-span-2">
+                <div className="flex items-center justify-between">
+                  <Label>{f.label}</Label>
+                  <span className="text-sm font-ui text-muted-foreground">
+                    {isAtMax ? "Any" : `Up to ${fmt(current)}`}
+                  </span>
+                </div>
+                <Slider
+                  min={min} max={max} step={step}
+                  value={[current]}
+                  onValueChange={isDisabled ? undefined : ([v]) => effectiveSetter(v >= max ? "" : String(v))}
+                  disabled={isDisabled}
+                />
               </div>
             );
           }
-          if (f.type === "singleslider") {
-            const fmt = f.formatValue ?? ((v: number) => String(v));
-            const sliderLabel = display ? `Up to ${fmt(Number(display))}` : displayText;
+          if (f.type === "textarea") {
             return (
-              <div key={f.key} className="space-y-1">
-                <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">{f.label}</label>
-                <p className="text-sm font-ui">{sliderLabel}</p>
+              <div key={f.key} className="space-y-2 md:col-span-2">
+                <Label>{f.label}</Label>
+                <textarea
+                  value={effectiveValue}
+                  onChange={e => effectiveSetter(e.target.value)}
+                  placeholder={`Enter ${f.label.toLowerCase()}`}
+                  rows={3}
+                  disabled={isDisabled}
+                  className="w-full px-3 py-2 text-sm rounded-[var(--radius)] border border-border bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60 disabled:cursor-default disabled:resize-none"
+                />
               </div>
             );
           }
           return (
-            <div key={f.key} className={`space-y-1 ${isWide ? "md:col-span-2" : ""}`}>
-              <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">{f.label}</label>
-              {f.type === "multiselect" && display ? (
-                <div className="flex flex-wrap gap-1.5 mt-1">
-                  {display.split(",").map(s => s.trim()).filter(Boolean).map(s => (
-                    <span key={s} className="px-2.5 py-0.5 rounded-full text-xs bg-secondary text-secondary-foreground border border-border font-ui">{s}</span>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm font-ui">{displayText}</p>
-              )}
+            <div key={f.key} className="space-y-2">
+              <Label>{f.label}</Label>
+              <Input
+                type={f.type === "number" ? "number" : "text"}
+                value={effectiveValue}
+                onChange={e => effectiveSetter(e.target.value)}
+                placeholder={`Enter ${f.label.toLowerCase()}`}
+                min={f.type === "number" ? 0 : undefined}
+                disabled={isDisabled}
+              />
             </div>
           );
         })}
