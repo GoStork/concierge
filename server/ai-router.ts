@@ -358,17 +358,27 @@ async function callTier2Claude(
         return { content: text, toolCallsExecuted: false, searchToolResults };
       }
     } else {
-      // After tool calls - stream final response using a tools-free model to force text output.
-      // If the same tools-enabled model is reused here, Gemini may call tools again instead of
-      // returning text, resulting in 0 chars. A fresh model without tools forces a text response.
+      // After tool calls - stream final response.
+      // A text-only model cannot process functionCall parts in history (returns 0 chars).
+      // Instead, replay the conversation up to the user's message, then inject the search
+      // results as a plain-text synthetic message so the model treats them as inline context.
       const tStream2 = Date.now();
-      const fullHistory = await chat.getHistory();
+      const resultsText = searchToolResults.length > 0
+        ? searchToolResults.map((r) => `[${r.toolName} results]:\n${r.resultText}`).join("\n\n---\n\n")
+        : (Array.isArray(currentMessage)
+            ? currentMessage.map((p: any) => p?.functionResponse?.response?.output || "").join("\n")
+            : String(currentMessage));
+      const syntheticMsg = `Here are the database search results:\n\n${resultsText}\n\nNow provide your response to the user based on these results.`;
       const textModel = geminiAI.getGenerativeModel({
         model: "gemini-3.5-flash",
         systemInstruction: { parts: [{ text: fullSystem }] },
       });
-      const textChat = textModel.startChat({ history: fullHistory });
-      const result = await textChat.sendMessageStream(currentMessage);
+      const replayHistory = [
+        ...chatHistory,
+        { role: "user" as const, parts: [{ text: typeof userMessage === "string" ? userMessage : JSON.stringify(userMessage) }] },
+      ];
+      const textChat = textModel.startChat({ history: replayHistory });
+      const result = await textChat.sendMessageStream(syntheticMsg);
       let fullText = "";
       let firstEvent2Ms: number | null = null;
       for await (const chunk of result.stream) {
@@ -376,7 +386,7 @@ async function callTier2Claude(
         try {
           const text = chunk.text();
           if (text) { fullText += text; sse.sendToken(text); }
-        } catch { /* chunk may be non-text (safety/finish events) - skip */ }
+        } catch { /* skip non-text finish/safety chunks */ }
       }
       console.log(`[TIER2] DONE (after tools) stream=${Date.now() - tStream2}ms (firstEvent=${firstEvent2Ms}ms, ${fullText.length} chars). Total TIER2 ${Date.now() - t0}ms`);
       return { content: fullText, toolCallsExecuted: true, searchToolResults };
