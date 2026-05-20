@@ -3918,8 +3918,9 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           }
         }
 
-        // Has embryos - also handle "Yes, I do" quick reply (must be in embryo context via hasEmbryos==null guard)
-        if (extractedProfile?.hasEmbryos == null) {
+        // Has embryos - hasEmbryos/embryoCount/embryosTested use non-null DB defaults (false/0/false),
+        // so == null checks always fail. Use !== true to detect "not yet confirmed as true".
+        if (extractedProfile?.hasEmbryos !== true) {
           const embryoCountMatch = msg.match(/\b(\d+)\s*(frozen\s+)?embryos?\b/);
           if (embryoCountMatch) {
             autoProfileData.hasEmbryos = true;
@@ -3932,7 +3933,8 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         }
 
         // Embryo count update even when hasEmbryos is already true
-        if (extractedProfile?.hasEmbryos === true && extractedProfile?.embryoCount == null) {
+        // embryoCount defaults to 0 (non-null), so check for 0 rather than null
+        if ((extractedProfile?.hasEmbryos === true || autoProfileData.hasEmbryos === true) && !extractedProfile?.embryoCount && !autoProfileData.embryoCount) {
           const embryoCountUpdateMatch = msg.match(/\b(\d+)\s*(frozen\s+)?embryos?\b|^(\d+)$|^(\d+)\s*\+?$/);
           if (embryoCountUpdateMatch) {
             const count = parseInt(embryoCountUpdateMatch[1] || embryoCountUpdateMatch[3] || embryoCountUpdateMatch[4], 10);
@@ -3942,8 +3944,8 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           }
         }
 
-        // PGT-A tested - extract from context-aware patterns or bare Yes/No after AI asked about PGT-A
-        if (extractedProfile?.hasEmbryos === true && extractedProfile?.embryosTested == null) {
+        // PGT-A tested - embryosTested defaults to false (non-null), so check !== true
+        if ((extractedProfile?.hasEmbryos === true || autoProfileData.hasEmbryos === true) && extractedProfile?.embryosTested !== true) {
           if (/\byes\b.*pgt|pgt.*\byes\b|they.?ve been tested|all.*tested|pgt.?a tested|tested.*pgt.?a|yes.*tested/i.test(msg)) {
             autoProfileData.embryosTested = true;
           } else if (/\bno\b.*pgt|pgt.*\bno\b|not.*tested|haven.t.*tested|not pgt/i.test(msg)) {

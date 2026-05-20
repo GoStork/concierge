@@ -939,20 +939,12 @@ function AccountTab() {
               options: spermSourceOptions },
             { label: "Carrier", key: "carrier", value: editCarrier, setter: setEditCarrier, type: "select",
               options: carrierOptions },
-            { label: "Has Embryos", key: "hasEmbryos", value: editHasEmbryos, setter: setEditHasEmbryos, type: "yesno",
-              display: (v: any, d?: any) => {
-                if (v !== true && v !== false && v !== "true" && v !== "false") return null;
-                const hasEmbryos = v === true || v === "true";
-                if (!hasEmbryos) return "No";
-                const count = d?.embryoCount;
-                const tested = d?.embryosTested;
-                return `Yes${count ? ` - ${count}` : ""}${tested === true || tested === "true" ? " (PGT-A tested)" : ""}`;
-              }
-            },
-            { label: "Embryo Count", key: "embryoCount", value: editEmbryoCount, setter: setEditEmbryoCount, type: "number",
-              showIf: editing ? (editHasEmbryos === "true" || editHasEmbryos === "") : false },
-            { label: "Embryos Tested (PGT-A)", key: "embryosTested", value: editEmbryosTested, setter: setEditEmbryosTested, type: "yesno",
-              showIf: editing ? (editHasEmbryos === "true" || editHasEmbryos === "") : false,
+            { label: "Has Embryos", key: "hasEmbryos", value: editHasEmbryos, setter: setEditHasEmbryos, type: "yesno" },
+            { label: "Number of Frozen Embryos", key: "embryoCount", value: editEmbryoCount, setter: setEditEmbryoCount, type: "number",
+              showIf: editing ? (editHasEmbryos === "true" || editHasEmbryos === "") : (parentProfileQuery.data?.hasEmbryos === true),
+              display: (v: any) => v != null && v !== "" && Number(v) > 0 ? String(v) : null },
+            { label: "PGT-A Tested", key: "embryosTested", value: editEmbryosTested, setter: setEditEmbryosTested, type: "yesno",
+              showIf: editing ? (editHasEmbryos === "true" || editHasEmbryos === "") : (parentProfileQuery.data?.hasEmbryos === true),
               display: (v: any) => v === true || v === "true" ? "Yes" : v === false || v === "false" ? "No" : null },
           ]}
         />
