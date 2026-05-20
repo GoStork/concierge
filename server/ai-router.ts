@@ -117,10 +117,33 @@ async function callTier1Gemini(
   let fullText = "";
   for await (const chunk of result.stream) {
     const text = chunk.text();
-    if (text) {
-      fullText += text;
-      sse.sendToken(text);
+    if (text) fullText += text;
+  }
+
+  // Strip questions that Gemini bundles at the end of long educational messages.
+  // These questions must appear as standalone messages so the user sees them clearly
+  // with their quick-reply buttons. If the full response is long (>200 chars before
+  // the question) we remove the trailing question - Gemini will ask it standalone
+  // on the next turn once it sees the question wasn't answered.
+  const trailingQuestionPatterns = [
+    /\s*\n*What are your preferences regarding termination if medically necessary\?\s*$/i,
+    /\s*\n*With all of that in mind, which countries are you open to for your surrogacy\?\s*$/i,
+    /\s*\n*Are you hoping to have twins, or would you prefer a singleton pregnancy\?\s*$/i,
+    /\s*\n*Are you hoping for twins or would you prefer a singleton\?\s*$/i,
+  ];
+  for (const pattern of trailingQuestionPatterns) {
+    if (pattern.test(fullText)) {
+      const stripped = fullText.replace(pattern, "").trimEnd();
+      if (stripped.length > 200) {
+        fullText = stripped;
+        break;
+      }
     }
+  }
+
+  // Fake-stream the (possibly processed) response
+  for (const char of fullText) {
+    sse.sendToken(char);
   }
   return fullText;
 }
