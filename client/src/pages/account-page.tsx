@@ -1070,7 +1070,7 @@ function AccountTab() {
             <>
               <div className="space-y-1">
                 <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Full Name</label>
-                <p className="text-sm font-ui" data-testid="text-account-name">{user.name || '-'}</p>
+                <p className="text-sm font-ui" data-testid="text-account-name">{user.name || '-- Not specified --'}</p>
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Email</label>
@@ -1083,44 +1083,44 @@ function AccountTab() {
                 <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Mobile Number</label>
                 <div className="flex items-center gap-2">
                   <Phone className="w-3.5 h-3.5 text-muted-foreground" />
-                  <p className="text-sm font-ui" data-testid="text-account-mobile">{mobileNumberDisplay || mobileNumber || '-'}</p>
+                  <p className="text-sm font-ui" data-testid="text-account-mobile">{mobileNumberDisplay || mobileNumber || '-- Not specified --'}</p>
                 </div>
               </div>
               {!isProviderUser && (
                 <>
                   <div className="space-y-1">
                     <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Location</label>
-                    <p className="text-sm font-ui" data-testid="text-account-location">{locationDisplay || '-'}</p>
+                    <p className="text-sm font-ui" data-testid="text-account-location">{locationDisplay || '-- Not specified --'}</p>
                   </div>
                   {isParent && (
                     <>
                       <div className="space-y-1">
                         <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Gender Identity</label>
-                        <p className="text-sm font-ui" data-testid="text-account-gender">{{ "I'm a woman": "Woman", "I'm a man": "Man", "I'm non-binary": "Non-binary" }[(user as any).gender as string] || (user as any).gender || '-'}</p>
+                        <p className="text-sm font-ui" data-testid="text-account-gender">{{ "I'm a woman": "Woman", "I'm a man": "Man", "I'm non-binary": "Non-binary" }[(user as any).gender as string] || (user as any).gender || '-- Not specified --'}</p>
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Sexual Orientation</label>
-                        <p className="text-sm font-ui" data-testid="text-account-orientation">{(user as any).sexualOrientation || '-'}</p>
+                        <p className="text-sm font-ui" data-testid="text-account-orientation">{(user as any).sexualOrientation?.replace(/\b\w/g, (c: string) => c.toUpperCase()) || '-- Not specified --'}</p>
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Relationship Status</label>
-                        <p className="text-sm font-ui" data-testid="text-account-relationship">{(user as any).relationshipStatus || '-'}</p>
+                        <p className="text-sm font-ui" data-testid="text-account-relationship">{(user as any).relationshipStatus?.replace(/\b\w/g, (c: string) => c.toUpperCase()) || '-- Not specified --'}</p>
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Age</label>
                         <p className="text-sm font-ui" data-testid="text-account-age">
-                          {(user as any).dateOfBirth ? String(new Date().getFullYear() - new Date((user as any).dateOfBirth).getFullYear()) : '-'}
+                          {(user as any).dateOfBirth ? String(new Date().getFullYear() - new Date((user as any).dateOfBirth).getFullYear()) : '-- Not specified --'}
                         </p>
                       </div>
                       {((user as any).relationshipStatus === "Partnered" || (user as any).relationshipStatus === "Married") && (
                         <>
                           <div className="space-y-1">
                             <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Partner's Full Name</label>
-                            <p className="text-sm font-ui" data-testid="text-account-partner-name">{(user as any).partnerFirstName || '-'}</p>
+                            <p className="text-sm font-ui" data-testid="text-account-partner-name">{(user as any).partnerFirstName || '-- Not specified --'}</p>
                           </div>
                           <div className="space-y-1">
                             <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Partner's Age</label>
-                            <p className="text-sm font-ui" data-testid="text-account-partner-age">{(user as any).partnerAge || '-'}</p>
+                            <p className="text-sm font-ui" data-testid="text-account-partner-age">{(user as any).partnerAge || '-- Not specified --'}</p>
                           </div>
                         </>
                       )}
@@ -1612,9 +1612,15 @@ function ProfileSection({ title, editing, data, fields, forceShow, onEdit, onSav
           }
           // View mode - show value or placeholder when forceShow is set
           const isWide = f.type === "multiselect" || f.type === "range" || f.type === "singleslider" || f.type === "textarea";
-          const display = f.display
+          const rawDisplay = f.display
             ? f.display(raw, data)
-            : (raw != null && raw !== "" ? String(raw) : null);
+            : f.type === "yesno"
+              ? (raw === true || raw === "true" ? "Yes" : raw === false || raw === "false" ? "No" : null)
+              : (raw != null && raw !== "" ? String(raw) : null);
+          // Apply title case to select / yesno / multiselect values (not free text or placeholders)
+          const display = (rawDisplay && (f.type === "select" || f.type === "yesno" || f.type === "multiselect"))
+            ? rawDisplay.split(",").map(s => s.trim().replace(/\b\w/g, c => c.toUpperCase())).join(", ")
+            : rawDisplay;
           if (!display && !forceShow) return null;
           const displayText = display ?? "-- Not specified --";
           if (f.type === "range") {
