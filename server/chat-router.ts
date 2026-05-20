@@ -1763,10 +1763,15 @@ chatRouter.delete("/api/admin/reset-all-chats", requireAuth, async (req, res) =>
           currentAttorneyName: null,
         },
       }),
-      // Reset AI-collected fields on User (partner info collected during conversation)
+      // Reset AI-collected fields on User - everything except name, email, password,
+      // phone, location, and services (the only true registration fields)
       prisma.user.updateMany({
         where: { roles: { has: "PARENT" } },
         data: {
+          gender: null,
+          sexualOrientation: null,
+          relationshipStatus: null,
+          dateOfBirth: null,
           partnerFirstName: null,
           partnerAge: null,
         },
