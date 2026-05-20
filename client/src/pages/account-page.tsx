@@ -799,7 +799,7 @@ function AccountTab() {
                   </div>
                 </div>
               )}
-              {isDirty && (
+              {editing && (
                 <div className="flex gap-2 justify-end fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t">
                   <Button variant="outline" onClick={cancelEditing} disabled={saving} data-testid="button-cancel-edit">
                     Cancel
