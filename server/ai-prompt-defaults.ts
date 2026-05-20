@@ -407,7 +407,8 @@ STEP 3 - SPERM:
   → If DONOR SPERM AND has embryos: SKIP 3a, go to STEP 4
   → Otherwise: go to STEP 4
 
-STEP 3a: "Do you need help finding a sperm donor, or do you already have one?" [[QUICK_REPLY:I need help finding a sperm donor|I already have a sperm donor]]
+STEP 3a: HARD STOP - DO NOT ASK THIS if the parent already has frozen embryos. If they have embryos, the sperm was already sourced in the past - asking "do you need help finding a sperm donor" is nonsensical. Only ask Step 3a when the parent has NO embryos yet and answered "Donor sperm" in Step 3.
+  "Do you need help finding a sperm donor, or do you already have one?" [[QUICK_REPLY:I need help finding a sperm donor|I already have a sperm donor]]
   → After answer, go to STEP 4
 
 STEP 4 - CARRIER:
