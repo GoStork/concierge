@@ -54,6 +54,8 @@ function AccountTab() {
   const [isDirty, setIsDirty] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editingSection, setEditingSection] = useState<string | null>(null);
+  const [sectionSaving, setSectionSaving] = useState(false);
   const [editName, setEditName] = useState("");
   const [editMobileE164, setEditMobileE164] = useState("");
   const [editMobileDisplay, setEditMobileDisplay] = useState("");
@@ -286,6 +288,263 @@ function AccountTab() {
     setConfirmPassword("");
   }
 
+  // --- Per-section init functions ---
+
+  function startEditingSection(section: string) {
+    const d = parentProfileQuery.data;
+    if (section === "journey") {
+      setEditJourneyStage(d?.journeyStage || "");
+      setEditIsFirstIvf(d?.isFirstIvf != null ? String(d.isFirstIvf) : "");
+    } else if (section === "biological") {
+      setEditEggSource(d?.eggSource || "");
+      setEditSpermSource(d?.spermSource || "");
+      setEditCarrier(d?.carrier || "");
+      setEditHasEmbryos(d?.hasEmbryos != null ? String(d.hasEmbryos) : "");
+      setEditEmbryoCount(d?.embryoCount != null ? String(d.embryoCount) : "");
+      setEditEmbryosTested(d?.embryosTested != null ? String(d.embryosTested) : "");
+    } else if (section === "clinic") {
+      setEditNeedsClinic(d?.needsClinic != null ? String(d.needsClinic) : "");
+      setEditCurrentClinicName(d?.currentClinicName || "");
+      setEditClinicPriority(d?.clinicPriority || "");
+      setEditClinicAgeGroup(d?.clinicAgeGroup || "");
+      setEditClinicPriorityTags(d?.clinicPriorityTags || "");
+    } else if (section === "surrogate") {
+      setEditSurrogateCountries(d?.surrogateCountries || "");
+      setEditSurrogateTermination(d?.surrogateTermination || "");
+      setEditSurrogateTwins(d?.surrogateTwins || "");
+      setEditSurrogateAgeRange(d?.surrogateAgeRange || "");
+      setEditSurrogateBudget(d?.surrogateBudget || "");
+      setEditSurrogateExperience(d?.surrogateExperience || "");
+      setEditSurrogateMedPrefs(d?.surrogateMedPrefs || "");
+      const orientation = (user as any).sexualOrientation || "";
+      const isNonStraight = orientation && orientation.toLowerCase() !== "straight";
+      const savedSameSex = d?.sameSexCouple;
+      setEditSameSexCouple(isNonStraight ? "true" : savedSameSex != null ? String(savedSameSex) : "");
+      setEditSurrogateRace(d?.surrogateRace || "");
+      setEditSurrogateEthnicity(d?.surrogateEthnicity || "");
+      setEditSurrogateRelationship(d?.surrogateRelationship || "");
+      setEditSurrogateBmiRange(d?.surrogateBmiRange || "");
+      setEditSurrogateTotalCostRange(d?.surrogateTotalCostRange || "");
+      setEditSurrogateLiveBirthsRange(d?.surrogateLiveBirthsRange || "");
+      setEditSurrogateMaxCSections(d?.surrogateMaxCSections != null ? String(d.surrogateMaxCSections) : "");
+      setEditSurrogateMaxMiscarriages(d?.surrogateMaxMiscarriages != null ? String(d.surrogateMaxMiscarriages) : "");
+      setEditSurrogateMaxAbortions(d?.surrogateMaxAbortions != null ? String(d.surrogateMaxAbortions) : "");
+      setEditSurrogateLastDeliveryYear(d?.surrogateLastDeliveryYear != null ? String(d.surrogateLastDeliveryYear) : "");
+      setEditSurrogateCovidVaccinated(d?.surrogateCovidVaccinated != null ? String(d.surrogateCovidVaccinated) : "");
+      setEditSurrogateSelectiveReduction(d?.surrogateSelectiveReduction != null ? String(d.surrogateSelectiveReduction) : "");
+      setEditSurrogateInternationalParents(d?.surrogateInternationalParents != null ? String(d.surrogateInternationalParents) : "");
+    } else if (section === "eggDonor") {
+      setEditDonorPreferences(d?.donorPreferences || "");
+      setEditDonorEyeColor(d?.donorEyeColor || "");
+      setEditDonorHairColor(d?.donorHairColor || "");
+      setEditDonorHeight(d?.donorHeight || "");
+      setEditDonorEducation(d?.donorEducation || "");
+      setEditDonorEthnicity(d?.donorEthnicity || "");
+      setEditEggDonorAgeRange(d?.eggDonorAgeRange || "");
+      setEditEggDonorCompensationRange(d?.eggDonorCompensationRange || "");
+      setEditEggDonorTotalCostRange(d?.eggDonorTotalCostRange || "");
+      setEditEggDonorLotCostRange(d?.eggDonorLotCostRange || "");
+      setEditEggDonorEggType(d?.eggDonorEggType || "");
+      setEditEggDonorDonationType(d?.eggDonorDonationType || "");
+    } else if (section === "spermDonor") {
+      setEditSpermDonorType(d?.spermDonorType || "");
+      setEditSpermDonorPreferences(d?.spermDonorPreferences || "");
+      setEditSpermDonorAgeRange(d?.spermDonorAgeRange || "");
+      setEditSpermDonorEyeColor(d?.spermDonorEyeColor || "");
+      setEditSpermDonorHairColor(d?.spermDonorHairColor || "");
+      setEditSpermDonorHeightRange(d?.spermDonorHeightRange || "");
+      setEditSpermDonorRace(d?.spermDonorRace || "");
+      setEditSpermDonorEthnicity(d?.spermDonorEthnicity || "");
+      setEditSpermDonorEducation(d?.spermDonorEducation || "");
+      setEditSpermDonorMaxPrice(d?.spermDonorMaxPrice != null ? String(d.spermDonorMaxPrice) : "");
+      setEditSpermDonorVialType(d?.spermDonorVialType || "");
+    } else if (section === "providers") {
+      setEditCurrentAgencyName(d?.currentAgencyName || "");
+      setEditCurrentAttorneyName(d?.currentAttorneyName || "");
+    }
+    setEditingSection(section);
+  }
+
+  // --- Per-section save functions ---
+
+  async function saveSectionJourney() {
+    setSectionSaving(true);
+    try {
+      const payload: any = {
+        journeyStage: editJourneyStage || null,
+        isFirstIvf: editIsFirstIvf !== "" ? editIsFirstIvf === "true" : null,
+      };
+      await apiRequest("PUT", "/api/user/profile", payload);
+      await parentProfileQuery.refetch();
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      toast({ title: "Journey updated", variant: "success" });
+      setEditingSection(null);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSectionSaving(false);
+    }
+  }
+
+  async function saveSectionBiological() {
+    setSectionSaving(true);
+    try {
+      const payload: any = {
+        eggSource: editEggSource || null,
+        spermSource: editSpermSource || null,
+        carrier: editCarrier || null,
+        hasEmbryos: editHasEmbryos !== "" ? editHasEmbryos === "true" : null,
+        embryoCount: editEmbryoCount !== "" ? Number(editEmbryoCount) : null,
+        embryosTested: editEmbryosTested !== "" ? editEmbryosTested === "true" : null,
+      };
+      await apiRequest("PUT", "/api/user/profile", payload);
+      await parentProfileQuery.refetch();
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      toast({ title: "Biological baseline updated", variant: "success" });
+      setEditingSection(null);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSectionSaving(false);
+    }
+  }
+
+  async function saveSectionClinic() {
+    setSectionSaving(true);
+    try {
+      const payload: any = {
+        needsClinic: editNeedsClinic !== "" ? editNeedsClinic === "true" : null,
+        currentClinicName: editCurrentClinicName || null,
+        clinicPriority: editClinicPriority || null,
+        clinicAgeGroup: editClinicAgeGroup || null,
+        clinicPriorityTags: editClinicPriorityTags || null,
+      };
+      await apiRequest("PUT", "/api/user/profile", payload);
+      await parentProfileQuery.refetch();
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      toast({ title: "Clinic preferences updated", variant: "success" });
+      setEditingSection(null);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSectionSaving(false);
+    }
+  }
+
+  async function saveSectionSurrogate() {
+    setSectionSaving(true);
+    try {
+      const payload: any = {
+        surrogateCountries: editSurrogateCountries || null,
+        surrogateTermination: editSurrogateTermination || null,
+        surrogateTwins: editSurrogateTwins || null,
+        surrogateAgeRange: editSurrogateAgeRange || null,
+        surrogateBudget: editSurrogateBudget || null,
+        surrogateExperience: editSurrogateExperience || null,
+        surrogateMedPrefs: editSurrogateMedPrefs || null,
+        sameSexCouple: editSameSexCouple !== "" ? editSameSexCouple === "true" : null,
+        surrogateRace: editSurrogateRace || null,
+        surrogateEthnicity: editSurrogateEthnicity || null,
+        surrogateRelationship: editSurrogateRelationship || null,
+        surrogateBmiRange: editSurrogateBmiRange || null,
+        surrogateTotalCostRange: editSurrogateTotalCostRange || null,
+        surrogateLiveBirthsRange: editSurrogateLiveBirthsRange || null,
+        surrogateMaxCSections: editSurrogateMaxCSections !== "" ? Number(editSurrogateMaxCSections) : null,
+        surrogateMaxMiscarriages: editSurrogateMaxMiscarriages !== "" ? Number(editSurrogateMaxMiscarriages) : null,
+        surrogateMaxAbortions: editSurrogateMaxAbortions !== "" ? Number(editSurrogateMaxAbortions) : null,
+        surrogateLastDeliveryYear: editSurrogateLastDeliveryYear !== "" ? Number(editSurrogateLastDeliveryYear) : null,
+        surrogateCovidVaccinated: editSurrogateCovidVaccinated !== "" ? editSurrogateCovidVaccinated === "true" : null,
+        surrogateSelectiveReduction: editSurrogateSelectiveReduction !== "" ? editSurrogateSelectiveReduction === "true" : null,
+        surrogateInternationalParents: editSurrogateInternationalParents !== "" ? editSurrogateInternationalParents === "true" : null,
+      };
+      await apiRequest("PUT", "/api/user/profile", payload);
+      await parentProfileQuery.refetch();
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      toast({ title: "Surrogate preferences updated", variant: "success" });
+      setEditingSection(null);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSectionSaving(false);
+    }
+  }
+
+  async function saveSectionEggDonor() {
+    setSectionSaving(true);
+    try {
+      const payload: any = {
+        donorPreferences: editDonorPreferences || null,
+        donorEyeColor: editDonorEyeColor || null,
+        donorHairColor: editDonorHairColor || null,
+        donorHeight: editDonorHeight || null,
+        donorEducation: editDonorEducation || null,
+        donorEthnicity: editDonorEthnicity || null,
+        eggDonorAgeRange: editEggDonorAgeRange || null,
+        eggDonorCompensationRange: editEggDonorCompensationRange || null,
+        eggDonorTotalCostRange: editEggDonorTotalCostRange || null,
+        eggDonorLotCostRange: editEggDonorLotCostRange || null,
+        eggDonorEggType: editEggDonorEggType || null,
+        eggDonorDonationType: editEggDonorDonationType || null,
+      };
+      await apiRequest("PUT", "/api/user/profile", payload);
+      await parentProfileQuery.refetch();
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      toast({ title: "Egg donor preferences updated", variant: "success" });
+      setEditingSection(null);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSectionSaving(false);
+    }
+  }
+
+  async function saveSectionSpermDonor() {
+    setSectionSaving(true);
+    try {
+      const payload: any = {
+        spermDonorType: editSpermDonorType || null,
+        spermDonorPreferences: editSpermDonorPreferences || null,
+        spermDonorAgeRange: editSpermDonorAgeRange || null,
+        spermDonorEyeColor: editSpermDonorEyeColor || null,
+        spermDonorHairColor: editSpermDonorHairColor || null,
+        spermDonorHeightRange: editSpermDonorHeightRange || null,
+        spermDonorRace: editSpermDonorRace || null,
+        spermDonorEthnicity: editSpermDonorEthnicity || null,
+        spermDonorEducation: editSpermDonorEducation || null,
+        spermDonorMaxPrice: editSpermDonorMaxPrice !== "" ? Number(editSpermDonorMaxPrice) : null,
+        spermDonorVialType: editSpermDonorVialType || null,
+      };
+      await apiRequest("PUT", "/api/user/profile", payload);
+      await parentProfileQuery.refetch();
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      toast({ title: "Sperm donor preferences updated", variant: "success" });
+      setEditingSection(null);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSectionSaving(false);
+    }
+  }
+
+  async function saveSectionProviders() {
+    setSectionSaving(true);
+    try {
+      const payload: any = {
+        currentAgencyName: editCurrentAgencyName || null,
+        currentAttorneyName: editCurrentAttorneyName || null,
+      };
+      await apiRequest("PUT", "/api/user/profile", payload);
+      await parentProfileQuery.refetch();
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      toast({ title: "Current providers updated", variant: "success" });
+      setEditingSection(null);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSectionSaving(false);
+    }
+  }
+
   async function handleSave() {
     if (!editName.trim()) {
       toast({ title: "Name is required", variant: "destructive" });
@@ -497,7 +756,7 @@ function AccountTab() {
     : ["Self carrying", "Gestational surrogate"];
 
   // Egg donor cost slider visibility based on egg type selection
-  const currentEggType = editing ? editEggDonorEggType : (parentProfileQuery.data?.eggDonorEggType || "");
+  const currentEggType = editingSection === "eggDonor" ? editEggDonorEggType : (parentProfileQuery.data?.eggDonorEggType || "");
   const showFreshCosts = currentEggType !== "Frozen";   // Fresh, Either, or unspecified
   const showFrozenCost = currentEggType !== "Fresh";    // Frozen, Either, or unspecified
 
@@ -923,9 +1182,13 @@ function AccountTab() {
         {/* Journey */}
         <ProfileSection
           title="Journey"
-          editing={editing}
+          editing={editingSection === "journey"}
           forceShow
           data={parentProfileQuery.data}
+          onEdit={() => startEditingSection("journey")}
+          onSave={saveSectionJourney}
+          onCancel={() => setEditingSection(null)}
+          saving={sectionSaving}
           fields={[
             { label: "Stage", key: "journeyStage", value: editJourneyStage, setter: setEditJourneyStage, type: "select",
               options: ["Just started researching", "In consultation", "Agency selected", "Match in progress", "IVF in progress", "Egg retrieval complete", "Transfer complete"] },
@@ -937,9 +1200,13 @@ function AccountTab() {
         {/* Biological Baseline */}
         <ProfileSection
           title="Biological Baseline"
-          editing={editing}
+          editing={editingSection === "biological"}
           forceShow
           data={parentProfileQuery.data}
+          onEdit={() => startEditingSection("biological")}
+          onSave={saveSectionBiological}
+          onCancel={() => setEditingSection(null)}
+          saving={sectionSaving}
           fields={[
             { label: "Egg Source", key: "eggSource", value: editEggSource, setter: setEditEggSource, type: "select",
               options: eggSourceOptions },
@@ -949,10 +1216,10 @@ function AccountTab() {
               options: carrierOptions },
             { label: "Has Embryos", key: "hasEmbryos", value: editHasEmbryos, setter: setEditHasEmbryos, type: "yesno" },
             { label: "Number of Frozen Embryos", key: "embryoCount", value: editEmbryoCount, setter: setEditEmbryoCount, type: "number",
-              showIf: editing ? (editHasEmbryos === "true" || editHasEmbryos === "") : (parentProfileQuery.data?.hasEmbryos === true),
+              showIf: editingSection === "biological" ? (editHasEmbryos === "true" || editHasEmbryos === "") : (parentProfileQuery.data?.hasEmbryos === true),
               display: (v: any) => v != null && v !== "" && Number(v) > 0 ? String(v) : null },
             { label: "PGT-A Tested", key: "embryosTested", value: editEmbryosTested, setter: setEditEmbryosTested, type: "yesno",
-              showIf: editing ? (editHasEmbryos === "true" || editHasEmbryos === "") : (parentProfileQuery.data?.hasEmbryos === true),
+              showIf: editingSection === "biological" ? (editHasEmbryos === "true" || editHasEmbryos === "") : (parentProfileQuery.data?.hasEmbryos === true),
               display: (v: any) => v === true || v === "true" ? "Yes" : v === false || v === "false" ? "No" : null },
           ]}
         />
@@ -960,9 +1227,13 @@ function AccountTab() {
         {/* Clinic Preferences - only if registered for Fertility Clinic */}
         {hasClinic && <ProfileSection
           title="IVF Clinic Preferences"
-          editing={editing}
+          editing={editingSection === "clinic"}
           forceShow
           data={parentProfileQuery.data}
+          onEdit={() => startEditingSection("clinic")}
+          onSave={saveSectionClinic}
+          onCancel={() => setEditingSection(null)}
+          saving={sectionSaving}
           fields={[
             { label: "Needs Clinic", key: "needsClinic", value: editNeedsClinic, setter: setEditNeedsClinic, type: "yesno",
               display: (v: any) => v === true || v === "true" ? "Yes - needs a clinic" : v === false || v === "false" ? "No - has one" : null },
@@ -978,9 +1249,13 @@ function AccountTab() {
         {/* Surrogate Preferences - only if registered for Surrogate */}
         {hasSurrogate && <ProfileSection
           title="Surrogate Preferences"
-          editing={editing}
+          editing={editingSection === "surrogate"}
           forceShow
           data={parentProfileQuery.data}
+          onEdit={() => startEditingSection("surrogate")}
+          onSave={saveSectionSurrogate}
+          onCancel={() => setEditingSection(null)}
+          saving={sectionSaving}
           fields={[
             { label: "Surrogate Age Range", key: "surrogateAgeRange", value: editSurrogateAgeRange, setter: setEditSurrogateAgeRange, type: "range",
               rangeMin: 18, rangeMax: 45, rangeStep: 1 },
@@ -1030,9 +1305,13 @@ function AccountTab() {
         {/* Egg Donor Preferences - only if registered for Egg Donor */}
         {hasEggDonor && <ProfileSection
           title="Egg Donor Preferences"
-          editing={editing}
+          editing={editingSection === "eggDonor"}
           forceShow
           data={parentProfileQuery.data}
+          onEdit={() => startEditingSection("eggDonor")}
+          onSave={saveSectionEggDonor}
+          onCancel={() => setEditingSection(null)}
+          saving={sectionSaving}
           fields={[
             { label: "Donor Age Range", key: "eggDonorAgeRange", value: editEggDonorAgeRange, setter: setEditEggDonorAgeRange, type: "range",
               rangeMin: 18, rangeMax: 45, rangeStep: 1 },
@@ -1069,9 +1348,13 @@ function AccountTab() {
         {/* Sperm Donor Preferences - only if registered for Sperm Donor */}
         {hasSpermDonor && <ProfileSection
           title="Sperm Donor Preferences"
-          editing={editing}
+          editing={editingSection === "spermDonor"}
           forceShow
           data={parentProfileQuery.data}
+          onEdit={() => startEditingSection("spermDonor")}
+          onSave={saveSectionSpermDonor}
+          onCancel={() => setEditingSection(null)}
+          saving={sectionSaving}
           fields={[
             { label: "Donor Age Range", key: "spermDonorAgeRange", value: editSpermDonorAgeRange, setter: setEditSpermDonorAgeRange, type: "range",
               rangeMin: 18, rangeMax: 45, rangeStep: 1 },
@@ -1104,8 +1387,12 @@ function AccountTab() {
         {/* Current Providers */}
         <ProfileSection
           title="Current Providers"
-          editing={editing}
+          editing={editingSection === "providers"}
           data={parentProfileQuery.data}
+          onEdit={() => startEditingSection("providers")}
+          onSave={saveSectionProviders}
+          onCancel={() => setEditingSection(null)}
+          saving={sectionSaving}
           fields={[
             { label: "Agency", key: "currentAgencyName", value: editCurrentAgencyName, setter: setEditCurrentAgencyName, type: "text" },
             { label: "Attorney", key: "currentAttorneyName", value: editCurrentAttorneyName, setter: setEditCurrentAttorneyName, type: "text" },
@@ -1135,12 +1422,16 @@ type ProfileFieldDef = {
   showIf?: boolean;
 };
 
-function ProfileSection({ title, editing, data, fields, forceShow }: {
+function ProfileSection({ title, editing, data, fields, forceShow, onEdit, onSave, onCancel, saving }: {
   title: string;
   editing: boolean;
   data: any;
   fields: ProfileFieldDef[];
   forceShow?: boolean;
+  onEdit?: () => void;
+  onSave?: () => void;
+  onCancel?: () => void;
+  saving?: boolean;
 }) {
   const activeFields = fields.filter(f => f.showIf === undefined || f.showIf !== false);
   const hasAnyValue = activeFields.some(f => {
@@ -1154,7 +1445,25 @@ function ProfileSection({ title, editing, data, fields, forceShow }: {
 
   return (
     <Card className="p-8 mt-6">
-      <h2 className="text-lg font-heading mb-6">{title}</h2>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-lg font-heading">{title}</h2>
+        {!editing && onEdit && (
+          <Button variant="outline" size="sm" onClick={onEdit}>
+            <Pencil className="w-3.5 h-3.5 mr-1.5" /> Edit
+          </Button>
+        )}
+        {editing && (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={onCancel} disabled={saving}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={onSave} disabled={saving}>
+              {saving ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
+              Save
+            </Button>
+          </div>
+        )}
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
         {activeFields.map((f) => {
           const raw = data?.[f.key];
