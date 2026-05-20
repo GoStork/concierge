@@ -776,10 +776,17 @@ function AccountTab() {
     <Card className="p-8">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-lg font-heading">Personal Information</h2>
-        {!editing && (
+        {!editing ? (
           <Button variant="outline" size="sm" onClick={startEditing} disabled={profileLoading} data-testid="button-edit-profile">
             {profileLoading ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Pencil className="w-3.5 h-3.5 mr-1.5" />} Edit
           </Button>
+        ) : (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={cancelEditing} disabled={saving} data-testid="button-cancel-edit">Cancel</Button>
+            <Button size="sm" onClick={handleSave} disabled={saving || !editName.trim()} data-testid="button-save-profile">
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}Save
+            </Button>
+          </div>
         )}
       </div>
 
@@ -1056,17 +1063,6 @@ function AccountTab() {
                     <Building2 className="w-4 h-4 text-muted-foreground" />
                     <span className="text-sm text-muted-foreground" data-testid="text-account-provider">{providerName}</span>
                   </div>
-                </div>
-              )}
-              {editing && (
-                <div className="flex gap-2 justify-end fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t">
-                  <Button variant="outline" onClick={cancelEditing} disabled={saving} data-testid="button-cancel-edit">
-                    Cancel
-                  </Button>
-                  <Button onClick={handleSave} disabled={saving || !editName.trim()} data-testid="button-save-profile">
-                    {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
-                    Save
-                  </Button>
                 </div>
               )}
             </>
