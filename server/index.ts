@@ -191,7 +191,7 @@ export function log(message: string, source = "nestjs") {
 
   // Pre-warm Anthropic connection in the background - eliminates cold-start TLS latency
   // for the first real concierge request.
-  import("./ai-router").then(({ warmupAnthropicConnection }) => {
-    warmupAnthropicConnection().catch((e: any) => log(`Anthropic warmup error: ${e.message}`));
+  import("./ai-router").then(({ warmupGeminiConnection }) => {
+    warmupGeminiConnection().catch((e: any) => log(`Gemini warmup error: ${e.message}`));
   });
 })();

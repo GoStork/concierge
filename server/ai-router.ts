@@ -38,16 +38,13 @@ function getAnthropicClient(): Anthropic {
 }
 
 // Pre-warm the Anthropic connection on startup to eliminate cold-start TLS handshake latency.
-export async function warmupAnthropicConnection(): Promise<void> {
+export async function warmupGeminiConnection(): Promise<void> {
   try {
-    await getAnthropicClient().messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1,
-      messages: [{ role: "user", content: "hi" }],
-    });
-    console.log("[ANTHROPIC] Connection pre-warmed");
+    const model = geminiAI.getGenerativeModel({ model: "gemini-3.5-flash" });
+    await model.generateContent("hi");
+    console.log("[GEMINI] Tier2 connection pre-warmed");
   } catch (e: any) {
-    console.log(`[ANTHROPIC] Pre-warm failed (non-critical): ${e.message}`);
+    console.log(`[GEMINI] Pre-warm failed (non-critical): ${e.message}`);
   }
 }
 const geminiAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
@@ -137,19 +134,30 @@ function normalizeCarrier(val: string): string {
   if (v.includes("partner") || v.includes("spouse")) return "My partner";
   return val;
 }
-function normalizeEggSource(val: string): string {
+function normalizeEggSource(val: string, _parentGender?: string | null): string {
   const v = val.toLowerCase().trim().replace(/^a\s+/, "");
   if (v.includes("donor egg") || v.includes("egg donor") || v === "donor eggs" || v === "egg donor") return "Egg donor";
-  if (v.includes("own egg") || v === "her own" || v === "my own eggs" || v === "own eggs") return "Own eggs";
   if (v.includes("donated embryo") || v.includes("embryo donation")) return "Donated embryos";
+  // "Partner eggs" canonical applies to both genders: Two Moms (one female partner provides eggs)
+  // and Man+Woman with man speaking (female partner provides eggs). Two Dads can never legitimately
+  // emit a partner-eggs SAVE since neither partner has eggs biologically.
+  if (v.includes("partner") && v.includes("egg")) return "Partner eggs";
+  if (v.includes("own egg") || v === "her own" || v === "my own eggs" || v === "own eggs") return "Own eggs";
   return val;
 }
-function normalizeSpermSource(val: string): string {
+function normalizeSpermSource(val: string, parentGender?: string | null): string {
   const v = val.toLowerCase().trim().replace(/^a\s+/, "");
   if (v.includes("sperm donor") || v === "donor sperm" || v === "sperm donor") return "Sperm donor";
   if (v === "my own" || v === "my sperm" || v.includes("own sperm") || v === "his own") return "My sperm";
   if (v === "known donor") return "Known donor";
-  if (v.includes("partner") || v.includes("spouse")) return "Partner/Spouse";
+  if (v.includes("partner") || v.includes("spouse")) {
+    // Gender-aware: male couples (Two Dads) use "Partner sperm" canonical; female users (Solo Woman,
+    // Two Moms, Man+Woman) use "Partner/Spouse". Matches the dropdown options in account-page.tsx.
+    const g = (parentGender || "").toLowerCase();
+    const isFemale = /\b(female|woman|girl)\b/.test(g);
+    const isMale = !isFemale && /\b(male|man|boy)\b/.test(g);
+    return isMale ? "Partner sperm" : "Partner/Spouse";
+  }
   return val;
 }
 
@@ -236,7 +244,7 @@ function injectMissingQuickReplies(content: string): string {
 }
 
 // -------------------------------------------------------------------------
-// Tier 2: Claude Sonnet 4.6 - matching, tool calls, complex rules
+// Tier 2: Gemini 3.5 Flash - matching, tool calls, complex rules
 // -------------------------------------------------------------------------
 async function callTier2Claude(
   systemPrompt: string,
@@ -246,222 +254,121 @@ async function callTier2Claude(
   mcpClientRef: Client | null,
   forceToolUse = false
 ): Promise<{ content: string; toolCallsExecuted: boolean; searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] }> {
-  // Collect all inline system messages (injected throughout the messages array) and
-  // append them to the main system prompt, since Anthropic only supports system content
-  // in the top-level "system" field - not as role:"system" entries in the messages array.
+  const hasTools = openAiTools.length > 0;
+
+  // Collect inline system messages and merge into one prompt (strip the cache marker - not needed for Gemini)
   const inlineSystemParts: string[] = [];
   for (const m of messages) {
-    if (m.role === "system" && typeof m.content === "string") {
-      inlineSystemParts.push(m.content);
-    }
+    if (m.role === "system" && typeof m.content === "string") inlineSystemParts.push(m.content);
   }
-  // The MAIN system prompt (inlineSystemParts[0]) contains a ___CACHE_BREAKPOINT___ marker
-  // separating the stable prefix from the per-request suffix. Additional inline system
-  // messages (injected enforcement rules) are appended to the dynamic suffix.
   const CACHE_MARKER = "___CACHE_BREAKPOINT___";
   const mainSystem = inlineSystemParts[0] || systemPrompt;
   const extraSystem = inlineSystemParts.slice(1).join("\n\n---\n\n");
   const markerIdx = mainSystem.indexOf(CACHE_MARKER);
-  let staticPrefix: string;
-  let dynamicSuffix: string;
-  if (markerIdx >= 0) {
-    staticPrefix = mainSystem.slice(0, markerIdx);
-    dynamicSuffix = mainSystem.slice(markerIdx + CACHE_MARKER.length);
-  } else {
-    // Fallback: legacy callers without the marker - cache the whole thing.
-    staticPrefix = mainSystem;
-    dynamicSuffix = "";
-  }
-  if (extraSystem) {
-    dynamicSuffix = (dynamicSuffix ? dynamicSuffix + "\n\n---\n\n" : "") + extraSystem;
-  }
-  const fullSystemPrompt = staticPrefix + dynamicSuffix; // for logging only
+  const strippedMain = markerIdx >= 0 ? mainSystem.slice(0, markerIdx) + mainSystem.slice(markerIdx + CACHE_MARKER.length) : mainSystem;
+  const fullSystem = strippedMain + (extraSystem ? "\n\n---\n\n" + extraSystem : "");
 
-  // Convert to Anthropic message format (no system role), trimmed to last 20 turns.
-  // Tier2 only needs recent context; trimming 50+ message histories cuts input tokens ~30-50%.
+  // Build Gemini history (last 20 turns, must start with a user turn)
   const TIER2_MAX_HISTORY = 20;
-  const anthropicMessages: Anthropic.Messages.MessageParam[] = messages
+  const rawHistory = messages
     .filter((m) => m.role !== "system")
     .map((m) => ({
-      role: (m.role === "assistant" ? "assistant" : "user") as "assistant" | "user",
-      content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+      role: (m.role === "assistant" ? "model" : "user") as "model" | "user",
+      parts: [{ text: typeof m.content === "string" ? m.content : JSON.stringify(m.content) }],
     }))
     .slice(-TIER2_MAX_HISTORY);
+  const firstUserIdx = rawHistory.findIndex((m) => m.role === "user");
+  const trimmedHistory = firstUserIdx >= 0 ? rawHistory.slice(firstUserIdx) : [];
+  const chatHistory = trimmedHistory.slice(0, -1); // all but the current user message
 
-  // Prompt caching: cache_control only on the static prefix.
-  // The dynamic suffix is sent fresh each call but is small (~7K chars vs 95K cached).
-  // After the first call within 5 min, subsequent calls hit cache for the prefix (~90% input token reduction).
-  const systemWithCache: Anthropic.Messages.TextBlockParam[] = dynamicSuffix
-    ? [
-        {
-          type: "text",
-          text: staticPrefix,
-          // @ts-ignore - cache_control is supported by the API
-          cache_control: { type: "ephemeral" },
-        },
-        {
-          type: "text",
-          text: dynamicSuffix,
-        },
-      ]
-    : [
-        {
-          type: "text",
-          text: staticPrefix,
-          // @ts-ignore
-          cache_control: { type: "ephemeral" },
-        },
-      ];
+  const lastNonSystem = messages.filter((m) => m.role !== "system").at(-1);
+  const userMessage = typeof lastNonSystem?.content === "string" ? lastNonSystem.content : JSON.stringify(lastNonSystem?.content ?? "");
 
-  // Convert OpenAI tools to Anthropic format
-  const anthropicTools: Anthropic.Messages.Tool[] = openAiTools.map((t) => ({
-    name: t.function.name,
-    description: t.function.description || "",
-    input_schema: t.function.parameters as Anthropic.Messages.Tool["input_schema"],
-  }));
+  // Convert OpenAI tool format to Gemini FunctionDeclaration format
+  const geminiTools = hasTools
+    ? [{ functionDeclarations: openAiTools.map((t: any) => ({ name: t.function.name, description: t.function.description || "", parameters: t.function.parameters })) }]
+    : undefined;
 
-  let currentMessages = [...anthropicMessages];
+  const model = geminiAI.getGenerativeModel({
+    model: "gemini-3.5-flash",
+    ...(geminiTools ? { tools: geminiTools as any } : {}),
+    systemInstruction: { parts: [{ text: fullSystem }] },
+  });
+
+  const chat = model.startChat({ history: chatHistory });
+
   let toolCallsExecuted = false;
   const searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] = [];
-
   const t0 = Date.now();
-  const histTurns = anthropicMessages.length;
-  console.log(`[TIER2] start: history=${histTurns} turns, system=${staticPrefix.length}+${dynamicSuffix.length} chars (static+dynamic), tools=${anthropicTools.length}`);
+  const searchToolNames = ["search_surrogates", "search_egg_donors", "search_sperm_donors", "search_clinics"];
+  console.log(`[TIER2] start: history=${chatHistory.length} turns, system=${fullSystem.length} chars, tools=${openAiTools.length}`);
+
+  let currentMessage: any = userMessage;
 
   while (true) {
-    const hasTools = anthropicTools.length > 0;
-
     if (!toolCallsExecuted) {
-      const tStreamStart = Date.now();
-      // Streaming from the start: text responses flow to the client in real-time;
-      // tool_use responses are collected silently then executed.
-      const stream = getAnthropicClient().messages.stream({
-        model: "claude-sonnet-4-6",
-        max_tokens: hasTools ? 512 : 2048,
-        // @ts-ignore
-        system: systemWithCache,
-        messages: currentMessages,
-        ...(hasTools ? { tools: anthropicTools } : {}),
-      });
-
-      let accumulatedText = "";
-      let sawToolUse = false;
-      const collectedToolBlocks: { id: string; name: string; input: Record<string, unknown> }[] = [];
-      let currentToolBlock: { id: string; name: string; inputJson: string } | null = null;
-      let firstEventMs: number | null = null;
-      let cacheReadTokens = 0;
-      let cacheCreationTokens = 0;
-      let inputTokens = 0;
-
-      for await (const event of stream) {
-        if (firstEventMs === null) firstEventMs = Date.now() - tStreamStart;
-        if (event.type === "content_block_start") {
-          if (event.content_block.type === "tool_use") {
-            sawToolUse = true;
-            currentToolBlock = { id: event.content_block.id, name: event.content_block.name, inputJson: "" };
-          }
-        } else if (event.type === "content_block_delta") {
-          if (event.delta.type === "input_json_delta" && currentToolBlock) {
-            currentToolBlock.inputJson += event.delta.partial_json;
-          } else if (event.delta.type === "text_delta") {
-            accumulatedText += event.delta.text;
-            // Stream text directly only when no tools are in play (tools take priority;
-            // if a tool_use block appears later in the same response the text is discarded).
-            if (!hasTools) sse.sendToken(event.delta.text);
-          }
-        } else if (event.type === "content_block_stop" && currentToolBlock) {
-          try { collectedToolBlocks.push({ ...currentToolBlock, input: JSON.parse(currentToolBlock.inputJson) }); }
-          catch { collectedToolBlocks.push({ ...currentToolBlock, input: {} }); }
-          currentToolBlock = null;
-        } else if (event.type === "message_start" && event.message?.usage) {
-          inputTokens = event.message.usage.input_tokens || 0;
-          cacheReadTokens = (event.message.usage as any).cache_read_input_tokens || 0;
-          cacheCreationTokens = (event.message.usage as any).cache_creation_input_tokens || 0;
+      if (!hasTools) {
+        // No tools - stream directly to SSE
+        const tStream = Date.now();
+        const result = await chat.sendMessageStream(currentMessage);
+        let fullText = "";
+        let firstEventMs: number | null = null;
+        for await (const chunk of result.stream) {
+          if (firstEventMs === null) firstEventMs = Date.now() - tStream;
+          const text = chunk.text();
+          if (text) { fullText += text; sse.sendToken(text); }
         }
+        console.log(`[TIER2] DONE (no tools) in ${Date.now() - t0}ms`);
+        return { content: fullText, toolCallsExecuted: false, searchToolResults };
       }
 
-      const stream1Ms = Date.now() - tStreamStart;
-      console.log(`[TIER2] stream1 done in ${stream1Ms}ms (firstEvent=${firstEventMs}ms, sawToolUse=${sawToolUse}, textChars=${accumulatedText.length}, in=${inputTokens}, cacheRead=${cacheReadTokens}, cacheCreate=${cacheCreationTokens})`);
+      // Has tools - non-streaming first pass to detect function calls
+      const tCall = Date.now();
+      const response = await chat.sendMessage(currentMessage);
+      const functionCalls = response.response.functionCalls();
+      console.log(`[TIER2] call1 done in ${Date.now() - tCall}ms, functionCalls=${functionCalls?.length ?? 0}`);
 
-      if (sawToolUse) {
+      if (functionCalls && functionCalls.length > 0) {
         toolCallsExecuted = true;
-        const finalMsg = await stream.finalMessage();
-        const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
-
-        for (const block of collectedToolBlocks) {
+        const functionResponses: any[] = [];
+        for (const fc of functionCalls) {
           if (mcpClientRef) {
-            const tMcpStart = Date.now();
+            const tMcp = Date.now();
             try {
-              const toolResult = await mcpClientRef.callTool({
-                name: block.name,
-                arguments: block.input,
-              });
+              const toolResult = await mcpClientRef.callTool({ name: fc.name, arguments: fc.args as Record<string, unknown> });
               const resultText = (toolResult.content as any)?.[0]?.text || JSON.stringify(toolResult);
-              console.log(`[TIER2] MCP ${block.name} in ${Date.now() - tMcpStart}ms (result=${resultText.length} chars)`);
-              toolResults.push({ type: "tool_result", tool_use_id: block.id, content: resultText });
-              const searchTools = ["search_surrogates", "search_egg_donors", "search_sperm_donors", "search_clinics"];
-              if (searchTools.includes(block.name)) {
-                searchToolResults.push({ toolName: block.name, resultText, toolArgs: block.input });
+              console.log(`[TIER2] MCP ${fc.name} in ${Date.now() - tMcp}ms (result=${resultText.length} chars)`);
+              functionResponses.push({ functionResponse: { name: fc.name, response: { output: resultText } } });
+              if (searchToolNames.includes(fc.name)) {
+                searchToolResults.push({ toolName: fc.name, resultText, toolArgs: fc.args });
               }
             } catch (e: any) {
-              console.log(`[TIER2] MCP ${block.name} FAILED in ${Date.now() - tMcpStart}ms: ${e.message}`);
-              toolResults.push({ type: "tool_result", tool_use_id: block.id, content: `Error: ${e.message}`, is_error: true });
+              console.log(`[TIER2] MCP ${fc.name} FAILED in ${Date.now() - tMcp}ms: ${e.message}`);
+              functionResponses.push({ functionResponse: { name: fc.name, response: { output: `Error: ${e.message}` } } });
             }
           }
         }
-
-        currentMessages = [
-          ...currentMessages,
-          { role: "assistant" as const, content: finalMsg.content },
-          { role: "user" as const, content: toolResults },
-        ];
-        continue;
-      } else if (!hasTools) {
-        // Text was already streamed token-by-token above
-        console.log(`[TIER2] DONE (no tools) in ${Date.now() - t0}ms`);
-        return { content: accumulatedText, toolCallsExecuted: false, searchToolResults };
+        currentMessage = functionResponses;
       } else {
-        // hasTools but Claude chose to respond with text - fake-stream the buffered text
-        const words = accumulatedText.split(" ");
-        for (const word of words) {
-          sse.sendToken(word + " ");
-          await new Promise((r) => setTimeout(r, 0));
-        }
+        // Model chose text instead of calling tools - fake-stream the buffered text
+        const text = response.response.text();
+        const words = text.split(" ");
+        for (const word of words) { sse.sendToken(word + " "); await new Promise((r) => setTimeout(r, 0)); }
         console.log(`[TIER2] DONE (text w/ tools enabled) in ${Date.now() - t0}ms`);
-        return { content: accumulatedText, toolCallsExecuted: false, searchToolResults };
+        return { content: text, toolCallsExecuted: false, searchToolResults };
       }
     } else {
-      // After tool calls - true streaming.
-      // Match card + intro text fits in ~1500 tokens. Reduced from 4096 for speed.
-      const tStream2Start = Date.now();
-      const stream = await getAnthropicClient().messages.stream({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1500,
-        // @ts-ignore
-        system: systemWithCache,
-        messages: currentMessages,
-      });
-
+      // After tool calls - stream the final response
+      const tStream2 = Date.now();
+      const result = await chat.sendMessageStream(currentMessage);
       let fullText = "";
       let firstEvent2Ms: number | null = null;
-      let in2 = 0, cacheRead2 = 0, cacheCreate2 = 0, out2 = 0;
-      for await (const event of stream) {
-        if (firstEvent2Ms === null) firstEvent2Ms = Date.now() - tStream2Start;
-        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-          const text = event.delta.text;
-          fullText += text;
-          sse.sendToken(text);
-        } else if (event.type === "message_start" && event.message?.usage) {
-          in2 = event.message.usage.input_tokens || 0;
-          cacheRead2 = (event.message.usage as any).cache_read_input_tokens || 0;
-          cacheCreate2 = (event.message.usage as any).cache_creation_input_tokens || 0;
-        } else if (event.type === "message_delta" && (event as any).usage) {
-          out2 = (event as any).usage.output_tokens || 0;
-        }
+      for await (const chunk of result.stream) {
+        if (firstEvent2Ms === null) firstEvent2Ms = Date.now() - tStream2;
+        const text = chunk.text();
+        if (text) { fullText += text; sse.sendToken(text); }
       }
-      const stream2Ms = Date.now() - tStream2Start;
-      const tps = out2 > 0 ? (out2 / (stream2Ms / 1000)).toFixed(1) : "?";
-      console.log(`[TIER2] stream2 done in ${stream2Ms}ms (firstEvent=${firstEvent2Ms}ms, ${fullText.length} chars, in=${in2}, cacheRead=${cacheRead2}, cacheCreate=${cacheCreate2}, out=${out2}, ${tps} tok/s). Total TIER2 ${Date.now() - t0}ms`);
+      console.log(`[TIER2] DONE (after tools) stream=${Date.now() - tStream2}ms (firstEvent=${firstEvent2Ms}ms, ${fullText.length} chars). Total TIER2 ${Date.now() - t0}ms`);
       return { content: fullText, toolCallsExecuted: true, searchToolResults };
     }
   }
@@ -496,21 +403,26 @@ function assemblePromptFromSections(sections: Map<string, string>, sectionKeys: 
 // Simple non-streaming Claude call for interceptor retries (replaces gpt-4o retries)
 async function claudeRetry(messages: any[]): Promise<string> {
   const systemMsg = messages.find((m: any) => m.role === "system");
-  let conversationMsgs = messages
+  const rawHistory = messages
     .filter((m: any) => m.role === "user" || m.role === "assistant")
-    .map((m: any) => ({ role: m.role as "user" | "assistant", content: typeof m.content === "string" ? m.content : JSON.stringify(m.content) }));
-  // Anthropic requires messages to start with user - drop any leading assistant turns
-  while (conversationMsgs.length > 0 && conversationMsgs[0].role === "assistant") {
-    conversationMsgs = conversationMsgs.slice(1);
-  }
-  if (!conversationMsgs.length) return "";
-  const res = await getAnthropicClient().messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 1024,
-    ...(systemMsg ? { system: systemMsg.content } : {}),
-    messages: conversationMsgs,
+    .map((m: any) => ({
+      role: (m.role === "assistant" ? "model" : "user") as "model" | "user",
+      parts: [{ text: typeof m.content === "string" ? m.content : JSON.stringify(m.content) }],
+    }));
+  const firstUserIdx = rawHistory.findIndex((m) => m.role === "user");
+  const history = firstUserIdx >= 0 ? rawHistory.slice(firstUserIdx) : rawHistory;
+  if (!history.length) return "";
+  const chatHistory = history.slice(0, -1);
+  const lastMsg = history.at(-1);
+  if (!lastMsg) return "";
+  const userMessage = lastMsg.parts[0].text;
+  const model = geminiAI.getGenerativeModel({
+    model: "gemini-3.5-flash",
+    ...(systemMsg ? { systemInstruction: { parts: [{ text: systemMsg.content }] } } : {}),
   });
-  return res.content[0].type === "text" ? res.content[0].text : "";
+  const chat = model.startChat({ history: chatHistory });
+  const result = await chat.sendMessage(userMessage);
+  return result.response.text();
 }
 
 export const aiRouter = Router();
@@ -3520,14 +3432,34 @@ ${phase0Section}`;
           try {
             const earlyData = JSON.parse(esm[1]);
             if (Object.keys(earlyData).length > 0 && userRecord?.parentAccountId) {
-              await prisma.intendedParentProfile.upsert({
-                where: { parentAccountId: userRecord.parentAccountId },
-                update: earlyData,
-                create: { parentAccountId: userRecord.parentAccountId, ...earlyData },
-              });
-              // Update local profile cache
-              if (profile) Object.assign(profile, earlyData);
-              console.log(`[EARLY-SAVE] Saved profile data before sperm Q strip:`, Object.keys(earlyData));
+              // Normalize biological-baseline fields so we never write raw lowercase from the prompt template.
+              if (typeof earlyData.carrier === "string") earlyData.carrier = normalizeCarrier(earlyData.carrier);
+              if (typeof earlyData.eggSource === "string") earlyData.eggSource = normalizeEggSource(earlyData.eggSource, userRecord?.gender);
+              if (typeof earlyData.spermSource === "string") earlyData.spermSource = normalizeSpermSource(earlyData.spermSource, userRecord?.gender);
+              // Carrier guard: block AI-emitted SAVE from flipping an explicit "Self" to "Gestational surrogate"
+              // unless the parent's message in this turn mentioned a surrogate. Same logic as in the main
+              // SAVE block at line ~4170 - keep them in sync.
+              if (typeof earlyData.carrier === "string" && earlyData.carrier === "Gestational surrogate") {
+                const existing = (await prisma.intendedParentProfile.findFirst({
+                  where: { parentAccountId: userRecord.parentAccountId },
+                  select: { carrier: true },
+                }))?.carrier;
+                const userMentionsSurrogate = /\bgestational surrogate\b|\ba surrogate\b|\bsurrogate will carry\b|\bvia surrogacy\b/i.test(userMessage || "");
+                if ((existing === "Self" || existing === "Self carrying") && !userMentionsSurrogate) {
+                  console.log(`[EARLY-SAVE CARRIER GUARD] Blocked carrier downgrade from "${existing}" -> "Gestational surrogate"`);
+                  delete earlyData.carrier;
+                }
+              }
+              if (Object.keys(earlyData).length > 0) {
+                await prisma.intendedParentProfile.upsert({
+                  where: { parentAccountId: userRecord.parentAccountId },
+                  update: earlyData,
+                  create: { parentAccountId: userRecord.parentAccountId, ...earlyData },
+                });
+                // Update local profile cache
+                if (profile) Object.assign(profile, earlyData);
+                console.log(`[EARLY-SAVE] Saved profile data before sperm Q strip:`, Object.keys(earlyData));
+              }
             }
           } catch {}
         }
@@ -3575,7 +3507,11 @@ ${phase0Section}`;
     // Post-processor: strip carrier question ("who will carry") for male parents or parents registered for surrogacy.
     // A male parent cannot carry - the answer is always "a gestational surrogate", so asking is pointless.
     const parentNeedsSurrogate = needsSurrogate || alreadyHasSurrogate || profile?.needsSurrogate === true || isMaleGender || isGayMale;
-    if (parentNeedsSurrogate) {
+    // Don't auto-save "Gestational surrogate" if the parent already explicitly stated they (or their partner)
+    // will carry. This protects lesbian self-carry (Two Moms) and partner-carry (Two Moms partner case)
+    // from being silently overwritten when the AI happens to include a "who will carry?" question alongside.
+    const parentSaidSelfOrPartnerCarry = /\bi('ll| will| am| plan to)?\s+(carry|be carrying|be the carrier|carry the pregnancy)\b|\bcarrying (it|the pregnancy|myself|the baby)\b|\bi'll carry\b|\bmy partner (?:will|is|plans to)\s+carry\b|\b(?:wife|husband|spouse) (?:will )?carr(?:y|ies)\b/i.test(allUserMessages);
+    if (parentNeedsSurrogate && !parentSaidSelfOrPartnerCarry) {
       // Detect carrier question by its text pattern and strip entire sentence + quick reply
       const carrierQuestionPattern = /[^.!?]*(?:who(?:'s| is| will be| would be| was| are)?(?:\s+\w+)?\s+(?:planning\s+to\s+)?(?:carry(?:ing)?|carrier)|who(?:'s| is) (?:going to|planning to) (?:carry|be the carrier))[^.!?]*[.!?]?\s*\[\[QUICK_REPLY:[^\]]*\]\]/gi;
       if (carrierQuestionPattern.test(finalContent)) {
@@ -3990,7 +3926,26 @@ NEVER promise to search without actually calling the search tool. NEVER end with
 
         // Sperm source - extract from parent's direct statement
         if (extractedProfile?.spermSource == null) {
-          if (/^my own$|^my own sperm$|\bi used my own sperm|\busing my own sperm|\bmy (own )?sperm\b/i.test(msg)) {
+          // Partner sperm FIRST: require explicit sperm context OR a male parent answering a partner question.
+          // We disambiguate the bare "my partner's" multiple ways:
+          //   (a) message includes the word "sperm" - unambiguous
+          //   (b) bare "my partner's" + last AI message mentioned sperm - context match
+          //   (c) bare "my partner's" + male parent (Two Dads / MW with man speaking) AND no "eggs" word
+          //       in the last AI message - gender heuristic for ambiguous AI phrasing
+          const bareMyPartners = /^my partner'?s\s*$/i.test(msg);
+          const lastAiMsgForSperm = bareMyPartners
+            ? [...chatHistory].reverse().find(m => m.role === "assistant")
+            : null;
+          const lastAiContent = (lastAiMsgForSperm?.content || "").toString();
+          const lastAiAskedSperm = lastAiContent && /sperm|donor sample|genetic material|seed/i.test(lastAiContent);
+          const lastAiAskedEggs = lastAiContent && /\beggs?\b/i.test(lastAiContent);
+          const genderL = (userRecord?.gender || "").toLowerCase();
+          const isMaleParent = !/\b(female|woman|girl)\b/.test(genderL) && /\b(male|man|boy)\b/.test(genderL);
+          if (/\bmy partner'?s sperm\b|\bpartner'?s sperm\b|^partner sperm$/i.test(msg) ||
+              (bareMyPartners && lastAiAskedSperm) ||
+              (bareMyPartners && isMaleParent && !lastAiAskedEggs)) {
+            autoProfileData.spermSource = normalizeSpermSource("partner's sperm", userRecord?.gender);
+          } else if (/^my own$|^my own sperm$|\bi used my own sperm|\busing my own sperm|\bmy (own )?sperm\b/i.test(msg)) {
             autoProfileData.spermSource = "My sperm";
           } else if (/^donor sperm$|^a sperm donor$|^sperm donor$|\bi used donor sperm|\busing donor sperm/i.test(msg)) {
             autoProfileData.spermSource = "Sperm donor";
@@ -4006,12 +3961,15 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         // Solo Man / Two Dads have eggSource pre-set to "Egg donor" via IMMEDIATE PROFILE INFERENCE
         // so the null guard prevents this from overwriting their value.
         if (extractedProfile?.eggSource == null) {
-          if (/\bi('ll| will| am|'m)? (be )?(going to |gonna |planning to )?use (my |our )?own eggs?\b|\bmy own eggs?\b|^own eggs?$|^my own$/i.test(msg)) {
+          // Partner eggs FIRST: "my partner's eggs" contains "eggs" so check partner explicitly first
+          // so we don't misclassify it as "Own eggs". For female parents this saves "Partner eggs"
+          // (Two Moms canonical); for male parents (impossible biologically) it falls through.
+          if (/\bmy partner'?s? eggs?\b|\bpartner'?s eggs?\b|^my partner'?s?$|^partner eggs$/i.test(msg)) {
+            autoProfileData.eggSource = normalizeEggSource("partner's eggs", userRecord?.gender);
+          } else if (/\bi('ll| will| am|'m)? (be )?(going to |gonna |planning to )?use (my |our )?own eggs?\b|\bmy own eggs?\b|^own eggs?$|^my own$/i.test(msg)) {
             autoProfileData.eggSource = "Own eggs";
           } else if (/\bdonor eggs?\b|\begg donor\b|\bi('ll| will|'m|m)? (be )?using (an? )?egg donor\b/i.test(msg)) {
             autoProfileData.eggSource = "Egg donor";
-          } else if (/\bmy partner'?s? eggs?\b|\bpartner('s)? eggs?\b/i.test(msg)) {
-            autoProfileData.eggSource = "Own eggs"; // partner's eggs treated as "Own eggs" per prompt rule
           }
         }
 
@@ -4025,7 +3983,11 @@ NEVER promise to search without actually calling the search tool. NEVER end with
 
         // Carrier - extract from user message text first (most reliable signal)
         if (extractedProfile?.carrier == null) {
-          if (/\bi('ll| will| am| plan to)? (carry|be carrying|be the carrier|carry the pregnancy)\b/i.test(msg) ||
+          // Partner-carry FIRST: "My partner will carry" must match before the generic carry regex
+          // so we don't misclassify it as "Self".
+          if (/\bmy partner (?:will|is going to|plans to|is)\s+(?:carry|carrying|be the carrier|be carrying)\b|\bpartner('s)? carrying\b|\b(?:my )?(?:wife|husband|spouse|partner) (?:will )?carr(?:y|ies)\b/i.test(msg)) {
+            autoProfileData.carrier = "My partner";
+          } else if (/\bi('ll| will| am| plan to)? (carry|be carrying|be the carrier|carry the pregnancy)\b/i.test(msg) ||
               /\bcarrying (it|the pregnancy|myself|the baby)\b/i.test(msg) ||
               /\bi'll carry\b/i.test(msg)) {
             autoProfileData.carrier = "Self";
@@ -4183,9 +4145,9 @@ NEVER promise to search without actually calling the search tool. NEVER end with
               profileData.carrier = normalized;
             }
           } else if (resolvedKey === "eggSource") {
-            profileData.eggSource = normalizeEggSource(String(value));
+            profileData.eggSource = normalizeEggSource(String(value), userRecord?.gender);
           } else if (resolvedKey === "spermSource") {
-            profileData.spermSource = normalizeSpermSource(String(value));
+            profileData.spermSource = normalizeSpermSource(String(value), userRecord?.gender);
           } else {
             // Ensure string fields are actually strings - AI sometimes saves arrays
             profileData[resolvedKey] = Array.isArray(value) ? value.join(",") : String(value);
