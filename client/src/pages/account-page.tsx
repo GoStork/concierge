@@ -1070,82 +1070,108 @@ function AccountTab() {
             </>
           ) : (
             <>
-              <div className="space-y-1">
-                <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Full Name</label>
-                <p className="text-sm font-ui" data-testid="text-account-name">{user.name || '-- Not specified --'}</p>
+              <div className="space-y-2">
+                <Label>Full Name</Label>
+                <Input disabled value={user.name || ""} placeholder="-- Not specified --" data-testid="text-account-name" />
               </div>
-              <div className="space-y-1">
-                <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Email</label>
-                <div className="flex items-center gap-2">
-                  <Mail className="w-3.5 h-3.5 text-muted-foreground" />
-                  <p className="text-sm font-ui" data-testid="text-account-email">{user.email}</p>
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <div className="flex items-center gap-2 h-10 px-3 rounded-[var(--radius)] border border-border/40 bg-muted/30">
+                  <Mail className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground" data-testid="text-account-email">{user.email}</span>
                 </div>
+                <p className="text-xs text-muted-foreground">Email cannot be changed</p>
               </div>
-              <div className="space-y-1">
-                <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Mobile Number</label>
-                <div className="flex items-center gap-2">
-                  <Phone className="w-3.5 h-3.5 text-muted-foreground" />
-                  <p className="text-sm font-ui" data-testid="text-account-mobile">{mobileNumberDisplay || mobileNumber || '-- Not specified --'}</p>
-                </div>
+              <div className="space-y-2">
+                <Label>Mobile Number</Label>
+                <Input disabled value={mobileNumberDisplay || mobileNumber || ""} placeholder="-- Not specified --" data-testid="text-account-mobile" />
               </div>
               {!isProviderUser && (
                 <>
-                  <div className="space-y-1">
-                    <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Location</label>
-                    <p className="text-sm font-ui" data-testid="text-account-location">{locationDisplay || '-- Not specified --'}</p>
+                  <div className="space-y-2">
+                    <Label>Location</Label>
+                    <Input disabled value={locationDisplay || ""} placeholder="-- Not specified --" data-testid="text-account-location" />
                   </div>
                   {isParent && (
                     <>
-                      <div className="space-y-1">
-                        <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Gender Identity</label>
-                        <p className="text-sm font-ui" data-testid="text-account-gender">{{ "I'm a woman": "Woman", "I'm a man": "Man", "I'm non-binary": "Non-binary" }[(user as any).gender as string] || (user as any).gender || '-- Not specified --'}</p>
+                      <div className="space-y-2">
+                        <Label>Gender Identity</Label>
+                        <Select disabled value={(user as any).gender || ""}>
+                          <SelectTrigger data-testid="select-gender"><SelectValue placeholder="-- Not specified --" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="I'm a woman">Woman</SelectItem>
+                            <SelectItem value="I'm a man">Man</SelectItem>
+                            <SelectItem value="I'm non-binary">Non-binary</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Sexual Orientation</label>
-                        <p className="text-sm font-ui" data-testid="text-account-orientation">{(user as any).sexualOrientation?.replace(/\b\w/g, (c: string) => c.toUpperCase()) || '-- Not specified --'}</p>
+                      <div className="space-y-2">
+                        <Label>Sexual Orientation</Label>
+                        <Select disabled value={(user as any).sexualOrientation || ""}>
+                          <SelectTrigger data-testid="select-orientation"><SelectValue placeholder="-- Not specified --" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Straight">Straight</SelectItem>
+                            <SelectItem value="Gay">Gay</SelectItem>
+                            <SelectItem value="Lesbian">Lesbian</SelectItem>
+                            <SelectItem value="Bi">Bi</SelectItem>
+                            <SelectItem value="Queer">Queer</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Relationship Status</label>
-                        <p className="text-sm font-ui" data-testid="text-account-relationship">{(user as any).relationshipStatus?.replace(/\b\w/g, (c: string) => c.toUpperCase()) || '-- Not specified --'}</p>
+                      <div className="space-y-2">
+                        <Label>Relationship Status</Label>
+                        <Select disabled value={(user as any).relationshipStatus || ""}>
+                          <SelectTrigger data-testid="select-relationship"><SelectValue placeholder="-- Not specified --" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Single">Single</SelectItem>
+                            <SelectItem value="Partnered">Partnered</SelectItem>
+                            <SelectItem value="Married">Married</SelectItem>
+                            <SelectItem value="Separated/Divorced/Widowed">Separated/Divorced/Widowed</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Age</label>
-                        <p className="text-sm font-ui" data-testid="text-account-age">
-                          {(user as any).dateOfBirth ? String(new Date().getFullYear() - new Date((user as any).dateOfBirth).getFullYear()) : '-- Not specified --'}
-                        </p>
+                      <div className="space-y-2">
+                        <Label>Your Age</Label>
+                        <Input
+                          disabled
+                          type="number"
+                          value={(user as any).dateOfBirth ? String(new Date().getFullYear() - new Date((user as any).dateOfBirth).getFullYear()) : ""}
+                          placeholder="-- Not specified --"
+                          data-testid="text-account-age"
+                        />
                       </div>
                       {((user as any).relationshipStatus === "Partnered" || (user as any).relationshipStatus === "Married") && (
                         <>
-                          <div className="space-y-1">
-                            <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Partner's Full Name</label>
-                            <p className="text-sm font-ui" data-testid="text-account-partner-name">{(user as any).partnerFirstName || '-- Not specified --'}</p>
+                          <div className="space-y-2">
+                            <Label>Partner's Full Name</Label>
+                            <Input disabled value={(user as any).partnerFirstName || ""} placeholder="-- Not specified --" data-testid="text-account-partner-name" />
                           </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Partner's Age</label>
-                            <p className="text-sm font-ui" data-testid="text-account-partner-age">{(user as any).partnerAge || '-- Not specified --'}</p>
+                          <div className="space-y-2">
+                            <Label>Partner's Age</Label>
+                            <Input disabled type="number" value={(user as any).partnerAge || ""} placeholder="-- Not specified --" data-testid="text-account-partner-age" />
                           </div>
                         </>
                       )}
-                      <div className="space-y-1 md:col-span-2">
-                        <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Services</label>
-                        <div className="flex flex-wrap gap-1.5" data-testid="text-account-services">
-                          {(parentProfileQuery.data?.interestedServices || []).length > 0
-                            ? (parentProfileQuery.data?.interestedServices || []).map((svc: string) => (
-                                <span key={svc} className="px-2.5 py-0.5 rounded-full text-xs bg-primary/10 text-primary border border-primary/20">
-                                  {svc}
-                                </span>
-                              ))
-                            : <p className="text-sm font-ui">-</p>
-                          }
+                      <div className="space-y-2 md:col-span-2">
+                        <Label>Services You're Looking For</Label>
+                        <div className="flex flex-wrap gap-2" data-testid="text-account-services">
+                          {["Fertility Clinic", "Egg Donor", "Surrogate", "Sperm Donor"].map((svc) => {
+                            const selected = (parentProfileQuery.data?.interestedServices || []).includes(svc);
+                            return (
+                              <span key={svc} className={`px-3 py-1 text-sm rounded-full border font-ui ${selected ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border opacity-50"}`}>
+                                {svc}
+                              </span>
+                            );
+                          })}
                         </div>
                       </div>
                     </>
                   )}
                 </>
               )}
-              <div className="space-y-1">
-                <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Password</label>
-                <p className="text-sm font-ui text-muted-foreground" data-testid="text-account-password">••••••••</p>
+              <div className="space-y-2">
+                <Label>Password</Label>
+                <Input disabled type="password" value="placeholder" placeholder="••••••••" data-testid="text-account-password" />
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Role</label>
