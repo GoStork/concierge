@@ -439,7 +439,8 @@ export class UsersController {
     if (body.password !== undefined && body.password.length >= 6) {
       updateData.password = await this.authService.hashPassword(body.password);
     }
-    if (Object.keys(updateData).length === 0 && !body.interestedServices) {
+    // Only reject if there are no User-model fields AND no profile/services fields in the body
+    if (Object.keys(updateData).length === 0 && !body.interestedServices && Object.keys(body).length === 0) {
       throw new BadRequestException("No fields to update");
     }
 
