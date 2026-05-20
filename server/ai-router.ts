@@ -358,15 +358,25 @@ async function callTier2Claude(
         return { content: text, toolCallsExecuted: false, searchToolResults };
       }
     } else {
-      // After tool calls - stream the final response
+      // After tool calls - stream final response using a tools-free model to force text output.
+      // If the same tools-enabled model is reused here, Gemini may call tools again instead of
+      // returning text, resulting in 0 chars. A fresh model without tools forces a text response.
       const tStream2 = Date.now();
-      const result = await chat.sendMessageStream(currentMessage);
+      const fullHistory = await chat.getHistory();
+      const textModel = geminiAI.getGenerativeModel({
+        model: "gemini-3.5-flash",
+        systemInstruction: { parts: [{ text: fullSystem }] },
+      });
+      const textChat = textModel.startChat({ history: fullHistory });
+      const result = await textChat.sendMessageStream(currentMessage);
       let fullText = "";
       let firstEvent2Ms: number | null = null;
       for await (const chunk of result.stream) {
         if (firstEvent2Ms === null) firstEvent2Ms = Date.now() - tStream2;
-        const text = chunk.text();
-        if (text) { fullText += text; sse.sendToken(text); }
+        try {
+          const text = chunk.text();
+          if (text) { fullText += text; sse.sendToken(text); }
+        } catch { /* chunk may be non-text (safety/finish events) - skip */ }
       }
       console.log(`[TIER2] DONE (after tools) stream=${Date.now() - tStream2}ms (firstEvent=${firstEvent2Ms}ms, ${fullText.length} chars). Total TIER2 ${Date.now() - t0}ms`);
       return { content: fullText, toolCallsExecuted: true, searchToolResults };
