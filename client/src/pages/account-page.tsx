@@ -296,6 +296,7 @@ function AccountTab() {
       setEditJourneyStage(d?.journeyStage || "");
       setEditCurrentClinicName(d?.currentClinicName || "");
     } else if (section === "biological") {
+      setEditCurrentClinicName(d?.currentClinicName || "");
       setEditEggSource(d?.eggSource || "");
       setEditSpermSource(d?.spermSource || "");
       setEditCarrier(d?.carrier || "");
@@ -390,6 +391,7 @@ function AccountTab() {
     setSectionSaving(true);
     try {
       const payload: any = {
+        currentClinicName: editCurrentClinicName || null,
         eggSource: editEggSource || null,
         spermSource: editSpermSource || null,
         carrier: editCarrier || null,
@@ -1175,23 +1177,6 @@ function AccountTab() {
       const hasSpermDonor = services.includes("Sperm Donor");
       return (
       <>
-        {/* Journey */}
-        <ProfileSection
-          title="Journey"
-          editing={editingSection === "journey"}
-          forceShow
-          data={parentProfileQuery.data}
-          onEdit={() => startEditingSection("journey")}
-          onSave={saveSectionJourney}
-          onCancel={() => setEditingSection(null)}
-          saving={sectionSaving}
-          fields={[
-            { label: "Stage", key: "journeyStage", value: editJourneyStage, setter: setEditJourneyStage, type: "select",
-              options: ["Just started researching", "In consultation", "Agency selected", "Match in progress", "IVF in progress", "Egg retrieval complete", "Transfer complete"] },
-            { label: "Current Clinic", key: "currentClinicName", value: editCurrentClinicName, setter: setEditCurrentClinicName, type: "text" },
-          ]}
-        />
-
         {/* Biological Baseline */}
         <ProfileSection
           title="Biological Baseline"
@@ -1203,6 +1188,7 @@ function AccountTab() {
           onCancel={() => setEditingSection(null)}
           saving={sectionSaving}
           fields={[
+            { label: "Current Clinic", key: "currentClinicName", value: editCurrentClinicName, setter: setEditCurrentClinicName, type: "text" },
             { label: "Egg Source", key: "eggSource", value: editEggSource, setter: setEditEggSource, type: "select",
               options: eggSourceOptions },
             { label: "Sperm Source", key: "spermSource", value: editSpermSource, setter: setEditSpermSource, type: "select",
