@@ -912,12 +912,19 @@ function AccountTab() {
       </div>
     </Card>
 
-    {isParent && (
+    {isParent && (() => {
+      const services: string[] = editing ? editServices : (parentProfileQuery.data?.interestedServices || []);
+      const hasClinic = services.includes("Fertility Clinic");
+      const hasSurrogate = services.includes("Surrogate");
+      const hasEggDonor = services.includes("Egg Donor");
+      const hasSpermDonor = services.includes("Sperm Donor");
+      return (
       <>
         {/* Journey */}
         <ProfileSection
           title="Journey"
           editing={editing}
+          forceShow
           data={parentProfileQuery.data}
           fields={[
             { label: "Stage", key: "journeyStage", value: editJourneyStage, setter: setEditJourneyStage, type: "select",
@@ -931,6 +938,7 @@ function AccountTab() {
         <ProfileSection
           title="Biological Baseline"
           editing={editing}
+          forceShow
           data={parentProfileQuery.data}
           fields={[
             { label: "Egg Source", key: "eggSource", value: editEggSource, setter: setEditEggSource, type: "select",
@@ -949,10 +957,11 @@ function AccountTab() {
           ]}
         />
 
-        {/* Clinic Preferences */}
-        <ProfileSection
+        {/* Clinic Preferences - only if registered for Fertility Clinic */}
+        {hasClinic && <ProfileSection
           title="IVF Clinic Preferences"
           editing={editing}
+          forceShow
           data={parentProfileQuery.data}
           fields={[
             { label: "Needs Clinic", key: "needsClinic", value: editNeedsClinic, setter: setEditNeedsClinic, type: "yesno",
@@ -964,12 +973,13 @@ function AccountTab() {
               options: ["Success rates", "Location", "Cost", "Volume of cycles", "Physician gender", "LGBTQ+ friendly", "Donor egg program", "Gestational carrier program", "Language support", "Personalized care"] },
             { label: "Additional notes", key: "clinicPriority", value: editClinicPriority, setter: setEditClinicPriority, type: "textarea" },
           ]}
-        />
+        />}
 
-        {/* Surrogate Preferences */}
-        <ProfileSection
+        {/* Surrogate Preferences - only if registered for Surrogate */}
+        {hasSurrogate && <ProfileSection
           title="Surrogate Preferences"
           editing={editing}
+          forceShow
           data={parentProfileQuery.data}
           fields={[
             { label: "Surrogate Age Range", key: "surrogateAgeRange", value: editSurrogateAgeRange, setter: setEditSurrogateAgeRange, type: "range",
@@ -1015,12 +1025,13 @@ function AccountTab() {
               options: SURROGACY_COUNTRIES },
             { label: "Medical Preferences", key: "surrogateMedPrefs", value: editSurrogateMedPrefs, setter: setEditSurrogateMedPrefs, type: "textarea" },
           ]}
-        />
+        />}
 
-        {/* Egg Donor Preferences */}
-        <ProfileSection
+        {/* Egg Donor Preferences - only if registered for Egg Donor */}
+        {hasEggDonor && <ProfileSection
           title="Egg Donor Preferences"
           editing={editing}
+          forceShow
           data={parentProfileQuery.data}
           fields={[
             { label: "Donor Age Range", key: "eggDonorAgeRange", value: editEggDonorAgeRange, setter: setEditEggDonorAgeRange, type: "range",
@@ -1053,12 +1064,13 @@ function AccountTab() {
                 "Nigerian", "Ethiopian", "Jamaican", "Haitian",
                 "Middle Eastern", "Persian", "Turkish", "Brazilian"] },
           ]}
-        />
+        />}
 
-        {/* Sperm Donor Preferences */}
-        <ProfileSection
+        {/* Sperm Donor Preferences - only if registered for Sperm Donor */}
+        {hasSpermDonor && <ProfileSection
           title="Sperm Donor Preferences"
           editing={editing}
+          forceShow
           data={parentProfileQuery.data}
           fields={[
             { label: "Donor Age Range", key: "spermDonorAgeRange", value: editSpermDonorAgeRange, setter: setEditSpermDonorAgeRange, type: "range",
@@ -1087,7 +1099,7 @@ function AccountTab() {
               options: ["ICI", "IUI", "IVF"] },
             { label: "Additional Preferences", key: "spermDonorPreferences", value: editSpermDonorPreferences, setter: setEditSpermDonorPreferences, type: "textarea" },
           ]}
-        />
+        />}
 
         {/* Current Providers */}
         <ProfileSection
@@ -1100,7 +1112,8 @@ function AccountTab() {
           ]}
         />
       </>
-    )}
+      );
+    })()}
     </>
   );
 }
@@ -1122,11 +1135,12 @@ type ProfileFieldDef = {
   showIf?: boolean;
 };
 
-function ProfileSection({ title, editing, data, fields }: {
+function ProfileSection({ title, editing, data, fields, forceShow }: {
   title: string;
   editing: boolean;
   data: any;
   fields: ProfileFieldDef[];
+  forceShow?: boolean;
 }) {
   const activeFields = fields.filter(f => f.showIf === undefined || f.showIf !== false);
   const hasAnyValue = activeFields.some(f => {
@@ -1136,7 +1150,7 @@ function ProfileSection({ title, editing, data, fields }: {
     return String(raw).trim() !== "";
   });
 
-  if (!editing && !hasAnyValue) return null;
+  if (!editing && !hasAnyValue && !forceShow) return null;
 
   return (
     <Card className="p-8 mt-6">
@@ -1285,18 +1299,19 @@ function ProfileSection({ title, editing, data, fields }: {
               </div>
             );
           }
-          // View mode - only show if value exists
+          // View mode - show value or placeholder when forceShow is set
           const isWide = f.type === "multiselect" || f.type === "range" || f.type === "singleslider" || f.type === "textarea";
           const display = f.display
             ? f.display(raw, data)
             : (raw != null && raw !== "" ? String(raw) : null);
-          if (!display) return null;
+          if (!display && !forceShow) return null;
+          const displayText = display ?? "-- Not specified --";
           if (f.type === "range") {
-            const parts = display.split(",");
+            const parts = (display ?? "").split(",");
             const lo = parts[0] ? Number(parts[0]) : null;
             const hi = parts[1] ? Number(parts[1]) : null;
             const fmt = f.formatValue ?? ((v: number) => f.rangeUnit === "$" ? `$${v.toLocaleString()}` : String(v));
-            const rangeLabel = lo != null && hi != null ? `${fmt(lo)} - ${fmt(hi)}` : display;
+            const rangeLabel = lo != null && hi != null ? `${fmt(lo)} - ${fmt(hi)}` : displayText;
             return (
               <div key={f.key} className="space-y-1 md:col-span-2">
                 <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">{f.label}</label>
@@ -1306,24 +1321,25 @@ function ProfileSection({ title, editing, data, fields }: {
           }
           if (f.type === "singleslider") {
             const fmt = f.formatValue ?? ((v: number) => String(v));
+            const sliderLabel = display ? `Up to ${fmt(Number(display))}` : displayText;
             return (
               <div key={f.key} className="space-y-1">
                 <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">{f.label}</label>
-                <p className="text-sm font-ui">Up to {fmt(Number(display))}</p>
+                <p className="text-sm font-ui">{sliderLabel}</p>
               </div>
             );
           }
           return (
             <div key={f.key} className={`space-y-1 ${isWide ? "md:col-span-2" : ""}`}>
               <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">{f.label}</label>
-              {f.type === "multiselect" ? (
+              {f.type === "multiselect" && display ? (
                 <div className="flex flex-wrap gap-1.5 mt-1">
                   {display.split(",").map(s => s.trim()).filter(Boolean).map(s => (
                     <span key={s} className="px-2.5 py-0.5 rounded-full text-xs bg-secondary text-secondary-foreground border border-border font-ui">{s}</span>
                   ))}
                 </div>
               ) : (
-                <p className="text-sm font-ui">{display}</p>
+                <p className="text-sm font-ui">{displayText}</p>
               )}
             </div>
           );
