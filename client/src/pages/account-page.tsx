@@ -1297,8 +1297,6 @@ function AccountTab() {
           onCancel={() => setEditingSection(null)}
           saving={sectionSaving}
           fields={[
-            // --- Asked in conversation (B1 open-ended, then B2) ---
-            { label: "Preferences Summary", key: "donorPreferences", value: editDonorPreferences, setter: setEditDonorPreferences, type: "textarea" },
             { label: "Eye Color", key: "donorEyeColor", value: editDonorEyeColor, setter: setEditDonorEyeColor, type: "multiselect",
               options: ["Brown", "Blue", "Green", "Hazel", "Gray", "Amber"] },
             { label: "Hair Color", key: "donorHairColor", value: editDonorHairColor, setter: setEditDonorHairColor, type: "multiselect",
@@ -1317,7 +1315,6 @@ function AccountTab() {
               options: ["High School", "Some College", "Associate", "Bachelor", "Master", "Doctorate"] },
             { label: "Donation Type", key: "eggDonorDonationType", value: editEggDonorDonationType, setter: setEditEggDonorDonationType, type: "select",
               options: ["Anonymous", "Semi-Open", "Open ID", "Known"] },
-            // --- Preference filters (set manually) ---
             { label: "Donor Age Range", key: "eggDonorAgeRange", value: editEggDonorAgeRange, setter: setEditEggDonorAgeRange, type: "range",
               rangeMin: 18, rangeMax: 45, rangeStep: 1 },
             { label: "Egg Type", key: "eggDonorEggType", value: editEggDonorEggType, setter: setEditEggDonorEggType, type: "select",
@@ -1328,6 +1325,7 @@ function AccountTab() {
               rangeMin: 0, rangeMax: 200000, rangeStep: 5000, rangeUnit: "$", showIf: showFreshCosts },
             { label: "Egg Lot Cost", key: "eggDonorLotCostRange", value: editEggDonorLotCostRange, setter: setEditEggDonorLotCostRange, type: "range",
               rangeMin: 0, rangeMax: 50000, rangeStep: 500, rangeUnit: "$", showIf: showFrozenCost },
+            { label: "Preferences Summary", key: "donorPreferences", value: editDonorPreferences, setter: setEditDonorPreferences, type: "textarea" },
           ]}
         />}
 
@@ -1342,8 +1340,6 @@ function AccountTab() {
           onCancel={() => setEditingSection(null)}
           saving={sectionSaving}
           fields={[
-            // --- Asked in conversation (C1 open-ended, then C2) ---
-            { label: "Additional Preferences", key: "spermDonorPreferences", value: editSpermDonorPreferences, setter: setEditSpermDonorPreferences, type: "textarea" },
             { label: "Eye Color", key: "spermDonorEyeColor", value: editSpermDonorEyeColor, setter: setEditSpermDonorEyeColor, type: "multiselect",
               options: ["Brown", "Blue", "Green", "Hazel", "Gray", "Amber"] },
             { label: "Hair Color", key: "spermDonorHairColor", value: editSpermDonorHairColor, setter: setEditSpermDonorHairColor, type: "multiselect",
@@ -1369,6 +1365,7 @@ function AccountTab() {
               formatValue: (v: number) => `$${v.toLocaleString()}` },
             { label: "Vial Type Availability", key: "spermDonorVialType", value: editSpermDonorVialType, setter: setEditSpermDonorVialType, type: "multiselect",
               options: ["ICI", "IUI", "IVF"] },
+            { label: "Additional Preferences", key: "spermDonorPreferences", value: editSpermDonorPreferences, setter: setEditSpermDonorPreferences, type: "textarea" },
           ]}
         />}
 
