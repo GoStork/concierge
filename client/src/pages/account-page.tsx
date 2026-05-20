@@ -1257,6 +1257,14 @@ function AccountTab() {
           onCancel={() => setEditingSection(null)}
           saving={sectionSaving}
           fields={[
+            // --- Asked in conversation (D1, D2, D3) ---
+            { label: "Countries Open To", key: "surrogateCountries", value: editSurrogateCountries, setter: setEditSurrogateCountries, type: "multiselect",
+              options: SURROGACY_COUNTRIES },
+            { label: "Termination Preference", key: "surrogateTermination", value: editSurrogateTermination, setter: setEditSurrogateTermination, type: "select",
+              options: ["Required", "Preferred", "Open to discuss", "No preference"] },
+            { label: "Agrees to Twins", key: "surrogateTwins", value: editSurrogateTwins, setter: setEditSurrogateTwins, type: "select",
+              options: ["Yes", "No"] },
+            // --- Preference filters (set manually) ---
             { label: "Surrogate Age Range", key: "surrogateAgeRange", value: editSurrogateAgeRange, setter: setEditSurrogateAgeRange, type: "range",
               rangeMin: 18, rangeMax: 45, rangeStep: 1 },
             { label: "BMI Range", key: "surrogateBmiRange", value: editSurrogateBmiRange, setter: setEditSurrogateBmiRange, type: "range",
@@ -1282,8 +1290,6 @@ function AccountTab() {
             { label: "Max Abortions", key: "surrogateMaxAbortions", value: editSurrogateMaxAbortions, setter: setEditSurrogateMaxAbortions, type: "singleslider",
               rangeMin: 0, rangeMax: 5, rangeStep: 1 },
             { label: "Last Delivery Year (since)", key: "surrogateLastDeliveryYear", value: editSurrogateLastDeliveryYear, setter: setEditSurrogateLastDeliveryYear, type: "number" },
-            { label: "Agrees to Twins", key: "surrogateTwins", value: editSurrogateTwins, setter: setEditSurrogateTwins, type: "select",
-              options: ["Yes", "No"] },
             { label: "Agrees to Selective Reduction", key: "surrogateSelectiveReduction", value: editSurrogateSelectiveReduction, setter: setEditSurrogateSelectiveReduction, type: "yesno",
               display: (v: any) => v === true || v === "true" ? "Yes" : v === false || v === "false" ? "No" : null },
             { label: "Open to International Parents", key: "surrogateInternationalParents", value: editSurrogateInternationalParents, setter: setEditSurrogateInternationalParents, type: "yesno",
@@ -1292,12 +1298,8 @@ function AccountTab() {
               display: (v: any) => v === true || v === "true" ? "Yes" : v === false || v === "false" ? "No" : null },
             { label: "COVID Vaccinated Required", key: "surrogateCovidVaccinated", value: editSurrogateCovidVaccinated, setter: setEditSurrogateCovidVaccinated, type: "yesno",
               display: (v: any) => v === true || v === "true" ? "Yes" : v === false || v === "false" ? "No" : null },
-            { label: "Termination Preference", key: "surrogateTermination", value: editSurrogateTermination, setter: setEditSurrogateTermination, type: "select",
-              options: ["Required", "Preferred", "Open to discuss", "No preference"] },
             { label: "Experience Preference", key: "surrogateExperience", value: editSurrogateExperience, setter: setEditSurrogateExperience, type: "select",
               options: ["First-time ok", "Experienced preferred", "Experienced only", "No preference"] },
-            { label: "Countries Open To", key: "surrogateCountries", value: editSurrogateCountries, setter: setEditSurrogateCountries, type: "multiselect",
-              options: SURROGACY_COUNTRIES },
             { label: "Medical Preferences", key: "surrogateMedPrefs", value: editSurrogateMedPrefs, setter: setEditSurrogateMedPrefs, type: "textarea" },
           ]}
         />}
@@ -1313,6 +1315,27 @@ function AccountTab() {
           onCancel={() => setEditingSection(null)}
           saving={sectionSaving}
           fields={[
+            // --- Asked in conversation (B1 open-ended, then B2) ---
+            { label: "Preferences Summary", key: "donorPreferences", value: editDonorPreferences, setter: setEditDonorPreferences, type: "textarea" },
+            { label: "Eye Color", key: "donorEyeColor", value: editDonorEyeColor, setter: setEditDonorEyeColor, type: "multiselect",
+              options: ["Brown", "Blue", "Green", "Hazel", "Gray", "Amber"] },
+            { label: "Hair Color", key: "donorHairColor", value: editDonorHairColor, setter: setEditDonorHairColor, type: "multiselect",
+              options: ["Black", "Brown", "Blonde", "Red", "Auburn", "Gray"] },
+            { label: "Height Range", key: "donorHeight", value: editDonorHeight, setter: setEditDonorHeight, type: "range",
+              rangeMin: 48, rangeMax: 84, rangeStep: 1,
+              formatValue: (v: number) => { const ft = Math.floor(v / 12); return `${ft}'${v % 12}"`; } },
+            { label: "Ethnicity", key: "donorEthnicity", value: editDonorEthnicity, setter: setEditDonorEthnicity, type: "multiselect",
+              options: ["Asian", "Black", "Hispanic", "White", "Mixed", "Other",
+                "Chinese", "Japanese", "Korean", "Vietnamese", "Filipino", "Indian",
+                "Mexican", "Puerto Rican", "Cuban", "Colombian",
+                "Italian", "Irish", "German", "French", "English", "Polish", "Russian",
+                "Nigerian", "Ethiopian", "Jamaican", "Haitian",
+                "Middle Eastern", "Persian", "Turkish", "Brazilian"] },
+            { label: "Education", key: "donorEducation", value: editDonorEducation, setter: setEditDonorEducation, type: "select",
+              options: ["High School", "Some College", "Associate", "Bachelor", "Master", "Doctorate"] },
+            { label: "Donation Type", key: "eggDonorDonationType", value: editEggDonorDonationType, setter: setEditEggDonorDonationType, type: "select",
+              options: ["Anonymous", "Semi-Open", "Open ID", "Known"] },
+            // --- Preference filters (set manually) ---
             { label: "Donor Age Range", key: "eggDonorAgeRange", value: editEggDonorAgeRange, setter: setEditEggDonorAgeRange, type: "range",
               rangeMin: 18, rangeMax: 45, rangeStep: 1 },
             { label: "Egg Type", key: "eggDonorEggType", value: editEggDonorEggType, setter: setEditEggDonorEggType, type: "select",
@@ -1323,25 +1346,6 @@ function AccountTab() {
               rangeMin: 0, rangeMax: 200000, rangeStep: 5000, rangeUnit: "$", showIf: showFreshCosts },
             { label: "Egg Lot Cost", key: "eggDonorLotCostRange", value: editEggDonorLotCostRange, setter: setEditEggDonorLotCostRange, type: "range",
               rangeMin: 0, rangeMax: 50000, rangeStep: 500, rangeUnit: "$", showIf: showFrozenCost },
-            { label: "Preferences Summary", key: "donorPreferences", value: editDonorPreferences, setter: setEditDonorPreferences, type: "textarea" },
-            { label: "Donation Type", key: "eggDonorDonationType", value: editEggDonorDonationType, setter: setEditEggDonorDonationType, type: "select",
-              options: ["Anonymous", "Semi-Open", "Open ID", "Known"] },
-            { label: "Eye Color", key: "donorEyeColor", value: editDonorEyeColor, setter: setEditDonorEyeColor, type: "multiselect",
-              options: ["Brown", "Blue", "Green", "Hazel", "Gray", "Amber"] },
-            { label: "Hair Color", key: "donorHairColor", value: editDonorHairColor, setter: setEditDonorHairColor, type: "multiselect",
-              options: ["Black", "Brown", "Blonde", "Red", "Auburn", "Gray"] },
-            { label: "Height Range", key: "donorHeight", value: editDonorHeight, setter: setEditDonorHeight, type: "range",
-              rangeMin: 48, rangeMax: 84, rangeStep: 1,
-              formatValue: (v: number) => { const ft = Math.floor(v / 12); return `${ft}'${v % 12}"`; } },
-            { label: "Education", key: "donorEducation", value: editDonorEducation, setter: setEditDonorEducation, type: "select",
-              options: ["High School", "Some College", "Associate", "Bachelor", "Master", "Doctorate"] },
-            { label: "Ethnicity", key: "donorEthnicity", value: editDonorEthnicity, setter: setEditDonorEthnicity, type: "multiselect",
-              options: ["Asian", "Black", "Hispanic", "White", "Mixed", "Other",
-                "Chinese", "Japanese", "Korean", "Vietnamese", "Filipino", "Indian",
-                "Mexican", "Puerto Rican", "Cuban", "Colombian",
-                "Italian", "Irish", "German", "French", "English", "Polish", "Russian",
-                "Nigerian", "Ethiopian", "Jamaican", "Haitian",
-                "Middle Eastern", "Persian", "Turkish", "Brazilian"] },
           ]}
         />}
 
@@ -1356,14 +1360,8 @@ function AccountTab() {
           onCancel={() => setEditingSection(null)}
           saving={sectionSaving}
           fields={[
-            { label: "Donor Age Range", key: "spermDonorAgeRange", value: editSpermDonorAgeRange, setter: setEditSpermDonorAgeRange, type: "range",
-              rangeMin: 18, rangeMax: 45, rangeStep: 1 },
-            { label: "Height Range", key: "spermDonorHeightRange", value: editSpermDonorHeightRange, setter: setEditSpermDonorHeightRange, type: "range",
-              rangeMin: 48, rangeMax: 84, rangeStep: 1,
-              formatValue: (v: number) => { const ft = Math.floor(v / 12); return `${ft}'${v % 12}"`; } },
-            { label: "Max Cost", key: "spermDonorMaxPrice", value: editSpermDonorMaxPrice, setter: setEditSpermDonorMaxPrice, type: "singleslider",
-              rangeMin: 0, rangeMax: 5000, rangeStep: 100,
-              formatValue: (v: number) => `$${v.toLocaleString()}` },
+            // --- Asked in conversation (C1 open-ended, then C2) ---
+            { label: "Additional Preferences", key: "spermDonorPreferences", value: editSpermDonorPreferences, setter: setEditSpermDonorPreferences, type: "textarea" },
             { label: "Eye Color", key: "spermDonorEyeColor", value: editSpermDonorEyeColor, setter: setEditSpermDonorEyeColor, type: "multiselect",
               options: ["Brown", "Blue", "Green", "Hazel", "Gray", "Amber"] },
             { label: "Hair Color", key: "spermDonorHairColor", value: editSpermDonorHairColor, setter: setEditSpermDonorHairColor, type: "multiselect",
@@ -1376,11 +1374,19 @@ function AccountTab() {
                 "Nigerian", "Persian", "Polish", "Puerto Rican", "Russian", "Turkish", "Vietnamese", "Other"] },
             { label: "Education", key: "spermDonorEducation", value: editSpermDonorEducation, setter: setEditSpermDonorEducation, type: "select",
               options: ["High School", "Some College", "Associate", "Bachelor", "Master", "Doctorate"] },
+            { label: "Donor Age Range", key: "spermDonorAgeRange", value: editSpermDonorAgeRange, setter: setEditSpermDonorAgeRange, type: "range",
+              rangeMin: 18, rangeMax: 45, rangeStep: 1 },
+            { label: "Height Range", key: "spermDonorHeightRange", value: editSpermDonorHeightRange, setter: setEditSpermDonorHeightRange, type: "range",
+              rangeMin: 48, rangeMax: 84, rangeStep: 1,
+              formatValue: (v: number) => { const ft = Math.floor(v / 12); return `${ft}'${v % 12}"`; } },
             { label: "Donor Type", key: "spermDonorType", value: editSpermDonorType, setter: setEditSpermDonorType, type: "select",
               options: ["Open", "Anonymous", "Exclusive"] },
+            // --- Preference filters (set manually) ---
+            { label: "Max Cost", key: "spermDonorMaxPrice", value: editSpermDonorMaxPrice, setter: setEditSpermDonorMaxPrice, type: "singleslider",
+              rangeMin: 0, rangeMax: 5000, rangeStep: 100,
+              formatValue: (v: number) => `$${v.toLocaleString()}` },
             { label: "Vial Type Availability", key: "spermDonorVialType", value: editSpermDonorVialType, setter: setEditSpermDonorVialType, type: "multiselect",
               options: ["ICI", "IUI", "IVF"] },
-            { label: "Additional Preferences", key: "spermDonorPreferences", value: editSpermDonorPreferences, setter: setEditSpermDonorPreferences, type: "textarea" },
           ]}
         />}
 
