@@ -1566,7 +1566,9 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         if (curEggSource == null) inf.eggSource = "Egg donor";
         if (curCarrier == null && !inf.carrier) inf.carrier = "Gestational surrogate";
         if (curNeedsSurrogate == null && !inf.needsSurrogate) inf.needsSurrogate = true;
-        if (curNeedsEggDonor == null && !inf.needsEggDonor && !hasEmbryos) inf.needsEggDonor = true;
+        // Only infer needsEggDonor if they explicitly registered for Egg Donor -
+        // a male user with only Surrogate registered does NOT need a new egg donor
+        if (curNeedsEggDonor == null && !inf.needsEggDonor && !hasEmbryos && registeredForEggDonor) inf.needsEggDonor = true;
       }
       if (genderIsMale && orientationIsGay) {
         if (curIsLGBTQ == null) inf.isLGBTQ = true;
