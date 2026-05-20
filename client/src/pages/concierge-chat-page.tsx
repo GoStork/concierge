@@ -3837,8 +3837,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       if (o === "no") return "No, my embryos haven't been PGT-A tested";
       if (/not sure/i.test(o)) return "I'm not sure if my embryos have been PGT-A tested";
     }
-    // Frozen embryos (Step 1)
-    if (/frozen embryos/i.test(q)) {
+    // Frozen embryos (Step 1) - only when directly asking about embryos, not when
+    // "frozen embryos" appears in a curation summary that mentions them in passing.
+    if (/do you (?:already )?have (?:any )?frozen embryos|frozen embryos\?$/i.test(q)) {
       if (/^yes/i.test(o)) return "Yes, I already have frozen embryos";
       if (/^no/i.test(o)) return "No, I don't have frozen embryos yet";
       if (/working/i.test(o)) return "I'm working on creating embryos";
