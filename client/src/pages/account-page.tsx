@@ -485,11 +485,11 @@ function AccountTab() {
   const isMan = currentGender === "i'm a man" || currentGender === "man";
 
   const eggSourceOptions = isMan
-    ? ["Egg donor", "Donated embryos"]
-    : ["Own eggs", "Egg donor", "Donated embryos"];
+    ? ["Partner eggs", "Egg donor", "Donated embryos"]
+    : ["Own eggs", "Partner eggs", "Egg donor", "Donated embryos"];
 
   const spermSourceOptions = isMan
-    ? ["My sperm", "Sperm donor", "Known donor"]
+    ? ["My sperm", "Partner sperm", "Sperm donor", "Known donor"]
     : ["Partner/Spouse", "Sperm donor", "Known donor"];
 
   const carrierOptions = isMan
