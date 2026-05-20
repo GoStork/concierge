@@ -294,7 +294,7 @@ function AccountTab() {
     const d = parentProfileQuery.data;
     if (section === "journey") {
       setEditJourneyStage(d?.journeyStage || "");
-      setEditIsFirstIvf(d?.isFirstIvf != null ? String(d.isFirstIvf) : "");
+      setEditCurrentClinicName(d?.currentClinicName || "");
     } else if (section === "biological") {
       setEditEggSource(d?.eggSource || "");
       setEditSpermSource(d?.spermSource || "");
@@ -304,7 +304,7 @@ function AccountTab() {
       setEditEmbryosTested(d?.embryosTested != null ? String(d.embryosTested) : "");
     } else if (section === "clinic") {
       setEditNeedsClinic(d?.needsClinic != null ? String(d.needsClinic) : "");
-      setEditCurrentClinicName(d?.currentClinicName || "");
+      setEditIsFirstIvf(d?.isFirstIvf != null ? String(d.isFirstIvf) : "");
       setEditClinicPriority(d?.clinicPriority || "");
       setEditClinicAgeGroup(d?.clinicAgeGroup || "");
       setEditClinicPriorityTags(d?.clinicPriorityTags || "");
@@ -372,7 +372,7 @@ function AccountTab() {
     try {
       const payload: any = {
         journeyStage: editJourneyStage || null,
-        isFirstIvf: editIsFirstIvf !== "" ? editIsFirstIvf === "true" : null,
+        currentClinicName: editCurrentClinicName || null,
       };
       await apiRequest("PUT", "/api/user/profile", payload);
       await parentProfileQuery.refetch();
@@ -414,7 +414,7 @@ function AccountTab() {
     try {
       const payload: any = {
         needsClinic: editNeedsClinic !== "" ? editNeedsClinic === "true" : null,
-        currentClinicName: editCurrentClinicName || null,
+        isFirstIvf: editIsFirstIvf !== "" ? editIsFirstIvf === "true" : null,
         clinicPriority: editClinicPriority || null,
         clinicAgeGroup: editClinicAgeGroup || null,
         clinicPriorityTags: editClinicPriorityTags || null,
@@ -1192,8 +1192,7 @@ function AccountTab() {
           fields={[
             { label: "Stage", key: "journeyStage", value: editJourneyStage, setter: setEditJourneyStage, type: "select",
               options: ["Just started researching", "In consultation", "Agency selected", "Match in progress", "IVF in progress", "Egg retrieval complete", "Transfer complete"] },
-            { label: "First IVF", key: "isFirstIvf", value: editIsFirstIvf, setter: setEditIsFirstIvf, type: "yesno",
-              display: (v: any) => v === true || v === "true" ? "Yes" : v === false || v === "false" ? "No" : null },
+            { label: "Current Clinic", key: "currentClinicName", value: editCurrentClinicName, setter: setEditCurrentClinicName, type: "text" },
           ]}
         />
 
@@ -1237,7 +1236,8 @@ function AccountTab() {
           fields={[
             { label: "Needs Clinic", key: "needsClinic", value: editNeedsClinic, setter: setEditNeedsClinic, type: "yesno",
               display: (v: any) => v === true || v === "true" ? "Yes - needs a clinic" : v === false || v === "false" ? "No - has one" : null },
-            { label: "Current Clinic", key: "currentClinicName", value: editCurrentClinicName, setter: setEditCurrentClinicName, type: "text" },
+            { label: "First IVF Journey", key: "isFirstIvf", value: editIsFirstIvf, setter: setEditIsFirstIvf, type: "yesno",
+              display: (v: any) => v === true || v === "true" ? "Yes - first time" : v === false || v === "false" ? "No - done IVF before" : null },
             { label: "Patient Age Group", key: "clinicAgeGroup", value: editClinicAgeGroup, setter: setEditClinicAgeGroup, type: "select",
               options: ["Under 35", "35-37", "38-40", "Over 40"] },
             { label: "What matters most to you in a clinic?", key: "clinicPriorityTags", value: editClinicPriorityTags, setter: setEditClinicPriorityTags, type: "multiselect",
