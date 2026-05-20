@@ -358,27 +358,15 @@ async function callTier2Claude(
         return { content: text, toolCallsExecuted: false, searchToolResults };
       }
     } else {
-      // After tool calls - stream final response.
-      // A text-only model cannot process functionCall parts in history (returns 0 chars).
-      // Instead, replay the conversation up to the user's message, then inject the search
-      // results as a plain-text synthetic message so the model treats them as inline context.
+      // After tool calls - stream final text response.
+      // Use the same tools-enabled model but pass toolConfig.mode = "NONE" to tell Gemini
+      // "don't call any more tools, just respond with text." This keeps the functionCall/
+      // functionResponse parts valid in history while preventing recursive tool calls.
       const tStream2 = Date.now();
-      const resultsText = searchToolResults.length > 0
-        ? searchToolResults.map((r) => `[${r.toolName} results]:\n${r.resultText}`).join("\n\n---\n\n")
-        : (Array.isArray(currentMessage)
-            ? currentMessage.map((p: any) => p?.functionResponse?.response?.output || "").join("\n")
-            : String(currentMessage));
-      const syntheticMsg = `Here are the database search results:\n\n${resultsText}\n\nNow provide your response to the user based on these results.`;
-      const textModel = geminiAI.getGenerativeModel({
-        model: "gemini-3.5-flash",
-        systemInstruction: { parts: [{ text: fullSystem }] },
-      });
-      const replayHistory = [
-        ...chatHistory,
-        { role: "user" as const, parts: [{ text: typeof userMessage === "string" ? userMessage : JSON.stringify(userMessage) }] },
-      ];
-      const textChat = textModel.startChat({ history: replayHistory });
-      const result = await textChat.sendMessageStream(syntheticMsg);
+      const result = await chat.sendMessageStream(currentMessage, {
+        // @ts-ignore - toolConfig is a valid Gemini API parameter not yet typed in SDK
+        toolConfig: { functionCallingConfig: { mode: "NONE" } },
+      } as any);
       let fullText = "";
       let firstEvent2Ms: number | null = null;
       for await (const chunk of result.stream) {
