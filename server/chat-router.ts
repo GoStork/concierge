@@ -1681,8 +1681,10 @@ chatRouter.post("/api/admin/concierge-prompts/seed", requireAuth, async (req, re
 chatRouter.delete("/api/admin/reset-all-chats", requireAuth, async (req, res) => {
   if (!isAdminUser(req.user)) return res.status(403).json({ message: "Forbidden" });
   try {
-    // Delete in dependency order - preserve interestedServices on profiles (set during registration)
-    const [invoiceReminders, invoices, agreements, silentQueries, messages, sessions, bookings, notifications, profiles] = await prisma.$transaction([
+    // Delete in dependency order.
+    // Preserve only true registration fields: interestedServices, gender, sexualOrientation,
+    // relationshipStatus, name, email, phone, location. Everything else was collected by the AI.
+    const [invoiceReminders, invoices, agreements, silentQueries, messages, sessions, bookings, notifications, profiles, parentUsers] = await prisma.$transaction([
       prisma.invoiceReminder.deleteMany({}),
       prisma.invoice.deleteMany({}),
       prisma.agreement.deleteMany({}),
@@ -1741,6 +1743,7 @@ chatRouter.delete("/api/admin/reset-all-chats", requireAuth, async (req, res) =>
           spermDonorEthnicity: null,
           spermDonorEducation: null,
           spermDonorMaxPrice: null,
+          spermDonorVialType: null,
           spermDonorCovidVaccinated: null,
           eggDonorAgeRange: null,
           eggDonorCompensationRange: null,
@@ -1751,12 +1754,21 @@ chatRouter.delete("/api/admin/reset-all-chats", requireAuth, async (req, res) =>
           clinicAgeGroup: null,
           clinicPriorityTags: null,
           sameSexCouple: null,
+          isLGBTQ: null,
           isFirstIvf: null,
           hotLeadProviderId: null,
           hotLeadAt: null,
           currentClinicName: null,
           currentAgencyName: null,
           currentAttorneyName: null,
+        },
+      }),
+      // Reset AI-collected fields on User (partner info collected during conversation)
+      prisma.user.updateMany({
+        where: { role: "PARENT" },
+        data: {
+          partnerFirstName: null,
+          partnerAge: null,
         },
       }),
     ]);
