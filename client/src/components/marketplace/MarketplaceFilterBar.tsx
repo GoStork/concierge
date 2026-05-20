@@ -396,6 +396,139 @@ function tinderLabel(active: boolean, dark?: boolean) {
 const TINDER_LABEL_ACTIVE = `${TINDER_LABEL_BASE} text-white`;
 const TINDER_LABEL_INACTIVE = `${TINDER_LABEL_BASE} text-white/80`;
 
+// Location input that holds its own state and only syncs to parent on commit.
+// Bypasses a vaul/iOS bug where a controlled input inside a drawer loses focus
+// on every keystroke when the parent component re-renders.
+// Also shows Nominatim/OSM autocomplete suggestions for city/state/country.
+function LocationDrawerInput({
+  initialValue,
+  onCommit,
+  placeholder,
+  testId,
+  onClose,
+}: {
+  initialValue: string;
+  onCommit: (value: string) => void;
+  placeholder: string;
+  testId: string;
+  onClose: () => void;
+}) {
+  const dispatch = useAppDispatch();
+  const [localValue, setLocalValue] = useState(initialValue);
+  const [suggestions, setSuggestions] = useState<{ label: string; commit: string }[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Re-sync if the parent value changes (e.g. cleared externally) but only if
+  // the local input is empty - so we don't clobber what the user just picked
+  // when the parent re-renders during the close animation.
+  useEffect(() => {
+    if (!localValue) setLocalValue(initialValue);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialValue]);
+
+  const runSearch = useCallback(async (q: string) => {
+    if (q.trim().length < 3) {
+      setSuggestions([]);
+      setOpen(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        q,
+        format: "json",
+        addressdetails: "1",
+        limit: "5",
+        "accept-language": "en",
+      });
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
+        headers: { "Accept-Language": "en" },
+      });
+      const data = await res.json();
+      const mapped = (data || [])
+        .filter((item: any) => item.address)
+        .map((item: any) => {
+          const a = item.address;
+          const city = a.city || a.town || a.village || a.hamlet || a.county || "";
+          const state = a.state || a.region || "";
+          const country = a.country || "";
+          const label = [city, state, country].filter(Boolean).join(", ");
+          // Marketplace filter takes a single string; commit the most-specific non-empty match.
+          // Prefer city, fall back to state, fall back to country.
+          const commit = city || state || country || label;
+          return { label, commit };
+        })
+        .filter((s: { label: string }) => s.label);
+      setSuggestions(mapped);
+      setOpen(mapped.length > 0);
+    } catch {
+      setSuggestions([]);
+      setOpen(false);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    setLocalValue(v);
+    onCommit(v);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => runSearch(v), 350);
+  };
+
+  const pick = (s: { label: string; commit: string }) => {
+    setLocalValue(s.label);
+    // Dispatch directly to Redux too - the URL->useEffect->Redux flow has a tick of latency
+    // that can race with the drawer close. Direct dispatch guarantees the filter is set
+    // before the swipe deck re-renders.
+    dispatch(setFilter({ key: "location", values: s.commit ? [s.commit] : [] }));
+    onCommit(s.commit);
+    setOpen(false);
+    setSuggestions([]);
+    onClose();
+  };
+
+  return (
+    <div className="relative" data-vaul-no-drag>
+      <div className="relative">
+        <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input
+          data-vaul-no-drag
+          autoFocus
+          className="pl-9"
+          placeholder={placeholder}
+          value={localValue}
+          onChange={handleChange}
+          onKeyDown={(e) => { if (e.key === "Enter") { setOpen(false); onClose(); } }}
+          data-testid={testId}
+        />
+      </div>
+      {open && suggestions.length > 0 && (
+        <div className="mt-2 border rounded-md bg-background shadow-sm max-h-60 overflow-y-auto" data-vaul-no-drag>
+          {suggestions.map((s, i) => (
+            <button
+              key={`${s.label}-${i}`}
+              type="button"
+              className="w-full text-left px-3 py-2 text-sm hover:bg-muted active:bg-muted flex items-center gap-2"
+              onClick={() => pick(s)}
+              data-testid={`${testId}-suggestion-${i}`}
+            >
+              <MapPin className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              <span>{s.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {loading && !open && (
+        <p className="mt-1 text-xs text-muted-foreground">Searching...</p>
+      )}
+    </div>
+  );
+}
+
 function MobileCustomTagDrawer({ label, filterKey, options, activeFilters, dispatch, testIdPrefix, btnStyle, dark }: {
   label: string;
   filterKey: string;
@@ -1219,7 +1352,7 @@ function MobileMedicalDrawer({ activeFilters, dispatch, btnStyle, dark }: { acti
 
 function MobileAgreesToDrawer({ activeFilters, dispatch, btnStyle, dark }: { activeFilters: Record<string, string[]>; dispatch: any; btnStyle?: React.CSSProperties; dark?: boolean }) {
   const [open, setOpen] = useState(false);
-  const agreesKeys = ["agreesToTwins", "agreesToSelectiveReduction", "openToSameSexCouple", "agreesToInternationalParents"];
+  const agreesKeys = ["agreesToTwins", "agreesToAbortion", "agreesToSelectiveReduction", "openToSameSexCouple", "agreesToInternationalParents"];
   const activeCount = agreesKeys.filter((k) => (activeFilters[k] || [])[0] === "true").length;
 
   return (
@@ -1233,6 +1366,7 @@ function MobileAgreesToDrawer({ activeFilters, dispatch, btnStyle, dark }: { act
         <DrawerHeader><DrawerTitle>Agrees To</DrawerTitle></DrawerHeader>
         <div className="px-6 pb-6 space-y-4 max-h-[70vh] overflow-y-auto">
           <BooleanToggle label="Twins" filterKey="agreesToTwins" activeFilters={activeFilters} dispatch={dispatch} />
+          <BooleanToggle label="Abortion" filterKey="agreesToAbortion" activeFilters={activeFilters} dispatch={dispatch} />
           <BooleanToggle label="Selective Reduction" filterKey="agreesToSelectiveReduction" activeFilters={activeFilters} dispatch={dispatch} />
           <BooleanToggle label="Same Sex Couple" filterKey="openToSameSexCouple" activeFilters={activeFilters} dispatch={dispatch} />
           <BooleanToggle label="International Parents" filterKey="agreesToInternationalParents" activeFilters={activeFilters} dispatch={dispatch} />
@@ -1315,7 +1449,7 @@ export function MarketplaceFilterBar({
 
   const ivfMobileFilterButtons = isIvf ? (
     <>
-      <Drawer open={locationDrawerOpen} onOpenChange={setLocationDrawerOpen}>
+      <Drawer open={locationDrawerOpen} onOpenChange={setLocationDrawerOpen} repositionInputs={false}>
         <DrawerTrigger asChild>
           <button
             className={tinderLabel(!!ivfLocation, darkLabels)}
@@ -1328,17 +1462,13 @@ export function MarketplaceFilterBar({
         <DrawerContent>
           <DrawerHeader><DrawerTitle>Location</DrawerTitle></DrawerHeader>
           <div className="p-4">
-            <div className="relative">
-              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="City or state"
-                value={ivfLocation || ""}
-                onChange={(e) => onIvfLocationChange?.(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") setLocationDrawerOpen(false); }}
-                data-testid="input-ivf-location-mobile"
-              />
-            </div>
+            <LocationDrawerInput
+              initialValue={ivfLocation || ""}
+              onCommit={(v) => onIvfLocationChange?.(v)}
+              placeholder="City or state"
+              testId="input-ivf-location-mobile"
+              onClose={() => setLocationDrawerOpen(false)}
+            />
           </div>
         </DrawerContent>
       </Drawer>
@@ -1448,7 +1578,7 @@ export function MarketplaceFilterBar({
       {isIvf && ivfMobileFilterButtons}
 
       {!isIvf && (
-        <Drawer open={locationDrawerOpen} onOpenChange={setLocationDrawerOpen}>
+        <Drawer open={locationDrawerOpen} onOpenChange={setLocationDrawerOpen} repositionInputs={false}>
           <DrawerTrigger asChild>
             <button
               className={tinderLabel(!!hasLocation, darkLabels)}
@@ -1461,17 +1591,13 @@ export function MarketplaceFilterBar({
           <DrawerContent>
             <DrawerHeader><DrawerTitle>Location</DrawerTitle></DrawerHeader>
             <div className="p-4">
-              <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  className="pl-9"
-                  placeholder="City, state, or country"
-                  value={location || ""}
-                  onChange={(e) => onLocationChange?.(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") setLocationDrawerOpen(false); }}
-                  data-testid="input-location-mobile"
-                />
-              </div>
+              <LocationDrawerInput
+                initialValue={location || ""}
+                onCommit={(v) => onLocationChange?.(v)}
+                placeholder="City, state, or country"
+                testId="input-location-mobile"
+                onClose={() => setLocationDrawerOpen(false)}
+              />
             </div>
           </DrawerContent>
         </Drawer>
@@ -1551,20 +1677,16 @@ export function MarketplaceFilterBar({
             {ivfLocation || "Location"}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-64 p-3" align="start">
+        <PopoverContent className="w-72 p-3" align="start">
           <div className="space-y-2">
             <span className="font-ui" style={{ fontSize: 'var(--filter-label-size, 18px)' }}>Location</span>
-            <div className="relative">
-              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="City or state"
-                value={ivfLocation || ""}
-                onChange={(e) => onIvfLocationChange?.(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") setLocationPopoverOpen(false); }}
-                data-testid="input-ivf-location-desktop"
-              />
-            </div>
+            <LocationDrawerInput
+              initialValue={ivfLocation || ""}
+              onCommit={(v) => onIvfLocationChange?.(v)}
+              placeholder="City or state"
+              testId="input-ivf-location-desktop"
+              onClose={() => setLocationPopoverOpen(false)}
+            />
             {ivfLocation && (
               <Button variant="ghost" size="sm" className="h-auto py-0.5" style={{ fontSize: 'calc(var(--drawer-body-size, 16px) * 0.75)' }} onClick={() => { onIvfLocationChange?.(""); setLocationPopoverOpen(false); }} data-testid="clear-ivf-location">
                 Clear
@@ -1687,20 +1809,16 @@ export function MarketplaceFilterBar({
               {location || "Location"}
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-64 p-3" align="start">
+          <PopoverContent className="w-72 p-3" align="start">
             <div className="space-y-2">
               <span className="font-ui" style={{ fontSize: 'var(--filter-label-size, 18px)' }}>Location</span>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  className="pl-9"
-                  placeholder="City, state, or country"
-                  value={location || ""}
-                  onChange={(e) => onLocationChange?.(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") setLocationPopoverOpen(false); }}
-                  data-testid="input-location-desktop"
-                />
-              </div>
+              <LocationDrawerInput
+                initialValue={location || ""}
+                onCommit={(v) => onLocationChange?.(v)}
+                placeholder="City, state, or country"
+                testId="input-location-desktop"
+                onClose={() => setLocationPopoverOpen(false)}
+              />
               {location && (
                 <Button variant="ghost" size="sm" className="h-auto py-0.5" style={{ fontSize: 'calc(var(--drawer-body-size, 16px) * 0.75)' }} onClick={() => { onLocationChange?.(""); setLocationPopoverOpen(false); }} data-testid="clear-location">
                   Clear

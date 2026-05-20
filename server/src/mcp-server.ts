@@ -998,12 +998,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
       const surrogateSelectCols = `id, "providerId", "firstName", "externalId", age, location, "baseCompensation", "agreesToTwins", "agreesToAbortion", "agreesToSelectiveReduction", "openToSameSexCouple", "agreesToInternationalParents", "isExperienced", ethnicity, race, "liveBirths", "photoUrl", religion, bmi, "cSections", miscarriages, "covidVaccinated", "lastDeliveryYear"`;
 
-      // Base WHERE: absolute requirements — boolean preferences, age, BMI, c-sections, miscarriages.
-      // These are never relaxed because they represent hard parental/medical requirements.
+      // Base WHERE: medical/legal hard limits only (age, BMI, c-sections, miscarriages, max compensation).
+      // Preferences that can be relaxed for "close match" presentation are added as softFilters below.
       const baseWhere: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
       if (excludeSet.size > 0) baseWhere.id = { notIn: Array.from(excludeSet) };
-      if (agreesToTwins !== undefined) baseWhere.agreesToTwins = agreesToTwins;
-      if (agreesToAbortion !== undefined) baseWhere.agreesToAbortion = agreesToAbortion;
       if (openToSameSexCouple !== undefined) baseWhere.openToSameSexCouple = openToSameSexCouple;
       if (openToInternationalParents === true) {
         baseWhere.OR = [
@@ -1056,7 +1054,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       // Soft filters: relaxed one-at-a-time if no full-match results.
-      // Covid vaccination is first (most expendable preference); ethnicity and location follow.
+      // Order is "most expendable first": covid → ethnicity → location → twins → abortion.
+      // Twins and abortion are LAST so they're only relaxed as a final fallback to avoid
+      // returning empty results. The relaxedFilter label is reported back so the AI can be
+      // transparent ("I couldn't find a pro-life surrogate, but here's a close match...").
       const softFilters: SoftFilter[] = [];
       if (requireCovidVaccinated === true) softFilters.push({
         label: "covid vaccinated",
@@ -1069,6 +1070,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (location) softFilters.push({
         label: `location (${location})`,
         applyToWhere: (w) => { Object.assign(w, buildLocationWhere(location)); },
+      });
+      if (agreesToTwins !== undefined) softFilters.push({
+        label: agreesToTwins ? "agrees to twins" : "singleton only (no twins)",
+        applyToWhere: (w) => { w.agreesToTwins = agreesToTwins; },
+      });
+      if (agreesToAbortion !== undefined) softFilters.push({
+        label: agreesToAbortion ? "pro-choice (agrees to termination)" : "pro-life (does not agree to termination)",
+        applyToWhere: (w) => { w.agreesToAbortion = agreesToAbortion; },
       });
 
       const { candidates, relaxedFilter: surrogateRelaxedFilter } = await searchWithFallback(
@@ -1982,7 +1991,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const take = Math.min(rawLimit || 5, 10);
       const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
 
-      const where: any = {
+      const baseAgencyWhere: any = {
         services: {
           some: {
             providerType: { name: "Surrogacy Agency" },
@@ -1991,53 +2000,60 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         },
       };
 
-      if (agencyLocation) {
-        const locationClause = buildClinicLocationWhere(agencyLocation);
-        if (locationClause && Object.keys(locationClause).length) {
-          // buildClinicLocationWhere returns { some: { OR: [...] } } - use directly for locations relation
-          where.locations = locationClause;
-        }
-      }
-
-      if (twinsAllowed === true) {
-        where.surrogacyTwinsAllowed = true;
-      }
-
-      const agencies = await prisma.provider.findMany({
-        where,
-        take: take * 3,
-        select: {
-          id: true,
-          name: true,
-          logoUrl: true,
-          surrogacyTwinsAllowed: true,
-          surrogacyCitizensNotAllowed: true,
-          locations: {
-            orderBy: { sortOrder: "asc" },
-            select: { city: true, state: true },
-          },
-          surrogacyProfile: {
-            select: {
-              numberOfBabiesBorn: true,
-              timeToMatch: true,
-              familiesPerCoordinator: true,
-              screening: {
-                select: {
-                  criminalBackgroundCheck: true,
-                  homeVisits: true,
-                  financialsReview: true,
-                  socialWorkerScreening: true,
-                  medicalRecordsReview: true,
-                  surrogateInsuranceReview: true,
-                  psychologicalScreening: true,
-                },
+      const agencySelect = {
+        id: true,
+        name: true,
+        logoUrl: true,
+        surrogacyTwinsAllowed: true,
+        surrogacyCitizensNotAllowed: true,
+        locations: {
+          orderBy: { sortOrder: "asc" as const },
+          select: { city: true, state: true },
+        },
+        surrogacyProfile: {
+          select: {
+            numberOfBabiesBorn: true,
+            timeToMatch: true,
+            familiesPerCoordinator: true,
+            screening: {
+              select: {
+                criminalBackgroundCheck: true,
+                homeVisits: true,
+                financialsReview: true,
+                socialWorkerScreening: true,
+                medicalRecordsReview: true,
+                surrogateInsuranceReview: true,
+                psychologicalScreening: true,
               },
             },
           },
         },
-      });
+      };
 
-      let filtered = agencies.filter(a => !excludeSet.has(a.id));
+      // Soft filters: relaxed one at a time if no full-match results.
+      // Twins is most expendable (just a preference); location is last (most semantically meaningful).
+      const agencySoftFilters: SoftFilter[] = [];
+      if (twinsAllowed === true) agencySoftFilters.push({
+        label: "twins allowed",
+        applyToWhere: (w) => { w.surrogacyTwinsAllowed = true; },
+      });
+      if (agencyLocation) {
+        const locationClause = buildClinicLocationWhere(agencyLocation);
+        if (locationClause && Object.keys(locationClause).length) {
+          agencySoftFilters.push({
+            label: `location (${agencyLocation})`,
+            applyToWhere: (w) => { w.locations = locationClause; },
+          });
+        }
+      }
+
+      const { candidates: agencies, relaxedFilter: agencyRelaxedFilter } = await searchWithFallback(
+        (w) => prisma.provider.findMany({ where: w, take: take * 3, select: agencySelect }),
+        baseAgencyWhere,
+        agencySoftFilters,
+      );
+
+      let filtered = agencies.filter((a: any) => !excludeSet.has(a.id));
 
       if (servesParentFromCountry) {
         const countryLower = servesParentFromCountry.trim().toLowerCase();
@@ -2049,7 +2065,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         });
       }
 
-      const results = filtered.slice(0, take).map(a => ({
+      const results = filtered.slice(0, take).map((a: any) => ({
         id: a.id,
         name: a.name,
         logoUrl: a.logoUrl,
@@ -2062,8 +2078,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         screening: a.surrogacyProfile?.screening ?? null,
       }));
 
+      const agencyRelaxedNote = agencyRelaxedFilter
+        ? ` NOTE: No 100% match found. Search broadened by relaxing "${agencyRelaxedFilter}" - present the best available agency as a close match and clearly tell the parent which property differs.`
+        : "";
+
       return {
-        content: [{ type: "text", text: JSON.stringify(results) }],
+        content: [{ type: "text", text: `Found ${results.length} surrogacy agencies:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Present ONE agency as a MATCH_CARD with type "Agency". Use the "id" as providerId. Mention specific locations from the locations array.${agencyRelaxedNote}` }],
       };
     }
 

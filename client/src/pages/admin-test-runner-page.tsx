@@ -197,6 +197,22 @@ export default function AdminTestRunnerPage() {
               [ev.id]: { ...prev.tests[ev.id], status: "running" },
             },
           }));
+        } else if (ev.type === "test_progress") {
+          setState(prev => ({
+            ...prev,
+            tests: {
+              ...prev.tests,
+              [ev.id]: {
+                ...prev.tests[ev.id],
+                status: prev.tests[ev.id]?.status === "pending" ? "running" : prev.tests[ev.id]?.status,
+                currentMessage: ev.currentMessage ?? prev.tests[ev.id]?.currentMessage ?? 0,
+                totalMessages: ev.totalMessages ?? prev.tests[ev.id]?.totalMessages ?? 0,
+                lastUserMsg: ev.lastUserMsg ?? prev.tests[ev.id]?.lastUserMsg,
+                lastAiSnippet: ev.lastAiSnippet ?? prev.tests[ev.id]?.lastAiSnippet,
+                currentStatus: ev.currentStatus ?? prev.tests[ev.id]?.currentStatus,
+              },
+            },
+          }));
         } else if (ev.type === "test_done") {
           setState(prev => ({
             ...prev,
@@ -467,8 +483,9 @@ export default function AdminTestRunnerPage() {
                 )}
               </div>
 
-              {/* Expanded detail */}
-              {isExpanded && (
+              {/* Status detail - always visible for failed tests (so errors are seen at-a-glance);
+                  pass/pending/running details still gated behind expansion to keep the grid compact. */}
+              {(errors.length > 0 || isExpanded) && (
                 <div style={{ borderTop: "1px solid hsl(var(--border))", padding: "10px 12px", background: "hsl(var(--background) / 0.5)" }}>
                   {errors.length > 0 ? (
                     <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>

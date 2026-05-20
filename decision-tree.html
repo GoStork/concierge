@@ -118,7 +118,7 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
 <header>
   <div>
     <h1>GoStork &mdash; Question Decision Tree</h1>
-    <p>Auto-generated from <code>server/ai-prompt-defaults.ts</code> &mdash; May 18, 2026, 09:57 PM &mdash; 61 questions discovered</p>
+    <p>Auto-generated from <code>server/ai-prompt-defaults.ts</code> &mdash; May 19, 2026, 08:35 PM &mdash; 62 questions discovered</p>
   </div>
   <span class="gen-badge">&#9889; Live from source</span>
 </header>
@@ -128,7 +128,7 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
   <button onclick="show('phase-0',this)">AI Intro (Phase 0)<span class="stat">5q</span></button>
   <button onclick="show('phase-1-identity-opener',this)">Phase 1: Identity Opener<span class="stat">7q</span></button>
   <button onclick="show('phase-2-biological-baseline-asked-once-shared-across-all-providers',this)">Phase 2: Biological Baseline (Asked Once, Shared Across All Providers)<span class="stat">30q</span></button>
-  <button onclick="show('phase-3-progressive-match-cycles',this)">Phase 3: Progressive Match Cycles<span class="stat">19q</span></button>
+  <button onclick="show('phase-3-progressive-match-cycles',this)">Phase 3: Progressive Match Cycles<span class="stat">20q</span></button>
   <button onclick="show('phase-4-wrap-up',this)">Phase 4: Wrap-Up<span class="stat">0q</span></button>
 </nav>
 <div class="legend">
@@ -180,7 +180,7 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>AI Intro (Phase 0)</h4><p>5 user-facing questions</p></div>
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 1: Identity Opener</h4><p>7 user-facing questions</p></div>
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 2: Biological Baseline (Asked Once, Shared Across All Providers)</h4><p>30 user-facing questions</p></div>
-    <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 3: Progressive Match Cycles</h4><p>19 user-facing questions</p></div>
+    <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 3: Progressive Match Cycles</h4><p>20 user-facing questions</p></div>
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 4: Wrap-Up</h4><p>0 user-facing questions</p></div>
     <div class="card"><span class="ctag t-ru">Key Rule</span><h4>One question per message</h4><p>Never ask multiple questions in a single AI message. Wait for a response before the next.</p></div>
     <div class="card"><span class="ctag t-ru">Key Rule</span><h4>MATCH_CARD required</h4><p>Every donor/surrogate recommendation MUST include [[MATCH_CARD:ID]]. Plain-text-only is forbidden.</p></div>
@@ -1297,7 +1297,30 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
   </div>
   
   <div class="tab-content">
+    <div class="tree-flow">
+<div class="tree-node">
+  <div class="node-box node-step">
+    <div class="node-hdr"><span class="nlabel nlabel-step">STEP 3</span><div class="nquestion">4. End with:</div></div>
     
+    
+  </div>
+  <div class="fork-row">
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">Tell me more</div>
+        
+      </div>
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">Keep looking</div>
+        
+      </div>
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">Adjust my preferences</div>
+        
+      </div></div>
+</div></div>
     
 <div class="subsection depth-1">
   <h4 class="sub-title">Match Cycle A: Ivf Clinic</h4>

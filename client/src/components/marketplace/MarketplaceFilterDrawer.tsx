@@ -392,6 +392,16 @@ export function MarketplaceFilterDrawer({ open, onClose, providerType, initialTa
                     />
                   </div>
                   <div className="flex items-center justify-between">
+                    <Label className="font-ui" style={{ fontSize: 'var(--badge-text-size, 13px)' }}>Agrees to Abortion</Label>
+                    <Switch
+                      checked={(activeFilters.agreesToAbortion || [])[0] === "true"}
+                      onCheckedChange={(checked) =>
+                        dispatch(setFilter({ key: "agreesToAbortion", values: checked ? ["true"] : [] }))
+                      }
+                      data-testid="switch-abortion"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
                     <Label className="font-ui" style={{ fontSize: 'var(--badge-text-size, 13px)' }}>COVID Vaccinated</Label>
                     <Switch
                       checked={(activeFilters.covidVaccinated || [])[0] === "true"}

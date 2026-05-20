@@ -169,6 +169,7 @@ export function matchesFilter(donor: any, key: string, values: string[]): boolea
     return comp >= min && comp <= max;
   }
   if (key === "agreesToTwins") return donor.agreesToTwins === true;
+  if (key === "agreesToAbortion") return donor.agreesToAbortion === true;
   if (key === "agreesToSelectiveReduction") return donor.agreesToSelectiveReduction === true;
   if (key === "openToSameSexCouple") return donor.openToSameSexCouple === true;
   if (key === "agreesToInternationalParents") return donor.agreesToInternationalParents === true;

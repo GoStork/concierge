@@ -9,9 +9,11 @@ import fs from "fs";
 import { isUserOnline } from "./online-tracker";
 import jwt from "jsonwebtoken";
 
-// Lazy getter - reads env var at call time.
-// Falls back to reading .env directly if shell exported an empty ANTHROPIC_API_KEY.
+// Singleton Anthropic client - enables HTTP connection pooling across requests.
+let _anthropicClient: Anthropic | null = null;
+
 function getAnthropicClient(): Anthropic {
+  if (_anthropicClient) return _anthropicClient;
   let apiKey = process.env.ANTHROPIC_API_KEY;
   console.log(`[ANTHROPIC] env key: ${apiKey ? "SET (length " + apiKey.length + ")" : "EMPTY/MISSING"}`);
   if (!apiKey) {
@@ -31,7 +33,22 @@ function getAnthropicClient(): Anthropic {
     }
   }
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set");
-  return new Anthropic({ apiKey });
+  _anthropicClient = new Anthropic({ apiKey });
+  return _anthropicClient;
+}
+
+// Pre-warm the Anthropic connection on startup to eliminate cold-start TLS handshake latency.
+export async function warmupAnthropicConnection(): Promise<void> {
+  try {
+    await getAnthropicClient().messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1,
+      messages: [{ role: "user", content: "hi" }],
+    });
+    console.log("[ANTHROPIC] Connection pre-warmed");
+  } catch (e: any) {
+    console.log(`[ANTHROPIC] Pre-warm failed (non-critical): ${e.message}`);
+  }
 }
 const geminiAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -238,27 +255,63 @@ async function callTier2Claude(
       inlineSystemParts.push(m.content);
     }
   }
-  const fullSystemPrompt = inlineSystemParts.length > 1
-    ? inlineSystemParts.join("\n\n---\n\n") // merge all; first entry is the main system prompt
-    : systemPrompt;
+  // The MAIN system prompt (inlineSystemParts[0]) contains a ___CACHE_BREAKPOINT___ marker
+  // separating the stable prefix from the per-request suffix. Additional inline system
+  // messages (injected enforcement rules) are appended to the dynamic suffix.
+  const CACHE_MARKER = "___CACHE_BREAKPOINT___";
+  const mainSystem = inlineSystemParts[0] || systemPrompt;
+  const extraSystem = inlineSystemParts.slice(1).join("\n\n---\n\n");
+  const markerIdx = mainSystem.indexOf(CACHE_MARKER);
+  let staticPrefix: string;
+  let dynamicSuffix: string;
+  if (markerIdx >= 0) {
+    staticPrefix = mainSystem.slice(0, markerIdx);
+    dynamicSuffix = mainSystem.slice(markerIdx + CACHE_MARKER.length);
+  } else {
+    // Fallback: legacy callers without the marker - cache the whole thing.
+    staticPrefix = mainSystem;
+    dynamicSuffix = "";
+  }
+  if (extraSystem) {
+    dynamicSuffix = (dynamicSuffix ? dynamicSuffix + "\n\n---\n\n" : "") + extraSystem;
+  }
+  const fullSystemPrompt = staticPrefix + dynamicSuffix; // for logging only
 
-  // Convert to Anthropic message format (no system role)
+  // Convert to Anthropic message format (no system role), trimmed to last 20 turns.
+  // Tier2 only needs recent context; trimming 50+ message histories cuts input tokens ~30-50%.
+  const TIER2_MAX_HISTORY = 20;
   const anthropicMessages: Anthropic.Messages.MessageParam[] = messages
     .filter((m) => m.role !== "system")
     .map((m) => ({
       role: (m.role === "assistant" ? "assistant" : "user") as "assistant" | "user",
       content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
-    }));
+    }))
+    .slice(-TIER2_MAX_HISTORY);
 
-  // Prompt caching on the system prompt - 90% cost reduction after first cache hit
-  const systemWithCache: Anthropic.Messages.TextBlockParam[] = [
-    {
-      type: "text",
-      text: fullSystemPrompt,
-      // @ts-ignore - cache_control is supported by the API
-      cache_control: { type: "ephemeral" },
-    },
-  ];
+  // Prompt caching: cache_control only on the static prefix.
+  // The dynamic suffix is sent fresh each call but is small (~7K chars vs 95K cached).
+  // After the first call within 5 min, subsequent calls hit cache for the prefix (~90% input token reduction).
+  const systemWithCache: Anthropic.Messages.TextBlockParam[] = dynamicSuffix
+    ? [
+        {
+          type: "text",
+          text: staticPrefix,
+          // @ts-ignore - cache_control is supported by the API
+          cache_control: { type: "ephemeral" },
+        },
+        {
+          type: "text",
+          text: dynamicSuffix,
+        },
+      ]
+    : [
+        {
+          type: "text",
+          text: staticPrefix,
+          // @ts-ignore
+          cache_control: { type: "ephemeral" },
+        },
+      ];
 
   // Convert OpenAI tools to Anthropic format
   const anthropicTools: Anthropic.Messages.Tool[] = openAiTools.map((t) => ({
@@ -271,40 +324,87 @@ async function callTier2Claude(
   let toolCallsExecuted = false;
   const searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] = [];
 
+  const t0 = Date.now();
+  const histTurns = anthropicMessages.length;
+  console.log(`[TIER2] start: history=${histTurns} turns, system=${staticPrefix.length}+${dynamicSuffix.length} chars (static+dynamic), tools=${anthropicTools.length}`);
+
   while (true) {
     const hasTools = anthropicTools.length > 0;
 
     if (!toolCallsExecuted) {
-      // First call - non-streaming to detect tool use.
-      // Tool call detection only needs ~256 tokens (just the tool_use block).
-      const response = await getAnthropicClient().messages.create({
+      const tStreamStart = Date.now();
+      // Streaming from the start: text responses flow to the client in real-time;
+      // tool_use responses are collected silently then executed.
+      const stream = getAnthropicClient().messages.stream({
         model: "claude-sonnet-4-6",
-        max_tokens: hasTools ? 512 : 2048, // 512 if tools (just detect tool call), 2048 if no tools
+        max_tokens: hasTools ? 512 : 2048,
         // @ts-ignore
         system: systemWithCache,
         messages: currentMessages,
         ...(hasTools ? { tools: anthropicTools } : {}),
       });
 
-      if (response.stop_reason === "tool_use") {
+      let accumulatedText = "";
+      let sawToolUse = false;
+      const collectedToolBlocks: { id: string; name: string; input: Record<string, unknown> }[] = [];
+      let currentToolBlock: { id: string; name: string; inputJson: string } | null = null;
+      let firstEventMs: number | null = null;
+      let cacheReadTokens = 0;
+      let cacheCreationTokens = 0;
+      let inputTokens = 0;
+
+      for await (const event of stream) {
+        if (firstEventMs === null) firstEventMs = Date.now() - tStreamStart;
+        if (event.type === "content_block_start") {
+          if (event.content_block.type === "tool_use") {
+            sawToolUse = true;
+            currentToolBlock = { id: event.content_block.id, name: event.content_block.name, inputJson: "" };
+          }
+        } else if (event.type === "content_block_delta") {
+          if (event.delta.type === "input_json_delta" && currentToolBlock) {
+            currentToolBlock.inputJson += event.delta.partial_json;
+          } else if (event.delta.type === "text_delta") {
+            accumulatedText += event.delta.text;
+            // Stream text directly only when no tools are in play (tools take priority;
+            // if a tool_use block appears later in the same response the text is discarded).
+            if (!hasTools) sse.sendToken(event.delta.text);
+          }
+        } else if (event.type === "content_block_stop" && currentToolBlock) {
+          try { collectedToolBlocks.push({ ...currentToolBlock, input: JSON.parse(currentToolBlock.inputJson) }); }
+          catch { collectedToolBlocks.push({ ...currentToolBlock, input: {} }); }
+          currentToolBlock = null;
+        } else if (event.type === "message_start" && event.message?.usage) {
+          inputTokens = event.message.usage.input_tokens || 0;
+          cacheReadTokens = (event.message.usage as any).cache_read_input_tokens || 0;
+          cacheCreationTokens = (event.message.usage as any).cache_creation_input_tokens || 0;
+        }
+      }
+
+      const stream1Ms = Date.now() - tStreamStart;
+      console.log(`[TIER2] stream1 done in ${stream1Ms}ms (firstEvent=${firstEventMs}ms, sawToolUse=${sawToolUse}, textChars=${accumulatedText.length}, in=${inputTokens}, cacheRead=${cacheReadTokens}, cacheCreate=${cacheCreationTokens})`);
+
+      if (sawToolUse) {
         toolCallsExecuted = true;
+        const finalMsg = await stream.finalMessage();
         const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
 
-        for (const block of response.content) {
-          if (block.type === "tool_use" && mcpClientRef) {
+        for (const block of collectedToolBlocks) {
+          if (mcpClientRef) {
+            const tMcpStart = Date.now();
             try {
               const toolResult = await mcpClientRef.callTool({
                 name: block.name,
-                arguments: block.input as Record<string, unknown>,
+                arguments: block.input,
               });
               const resultText = (toolResult.content as any)?.[0]?.text || JSON.stringify(toolResult);
+              console.log(`[TIER2] MCP ${block.name} in ${Date.now() - tMcpStart}ms (result=${resultText.length} chars)`);
               toolResults.push({ type: "tool_result", tool_use_id: block.id, content: resultText });
-              // Track search tool results for fallback MATCH_CARD injection
               const searchTools = ["search_surrogates", "search_egg_donors", "search_sperm_donors", "search_clinics"];
               if (searchTools.includes(block.name)) {
                 searchToolResults.push({ toolName: block.name, resultText, toolArgs: block.input });
               }
             } catch (e: any) {
+              console.log(`[TIER2] MCP ${block.name} FAILED in ${Date.now() - tMcpStart}ms: ${e.message}`);
               toolResults.push({ type: "tool_result", tool_use_id: block.id, content: `Error: ${e.message}`, is_error: true });
             }
           }
@@ -312,24 +412,28 @@ async function callTier2Claude(
 
         currentMessages = [
           ...currentMessages,
-          { role: "assistant" as const, content: response.content },
+          { role: "assistant" as const, content: finalMsg.content },
           { role: "user" as const, content: toolResults },
         ];
-        continue; // loop again to get final response
+        continue;
+      } else if (!hasTools) {
+        // Text was already streamed token-by-token above
+        console.log(`[TIER2] DONE (no tools) in ${Date.now() - t0}ms`);
+        return { content: accumulatedText, toolCallsExecuted: false, searchToolResults };
       } else {
-        // No tool calls - stream this response word by word
-        const textBlock = response.content.find((b) => b.type === "text");
-        const text = textBlock?.type === "text" ? textBlock.text : "";
-        const words = text.split(" ");
+        // hasTools but Claude chose to respond with text - fake-stream the buffered text
+        const words = accumulatedText.split(" ");
         for (const word of words) {
           sse.sendToken(word + " ");
           await new Promise((r) => setTimeout(r, 0));
         }
-        return { content: text, toolCallsExecuted: false, searchToolResults };
+        console.log(`[TIER2] DONE (text w/ tools enabled) in ${Date.now() - t0}ms`);
+        return { content: accumulatedText, toolCallsExecuted: false, searchToolResults };
       }
     } else {
       // After tool calls - true streaming.
       // Match card + intro text fits in ~1500 tokens. Reduced from 4096 for speed.
+      const tStream2Start = Date.now();
       const stream = await getAnthropicClient().messages.stream({
         model: "claude-sonnet-4-6",
         max_tokens: 1500,
@@ -339,13 +443,25 @@ async function callTier2Claude(
       });
 
       let fullText = "";
+      let firstEvent2Ms: number | null = null;
+      let in2 = 0, cacheRead2 = 0, cacheCreate2 = 0, out2 = 0;
       for await (const event of stream) {
+        if (firstEvent2Ms === null) firstEvent2Ms = Date.now() - tStream2Start;
         if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
           const text = event.delta.text;
           fullText += text;
           sse.sendToken(text);
+        } else if (event.type === "message_start" && event.message?.usage) {
+          in2 = event.message.usage.input_tokens || 0;
+          cacheRead2 = (event.message.usage as any).cache_read_input_tokens || 0;
+          cacheCreate2 = (event.message.usage as any).cache_creation_input_tokens || 0;
+        } else if (event.type === "message_delta" && (event as any).usage) {
+          out2 = (event as any).usage.output_tokens || 0;
         }
       }
+      const stream2Ms = Date.now() - tStream2Start;
+      const tps = out2 > 0 ? (out2 / (stream2Ms / 1000)).toFixed(1) : "?";
+      console.log(`[TIER2] stream2 done in ${stream2Ms}ms (firstEvent=${firstEvent2Ms}ms, ${fullText.length} chars, in=${in2}, cacheRead=${cacheRead2}, cacheCreate=${cacheCreate2}, out=${out2}, ${tps} tok/s). Total TIER2 ${Date.now() - t0}ms`);
       return { content: fullText, toolCallsExecuted: true, searchToolResults };
     }
   }
@@ -1488,8 +1604,10 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       const parentAccountId = userRecord.parentAccountId;
       const registeredServices: string[] = (profile?.interestedServices || []) as string[];
       const genderVal = (userRecord.gender || "").toLowerCase();
-      const genderIsMale = genderVal.includes("male") || genderVal.includes("man");
-      const genderIsFemale = genderVal.includes("female") || genderVal.includes("woman");
+      // CRITICAL: must check female/woman BEFORE male/man because "female".includes("male") is true.
+      // Word-boundary regex prevents false positives - "female" no longer matches "male".
+      const genderIsFemale = /\b(female|woman|girl)\b/.test(genderVal);
+      const genderIsMale = !genderIsFemale && /\b(male|man|boy)\b/.test(genderVal);
       const orientationVal = (userRecord.sexualOrientation || "").toLowerCase();
       const orientationIsGay = orientationVal === "gay";
       const orientationIsLesbian = orientationVal === "lesbian";
@@ -2463,8 +2581,9 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // Detect gay male from chat text OR from DB profile (gender=male + LGBTQ/Gay orientation).
     // "Solo man" + "Yes" to LGBTQ+ does not match the regex, so we must also check the DB.
     const genderLower = (userRecord?.gender || "").toLowerCase();
-    const isMaleGender = genderLower.includes("male") || genderLower.includes("man");
-    const isFemaleGender = genderLower.includes("female") || genderLower.includes("woman");
+    // Same female-first ordering as above: "female".includes("male") is true so naive substring fails.
+    const isFemaleGender = /\b(female|woman|girl)\b/.test(genderLower);
+    const isMaleGender = !isFemaleGender && /\b(male|man|boy)\b/.test(genderLower);
     const orientationLower = (userRecord?.sexualOrientation || "").toLowerCase();
     const isLesbianOrientation = orientationLower === "lesbian";
     const relationshipLower = (userRecord?.relationshipStatus || "").toLowerCase();
@@ -2724,7 +2843,6 @@ NEVER tell the parent you are skipping questions. Just move naturally to the nex
 MANDATORY RULE - NEVER ASK QUESTIONS ALREADY ANSWERED:
 Before asking ANY question, check if the parent already provided the answer. If yes, skip it silently and move to the next unanswered step. NEVER announce you are skipping.
 `;
-    const effectiveLogic = isDonorInquiryMode ? donorInquiryPrompt : (skipRulesPreamble + "\n" + biologicalMasterLogic);
 
     // Collect all previously-presented match card provider IDs to prevent re-suggesting
     const presentedProviderIds = new Set<string>();
@@ -2738,19 +2856,29 @@ Before asking ANY question, check if the parent already provided the answer. If 
       ? `\nALREADY PRESENTED PROFILES (NEVER suggest these again - use excludeIds parameter to filter them out):\n${JSON.stringify(Array.from(presentedProviderIds))}\nWhen calling search tools (search_surrogates, search_egg_donors, search_sperm_donors, search_clinics), ALWAYS pass the above IDs in the "excludeIds" parameter to ensure the parent sees NEW profiles they haven't seen before.\n`
       : "";
 
-    const systemPrompt = `${personalityBlock}
+    // Split the system prompt into a STATIC prefix (cached across calls/sessions) and a
+    // DYNAMIC suffix (per-request). The CACHE_BREAKPOINT marker is detected in
+    // callTier2Claude which inserts cache_control on the static block only.
+    // Static: persona + master logic + guidance rules + tool usage (identical across sessions)
+    // Dynamic: skip rules + user profile + RAG + whispers + presented IDs (varies per request)
+    const staticMasterLogic = isDonorInquiryMode ? donorInquiryPrompt : biologicalMasterLogic;
+    const toolUsageSection = dbSections?.get("tool_usage") || `When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS use the MCP database tools (search_surrogates, search_egg_donors, search_sperm_donors, search_clinics). NEVER fabricate any provider data.
+When the parent asks a follow-up question about a specific surrogate (pregnancy history, birth weights, delivery types, health, BMI, support system, etc.), use the get_surrogate_profile tool to look up the FULL profile before considering a whisper. This tool returns ALL profile details.
+When the parent asks a follow-up question about a specific egg donor (eye color, hair color, ethnicity, education, medical history, etc.), use the get_egg_donor_profile tool to look up the FULL profile before considering a whisper.`;
+
+    const staticSystemPart = `${personalityBlock}
+
+${staticMasterLogic}
+${guidanceRules}
+${toolUsageSection}`;
+
+    const dynamicSystemPart = `${skipRulesPreamble}
 
 USER CONTEXT (already collected - do NOT ask again):
 ${userContextBlock}
+${ragContext}${answeredWhispersContext}${alreadyPresentedContext}`;
 
-${effectiveLogic}
-${guidanceRules}
-${ragContext}
-${answeredWhispersContext}
-${alreadyPresentedContext}
-${dbSections?.get("tool_usage") || `When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS use the MCP database tools (search_surrogates, search_egg_donors, search_sperm_donors, search_clinics). NEVER fabricate any provider data.
-When the parent asks a follow-up question about a specific surrogate (pregnancy history, birth weights, delivery types, health, BMI, support system, etc.), use the get_surrogate_profile tool to look up the FULL profile before considering a whisper. This tool returns ALL profile details.
-When the parent asks a follow-up question about a specific egg donor (eye color, hair color, ethnicity, education, medical history, etc.), use the get_egg_donor_profile tool to look up the FULL profile before considering a whisper.`}`;
+    const systemPrompt = `${staticSystemPart}\n___CACHE_BREAKPOINT___\n${dynamicSystemPart}`;
 
     messages.unshift({
       role: "system",
@@ -3874,6 +4002,27 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           }
         }
 
+        // Egg source - extract from parent's direct statement (mirrors sperm source extraction).
+        // Solo Man / Two Dads have eggSource pre-set to "Egg donor" via IMMEDIATE PROFILE INFERENCE
+        // so the null guard prevents this from overwriting their value.
+        if (extractedProfile?.eggSource == null) {
+          if (/\bi('ll| will| am|'m)? (be )?(going to |gonna |planning to )?use (my |our )?own eggs?\b|\bmy own eggs?\b|^own eggs?$|^my own$/i.test(msg)) {
+            autoProfileData.eggSource = "Own eggs";
+          } else if (/\bdonor eggs?\b|\begg donor\b|\bi('ll| will|'m|m)? (be )?using (an? )?egg donor\b/i.test(msg)) {
+            autoProfileData.eggSource = "Egg donor";
+          } else if (/\bmy partner'?s? eggs?\b|\bpartner('s)? eggs?\b/i.test(msg)) {
+            autoProfileData.eggSource = "Own eggs"; // partner's eggs treated as "Own eggs" per prompt rule
+          }
+        }
+
+        // needsEggDonor false signal: when parent chooses to use existing embryos (no new egg donor needed).
+        // The IMMEDIATE PROFILE INFERENCE sets needsEggDonor=true at registration time for anyone who
+        // registered for "Egg Donor" service. If they later confirm they will use existing embryos, that
+        // inference is stale and must be flipped to false.
+        if (extractedProfile?.needsEggDonor !== false && /\buse (my |our )?existing embryos?\b|^use existing$|\bgoing with (my |our )?existing embryos?\b/i.test(msg)) {
+          autoProfileData.needsEggDonor = false;
+        }
+
         // Carrier - extract from user message text first (most reliable signal)
         if (extractedProfile?.carrier == null) {
           if (/\bi('ll| will| am| plan to)? (carry|be carrying|be the carrier|carry the pregnancy)\b/i.test(msg) ||
@@ -4018,7 +4167,21 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             const num = parseInt(String(value), 10);
             if (!isNaN(num) && num >= 0) profileData[resolvedKey] = num;
           } else if (resolvedKey === "carrier") {
-            profileData.carrier = normalizeCarrier(String(value));
+            const normalized = normalizeCarrier(String(value));
+            // Guard: never downgrade an explicit "Self" / "Self carrying" carrier to "Gestational surrogate"
+            // unless the parent has actually mentioned a surrogate in this message. Prevents the AI from
+            // hallucinating a surrogate-need after the parent already said "I'll carry myself".
+            const currentCarrier = (await prisma.intendedParentProfile.findFirst({
+              where: { parentAccountId: userRecord!.parentAccountId! },
+              select: { carrier: true },
+            }))?.carrier;
+            const isDowngrade = (currentCarrier === "Self" || currentCarrier === "Self carrying") && normalized === "Gestational surrogate";
+            const userMentionsSurrogate = /\bgestational surrogate\b|\ba surrogate\b|\bsurrogate will carry\b|\bvia surrogacy\b/i.test(userMessage || "");
+            if (isDowngrade && !userMentionsSurrogate) {
+              console.log(`[CARRIER GUARD] Blocked SAVE attempting to downgrade carrier from "${currentCarrier}" -> "Gestational surrogate" (user did not mention a surrogate)`);
+            } else {
+              profileData.carrier = normalized;
+            }
           } else if (resolvedKey === "eggSource") {
             profileData.eggSource = normalizeEggSource(String(value));
           } else if (resolvedKey === "spermSource") {
@@ -4495,12 +4658,20 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     }
 
     let matchCards: any[] = [];
+    // Track AI-emitted cards that were rejected for missing required fields - the fallback
+    // below can use the AI's intent (mentioned type/id) to repair them from tool results.
+    let aiAttemptedTags = 0;
     const matchCardRegex = /\[\[MATCH_CARD:([\s\S]*?)\]\]/g;
     let mcMatch;
     while ((mcMatch = matchCardRegex.exec(finalContent)) !== null) {
+      aiAttemptedTags++;
       try {
         const parsed = JSON.parse(mcMatch[1]);
-        if (parsed && parsed.type && parsed.providerId) {
+        if (!parsed) continue;
+        // Accept `id` as a fallback when AI used the wrong field name for providerId.
+        // The AI sometimes emits id: "<uuid>" instead of providerId: "<uuid>".
+        if (!parsed.providerId && parsed.id) parsed.providerId = parsed.id;
+        if (parsed.type && parsed.providerId) {
           matchCards.push(parsed);
         } else {
           console.warn("[ai-router] MATCH_CARD missing required fields (type/providerId), skipping:", parsed);
@@ -4513,8 +4684,11 @@ NEVER promise to search without actually calling the search tool. NEVER end with
 
     if (matchCards.length === 0 && lastSearchToolResults.length > 0) {
       const matchIntroPattern = /(?:meet|introducing|found|here(?:'s| is)|check (?:out|her|his|their)|i(?:'ve| have) (?:got|a)|first up|special to show|great (?:fit|match|option|choice|pick)|perfect (?:fit|match|option|choice)|top (?:option|pick|choice)|someone.*really|stands?\s*out|option for you|recommend|show you)/i;
-      if (matchIntroPattern.test(finalContent)) {
-        console.log(`[MATCH_CARD FALLBACK] AI introduced a match but forgot [[MATCH_CARD:...]] tag - attempting auto-creation from tool results`);
+      // Trigger the fallback if the AI either (a) tried to emit a tag but malformed it, or
+      // (b) introduced a match in prose without any tag at all.
+      const shouldRepair = aiAttemptedTags > 0 || matchIntroPattern.test(finalContent);
+      if (shouldRepair) {
+        console.log(`[MATCH_CARD FALLBACK] AI introduced a match but forgot/malformed [[MATCH_CARD:...]] tag (attemptedTags=${aiAttemptedTags}) - attempting auto-creation from tool results`);
         const mentionedNameMatch = finalContent.match(/(?:Surrogate|Donor|Clinic)\s*#?(\d+)/i);
         const mentionedFirstName = finalContent.match(/(?:Meet|introducing)\s+(\w+)/i);
         // Strip markdown bold markers for name matching
@@ -4907,7 +5081,9 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         const genderCheck = (userRecord?.gender || "").toLowerCase();
         const orientationCheck = (userRecord?.sexualOrientation || "").toLowerCase();
         const relationCheck = (userRecord?.relationshipStatus || "").toLowerCase();
-        const isMaleParent = genderCheck.includes("man") || genderCheck.includes("male") || genderCheck === "m";
+        // "female".includes("male") is true - check female first then exclude.
+        const isFemaleParent = /\b(female|woman|girl)\b/.test(genderCheck) || genderCheck === "f";
+        const isMaleParent = !isFemaleParent && (/\b(male|man|boy)\b/.test(genderCheck) || genderCheck === "m");
         const isGay = orientationCheck.includes("gay") || orientationCheck.includes("homosexual");
         const isSingleMale = isMaleParent && relationCheck.includes("single");
         const isGayCouple = isMaleParent && isGay;

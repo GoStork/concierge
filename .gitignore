@@ -13,3 +13,4 @@ public/
 /generated/prisma
 dump.rdb
 .mcp.json
+.test-runner-state.json

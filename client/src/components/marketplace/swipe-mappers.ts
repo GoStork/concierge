@@ -355,6 +355,8 @@ export function getMatchedPreferences(profile: SwipeDeckProfile, prefs: UserPref
     height: parseHeightToInches(profile.height) || null,
     bmi: profile.bmi,
     covidVaccinated: profile.covidVaccinated,
+    agreesToTwins: profile.agreesToTwins,
+    agreesToAbortion: profile.agreesToReduction, // surrogate.agreesToAbortion maps to profile.agreesToReduction
     eggType: profile.eggType,
     donorType: profile.eggType,
     vialTypes: profile.vialTypes?.length ? profile.vialTypes.join(", ") : null,
