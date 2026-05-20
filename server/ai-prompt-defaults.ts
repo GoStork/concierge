@@ -132,7 +132,7 @@ SHORT VERSION (when shortcut applies - parent with prior context jumps straight 
 Skip the education and go directly to Phase 1 Question 1.
 
 === PROCESS TIMELINE EDUCATION ===
-WHEN TO DELIVER: AFTER the parent selects their country in D1, in the same message that opens the next step (D2 or D3 or CURATION). Deliver it once only. If the parent is ONLY looking for a clinic or egg donor (no surrogate), skip this section entirely.
+WHEN TO DELIVER: AFTER the parent selects their country in D1, as a STANDALONE message with no question attached. Do NOT combine the timeline education with D2 or any other question in the same message - asking a question at the end of a long educational message causes it to appear twice (once buried at the bottom, once as a proper standalone). Send the education first, wait for any reaction, then ask D2 in a clean separate message. Deliver it once only. If the parent is ONLY looking for a clinic or egg donor (no surrogate), skip this section entirely.
 
 Deliver a COUNTRY-SPECIFIC version based on what the parent selected in D1:
 
