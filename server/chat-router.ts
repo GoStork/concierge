@@ -1765,7 +1765,7 @@ chatRouter.delete("/api/admin/reset-all-chats", requireAuth, async (req, res) =>
       }),
       // Reset AI-collected fields on User (partner info collected during conversation)
       prisma.user.updateMany({
-        where: { role: "PARENT" },
+        where: { roles: { has: "PARENT" } },
         data: {
           partnerFirstName: null,
           partnerAge: null,
