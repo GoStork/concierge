@@ -118,14 +118,14 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
 <header>
   <div>
     <h1>GoStork &mdash; Question Decision Tree</h1>
-    <p>Auto-generated from <code>server/ai-prompt-defaults.ts</code> &mdash; May 20, 2026, 08:17 AM &mdash; 62 questions discovered</p>
+    <p>Auto-generated from <code>server/ai-prompt-defaults.ts</code> &mdash; May 22, 2026, 07:07 PM &mdash; 63 questions discovered</p>
   </div>
   <span class="gen-badge">&#9889; Live from source</span>
 </header>
 <nav>
   <button class="active" onclick="show('overview',this)">Overview</button>
   <button onclick="show('onboarding',this)">Onboarding</button>
-  <button onclick="show('phase-0',this)">AI Intro (Phase 0)<span class="stat">5q</span></button>
+  <button onclick="show('phase-0',this)">AI Intro (Phase 0)<span class="stat">6q</span></button>
   <button onclick="show('phase-1-identity-opener',this)">Phase 1: Identity Opener<span class="stat">7q</span></button>
   <button onclick="show('phase-2-biological-baseline-asked-once-shared-across-all-providers',this)">Phase 2: Biological Baseline (Asked Once, Shared Across All Providers)<span class="stat">30q</span></button>
   <button onclick="show('phase-3-progressive-match-cycles',this)">Phase 3: Progressive Match Cycles<span class="stat">20q</span></button>
@@ -177,7 +177,7 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
 </div>
   <div class="cards">
     <div class="card"><span class="ctag t-ob">Onboarding</span><h4>6 screens before chat</h4><p>Service selection, name, location, phone, OTP, account creation. Not in ai-prompt-defaults.ts.</p></div>
-    <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>AI Intro (Phase 0)</h4><p>5 user-facing questions</p></div>
+    <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>AI Intro (Phase 0)</h4><p>6 user-facing questions</p></div>
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 1: Identity Opener</h4><p>7 user-facing questions</p></div>
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 2: Biological Baseline (Asked Once, Shared Across All Providers)</h4><p>30 user-facing questions</p></div>
     <div class="card"><span class="ctag t-phase">AI Prompt</span><h4>Phase 3: Progressive Match Cycles</h4><p>20 user-facing questions</p></div>
@@ -377,8 +377,33 @@ main{padding:28px 28px 60px;max-width:1400px;margin:0 auto}
     
 <div class="tree-node">
   <div class="node-box node-anon">
-    <div class="node-hdr"><span class="nlabel nlabel-anon">Q1</span><div class="nquestion">Are you hoping for twins?</div></div>
+    <div class="node-hdr"><span class="nlabel nlabel-anon">Q1</span><div class="nquestion">What are your preferences regarding termination if medically necessary?</div></div>
     <div class="nsave"><span class="nsave-field">relationshipStatus</span><span class="nsave-field">gender</span><span class="nsave-field">sexualOrientation</span><span class="nsave-field">sameSexCouple</span><span class="nsave-field">birthYear</span><span class="nsave-field">hasEmbryos</span><span class="nsave-field">embryoCount</span></div>
+    <div class="nskip"><span class="nskip-pill">skip if: this section for now and proceed directly to the next step without a timeline message.</span></div>
+  </div>
+  <div class="fork-row">
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">Pro-choice surrogate</div>
+        
+      </div>
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">Pro-life surrogate</div>
+        
+      </div>
+      <div class="fork-branch">
+        <div class="fork-line"></div>
+        <div class="fork-chip fork-chip-qr">No preference</div>
+        
+      </div></div>
+</div>
+<div class="tree-connector"></div>
+
+<div class="tree-node">
+  <div class="node-box node-anon">
+    <div class="node-hdr"><span class="nlabel nlabel-anon">Q2</span><div class="nquestion">Are you hoping for twins?</div></div>
+    
     <div class="nskip"><span class="nskip-pill">skip if: ONLY the Phase 1 identity opener question (&quot;Are you on this journey solo, or with a partner?&quot; etc.). Do NOT skip Phase 2 (biological baseline). Phase 2 must still be asked in full, but apply the normal skip rules - skip any step whose answer can be directly inferred from what the parent already stated. Identity info (gender/orientation) should be gathered inline in Phase 2 only if a specific step actually requires it.</span></div>
   </div>
   <div class="fork-row">
