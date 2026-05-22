@@ -27,6 +27,7 @@ import { GoogleGenAI } from "@google/genai";
 import { StorageService } from "../storage/storage.service";
 
 const UPLOADS_DIR = path.resolve(process.cwd(), "public/uploads");
+const PERSONAS_DIR = path.resolve(process.cwd(), "server/personas");
 const MAX_FILE_SIZE = 16 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = [
   "image/jpeg",
@@ -162,6 +163,95 @@ export class UploadsController {
           resolve();
         } catch (err: any) {
           console.error("[uploads] Upload error:", err?.message, err?.errors || "");
+          res.status(500).json({ message: "Failed to process upload" });
+          resolve();
+        }
+      });
+
+      req.on("error", () => {
+        res.status(500).json({ message: "Upload failed" });
+        resolve();
+      });
+    });
+  }
+
+  @Post("persona-avatar")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiOperation({ summary: "Upload a persona avatar — always saved to server/personas/ in the repository" })
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: { file: { type: "string", format: "binary" } },
+    },
+  })
+  async uploadPersonaAvatar(@Req() req: Request, @Res() res: Response) {
+    if (!fs.existsSync(PERSONAS_DIR)) {
+      fs.mkdirSync(PERSONAS_DIR, { recursive: true });
+    }
+
+    const contentType = req.headers["content-type"] || "";
+    if (!contentType.includes("multipart/form-data")) {
+      res.status(400).json({ message: "Content-Type must be multipart/form-data" });
+      return;
+    }
+    const boundaryMatch = contentType.match(/boundary=(.+)/);
+    if (!boundaryMatch) {
+      res.status(400).json({ message: "Missing boundary in content-type" });
+      return;
+    }
+
+    const chunks: Buffer[] = [];
+    let totalSize = 0;
+
+    return new Promise<void>((resolve) => {
+      req.on("data", (chunk: Buffer) => {
+        totalSize += chunk.length;
+        if (totalSize > MAX_FILE_SIZE) {
+          req.destroy();
+          res.status(413).json({ message: "File too large. Maximum size is 16MB." });
+          resolve();
+          return;
+        }
+        chunks.push(chunk);
+      });
+
+      req.on("end", async () => {
+        try {
+          const body = Buffer.concat(chunks);
+          const parsed = parseMultipart(body, boundaryMatch![1]);
+          if (!parsed) {
+            res.status(400).json({ message: "No file found in request" });
+            resolve();
+            return;
+          }
+          if (!ALLOWED_IMAGE_TYPES.includes(parsed.contentType)) {
+            res.status(400).json({ message: "Only image files are allowed for persona avatars" });
+            resolve();
+            return;
+          }
+
+          const ext = getExtension(parsed.contentType, parsed.filename);
+          const uniqueName = `${crypto.randomBytes(16).toString("hex")}${ext}`;
+          const filePath = path.join(PERSONAS_DIR, uniqueName);
+
+          let fileData = parsed.data;
+          try {
+            const sharp = require("sharp");
+            const metadata = await sharp(parsed.data).metadata();
+            if (metadata.width && metadata.height && (metadata.width > 400 || metadata.height > 400)) {
+              fileData = await sharp(parsed.data)
+                .resize(400, 400, { fit: "cover" })
+                .jpeg({ quality: 90 })
+                .toBuffer();
+            }
+          } catch {}
+
+          fs.writeFileSync(filePath, fileData);
+          res.status(201).json({ url: `/persona-avatars/${uniqueName}` });
+          resolve();
+        } catch (err: any) {
+          console.error("[uploads] Persona avatar upload error:", err?.message);
           res.status(500).json({ message: "Failed to process upload" });
           resolve();
         }

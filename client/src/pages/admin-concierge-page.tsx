@@ -881,7 +881,7 @@ export default function AdminConciergePage() {
     const formData = new FormData();
     formData.append("file", file, file instanceof File ? file.name : "avatar.jpg");
     try {
-      const res = await fetch("/api/uploads", { method: "POST", body: formData, credentials: "include" });
+      const res = await fetch("/api/uploads/persona-avatar", { method: "POST", body: formData, credentials: "include" });
       if (!res.ok) throw new Error("Upload failed");
       const data = await res.json();
       callback(data.url);

@@ -69,6 +69,9 @@ export function log(message: string, source = "nestjs") {
   const uploadsPath = path.resolve(process.cwd(), "public/uploads");
   app.use("/uploads", express.static(uploadsPath));
 
+  const personasPath = path.resolve(process.cwd(), "server/personas");
+  app.use("/persona-avatars", express.static(personasPath));
+
   const sessionMiddleware = session({
     secret: process.env.SESSION_SECRET || "r3pl1t_s3cr3t_k3y_g0st0rk",
     resave: false,

@@ -10,6 +10,10 @@ public/
 *.png
 *.jpg
 *.jpeg
+!server/personas/*.png
+!server/personas/*.jpg
+!server/personas/*.jpeg
+!server/personas/*.webp
 /generated/prisma
 dump.rdb
 .mcp.json
