@@ -2546,7 +2546,11 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
 
     // Also check saved profile DB fields - these are the most reliable signal
     const profileServices: string[] = profile?.interestedServices || [];
-    const profileNeedsEggDonor = profileServices.includes("Egg Donor") || profile?.needsEggDonor === true;
+    const registeredForEggDonor = profileServices.includes("Egg Donor");
+    const registeredForSurrogate = profileServices.includes("Surrogate");
+    const registeredForClinic = profileServices.includes("Fertility Clinic");
+    // profileNeedsEggDonor only uses registered services - NOT stale profile.needsEggDonor which can bleed across sessions
+    const profileNeedsEggDonor = registeredForEggDonor || (profile?.needsEggDonor === true && mentionsEggDonor);
     const profileAlreadyHasEggDonor = profile?.needsEggDonor === false;
     const profileNeedsSurrogate = profileServices.includes("Surrogate") || profile?.needsSurrogate === true;
     const profileAlreadyHasSurrogate = profile?.needsSurrogate === false;
@@ -2561,6 +2565,22 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     const alreadyHasSurrogate = hasSurrogate || profileAlreadyHasSurrogate;
     const needsSpermDonor = mentionsSpermDonor || profileNeedsSpermDonor;
     const alreadyHasSpermDonor = hasSpermDonor;
+
+    // --- PHASE 1 ENFORCEMENT ---
+    // If Phase 1 (identity/relationship) has not been collected yet and the parent needs a clinic or surrogate,
+    // inject a high-priority directive so the AI asks Phase 1 BEFORE any Phase 2 question.
+    const phase1GenderKnown = !!userRecord?.gender;
+    const phase1RelationshipKnown = !!userRecord?.relationshipStatus;
+    const phase1Needed = (registeredForClinic || registeredForSurrogate || needsClinic || needsSurrogate || mentionsClinic || mentionsSurrogate) && !(registeredForSurrogate && profileServices.length === 1 && profileServices.includes("Surrogate") && false); // always enforce
+    const phase1Complete = phase1GenderKnown && phase1RelationshipKnown;
+    if (!phase1Complete && phase1Needed) {
+      skipDirectives.unshift(
+        "PHASE 1 NOT YET DONE - TOP PRIORITY: Gender and relationship status have NOT been collected yet. " +
+        "Before asking ANYTHING from Phase 2 (no clinic question, no embryo question, no egg/sperm/carrier question), " +
+        "you MUST ask Phase 1 Question 1 now. Ask: 'Are you on this journey solo, or with a partner?' " +
+        "[[QUICK_REPLY:Solo|With a partner|As a couple]]. This is your ONLY job right now. Do not deviate."
+      );
+    }
 
     // --- PHASE 2: BIOLOGICAL BASELINE SKIP DIRECTIVES ---
 
