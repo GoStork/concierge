@@ -2884,28 +2884,27 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     if (mm) setResolvedMatchmakerName(mm.name);
   }, [effectiveMatchmakerId, matchmakers]);
 
-  // Compute the best available avatar URL from live data or localStorage cache.
-  const computedAvatarUrl = useMemo(() => {
-    if (selectedMatchmaker?.avatarUrl) {
-      return getPhotoSrc(selectedMatchmaker.avatarUrl) || selectedMatchmaker.avatarUrl;
-    }
-    if (!effectiveMatchmakerId) return null;
-    try {
-      const raw = localStorage.getItem("gostork_brand_settings");
-      if (raw) {
-        const cached = JSON.parse(raw);
-        const mm = (cached?.matchmakers || []).find((m: any) => m.id === effectiveMatchmakerId);
-        if (mm?.avatarUrl) return getPhotoSrc(mm.avatarUrl) || mm.avatarUrl;
-      }
-    } catch {}
-    return null;
-  }, [selectedMatchmaker?.avatarUrl, effectiveMatchmakerId]);
-
   // Lock in the avatar URL once resolved — never revert to null on re-renders.
-  const [resolvedAvatarUrl, setResolvedAvatarUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (computedAvatarUrl) setResolvedAvatarUrl(computedAvatarUrl);
-  }, [computedAvatarUrl]);
+  // useRef holds the last known good value so useMemo can return it synchronously
+  // even during re-renders where selectedMatchmaker is briefly undefined.
+  const _lockedAvatarUrl = useRef<string | null>(null);
+  const resolvedAvatarUrl = useMemo(() => {
+    let url: string | null = null;
+    if (selectedMatchmaker?.avatarUrl) {
+      url = getPhotoSrc(selectedMatchmaker.avatarUrl) || selectedMatchmaker.avatarUrl;
+    } else if (effectiveMatchmakerId) {
+      try {
+        const raw = localStorage.getItem("gostork_brand_settings");
+        if (raw) {
+          const cached = JSON.parse(raw);
+          const mm = (cached?.matchmakers || []).find((m: any) => m.id === effectiveMatchmakerId);
+          if (mm?.avatarUrl) url = getPhotoSrc(mm.avatarUrl) || mm.avatarUrl;
+        }
+      } catch {}
+    }
+    if (url) _lockedAvatarUrl.current = url;
+    return _lockedAvatarUrl.current;
+  }, [selectedMatchmaker?.avatarUrl, effectiveMatchmakerId]);
 
   const brandColor = brand?.primaryColor || "#004D4D";
   const chatPalette = useMemo(() => deriveChatPalette(brandColor), [brandColor]);
