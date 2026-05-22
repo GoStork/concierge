@@ -26,12 +26,18 @@ export default function MatchmakerSelectionPage() {
     .filter(m => m.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
-  // Lock in resolved avatar URLs — once set per matchmaker ID, never overwrite.
-  const _lockedAvatars = useRef<Record<string, string>>({});
+  // Persist resolved avatar URLs in sessionStorage so they survive page refreshes.
+  // useRef is seeded from sessionStorage on mount — first render already has the URLs.
+  const _lockedAvatars = useRef<Record<string, string>>(() => {
+    try { return JSON.parse(sessionStorage.getItem("gostork_persona_avatars") || "{}"); } catch { return {}; }
+  });
   matchmakers.forEach(m => {
-    if (_lockedAvatars.current[m.id]) return; // already locked, don't change src mid-render
+    if (_lockedAvatars.current[m.id]) return;
     const url = m.avatarUrl ? (getPhotoSrc(m.avatarUrl) || m.avatarUrl) : null;
-    if (url) _lockedAvatars.current[m.id] = url;
+    if (url) {
+      _lockedAvatars.current[m.id] = url;
+      try { sessionStorage.setItem("gostork_persona_avatars", JSON.stringify(_lockedAvatars.current)); } catch {}
+    }
   });
   const getLockedAvatar = (id: string) => _lockedAvatars.current[id] ?? null;
 
