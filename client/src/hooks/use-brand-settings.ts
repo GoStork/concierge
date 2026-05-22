@@ -472,6 +472,12 @@ export function useBrandSettings() {
     if (query.data) {
       applyBrandToDocument(query.data);
       saveCachedBrand(query.data);
+      // Preload all matchmaker avatars into browser cache as soon as brand loads
+      (query.data.matchmakers || []).forEach((m: any) => {
+        if (!m.avatarUrl) return;
+        const src = getPhotoSrc(m.avatarUrl) || m.avatarUrl;
+        if (src) { const img = new Image(); img.src = src; }
+      });
     }
   }, [query.data]);
 
