@@ -26,9 +26,10 @@ export default function MatchmakerSelectionPage() {
     .filter(m => m.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
-  // Lock in resolved avatar URLs — once set per matchmaker ID, never revert to null.
+  // Lock in resolved avatar URLs — once set per matchmaker ID, never overwrite.
   const _lockedAvatars = useRef<Record<string, string>>({});
   matchmakers.forEach(m => {
+    if (_lockedAvatars.current[m.id]) return; // already locked, don't change src mid-render
     const url = m.avatarUrl ? (getPhotoSrc(m.avatarUrl) || m.avatarUrl) : null;
     if (url) _lockedAvatars.current[m.id] = url;
   });
@@ -180,15 +181,16 @@ export default function MatchmakerSelectionPage() {
               )}
               <div className="flex flex-col items-center text-center gap-3">
                 <div className="w-24 h-24 rounded-full flex-shrink-0 relative">
-                  {getLockedAvatar(m.id) && (
-                    <img
-                      src={getLockedAvatar(m.id)!}
-                      alt={m.name}
-                      className="w-24 h-24 rounded-full object-cover border-3 absolute inset-0 z-10"
-                      style={{ borderColor: isSelected ? brand?.primaryColor : "transparent" }}
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                    />
-                  )}
+                  <img
+                    src={getLockedAvatar(m.id) || ''}
+                    alt={m.name}
+                    className="w-24 h-24 rounded-full object-cover border-3 absolute inset-0 z-10"
+                    style={{
+                      borderColor: isSelected ? brand?.primaryColor : "transparent",
+                      display: getLockedAvatar(m.id) ? 'block' : 'none',
+                    }}
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
                   <div
                     className="w-24 h-24 rounded-full flex items-center justify-center text-primary-foreground text-2xl font-bold"
                     style={{ backgroundColor: brand?.primaryColor || "#004D4D" }}
