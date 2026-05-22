@@ -2884,34 +2884,28 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     if (mm) setResolvedMatchmakerName(mm.name);
   }, [effectiveMatchmakerId, matchmakers]);
 
-  // Resolved avatar URL: use selectedMatchmaker when brand has loaded, otherwise fall back
-  // to the sessionStorage cache written by the matchmaker-selection page so the header
-  // renders the real photo instantly instead of showing the letter placeholder.
-  const resolvedAvatarUrl = useMemo(() => {
+  // Compute the best available avatar URL from live data or localStorage cache.
+  const computedAvatarUrl = useMemo(() => {
     if (selectedMatchmaker?.avatarUrl) {
       return getPhotoSrc(selectedMatchmaker.avatarUrl) || selectedMatchmaker.avatarUrl;
     }
     if (!effectiveMatchmakerId) return null;
-    // Fall back to localStorage brand cache (persists across page loads / direct URL navigation)
     try {
       const raw = localStorage.getItem("gostork_brand_settings");
       if (raw) {
-        const brand = JSON.parse(raw);
-        const mm = (brand?.matchmakers || []).find((m: any) => m.id === effectiveMatchmakerId);
+        const cached = JSON.parse(raw);
+        const mm = (cached?.matchmakers || []).find((m: any) => m.id === effectiveMatchmakerId);
         if (mm?.avatarUrl) return getPhotoSrc(mm.avatarUrl) || mm.avatarUrl;
       }
-    } catch {
-      // localStorage unavailable
-    }
+    } catch {}
     return null;
   }, [selectedMatchmaker?.avatarUrl, effectiveMatchmakerId]);
 
-  // Preload the matchmaker avatar so it's in the browser cache before the header renders
+  // Lock in the avatar URL once resolved — never revert to null on re-renders.
+  const [resolvedAvatarUrl, setResolvedAvatarUrl] = useState<string | null>(null);
   useEffect(() => {
-    if (!resolvedAvatarUrl) return;
-    const img = new Image();
-    img.src = resolvedAvatarUrl;
-  }, [resolvedAvatarUrl]);
+    if (computedAvatarUrl) setResolvedAvatarUrl(computedAvatarUrl);
+  }, [computedAvatarUrl]);
 
   const brandColor = brand?.primaryColor || "#004D4D";
   const chatPalette = useMemo(() => deriveChatPalette(brandColor), [brandColor]);
