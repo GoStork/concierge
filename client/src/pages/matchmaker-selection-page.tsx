@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
@@ -25,6 +25,14 @@ export default function MatchmakerSelectionPage() {
   const matchmakers: Matchmaker[] = (brand?.matchmakers || [])
     .filter(m => m.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder);
+
+  // Lock in resolved avatar URLs — once set per matchmaker ID, never revert to null.
+  const _lockedAvatars = useRef<Record<string, string>>({});
+  matchmakers.forEach(m => {
+    const url = m.avatarUrl ? (getPhotoSrc(m.avatarUrl) || m.avatarUrl) : null;
+    if (url) _lockedAvatars.current[m.id] = url;
+  });
+  const getLockedAvatar = (id: string) => _lockedAvatars.current[id] ?? null;
 
   // Cache resolved avatar URLs in sessionStorage so the chat header can display them
   // instantly on the next page before brand data loads
@@ -172,9 +180,9 @@ export default function MatchmakerSelectionPage() {
               )}
               <div className="flex flex-col items-center text-center gap-3">
                 <div className="w-24 h-24 rounded-full flex-shrink-0 relative">
-                  {m.avatarUrl && (
+                  {getLockedAvatar(m.id) && (
                     <img
-                      src={getPhotoSrc(m.avatarUrl) || undefined}
+                      src={getLockedAvatar(m.id)!}
                       alt={m.name}
                       className="w-24 h-24 rounded-full object-cover border-3 absolute inset-0 z-10"
                       style={{ borderColor: isSelected ? brand?.primaryColor : "transparent" }}
