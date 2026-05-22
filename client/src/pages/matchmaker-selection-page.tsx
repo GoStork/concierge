@@ -56,6 +56,10 @@ export default function MatchmakerSelectionPage() {
     if (!selectedId) return;
     const selected = matchmakers.find((m) => m.id === selectedId);
     if (selected) {
+      if (selected.avatarUrl) {
+        const preload = new Image();
+        preload.src = getPhotoSrc(selected.avatarUrl) || selected.avatarUrl;
+      }
       setTransitionMatchmaker(selected);
       setTransitioning(true);
       setTimeout(() => {
