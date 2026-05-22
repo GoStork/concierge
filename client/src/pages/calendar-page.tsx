@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useCompanyName } from "@/hooks/use-brand-settings";
 import {
-  Loader2, Plus, Copy, Check, Video, Clock, User, Users, Calendar, List, ChevronLeft, ChevronRight, X, Settings, CalendarClock, Phone, MapPin, Link2, Trash2, Pencil, FileText, Crown, Search, Filter, SlidersHorizontal, Repeat, CalendarCheck, Ban, ChevronDown,
+  Loader2, Plus, Copy, Check, Video, Clock, User, Users, Calendar, List, ChevronLeft, ChevronRight, X, Settings, CalendarClock, Phone, MapPin, Link2, Trash2, Pencil, FileText, Crown, Search, Filter, SlidersHorizontal, Repeat, CalendarCheck, Ban, ChevronDown, AlertTriangle,
 } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import "react-big-calendar/lib/css/react-big-calendar.css";
@@ -1302,6 +1302,8 @@ export default function CalendarPage() {
   const [showList, setShowList] = useState(false);
   const [pastMeetingsTab, setPastMeetingsTab] = useState<"meetings" | "recordings" | "transcripts">("meetings");
   const [sidebarTab, setSidebarTab] = useState<"upcoming" | "past" | "recordings" | "transcripts">("upcoming");
+  const [googleReconnecting, setGoogleReconnecting] = useState(false);
+  const [microsoftReconnecting, setMicrosoftReconnecting] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [parentBookOpen, setParentBookOpen] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<any>(null);
@@ -1488,6 +1490,7 @@ export default function CalendarPage() {
 
   const hasGoogleConnection = connections?.some((c: any) => c.provider === "google" && c.connected);
   const hasMicrosoftConnection = connections?.some((c: any) => c.provider === "microsoft" && c.connected);
+  const expiredConnections = connections?.filter((c: any) => c.tokenValid === false && (c.provider === "google" || c.provider === "microsoft" || c.provider === "apple")) ?? [];
 
   const { data: googleEvents } = useQuery<any[]>({
     queryKey: ["/api/calendar/google/events", rangeStart.toISOString(), rangeEnd.toISOString()],
@@ -1911,6 +1914,80 @@ export default function CalendarPage() {
   return (
     <div className="w-full space-y-3">
       <h1 className="font-display text-3xl font-heading text-primary" data-testid="text-page-title">Meetings</h1>
+
+      {expiredConnections.length > 0 && (
+        <div className="rounded-[var(--radius)] border border-[hsl(var(--brand-warning)/0.4)] bg-[hsl(var(--brand-warning)/0.08)] p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-[hsl(var(--brand-warning))] shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-ui font-medium text-foreground">
+                {expiredConnections.length === 1 ? "A calendar connection has expired" : `${expiredConnections.length} calendar connections have expired`}
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                New bookings won't sync until you reconnect. Click below to fix this now.
+              </p>
+              <div className="flex flex-wrap gap-2 mt-3">
+                {expiredConnections.map((conn: any) => {
+                  const isMs = conn.provider === "microsoft";
+                  const isApple = conn.provider === "apple";
+                  const isReconnecting = isMs ? microsoftReconnecting : googleReconnecting;
+                  const label = conn.label || conn.email || (isMs ? "Microsoft" : isApple ? "Apple" : "Google");
+                  if (isApple) {
+                    return (
+                      <Link
+                        key={conn.id}
+                        to="/account/calendar"
+                        className="inline-flex items-center h-8 px-3 text-xs font-ui font-medium rounded-[var(--radius)] border border-[hsl(var(--brand-warning)/0.5)] text-foreground hover:bg-[hsl(var(--brand-warning)/0.1)] transition-colors"
+                      >
+                        <Calendar className="w-3.5 h-3.5 mr-1.5" />
+                        Fix {label} in Settings
+                      </Link>
+                    );
+                  }
+                  return (
+                    <Button
+                      key={conn.id}
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs font-ui border-[hsl(var(--brand-warning)/0.5)] text-foreground hover:bg-[hsl(var(--brand-warning)/0.1)]"
+                      disabled={googleReconnecting || microsoftReconnecting}
+                      onClick={async () => {
+                        if (isMs) setMicrosoftReconnecting(true); else setGoogleReconnecting(true);
+                        try {
+                          const hint = conn.email ? `?login_hint=${encodeURIComponent(conn.email)}` : "";
+                          const res = await fetch(`/api/calendar/${conn.provider}/auth-url${hint}`, { credentials: "include" });
+                          const data = await res.json();
+                          if (!res.ok) {
+                            toast({ title: data.message || "Failed to start reconnection", variant: "destructive" });
+                            if (isMs) setMicrosoftReconnecting(false); else setGoogleReconnecting(false);
+                            return;
+                          }
+                          if (data.url) window.location.href = data.url;
+                          else {
+                            toast({ title: "Failed to start reconnection", variant: "destructive" });
+                            if (isMs) setMicrosoftReconnecting(false); else setGoogleReconnecting(false);
+                          }
+                        } catch {
+                          toast({ title: "Failed to start reconnection", variant: "destructive" });
+                          if (isMs) setMicrosoftReconnecting(false); else setGoogleReconnecting(false);
+                        }
+                      }}
+                    >
+                      {isReconnecting ? (
+                        <Loader2 className="w-3 h-3 animate-spin mr-1.5" />
+                      ) : (
+                        <Calendar className="w-3.5 h-3.5 mr-1.5" />
+                      )}
+                      Reconnect {label}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-3" data-testid="card-calendar-controls">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">

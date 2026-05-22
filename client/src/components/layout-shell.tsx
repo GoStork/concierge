@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useMemo } from "react";
+import { useEffect, useRef, useCallback, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
@@ -6,7 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { queryClient } from "@/lib/queryClient";
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { 
+import {
   LogOut,
   Baby,
   User,
@@ -21,7 +21,9 @@ import {
   MessageCircle,
   Headphones,
   DollarSign,
-  FlaskConical
+  FlaskConical,
+  AlertTriangle,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +39,36 @@ import { MeetingReminderPopup } from "@/components/meeting-reminder-popup";
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, AgencyIcon, SpermIcon } from "@/components/icons/marketplace-icons";
 import { useAppDispatch, useAppSelector } from "@/store";
 import { setMarketplaceTab } from "@/store/uiSlice";
+
+function GoogleCalendarIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 48 48" className={className}>
+      <path d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z" fill="#FFC107"/>
+      <path d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z" fill="#FF3D00"/>
+      <path d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0124 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z" fill="#4CAF50"/>
+      <path d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 01-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z" fill="#1976D2"/>
+    </svg>
+  );
+}
+
+function MicrosoftCalendarIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className}>
+      <rect x="1" y="1" width="10.5" height="10.5" fill="#f25022" />
+      <rect x="12.5" y="1" width="10.5" height="10.5" fill="#7fba00" />
+      <rect x="1" y="12.5" width="10.5" height="10.5" fill="#00a4ef" />
+      <rect x="12.5" y="12.5" width="10.5" height="10.5" fill="#ffb900" />
+    </svg>
+  );
+}
+
+function AppleCalendarIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="#333333">
+      <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/>
+    </svg>
+  );
+}
 
 let sharedAudioCtx: AudioContext | null = null;
 
@@ -572,6 +604,36 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     }, 0);
   }, [adminConciergeSessions]);
 
+  const { data: calendarConnections } = useQuery<any[]>({
+    queryKey: ["/api/calendar/connections"],
+    queryFn: async () => {
+      const res = await fetch("/api/calendar/connections", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!user,
+    staleTime: 5 * 60 * 1000,
+  });
+  const [calendarBannerDismissed, setCalendarBannerDismissed] = useState(false);
+  const [bannerGoogleReconnecting, setBannerGoogleReconnecting] = useState(false);
+  const [bannerMicrosoftReconnecting, setBannerMicrosoftReconnecting] = useState(false);
+  const expiredCalendarConnections = (calendarConnections || []).filter(
+    (c: any) => c.tokenValid === false && (c.provider === "google" || c.provider === "microsoft" || c.provider === "apple")
+  );
+  const showCalendarBanner = !calendarBannerDismissed && expiredCalendarConnections.length > 0;
+
+  async function handleBannerReconnect(conn: any) {
+    const isMs = conn.provider === "microsoft";
+    if (isMs) setBannerMicrosoftReconnecting(true); else setBannerGoogleReconnecting(true);
+    try {
+      const hint = conn.email ? `?login_hint=${encodeURIComponent(conn.email)}` : "";
+      const res = await fetch(`/api/calendar/${conn.provider}/auth-url${hint}`, { credentials: "include" });
+      const data = await res.json();
+      if (data.url) { window.location.href = data.url; return; }
+    } catch {}
+    if (isMs) setBannerMicrosoftReconnecting(false); else setBannerGoogleReconnecting(false);
+  }
+
   if (!user) return <>{children}</>;
 
   const reminderPopup = <MeetingReminderPopup />;
@@ -896,7 +958,117 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       </nav>
       </div>
 
-      <main className={`pt-0 md:pt-16 ${location.pathname === '/marketplace' || /^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname) ? 'pb-0' : location.pathname.startsWith('/chat') || location.pathname.startsWith('/admin/concierge-monitor') ? 'pb-0' : 'pb-28'} md:pb-0 min-h-screen transition-all duration-300`}>
+      {showCalendarBanner && (
+        <div className="fixed top-16 left-0 right-0 z-40 hidden md:block">
+          <div className="border-b border-[hsl(var(--brand-warning)/0.4)] bg-[hsl(var(--brand-warning)/0.1)] px-4 py-2.5">
+            <div className="max-w-[1800px] mx-auto flex items-center gap-3 flex-wrap">
+              <AlertTriangle className="w-4 h-4 text-[hsl(var(--brand-warning))] shrink-0" />
+              <p className="text-sm font-ui text-foreground flex-1 min-w-0">
+                <span className="font-medium">
+                  {expiredCalendarConnections.length === 1 ? "A calendar connection has expired." : `${expiredCalendarConnections.length} calendar connections have expired.`}
+                </span>
+                {" "}New bookings won't sync until you reconnect.
+              </p>
+              <div className="flex items-center gap-2 shrink-0">
+                {expiredCalendarConnections.map((conn: any) => {
+                  const isMs = conn.provider === "microsoft";
+                  const isApple = conn.provider === "apple";
+                  const isReconnecting = isMs ? bannerMicrosoftReconnecting : bannerGoogleReconnecting;
+                  const label = conn.label || conn.email || (isMs ? "Microsoft" : isApple ? "Apple" : "Gmail");
+                  if (isApple) {
+                    return (
+                      <Link
+                        key={conn.id}
+                        to="/account/calendar"
+                        className="inline-flex items-center h-7 px-3 text-xs font-ui font-medium rounded-[var(--radius)] border border-[hsl(var(--brand-warning)/0.5)] text-foreground hover:bg-[hsl(var(--brand-warning)/0.1)] transition-colors"
+                      >
+                        <AppleCalendarIcon className="w-3.5 h-3.5 mr-1.5" />
+                        Fix {label} in Settings
+                      </Link>
+                    );
+                  }
+                  return (
+                    <Button
+                      key={conn.id}
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs font-ui border-[hsl(var(--brand-warning)/0.5)] text-foreground hover:bg-[hsl(var(--brand-warning)/0.1)]"
+                      disabled={bannerGoogleReconnecting || bannerMicrosoftReconnecting}
+                      onClick={() => handleBannerReconnect(conn)}
+                    >
+                      {isReconnecting ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : isMs ? <MicrosoftCalendarIcon className="w-3.5 h-3.5 mr-1.5" /> : <GoogleCalendarIcon className="w-3.5 h-3.5 mr-1.5" />}
+                      Reconnect {label}
+                    </Button>
+                  );
+                })}
+                <button
+                  onClick={() => setCalendarBannerDismissed(true)}
+                  className="text-muted-foreground hover:text-foreground transition-colors ml-1"
+                  aria-label="Dismiss"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCalendarBanner && (
+        <div className="md:hidden mx-4 mt-3 rounded-[var(--radius)] border border-[hsl(var(--brand-warning)/0.4)] bg-[hsl(var(--brand-warning)/0.08)] p-3">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-[hsl(var(--brand-warning))] shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-ui font-medium text-foreground">
+                {expiredCalendarConnections.length === 1 ? "A calendar connection has expired." : `${expiredCalendarConnections.length} calendar connections have expired.`}
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">New bookings won't sync until you reconnect.</p>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {expiredCalendarConnections.map((conn: any) => {
+                  const isMs = conn.provider === "microsoft";
+                  const isApple = conn.provider === "apple";
+                  const isReconnecting = isMs ? bannerMicrosoftReconnecting : bannerGoogleReconnecting;
+                  const label = conn.label || conn.email || (isMs ? "Microsoft" : isApple ? "Apple" : "Gmail");
+                  if (isApple) {
+                    return (
+                      <Link
+                        key={conn.id}
+                        to="/account/calendar"
+                        className="inline-flex items-center h-7 px-3 text-xs font-ui font-medium rounded-[var(--radius)] border border-[hsl(var(--brand-warning)/0.5)] text-foreground hover:bg-[hsl(var(--brand-warning)/0.1)] transition-colors"
+                      >
+                        <AppleCalendarIcon className="w-3.5 h-3.5 mr-1.5" />
+                        Fix {label} in Settings
+                      </Link>
+                    );
+                  }
+                  return (
+                    <Button
+                      key={conn.id}
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs font-ui border-[hsl(var(--brand-warning)/0.5)] text-foreground hover:bg-[hsl(var(--brand-warning)/0.1)]"
+                      disabled={bannerGoogleReconnecting || bannerMicrosoftReconnecting}
+                      onClick={() => handleBannerReconnect(conn)}
+                    >
+                      {isReconnecting ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : isMs ? <MicrosoftCalendarIcon className="w-3.5 h-3.5 mr-1.5" /> : <GoogleCalendarIcon className="w-3.5 h-3.5 mr-1.5" />}
+                      Reconnect {label}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+            <button
+              onClick={() => setCalendarBannerDismissed(true)}
+              className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+              aria-label="Dismiss"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      <main className={`pt-0 ${showCalendarBanner ? 'md:pt-[88px]' : 'md:pt-16'} ${location.pathname === '/marketplace' || /^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname) ? 'pb-0' : location.pathname.startsWith('/chat') || location.pathname.startsWith('/admin/concierge-monitor') ? 'pb-0' : 'pb-28'} md:pb-0 min-h-screen transition-all duration-300`}>
         <div className={`${location.pathname.startsWith('/chat') || location.pathname.startsWith('/admin/concierge-monitor') ? '' : `max-w-[1800px] mx-auto pt-4 px-4 ${location.pathname === '/marketplace' ? 'pb-0' : 'pb-4'} md:p-6 lg:p-8`} animate-in fade-in slide-in-from-bottom-4 duration-500`}>
           {children}
         </div>
