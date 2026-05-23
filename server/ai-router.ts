@@ -194,7 +194,11 @@ function injectMissingQuickReplies(content: string): string {
     // Phase 0
     [/do you have any questions about gostork/i, "[[QUICK_REPLY:I understand, let's get started|I have a few questions]]"],
     [/what are you looking for help with/i, "[[QUICK_REPLY:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]]"],
-    // Phase 1 identity
+    // Phase 1 identity - single 5-option question
+    [/solo man.*solo woman.*two dads.*two moms.*man and a woman/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
+    [/which best describes you/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
+    [/which of these fits your journey/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
+    // Phase 1 identity - legacy fallbacks (kept in case AI deviates from single-question format)
     [/are you a woman or a man/i, "[[QUICK_REPLY:A woman|A man]]"],
     [/same-sex couple or opposite-sex/i, "[[QUICK_REPLY:Same-sex couple|Opposite-sex couple]]"],
     [/two dads.*two moms.*man and a woman/i, "[[QUICK_REPLY:Two dads|Two moms|A man and a woman]]"],
@@ -251,6 +255,10 @@ function injectMissingQuickReplies(content: string): string {
     [/are you hoping to have twins.*singleton/i, "[[QUICK_REPLY:Hoping for twins|Singleton only|No preference]]"],
     [/first ivf journey.*done ivf before/i, "[[QUICK_REPLY:First time|I've done IVF before]]"],
     [/termination if medically necessary/i, "[[QUICK_REPLY:Pro-choice surrogate|Pro-life surrogate|No preference]]"],
+    // Timeline education closing question
+    [/give you a sense of what to expect/i, "[[QUICK_REPLY:Yes, makes sense|I have a question]]"],
+    [/does that timeline feel right/i, "[[QUICK_REPLY:Yes, makes sense|I have a question]]"],
+    [/does that give you a sense/i, "[[QUICK_REPLY:Yes, makes sense|I have a question]]"],
     // CURATION summary confirmation - "Does that sound right / correct and are you ready?"
     [/does that (?:sound right|all sound correct|sound correct).*ready/i, "[[QUICK_REPLY:Yes, I'm ready!|Let me correct something]]"],
     [/ready to see some (?:surrogate|donor|clinic|match)/i, "[[QUICK_REPLY:Yes, show me matches!|Not yet]]"],
@@ -3353,7 +3361,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         mcpClient,
         forceToolUseForSearch
       );
-      finalContent = tier2Result.content || "I'm sorry, I couldn't process that.";
+      finalContent = tier2Result.content || "I ran into a brief issue - could you send that again? [[QUICK_REPLY:Try again]]";
       finalContent = injectMissingQuickReplies(finalContent);
       // Populate lastSearchToolResults from Tier2 tool calls for fallback MATCH_CARD injection
       if (tier2Result.searchToolResults.length > 0) {
@@ -3476,7 +3484,7 @@ ${phase0Section}`;
           finalContent = "I had a brief connection hiccup - could you send that again?";
           sse.sendToken(finalContent);
         }
-        if (!finalContent) finalContent = "I'm sorry, I couldn't process that.";
+        if (!finalContent) finalContent = "I ran into a brief issue - could you send that again? [[QUICK_REPLY:Try again]]";
         finalContent = injectMissingQuickReplies(finalContent);
       }
     }
