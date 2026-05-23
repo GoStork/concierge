@@ -3733,6 +3733,18 @@ ${phase0Section}`;
           console.error("[CARRIER POST-PROC] Failed to auto-save carrier:", e);
         }
         finalContent = finalContent.replace(carrierQuestionPattern, "").trim();
+        // If stripping the carrier question left the entire response empty, the AI had
+        // nothing else to say. Re-run Tier 2 (no tools) to generate the actual next step.
+        if (!finalContent) {
+          console.log("[CARRIER POST-PROC] Response empty after strip - re-running for next step");
+          try {
+            const retryResult = await callTier2Claude(systemPromptForTiers, messages, [], sse, mcpClient, false);
+            if (retryResult.content) finalContent = retryResult.content;
+          } catch (retryErr: any) {
+            console.error("[CARRIER POST-PROC] Retry failed:", retryErr?.message);
+          }
+          if (!finalContent) finalContent = "Got it! Let's move on. [[QUICK_REPLY:Continue]]";
+        }
       } else {
         // Fallback: if a quick reply contains "surrogate" and "Me"/"My partner", strip the invalid options
         finalContent = finalContent.replace(
