@@ -3372,6 +3372,11 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
     // Extract the system prompt text (first message in messages array after unshift)
     const systemPromptForTiers = typeof messages[0]?.content === "string" ? messages[0].content : "";
 
+    // Phase 1 completion check - needed in both Tier 1 pre-generation bypasses and
+    // post-generation interceptors. Declared here (outer scope) to avoid TDZ errors.
+    const phase1Complete = !!(profile?.familyType) ||
+      chatHistory.some((m: any) => m.role === "user" && /\b(solo man|solo woman|two dads|two moms|man and a woman)\b/i.test(m.content || ""));
+
     if (useTier2) {
       // Tier 2: Claude Sonnet 4.6 with full prompt + caching + tools
       // Force tool use when parent says "ready" after CURATION - prevents AI from fabricating match results.
@@ -3883,8 +3888,6 @@ ${phase0Section}`;
     // Phase 1 already established the family type. Gemini ignores the skip directive and asks it
     // anyway, which re-surfaces what looks like a Phase 1 question mid-conversation.
     const d0aPattern = /[^.!?]*(?:are you (?:going on this journey|on this journey|doing this) (?:solo|on your own)|solo.*or.*with a partner|journey.*solo.*partner)[^.!?]*[.!?]?\s*(?:\[\[(?:QUICK_REPLY|MULTI_SELECT):[^\]]*\]\])?/gi;
-    const phase1Complete = !!(profile?.familyType) ||
-      chatHistory.some((m: any) => m.role === "user" && /\b(solo man|solo woman|two dads|two moms|man and a woman)\b/i.test(m.content || ""));
     if (!useTier2 && phase1Complete && d0aPattern.test(finalContent)) {
       console.log("[D0a INTERCEPT] Stripping redundant D0a question - family type already known from Phase 1");
       finalContent = finalContent.replace(d0aPattern, "").trim();
