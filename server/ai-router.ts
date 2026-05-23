@@ -3641,10 +3641,18 @@ ${phase0Section}`;
         sse.sendToken(humanMsg.replace(/\[\[HUMAN_NEEDED\]\]/g, "").replace(/\[\[QUICK_REPLY:.*?\]\]/g, "").trim());
         finalContent = humanMsg;
       } else if (shouldServePhase1) {
-        finalContent = `To help me tailor everything to your situation -\n\nWhich best describes you? [[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]`;
+        // Check if Phase 0 Part 2 (Eran Amir vetting paragraph) was ever delivered.
+        // When the user goes through the Q&A path ("I have a few questions" → asks questions
+        // → "I understand, let's get started"), Gemini handles Q&A but never delivers Part 2.
+        const part2Delivered = chatHistory.some((m: any) =>
+          m.role === "assistant" && /eran amir|personally vetted|no waiting lists/i.test(m.content || "")
+        );
+        const part2Text = part2Delivered ? "" :
+          `One thing that sets GoStork apart: every provider has been personally vetted by Eran Amir, our founder, who went through surrogacy himself. He personally interviews each agency's leadership, reviews their operations, and makes sure they have the right team in place.${needsSurrogate ? " And there are no waiting lists - every surrogate you'll see is available right now." : ""}\n\n`;
+        finalContent = `${part2Text}To help me tailor everything to your situation -\n\nWhich best describes you? [[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]`;
         sse.sendToken(finalContent);
         serverBypassServed = true;
-        console.log("[PHASE1 BYPASS] Served hardcoded Phase 1 question - Gemini skipped");
+        console.log(`[PHASE1 BYPASS] Served ${part2Delivered ? "" : "Part 2 + "}Phase 1 question - Gemini skipped`);
       } else if (straightCoupleFollowUpNeeded) {
         finalContent = `And are you the woman or the man in this journey? [[QUICK_REPLY:I'm the woman|I'm the man]]`;
         sse.sendToken(finalContent);
