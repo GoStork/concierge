@@ -3396,6 +3396,23 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         mcpClient,
         forceToolUseForSearch
       );
+      // If Claude executed a search tool but returned empty text, retry once with an explicit
+      // instruction to present the results. This happens when Claude calls the tool successfully
+      // but fails to generate the match card presentation in the same response.
+      if (!tier2Result.content && tier2Result.toolCallsExecuted && tier2Result.searchToolResults.length > 0) {
+        console.log("[TIER2 RETRY] Tool call succeeded but content empty - retrying with explicit present instruction");
+        const retryMessages = [...messages, {
+          role: "system" as const,
+          content: "The search tool has already been called and returned results. Do NOT call any tool again. Present the FIRST result as a [[MATCH_CARD]] immediately. Do not say you are searching. Just show the card."
+        }];
+        const retryResult = await callTier2Claude(systemPromptForTiers, retryMessages, openAiTools, sse, mcpClient, false);
+        if (retryResult.content) {
+          tier2Result.content = retryResult.content;
+        }
+        if (retryResult.searchToolResults.length > 0) {
+          tier2Result.searchToolResults.push(...retryResult.searchToolResults);
+        }
+      }
       finalContent = tier2Result.content || "I ran into a brief issue - could you send that again? [[QUICK_REPLY:Try again]]";
       finalContent = injectMissingQuickReplies(finalContent);
       // Populate lastSearchToolResults from Tier2 tool calls for fallback MATCH_CARD injection
