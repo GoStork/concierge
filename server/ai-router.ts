@@ -2610,15 +2610,23 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     }
 
     // --- PHASE 2: BIOLOGICAL BASELINE SKIP DIRECTIVES ---
+    // CRITICAL: Profile-based skips for biological baseline fields ONLY fire when the
+    // topic was also mentioned in the CURRENT conversation. Profile data from previous
+    // sessions must not silently skip Phase 2 questions in a new conversation.
 
     // Detect embryo possession from chat history as well as DB (chat answers may not be saved to DB yet)
     const chatMentionsHavingEmbryos = /(?:have|has|got)\s+(?:\d+\s+)?(?:frozen\s+)?embryo|yes[,.]?\s+(?:my\s+)?embryo|already\s+have\s+(?:\d+\s+)?(?:frozen\s+)?embryo|i\s+have\s+(?:\d+\s+)?(?:frozen\s+)?embryo/i.test(allUserMessages);
-    const effectivelyHasEmbryos = profile?.hasEmbryos === true || chatMentionsHavingEmbryos;
+    const chatMentionsNoEmbryos = /no.*embryo|don'?t have.*embryo|not.*embryo|working to create|haven'?t.*embryo/i.test(allUserMessages);
+    const chatMentionsEggSource = /partner'?s eggs|my own eggs|donor eggs|egg donor|eggs from a donor|used.*egg/i.test(allUserMessages);
+    const chatMentionsSpermSource = /my own sperm|used my own|sperm donor|donor sperm|own sperm/i.test(allUserMessages);
+    const chatMentionsCarrier = /carrying.*pregnancy|who.*carr|my partner.*carr|i'?ll carry|gestational surrogate/i.test(allUserMessages);
+    // effectivelyHasEmbryos: true only when confirmed IN THIS conversation (not just profile)
+    const effectivelyHasEmbryos = chatMentionsHavingEmbryos || (profile?.hasEmbryos === true && chatMentionsHavingEmbryos);
 
-    // Embryos: skip if already answered in DB or if context makes it obvious
-    if (profile?.hasEmbryos === true) {
+    // Embryos: skip only if confirmed in current conversation
+    if (profile?.hasEmbryos === true && chatMentionsHavingEmbryos) {
       skipDirectives.push(`DO NOT ask about frozen embryos (Step 1) - already saved: YES, ${profile.embryoCount ?? "unknown"} embryos, PGT-A tested: ${profile.embryosTested === true ? "yes" : "unknown"}.`);
-    } else if (profile?.hasEmbryos === false) {
+    } else if (profile?.hasEmbryos === false && chatMentionsNoEmbryos) {
       skipDirectives.push("DO NOT ask about frozen embryos (Step 1) - already saved: NO embryos.");
     } else if (chatMentionsHavingEmbryos) {
       skipDirectives.push("DO NOT ask about frozen embryos (Step 1) - parent already confirmed in this conversation they have frozen embryos.");
@@ -2626,19 +2634,19 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       skipDirectives.push("DO NOT ask about frozen embryos (Step 1) - parent needs an egg donor, so they do not have embryos yet.");
     }
 
-    // Egg source: skip if already saved or context is obvious
-    if (profile?.eggSource) {
+    // Egg source: skip only if confirmed in current conversation
+    if (profile?.eggSource && chatMentionsEggSource) {
       skipDirectives.push(`DO NOT ask about egg source (Step 2) - already saved: ${profile.eggSource}.`);
     } else if (isGayMale || needsEggDonor || alreadyHasEggDonor) {
       skipDirectives.push("DO NOT ask about egg source (Step 2) - already known: using egg donor.");
-    } else if (isFemaleGender && !profile?.eggSource) {
+    } else if (isFemaleGender && !chatMentionsEggSource) {
       // Female parent with unknown egg source - must ask Step 2 explicitly.
       // This prevents the AI from incorrectly assuming "donor eggs" for solo women who may use their own eggs.
       skipDirectives.push("DO NOT assume or infer egg source - it has not been confirmed yet. You MUST ask Step 2 (egg source question) before proceeding to Step 2a.");
     }
 
-    // Sperm source: skip if already saved OR biologically obvious from gender/orientation
-    if (profile?.spermSource) {
+    // Sperm source: skip only if confirmed in current conversation
+    if (profile?.spermSource && chatMentionsSpermSource) {
       skipDirectives.push(`DO NOT ask about sperm source (Step 3) - already saved: ${profile.spermSource}.`);
     } else if (isFemaleGender && isSoloSkip) {
       // Solo woman ALWAYS uses a sperm donor - no other option exists
@@ -2654,9 +2662,9 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       );
     }
 
-    // Carrier: skip if already saved or context is obvious.
+    // Carrier: skip only if confirmed in current conversation or biologically obvious.
     // ANY male parent cannot carry - isMaleGender alone is sufficient, no LGBTQ detection needed.
-    if (profile?.carrier) {
+    if (profile?.carrier && chatMentionsCarrier) {
       skipDirectives.push(`DO NOT ask about carrier/who will carry (Step 4) - already saved: ${profile.carrier}.`);
     } else if (isMaleGender || isGayMale || needsSurrogate || alreadyHasSurrogate) {
       skipDirectives.push(
@@ -2689,12 +2697,15 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // Never pre-confirm "they DO need an egg donor" when hasEmbryos=true - that directive overrides prompt rules and causes the bug.
     // Issue 2: A MALE parent with embryos who did NOT register for egg donation never needs Step 1c or a new egg donor.
     if (isMaleGender && effectivelyHasEmbryos && !profileNeedsEggDonor) {
+      // Only skip Step 1c/2a - NOT Step 2 itself. Step 2 (egg source) must still be asked
+      // for a straight male because we don't know if partner eggs or donor eggs were used.
       skipDirectives.push(
-        "SKIP Step 1c, Step 2 (egg source), and Step 2a (egg donor help) ENTIRELY. " +
+        "SKIP Step 1c and Step 2a (egg donor help) ONLY. " +
         "This parent is a MALE parent with EXISTING frozen embryos who DID NOT register for egg donation. " +
-        "His embryos were already created using a donor egg in the PAST - no new egg donor is needed. " +
-        "DO NOT ask about egg donors. DO NOT say 'since you'll need an egg donor' or 'you used a donor'. " +
-        "Proceed directly to Step 3 (sperm source)."
+        "No NEW egg donor is needed. DO NOT say 'since you'll need an egg donor'. " +
+        "HOWEVER: you MUST still ask Step 2 (egg source) to find out whose eggs were used for those embryos - " +
+        "partner's eggs or donor eggs? Ask: 'For those embryos, were the eggs your partner's or from a donor?' " +
+        "[[QUICK_REPLY:My partner's eggs|Donor eggs]] - then proceed to Step 3 (sperm source)."
       );
     } else if (effectivelyHasEmbryos && needsEggDonor && !alreadyHasEggDonor) {
       skipDirectives.push(
