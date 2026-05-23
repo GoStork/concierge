@@ -2571,9 +2571,24 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // inject a high-priority directive so the AI asks Phase 1 BEFORE any Phase 2 question.
     const phase1GenderKnown = !!userRecord?.gender;
     const phase1RelationshipKnown = !!userRecord?.relationshipStatus;
-    const phase1Needed = (registeredForClinic || registeredForSurrogate || needsClinic || needsSurrogate || mentionsClinic || mentionsSurrogate) && !(registeredForSurrogate && profileServices.length === 1 && profileServices.includes("Surrogate") && false); // always enforce
-    const phase1Complete = phase1GenderKnown && phase1RelationshipKnown;
-    if (!phase1Complete && phase1Needed) {
+    const phase1Needed = registeredForClinic || registeredForSurrogate || needsClinic || needsSurrogate || mentionsClinic || mentionsSurrogate;
+
+    // Detect straight couple where we know it's a man+woman but don't yet know WHO is speaking.
+    // Signals: sameSexCouple=false saved, OR chat mentions "a woman and a man" / "man and a woman" / "opposite-sex",
+    // AND gender not yet saved.
+    const chatMentionsStraightCouple = /\b(a woman and a man|a man and a woman|opposite.sex|straight couple|husband and (i|wife)|wife and (i|husband))\b/i.test(allUserMessages);
+    const straightCoupleKnown = profile?.sameSexCouple === false || chatMentionsStraightCouple;
+    const speakerGenderNeeded = straightCoupleKnown && !phase1GenderKnown;
+
+    if (speakerGenderNeeded && phase1Needed) {
+      // We know it's a straight couple but not who is speaking - ask the follow-up before Phase 2
+      skipDirectives.unshift(
+        "PHASE 1 FOLLOW-UP REQUIRED - TOP PRIORITY: We know this is a man-and-woman couple but we do NOT yet know which partner is filling out this form. " +
+        "Before asking ANYTHING from Phase 2 (no clinic question, no embryo question, no egg/sperm/carrier question), " +
+        "you MUST ask: 'And just so I can ask the right questions - are you the woman or the man in this journey?' " +
+        "[[QUICK_REPLY:I'm the woman|I'm the man]]. This is your ONLY job right now. Do not deviate."
+      );
+    } else if (!phase1GenderKnown && !phase1RelationshipKnown && phase1Needed) {
       skipDirectives.unshift(
         "PHASE 1 NOT YET DONE - TOP PRIORITY: Gender and relationship status have NOT been collected yet. " +
         "Before asking ANYTHING from Phase 2 (no clinic question, no embryo question, no egg/sperm/carrier question), " +
