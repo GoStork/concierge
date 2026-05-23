@@ -3684,18 +3684,22 @@ ${phase0Section}`;
         if (!finalContent) finalContent = "I ran into a brief issue - could you send that again? [[QUICK_REPLY:Try again]]";
         finalContent = injectMissingQuickReplies(finalContent);
 
-        // Phase 0 Q&A completeness: if Gemini answered a question during Phase 0 Q&A
-        // but didn't end with a follow-up question, append one. Every message must end
-        // with a question - answering and going silent breaks conversation flow.
+        // Phase 0 Q&A completeness: every Gemini response during Phase 0 Q&A must
+        // end with [[QUICK_REPLY]] buttons so the user has a clear next step.
+        // Gemini sometimes asks a question but omits the buttons - always enforce them.
         if (!serverBypassServed && phase0Done && !phase0ReadyForPhase1) {
-          const stripped = finalContent.replace(/\[\[.*?\]\]/g, "").trim();
-          const endsWithQuestion = stripped.endsWith("?");
           const hasQuickReply = /\[\[QUICK_REPLY:/.test(finalContent);
-          if (!endsWithQuestion && !hasQuickReply) {
-            const suffix = "\n\nDo you have any other questions, or are you ready to get started? [[QUICK_REPLY:I have more questions|I understand, let's get started]]";
+          if (!hasQuickReply) {
+            const stripped = finalContent.replace(/\[\[.*?\]\]/g, "").trim();
+            const endsWithQuestion = stripped.endsWith("?");
+            // If already ends with a question just append the buttons inline.
+            // If not, append a full follow-up question + buttons.
+            const suffix = endsWithQuestion
+              ? " [[QUICK_REPLY:I have more questions|I understand, let's get started]]"
+              : "\n\nDo you have any other questions, or are you ready to get started? [[QUICK_REPLY:I have more questions|I understand, let's get started]]";
             sse.sendToken(suffix);
             finalContent += suffix;
-            console.log("[PHASE0 Q&A] Appended missing follow-up question to Gemini response");
+            console.log("[PHASE0 Q&A] Appended missing quick reply buttons to Gemini response");
           }
         }
       }
