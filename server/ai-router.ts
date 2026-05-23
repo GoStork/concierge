@@ -3591,20 +3591,30 @@ ${phase0Section}`;
       // When Phase 1 is needed, skip Gemini entirely and serve the hardcoded
       // question directly. This is the only way to guarantee it never regresses.
       // -----------------------------------------------------------------------
-      const phase1AlreadyAsked = chatHistory.some((m: any) =>
-        m.role === "assistant" && /solo man.*solo woman.*two dads|which best describes you|which of these fits your journey/i.test(m.content || "")
-      );
       const phase1AnsweredInHistory = chatHistory.some((m: any) =>
         m.role === "user" && /\b(solo man|solo woman|two dads|two moms|man and a woman)\b/i.test(m.content || "")
       ) || !!profile?.familyType;
       const parentNeedsPhase1 = services.some((s: string) => /surrog|clinic|ivf/i.test(s))
         || needsSurrogate || needsClinic || profile?.needsSurrogate === true || profile?.needsClinic === true;
-      const shouldServePhase1 = phase0Done && parentNeedsPhase1 && !phase1AlreadyAsked && !phase1AnsweredInHistory;
+      // Allow clarifying questions to reach Gemini so the user gets an explanation.
+      // The bypass will re-fire on the next turn once familyType is still unset.
+      const userIsAskingClarification = /\?/.test(userMessage) ||
+        /^(what|why|how|can you|tell me|i don'?t|i'm not sure|not sure|confused|explain|what does|what is|what are)/i.test(userMessage.trim());
+      const phase1AlreadyAsked = chatHistory.some((m: any) =>
+        m.role === "assistant" && /solo man.*solo woman.*two dads|which best describes you|which of these fits your journey/i.test(m.content || "")
+      );
+      // Bypass fires whenever familyType is unknown - not just on first ask.
+      // If user gives a weird/invalid answer, we re-serve the question directly instead of
+      // handing back to Gemini (which would revert to old phrasing).
+      // Exception: clarifying questions go to Gemini so the user gets an explanation.
+      const shouldServePhase1 = phase0Done && parentNeedsPhase1 && !phase1AnsweredInHistory
+        && !(userIsAskingClarification && phase1AlreadyAsked);
 
       const straightCoupleFollowUpNeeded = phase0Done
         && profile?.familyType === "straight_couple"
         && !profile?.gender
-        && !chatHistory.some((m: any) => m.role === "user" && /i('m| am) (the )?(woman|man)\b/i.test(m.content || ""));
+        && !chatHistory.some((m: any) => m.role === "user" && /i('m| am) (the )?(woman|man)\b/i.test(m.content || ""))
+        && !userIsAskingClarification;
 
       // Human escalation: bypass Gemini entirely and return the correct response
       const humanRequestRegexT1 = /talk to (?:a )?(?:real|human|actual) person|talk to (?:the )?gostork team|speak (?:to|with) (?:a )?human|connect me with (?:a )?(?:human|person|someone)|i want (?:a )?human|i'd like to talk to a real person|just want to speak to (?:a )?human|want to talk to (?:a )?human/i;
