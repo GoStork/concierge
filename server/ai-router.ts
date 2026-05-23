@@ -3853,6 +3853,35 @@ ${phase0Section}`;
       }
     }
 
+    // EGG SOURCE INTERCEPTOR (Step 2)
+    // Gemini consistently skips Step 2 (egg source) for straight/female parents with embryos,
+    // jumping from Step 1b (PGT-A) directly to Step 3 (sperm). Detect this and replace.
+    const spermQuestionInContent = /(?:for (?:those embryos,? )?(?:did you use|sperm)|(?:and )?for sperm[,\s]|using your own(?: sperm)? or a sperm donor)/i.test(finalContent);
+    const eggSourceAlreadyAnswered = !!profile?.eggSource ||
+      chatHistory.some((m: any) => m.role === "user" && /partner'?s eggs|my own eggs|donor eggs|egg donor/i.test(m.content || ""));
+    const isGayOrSingleMaleForEgg = isGayMale || (isMaleGender && isSoloSkip);
+    const familyTypeKnownForEgg = !!(profile?.familyType) || isMaleGender || isFemaleGender;
+    if (!useTier2 && spermQuestionInContent && !eggSourceAlreadyAnswered && familyTypeKnownForEgg && !isGayOrSingleMaleForEgg) {
+      // Straight male: partner's eggs or donor eggs (never "my own")
+      // Female (coupled): own, partner's, or donor | Solo woman: own or donor
+      let eggQ: string;
+      if (isMaleGender) {
+        eggQ = `For those embryos, were the eggs your partner's or from a donor? [[QUICK_REPLY:My partner's eggs|Donor eggs]]`;
+      } else if (isFemaleGender && isSoloSkip) {
+        eggQ = `For those embryos, were the eggs yours or from a donor? [[QUICK_REPLY:My own eggs|Donor eggs]]`;
+      } else {
+        eggQ = `For those embryos, were the eggs yours, your partner's, or from a donor? [[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs]]`;
+      }
+      console.log("[EGG SOURCE INTERCEPT] Replacing premature sperm question with egg source question");
+      // Strip the sperm question and replace with the egg source question.
+      // Strip broadly so partial sentences before the sperm question are also removed.
+      const spermQPattern = /[^.!?]*(?:for (?:those embryos,? )?(?:did you use|sperm)|(?:and )?for sperm[,\s]|using your own(?: sperm)? or a sperm donor)[^.!?]*[.!?]?\s*(?:\[\[QUICK_REPLY:[^\]]*\]\])?/gi;
+      const stripped = finalContent.replace(spermQPattern, "").trim();
+      finalContent = stripped ? `${stripped}\n\n${eggQ}` : eggQ;
+      // Re-stream the corrected content (the original was already streamed by Gemini)
+      sse.sendToken("\n\n" + eggQ);
+    }
+
     // Force-correct Phase 1 identity quick replies.
     // Gemini generates its own [[QUICK_REPLY:Solo|With a partner|...]] from training data,
     // bypassing injectMissingQuickReplies (which only fires when no QR tag exists).
