@@ -3584,12 +3584,42 @@ CURATION: "Here's what I have: [family type, location, country, termination pref
 
 ${phase0Section}`;
 
+      // -----------------------------------------------------------------------
+      // SERVER-SIDE PHASE 1 BYPASS
+      // Gemini cannot be trusted to ask the 5-option identity question in the
+      // correct format - it keeps reverting to old phrasings from training data.
+      // When Phase 1 is needed, skip Gemini entirely and serve the hardcoded
+      // question directly. This is the only way to guarantee it never regresses.
+      // -----------------------------------------------------------------------
+      const phase1AlreadyAsked = chatHistory.some((m: any) =>
+        m.role === "assistant" && /solo man.*solo woman.*two dads|which best describes you|which of these fits your journey/i.test(m.content || "")
+      );
+      const phase1AnsweredInHistory = chatHistory.some((m: any) =>
+        m.role === "user" && /\b(solo man|solo woman|two dads|two moms|man and a woman)\b/i.test(m.content || "")
+      ) || !!profile?.familyType;
+      const parentNeedsPhase1 = services.some((s: string) => /surrog|clinic|ivf/i.test(s))
+        || needsSurrogate || needsClinic || profile?.needsSurrogate === true || profile?.needsClinic === true;
+      const shouldServePhase1 = phase0Done && parentNeedsPhase1 && !phase1AlreadyAsked && !phase1AnsweredInHistory;
+
+      const straightCoupleFollowUpNeeded = phase0Done
+        && profile?.familyType === "straight_couple"
+        && !profile?.gender
+        && !chatHistory.some((m: any) => m.role === "user" && /i('m| am) (the )?(woman|man)\b/i.test(m.content || ""));
+
       // Human escalation: bypass Gemini entirely and return the correct response
       const humanRequestRegexT1 = /talk to (?:a )?(?:real|human|actual) person|talk to (?:the )?gostork team|speak (?:to|with) (?:a )?human|connect me with (?:a )?(?:human|person|someone)|i want (?:a )?human|i'd like to talk to a real person|just want to speak to (?:a )?human|want to talk to (?:a )?human/i;
       if (humanRequestRegexT1.test(userMessage)) {
         const humanMsg = `Of course! I've just notified the GoStork concierge team - someone will join our chat shortly to assist you directly. In the meantime, would you like to keep making progress on your matches while you wait? [[HUMAN_NEEDED]] [[QUICK_REPLY:Yes, let's keep going|I'll wait for the team]]`;
         sse.sendToken(humanMsg.replace(/\[\[HUMAN_NEEDED\]\]/g, "").replace(/\[\[QUICK_REPLY:.*?\]\]/g, "").trim());
         finalContent = humanMsg;
+      } else if (shouldServePhase1) {
+        finalContent = `To help me tailor everything to your situation -\n\nWhich best describes you? [[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]`;
+        sse.sendToken(finalContent);
+        console.log("[PHASE1 BYPASS] Served hardcoded Phase 1 question - Gemini skipped");
+      } else if (straightCoupleFollowUpNeeded) {
+        finalContent = `And are you the woman or the man in this journey? [[QUICK_REPLY:I'm the woman|I'm the man]]`;
+        sse.sendToken(finalContent);
+        console.log("[PHASE1 BYPASS] Served straight couple follow-up - Gemini skipped");
       } else {
         // Pass only non-system messages to Tier 1 - the tier1SystemPrompt is the sole system context
         const tier1Messages = messages.filter((m: any) => m.role !== "system");
