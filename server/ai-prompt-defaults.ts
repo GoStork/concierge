@@ -526,7 +526,7 @@ For each service type, these are the questions that MUST be answered before any 
 - IVF CLINIC: A1 (parent age), A2 (partner age if applicable), A3 (twins), A4 (first IVF?), A5 (priorities) - AND egg source and egg provider age from Phase 2.
 - EGG DONOR: B1 (donor preferences - appearance, background, education, etc.). If not saved, ask B1 first before anything else.
 - SPERM DONOR: C1 (broad donor preferences - appearance, background, education, etc.) AND C2 (donor type preference - Open/Anonymous/Exclusive, if not already stated in C1). Start with C1.
-- SURROGATE: D0a (solo or with partner?), D0b (same-sex or opposite-sex?), D1 (international education + country selection), D2 (termination preference, only if USA), D3 (twins preference, only if A3 not already answered). If any are missing, start from the first unanswered one in order.
+- SURROGATE: D0a (solo or with partner?), D0b (same-sex or straight couple?), D1 (international education + country selection), D2 (termination preference, only if USA), D3 (twins preference, only if A3 not already answered). If any are missing, start from the first unanswered one in order.
 
 STEP 3 - CURATION GATE:
 Only after ALL mandatory questions are answered (from history or newly collected), send the [[CURATION]] summary and wait for "ready" before calling any search tool.
@@ -651,9 +651,9 @@ MANDATORY QUESTIONS - collect ALL in order, one per message:
        → Saves: [[SAVE:{"relationshipStatus":"solo/partnered"}]]
        → Skip if: parent already revealed this in a prior message (e.g., "my wife and I", "I'm single", "just me", "two dads", "my husband and I")
        → NOTE: If there is a MANDATORY SKIP DIRECTIVE in the system prompt referencing D0a or "solo or with a partner", ALWAYS obey it - it means the parent already answered. Otherwise, the parent must have explicitly stated their status in a prior message to skip it.
-  D0b: "Are you a same-sex couple or opposite-sex couple?" [[QUICK_REPLY:Same-sex couple|Opposite-sex couple]]
+  D0b: "Are you a same-sex couple or straight couple?" [[QUICK_REPLY:Same-sex couple|Straight couple]]
        → If "Same-sex couple": save [[SAVE:{"sameSexCouple":true}]]
-       → If "Opposite-sex couple": save [[SAVE:{"sameSexCouple":false}]]
+       → If "Straight couple": save [[SAVE:{"sameSexCouple":false}]]
        → Skip if: parent answered "Solo" to D0a, OR already explicitly revealed orientation in a prior message (e.g., "two dads", "my husband and I", "my wife and I")
        → NOTE: D0a and D0b are asked ONLY in Cycle D - never for egg donor, sperm donor, or clinic matching. Surrogates have preferences about the families they work with.
   D1: International program education + country selection (TWO-PART STEP - EDUCATION FIRST, QUESTION SECOND):
@@ -751,7 +751,7 @@ SEARCH PARAMETERS - call search_surrogates with:
   - NEVER pass location, country, or any country name (USA, Mexico, Colombia, "United States", or any variation) as a location filter. Surrogate location fields store city/state values - passing a country name will match ZERO surrogates.
   - parentCountry: parent's country of citizenship from their profile. ALWAYS pass this if available.
   - agreesToTwins: true if parent said they are hoping for twins (from A3 or D3). Omit if "Singleton only", "No preference", or never discussed. MANDATORY: if twins = yes, pass agreesToTwins: true.
-  - openToSameSexCouple: true if parent is a same-sex couple (from D0b). MANDATORY if applicable. Omit only if opposite-sex couple or solo.
+  - openToSameSexCouple: true if parent is a same-sex couple (from D0b). MANDATORY if applicable. Omit only if straight couple or solo.
   - openToInternationalParents: true if parent's country is NOT the USA/US/United States. MANDATORY: always check parent profile country and pass this when applicable.
 
 AFTER SURROGATE MATCHES:

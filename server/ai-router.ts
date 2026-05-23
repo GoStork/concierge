@@ -200,7 +200,7 @@ function injectMissingQuickReplies(content: string): string {
     [/which of these fits your journey/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
     // Phase 1 identity - any old-style phrasing gets upgraded to 5-option format
     [/are you a woman or a man/i, "[[QUICK_REPLY:A woman|A man]]"],
-    [/same-sex couple or opposite-sex/i, "[[QUICK_REPLY:Same-sex couple|Opposite-sex couple]]"],
+    [/same-sex couple or opposite-sex/i, "[[QUICK_REPLY:Same-sex couple|Straight couple]]"],
     [/two dads.*two moms.*man and a woman/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
     [/two moms.*two dads.*man and a woman/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
     [/solo.*with a partner.*as a couple/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
@@ -2838,7 +2838,7 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       );
     } else if (profile?.sameSexCouple === false || straightCoupleFromPhase1 || chatMentionsStraightCouple) {
       skipDirectives.push(
-        `DO NOT ask the LGBTQ+ identity question (D0b) / 'same-sex or opposite-sex couple' - already known: parent is in an opposite-sex (straight) couple. They already told us this in Phase 1. NEVER ask it again.`
+        `DO NOT ask the LGBTQ+ identity question (D0b) / 'same-sex or straight couple' - already known: parent is in an opposite-sex (straight) couple. They already told us this in Phase 1. NEVER ask it again.`
       );
     }
     if (userRecord?.relationshipStatus || soloFromPhase1 || straightCoupleFromPhase1 || sameSexCoupleFromPhase1) {
@@ -3579,7 +3579,7 @@ CURATION: "Here's what I have: [summary]. Shall I find your perfect matches now?
 -- D: SURROGATE --
 D0a: "Are you going on this journey solo, or with a partner?" [[QUICK_REPLY:Solo|With a partner]] -> [[SAVE:{"relationshipStatus":"solo/partnered"}]]
 Skip if already known from Phase 1/2.
-D0b: "Are you a same-sex couple or opposite-sex couple?" [[QUICK_REPLY:Same-sex couple|Opposite-sex couple]] -> [[SAVE:{"sameSexCouple":true/false}]]
+D0b: "Are you a same-sex couple or straight couple?" [[QUICK_REPLY:Same-sex couple|Straight couple]] -> [[SAVE:{"sameSexCouple":true/false}]]
 Skip if D0a was "Solo", or orientation already known.
 D1: Deliver cost education FIRST (required), then ask country question.
 IF HAS EMBRYOS:
