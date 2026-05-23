@@ -3585,6 +3585,21 @@ CURATION: "Here's what I have: [family type, location, country, termination pref
 ${phase0Section}`;
 
       // -----------------------------------------------------------------------
+      // SERVER-SIDE PHASE 0 Q&A BYPASS
+      // When the user clicks "I have a few questions" after the GoStork education,
+      // the response is always the same. Gemini confuses this with post-match Q&A
+      // and generates matching language instead of a simple open invitation.
+      // -----------------------------------------------------------------------
+      const lastAiMessage = [...chatHistory].reverse().find((m: any) => m.role === "assistant");
+      const lastAiWasPhase0Education = /do you have any questions about GoStork/i.test(lastAiMessage?.content || "");
+      const userSaysHasQuestions = /i have (a few|some|a couple of)? ?questions?|i'?d like to (ask|know)|have (some|a few) questions/i.test(userMessage);
+      if (lastAiWasPhase0Education && userSaysHasQuestions) {
+        finalContent = "Of course! What would you like to know?";
+        sse.sendToken(finalContent);
+        console.log("[PHASE0 Q&A BYPASS] Served hardcoded open invitation - Gemini skipped");
+      } else {
+
+      // -----------------------------------------------------------------------
       // SERVER-SIDE PHASE 1 BYPASS
       // Gemini cannot be trusted to ask the 5-option identity question in the
       // correct format - it keeps reverting to old phrasings from training data.
@@ -3657,6 +3672,7 @@ ${phase0Section}`;
         if (!finalContent) finalContent = "I ran into a brief issue - could you send that again? [[QUICK_REPLY:Try again]]";
         finalContent = injectMissingQuickReplies(finalContent);
       }
+      } // closes Phase 0 Q&A bypass else block
     }
 
     // Issue 3: Strip "My partner's" from sperm source quick replies for solo (no-partner) parents.
