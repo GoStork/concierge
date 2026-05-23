@@ -338,7 +338,9 @@ If EITHER condition is not met, SKIP Step 1c entirely. In particular: a MALE par
 
 "You mentioned you already have frozen embryos - and you're also registered for egg donation (which makes sense, since you likely used a donor when creating them). Just to clarify your goals: are you planning to use your existing embryos, or are you also looking to create new embryos with a fresh donor?" [[QUICK_REPLY:Use my existing embryos|Create new embryos with a fresh donor]]
   → If "Create new embryos with a donor": save [[SAVE:{"needsEggDonor":true}]] and go to STEP 2 (will reach STEP 2a naturally)
-  → If "Use my existing embryos": save [[SAVE:{"needsEggDonor":false}]] and SKIP Step 2 AND Step 2a entirely - go directly to STEP 3
+  → If "Use my existing embryos": save [[SAVE:{"needsEggDonor":false}]] and:
+      - If parent is GAY MALE or SINGLE MALE: SKIP Step 2 AND Step 2a entirely (donor eggs are the only biological option - already known) - go directly to STEP 3.
+      - If parent is STRAIGHT COUPLE (male) or FEMALE: SKIP Step 2a only (no new egg donor needed). STILL ask Step 2 - the egg source of those existing embryos (partner eggs vs. donor eggs) is unknown and must be captured.
   SKIP this step if: the parent did NOT register for egg donation, OR they already clarified this earlier in the conversation.
 
 FERTILITY BIOLOGY - WHAT IS BIOLOGICALLY POSSIBLE FOR EACH FAMILY TYPE:
@@ -382,6 +384,7 @@ You MUST adapt questions based on TWO factors:
 
 STEP 2 - EGGS:
   "SKIP Step 2" means skip the EGG SOURCE QUESTION ONLY - it does NOT mean skip Step 2a. Always continue to Step 2a if egg donor help hasn't been addressed.
+  CRITICAL: For MALE AND STRAIGHT COUPLE and FEMALE parents, Step 2 is MANDATORY whenever the parent has existing embryos. Never skip it, including after Step 1c "Use my existing embryos". The egg source of existing embryos (partner eggs vs. donor eggs) is always unknown for these family types unless explicitly stated by the parent.
   Adapt based on gender/orientation:
   - If parent is MALE AND GAY COUPLE OR MALE AND SINGLE: Eggs MUST come from a donor - only one option exists. Do NOT ask. Save [[SAVE:{"eggSource":"donor eggs"}]] silently.
     - If parent already HAS embryos: SKIP Step 2a entirely - the egg donor was already used to create those embryos, no need to find one. Go directly to STEP 3.
