@@ -3477,12 +3477,25 @@ ${phase0Section}`;
       } else {
         // Pass only non-system messages to Tier 1 - the tier1SystemPrompt is the sole system context
         const tier1Messages = messages.filter((m: any) => m.role !== "system");
+        const geminiErrorPhrases = /having trouble connecting|trouble connecting|i('m| am) sorry.*connecting|please try again.*moment|experiencing.*issues|temporarily unavailable/i;
         try {
           finalContent = await callTier1Gemini(tier1SystemPrompt, tier1Messages, sse);
+          // Gemini sometimes returns a generic "having trouble connecting" string instead of throwing.
+          // Detect this and fall back to Tier 2 so the user gets a real response.
+          if (!finalContent || geminiErrorPhrases.test(finalContent)) {
+            console.warn("[Tier1] Gemini returned error-like response, falling back to Tier 2:", finalContent?.slice(0, 100));
+            const tier2Fallback = await callTier2Claude(systemPromptForTiers, messages, [], sse, mcpClient, false);
+            if (tier2Fallback.content) finalContent = tier2Fallback.content;
+          }
         } catch (tier1Error: any) {
-          console.error("[Tier1] Gemini failed, providing fallback:", tier1Error?.message);
-          finalContent = "I had a brief connection hiccup - could you send that again?";
-          sse.sendToken(finalContent);
+          console.error("[Tier1] Gemini threw, falling back to Tier 2:", tier1Error?.message);
+          try {
+            const tier2Fallback = await callTier2Claude(systemPromptForTiers, messages, [], sse, mcpClient, false);
+            finalContent = tier2Fallback.content || "I had a brief connection hiccup - could you send that again?";
+          } catch {
+            finalContent = "I had a brief connection hiccup - could you send that again?";
+            sse.sendToken(finalContent);
+          }
         }
         if (!finalContent) finalContent = "I ran into a brief issue - could you send that again? [[QUICK_REPLY:Try again]]";
         finalContent = injectMissingQuickReplies(finalContent);
