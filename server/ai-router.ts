@@ -3369,9 +3369,15 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       }
     } else {
       // Tier 1: Gemini 2.5 Flash - MINIMAL prompt, Phase 0-2 only, no matching
-      // Extract only the Phase 0 + conversation flow section from the DB prompt
+      // Extract only the Phase 0-2 section from conversation_flow - strip Phase 3+ (match cycles)
+      // to keep the prompt small. Gemini returns soft error responses when the prompt grows too large.
       const promptSections = await getPromptSections();
-      const conversationFlow = promptSections.get("conversation_flow") || "";
+      const fullConversationFlow = promptSections.get("conversation_flow") || "";
+      const phase3Marker = "=== PHASE 3: PROGRESSIVE MATCH CYCLES ===";
+      const phase3Idx = fullConversationFlow.indexOf(phase3Marker);
+      const conversationFlow = phase3Idx > 0
+        ? fullConversationFlow.slice(0, phase3Idx).trimEnd()
+        : fullConversationFlow;
       const expertPersona = promptSections.get("expert_persona") || "";
       const uiComponents = promptSections.get("ui_components") || "";
 
