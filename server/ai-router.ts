@@ -269,7 +269,7 @@ function injectMissingQuickReplies(content: string): string {
     [/does she feel like (?:a |she could be a )?good (?:match|fit)/i, "[[QUICK_REPLY:I have questions about her|Schedule a free consultation|I don't like her]]"],
     [/ready to take the next step.*schedule/i, "[[QUICK_REPLY:Yes, schedule a call|I don't like her]]"],
     // Surrogate decline education follow-up
-    [/what didn't feel right|didn't feel right to you|what.*not.*right/i, "[[QUICK_REPLY:Her location|Her age|Her BMI|Too many pregnancies or C-sections|Her medical history|Her appearance|Her vibe or personality|The cost|Something else]]"],
+    [/what didn't feel right|didn't feel right to you|what.*not.*right/i, "[[QUICK_REPLY:Her location|Her age|Her BMI|Too many pregnancies|Too many C-sections|Her medical history|Her appearance|Her vibe or personality|The cost|Something else]]"],
     [/find.*someone.*better|schedule.*call.*anyway/i, "[[QUICK_REPLY:Find me someone better|Schedule a call with her anyway]]"],
   ];
 
