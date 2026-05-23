@@ -3679,6 +3679,13 @@ ${phase0Section}`;
         sse.sendToken(finalContent);
         serverBypassServed = true;
         console.log("[PHASE1 BYPASS] Served straight couple follow-up - Gemini skipped");
+      } else if (!useTier2 && phase1Complete && /are you going on this journey solo|solo.*or.*with a partner|journey.*solo.*partner/i.test(userMessage + " " + (chatHistory[chatHistory.length - 1]?.content || ""))) {
+        // D0a bypass: if the last AI message was D0a, skip it and go to Tier 2 for D1.
+        // Gemini should never be generating D0a when Phase 1 already answered it.
+        console.log("[D0a BYPASS] Phase 1 known - skipping D0a, calling Tier 2 for D1");
+        const d1Result = await callTier2Claude(systemPromptForTiers, messages, [], sse, mcpClient, false);
+        finalContent = d1Result.content || "";
+        serverBypassServed = true;
       } else {
         // Pass only non-system messages to Tier 1 - the tier1SystemPrompt is the sole system context
         const tier1Messages = messages.filter((m: any) => m.role !== "system");
