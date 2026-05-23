@@ -198,14 +198,16 @@ function injectMissingQuickReplies(content: string): string {
     [/solo man.*solo woman.*two dads.*two moms.*man and a woman/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
     [/which best describes you/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
     [/which of these fits your journey/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
-    // Phase 1 identity - legacy fallbacks (kept in case AI deviates from single-question format)
+    // Phase 1 identity - any old-style phrasing gets upgraded to 5-option format
     [/are you a woman or a man/i, "[[QUICK_REPLY:A woman|A man]]"],
     [/same-sex couple or opposite-sex/i, "[[QUICK_REPLY:Same-sex couple|Opposite-sex couple]]"],
-    [/two dads.*two moms.*man and a woman/i, "[[QUICK_REPLY:Two dads|Two moms|A man and a woman]]"],
-    [/two moms.*two dads.*man and a woman/i, "[[QUICK_REPLY:Two dads|Two moms|A man and a woman]]"],
-    [/solo.*with a partner.*as a couple/i, "[[QUICK_REPLY:Solo|With a partner|As a couple]]"],
-    [/on your own.*with a partner/i, "[[QUICK_REPLY:Solo|With a partner|As a couple]]"],
-    [/are you on this journey solo/i, "[[QUICK_REPLY:Solo|With a partner]]"],
+    [/two dads.*two moms.*man and a woman/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
+    [/two moms.*two dads.*man and a woman/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
+    [/solo.*with a partner.*as a couple/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
+    [/on your own.*with a partner/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
+    [/are you on this journey solo/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
+    [/solo.*or with a partner/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
+    [/journey solo.*partner/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
     // Phase 2 biological baseline
     [/do you already have a fertility clinic.*need help finding one/i, "[[QUICK_REPLY:I need help finding a clinic|I already have a clinic]]"],
     [/need help finding.*fertility clinic.*already have one/i, "[[QUICK_REPLY:I need help finding a clinic|I already have a clinic]]"],
@@ -3444,9 +3446,12 @@ Do you have any questions about GoStork and how we can help you?" [[QUICK_REPLY:
 5. Never deliver education more than once.
 
 === PHASE 1: IDENTITY (clinic/surrogate seekers only) ===
-Ask once: "To help me tailor everything to your situation -
+MANDATORY: Use EXACTLY this question and EXACTLY these five quick reply options. Do NOT rephrase. Do NOT ask "solo or with a partner?" or any two-step version. One question, five options, always.
+
+"To help me tailor everything to your situation -
 
 Which best describes you?" [[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]
+
 - Solo man -> [[SAVE:{"gender":"man","relationshipStatus":"single","familyType":"solo_man"}]]
 - Solo woman -> [[SAVE:{"gender":"woman","relationshipStatus":"single","familyType":"solo_woman"}]]
 - Two dads -> [[SAVE:{"gender":"man","sexualOrientation":"gay","relationshipStatus":"couple","familyType":"two_dads"}]]
