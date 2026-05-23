@@ -2559,14 +2559,16 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     const registeredForEggDonor = profileServices.includes("Egg Donor");
     const registeredForSurrogate = profileServices.includes("Surrogate");
     const registeredForClinic = profileServices.includes("Fertility Clinic");
-    // profileNeedsEggDonor only uses registered services - NOT stale profile.needsEggDonor which can bleed across sessions
+    // Biological baseline profile fields can bleed across sessions - only trust them when the
+    // relevant topic was also mentioned in the current conversation's chat history.
+    // Registration-form services (profileServices) are always reliable; AI-saved fields are not.
     const profileNeedsEggDonor = registeredForEggDonor || (profile?.needsEggDonor === true && mentionsEggDonor);
-    const profileAlreadyHasEggDonor = profile?.needsEggDonor === false;
-    const profileNeedsSurrogate = profileServices.includes("Surrogate") || profile?.needsSurrogate === true;
-    const profileAlreadyHasSurrogate = profile?.needsSurrogate === false;
-    const profileNeedsSpermDonor = profileServices.includes("Sperm Donor");
-    const profileNeedsClinic = profileServices.includes("Fertility Clinic") || profile?.needsClinic === true;
-    const profileAlreadyHasClinic = profile?.needsClinic === false;
+    const profileAlreadyHasEggDonor = profile?.needsEggDonor === false && hasEggDonor;
+    const profileNeedsSurrogate = profileServices.includes("Surrogate") || (profile?.needsSurrogate === true && mentionsSurrogate);
+    const profileAlreadyHasSurrogate = profile?.needsSurrogate === false && hasSurrogate;
+    const profileNeedsSpermDonor = profileServices.includes("Sperm Donor") || (profile?.needsSpermDonor === true && mentionsSpermDonor);
+    const profileNeedsClinic = profileServices.includes("Fertility Clinic") || (profile?.needsClinic === true && mentionsClinic);
+    const profileAlreadyHasClinic = profile?.needsClinic === false && (mentionsClinic || hasClinic);
 
     // Combined signals (DB profile takes precedence over regex chat scan)
     const needsEggDonor = mentionsEggDonor || profileNeedsEggDonor;
