@@ -3763,6 +3763,26 @@ ${phase0Section}`;
       }
     }
 
+    // Force-correct Phase 1 identity quick replies.
+    // Gemini generates its own [[QUICK_REPLY:Solo|With a partner|...]] from training data,
+    // bypassing injectMissingQuickReplies (which only fires when no QR tag exists).
+    // Any Phase 1 identity question with the wrong options gets its QR replaced unconditionally.
+    const PHASE1_CORRECT_QR = "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]";
+    const phase1QuestionPattern = /(?:are you (?:on this journey|doing this) (?:solo|on your own)|solo.*or.*with a partner|journey.*solo.*partner|which best describes|which of these fits your journey)/i;
+    if (!useTier2 && phase1QuestionPattern.test(finalContent)) {
+      // Replace any QR on this message that doesn't already have the 5 correct options
+      finalContent = finalContent.replace(/\[\[QUICK_REPLY:([^\]]*)\]\]/g, (_match: string, options: string) => {
+        const opts = options.split("|").map((o: string) => o.trim());
+        const hasCorrect = opts.includes("Solo man") && opts.includes("Two dads");
+        return hasCorrect ? _match : PHASE1_CORRECT_QR;
+      });
+      // If no QR tag existed at all, append the correct one
+      if (!finalContent.includes("[[QUICK_REPLY:")) {
+        finalContent = finalContent.trimEnd() + " " + PHASE1_CORRECT_QR;
+      }
+      console.log("[PHASE1 FIX] Replaced identity QR with 5-option set");
+    }
+
     // One-way door: [[CURATION]] in response permanently activates Tier 2
     if (!useTier2 && finalContent.includes("[[CURATION]]")) {
       prisma.aiChatSession.update({
