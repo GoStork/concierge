@@ -3690,11 +3690,16 @@ ${phase0Section}`;
         sse.sendToken(finalContent);
         serverBypassServed = true;
         console.log("[PHASE1 BYPASS] Served straight couple follow-up - Gemini skipped");
-      } else if (!useTier2 && phase1Complete && /are you going on this journey solo|solo.*or.*with a partner|journey.*solo.*partner/i.test(userMessage + " " + (chatHistory[chatHistory.length - 1]?.content || ""))) {
-        // D0a bypass: if the last AI message was D0a, skip it and go to Tier 2 for D1.
-        // Gemini should never be generating D0a when Phase 1 already answered it.
-        console.log("[D0a BYPASS] Phase 1 known - skipping D0a, calling Tier 2 for D1");
-        const d1Result = await callTier2Claude(systemPromptForTiers, messages, [], sse, mcpClient, false);
+      } else if (!useTier2 && phase1Complete && needsSurrogate && chatMentionsSpermSource &&
+          !chatHistory.some((m: any) => m.role === "assistant" && /which countries are you open to|colombia.*mexico|surrogate.*cost.*comparison/i.test(m.content || "")) &&
+          !chatHistory.some((m: any) => m.role === "assistant" && /are you going on this journey solo|solo.*or.*with a partner/i.test(m.content || ""))) {
+        // Phase 2 → D-cycle pre-bypass: sperm just answered, surrogate needed, Phase 1 known.
+        // D0a and D0b are both answerable from Phase 1 - skip them and go directly to D1.
+        // This prevents Gemini from ever streaming D0a to the screen.
+        console.log("[D-CYCLE BYPASS] Phase 2 complete, D0a/D0b skippable - calling Tier 2 for D1 directly");
+        const skipToD1Msg = { role: "system" as const, content: "D0a and D0b are already answered from Phase 1 (family type is known). Skip them entirely. Your ONLY job right now is to ask D1: deliver the international surrogacy cost education (with or without embryos as appropriate) then ask which countries they are open to. [[MULTI_SELECT:USA|Mexico|Colombia]]" };
+        const d1Messages = [...messages, skipToD1Msg];
+        const d1Result = await callTier2Claude(systemPromptForTiers, d1Messages, [], sse, mcpClient, false);
         finalContent = d1Result.content || "";
         serverBypassServed = true;
       } else {
