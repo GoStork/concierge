@@ -3344,6 +3344,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
     // -------------------------------------------------------------------------
     const useTier2 = !!(currentSession?.tier2Active);
     let finalContent = "";
+    let serverBypassServed = false; // true when a server-side hardcoded bypass served the response
     let lastSearchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] = [];
     const tierCallStart = Date.now();
 
@@ -3596,6 +3597,7 @@ ${phase0Section}`;
       if (lastAiWasPhase0Education && userSaysHasQuestions) {
         finalContent = "Of course! What would you like to know?";
         sse.sendToken(finalContent);
+        serverBypassServed = true;
         console.log("[PHASE0 Q&A BYPASS] Served hardcoded open invitation - Gemini skipped");
       } else {
 
@@ -3641,10 +3643,12 @@ ${phase0Section}`;
       } else if (shouldServePhase1) {
         finalContent = `To help me tailor everything to your situation -\n\nWhich best describes you? [[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]`;
         sse.sendToken(finalContent);
+        serverBypassServed = true;
         console.log("[PHASE1 BYPASS] Served hardcoded Phase 1 question - Gemini skipped");
       } else if (straightCoupleFollowUpNeeded) {
         finalContent = `And are you the woman or the man in this journey? [[QUICK_REPLY:I'm the woman|I'm the man]]`;
         sse.sendToken(finalContent);
+        serverBypassServed = true;
         console.log("[PHASE1 BYPASS] Served straight couple follow-up - Gemini skipped");
       } else {
         // Pass only non-system messages to Tier 1 - the tier1SystemPrompt is the sole system context
@@ -4092,7 +4096,7 @@ ${phase0Section}`;
       /bear with me/i,
     ];
     const hasDeadEnd = deadEndPatterns.some((p) => p.test(finalContent));
-    if (hasDeadEnd && !isSkipAction) {
+    if (hasDeadEnd && !isSkipAction && !serverBypassServed) {
       console.log(`[DEAD-END INTERCEPT] AI used passive/open-ended closing. Forcing retry with active next step.`);
       try {
         messages.push({
