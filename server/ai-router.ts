@@ -3694,13 +3694,15 @@ ${phase0Section}`;
           !chatHistory.some((m: any) => m.role === "assistant" && /which countries are you open to|colombia.*mexico|surrogate.*cost.*comparison/i.test(m.content || "")) &&
           !chatHistory.some((m: any) => m.role === "assistant" && /are you going on this journey solo|solo.*or.*with a partner/i.test(m.content || ""))) {
         // Phase 2 → D-cycle pre-bypass: sperm just answered, surrogate needed, Phase 1 known.
-        // D0a and D0b are both answerable from Phase 1 - skip them and go directly to D1.
-        // This prevents Gemini from ever streaming D0a to the screen.
-        console.log("[D-CYCLE BYPASS] Phase 2 complete, D0a/D0b skippable - calling Tier 2 for D1 directly");
-        const skipToD1Msg = { role: "system" as const, content: "D0a and D0b are already answered from Phase 1 (family type is known). Skip them entirely. Your ONLY job right now is to ask D1: deliver the international surrogacy cost education (with or without embryos as appropriate) then ask which countries they are open to. [[MULTI_SELECT:USA|Mexico|Colombia]]" };
-        const d1Messages = [...messages, skipToD1Msg];
-        const d1Result = await callTier2Claude(systemPromptForTiers, d1Messages, [], sse, mcpClient, false);
-        finalContent = d1Result.content || "";
+        // D0a and D0b are skippable - serve D1 (cost education + country question) directly.
+        // Hardcoded text matches the compact Tier 1 prompt exactly. No AI call = no empty response.
+        console.log("[D-CYCLE BYPASS] Serving D1 cost education directly - Gemini skipped");
+        const d1HasEmbryos = chatMentionsHavingEmbryos || profile?.hasEmbryos === true;
+        const d1Text = d1HasEmbryos
+          ? `One thing many families don't realize: since you already have frozen embryos, you can ship them internationally and do your surrogacy in Colombia or Mexico at a significant cost savings - without giving up the embryos you've worked so hard to create.\n\nHere's a quick breakdown:\n- United States: $150,000 and up (surrogate compensation, agency fee, legal, insurance)\n- Mexico: around $100,000 all-in\n- Colombia: starting from $65,000 all-in - our most popular option\n\nColombia has become the go-to for many of our families. The legal process is straightforward, you only need to stay a few weeks after the baby is born, and we have agencies there we trust completely.\n\nWith all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`
+          : `Something worth knowing before we dive in: international surrogacy programs can include everything - IVF, egg donor, AND surrogate - all in one package, at a fraction of what you'd pay in the US.\n\nHere's a quick comparison:\n- United States: $150,000+ for surrogacy alone (IVF and egg donor are separate additional costs)\n- Mexico: around $100,000 for a complete program including IVF, egg donor, and surrogate\n- Colombia: starting from $65,000 for a complete program - our most popular option\n\nColombia's program is particularly well-regarded. The agencies we work with there have delivered hundreds of healthy babies, the legal process is clean, and you only need to stay a few weeks after birth.\n\nWith all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`;
+        finalContent = d1Text;
+        sse.sendToken(d1Text);
         serverBypassServed = true;
       } else {
         // Pass only non-system messages to Tier 1 - the tier1SystemPrompt is the sole system context
