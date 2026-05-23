@@ -3872,6 +3872,30 @@ ${phase0Section}`;
       }
     }
 
+    // D0a INTERCEPTOR: Strip "Are you going on this journey solo, or with a partner?" when
+    // Phase 1 already established the family type. Gemini ignores the skip directive and asks it
+    // anyway, which re-surfaces what looks like a Phase 1 question mid-conversation.
+    const d0aPattern = /[^.!?]*(?:are you (?:going on this journey|on this journey|doing this) (?:solo|on your own)|solo.*or.*with a partner|journey.*solo.*partner)[^.!?]*[.!?]?\s*(?:\[\[(?:QUICK_REPLY|MULTI_SELECT):[^\]]*\]\])?/gi;
+    const phase1Complete = !!(profile?.familyType) ||
+      chatHistory.some((m: any) => m.role === "user" && /\b(solo man|solo woman|two dads|two moms|man and a woman)\b/i.test(m.content || ""));
+    if (!useTier2 && phase1Complete && d0aPattern.test(finalContent)) {
+      console.log("[D0a INTERCEPT] Stripping redundant D0a question - family type already known from Phase 1");
+      finalContent = finalContent.replace(d0aPattern, "").trim();
+      if (!finalContent) {
+        console.log("[D0a INTERCEPT] Response empty after strip - re-running for next step");
+        try {
+          const retryResult = await callTier2Claude(systemPromptForTiers, messages, [], sse, mcpClient, false);
+          if (retryResult.content) {
+            finalContent = retryResult.content;
+            sse.sendToken(finalContent);
+          }
+        } catch (retryErr: any) {
+          console.error("[D0a INTERCEPT] Retry failed:", retryErr?.message);
+        }
+        if (!finalContent) finalContent = "Let me get you set up with some surrogate options. [[QUICK_REPLY:Continue]]";
+      }
+    }
+
     // EGG SOURCE INTERCEPTOR (Step 2)
     // Gemini consistently skips Step 2 (egg source) for straight/female parents with embryos,
     // jumping from Step 1b (PGT-A) directly to Step 3 (sperm). Detect this and replace.
