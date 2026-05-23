@@ -328,8 +328,10 @@ STEP 1a: "How many embryos do you have?" [[QUICK_REPLY:1|2|3|4|5|6-10|Above 10]]
   → After answer, save [[SAVE:{"embryoCount":<number>}]] and go to STEP 1b
 
 STEP 1b: "Have they been PGT-A tested?" [[QUICK_REPLY:Yes|No|I'm not sure]]
-  → If YES or NO: save [[SAVE:{"embryosTested":<true/false>}]] and go to STEP 1c (if applicable) or STEP 2
-  → If NOT SURE: go to STEP 1c (if applicable) or STEP 2 (do not save embryosTested)
+  → Save result, then route STRICTLY by family type:
+    - GAY MALE COUPLE or SINGLE MALE: Save silently [[SAVE:{"eggSource":"donor eggs"}]]. Check Step 1c preconditions; if Step 1c applies go there, otherwise go to STEP 3. NEVER ask Step 2 - donor eggs are biologically the only option.
+    - STRAIGHT COUPLE (male speaking) or FEMALE (any): Check Step 1c preconditions; if Step 1c applies go there. THEN go to STEP 2. The VERY NEXT question after Step 1b (or Step 1c) MUST be the egg source question. FORBIDDEN: jumping from Step 1b directly to Step 3 for this family type.
+  DO NOT save embryosTested if "I'm not sure".
 
 STEP 1c - EGG DONOR CONFLICT RESOLUTION:
 MANDATORY PRECONDITIONS - BOTH must be true or SKIP entirely:
