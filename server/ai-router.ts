@@ -3596,25 +3596,26 @@ ${phase0Section}`;
       ) || !!profile?.familyType;
       const parentNeedsPhase1 = services.some((s: string) => /surrog|clinic|ivf/i.test(s))
         || needsSurrogate || needsClinic || profile?.needsSurrogate === true || profile?.needsClinic === true;
-      // Allow clarifying questions to reach Gemini so the user gets an explanation.
-      // The bypass will re-fire on the next turn once familyType is still unset.
-      const userIsAskingClarification = /\?/.test(userMessage) ||
-        /^(what|why|how|can you|tell me|i don'?t|i'm not sure|not sure|confused|explain|what does|what is|what are)/i.test(userMessage.trim());
       const phase1AlreadyAsked = chatHistory.some((m: any) =>
         m.role === "assistant" && /solo man.*solo woman.*two dads|which best describes you|which of these fits your journey/i.test(m.content || "")
       );
-      // Bypass fires whenever familyType is unknown - not just on first ask.
-      // If user gives a weird/invalid answer, we re-serve the question directly instead of
-      // handing back to Gemini (which would revert to old phrasing).
-      // Exception: clarifying questions go to Gemini so the user gets an explanation.
-      const shouldServePhase1 = phase0Done && parentNeedsPhase1 && !phase1AnsweredInHistory
-        && !(userIsAskingClarification && phase1AlreadyAsked);
+      // Only bypass once Phase 0 Q&A is fully finished.
+      // phase0Done fires as soon as the user sends any message after the education -
+      // including "I have a few questions", so we need an explicit confirmation signal.
+      // The bypass must NOT fire while the user is still asking questions about GoStork.
+      const phase0ReadyForPhase1 = phase1AlreadyAsked || chatHistory.some((m: any) =>
+        m.role === "user" && /i understand.*let'?s|let'?s (get )?start(ed)?|let'?s go|let'?s begin|i'?m ready|get started|start now/i.test(m.content || "")
+      );
+      // Bypass fires only on the FIRST ask (phase1AlreadyAsked = false) AND only after
+      // Phase 0 is truly done. Once Phase 1 has been asked, Gemini handles all follow-up
+      // turns (fertility questions, clarifications, weird answers) - the post-generation
+      // QR replacer ensures correct options if Gemini re-asks the identity question.
+      const shouldServePhase1 = phase0Done && phase0ReadyForPhase1 && parentNeedsPhase1 && !phase1AnsweredInHistory && !phase1AlreadyAsked;
 
       const straightCoupleFollowUpNeeded = phase0Done
         && profile?.familyType === "straight_couple"
         && !profile?.gender
-        && !chatHistory.some((m: any) => m.role === "user" && /i('m| am) (the )?(woman|man)\b/i.test(m.content || ""))
-        && !userIsAskingClarification;
+        && !chatHistory.some((m: any) => m.role === "user" && /i('m| am) (the )?(woman|man)\b/i.test(m.content || ""));
 
       // Human escalation: bypass Gemini entirely and return the correct response
       const humanRequestRegexT1 = /talk to (?:a )?(?:real|human|actual) person|talk to (?:the )?gostork team|speak (?:to|with) (?:a )?human|connect me with (?:a )?(?:human|person|someone)|i want (?:a )?human|i'd like to talk to a real person|just want to speak to (?:a )?human|want to talk to (?:a )?human/i;
