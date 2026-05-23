@@ -375,7 +375,15 @@ async function callTier2Claude(
             const tMcp = Date.now();
             try {
               const toolResult = await mcpClientRef.callTool({ name: fc.name, arguments: fc.args as Record<string, unknown> });
-              const resultText = (toolResult.content as any)?.[0]?.text || JSON.stringify(toolResult);
+              let resultText = (toolResult.content as any)?.[0]?.text || JSON.stringify(toolResult);
+              // Truncate large search results: 29KB of surrogate data overwhelms Gemini's
+              // second-round context, causing it to return 0 chars. We only need the first
+              // 1-2 results to show a match card - truncate to keep the round-trip manageable.
+              const MAX_TOOL_RESULT = 8000;
+              if (searchToolNames.includes(fc.name) && resultText.length > MAX_TOOL_RESULT) {
+                resultText = resultText.slice(0, MAX_TOOL_RESULT) + "\n\n[Results truncated - present the first surrogate above as a [[MATCH_CARD]] only]";
+                console.log(`[TIER2] Truncated ${fc.name} result to ${MAX_TOOL_RESULT} chars`);
+              }
               console.log(`[TIER2] MCP ${fc.name} in ${Date.now() - tMcp}ms (result=${resultText.length} chars)`);
               functionResponses.push({ functionResponse: { name: fc.name, response: { output: resultText } } });
               if (searchToolNames.includes(fc.name)) {
@@ -413,7 +421,28 @@ async function callTier2Claude(
         try {
           const text = chunk.text();
           if (text) { fullText += text; sse.sendToken(text); }
-        } catch { /* skip non-text finish/safety chunks */ }
+        } catch (chunkErr: any) {
+          // Log the real error so we can diagnose future 0-char failures
+          if (chunkErr?.message) console.warn(`[TIER2] chunk.text() threw: ${chunkErr.message}`);
+        }
+      }
+      // If streaming produced nothing, try extracting text from the resolved response object.
+      // This happens when Gemini returns a finish chunk with no text parts (context overflow,
+      // safety stop, or empty generation after large tool results).
+      if (!fullText) {
+        try {
+          const finalResponse = await result.response;
+          const fallbackText = finalResponse.text();
+          if (fallbackText) {
+            fullText = fallbackText;
+            sse.sendToken(fallbackText);
+            console.warn("[TIER2] Stream was empty - recovered text from response object");
+          } else {
+            console.warn("[TIER2] Stream AND response.text() both empty - Gemini produced no content after tool call");
+          }
+        } catch (fallbackErr: any) {
+          console.warn(`[TIER2] response.text() fallback also threw: ${fallbackErr?.message}`);
+        }
       }
       console.log(`[TIER2] DONE (after tools) stream=${Date.now() - tStream2}ms (firstEvent=${firstEvent2Ms}ms, ${fullText.length} chars). Total TIER2 ${Date.now() - t0}ms`);
       return { content: fullText, toolCallsExecuted: true, searchToolResults };
