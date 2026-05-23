@@ -266,8 +266,11 @@ function injectMissingQuickReplies(content: string): string {
     [/ready to see some (?:surrogate|donor|clinic|match)/i, "[[QUICK_REPLY:Yes, show me matches!|Not yet]]"],
     [/shall i find your (?:perfect )?matches/i, "[[QUICK_REPLY:Yes, find my matches!|I have a question first]]"],
     // Post-surrogate match conversion follow-up
-    [/does she feel like (?:a |she could be a )?good (?:match|fit)/i, "[[QUICK_REPLY:I have questions about her|Schedule a free consultation|Show me another profile]]"],
-    [/ready to take the next step.*schedule/i, "[[QUICK_REPLY:Yes, schedule a call|Show me another profile]]"],
+    [/does she feel like (?:a |she could be a )?good (?:match|fit)/i, "[[QUICK_REPLY:I have questions about her|Schedule a free consultation|I don't like her]]"],
+    [/ready to take the next step.*schedule/i, "[[QUICK_REPLY:Yes, schedule a call|I don't like her]]"],
+    // Surrogate decline education follow-up
+    [/what didn't feel right|didn't feel right to you|what.*not.*right/i, "[[QUICK_REPLY:Her location|Her age|Her appearance|Too many kids|Her vibe or personality|The cost|Something else]]"],
+    [/find.*someone.*better|schedule.*call.*anyway/i, "[[QUICK_REPLY:Find me someone better|Schedule a call with her anyway]]"],
   ];
 
   for (const [pattern, tag] of patterns) {
