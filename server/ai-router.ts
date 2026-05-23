@@ -3661,10 +3661,13 @@ ${phase0Section}`;
       // QR replacer ensures correct options if Gemini re-asks the identity question.
       const shouldServePhase1 = phase0Done && phase0ReadyForPhase1 && parentNeedsPhase1 && !phase1AnsweredInHistory && !phase1AlreadyAsked;
 
+      // Use allUserMessages (includes current message) not chatHistory so the bypass
+      // doesn't loop: when user says "I am a man", chatHistory doesn't include it yet.
       const straightCoupleFollowUpNeeded = phase0Done
         && profile?.familyType === "straight_couple"
         && !profile?.gender
-        && !chatHistory.some((m: any) => m.role === "user" && /i('m| am) (the )?(woman|man)\b/i.test(m.content || ""));
+        && !/i('m| am) (the )?(woman|man)\b/i.test(allUserMessages)
+        && !isMaleGender && !isFemaleGender; // also skip if gender already known from DB
 
       // Human escalation: bypass Gemini entirely and return the correct response
       const humanRequestRegexT1 = /talk to (?:a )?(?:real|human|actual) person|talk to (?:the )?gostork team|speak (?:to|with) (?:a )?human|connect me with (?:a )?(?:human|person|someone)|i want (?:a )?human|i'd like to talk to a real person|just want to speak to (?:a )?human|want to talk to (?:a )?human/i;
