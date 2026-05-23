@@ -2818,24 +2818,32 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       skipDirectives.push(`DO NOT ask about twins preference (D3 / A3) - already saved: ${profile.surrogateTwins}.`);
     }
 
-    // D0a/D0b: skip if identity/relationship already known
-    // D0b is the "Do you identify as LGBTQ+?" question (Phase 1 Q2 and Cycle D D0b are the same question).
-    // Use isLGBTQ when known; fall back to sameSexCouple inference only for couples.
+    // D0a/D0b: skip if identity/relationship already known from Phase 1 or profile.
+    // "Man and a woman" answer in Phase 1 saves familyType=straight_couple but does NOT save
+    // sameSexCouple, so D0b skips must also check familyType and current conversation.
+    const straightCoupleFromPhase1 = profile?.familyType === "straight_couple" ||
+      chatHistory.some((m: any) => m.role === "user" && /\bman and a woman\b/i.test(m.content || ""));
+    const sameSexCoupleFromPhase1 = profile?.familyType === "two_dads" || profile?.familyType === "two_moms" ||
+      chatHistory.some((m: any) => m.role === "user" && /\b(two dads|two moms)\b/i.test(m.content || ""));
+    const soloFromPhase1 = profile?.familyType === "solo_man" || profile?.familyType === "solo_woman" ||
+      chatHistory.some((m: any) => m.role === "user" && /\b(solo man|solo woman)\b/i.test(m.content || ""));
+
     if (profile?.isLGBTQ != null) {
       skipDirectives.push(
         `DO NOT ask the LGBTQ+ identity question (Phase 1 Q2 / D0b) - already saved: isLGBTQ=${profile.isLGBTQ}. Never ask it again.`
       );
-    } else if (profile?.sameSexCouple === true) {
+    } else if (profile?.sameSexCouple === true || sameSexCoupleFromPhase1) {
       skipDirectives.push(
-        `DO NOT ask the LGBTQ+ identity question (D0b) - already known: parent is in a same-sex couple, they are LGBTQ+.`
+        `DO NOT ask the LGBTQ+ identity question (D0b) - already known: parent is in a same-sex couple.`
       );
-    } else if (profile?.sameSexCouple === false && (userRecord?.relationshipStatus || "").toLowerCase() === "coupled") {
+    } else if (profile?.sameSexCouple === false || straightCoupleFromPhase1 || chatMentionsStraightCouple) {
       skipDirectives.push(
-        `DO NOT ask the LGBTQ+ identity question (D0b) - already known: parent is in an opposite-sex couple, not LGBTQ+.`
+        `DO NOT ask the LGBTQ+ identity question (D0b) / 'same-sex or opposite-sex couple' - already known: parent is in an opposite-sex (straight) couple. They already told us this in Phase 1. NEVER ask it again.`
       );
     }
-    if (userRecord?.relationshipStatus) {
-      skipDirectives.push(`DO NOT ask D0a (solo or with partner) - already saved: ${userRecord.relationshipStatus}.`);
+    if (userRecord?.relationshipStatus || soloFromPhase1 || straightCoupleFromPhase1 || sameSexCoupleFromPhase1) {
+      const status = userRecord?.relationshipStatus || (soloFromPhase1 ? "single" : "partnered");
+      skipDirectives.push(`DO NOT ask D0a (solo or with partner) - already known from Phase 1: ${status}.`);
     }
 
     const skipRulesPreamble = skipDirectives.length > 0 ? `
