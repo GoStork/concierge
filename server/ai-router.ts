@@ -3683,11 +3683,18 @@ ${phase0Section}`;
       const userAffirmedPart1 = /^(yes|sure|makes sense|got it|ok|great|absolutely|yep|sounds good|i understand)/i.test(userMessage.trim()) ||
         /makes sense|let'?s (go|start)/i.test(userMessage);
       if (lastAiWasPart1 && userAffirmedPart1 && !part2AlreadyDelivered) {
-        const part2Text = `One thing that sets GoStork apart: every provider has been personally vetted by Eran Amir, our founder, who went through surrogacy himself. He personally interviews each agency's leadership, reviews their operations, and makes sure they have the right team in place.${needsSurrogate ? " And there are no waiting lists - every surrogate you'll see is available right now." : ""}\n\nDo you have any questions about GoStork and how we can help you? [[QUICK_REPLY:I understand, let's get started|I have a few questions]]`;
-        finalContent = part2Text;
-        sse.sendToken(part2Text);
+        // Serve Part 2 + Phase 1 in ONE response to avoid the typing-animation merge bug.
+        // When Part 2 and Phase 1 arrive in rapid succession as separate responses, the frontend
+        // animation queue merges them into the same bubble. Combining prevents this entirely.
+        const part2Body = `One thing that sets GoStork apart: every provider has been personally vetted by Eran Amir, our founder, who went through surrogacy himself. He personally interviews each agency's leadership, reviews their operations, and makes sure they have the right team in place.${needsSurrogate ? " And there are no waiting lists - every surrogate you'll see is available right now." : ""}`;
+        const needsPhase1Now = parentNeedsPhase1 && !phase1AnsweredInHistory && !phase1AlreadyAsked;
+        const combined = needsPhase1Now
+          ? `${part2Body}\n\nTo help me tailor everything to your situation -\n\nWhich best describes you? [[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]`
+          : `${part2Body}\n\nDo you have any questions about GoStork and how we can help you? [[QUICK_REPLY:I understand, let's get started|I have a few questions]]`;
+        finalContent = combined;
+        sse.sendToken(combined);
         serverBypassServed = true;
-        console.log("[PHASE0 PART2 BYPASS] Served Part 2 directly - Gemini skipped");
+        console.log(`[PHASE0 PART2 BYPASS] Served Part 2${needsPhase1Now ? " + Phase 1" : ""} directly - Gemini skipped`);
       } else {
 
       // -----------------------------------------------------------------------
