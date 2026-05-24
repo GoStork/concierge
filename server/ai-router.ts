@@ -3673,7 +3673,10 @@ ${phase0Section}`;
       // Serve Part 2 as a hardcoded bypass so Gemini never touches this turn.
       // -----------------------------------------------------------------------
       const lastAiMessage = [...chatHistory].reverse().find((m: any) => m.role === "assistant");
-      const lastAiWasPart1 = /does that make sense so far/i.test(lastAiMessage?.content || "");
+      // Part 1 detection: Gemini may rephrase the ending question, so check for
+      // the GoStork marketplace education content rather than the exact closing line.
+      const lastAiWasPart1 = /GoStork is a fertility marketplace|Kayak or Expedia for fertility|providers pay us a referral fee|completely free for intended parents/i.test(lastAiMessage?.content || "") &&
+        !/personally vetted by eran amir|no waiting lists/i.test(lastAiMessage?.content || "");
       const part2AlreadyDelivered = chatHistory.some((m: any) =>
         m.role === "assistant" && /personally vetted by eran amir|no waiting lists/i.test(m.content || "")
       );
