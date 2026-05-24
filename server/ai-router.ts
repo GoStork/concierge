@@ -2653,7 +2653,9 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // sessions must not silently skip Phase 2 questions in a new conversation.
 
     // Detect embryo possession from chat history as well as DB (chat answers may not be saved to DB yet)
-    const chatMentionsHavingEmbryos = /(?:have|has|got)\s+(?:\d+\s+)?(?:frozen\s+)?embryo|yes[,.]?\s+(?:my\s+)?embryo|already\s+have\s+(?:\d+\s+)?(?:frozen\s+)?embryo|i\s+have\s+(?:\d+\s+)?(?:frozen\s+)?embryo/i.test(allUserMessages);
+    // Exclude negated statements like "No, I don't have frozen embryos yet" which contain
+    // "have frozen embryo" as a substring but mean the opposite.
+    const chatMentionsHavingEmbryos = /(?<!don'?t\s+)(?<!no[,.]?\s+)(?:i\s+)?(?:already\s+)?(?:have|has|got)\s+(?:\d+\s+)?(?:frozen\s+)?embryo|yes[,.]?\s+(?:my\s+)?embryo|i\s+have\s+(?:\d+\s+)?embryo/i.test(allUserMessages);
     const chatMentionsNoEmbryos = /no.*embryo|don'?t have.*embryo|not.*embryo|working to create|haven'?t.*embryo/i.test(allUserMessages);
     const chatMentionsEggSource = /partner'?s eggs|my own eggs|donor eggs|egg donor|eggs from a donor|used.*egg/i.test(allUserMessages);
     const chatMentionsSpermSource = /my own sperm|used my own|sperm donor|donor sperm|own sperm/i.test(allUserMessages);
@@ -3814,9 +3816,14 @@ ${phase0Section}`;
         // alreadyHasClinic = true means they said "I already have a clinic" - skip clinic cycle.
         // needsClinic can be true for BOTH "I need help" AND "I already have" because both contain "clinic".
         const needsHelpFindingClinic = (needsClinic || registeredForClinic) && !alreadyHasClinic;
+        // Use the full D1 education text (same as D-cycle bypass) - NOT a truncated version
+        const d1HasEmbryosCarrier = chatMentionsHavingEmbryos || profile?.hasEmbryos === true;
+        const d1TextFull = d1HasEmbryosCarrier
+          ? `One thing many families don't realize: since you already have frozen embryos, you can ship them internationally and do your surrogacy in Colombia or Mexico at a significant cost savings - without giving up the embryos you've worked so hard to create.\n\nHere's a quick breakdown:\n- United States: $150,000 and up (surrogate compensation, agency fee, legal, insurance)\n- Mexico: around $100,000 all-in\n- Colombia: starting from $65,000 all-in - our most popular option\n\nColombia has become the go-to for many of our families. The legal process is straightforward, you only need to stay a few weeks after the baby is born, and we have agencies there we trust completely.\n\nWith all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`
+          : `Something worth knowing before we dive in: international surrogacy programs can include everything - IVF, egg donor, AND surrogate - all in one package, at a fraction of what you'd pay in the US.\n\nHere's a quick comparison:\n- United States: $150,000+ for surrogacy alone (IVF and egg donor are separate additional costs)\n- Mexico: around $100,000 for a complete program including IVF, egg donor, and surrogate\n- Colombia: starting from $65,000 for a complete program - our most popular option\n\nColombia's program is particularly well-regarded. The agencies we work with there have delivered hundreds of healthy babies, the legal process is clean, and you only need to stay a few weeks after birth.\n\nWith all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`;
         const transitionText = needsHelpFindingClinic
           ? `Got it! Now let's focus on finding the right IVF clinic for you.\n\nHow old are you?`
-          : `Got it! Now let's find you the perfect surrogate.\n\nOne thing many families don't realize: since you${chatMentionsHavingEmbryos ? " already have frozen embryos, you can ship them internationally and" : " can"} do your surrogacy in Colombia or Mexico at a significant cost savings.\n\nWith all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`;
+          : `Got it! Now let's find you the perfect surrogate.\n\n${d1TextFull}`;
         finalContent = transitionText;
         sse.sendToken(transitionText);
         serverBypassServed = true;
