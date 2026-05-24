@@ -4512,8 +4512,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                           borderColor: isSelected ? brandColor : `${brandColor}40`,
                           backgroundColor: isSelected ? `${brandColor}15` : "transparent",
                           color: brandColor,
+                          touchAction: "manipulation",
                         }}
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           if (isMulti) {
                             setMultiSelectChoices((prev) => {
                               const next = new Set(prev);

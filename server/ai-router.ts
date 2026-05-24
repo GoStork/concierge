@@ -3694,7 +3694,7 @@ ${phase0Section}`;
         finalContent = combined;
         sse.sendToken(combined);
         serverBypassServed = true;
-        console.log(`[PHASE0 PART2 BYPASS] Served Part 2${needsPhase1Now ? " + Phase 1" : ""} directly - Gemini skipped`);
+        console.log(`[PHASE0 PART2 BYPASS] Served Part 2${needsPhase1Now ? " + Phase 1" : ""} directly - triggered by: "${userMessage.slice(0, 40)}"`);
       } else {
 
       // -----------------------------------------------------------------------
@@ -3767,7 +3767,7 @@ ${phase0Section}`;
         finalContent = `${part2Text}To help me tailor everything to your situation -\n\nWhich best describes you? [[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]`;
         sse.sendToken(finalContent);
         serverBypassServed = true;
-        console.log(`[PHASE1 BYPASS] Served ${part2Delivered ? "" : "Part 2 + "}Phase 1 question - Gemini skipped`);
+        console.log(`[PHASE1 BYPASS] Served ${part2Delivered ? "" : "Part 2 + "}Phase 1 question - triggered by: "${userMessage.slice(0, 40)}" phase0Ready:${phase0ReadyForPhase1} phase1Asked:${phase1AlreadyAsked}`);
       } else if (straightCoupleFollowUpNeeded) {
         finalContent = `And are you the woman or the man in this journey? [[QUICK_REPLY:I'm the woman|I'm the man]]`;
         sse.sendToken(finalContent);
