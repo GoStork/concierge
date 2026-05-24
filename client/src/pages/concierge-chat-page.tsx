@@ -3502,6 +3502,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     }
 
     if (!text.trim()) return;
+    if (sendingRef.current) return; // block double-sends (e.g. double-tap on QR button)
     sendingRef.current = true;
     const userMessage = text.trim();
     setInput("");
