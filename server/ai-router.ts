@@ -230,12 +230,10 @@ function injectMissingQuickReplies(content: string): string {
     // Step 2 - egg source (past tense, female speaker: includes "My own eggs")
     [/were the eggs yours.*partner.*from a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs]]"],
     [/eggs yours.*partner.*from a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs]]"],
-    // Step 2 - egg source (future tense, straight male: no "My own eggs")
+    // Step 2 - egg source: gender-dependent options are handled in the done-event fallback
+    // which has isFemaleGender context. Only inject options here for the full-text patterns
+    // where the question text itself already reveals which options apply.
     [/plan for eggs.*partner.*own eggs.*considering a donor/i, "[[QUICK_REPLY:My partner's eggs|Donor eggs|I'm not sure yet]]"],
-    // Step 2 - egg source short form (Gemini often truncates the question)
-    [/what'?s your plan for eggs\??$/i, "[[QUICK_REPLY:My partner's eggs|Donor eggs|I'm not sure yet]]"],
-    [/plan for eggs - are you thinking/i, "[[QUICK_REPLY:My partner's eggs|Donor eggs|I'm not sure yet]]"],
-    // Step 2 - egg source (future tense, female speaker)
     [/what.*plan for eggs.*using your own.*considering a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]"],
     [/thinking of using your own.*considering a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]"],
     // Step 3 - sperm source (past tense, any phrasing - covers "For those embryos, did you use...")
@@ -5198,15 +5196,22 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     // recognised Phase 1/2 questions based on content pattern matching
     if (quickReplies.length === 0 && finalContent.trim().endsWith("?")) {
       const lc = finalContent.toLowerCase();
-      // Egg source question - context-aware options
-      if (/plan for eggs|what.*eggs.*partner|thinking.*eggs|eggs.*donor|eggs.*plan/i.test(finalContent)) {
+      // Egg source question - context-aware options based on gender
+      if (/plan for eggs|what.*eggs.*partner|thinking.*eggs|eggs.*donor|eggs.*plan|your plan for eggs/i.test(finalContent)) {
         if (isFemaleGender) {
-          quickReplies = ["My own eggs", "My partner's eggs", "Donor eggs", "I'm not sure yet"];
+          // Female speaker: can use own eggs. In straight couple her partner is male (no eggs),
+          // so no "My partner's eggs". In lesbian couple partner CAN provide eggs but we show
+          // same set since the question will clarify.
+          const isStraightCouple = /familyType.*straight_couple/i.test(JSON.stringify(profile || {})) ||
+            chatHistory.some((m: any) => m.role === "user" && /\bman and a woman\b/i.test(m.content || ""));
+          quickReplies = isStraightCouple
+            ? ["My own eggs", "Donor eggs", "I'm not sure yet"]
+            : ["My own eggs", "My partner's eggs", "Donor eggs", "I'm not sure yet"];
         } else {
-          // Straight male or unknown - partner's eggs or donor
+          // Male speaker in straight couple: partner (female) can provide eggs, or donor
           quickReplies = ["My partner's eggs", "Donor eggs", "I'm not sure yet"];
         }
-        console.log("[QUICK_REPLY FALLBACK] Injected egg source options");
+        console.log(`[QUICK_REPLY FALLBACK] Injected egg source options (female=${isFemaleGender})`);
       } else if (/are you hoping (?:for twins|to have twins)|hoping for twins.*singleton/i.test(finalContent)) {
         quickReplies = ["Hoping for twins", "Singleton only", "No preference"];
         console.log("[QUICK_REPLY FALLBACK] Injected twins options");
