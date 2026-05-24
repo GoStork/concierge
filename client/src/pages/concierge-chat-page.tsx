@@ -2864,6 +2864,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
+  const lastSentRef = useRef<{ text: string; time: number } | null>(null);
   const lastPollTimeRef = useRef<string | null>(null);
   const knownMessageIds = useRef<Set<string>>(new Set());
   const statusPollCounter = useRef(0);
@@ -3472,6 +3473,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     const hasFiles = stagedFiles.length > 0;
     if (!text.trim() && !hasFiles) return;
     if (sending || sendingRef.current || showCurationRef.current) return;
+    // Deduplicate: block the same message if sent within 1.5 seconds (double-tap protection)
+    const sendNow = Date.now();
+    if (lastSentRef.current && lastSentRef.current.text === text.trim() && sendNow - lastSentRef.current.time < 1500) return;
+    lastSentRef.current = { text: text.trim(), time: sendNow };
 
     // User just sent a message - they want to follow the AI response.
     // forceScrollRef bypasses userNearBottom (which smooth-scroll intermediate events can reset).
