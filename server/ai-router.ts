@@ -3797,7 +3797,7 @@ ${phase0Section}`;
         // Only fires when clinic cycle is NOT needed - if parent needs a clinic, Gemini handles
         // clinic cycle first (A1-A5 → CURATION), then Tier 2 handles D cycle after tier2Active fires.
         // D0a and D0b are skippable - serve D1 (cost education + country question) directly.
-        console.log("[D-CYCLE BYPASS] Serving D1 cost education directly - Gemini skipped");
+        console.log(`[D-CYCLE BYPASS] Firing: needsClinic=${needsClinic} registeredForClinic=${registeredForClinic} needsSurrogate=${needsSurrogate} chatMentionsSpermSource=${chatMentionsSpermSource} userMsg="${userMessage.slice(0,30)}"`);
         const d1HasEmbryos = chatMentionsHavingEmbryos || profile?.hasEmbryos === true;
         const d1Text = d1HasEmbryos
           ? `One thing many families don't realize: since you already have frozen embryos, you can ship them internationally and do your surrogacy in Colombia or Mexico at a significant cost savings - without giving up the embryos you've worked so hard to create.\n\nHere's a quick breakdown:\n- United States: $150,000 and up (surrogate compensation, agency fee, legal, insurance)\n- Mexico: around $100,000 all-in\n- Colombia: starting from $65,000 all-in - our most popular option\n\nColombia has become the go-to for many of our families. The legal process is straightforward, you only need to stay a few weeks after the baby is born, and we have agencies there we trust completely.\n\nWith all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`
