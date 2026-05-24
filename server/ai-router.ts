@@ -232,6 +232,9 @@ function injectMissingQuickReplies(content: string): string {
     [/eggs yours.*partner.*from a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs]]"],
     // Step 2 - egg source (future tense, straight male: no "My own eggs")
     [/plan for eggs.*partner.*own eggs.*considering a donor/i, "[[QUICK_REPLY:My partner's eggs|Donor eggs|I'm not sure yet]]"],
+    // Step 2 - egg source short form (Gemini often truncates the question)
+    [/what'?s your plan for eggs\??$/i, "[[QUICK_REPLY:My partner's eggs|Donor eggs|I'm not sure yet]]"],
+    [/plan for eggs - are you thinking/i, "[[QUICK_REPLY:My partner's eggs|Donor eggs|I'm not sure yet]]"],
     // Step 2 - egg source (future tense, female speaker)
     [/what.*plan for eggs.*using your own.*considering a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]"],
     [/thinking of using your own.*considering a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]"],
@@ -5195,7 +5198,16 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     // recognised Phase 1/2 questions based on content pattern matching
     if (quickReplies.length === 0 && finalContent.trim().endsWith("?")) {
       const lc = finalContent.toLowerCase();
-      if (/are you hoping (?:for twins|to have twins)|hoping for twins.*singleton/i.test(finalContent)) {
+      // Egg source question - context-aware options
+      if (/plan for eggs|what.*eggs.*partner|thinking.*eggs|eggs.*donor|eggs.*plan/i.test(finalContent)) {
+        if (isFemaleGender) {
+          quickReplies = ["My own eggs", "My partner's eggs", "Donor eggs", "I'm not sure yet"];
+        } else {
+          // Straight male or unknown - partner's eggs or donor
+          quickReplies = ["My partner's eggs", "Donor eggs", "I'm not sure yet"];
+        }
+        console.log("[QUICK_REPLY FALLBACK] Injected egg source options");
+      } else if (/are you hoping (?:for twins|to have twins)|hoping for twins.*singleton/i.test(finalContent)) {
         quickReplies = ["Hoping for twins", "Singleton only", "No preference"];
         console.log("[QUICK_REPLY FALLBACK] Injected twins options");
       } else if (/first ivf journey.*done ivf before|is this your first ivf|have you done ivf before/i.test(finalContent)) {
