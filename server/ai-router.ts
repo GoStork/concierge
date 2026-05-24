@@ -3435,11 +3435,18 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         // Include the actual search results in the retry message so Gemini doesn't re-call the tool.
         // Pass [] for tools to prevent a redundant search call.
         const firstResult = tier2Result.searchToolResults[0];
-        const retryMessages = [...messages, {
-          role: "system" as const,
-          content: `The search has already been completed. Here are the results from ${firstResult.toolName}:\n\n${firstResult.resultText.slice(0, 6000)}\n\nDo NOT call any search tool again. Present the FIRST result above as a [[MATCH_CARD]] immediately. Include the full description and follow the surrogate follow-up sequence.`
-        }];
-        const retryResult = await callTier2Claude(systemPromptForTiers, retryMessages, [], sse, mcpClient, false);
+        const serviceType = firstResult.toolName.includes("clinic") ? "IVF Clinic"
+          : firstResult.toolName.includes("surrogate") ? "Surrogate"
+          : firstResult.toolName.includes("egg") ? "Egg Donor"
+          : firstResult.toolName.includes("sperm") ? "Sperm Donor"
+          : "Surrogate Agency";
+        // Use a minimal system prompt for the retry - the full systemPromptForTiers (128K chars)
+        // makes the total context too large for Gemini to generate after a tool call.
+        const minimalRetrySystem = `You are a warm fertility concierge. The search has returned results. Present the FIRST result as a [[MATCH_CARD]] with this exact JSON format: [[MATCH_CARD:{"name":"display name","type":"${serviceType}","location":"city, state","photo":"","reasons":["reason1","reason2","reason3"],"providerId":"id from results"}]]. Write a warm 2-3 sentence personalized intro BEFORE the card. After the card, ask if it feels like a good match. Use only data from the search results provided - do not invent data.`;
+        const retryMessages = [
+          { role: "user" as const, content: `Search results:\n\n${firstResult.resultText.slice(0, 5000)}\n\nPresent the first result as a match card now.` }
+        ];
+        const retryResult = await callTier2Claude(minimalRetrySystem, retryMessages, [], sse, mcpClient, false);
         if (retryResult.content) {
           tier2Result.content = retryResult.content;
         }
