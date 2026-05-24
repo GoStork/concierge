@@ -3652,10 +3652,16 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             const applyFinalMsg = () => {
               if (data.showCuration) {
                 setMessages((prev) => {
-                  const hasPlaceholder = prev.some((m) => m.id === streamingId);
+                  // Clear quick reply buttons from ALL previous messages when curation fires.
+                  // Stale Phase 0 buttons (e.g. "Yes, I'm looking into surrogacy") on earlier
+                  // messages must be disabled so the parent can only confirm via the curation UI.
+                  const cleared = prev.map((m) =>
+                    m.quickReplies || m.multiSelect ? { ...m, quickReplies: undefined, multiSelect: undefined } : m
+                  );
+                  const hasPlaceholder = cleared.some((m) => m.id === streamingId);
                   return hasPlaceholder
-                    ? prev.map((m) => m.id === streamingId ? finalMsg : m)
-                    : [...prev.filter((m) => m.id !== streamingId), finalMsg];
+                    ? cleared.map((m) => m.id === streamingId ? finalMsg : m)
+                    : [...cleared.filter((m) => m.id !== streamingId), finalMsg];
                 });
                 setPendingCurationMessage(finalMsg);
                 curationAwaitingRef.current = true;
