@@ -3782,7 +3782,14 @@ ${phase0Section}`;
           }
         }
         if (!finalContent) finalContent = "I ran into a brief issue - could you send that again? [[QUICK_REPLY:Try again]]";
+        const beforeInject = finalContent;
         finalContent = injectMissingQuickReplies(finalContent);
+        // Stream the injected suffix so the client receives the QR tag.
+        // Gemini already streamed the main content; the injected portion was never sent.
+        if (finalContent !== beforeInject) {
+          const injectedSuffix = finalContent.slice(beforeInject.trimEnd().length);
+          if (injectedSuffix.trim()) sse.sendToken(injectedSuffix);
+        }
 
         // Phase 0 + Phase 1 separation: Gemini sometimes generates both Part 2 of the
         // GoStork education AND the Phase 1 identity question in the same response.
