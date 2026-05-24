@@ -3610,7 +3610,6 @@ Order: Clinic (A) -> Egg Donor (B) -> Sperm Donor (C) -> Surrogate (D). Skip typ
 After ALL questions answered for a type, send [[CURATION]] summary, then STOP - do not search or show cards.
 
 -- A: CLINIC --
-SKIP THIS ENTIRE CYCLE if the parent already has a clinic (needsClinic = false or they said "I already have a clinic"). Never ask A1-A5 for a parent who doesn't need help finding a clinic.
 A1: "How old are you?" -> [[SAVE:{"birthYear":YYYY}]] (current year minus age)
 A2: "And how old is your partner?" -> [[SAVE:{"partnerBirthYear":YYYY}]] (skip if single)
 A3: "Are you hoping for twins?" [[QUICK_REPLY:Yes|No]] -> [[SAVE:{"hopingForTwins":"yes/no"}]]
@@ -3740,12 +3739,13 @@ ${phase0Section}`;
         sse.sendToken(finalContent);
         serverBypassServed = true;
         console.log("[PHASE1 BYPASS] Served straight couple follow-up - Gemini skipped");
-      } else if (!useTier2 && phase1Complete && needsSurrogate && chatMentionsSpermSource &&
+      } else if (!useTier2 && phase1Complete && needsSurrogate && !needsClinic && chatMentionsSpermSource &&
           !chatHistory.some((m: any) => m.role === "assistant" && /which countries are you open to|colombia.*mexico|surrogate.*cost.*comparison/i.test(m.content || "")) &&
           !chatHistory.some((m: any) => m.role === "assistant" && /are you going on this journey solo|solo.*or.*with a partner/i.test(m.content || ""))) {
-        // Phase 2 → D-cycle pre-bypass: sperm just answered, surrogate needed, Phase 1 known.
+        // Phase 2 → D-cycle pre-bypass: sperm answered, surrogate-ONLY (no clinic needed), Phase 1 known.
+        // Only fires when clinic cycle is NOT needed - if parent needs a clinic, Gemini handles
+        // clinic cycle first (A1-A5 → CURATION), then Tier 2 handles D cycle after tier2Active fires.
         // D0a and D0b are skippable - serve D1 (cost education + country question) directly.
-        // Hardcoded text matches the compact Tier 1 prompt exactly. No AI call = no empty response.
         console.log("[D-CYCLE BYPASS] Serving D1 cost education directly - Gemini skipped");
         const d1HasEmbryos = chatMentionsHavingEmbryos || profile?.hasEmbryos === true;
         const d1Text = d1HasEmbryos
