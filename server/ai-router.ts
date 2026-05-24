@@ -3372,8 +3372,12 @@ After you send this, wait for the parent to reply. The system will then auto-sen
       });
     }
 
-    // When the parent says "ready" after a [[CURATION]] summary, force the AI to search immediately.
-    const userSaidReady = /^\s*ready\s*$/i.test(userMessage);
+    // When the parent says "ready" (or any affirmative) after a [[CURATION]] summary, force search.
+    // Also catch service-mention affirmatives like "Yes, I'm looking into surrogacy" which happen
+    // when the frontend's expandQuickReply incorrectly expands "Yes, find my matches!".
+    const userSaidReady = /^\s*ready\s*$/i.test(userMessage)
+      || /\b(yes.*find|find.*match|show.*match|let.*go|proceed|start.*search)\b/i.test(userMessage)
+      || (curationAlreadySent && /^(yes|sure|ok|okay|go|let'?s|please)\b.*(?:surrogacy|surrogate|egg donor|sperm donor|clinic|ivf|looking|match)/i.test(userMessage.trim()));
     if (userSaidReady && curationAlreadySent) {
       messages.push({
         role: "system" as const,
@@ -3445,14 +3449,16 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
           : "Surrogate Agency";
         // Use a minimal system prompt for the retry - the full systemPromptForTiers (128K chars)
         // makes the total context too large for Gemini to generate after a tool call.
-        const minimalRetrySystem = `You are Ariel, a warm GoStork fertility concierge helping intended parents find a ${serviceType}. A database search just completed successfully. Your ONLY job: present the FIRST result from the search data below as a match card.
+        const minimalRetrySystem = `You are Ariel, a warm GoStork fertility concierge. A database search for a ${serviceType} just completed. Present the FIRST result as a match card.
 
-Use this EXACT format (fill in real values from the data):
-[[MATCH_CARD:{"name":"their display name or ID","type":"${serviceType}","location":"city, state","photo":"","reasons":["matched preference 1","matched preference 2","matched preference 3"],"providerId":"their id field"}]]
+CRITICAL: The providerId in the MATCH_CARD MUST be the "id" field from the search results (a UUID like "abc-123-def"). NEVER use the display name or externalId as the providerId.
 
-Write 2-3 warm sentences BEFORE the card introducing this person. After the card ask: "Does she feel like a good match?" [[QUICK_REPLY:I have questions about her|Schedule a free consultation|I don't like her]]
+Use this EXACT format:
+[[MATCH_CARD:{"name":"displayName field","type":"${serviceType}","location":"location field","photo":"","reasons":["reason1","reason2","reason3"],"providerId":"id field value (UUID)"}]]
 
-Use ONLY real data from the search results. Never say the search failed.`;
+Write 2-3 warm sentences BEFORE the card. After the card: "Does she feel like a good match?" [[QUICK_REPLY:I have questions about her|Schedule a free consultation|I don't like her]]
+
+Rules: Use real values from the data. The providerId = the "id" UUID field. Never fabricate. Never say search failed.`;
         const retryMessages = [
           { role: "user" as const, content: `Here are the search results. Present the first one as a match card:\n\n${firstResult.resultText.slice(0, 5000)}` }
         ];
