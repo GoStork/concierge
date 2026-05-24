@@ -3687,9 +3687,17 @@ ${phase0Section}`;
         // When Part 2 and Phase 1 arrive in rapid succession as separate responses, the frontend
         // animation queue merges them into the same bubble. Combining prevents this entirely.
         const part2Body = `One thing that sets GoStork apart: every provider has been personally vetted by Eran Amir, our founder, who went through surrogacy himself. He personally interviews each agency's leadership, reviews their operations, and makes sure they have the right team in place.${needsSurrogate ? " And there are no waiting lists - every surrogate you'll see is available right now." : ""}`;
-        const parentNeedsPhase1ForPart2 = services.some((s: string) => /surrog|clinic|ivf/i.test(s))
+        // Inline all variables needed here - they are declared further down in the Tier 1 block
+        // and would cause ReferenceError (TDZ) if referenced before their declarations.
+        const _parentNeedsPhase1 = services.some((s: string) => /surrog|clinic|ivf/i.test(s))
           || needsSurrogate || needsClinic || profile?.needsSurrogate === true || profile?.needsClinic === true;
-        const needsPhase1Now = parentNeedsPhase1ForPart2 && !phase1AnsweredInHistory && !phase1AlreadyAsked;
+        const _phase1AnsweredInHistory = chatHistory.some((m: any) =>
+          m.role === "user" && /\b(solo man|solo woman|two dads|two moms|man and a woman)\b/i.test(m.content || "")
+        ) || !!profile?.familyType;
+        const _phase1AlreadyAsked = chatHistory.some((m: any) =>
+          m.role === "assistant" && /solo man.*solo woman.*two dads|which best describes you|which of these fits your journey/i.test(m.content || "")
+        );
+        const needsPhase1Now = _parentNeedsPhase1 && !_phase1AnsweredInHistory && !_phase1AlreadyAsked;
         const combined = needsPhase1Now
           ? `${part2Body}\n\nTo help me tailor everything to your situation -\n\nWhich best describes you? [[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]`
           : `${part2Body}\n\nDo you have any questions about GoStork and how we can help you? [[QUICK_REPLY:I understand, let's get started|I have a few questions]]`;
