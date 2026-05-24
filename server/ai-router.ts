@@ -3810,8 +3810,11 @@ ${phase0Section}`;
             });
           }
         } catch {}
-        // Transition message - next Gemini call will ask A1 or D1 depending on services
-        const transitionText = needsClinic || registeredForClinic
+        // Transition message - only go to clinic cycle if parent NEEDS HELP finding a clinic.
+        // alreadyHasClinic = true means they said "I already have a clinic" - skip clinic cycle.
+        // needsClinic can be true for BOTH "I need help" AND "I already have" because both contain "clinic".
+        const needsHelpFindingClinic = (needsClinic || registeredForClinic) && !alreadyHasClinic;
+        const transitionText = needsHelpFindingClinic
           ? `Got it! Now let's focus on finding the right IVF clinic for you.\n\nHow old are you?`
           : `Got it! Now let's find you the perfect surrogate.\n\nOne thing many families don't realize: since you${chatMentionsHavingEmbryos ? " already have frozen embryos, you can ship them internationally and" : " can"} do your surrogacy in Colombia or Mexico at a significant cost savings.\n\nWith all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`;
         finalContent = transitionText;
