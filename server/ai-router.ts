@@ -5284,12 +5284,15 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         // Accept `id` as a fallback when AI used the wrong field name for providerId.
         // The AI sometimes emits id: "<uuid>" instead of providerId: "<uuid>".
         if (!parsed.providerId && parsed.id) parsed.providerId = parsed.id;
-        // Reject numeric-only providerIds - these are display numbers (e.g. "23069") not real DB IDs.
-        // Gemini often uses the externalId display number instead of the UUID. Rejecting these
-        // lets the fallback below find the correct UUID from lastSearchToolResults.
-        const providerIdIsNumeric = parsed.providerId && /^\d+$/.test(String(parsed.providerId));
-        if (providerIdIsNumeric) {
-          console.warn(`[ai-router] MATCH_CARD has numeric display ID (${parsed.providerId}) instead of UUID - using fallback`);
+        // Reject invalid providerIds - these are not real DB UUIDs:
+        // - Numeric only (display number like "23069")
+        // - Looks like a name (only letters, short - e.g. "Sarah", "John")
+        // - Too short to be a UUID (UUIDs are 36 chars with hyphens)
+        const pid = String(parsed.providerId || "");
+        const providerIdIsNumeric = pid && /^\d+$/.test(pid);
+        const providerIdLooksLikeName = pid && /^[a-zA-Z\s]+$/.test(pid) && pid.length < 30;
+        if (providerIdIsNumeric || providerIdLooksLikeName) {
+          console.warn(`[ai-router] MATCH_CARD has invalid providerId (${pid}) - name or display number, using fallback`);
         } else if (parsed.type && parsed.providerId) {
           matchCards.push(parsed);
         } else {
