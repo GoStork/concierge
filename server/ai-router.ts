@@ -3767,7 +3767,7 @@ ${phase0Section}`;
         sse.sendToken(finalContent);
         serverBypassServed = true;
         console.log("[PHASE1 BYPASS] Served straight couple follow-up - Gemini skipped");
-      } else if (!useTier2 && phase1Complete && needsSurrogate && !needsClinic && chatMentionsSpermSource &&
+      } else if (!useTier2 && phase1Complete && needsSurrogate && !needsClinic && !registeredForClinic && chatMentionsSpermSource &&
           !chatHistory.some((m: any) => m.role === "assistant" && /which countries are you open to|colombia.*mexico|surrogate.*cost.*comparison/i.test(m.content || "")) &&
           !chatHistory.some((m: any) => m.role === "assistant" && /are you going on this journey solo|solo.*or.*with a partner/i.test(m.content || ""))) {
         // Phase 2 → D-cycle pre-bypass: sperm answered, surrogate-ONLY (no clinic needed), Phase 1 known.
