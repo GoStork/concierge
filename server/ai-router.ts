@@ -5106,7 +5106,13 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         // Accept `id` as a fallback when AI used the wrong field name for providerId.
         // The AI sometimes emits id: "<uuid>" instead of providerId: "<uuid>".
         if (!parsed.providerId && parsed.id) parsed.providerId = parsed.id;
-        if (parsed.type && parsed.providerId) {
+        // Reject numeric-only providerIds - these are display numbers (e.g. "23069") not real DB IDs.
+        // Gemini often uses the externalId display number instead of the UUID. Rejecting these
+        // lets the fallback below find the correct UUID from lastSearchToolResults.
+        const providerIdIsNumeric = parsed.providerId && /^\d+$/.test(String(parsed.providerId));
+        if (providerIdIsNumeric) {
+          console.warn(`[ai-router] MATCH_CARD has numeric display ID (${parsed.providerId}) instead of UUID - using fallback`);
+        } else if (parsed.type && parsed.providerId) {
           matchCards.push(parsed);
         } else {
           console.warn("[ai-router] MATCH_CARD missing required fields (type/providerId), skipping:", parsed);
