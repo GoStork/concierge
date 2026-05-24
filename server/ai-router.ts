@@ -3784,6 +3784,25 @@ ${phase0Section}`;
         if (!finalContent) finalContent = "I ran into a brief issue - could you send that again? [[QUICK_REPLY:Try again]]";
         finalContent = injectMissingQuickReplies(finalContent);
 
+        // Phase 0 + Phase 1 separation: Gemini sometimes generates both Part 2 of the
+        // GoStork education AND the Phase 1 identity question in the same response.
+        // Strip Phase 1 from any Tier 1 response that contains Part 2 content.
+        // The Phase 1 bypass will serve it correctly on the next turn.
+        const containsPart2 = /do you have any questions about GoStork/i.test(finalContent);
+        const containsPhase1 = /which best describes you|to help me tailor everything to your situation/i.test(finalContent);
+        if (!serverBypassServed && containsPart2 && containsPhase1) {
+          // Strip from "To help me tailor..." onwards (Phase 1 portion)
+          const phase1Start = finalContent.search(/to help me tailor everything to your situation/i);
+          if (phase1Start > 0) {
+            finalContent = finalContent.slice(0, phase1Start).trimEnd();
+            // Ensure Part 2 ending has the right QR buttons
+            if (!/\[\[QUICK_REPLY:/.test(finalContent)) {
+              finalContent += " [[QUICK_REPLY:I understand, let's get started|I have a few questions]]";
+            }
+            console.log("[PHASE0/1 SPLIT] Stripped Phase 1 from Part 2 response - will serve on next turn");
+          }
+        }
+
         // Phase 0 Q&A completeness: every Gemini response during Phase 0 Q&A must
         // end with [[QUICK_REPLY]] buttons so the user has a clear next step.
         // Gemini sometimes asks a question but omits the buttons - always enforce them.
