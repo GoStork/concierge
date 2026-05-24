@@ -2565,9 +2565,21 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // Detect gay male from chat text OR from DB profile (gender=male + LGBTQ/Gay orientation).
     // "Solo man" + "Yes" to LGBTQ+ does not match the regex, so we must also check the DB.
     const genderLower = (userRecord?.gender || "").toLowerCase();
+    // If gender not in DB yet, detect from chat when the bypass asked the gender follow-up
+    // ("And are you the woman or the man in this journey?") and the user answered it.
+    // This covers the gap between the bypass serving the question and the DB save completing.
+    const genderFollowUpEverAsked = chatHistory.some((m: any) =>
+      m.role === "assistant" && /are you the woman or the man in this journey/i.test(m.content || "")
+    );
+    const genderFromChat = (!genderLower && genderFollowUpEverAsked)
+      ? (/\bi('?m| am) (?:the )?man\b/i.test(allUserMessages) ? "man"
+        : /\bi('?m| am) (?:the )?woman\b/i.test(allUserMessages) ? "woman"
+        : "")
+      : "";
+    const effectiveGenderLower = genderLower || genderFromChat;
     // Same female-first ordering as above: "female".includes("male") is true so naive substring fails.
-    const isFemaleGender = /\b(female|woman|girl)\b/.test(genderLower);
-    const isMaleGender = !isFemaleGender && /\b(male|man|boy)\b/.test(genderLower);
+    const isFemaleGender = /\b(female|woman|girl)\b/.test(effectiveGenderLower);
+    const isMaleGender = !isFemaleGender && /\b(male|man|boy)\b/.test(effectiveGenderLower);
     const orientationLower = (userRecord?.sexualOrientation || "").toLowerCase();
     const isLesbianOrientation = orientationLower === "lesbian";
     const relationshipLower = (userRecord?.relationshipStatus || "").toLowerCase();
@@ -3796,6 +3808,21 @@ ${phase0Section}`;
         && !/i('m| am) (the )?(woman|man)\b/i.test(allUserMessages)
         && !isMaleGender && !isFemaleGender // also skip if gender already known from DB
         && !chatHistory.some((m: any) => m.role === "assistant" && /are you the woman or the man in this journey/i.test(m.content || ""));
+
+      // Gender save: when user answered the gender follow-up ("I am a man" / "I'm the woman")
+      // but the DB save hasn't landed yet (bypass served the question without a [[SAVE]] tag),
+      // persist it now so isMaleGender / isFemaleGender are correct for subsequent turns.
+      if (genderFromChat && !profile?.gender && userRecord?.parentAccountId) {
+        try {
+          await prisma.intendedParentProfile.upsert({
+            where: { parentAccountId: userRecord.parentAccountId },
+            update: { gender: genderFromChat },
+            create: { parentAccountId: userRecord.parentAccountId, gender: genderFromChat },
+          });
+          if (profile) profile.gender = genderFromChat;
+          console.log(`[GENDER SAVE] Saved gender from chat: ${genderFromChat}`);
+        } catch {}
+      }
 
       // Human escalation: bypass Gemini entirely and return the correct response
       const humanRequestRegexT1 = /talk to (?:a )?(?:real|human|actual) person|talk to (?:the )?gostork team|speak (?:to|with) (?:a )?human|connect me with (?:a )?(?:human|person|someone)|i want (?:a )?human|i'd like to talk to a real person|just want to speak to (?:a )?human|want to talk to (?:a )?human/i;
