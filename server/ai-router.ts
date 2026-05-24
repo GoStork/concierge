@@ -5249,6 +5249,15 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }
     }
 
+    // Correct sperm QR options for female parents - "My own" is biologically impossible.
+    // The inject patterns are gender-blind so they include "My own" for all parents.
+    // For a female in a straight couple, replace with "My partner's sperm".
+    if (isFemaleGender && quickReplies.some(qr => /^my own$/i.test(qr)) &&
+        /for sperm|sperm.*your own|using.*sperm|sperm donor/i.test(finalContent)) {
+      quickReplies = quickReplies.map(qr => /^my own$/i.test(qr) ? "My partner's sperm" : qr);
+      console.log("[SPERM QR FIX] Replaced 'My own' with 'My partner's sperm' for female parent");
+    }
+
     let showCuration = false;
     if (finalContent.includes("[[CURATION]]")) {
       showCuration = true;
