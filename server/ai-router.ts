@@ -256,6 +256,7 @@ function injectMissingQuickReplies(content: string): string {
     [/are you hoping for twins/i, "[[QUICK_REPLY:Yes|No]]"],
     [/are you hoping to have twins.*singleton/i, "[[QUICK_REPLY:Hoping for twins|Singleton only|No preference]]"],
     [/first ivf journey.*done ivf before/i, "[[QUICK_REPLY:First time|I've done IVF before]]"],
+    [/most important.*choosing a clinic|matters most.*clinic|important.*when choosing/i, "[[MULTI_SELECT:Success rates|Location|Cost|Volume of cycles|Physician gender]]"],
     [/termination if medically necessary/i, "[[QUICK_REPLY:Pro-choice surrogate|Pro-life surrogate|No preference]]"],
     // Timeline education closing question
     [/give you a sense of what to expect/i, "[[QUICK_REPLY:Yes, makes sense|I have a question]]"],
@@ -3790,6 +3791,25 @@ ${phase0Section}`;
         sse.sendToken(finalContent);
         serverBypassServed = true;
         console.log("[PHASE1 BYPASS] Served straight couple follow-up - Gemini skipped");
+      } else if (!useTier2 && justAnsweredA5 && !curationAlreadySent) {
+        // After A5 (clinic priorities) is answered, Gemini ignores the mandatory CURATION instruction
+        // and jumps to surrogate questions. Bypass Gemini and serve the clinic curation directly.
+        const currentYear = new Date().getFullYear();
+        const age = profile?.birthYear ? currentYear - profile.birthYear : null;
+        const partnerAge = profile?.partnerBirthYear ? currentYear - profile.partnerBirthYear : null;
+        const eggSource = profile?.eggSource || chatHistory.find((m: any) => m.role === "user" && /partner'?s eggs|my own eggs|donor eggs/i.test(m.content || ""))?.content?.match(/partner'?s eggs|my own eggs|donor eggs/i)?.[0] || "your eggs";
+        const twins = profile?.hopingForTwins === "yes" ? "hoping for twins" : profile?.hopingForTwins === "no" ? "preferring a singleton pregnancy" : null;
+        const priorities = profile?.clinicPriority || userMessage; // userMessage IS A5 answer
+        const agePart = age ? `you're ${age}` : "";
+        const partnerPart = partnerAge ? `, your partner is ${partnerAge}` : "";
+        const eggPart = eggSource.toLowerCase().includes("partner") ? ", using your partner's eggs" : eggSource.toLowerCase().includes("own") ? ", using your own eggs" : eggSource.toLowerCase().includes("donor") ? ", using donor eggs" : "";
+        const twinsPart = twins ? `, ${twins}` : "";
+        const priorityPart = priorities ? `, with ${priorities} being your top ${priorities.includes(",") ? "priorities" : "priority"} for a clinic` : "";
+        const curationText = `Here's what I have: ${agePart}${partnerPart}${eggPart}${twinsPart}${priorityPart}. Shall I find your perfect clinic matches now? [[CURATION]]`;
+        finalContent = curationText;
+        sse.sendToken(curationText);
+        serverBypassServed = true;
+        console.log("[A5 CURATION BYPASS] Served clinic curation directly - Gemini skipped");
       } else if (!useTier2 && phase1Complete && needsSurrogate && !needsClinic && !registeredForClinic && chatMentionsSpermSource &&
           // Also block if Step 0 (clinic question) was asked in this session - means clinic is in scope
           // even if the user's answer didn't contain the word "clinic" (e.g. clicked "Yes, I need help")
@@ -5120,7 +5140,8 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         console.log("[QUICK_REPLY FALLBACK] Injected first IVF options");
       } else if (/most important.*choosing a clinic|matters most.*clinic|important.*when choosing/i.test(finalContent)) {
         quickReplies = ["Success rates", "Location", "Cost", "Volume of cycles", "Physician gender"];
-        console.log("[QUICK_REPLY FALLBACK] Injected clinic priority options (A5)");
+        multiSelect = true;
+        console.log("[QUICK_REPLY FALLBACK] Injected clinic priority MULTI_SELECT options (A5)");
       } else if (/what.*preferences.*termination|preferences.*termination.*medically|termination if medically/i.test(finalContent)) {
         quickReplies = ["Pro-choice surrogate", "Pro-life surrogate", "No preference"];
         console.log("[QUICK_REPLY FALLBACK] Injected termination preference options");
