@@ -3610,6 +3610,7 @@ Order: Clinic (A) -> Egg Donor (B) -> Sperm Donor (C) -> Surrogate (D). Skip typ
 After ALL questions answered for a type, send [[CURATION]] summary, then STOP - do not search or show cards.
 
 -- A: CLINIC --
+SKIP THIS ENTIRE CYCLE if the parent already has a clinic (needsClinic = false or they said "I already have a clinic"). Never ask A1-A5 for a parent who doesn't need help finding a clinic.
 A1: "How old are you?" -> [[SAVE:{"birthYear":YYYY}]] (current year minus age)
 A2: "And how old is your partner?" -> [[SAVE:{"partnerBirthYear":YYYY}]] (skip if single)
 A3: "Are you hoping for twins?" [[QUICK_REPLY:Yes|No]] -> [[SAVE:{"hopingForTwins":"yes/no"}]]
@@ -3658,7 +3659,7 @@ Then: "With all of that in mind, which countries are you open to for your surrog
 D2: "What are your preferences regarding termination if medically necessary?" [[QUICK_REPLY:Pro-choice surrogate|Pro-life surrogate|No preference]] -> [[SAVE:{"surrogateTermination":"..."}]]
 Skip if parent did NOT select USA in D1.
 D3: "Are you hoping to have twins, or would you prefer a singleton pregnancy?" [[QUICK_REPLY:Hoping for twins|Singleton only|No preference]] -> [[SAVE:{"hopingForTwins":"..."}]]
-Skip ONLY if A3 was explicitly answered in this conversation. MANDATORY if parent has not gone through Cycle A.
+Skip ONLY if twins preference was explicitly stated in this conversation. NEVER skip because Cycle A was skipped - D3 is MANDATORY for surrogate matching regardless of clinic cycle status. Do NOT ask A1-A5 first.
 CURATION: "Here's what I have: [family type, location, country, termination preference, twins preference]. Shall I find your perfect matches now? [[CURATION]]"
 
 ${phase0Section}`;
