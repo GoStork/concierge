@@ -3474,6 +3474,17 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     const hasFiles = stagedFiles.length > 0;
     if (!text.trim() && !hasFiles) return;
     if (sending || sendingRef.current || showCurationRef.current) return;
+    // "ready" must never appear as a visible user message - it's always sent silently by
+    // the curation animation. If it arrives here through any path, redirect to silent send.
+    if (/^ready$/i.test(text.trim())) {
+      if (!sessionId) return;
+      fetch("/api/ai-concierge/chat", {
+        method: "POST", headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+        credentials: "include",
+        body: JSON.stringify({ message: "ready", sessionId, matchmakerId: effectiveMatchmakerId }),
+      }).catch(() => {});
+      return;
+    }
     // Deduplicate: block the same message if sent within 1.5 seconds (double-tap protection)
     const sendNow = Date.now();
     if (lastSentRef.current && lastSentRef.current.text === text.trim() && sendNow - lastSentRef.current.time < 1500) return;
