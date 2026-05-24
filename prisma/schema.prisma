@@ -1057,13 +1057,13 @@ model IntendedParentProfile {
   interestedServices  String[]      @default([])
   journeyStage        String?       
   
-  // Biological Matrix
-  hasEmbryos          Boolean       @default(false)
-  embryoCount         Int           @default(0)
-  embryosTested       Boolean       @default(false)
-  eggSource           String?       
-  spermSource         String?       
-  carrier             String?       
+  // Biological Matrix - nullable so null means "not yet asked" vs false/0 meaning "answered: no"
+  hasEmbryos          Boolean?
+  embryoCount         Int?
+  embryosTested       Boolean?
+  eggSource           String?
+  spermSource         String?
+  carrier             String?
 
   // Service-Specific Preferences
   clinicReason        String?
@@ -1076,10 +1076,10 @@ model IntendedParentProfile {
   surrogateBudget     String?
   surrogateMedPrefs   String?
 
-  // Needs flags (set during conversation)
-  needsSurrogate      Boolean       @default(false)
-  needsEggDonor       Boolean       @default(false)
-  needsClinic         Boolean       @default(false)
+  // Needs flags - nullable so null means "not yet asked" vs false meaning "answered: no"
+  needsSurrogate      Boolean?
+  needsEggDonor       Boolean?
+  needsClinic         Boolean?
 
   // Surrogate preferences
   surrogateTwins              String?
