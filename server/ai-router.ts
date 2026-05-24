@@ -3746,7 +3746,11 @@ ${phase0Section}`;
       // -----------------------------------------------------------------------
       const lastAiWasPhase0Education = /do you have any questions about GoStork/i.test(lastAiMessage?.content || "");
       const userSaysHasQuestions = /i have (a few|some|a couple of)? ?questions?|i'?d like to (ask|know)|have (some|a few) questions/i.test(userMessage);
-      if (lastAiWasPhase0Education && userSaysHasQuestions) {
+      // Also catch "I have a question" after Part 1 (before Part 2 is delivered).
+      // Without this, Gemini handles it and says "What would you like to know?" which
+      // matches the dead-end pattern /what would you like/, triggering a retry + flash.
+      const lastAiWasPart1ForQA = /does that make sense so far|GoStork is a fertility marketplace|Kayak or Expedia for fertility/i.test(lastAiMessage?.content || "");
+      if ((lastAiWasPhase0Education || lastAiWasPart1ForQA) && userSaysHasQuestions) {
         finalContent = "Of course! What would you like to know?";
         sse.sendToken(finalContent);
         serverBypassServed = true;
@@ -4482,7 +4486,8 @@ ${phase0Section}`;
       /is there anything (?:else|more) (?:i can|you'd like)/i,
       /let me know (?:if you need|your next|how I can|what you)/i,
       /anything (?:else )?(?:i can |you'd like me to )?(?:help|assist|do for)/i,
-      /what (?:would you like|else can I|can I help)/i,
+      /what (?:else can I|can I help)/i,
+      // NOTE: "what would you like to know?" is intentionally excluded - it's a valid Q&A prompt, not a dead-end
       /don't hesitate to/i,
       /i'm here (?:for you|whenever|if you)/i,
       /whenever you're ready/i,
