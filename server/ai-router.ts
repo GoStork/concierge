@@ -3845,8 +3845,8 @@ ${phase0Section}`;
         console.log(`[PHASE1 BYPASS] Served ${part2Delivered ? "" : "Part 2 + "}Phase 1 question - triggered by: "${userMessage.slice(0, 40)}" phase0Ready:${phase0ReadyForPhase1} phase1Asked:${phase1AlreadyAsked}`);
       } else if (straightCoupleFollowUpNeeded) {
         finalContent = `And are you the woman or the man in this journey? [[QUICK_REPLY:I'm the woman|I'm the man]]`;
+        serverBypassServed = true; // set before sendToken so Gemini never runs even if sendToken throws
         sse.sendToken(finalContent);
-        serverBypassServed = true;
         console.log("[PHASE1 BYPASS] Served straight couple follow-up - Gemini skipped");
       } else if (!useTier2 && needsSurrogate &&
           // Fire for ANY parent type who just answered the sperm question AND needs a surrogate.
