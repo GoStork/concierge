@@ -3429,17 +3429,17 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       // instruction to present the results. This happens when Claude calls the tool successfully
       // but fails to generate the match card presentation in the same response.
       if (!tier2Result.content && tier2Result.toolCallsExecuted && tier2Result.searchToolResults.length > 0) {
-        console.log("[TIER2 RETRY] Tool call succeeded but content empty - retrying with explicit present instruction");
+        console.log("[TIER2 RETRY] Tool call succeeded but content empty - retrying with results in context, no tools");
+        // Include the actual search results in the retry message so Gemini doesn't re-call the tool.
+        // Pass [] for tools to prevent a redundant search call.
+        const firstResult = tier2Result.searchToolResults[0];
         const retryMessages = [...messages, {
           role: "system" as const,
-          content: "The search tool has already been called and returned results. Do NOT call any tool again. Present the FIRST result as a [[MATCH_CARD]] immediately. Do not say you are searching. Just show the card."
+          content: `The search has already been completed. Here are the results from ${firstResult.toolName}:\n\n${firstResult.resultText.slice(0, 6000)}\n\nDo NOT call any search tool again. Present the FIRST result above as a [[MATCH_CARD]] immediately. Include the full description and follow the surrogate follow-up sequence.`
         }];
-        const retryResult = await callTier2Claude(systemPromptForTiers, retryMessages, openAiTools, sse, mcpClient, false);
+        const retryResult = await callTier2Claude(systemPromptForTiers, retryMessages, [], sse, mcpClient, false);
         if (retryResult.content) {
           tier2Result.content = retryResult.content;
-        }
-        if (retryResult.searchToolResults.length > 0) {
-          tier2Result.searchToolResults.push(...retryResult.searchToolResults);
         }
       }
       finalContent = tier2Result.content || "I ran into a brief issue - could you send that again? [[QUICK_REPLY:Try again]]";
