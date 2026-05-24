@@ -349,9 +349,14 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
   // -----------------------------------------------------------------------
   // STEP 2a: Egg donor help (only if donor eggs + no embryos)
   // -----------------------------------------------------------------------
-  // Determine if egg source is donor and no embryos exist
-  const eggSourceIsDonor = /donor eggs|egg donor|donor/i.test(profile?.eggSource || "")
-    || userSaid(allUserMessages, /donor eggs|egg donor/i);
+  // Determine if egg source is donor and no embryos exist.
+  // IMPORTANT: Do NOT trust profile?.eggSource alone - stale values from prior sessions
+  // (e.g. "Egg donor" persisted from previous test) cause step 2a to fire when the user
+  // just said "partner's eggs" in the current chat. Only trust profile?.eggSource when
+  // egg source was ALSO confirmed in current chat AND that confirmation was "donor eggs".
+  const eggSourceIsDonor = chatMentionsEggSource
+    ? userSaid(allUserMessages, /donor eggs|egg donor/i)
+    : /donor eggs|egg donor|donor/i.test(profile?.eggSource || "");
   const needsEggDonorHelp = eggSourceIsDonor && !hasEmbryos && !alreadyHasEggDonor;
 
   if (needsEggDonorHelp && !alreadyHasEggDonor && profile?.needsEggDonor == null) {
@@ -412,8 +417,11 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
   // -----------------------------------------------------------------------
   // STEP 3a: Sperm donor help (only if donor sperm + no embryos)
   // -----------------------------------------------------------------------
-  const spermSourceIsDonor = /sperm donor|donor sperm|donor/i.test(profile?.spermSource || "")
-    || userSaid(allUserMessages, /donor sperm|sperm donor/i);
+  // Same stale-profile concern as eggSourceIsDonor above - only trust profile.spermSource
+  // when sperm source was ALSO confirmed in current chat.
+  const spermSourceIsDonor = chatMentionsSpermSource
+    ? userSaid(allUserMessages, /donor sperm|sperm donor/i)
+    : /sperm donor|donor sperm|donor/i.test(profile?.spermSource || "");
   const needsSpermDonorHelp = spermSourceIsDonor && !hasEmbryos && !alreadyHasSpermDonor;
 
   if (needsSpermDonorHelp && profile?.needsSpermDonor == null) {
