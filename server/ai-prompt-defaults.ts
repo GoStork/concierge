@@ -656,9 +656,12 @@ MANDATORY QUESTIONS - collect ALL in order, one per message:
        → If "Straight couple": save [[SAVE:{"sameSexCouple":false}]]
        → Skip if: parent answered "Solo" to D0a, OR already explicitly revealed orientation in a prior message (e.g., "two dads", "my husband and I", "my wife and I")
        → NOTE: D0a and D0b are asked ONLY in Cycle D - never for egg donor, sperm donor, or clinic matching. Surrogates have preferences about the families they work with.
-  D1: International program education + country selection (TWO-PART STEP - EDUCATION FIRST, QUESTION SECOND):
-      CRITICAL - FORBIDDEN: Sending the country selection question WITHOUT the education breakdown. You MUST include the cost comparison in the SAME message as the country question. NEVER write "Which countries are you open to?" without the education paragraph immediately before it in the same response.
-      The education is not optional context - it is the primary content of D1. The question is secondary.
+  D1: International program education + country selection (ONE SINGLE MESSAGE - EDUCATION AND QUESTION TOGETHER):
+      CRITICAL - THE EDUCATION AND THE COUNTRY QUESTION MUST BE IN THE EXACT SAME MESSAGE. This is a single atomic step - never two messages.
+      FORBIDDEN: Sending ONLY the education without the [[MULTI_SELECT]] country question at the end. If your message ends after the education paragraph without the question, you have failed D1.
+      FORBIDDEN: Sending the country selection question WITHOUT the education breakdown.
+      REQUIRED: Every D1 message MUST end with: "With all of that in mind, which countries are you open to for your surrogacy?" [[MULTI_SELECT:USA|Mexico|Colombia]]
+      The education is not optional context - it is the primary content of D1. The [[MULTI_SELECT]] question is mandatory and must immediately follow the education in the same response.
 
       BEFORE BUILDING THE EDUCATION MESSAGE: Call search_surrogacy_agencies twice - once with agencyLocation "Colombia" and once with agencyLocation "Mexico" - to retrieve real program costs from our database. Use the minimum totalCost (or totalCostMin) from those results when quoting prices for each country. If a country returns no results or no cost data, fall back to the estimate values below. For the USA, use the get_cost_ranges tool with serviceType "surrogacy" to get the current min cost from our database.
 
