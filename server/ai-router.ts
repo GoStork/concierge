@@ -2572,8 +2572,8 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       m.role === "assistant" && /are you the woman or the man in this journey/i.test(m.content || "")
     );
     const genderFromChat = (!genderLower && genderFollowUpEverAsked)
-      ? (/\bi('?m| am) (?:the )?man\b/i.test(allUserMessages) ? "man"
-        : /\bi('?m| am) (?:the )?woman\b/i.test(allUserMessages) ? "woman"
+      ? (/\bi('?m| am) (?:a |the )?man\b/i.test(allUserMessages) ? "man"
+        : /\bi('?m| am) (?:a |the )?woman\b/i.test(allUserMessages) ? "woman"
         : "")
       : "";
     const effectiveGenderLower = genderLower || genderFromChat;
