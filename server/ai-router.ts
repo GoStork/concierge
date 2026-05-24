@@ -3818,11 +3818,24 @@ ${phase0Section}`;
         // After A5 (clinic priorities) is answered, Gemini ignores the mandatory CURATION instruction
         // and jumps to surrogate questions. Bypass Gemini and serve the clinic curation directly.
         const currentYear = new Date().getFullYear();
-        const age = profile?.birthYear ? currentYear - profile.birthYear : null;
-        const partnerAge = profile?.partnerBirthYear ? currentYear - profile.partnerBirthYear : null;
-        const eggSource = profile?.eggSource || chatHistory.find((m: any) => m.role === "user" && /partner'?s eggs|my own eggs|donor eggs/i.test(m.content || ""))?.content?.match(/partner'?s eggs|my own eggs|donor eggs/i)?.[0] || "your eggs";
-        const twins = profile?.hopingForTwins === "yes" ? "hoping for twins" : profile?.hopingForTwins === "no" ? "preferring a singleton pregnancy" : null;
-        const priorities = profile?.clinicPriority || userMessage; // userMessage IS A5 answer
+        // Prefer chatHistory answers over profile (profile may have stale data from previous sessions)
+        const allUserMsgs = chatHistory.filter((m: any) => m.role === "user").map((m: any) => m.content || "");
+        // Age: find a standalone number (18-70) that answered "How old are you?"
+        const ageAnswerMsg = allUserMsgs.find((s: string) => /^\d{2}$/.test(s.trim()) && parseInt(s.trim()) >= 18 && parseInt(s.trim()) <= 70);
+        const ageFromChat = ageAnswerMsg ? parseInt(ageAnswerMsg.trim()) : null;
+        const age = ageFromChat || (profile?.birthYear ? currentYear - profile.birthYear : null);
+        // Partner age: similar
+        const partnerAgeMsg = chatHistory.filter((m: any) => m.role === "assistant" && /partner.*age|how old.*partner|partner.*how old/i.test(m.content || "")).length > 0
+          ? allUserMsgs.find((s: string) => /^\d{2}$/.test(s.trim()) && parseInt(s.trim()) >= 18 && parseInt(s.trim()) <= 70 && s !== ageAnswerMsg) : null;
+        const partnerAgeFromChat = partnerAgeMsg ? parseInt(partnerAgeMsg.trim()) : null;
+        const partnerAge = partnerAgeFromChat || (profile?.partnerBirthYear ? currentYear - profile.partnerBirthYear : null);
+        // Egg source: from chatHistory first (prevent stale profile data like "Egg donor" from previous session)
+        const eggSourceFromChat = allUserMsgs.find((s: string) => /partner'?s eggs|my own eggs|donor eggs/i.test(s))?.match(/partner'?s eggs|my own eggs|donor eggs/i)?.[0];
+        const eggSource = eggSourceFromChat || (chatMentionsEggSource ? null : profile?.eggSource) || "your eggs";
+        const twins = chatHistory.some((m: any) => m.role === "user" && /hoping for twins|yes.*twins/i.test(m.content || "")) ? "hoping for twins"
+          : chatHistory.some((m: any) => m.role === "user" && /singleton|no twins/i.test(m.content || "")) ? "preferring singleton"
+          : profile?.hopingForTwins === "yes" ? "hoping for twins" : profile?.hopingForTwins === "no" ? "preferring a singleton pregnancy" : null;
+        const priorities = userMessage; // userMessage IS the A5 answer (what parent just typed)
         const agePart = age ? `you're ${age}` : "";
         const partnerPart = partnerAge ? `, your partner is ${partnerAge}` : "";
         const eggPart = eggSource.toLowerCase().includes("partner") ? ", using your partner's eggs" : eggSource.toLowerCase().includes("own") ? ", using your own eggs" : eggSource.toLowerCase().includes("donor") ? ", using donor eggs" : "";
