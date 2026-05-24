@@ -3871,18 +3871,33 @@ ${phase0Section}`;
         // alreadyHasClinic = true means they said "I already have a clinic" - skip clinic cycle.
         // needsClinic can be true for BOTH "I need help" AND "I already have" because both contain "clinic".
         const needsHelpFindingClinic = (needsClinic || registeredForClinic) && !alreadyHasClinic;
-        // Use the full D1 education text (same as D-cycle bypass) - NOT a truncated version
-        const d1HasEmbryosCarrier = chatMentionsHavingEmbryos || profile?.hasEmbryos === true;
-        const d1TextFull = d1HasEmbryosCarrier
-          ? `One thing many families don't realize: since you already have frozen embryos, you can ship them internationally and do your surrogacy in Colombia or Mexico at a significant cost savings - without giving up the embryos you've worked so hard to create.\n\nHere's a quick breakdown:\n- United States: $150,000 and up (surrogate compensation, agency fee, legal, insurance)\n- Mexico: around $100,000 all-in\n- Colombia: starting from $65,000 all-in - our most popular option\n\nColombia has become the go-to for many of our families. The legal process is straightforward, you only need to stay a few weeks after the baby is born, and we have agencies there we trust completely.\n\nWith all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`
-          : `Something worth knowing before we dive in: international surrogacy programs can include everything - IVF, egg donor, AND surrogate - all in one package, at a fraction of what you'd pay in the US.\n\nHere's a quick comparison:\n- United States: $150,000+ for surrogacy alone (IVF and egg donor are separate additional costs)\n- Mexico: around $100,000 for a complete program including IVF, egg donor, and surrogate\n- Colombia: starting from $65,000 for a complete program - our most popular option\n\nColombia's program is particularly well-regarded. The agencies we work with there have delivered hundreds of healthy babies, the legal process is clean, and you only need to stay a few weeks after birth.\n\nWith all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`;
-        const transitionText = needsHelpFindingClinic
-          ? `Got it! Now let's focus on finding the right IVF clinic for you.\n\nHow old are you?`
-          : `Got it! Now let's find you the perfect surrogate.\n\n${d1TextFull}`;
-        finalContent = transitionText;
-        sse.sendToken(transitionText);
-        serverBypassServed = true;
-        console.log("[STEP4 CARRIER BYPASS] Skipped carrier question for male/surrogate parent - Gemini never called");
+        // If parent has no embryos, they need IVF to create them - so we MUST know their clinic status
+        // before jumping to D1. If clinic question hasn't been asked or answered yet, ask step 0 first.
+        const clinicStatusAsked = chatHistory.some((m: any) =>
+          m.role === "assistant" && /do you already have a fertility clinic.*need help finding one|need help finding.*clinic.*already have a clinic/i.test(m.content || "")
+        );
+        const clinicStatusKnown = clinicStatusAsked || needsClinic || registeredForClinic || alreadyHasClinic;
+        const noEmbryosNeedIVF = chatMentionsNoEmbryos && !chatMentionsHavingEmbryos && profile?.hasEmbryos !== true;
+        if (noEmbryosNeedIVF && !clinicStatusKnown) {
+          const step0Text = `Got it! Since you'll need IVF to create embryos before transferring to a surrogate, let me ask:\n\nDo you already have a fertility clinic you're working with, or do you need help finding one? [[QUICK_REPLY:I need help finding a clinic|I already have a clinic]]`;
+          finalContent = step0Text;
+          sse.sendToken(step0Text);
+          serverBypassServed = true;
+          console.log("[STEP4 CARRIER BYPASS] Asking step 0 (clinic status) first - parent needs IVF clinic for surrogate path");
+        } else {
+          // Use the full D1 education text (same as D-cycle bypass) - NOT a truncated version
+          const d1HasEmbryosCarrier = chatMentionsHavingEmbryos || profile?.hasEmbryos === true;
+          const d1TextFull = d1HasEmbryosCarrier
+            ? `One thing many families don't realize: since you already have frozen embryos, you can ship them internationally and do your surrogacy in Colombia or Mexico at a significant cost savings - without giving up the embryos you've worked so hard to create.\n\nHere's a quick breakdown:\n- United States: $150,000 and up (surrogate compensation, agency fee, legal, insurance)\n- Mexico: around $100,000 all-in\n- Colombia: starting from $65,000 all-in - our most popular option\n\nColombia has become the go-to for many of our families. The legal process is straightforward, you only need to stay a few weeks after the baby is born, and we have agencies there we trust completely.\n\nWith all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`
+            : `Something worth knowing before we dive in: international surrogacy programs can include everything - IVF, egg donor, AND surrogate - all in one package, at a fraction of what you'd pay in the US.\n\nHere's a quick comparison:\n- United States: $150,000+ for surrogacy alone (IVF and egg donor are separate additional costs)\n- Mexico: around $100,000 for a complete program including IVF, egg donor, and surrogate\n- Colombia: starting from $65,000 for a complete program - our most popular option\n\nColombia's program is particularly well-regarded. The agencies we work with there have delivered hundreds of healthy babies, the legal process is clean, and you only need to stay a few weeks after birth.\n\nWith all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`;
+          const transitionText = needsHelpFindingClinic
+            ? `Got it! Now let's focus on finding the right IVF clinic for you.\n\nHow old are you?`
+            : `Got it! Now let's find you the perfect surrogate.\n\n${d1TextFull}`;
+          finalContent = transitionText;
+          sse.sendToken(transitionText);
+          serverBypassServed = true;
+          console.log("[STEP4 CARRIER BYPASS] Skipped carrier question for male/surrogate parent - Gemini never called");
+        }
       } else if (!useTier2 && justAnsweredA5 && !curationAlreadySent) {
         // After A5 (clinic priorities) is answered, Gemini ignores the mandatory CURATION instruction
         // and jumps to surrogate questions. Bypass Gemini and serve the clinic curation directly.
