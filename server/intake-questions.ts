@@ -166,8 +166,11 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
   if (isConversationalQuestion(userMessage)) return null;
 
   // Derived state (computed fresh each call)
-  const hasEmbryos = chatMentionsHavingEmbryos || profile?.hasEmbryos === true;
-  const noEmbryos = chatMentionsNoEmbryos || profile?.hasEmbryos === false;
+  // IMPORTANT: Only use profile data if ALSO confirmed in current conversation.
+  // Stale profile data from previous sessions must not skip questions in a new session.
+  // This mirrors the fix in ai-router.ts for biological baseline skip directives.
+  const hasEmbryos = chatMentionsHavingEmbryos;  // intentionally NOT || profile?.hasEmbryos
+  const noEmbryos = chatMentionsNoEmbryos;        // intentionally NOT || profile?.hasEmbryos === false
   const embryoStatusKnown = hasEmbryos || noEmbryos;
 
   // Gay/single male: egg donor is always required, no egg source question needed
@@ -305,11 +308,11 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
   // STEP 2: Egg source
   // Skip for: gay/single male (always donor, handled silently)
   // -----------------------------------------------------------------------
-  if (!isGayOrSingleMale && !chatMentionsEggSource && !profile?.eggSource) {
-    // Determine if we need to ask step 2
-    // For gas/single male we skip. Otherwise always ask unless already answered.
+  if (!isGayOrSingleMale && !chatMentionsEggSource) {
+    // Don't use profile?.eggSource to skip - stale from previous sessions.
+    // Only skip if egg source was confirmed IN THIS conversation.
     const step2Asked = aiAsked(chatHistory, /what'?s your plan for eggs|for those embryos.*were the eggs|partner'?s.*own eggs.*donor/i);
-    const step2Answered = !!(profile?.eggSource) || chatMentionsEggSource
+    const step2Answered = chatMentionsEggSource
       || userAnsweredAfter(chatHistory,
         /what'?s your plan for eggs|for those embryos.*were the eggs|were the eggs yours/i,
         /partner'?s eggs|my own eggs|donor eggs|not sure yet/i);
@@ -368,7 +371,7 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
   // Skip for: solo woman + two moms (always sperm donor - save silently)
   // -----------------------------------------------------------------------
   const skipSpermQuestion = isSoloWoman || isTwoMoms;
-  const spermSourceKnown = chatMentionsSpermSource || !!(profile?.spermSource);
+  const spermSourceKnown = chatMentionsSpermSource; // intentionally NOT || profile?.spermSource (stale)
 
   if (!skipSpermQuestion && !spermSourceKnown) {
     const step3Asked = aiAsked(chatHistory, /for sperm.*will you be using|for those embryos.*did you use.*sperm|for sperm.*will you.*using|and for sperm/i);
@@ -430,7 +433,7 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
   // Skip for: male/gay/needs surrogate (handled by carrier bypass in ai-router.ts)
   // -----------------------------------------------------------------------
   const skipCarrierQuestion = isMaleGender || isGayMale || needsSurrogate || alreadyHasSurrogate
-    || chatMentionsCarrier || !!(profile?.carrier);
+    || chatMentionsCarrier; // intentionally NOT || profile?.carrier (stale)
 
   if (!skipCarrierQuestion && isFemaleGender) {
     // Female registered for surrogacy - skip and save silently
@@ -438,7 +441,7 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
       // Skip step 4 entirely - will be saved silently by caller
     } else {
       const step4Asked = aiAsked(chatHistory, /who is planning to carry.*pregnancy|who.*carrying the pregnancy/i);
-      const step4Answered = chatMentionsCarrier || !!(profile?.carrier)
+      const step4Answered = chatMentionsCarrier
         || userAnsweredAfter(chatHistory,
           /who is planning to carry|who.*carrying/i,
           /\bme\b|my partner|gestational surrogate/i);
