@@ -5086,7 +5086,19 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     // recognised Phase 1/2 questions based on content pattern matching
     if (quickReplies.length === 0 && finalContent.trim().endsWith("?")) {
       const lc = finalContent.toLowerCase();
-      if (/lgbtq/i.test(finalContent)) {
+      if (/are you hoping (?:for twins|to have twins)|hoping for twins.*singleton/i.test(finalContent)) {
+        quickReplies = ["Hoping for twins", "Singleton only", "No preference"];
+        console.log("[QUICK_REPLY FALLBACK] Injected twins options");
+      } else if (/first ivf journey.*done ivf before|is this your first ivf|have you done ivf before/i.test(finalContent)) {
+        quickReplies = ["First time", "I've done IVF before"];
+        console.log("[QUICK_REPLY FALLBACK] Injected first IVF options");
+      } else if (/most important.*choosing a clinic|matters most.*clinic|important.*when choosing/i.test(finalContent)) {
+        quickReplies = ["Success rates", "Location", "Cost", "Volume of cycles", "Physician gender"];
+        console.log("[QUICK_REPLY FALLBACK] Injected clinic priority options (A5)");
+      } else if (/what.*preferences.*termination|preferences.*termination.*medically|termination if medically/i.test(finalContent)) {
+        quickReplies = ["Pro-choice surrogate", "Pro-life surrogate", "No preference"];
+        console.log("[QUICK_REPLY FALLBACK] Injected termination preference options");
+      } else if (/lgbtq/i.test(finalContent)) {
         quickReplies = ["Yes", "No"];
         console.log("[QUICK_REPLY FALLBACK] Injected Yes|No for LGBTQ+ question");
       } else if (/going on this journey|who.{0,20}journey|journey.{0,20}who/i.test(finalContent)) {
