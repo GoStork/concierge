@@ -236,18 +236,9 @@ function injectMissingQuickReplies(content: string): string {
     [/plan for eggs.*partner.*own eggs.*considering a donor/i, "[[QUICK_REPLY:My partner's eggs|Donor eggs|I'm not sure yet]]"],
     [/what.*plan for eggs.*using your own.*considering a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]"],
     [/thinking of using your own.*considering a donor/i, "[[QUICK_REPLY:My own eggs|My partner's eggs|Donor eggs|I'm not sure yet]]"],
-    // Step 3 - sperm source (past tense, any phrasing - covers "For those embryos, did you use...")
-    [/did you use your own sperm or a sperm donor/i, "[[QUICK_REPLY:My own|Donor sperm]]"],
-    [/did you use your own.*partner.*sperm donor/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm]]"],
-    [/for sperm.*did you use your own or a sperm donor/i, "[[QUICK_REPLY:My own|Donor sperm]]"],
-    [/for sperm.*did you use your own.*partner.*sperm donor/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm]]"],
-    [/sperm.*your own.*partner.*donor sperm/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm]]"],
-    // Step 3 - sperm source (future tense)
-    [/will you be using your own sperm or a sperm donor/i, "[[QUICK_REPLY:My own|Donor sperm|Not sure yet]]"],
-    [/will you be using your own.*partner.*sperm donor/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]"],
-    [/for sperm.*will you be using your own or a sperm donor/i, "[[QUICK_REPLY:My own|Donor sperm|Not sure yet]]"],
-    [/for sperm.*will you be using.*still deciding/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]"],
-    [/sperm.*own.*partner.*donor.*still deciding/i, "[[QUICK_REPLY:My own|My partner's|Donor sperm|Not sure yet]]"],
+    // Step 3 - sperm source: intentionally NOT injected here to avoid streaming wrong options.
+    // For female parents, "My own" is biologically impossible but inject is gender-blind.
+    // All sperm source QRs are handled in the done-event fallback which has gender context.
     [/do you need help finding an egg donor/i, "[[QUICK_REPLY:I need help finding an egg donor|I already have an egg donor]]"],
     [/do you need help finding a sperm donor/i, "[[QUICK_REPLY:I need help finding a sperm donor|I already have a sperm donor]]"],
     [/do you need help finding a surrogate/i, "[[QUICK_REPLY:I need help finding a surrogate|I already have a surrogate]]"],
@@ -5196,8 +5187,21 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     // recognised Phase 1/2 questions based on content pattern matching
     if (quickReplies.length === 0 && finalContent.trim().endsWith("?")) {
       const lc = finalContent.toLowerCase();
+      // Sperm source question - context-aware options (never "My own" for female parents)
+      if (/for sperm|sperm.*donor|using your own.*sperm|sperm.*your own|your plan for sperm|will you be using.*sperm/i.test(finalContent)) {
+        if (isFemaleGender) {
+          // Female parent: her partner's sperm OR donor sperm. Never "My own" - women don't produce sperm.
+          quickReplies = ["My partner's sperm", "Donor sperm", "Not sure yet"];
+        } else if (isGayMale) {
+          // Gay male couple: partner's, own, or donor
+          quickReplies = ["My own", "My partner's", "Donor sperm", "Not sure yet"];
+        } else {
+          // Straight male or unknown: own or donor
+          quickReplies = ["My own", "Donor sperm", "Not sure yet"];
+        }
+        console.log(`[QUICK_REPLY FALLBACK] Injected sperm source options (female=${isFemaleGender})`);
       // Egg source question - context-aware options based on gender
-      if (/plan for eggs|what.*eggs.*partner|thinking.*eggs|eggs.*donor|eggs.*plan|your plan for eggs/i.test(finalContent)) {
+      } else if (/plan for eggs|what.*eggs.*partner|thinking.*eggs|eggs.*donor|eggs.*plan|your plan for eggs/i.test(finalContent)) {
         if (isFemaleGender) {
           // Female speaker: can use own eggs. In straight couple her partner is male (no eggs),
           // so no "My partner's eggs". In lesbian couple partner CAN provide eggs but we show
