@@ -3791,6 +3791,29 @@ ${phase0Section}`;
         sse.sendToken(finalContent);
         serverBypassServed = true;
         console.log("[PHASE1 BYPASS] Served straight couple follow-up - Gemini skipped");
+      } else if (!useTier2 && (isMaleGender || isGayMale) && needsSurrogate && chatMentionsSpermSource &&
+          !chatHistory.some((m: any) => m.role === "user" && /my partner.*carr|a gestational surrogate|i.*will carry|i'll carry|carrying.*myself/i.test(m.content || "")) &&
+          !chatHistory.some((m: any) => m.role === "assistant" && /who is (?:planning to )?carry|who.*carry.*pregnancy/i.test(m.content || ""))) {
+        // Step 4 (carrier) pre-bypass for male parents who need a surrogate.
+        // Gemini streams the carrier question before the post-processor can strip it, causing a flash.
+        // Bypass Gemini entirely: save carrier silently, skip to the next step.
+        try {
+          if (userRecord?.parentAccountId) {
+            await prisma.intendedParentProfile.upsert({
+              where: { parentAccountId: userRecord.parentAccountId },
+              update: { carrier: "Gestational surrogate" },
+              create: { parentAccountId: userRecord.parentAccountId, carrier: "Gestational surrogate" },
+            });
+          }
+        } catch {}
+        // Transition message - next Gemini call will ask A1 or D1 depending on services
+        const transitionText = needsClinic || registeredForClinic
+          ? `Got it! Now let's focus on finding the right IVF clinic for you.\n\nHow old are you?`
+          : `Got it! Now let's find you the perfect surrogate.\n\nOne thing many families don't realize: since you${chatMentionsHavingEmbryos ? " already have frozen embryos, you can ship them internationally and" : " can"} do your surrogacy in Colombia or Mexico at a significant cost savings.\n\nWith all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`;
+        finalContent = transitionText;
+        sse.sendToken(transitionText);
+        serverBypassServed = true;
+        console.log("[STEP4 CARRIER BYPASS] Skipped carrier question for male/surrogate parent - Gemini never called");
       } else if (!useTier2 && justAnsweredA5 && !curationAlreadySent) {
         // After A5 (clinic priorities) is answered, Gemini ignores the mandatory CURATION instruction
         // and jumps to surrogate questions. Bypass Gemini and serve the clinic curation directly.
