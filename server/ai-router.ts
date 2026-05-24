@@ -3800,8 +3800,9 @@ ${phase0Section}`;
         console.log("[PHASE1 BYPASS] Served straight couple follow-up - Gemini skipped");
       } else if (!useTier2 && needsSurrogate &&
           // Fire for ANY parent type who just answered the sperm question AND needs a surrogate.
+          // MUST contain "sperm" explicitly - "using my own eggs" must NOT trigger this.
           // Male/gay male: their own sperm or donor | Female: partner's sperm or donor
-          /my own sperm|sperm donor|own sperm|donor sperm|using my own|i'll use my own|my partner'?s sperm|partner.*sperm/i.test(userMessage) &&
+          /\bsperm\b/i.test(userMessage) &&
           !chatHistory.some((m: any) => m.role === "user" && /my partner.*carr|a gestational surrogate|i.*will carry|i'll carry|carrying.*myself/i.test(m.content || "")) &&
           !chatHistory.some((m: any) => m.role === "assistant" && /who is (?:planning to )?carry|who.*carry.*pregnancy/i.test(m.content || ""))) {
         // Step 4 (carrier) pre-bypass for male parents who need a surrogate.
