@@ -8,6 +8,7 @@ import path from "path";
 import fs from "fs";
 import { isUserOnline } from "./online-tracker";
 import jwt from "jsonwebtoken";
+import { getNextIntakeQuestion } from "./intake-questions";
 
 // Singleton Anthropic client - enables HTTP connection pooling across requests.
 let _anthropicClient: Anthropic | null = null;
@@ -3884,6 +3885,57 @@ ${phase0Section}`;
         sse.sendToken(d1Text);
         serverBypassServed = true;
       } else {
+        // -----------------------------------------------------------------------
+        // INTAKE QUESTION BYPASS - serve hardcoded Phase 2 / Phase 3A / Phase 3D
+        // questions directly without calling Gemini. Eliminates wrong QR options,
+        // skipped questions, and flash bugs caused by Gemini unreliability.
+        //
+        // This runs ONLY when none of the more specific bypasses above fired.
+        // Gemini is still used for Phase 0 education, Phase 0 Q&A, Phase 3B B1
+        // (egg donor open prefs), Phase 3C C1 (sperm donor open prefs), and all
+        // Tier 2 matching / post-match turns.
+        // -----------------------------------------------------------------------
+        if (!serverBypassServed && !useTier2) {
+          const intakeQuestion = getNextIntakeQuestion({
+            profile,
+            chatHistory,
+            userMessage,
+            allUserMessages,
+            isMaleGender,
+            isFemaleGender,
+            isGayMale,
+            isLesbianOrientation,
+            isSoloSkip,
+            needsClinic,
+            needsSurrogate,
+            needsEggDonor,
+            needsSpermDonor,
+            registeredForClinic,
+            registeredForSurrogate,
+            registeredForEggDonor,
+            registeredForSpermDonor: (profile?.interestedServices || []).includes("Sperm Donor"),
+            alreadyHasClinic,
+            alreadyHasSurrogate,
+            alreadyHasEggDonor,
+            alreadyHasSpermDonor: !!(alreadyHasSpermDonor),
+            chatMentionsHavingEmbryos,
+            chatMentionsNoEmbryos,
+            chatMentionsEggSource,
+            chatMentionsSpermSource,
+            chatMentionsCarrier,
+            phase1Complete,
+            curationAlreadySent,
+          });
+
+          if (intakeQuestion) {
+            finalContent = intakeQuestion.text;
+            sse.sendToken(intakeQuestion.text);
+            serverBypassServed = true;
+            console.log(`[INTAKE BYPASS] Serving step=${intakeQuestion.step}: "${intakeQuestion.text.slice(0, 80)}"`);
+          }
+        }
+
+        if (!serverBypassServed) {
         // Pass only non-system messages to Tier 1 - the tier1SystemPrompt is the sole system context
         const tier1Messages = messages.filter((m: any) => m.role !== "system");
         const geminiErrorPhrases = /having trouble connecting|trouble connecting|i('m| am) sorry.*connecting|please try again.*moment|experiencing.*issues|temporarily unavailable/i;
@@ -3953,7 +4005,8 @@ ${phase0Section}`;
             console.log("[PHASE0 Q&A] Appended missing quick reply buttons to Gemini response");
           }
         }
-      }
+      } // closes if (!serverBypassServed) Gemini call block
+      } // closes } else { at line 3887 (D-cycle fallthrough - intake bypass or Gemini)
       } // closes Phase 0 Q&A bypass else block
       } // closes Phase 0 Part 2 bypass else block
     }
