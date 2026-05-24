@@ -2865,6 +2865,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
   const lastSentRef = useRef<{ text: string; time: number } | null>(null);
+  const lastQrClickRef = useRef<number>(0); // timestamp of last QR button click
   const lastPollTimeRef = useRef<string | null>(null);
   const knownMessageIds = useRef<Set<string>>(new Set());
   const statusPollCounter = useRef(0);
@@ -3912,6 +3913,13 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   };
 
   const handleQuickReply = (text: string, aiMessage = "") => {
+    // Debounce: block any QR click within 1.5 seconds of the previous one.
+    // expandQuickReply can return different text for the same option if the message
+    // animation is still running (partial vs full aiMessage), so we can't rely on
+    // string dedup alone - we need to block at the click level.
+    const now = Date.now();
+    if (now - lastQrClickRef.current < 1500) return;
+    lastQrClickRef.current = now;
     sendMessage(expandQuickReply(text, aiMessage));
   };
 
