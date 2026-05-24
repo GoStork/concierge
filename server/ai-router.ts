@@ -3700,9 +3700,11 @@ ${phase0Section}`;
       // phase0Done fires as soon as the user sends any message after the education -
       // including "I have a few questions", so we need an explicit confirmation signal.
       // The bypass must NOT fire while the user is still asking questions about GoStork.
-      const phase0ReadyForPhase1 = phase1AlreadyAsked || chatHistory.some((m: any) =>
-        m.role === "user" && /i understand.*let'?s|let'?s (get )?start(ed)?|let'?s go|let'?s begin|i'?m ready|get started|start now/i.test(m.content || "")
-      );
+      // allUserMessages includes the CURRENT user message - needed here so the bypass
+      // fires immediately when "I understand, let's get started" is the current turn,
+      // not only on the following turn when it's in chatHistory.
+      const phase0ReadyForPhase1 = phase1AlreadyAsked ||
+        /i understand.*let'?s|let'?s (get )?start(ed)?|let'?s go|let'?s begin|i'?m ready|get started|start now/i.test(allUserMessages);
       // Bypass fires only on the FIRST ask (phase1AlreadyAsked = false) AND only after
       // Phase 0 is truly done. Once Phase 1 has been asked, Gemini handles all follow-up
       // turns (fertility questions, clarifications, weird answers) - the post-generation
