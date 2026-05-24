@@ -4002,16 +4002,16 @@ ${phase0Section}`;
           }
         }
 
-        // Phase 0 Q&A completeness: every Gemini response during Phase 0 Q&A must
+        // Phase 0 Q&A completeness: every Gemini ANSWER during Phase 0 Q&A must
         // end with [[QUICK_REPLY]] buttons so the user has a clear next step.
-        // Gemini sometimes asks a question but omits the buttons - always enforce them.
+        // Exception: when Gemini is asking "what's your question?" it's prompting the user
+        // to type freely - adding nav buttons before they've asked is premature and confusing.
         if (!serverBypassServed && phase0Done && !phase0ReadyForPhase1) {
           const hasQuickReply = /\[\[QUICK_REPLY:/.test(finalContent);
-          if (!hasQuickReply) {
+          const isAskingForQuestion = /what'?s your question|what would you like to know|what.*question.*gostork|tell me.*question|go ahead.*ask|feel free.*ask/i.test(finalContent);
+          if (!hasQuickReply && !isAskingForQuestion) {
             const stripped = finalContent.replace(/\[\[.*?\]\]/g, "").trim();
             const endsWithQuestion = stripped.endsWith("?");
-            // If already ends with a question just append the buttons inline.
-            // If not, append a full follow-up question + buttons.
             const suffix = endsWithQuestion
               ? " [[QUICK_REPLY:I have more questions|I understand, let's get started]]"
               : "\n\nDo you have any other questions, or are you ready to get started? [[QUICK_REPLY:I have more questions|I understand, let's get started]]";
