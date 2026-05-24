@@ -3788,11 +3788,14 @@ ${phase0Section}`;
 
       // Use allUserMessages (includes current message) not chatHistory so the bypass
       // doesn't loop: when user says "I am a man", chatHistory doesn't include it yet.
+      // Also check userMessage directly: when user JUST answered "Man and a woman" this turn,
+      // profile.familyType hasn't been saved to DB yet so we must detect it from the message.
       const straightCoupleFollowUpNeeded = phase0Done
-        && profile?.familyType === "straight_couple"
+        && (profile?.familyType === "straight_couple" || /\bman and a woman\b/i.test(userMessage))
         && !profile?.gender
         && !/i('m| am) (the )?(woman|man)\b/i.test(allUserMessages)
-        && !isMaleGender && !isFemaleGender; // also skip if gender already known from DB
+        && !isMaleGender && !isFemaleGender // also skip if gender already known from DB
+        && !chatHistory.some((m: any) => m.role === "assistant" && /are you the woman or the man in this journey/i.test(m.content || ""));
 
       // Human escalation: bypass Gemini entirely and return the correct response
       const humanRequestRegexT1 = /talk to (?:a )?(?:real|human|actual) person|talk to (?:the )?gostork team|speak (?:to|with) (?:a )?human|connect me with (?:a )?(?:human|person|someone)|i want (?:a )?human|i'd like to talk to a real person|just want to speak to (?:a )?human|want to talk to (?:a )?human/i;
