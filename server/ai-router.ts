@@ -2606,6 +2606,8 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     const profileAlreadyHasClinic = profile?.needsClinic === false && (mentionsClinic || hasClinic);
 
     // Combined signals (DB profile takes precedence over regex chat scan)
+    const needsClinic = mentionsClinic || profileNeedsClinic;
+    const alreadyHasClinic = hasClinic || profileAlreadyHasClinic;
     const needsEggDonor = mentionsEggDonor || profileNeedsEggDonor;
     const alreadyHasEggDonor = hasEggDonor || profileAlreadyHasEggDonor;
     const needsSurrogate = mentionsSurrogate || profileNeedsSurrogate;
