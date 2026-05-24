@@ -185,7 +185,8 @@ export default function AdminConciergeMonitor() {
       return body;
     },
     onSuccess: (data) => {
-      toast({ title: "All chats reset", description: `Deleted ${data.deleted.sessions} sessions, ${data.deleted.bookings} bookings, ${data.deleted.parentProfiles} parent profiles`, duration: 1000 });
+      const { dismiss } = toast({ title: "All chats reset", description: `Deleted ${data.deleted.sessions} sessions, ${data.deleted.bookings} bookings, ${data.deleted.parentProfiles} parent profiles` });
+      setTimeout(dismiss, 1000);
       queryClient.invalidateQueries();
     },
     onError: (err: any) => {
