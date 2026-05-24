@@ -3445,9 +3445,16 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
           : "Surrogate Agency";
         // Use a minimal system prompt for the retry - the full systemPromptForTiers (128K chars)
         // makes the total context too large for Gemini to generate after a tool call.
-        const minimalRetrySystem = `You are a warm fertility concierge. The search has returned results. Present the FIRST result as a [[MATCH_CARD]] with this exact JSON format: [[MATCH_CARD:{"name":"display name","type":"${serviceType}","location":"city, state","photo":"","reasons":["reason1","reason2","reason3"],"providerId":"id from results"}]]. Write a warm 2-3 sentence personalized intro BEFORE the card. After the card, ask if it feels like a good match. Use only data from the search results provided - do not invent data.`;
+        const minimalRetrySystem = `You are Ariel, a warm GoStork fertility concierge helping intended parents find a ${serviceType}. A database search just completed successfully. Your ONLY job: present the FIRST result from the search data below as a match card.
+
+Use this EXACT format (fill in real values from the data):
+[[MATCH_CARD:{"name":"their display name or ID","type":"${serviceType}","location":"city, state","photo":"","reasons":["matched preference 1","matched preference 2","matched preference 3"],"providerId":"their id field"}]]
+
+Write 2-3 warm sentences BEFORE the card introducing this person. After the card ask: "Does she feel like a good match?" [[QUICK_REPLY:I have questions about her|Schedule a free consultation|I don't like her]]
+
+Use ONLY real data from the search results. Never say the search failed.`;
         const retryMessages = [
-          { role: "user" as const, content: `Search results:\n\n${firstResult.resultText.slice(0, 5000)}\n\nPresent the first result as a match card now.` }
+          { role: "user" as const, content: `Here are the search results. Present the first one as a match card:\n\n${firstResult.resultText.slice(0, 5000)}` }
         ];
         const retryResult = await callTier2Claude(minimalRetrySystem, retryMessages, [], sse, mcpClient, false);
         if (retryResult.content) {

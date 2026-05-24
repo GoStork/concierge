@@ -3816,6 +3816,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     const q = aiMessage.toLowerCase();
     const o = option.toLowerCase().trim();
 
+    // Curation confirmation buttons - never expand, always send exactly as shown.
+    // These confirm the parent is ready to see matches; they must not be rewritten
+    // as service mentions ("Yes, I'm looking into surrogacy") just because the
+    // curation summary happens to mention surrogacy/clinic/etc.
+    if (/^(yes,? find my matches?!?|yes,? let'?s go!?|ready to see|show me matches?|find my matches?|yes, find|i'm ready to see)/i.test(option.trim())) {
+      return option;
+    }
+
     // Sense-check question (Phase 0 "Does that make sense so far?"): collapse verbose
     // AI-generated options to simple confirmations so the wrong intent is never sent.
     if (/does that make sense|make sense so far/i.test(q)) {
