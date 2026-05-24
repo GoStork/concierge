@@ -1,0 +1,14 @@
+# Exclude noise directories for graphify mapping
+.claude/
+attached_assets/
+.agents/
+uploads/
+public/uploads/
+scripts/test-results/
+*.log
+*.lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+cookies.txt
+cookies2.txt

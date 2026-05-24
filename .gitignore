@@ -18,3 +18,5 @@ public/
 dump.rdb
 .mcp.json
 .test-runner-state.json
+graphify-out/
+scripts/test-results/
