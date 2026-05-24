@@ -3798,11 +3798,10 @@ ${phase0Section}`;
         sse.sendToken(finalContent);
         serverBypassServed = true;
         console.log("[PHASE1 BYPASS] Served straight couple follow-up - Gemini skipped");
-      } else if (!useTier2 && (isMaleGender || isGayMale) && needsSurrogate &&
-          // CRITICAL: only fire when sperm was answered in THIS specific message, not from stale history.
-          // chatMentionsSpermSource scans all history - in session continuations the parent may have
-          // answered sperm in a previous test round, causing this bypass to fire on unrelated turns.
-          /my own sperm|sperm donor|own sperm|donor sperm|using my own|i'll use my own/i.test(userMessage) &&
+      } else if (!useTier2 && needsSurrogate &&
+          // Fire for ANY parent type who just answered the sperm question AND needs a surrogate.
+          // Male/gay male: their own sperm or donor | Female: partner's sperm or donor
+          /my own sperm|sperm donor|own sperm|donor sperm|using my own|i'll use my own|my partner'?s sperm|partner.*sperm/i.test(userMessage) &&
           !chatHistory.some((m: any) => m.role === "user" && /my partner.*carr|a gestational surrogate|i.*will carry|i'll carry|carrying.*myself/i.test(m.content || "")) &&
           !chatHistory.some((m: any) => m.role === "assistant" && /who is (?:planning to )?carry|who.*carry.*pregnancy/i.test(m.content || ""))) {
         // Step 4 (carrier) pre-bypass for male parents who need a surrogate.
