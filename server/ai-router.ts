@@ -3666,12 +3666,33 @@ CURATION: "Here's what I have: [family type, location, country, termination pref
 ${phase0Section}`;
 
       // -----------------------------------------------------------------------
+      // SERVER-SIDE PHASE 0 PART 2 BYPASS
+      // When user affirms Part 1 ("Yes, makes sense!"), Gemini generates Part 2
+      // AND Phase 1 together in one streamed response. By the time any post-
+      // processing strip runs, the client has already received Phase 1 via stream.
+      // Serve Part 2 as a hardcoded bypass so Gemini never touches this turn.
+      // -----------------------------------------------------------------------
+      const lastAiMessage = [...chatHistory].reverse().find((m: any) => m.role === "assistant");
+      const lastAiWasPart1 = /does that make sense so far/i.test(lastAiMessage?.content || "");
+      const part2AlreadyDelivered = chatHistory.some((m: any) =>
+        m.role === "assistant" && /personally vetted by eran amir|no waiting lists/i.test(m.content || "")
+      );
+      const userAffirmedPart1 = /^(yes|sure|makes sense|got it|ok|great|absolutely|yep|sounds good|i understand)/i.test(userMessage.trim()) ||
+        /makes sense|let'?s (go|start)/i.test(userMessage);
+      if (lastAiWasPart1 && userAffirmedPart1 && !part2AlreadyDelivered) {
+        const part2Text = `One thing that sets GoStork apart: every provider has been personally vetted by Eran Amir, our founder, who went through surrogacy himself. He personally interviews each agency's leadership, reviews their operations, and makes sure they have the right team in place.${needsSurrogate ? " And there are no waiting lists - every surrogate you'll see is available right now." : ""}\n\nDo you have any questions about GoStork and how we can help you? [[QUICK_REPLY:I understand, let's get started|I have a few questions]]`;
+        finalContent = part2Text;
+        sse.sendToken(part2Text);
+        serverBypassServed = true;
+        console.log("[PHASE0 PART2 BYPASS] Served Part 2 directly - Gemini skipped");
+      } else {
+
+      // -----------------------------------------------------------------------
       // SERVER-SIDE PHASE 0 Q&A BYPASS
       // When the user clicks "I have a few questions" after the GoStork education,
       // the response is always the same. Gemini confuses this with post-match Q&A
       // and generates matching language instead of a simple open invitation.
       // -----------------------------------------------------------------------
-      const lastAiMessage = [...chatHistory].reverse().find((m: any) => m.role === "assistant");
       const lastAiWasPhase0Education = /do you have any questions about GoStork/i.test(lastAiMessage?.content || "");
       const userSaysHasQuestions = /i have (a few|some|a couple of)? ?questions?|i'?d like to (ask|know)|have (some|a few) questions/i.test(userMessage);
       if (lastAiWasPhase0Education && userSaysHasQuestions) {
@@ -3830,6 +3851,7 @@ ${phase0Section}`;
         }
       }
       } // closes Phase 0 Q&A bypass else block
+      } // closes Phase 0 Part 2 bypass else block
     }
 
     // Issue 3: Strip "My partner's" from sperm source quick replies for solo (no-partner) parents.
