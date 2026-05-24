@@ -194,7 +194,7 @@ function injectMissingQuickReplies(content: string): string {
   const patterns: [RegExp, string][] = [
     // Phase 0
     [/do you have any questions about gostork/i, "[[QUICK_REPLY:I understand, let's get started|I have a few questions]]"],
-    [/what are you looking for help with/i, "[[QUICK_REPLY:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]]"],
+    [/what are you looking for help with|which services.*interested|tell me.*services|services.*looking for/i, "[[MULTI_SELECT:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]]"],
     // Phase 1 identity - single 5-option question
     [/solo man.*solo woman.*two dads.*two moms.*man and a woman/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
     [/which best describes you/i, "[[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]"],
@@ -3724,6 +3724,21 @@ ${phase0Section}`;
       } else {
 
       // -----------------------------------------------------------------------
+      // SERVER-SIDE PHASE 0 PATH B BYPASS
+      // When the user says "No, I'm not looking into X" or corrects their services
+      // at the greeting confirmation, show the service selection MULTI_SELECT.
+      // Gemini generates "Could you please tell me which services..." without cards.
+      // -----------------------------------------------------------------------
+      const lastAiWasGreeting = /is that correct\?|looking into.*correct\?|looking for.*correct\?/i.test(lastAiMessage?.content || "");
+      const userCorrectedServices = /^no[,!.]?\s|not exactly|not quite|not specifically|i('m| am) not|that'?s not|actually/i.test(userMessage.trim());
+      if (lastAiWasGreeting && userCorrectedServices) {
+        finalContent = `Got it! What are you looking for help with? Select all that apply. [[MULTI_SELECT:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]]`;
+        sse.sendToken(finalContent);
+        serverBypassServed = true;
+        console.log("[PHASE0 PATH B BYPASS] Served service selection - Gemini skipped");
+      } else {
+
+      // -----------------------------------------------------------------------
       // SERVER-SIDE PHASE 0 Q&A BYPASS
       // When the user clicks "I have a few questions" after the GoStork education,
       // the response is always the same. Gemini confuses this with post-match Q&A
@@ -4008,6 +4023,7 @@ ${phase0Section}`;
       } // closes if (!serverBypassServed) Gemini call block
       } // closes } else { at line 3887 (D-cycle fallthrough - intake bypass or Gemini)
       } // closes Phase 0 Q&A bypass else block
+      } // closes Phase 0 Path B bypass else block
       } // closes Phase 0 Part 2 bypass else block
     }
 
