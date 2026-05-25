@@ -267,7 +267,13 @@ export default function AdminTestRunnerPage() {
             },
           }));
         } else if (ev.type === "run_done" || ev.type === "run_stopped") {
-          setState(prev => ({ ...prev, status: "done" }));
+          // Only flip overall status to "done" if no tests are still running or pending.
+          // With per-card parallel runs, one subprocess finishing first would otherwise
+          // prematurely mark the dashboard as idle while other tests are still going.
+          setState(prev => {
+            const stillActive = Object.values(prev.tests).some(t => t.status === "running" || t.status === "pending");
+            return { ...prev, status: stillActive ? "running" : "done" };
+          });
         } else if (ev.type === "report_ready") {
           setState(prev => ({ ...prev, reportPath: ev.path }));
         }

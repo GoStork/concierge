@@ -393,12 +393,20 @@ export class TestRunnerService {
     const type = event.type as string;
 
     if (type === "run_start") {
-      // CLI started a new run - initialize state
+      // CLI started a new run - MERGE into existing state, don't replace.
+      // Replacing wiped out any tests from a concurrent CLI run (e.g. user clicked
+      // Run on card SM-13 then on card SW-14 - SW-14's run_start was wiping SM-13's
+      // running tile, leaving SM-13's subprocess as a ghost that updated a now-deleted
+      // slot).
       const testIds = (event.testIds as string[]) || [];
-      const tests: Record<string, any> = {};
+      // Only reset tiles for THIS run's tests - leave others alone.
       for (const id of testIds) {
+        // If the same test is already running, don't reset it - the other Run click
+        // beat us to it. New runs of an already-running test are no-ops at the state
+        // level (the new subprocess will still run, but its tile shouldn't reset).
+        if (this.state.tests[id]?.status === "running") continue;
         const meta = ALL_TEST_META.find(t => t.id === id);
-        tests[id] = {
+        this.state.tests[id] = {
           id,
           persona: meta?.persona || "",
           name: meta?.name || id,
@@ -409,17 +417,15 @@ export class TestRunnerService {
           durationMs: 0,
         };
       }
-      this.state = {
-        runId: `cli-${Date.now()}`,
-        startedAt: new Date().toISOString(),
-        status: "running",
-        filter: event.filter as string | undefined,
-        tests,
-        passCount: 0,
-        failCount: 0,
-        totalCount: testIds.length,
-        log: [`[CLI] Test run started: ${testIds.length} tests`],
-      };
+      this.state.runId = `cli-${Date.now()}`;
+      if (!this.state.startedAt) this.state.startedAt = new Date().toISOString();
+      this.state.status = "running";
+      this.state.filter = event.filter as string | undefined;
+      this.state.totalCount = Object.keys(this.state.tests).length;
+      this.state.log.push(`[CLI] Test run started: ${testIds.length} tests (${testIds.join(", ")})`);
+      // Recompute counts from actual tile statuses so they stay consistent across merges.
+      this.state.passCount = Object.values(this.state.tests).filter(t => t.status === "pass").length;
+      this.state.failCount = Object.values(this.state.tests).filter(t => t.status === "fail").length;
       this.emit({ type: "state", state: this.state });
 
     } else if (type === "test_start") {
@@ -495,11 +501,19 @@ export class TestRunnerService {
       this.emit({ type: "test_progress", id, currentMessage: t.currentMessage, totalMessages: t.totalMessages, lastUserMsg: t.lastUserMsg, lastAiSnippet: t.lastAiSnippet, currentStatus: t.currentStatus });
 
     } else if (type === "run_done") {
-      this.state.status = "done";
-      this.state.endedAt = new Date().toISOString();
-      this.state.passCount = event.passCount as number || this.state.passCount;
-      this.state.failCount = event.failCount as number || this.state.failCount;
-      const line = `Results: ${this.state.passCount} passed, ${this.state.failCount} failed`;
+      // Only flip overall status to "done" if NO tests are still running/pending.
+      // Otherwise a parallel CLI run finishing first would prematurely mark the whole
+      // dashboard as done while other subprocesses are mid-flight.
+      const stillActive = Object.values(this.state.tests).some(t => t.status === "running" || t.status === "pending");
+      if (!stillActive) {
+        this.state.status = "done";
+        this.state.endedAt = new Date().toISOString();
+      }
+      // Recompute counts from actual tile statuses (not the CLI's local count, which is
+      // for that one subprocess only).
+      this.state.passCount = Object.values(this.state.tests).filter(t => t.status === "pass").length;
+      this.state.failCount = Object.values(this.state.tests).filter(t => t.status === "fail").length;
+      const line = `Results: ${this.state.passCount} passed, ${this.state.failCount} failed${stillActive ? " (other tests still running)" : ""}`;
       this.state.log.push(line);
       this.emit({ type: "run_done", passCount: this.state.passCount, failCount: this.state.failCount, durationMs: event.durationMs as number || 0, exitCode: event.exitCode as number || 0 });
       this.emit({ type: "log", line });
