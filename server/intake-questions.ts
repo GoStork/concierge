@@ -641,8 +641,14 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
     const selectedUSA = /usa|united states/i.test(surrogateCountries)
       || userSaid(allUserMessages, /\busa\b|united states/i);
 
+    // Declared at the OUTER scope so the D CURATION check below (line ~674) can read it.
+    // Previously this was a `const d2Asked` inside the `if (d1Answered && selectedUSA)`
+    // block - the variable went out of scope before the curation check that references
+    // it, throwing ReferenceError: d2Asked is not defined and aborting the request before
+    // sendDone could fire. SM-13 (USA surrogate path) hit this every single time.
+    let d2Asked = false;
     if (d1Answered && selectedUSA) {
-      const d2Asked = aiAsked(chatHistory, /preferences regarding termination|termination.*medically necessary|pro-choice.*pro-life/i);
+      d2Asked = aiAsked(chatHistory, /preferences regarding termination|termination.*medically necessary|pro-choice.*pro-life/i);
       const d2Answered = !!(profile?.surrogateTermination)
         || userAnsweredAfter(chatHistory, /preferences.*termination|termination.*medically/i, /pro-choice|pro-life|no preference/i);
       if (!d2Asked && !d2Answered) {
