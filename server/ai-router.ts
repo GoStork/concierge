@@ -987,6 +987,13 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       if (m.senderType === "system" && !allowedSystemCardTypes.includes(m.uiCardType) && m.uiCardType != null) return false;
       // Provider assessment prompts are only shown to providers, not parents
       if (!isProvider && m.uiCardType === "provider_assessment") return false;
+      // In a 3-way provider chat, hide AI concierge messages from before the provider joined -
+      // the provider session is a direct parent-provider channel; pre-join AI chatter is irrelevant.
+      if (session.status === "PROVIDER_JOINED" && session.providerJoinedAt && m.senderType === "ai") {
+        const msgTime = new Date(m.createdAt).getTime();
+        const joinTime = new Date(session.providerJoinedAt).getTime();
+        if (msgTime < joinTime) return false;
+      }
       return true;
     });
 
