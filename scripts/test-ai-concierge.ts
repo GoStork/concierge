@@ -2044,34 +2044,31 @@ async function main() {
       results.push(r);
     }
   } else {
-    // Concurrency pool: keep exactly CONCURRENCY tests running at all times.
-    // As soon as one finishes the next queued test starts immediately - no idle slots.
+    // Concurrency pool: always keep up to CONCURRENCY tests running.
+    // As each test finishes it immediately starts the next one - no waiting for a whole batch.
     const CONCURRENCY = 5;
     results = [];
+    let running = 0;
     const queue = [...toRun];
-    const active = new Set<Promise<void>>();
 
-    const startNext = () => {
-      if (queue.length === 0) return;
-      const tc = queue.shift()!;
-      console.log(`  ▶ Starting: ${tc.id}`);
-      reportToDashboard({ type: "test_start", id: tc.id });
-      const p: Promise<void> = runTest(tc).then(r => {
-        reportResult(r);
-        results.push(r);
-        active.delete(p);
-        startNext();
-      });
-      active.add(p);
-    };
-
-    // Fill the pool up to CONCURRENCY
-    for (let i = 0; i < Math.min(CONCURRENCY, toRun.length); i++) startNext();
-
-    // Wait until all tests complete
-    while (active.size > 0) {
-      await Promise.race(active);
-    }
+    await new Promise<void>(resolve => {
+      const next = () => {
+        if (queue.length === 0 && running === 0) { resolve(); return; }
+        while (running < CONCURRENCY && queue.length > 0) {
+          const tc = queue.shift()!;
+          running++;
+          console.log(`  ▶ Starting: ${tc.id}`);
+          reportToDashboard({ type: "test_start", id: tc.id });
+          runTest(tc).then(r => {
+            reportResult(r);
+            results.push(r);
+            running--;
+            next();
+          });
+        }
+      };
+      next();
+    });
   }
 
   const passed = results.filter(r => r.passed).length;
