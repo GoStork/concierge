@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Loader2, X, CalendarClock, Clock, Crown, Check } from "lucide-react";
+import { Loader2, X, CalendarClock, Clock, Crown, Check, Video } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -288,6 +288,21 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
             <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => setShowSuggestForm(true)} data-testid="button-suggest-new-time-inline">
               <CalendarClock className="w-3.5 h-3.5" /> New Time
             </Button>
+          </div>
+        )}
+
+        {isConfirmed && !hasPassed && booking.providerUser?.dailyRoomUrl && booking.meetingType !== "phone" && (
+          <div className="px-4 py-3 border-t bg-muted/20">
+            <a
+              href={`/room/${booking.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 w-full py-2 rounded-[var(--radius)] text-xs font-medium text-primary-foreground bg-primary transition-colors hover:bg-primary/90"
+              data-testid={isProvider ? "button-start-meeting-inline" : "button-join-meeting-inline"}
+            >
+              <Video className="w-3.5 h-3.5" />
+              {isProvider ? "Start Meeting" : "Join Meeting"}
+            </a>
           </div>
         )}
 

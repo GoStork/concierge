@@ -1614,7 +1614,7 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
       include: {
         providerUser: {
           select: {
-            id: true, name: true, email: true, photoUrl: true, providerId: true, roles: true,
+            id: true, name: true, email: true, photoUrl: true, providerId: true, roles: true, dailyRoomUrl: true,
             provider: { select: { id: true, name: true } },
             scheduleConfig: { select: { bookingPageSlug: true } },
           },

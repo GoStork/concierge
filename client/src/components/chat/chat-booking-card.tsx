@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Loader2, Check, X, CalendarClock } from "lucide-react";
+import { Loader2, Check, X, CalendarClock, Video } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { format } from "date-fns";
@@ -197,6 +197,19 @@ export function ChatBookingCard({ booking, onUpdate, readOnly }: ChatBookingCard
         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-ui ${statusClass}`}>
           {statusLabel}
         </span>
+      )}
+
+      {isConfirmed && !isPast && !readOnly && booking.providerUser?.dailyRoomUrl && booking.meetingType !== "phone" && (
+        <a
+          href={`/room/${booking.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-1 h-7 w-full rounded-[var(--radius)] text-[11px] font-ui text-primary-foreground bg-primary transition-colors hover:bg-primary/90"
+          data-testid={`chat-booking-join-${booking.id}`}
+        >
+          <Video className="w-3 h-3" />
+          Join Meeting
+        </a>
       )}
 
       {isConfirmed && !isPast && !readOnly && !showReschedule && (

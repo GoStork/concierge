@@ -1112,6 +1112,20 @@ export function InlineBookingCalendar({
           </div>
         )}
 
+        {isConfirmed && !hasPassed && booking.providerUser?.dailyRoomUrl && booking.meetingType !== "phone" && (
+          <a
+            href={`/room/${booking.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 w-full py-2.5 rounded-[var(--radius)] text-xs font-medium text-primary-foreground transition-colors hover:opacity-90"
+            style={{ backgroundColor: brandColor }}
+            data-testid="btn-join-meeting-inline"
+          >
+            <Video className="w-3.5 h-3.5" />
+            Join Meeting
+          </a>
+        )}
+
         {booking.publicToken && !wasCompleted && !isNoShow && !isParentNoShow && !isProviderNoShow && !isCancelledStatus && (
           <div className="flex gap-2">
             <button
