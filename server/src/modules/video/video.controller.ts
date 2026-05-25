@@ -807,9 +807,11 @@ export class VideoController {
   }
 
   private async findActiveBooking(providerUserId: string) {
-    // Prefer a booking that is still in-progress (not yet ended)
+    // Prefer a booking that is still in-progress (not yet ended).
+    // Do not filter by status - bookings may be PENDING or in other states
+    // during ad-hoc/test calls, and we still want post-call follow-up to fire.
     const active = await this.prisma.booking.findFirst({
-      where: { providerUserId, status: "CONFIRMED", actualEndedAt: null },
+      where: { providerUserId, actualEndedAt: null },
       orderBy: { scheduledAt: "desc" },
     });
     if (active) return active;
@@ -820,7 +822,6 @@ export class VideoController {
     return this.prisma.booking.findFirst({
       where: {
         providerUserId,
-        status: "CONFIRMED",
         actualEndedAt: { gte: new Date(Date.now() - 2 * 60 * 60 * 1000) },
       },
       orderBy: { actualEndedAt: "desc" },
