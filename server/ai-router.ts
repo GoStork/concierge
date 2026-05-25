@@ -4194,9 +4194,13 @@ ${phase0Section}`;
       );
     }
 
-    // Post-processor: strip carrier question ("who will carry") for male parents or parents registered for surrogacy.
-    // A male parent cannot carry - the answer is always "a gestational surrogate", so asking is pointless.
-    const parentNeedsSurrogate = needsSurrogate || alreadyHasSurrogate || profile?.needsSurrogate === true || isMaleGender || isGayMale;
+    // Post-processor: strip carrier question ("who will carry") for parents who definitely need a
+    // surrogate - either they explicitly said so, OR they're male with no female partner (solo male,
+    // gay male couple) where the partner cannot carry either. For MW male (straight male in a couple)
+    // the female partner CAN carry, so we must NOT strip the question - it's a real choice between
+    // "My partner" and "A gestational surrogate".
+    const isMaleSoloOrGay = isMaleGender && (isGayMale || isSoloSkip);
+    const parentNeedsSurrogate = needsSurrogate || alreadyHasSurrogate || profile?.needsSurrogate === true || isMaleSoloOrGay;
     // Don't auto-save "Gestational surrogate" if the parent already explicitly stated they (or their partner)
     // will carry. This protects lesbian self-carry (Two Moms) and partner-carry (Two Moms partner case)
     // from being silently overwritten when the AI happens to include a "who will carry?" question alongside.
