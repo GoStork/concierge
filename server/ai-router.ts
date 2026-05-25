@@ -3440,8 +3440,10 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
 
     // Phase 1 completion check - needed in both Tier 1 pre-generation bypasses and
     // post-generation interceptors. Declared here (outer scope) to avoid TDZ errors.
+    // MW phrasing variants: the QR button reads "Man and a woman" but free-text answers
+    // commonly invert to "A woman and a man" or just "woman and a man" - match both.
     const phase1Complete = !!(profile?.familyType) ||
-      chatHistory.some((m: any) => m.role === "user" && /\b(solo man|solo woman|two dads|two moms|man and a woman)\b/i.test(m.content || ""));
+      chatHistory.some((m: any) => m.role === "user" && /\b(solo man|solo woman|two dads|two moms|man and a woman|a woman and a man|woman and a man)\b/i.test(m.content || ""));
 
     if (useTier2) {
       // Tier 2: Claude Sonnet 4.6 with full prompt + caching + tools
@@ -3740,7 +3742,7 @@ ${phase0Section}`;
         const _parentNeedsPhase1 = services.some((s: string) => /surrog|clinic|ivf/i.test(s))
           || needsSurrogate || needsClinic || profile?.needsSurrogate === true || profile?.needsClinic === true;
         const _phase1AnsweredInHistory = chatHistory.some((m: any) =>
-          m.role === "user" && /\b(solo man|solo woman|two dads|two moms|man and a woman)\b/i.test(m.content || "")
+          m.role === "user" && /\b(solo man|solo woman|two dads|two moms|man and a woman|a woman and a man|woman and a man)\b/i.test(m.content || "")
         ) || !!profile?.familyType;
         const _phase1AlreadyAsked = chatHistory.some((m: any) =>
           m.role === "assistant" && /solo man.*solo woman.*two dads|which best describes you|which of these fits your journey/i.test(m.content || "")
@@ -3797,7 +3799,7 @@ ${phase0Section}`;
       // question directly. This is the only way to guarantee it never regresses.
       // -----------------------------------------------------------------------
       const phase1AnsweredInHistory = chatHistory.some((m: any) =>
-        m.role === "user" && /\b(solo man|solo woman|two dads|two moms|man and a woman)\b/i.test(m.content || "")
+        m.role === "user" && /\b(solo man|solo woman|two dads|two moms|man and a woman|a woman and a man|woman and a man)\b/i.test(m.content || "")
       ) || !!profile?.familyType;
       const parentNeedsPhase1 = services.some((s: string) => /surrog|clinic|ivf/i.test(s))
         || needsSurrogate || needsClinic || profile?.needsSurrogate === true || profile?.needsClinic === true;
