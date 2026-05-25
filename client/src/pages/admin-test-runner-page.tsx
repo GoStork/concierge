@@ -538,12 +538,15 @@ export default function AdminTestRunnerPage() {
                       {displayName}
                     </div>
                   </div>
-                  {/* Per-card Run button - reruns just this single test. Disabled while any
-                      run is in progress so we don't fight the running subprocess. */}
+                  {/* Per-card Run button - runs just this single test independently.
+                      Backend spawns one subprocess per startRun() call and keeps them in a
+                      childProcesses map keyed by runId, so multiple cards can run in parallel.
+                      The button is only disabled when THIS specific test is currently running,
+                      not when any other test is running. */}
                   <button
                     onClick={(e) => { e.stopPropagation(); startRun(tc.id); }}
-                    disabled={isRunning || status === "running"}
-                    title={status === "running" ? "Test already running" : isRunning ? "Stop the current run first" : `Run ${tc.id} only`}
+                    disabled={status === "running"}
+                    title={status === "running" ? `${tc.id} already running` : `Run ${tc.id} (parallel with any other running tests)`}
                     style={{
                       flexShrink: 0,
                       display: "inline-flex", alignItems: "center", gap: "3px",
@@ -553,8 +556,8 @@ export default function AdminTestRunnerPage() {
                       color: status === "fail" ? "hsl(var(--brand-error))" : "hsl(var(--primary))",
                       border: `1px solid ${status === "fail" ? "hsl(var(--brand-error) / 0.3)" : "hsl(var(--primary) / 0.3)"}`,
                       borderRadius: "var(--radius)",
-                      cursor: (isRunning || status === "running") ? "not-allowed" : "pointer",
-                      opacity: (isRunning || status === "running") ? 0.4 : 1,
+                      cursor: status === "running" ? "not-allowed" : "pointer",
+                      opacity: status === "running" ? 0.4 : 1,
                       whiteSpace: "nowrap",
                     }}>
                     <Play style={{ width: "10px", height: "10px" }} />
