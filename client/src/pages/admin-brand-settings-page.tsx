@@ -1374,11 +1374,12 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
   const messages: { text: string; own: boolean; time: string; chips?: "binary" | "multi" }[] = [
     { text: "Does that make sense so far?", own: false, time: "1:38 PM", chips: "binary" },
     { text: "Yes, makes sense!", own: true, time: "1:39 PM" },
-    { text: "What type of egg donor are you looking for?", own: false, time: "1:40 PM", chips: "multi" },
+    { text: "Any donor preferences? Select all that apply.", own: false, time: "1:40 PM", chips: "multi" },
   ];
 
   const binaryChips = ["Yes, makes sense!", "I have a question"];
-  const multiChips = ["Fresh donor", "Frozen eggs", "Open to both"];
+  const multiChips = ["Fresh cycle", "Frozen eggs", "Half siblings ok", "Open to both"];
+  const multiSelected = new Set([0, 2]); // indices pre-selected in preview
 
   return (
     <div className="space-y-3">
@@ -1400,9 +1401,34 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
                 )}
                 {msg.chips === "multi" && (
                   <div className="flex flex-wrap gap-2 mt-3">
-                    {multiChips.map((qr, qi) => (
-                      <span key={qi} style={chipUniform}>{qr}</span>
-                    ))}
+                    {multiChips.map((qr, qi) => {
+                      const isSelected = multiSelected.has(qi);
+                      const selectedStyle: CSSProperties = qrIsOutline
+                        ? { ...chipBase, backgroundColor: `${qrColor}18`, color: qrColor, border: `1px solid ${qrColor}` }
+                        : qrIsSecondary
+                        ? { ...chipBase, backgroundColor: `${qrColor}cc`, color: "hsl(var(--foreground))", border: showBorder ? `1px solid hsl(var(--border))` : "none" }
+                        : { ...chipBase, backgroundColor: `${qrColor}30`, color: qrColor, border: showBorder ? `1px solid ${qrColor}` : "none" };
+                      return (
+                        <span key={qi} style={isSelected ? selectedStyle : chipUniform}>
+                          {isSelected && <span style={{ marginRight: "4px", fontSize: "10px" }}>✓</span>}
+                          {qr}
+                        </span>
+                      );
+                    })}
+                    <span
+                      style={{
+                        ...chipBase,
+                        backgroundColor: primary,
+                        color: "#ffffff",
+                        border: "none",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Done (2)
+                    </span>
                   </div>
                 )}
               </div>
