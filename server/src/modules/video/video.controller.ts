@@ -996,15 +996,15 @@ export class VideoController {
       if (existingInvoice) return; // Already in payment flow
     }
 
-    // Also check if a readiness prompt was already sent to the parent's private chat
+    // Dedup: one readiness prompt per booking - check by bookingId stored in uiCardData
     const existingPrompt = await this.prisma.aiChatMessage.findFirst({
       where: {
         sessionId: parentMainSessionId,
         uiCardType: "readiness_prompt",
-        createdAt: { gte: new Date(Date.now() - 2 * 60 * 60 * 1000) },
+        uiCardData: { path: ["bookingId"], equals: bookingId },
       },
     });
-    if (existingPrompt) return; // Already sent within the last 2 hours
+    if (existingPrompt) return; // Already sent for this booking
 
     // Determine if this is a decision call
     let isDecisionCall = false;
@@ -1041,6 +1041,7 @@ export class VideoController {
     // session) so the parent can answer honestly without the provider seeing their response.
     await this.billingService.postReadinessPromptToChat({
       sessionId: parentMainSessionId,
+      bookingId,
       providerName: providerEntity.name,
       providerType: providerTypeName,
       isMatchCall,

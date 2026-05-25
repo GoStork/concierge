@@ -182,12 +182,13 @@ export class BillingService {
 
   async postReadinessPromptToChat(params: {
     sessionId: string;
+    bookingId: string;    // used for per-booking dedup
     providerName: string;
     providerType: string;
     isMatchCall: boolean; // true for surrogacy match calls
     dueAt?: Date;         // for surrogacy 24h countdown
   }) {
-    const { sessionId, providerName, providerType, isMatchCall, dueAt } = params;
+    const { sessionId, bookingId, providerName, providerType, isMatchCall, dueAt } = params;
 
     let content = "";
     let buttonLabel = "Yes, I'm Ready";
@@ -217,6 +218,7 @@ export class BillingService {
         senderName: "GoStork",
         uiCardType: "readiness_prompt",
         uiCardData: {
+          bookingId,
           providerName,
           providerType,
           isMatchCall,
