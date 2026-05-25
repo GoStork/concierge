@@ -2976,6 +2976,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
   const brandColor = brand?.primaryColor || "#004D4D";
   const chatPalette = useMemo(() => deriveChatPalette(brandColor), [brandColor]);
+  const qrStyle = brand?.quickReplyColorStyle ?? "primary";
+  const qrColor = qrStyle === "accent" ? (brand?.accentColor ?? "#0DA4EA")
+    : qrStyle === "secondary" ? (brand?.secondaryColor ?? "#F0FAF5")
+    : brandColor;
+  const qrIsOutline = qrStyle === "outline";
+  const qrIsSecondary = qrStyle === "secondary";
 
   const loadMessagesForSession = async (sid: string): Promise<boolean> => {
     try {
@@ -4572,14 +4578,23 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                           <div className="flex flex-wrap gap-2 mt-3" data-testid="quick-replies">
                             {msg.quickReplies.map((qr, qi) => {
                               const isSelected = isMulti && multiSelectChoices.has(qr);
+                              const positiveStyle = qrIsOutline
+                                ? { backgroundColor: "transparent", color: qrColor, border: `1px solid ${qrColor}` }
+                                : qrIsSecondary
+                                ? { backgroundColor: qrColor, color: "hsl(var(--foreground))", border: "1px solid hsl(var(--border))" }
+                                : { backgroundColor: qrColor, color: "#ffffff", border: "none" };
                               const chipStyle = isBinary
                                 ? qi === 0
-                                  ? { backgroundColor: brandColor, color: "#ffffff", border: "none" }
+                                  ? positiveStyle
                                   : { backgroundColor: "hsl(var(--secondary))", color: "hsl(var(--secondary-foreground))", border: "1px solid hsl(var(--border))" }
+                                : qrIsOutline
+                                ? { backgroundColor: "transparent", color: qrColor, borderColor: qrColor }
+                                : qrIsSecondary
+                                ? { backgroundColor: isSelected ? `${qrColor}cc` : qrColor, color: "hsl(var(--foreground))", borderColor: "hsl(var(--border))" }
                                 : {
-                                    backgroundColor: isSelected ? `${brandColor}30` : `${brandColor}18`,
-                                    color: brandColor,
-                                    borderColor: isSelected ? brandColor : `${brandColor}50`,
+                                    backgroundColor: isSelected ? `${qrColor}30` : `${qrColor}18`,
+                                    color: qrColor,
+                                    borderColor: isSelected ? qrColor : `${qrColor}50`,
                                   };
                               return (
                                 <Button

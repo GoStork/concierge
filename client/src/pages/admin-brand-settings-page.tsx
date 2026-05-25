@@ -1313,8 +1313,12 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
   const qrRadius = `${form.quickReplyRadius ?? 999}px`;
   const qrPx = `${form.quickReplyPaddingX ?? 14}px`;
   const qrPy = `${form.quickReplyPaddingY ?? 6}px`;
-  const qrBorderHex = Math.round((form.quickReplyBorderOpacity ?? 40) * 2.55).toString(16).padStart(2, "0");
-  const qrBgHex = Math.round((form.quickReplyBgOpacity ?? 0) * 2.55).toString(16).padStart(2, "0");
+  const qrStyle = form.quickReplyColorStyle ?? "primary";
+  const qrColor = qrStyle === "accent" ? (form.accentColor ?? "#0DA4EA")
+    : qrStyle === "secondary" ? (form.secondaryColor ?? "#F0FAF5")
+    : (form.primaryColor ?? "#004D4D");
+  const qrIsOutline = qrStyle === "outline";
+  const qrIsSecondary = qrStyle === "secondary";
 
   const bubbleBase: CSSProperties = {
     paddingLeft: px, paddingRight: px, paddingTop: py, paddingBottom: py,
@@ -1340,9 +1344,17 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
     border: "1px solid",
     fontWeight: 500,
   };
-  const chipPrimary: CSSProperties = { ...chipBase, backgroundColor: primary, color: "#ffffff", borderColor: primary };
+  const chipPositive: CSSProperties = qrIsOutline
+    ? { ...chipBase, backgroundColor: "transparent", color: qrColor, borderColor: qrColor }
+    : qrIsSecondary
+    ? { ...chipBase, backgroundColor: qrColor, color: "hsl(var(--foreground))", borderColor: "hsl(var(--border))" }
+    : { ...chipBase, backgroundColor: qrColor, color: "#ffffff", borderColor: qrColor };
   const chipSecondary: CSSProperties = { ...chipBase, backgroundColor: form.secondaryColor ?? "#F0FAF5", color: "hsl(var(--secondary-foreground))", borderColor: "hsl(var(--border))" };
-  const chipUniform: CSSProperties = { ...chipBase, backgroundColor: `${primary}18`, color: primary, borderColor: `${primary}50` };
+  const chipUniform: CSSProperties = qrIsOutline
+    ? { ...chipBase, backgroundColor: "transparent", color: qrColor, borderColor: qrColor }
+    : qrIsSecondary
+    ? { ...chipBase, backgroundColor: qrColor, color: "hsl(var(--foreground))", borderColor: "hsl(var(--border))" }
+    : { ...chipBase, backgroundColor: `${qrColor}18`, color: qrColor, borderColor: `${qrColor}50` };
 
   const messages: { text: string; own: boolean; time: string; chips?: "binary" | "multi" }[] = [
     { text: "Does that make sense so far?", own: false, time: "1:38 PM", chips: "binary" },
@@ -1364,7 +1376,7 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
                 {msg.text}
                 {msg.chips === "binary" && (
                   <div className="flex flex-wrap gap-2 mt-3">
-                    <span style={chipPrimary}>{binaryChips[0]}</span>
+                    <span style={chipPositive}>{binaryChips[0]}</span>
                     <span style={chipSecondary}>{binaryChips[1]}</span>
                   </div>
                 )}
@@ -2239,19 +2251,47 @@ export function BrandSettingsForm({
                   </div>
                   <Slider min={2} max={16} step={1} value={[form.quickReplyPaddingY ?? 6]} onValueChange={([v]) => updateField("quickReplyPaddingY", v)} disabled={formDisabled} />
                 </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Border Opacity</Label>
-                    <span className="text-sm text-muted-foreground">{form.quickReplyBorderOpacity ?? 40}%</span>
-                  </div>
-                  <Slider min={0} max={100} step={5} value={[form.quickReplyBorderOpacity ?? 40]} onValueChange={([v]) => updateField("quickReplyBorderOpacity", v)} disabled={formDisabled} />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Background Fill</Label>
-                    <span className="text-sm text-muted-foreground">{form.quickReplyBgOpacity ?? 0}%</span>
-                  </div>
-                  <Slider min={0} max={100} step={5} value={[form.quickReplyBgOpacity ?? 0]} onValueChange={([v]) => updateField("quickReplyBgOpacity", v)} disabled={formDisabled} />
+              </div>
+
+              {/* Color Style picker */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Chip Color Style</Label>
+                <p className="text-xs text-muted-foreground">Controls the fill color of the positive/multi chips. The secondary button style is always used for the decline option in 2-choice replies.</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-1">
+                  {([
+                    { key: "primary", label: "Primary", bg: form.primaryColor ?? "#004D4D", text: "#ffffff", border: form.primaryColor ?? "#004D4D" },
+                    { key: "accent", label: "Accent", bg: form.accentColor ?? "#0DA4EA", text: "#ffffff", border: form.accentColor ?? "#0DA4EA" },
+                    { key: "secondary", label: "Secondary", bg: form.secondaryColor ?? "#F0FAF5", text: "hsl(var(--foreground))", border: "hsl(var(--border))" },
+                    { key: "outline", label: "Outline", bg: "transparent", text: form.primaryColor ?? "#004D4D", border: form.primaryColor ?? "#004D4D" },
+                  ] as const).map(({ key, label, bg, text, border }) => {
+                    const selected = (form.quickReplyColorStyle ?? "primary") === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        disabled={formDisabled}
+                        onClick={() => updateField("quickReplyColorStyle", key)}
+                        className={`flex flex-col items-center gap-2 p-3 rounded-[var(--radius)] border-2 transition-all ${selected ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/40"}`}
+                      >
+                        <span
+                          style={{
+                            backgroundColor: bg,
+                            color: text,
+                            border: `1px solid ${border}`,
+                            borderRadius: `${form.quickReplyRadius ?? 999}px`,
+                            padding: "3px 10px",
+                            fontSize: "11px",
+                            fontWeight: 500,
+                            display: "inline-block",
+                          }}
+                        >
+                          Chip
+                        </span>
+                        <span className={`text-xs font-medium ${selected ? "text-primary" : "text-muted-foreground"}`}>{label}</span>
+                        {selected && <Check className="w-3 h-3 text-primary" />}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>

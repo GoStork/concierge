@@ -869,8 +869,7 @@ model SiteSettings {
   quickReplyRadius           Int?
   quickReplyPaddingX         Int?
   quickReplyPaddingY         Int?
-  quickReplyBorderOpacity    Int?
-  quickReplyBgOpacity        Int?
+  quickReplyColorStyle       String?
 
   // Onboarding intro page images (per service type)
   onboardingClinicImageUrl   String?
@@ -999,8 +998,7 @@ model ProviderBrandSettings {
   quickReplyRadius           Int?
   quickReplyPaddingX         Int?
   quickReplyPaddingY         Int?
-  quickReplyBorderOpacity    Int?
-  quickReplyBgOpacity        Int?
+  quickReplyColorStyle       String?
 
   provider                   Provider @relation(fields: [providerId], references: [id])
 }

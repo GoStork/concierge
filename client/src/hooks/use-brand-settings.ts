@@ -104,8 +104,7 @@ export interface BrandSettings {
   quickReplyRadius: number;
   quickReplyPaddingX: number;
   quickReplyPaddingY: number;
-  quickReplyBorderOpacity: number;
-  quickReplyBgOpacity: number;
+  quickReplyColorStyle: string;
   onboardingClinicImageUrl: string | null;
   onboardingEggDonorImageUrl: string | null;
   onboardingSurrogateImageUrl: string | null;
@@ -205,8 +204,7 @@ export const BRAND_DEFAULTS: BrandSettings = {
   quickReplyRadius: 999,
   quickReplyPaddingX: 14,
   quickReplyPaddingY: 6,
-  quickReplyBorderOpacity: 40,
-  quickReplyBgOpacity: 0,
+  quickReplyColorStyle: "primary",
   onboardingClinicImageUrl: null,
   onboardingEggDonorImageUrl: null,
   onboardingSurrogateImageUrl: null,
@@ -412,8 +410,7 @@ export function applyBrandToDocument(settings: BrandSettings) {
   root.style.setProperty("--quick-reply-radius", `${settings.quickReplyRadius ?? 999}px`);
   root.style.setProperty("--quick-reply-px", `${settings.quickReplyPaddingX ?? 14}px`);
   root.style.setProperty("--quick-reply-py", `${settings.quickReplyPaddingY ?? 6}px`);
-  root.style.setProperty("--quick-reply-border-opacity", String(Math.round((settings.quickReplyBorderOpacity ?? 40) * 2.55).toString(16).padStart(2, "0")));
-  root.style.setProperty("--quick-reply-bg-opacity", String(Math.round((settings.quickReplyBgOpacity ?? 0) * 2.55).toString(16).padStart(2, "0")));
+  root.style.setProperty("--quick-reply-color-style", settings.quickReplyColorStyle ?? "primary");
 
   // Remove any previously injected media query style (no longer needed).
   document.getElementById("brand-chat-responsive")?.remove();

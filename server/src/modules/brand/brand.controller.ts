@@ -107,8 +107,7 @@ const DEFAULTS = {
   quickReplyRadius: 999,
   quickReplyPaddingX: 14,
   quickReplyPaddingY: 6,
-  quickReplyBorderOpacity: 40,
-  quickReplyBgOpacity: 0,
+  quickReplyColorStyle: "primary",
 };
 
 const ADVANCED_COLOR_FIELDS = [
@@ -140,7 +139,7 @@ const ALLOWED_FIELDS = [
   "chatBubblePaddingX", "chatBubblePaddingY", "chatBubbleMaxWidth", "chatBubbleRadius",
   "chatTimestampFontSize", "chatTimestampOpacity", "chatInputFontSize", "chatInputFontSizeDesktop", "chatInputHeight",
   "quickReplyFontSize", "quickReplyRadius", "quickReplyPaddingX", "quickReplyPaddingY",
-  "quickReplyBorderOpacity", "quickReplyBgOpacity",
+  "quickReplyColorStyle",
   ...ADVANCED_COLOR_FIELDS,
 ];
 
@@ -287,8 +286,6 @@ function validateBrandBody(body: any) {
     quickReplyRadius: [0, 999],
     quickReplyPaddingX: [6, 28],
     quickReplyPaddingY: [2, 16],
-    quickReplyBorderOpacity: [0, 100],
-    quickReplyBgOpacity: [0, 100],
   };
   for (const [field, [min, max]] of Object.entries(intFields)) {
     if (body[field] !== undefined && body[field] !== null) {
@@ -297,6 +294,12 @@ function validateBrandBody(body: any) {
         throw new ForbiddenException(`${field} must be between ${min} and ${max}`);
       }
       body[field] = Math.round(v);
+    }
+  }
+
+  if (body.quickReplyColorStyle !== undefined && body.quickReplyColorStyle !== null) {
+    if (!["primary", "accent", "secondary", "outline"].includes(body.quickReplyColorStyle)) {
+      body.quickReplyColorStyle = "primary";
     }
   }
 
