@@ -325,7 +325,7 @@ export default function AdminTestRunnerPage() {
               <Button onClick={() => startRun(persona !== "all" ? persona : undefined)}
                 style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)", fontSize: "13px" }}>
                 <Play style={{ width: "13px", height: "13px", marginRight: "5px" }} />
-                {persona !== "all" ? `Run ${PERSONAS.find(p => p.id === persona)?.label.split(" ")[0]} ${PERSONAS.find(p => p.id === persona)?.label.split(" ")[1]}` : "Run All (72)"}
+                {persona !== "all" ? `Run ${PERSONAS.find(p => p.id === persona)?.label ?? persona}` : "Run All (72)"}
               </Button>
               <Button variant="outline" size="sm" onClick={clearResults}
                 disabled={state.status === "idle" && Object.keys(state.tests).length === 0}
