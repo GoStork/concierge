@@ -1320,6 +1320,14 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
   const qrIsOutline = qrStyle === "outline";
   const qrIsSecondary = qrStyle === "secondary";
 
+  const decStyle = form.quickReplyDeclineStyle ?? "secondary";
+  const decColor = decStyle === "accent" ? (form.accentColor ?? "#0DA4EA")
+    : decStyle === "secondary" ? (form.secondaryColor ?? "#F0FAF5")
+    : decStyle === "primary" ? (form.primaryColor ?? "#004D4D")
+    : (form.primaryColor ?? "#004D4D");
+  const decIsOutline = decStyle === "outline";
+  const decIsSecondary = decStyle === "secondary";
+
   const bubbleBase: CSSProperties = {
     paddingLeft: px, paddingRight: px, paddingTop: py, paddingBottom: py,
     fontSize, lineHeight, borderRadius: radius, maxWidth,
@@ -1349,7 +1357,11 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
     : qrIsSecondary
     ? { ...chipBase, backgroundColor: qrColor, color: "hsl(var(--foreground))", borderColor: "hsl(var(--border))" }
     : { ...chipBase, backgroundColor: qrColor, color: "#ffffff", borderColor: qrColor };
-  const chipSecondary: CSSProperties = { ...chipBase, backgroundColor: form.secondaryColor ?? "#F0FAF5", color: "hsl(var(--secondary-foreground))", borderColor: "hsl(var(--border))" };
+  const chipSecondary: CSSProperties = decIsOutline
+    ? { ...chipBase, backgroundColor: "transparent", color: decColor, borderColor: decColor }
+    : decIsSecondary
+    ? { ...chipBase, backgroundColor: decColor, color: "hsl(var(--foreground))", borderColor: "hsl(var(--border))" }
+    : { ...chipBase, backgroundColor: decColor, color: "#ffffff", borderColor: decColor };
   const chipUniform: CSSProperties = qrIsOutline
     ? { ...chipBase, backgroundColor: "transparent", color: qrColor, borderColor: qrColor }
     : qrIsSecondary
@@ -2256,7 +2268,7 @@ export function BrandSettingsForm({
               {/* Color Style picker */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Chip Color Style</Label>
-                <p className="text-xs text-muted-foreground">Controls the fill color of the positive/multi chips. The secondary button style is always used for the decline option in 2-choice replies.</p>
+                <p className="text-xs text-muted-foreground">Controls the fill of the positive or multi-choice chips.</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-1">
                   {([
                     { key: "primary", label: "Primary", bg: form.primaryColor ?? "#004D4D", text: "#ffffff", border: form.primaryColor ?? "#004D4D" },
@@ -2271,6 +2283,48 @@ export function BrandSettingsForm({
                         type="button"
                         disabled={formDisabled}
                         onClick={() => updateField("quickReplyColorStyle", key)}
+                        className={`flex flex-col items-center gap-2 p-3 rounded-[var(--radius)] border-2 transition-all ${selected ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/40"}`}
+                      >
+                        <span
+                          style={{
+                            backgroundColor: bg,
+                            color: text,
+                            border: `1px solid ${border}`,
+                            borderRadius: `${form.quickReplyRadius ?? 999}px`,
+                            padding: "3px 10px",
+                            fontSize: "11px",
+                            fontWeight: 500,
+                            display: "inline-block",
+                          }}
+                        >
+                          Chip
+                        </span>
+                        <span className={`text-xs font-medium ${selected ? "text-primary" : "text-muted-foreground"}`}>{label}</span>
+                        {selected && <Check className="w-3 h-3 text-primary" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Decline Button Style picker */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Decline Button Style</Label>
+                <p className="text-xs text-muted-foreground">Style of the second button when there are exactly 2 choices (e.g. Yes / No).</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-1">
+                  {([
+                    { key: "primary", label: "Primary", bg: form.primaryColor ?? "#004D4D", text: "#ffffff", border: form.primaryColor ?? "#004D4D" },
+                    { key: "accent", label: "Accent", bg: form.accentColor ?? "#0DA4EA", text: "#ffffff", border: form.accentColor ?? "#0DA4EA" },
+                    { key: "secondary", label: "Secondary", bg: form.secondaryColor ?? "#F0FAF5", text: "hsl(var(--foreground))", border: "hsl(var(--border))" },
+                    { key: "outline", label: "Outline", bg: "transparent", text: form.primaryColor ?? "#004D4D", border: form.primaryColor ?? "#004D4D" },
+                  ] as const).map(({ key, label, bg, text, border }) => {
+                    const selected = (form.quickReplyDeclineStyle ?? "secondary") === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        disabled={formDisabled}
+                        onClick={() => updateField("quickReplyDeclineStyle", key)}
                         className={`flex flex-col items-center gap-2 p-3 rounded-[var(--radius)] border-2 transition-all ${selected ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/40"}`}
                       >
                         <span

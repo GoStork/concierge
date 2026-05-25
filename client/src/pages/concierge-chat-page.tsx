@@ -2983,6 +2983,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const qrIsOutline = qrStyle === "outline";
   const qrIsSecondary = qrStyle === "secondary";
 
+  const decStyle = brand?.quickReplyDeclineStyle ?? "secondary";
+  const decColor = decStyle === "accent" ? (brand?.accentColor ?? "#0DA4EA")
+    : decStyle === "secondary" ? (brand?.secondaryColor ?? "#F0FAF5")
+    : decStyle === "primary" ? brandColor
+    : brandColor;
+  const decIsOutline = decStyle === "outline";
+  const decIsSecondary = decStyle === "secondary";
+
   const loadMessagesForSession = async (sid: string): Promise<boolean> => {
     try {
       const res = await fetch(`/api/ai-concierge/session/${sid}/messages`, { credentials: "include" });
@@ -4583,10 +4591,15 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                                 : qrIsSecondary
                                 ? { backgroundColor: qrColor, color: "hsl(var(--foreground))", border: "1px solid hsl(var(--border))" }
                                 : { backgroundColor: qrColor, color: "#ffffff", border: "none" };
+                              const declineStyle = decIsOutline
+                                ? { backgroundColor: "transparent", color: decColor, border: `1px solid ${decColor}` }
+                                : decIsSecondary
+                                ? { backgroundColor: decColor, color: "hsl(var(--foreground))", border: "1px solid hsl(var(--border))" }
+                                : { backgroundColor: decColor, color: "#ffffff", border: "none" };
                               const chipStyle = isBinary
                                 ? qi === 0
                                   ? positiveStyle
-                                  : { backgroundColor: "hsl(var(--secondary))", color: "hsl(var(--secondary-foreground))", border: "1px solid hsl(var(--border))" }
+                                  : declineStyle
                                 : qrIsOutline
                                 ? { backgroundColor: "transparent", color: qrColor, borderColor: qrColor }
                                 : qrIsSecondary

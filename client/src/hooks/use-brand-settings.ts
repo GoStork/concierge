@@ -105,6 +105,7 @@ export interface BrandSettings {
   quickReplyPaddingX: number;
   quickReplyPaddingY: number;
   quickReplyColorStyle: string;
+  quickReplyDeclineStyle: string;
   onboardingClinicImageUrl: string | null;
   onboardingEggDonorImageUrl: string | null;
   onboardingSurrogateImageUrl: string | null;
@@ -205,6 +206,7 @@ export const BRAND_DEFAULTS: BrandSettings = {
   quickReplyPaddingX: 14,
   quickReplyPaddingY: 6,
   quickReplyColorStyle: "primary",
+  quickReplyDeclineStyle: "secondary",
   onboardingClinicImageUrl: null,
   onboardingEggDonorImageUrl: null,
   onboardingSurrogateImageUrl: null,
@@ -411,6 +413,7 @@ export function applyBrandToDocument(settings: BrandSettings) {
   root.style.setProperty("--quick-reply-px", `${settings.quickReplyPaddingX ?? 14}px`);
   root.style.setProperty("--quick-reply-py", `${settings.quickReplyPaddingY ?? 6}px`);
   root.style.setProperty("--quick-reply-color-style", settings.quickReplyColorStyle ?? "primary");
+  root.style.setProperty("--quick-reply-decline-style", settings.quickReplyDeclineStyle ?? "secondary");
 
   // Remove any previously injected media query style (no longer needed).
   document.getElementById("brand-chat-responsive")?.remove();
