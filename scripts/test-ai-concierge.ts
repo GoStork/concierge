@@ -231,6 +231,25 @@ const clinicIntake: Msg[] = [
   { send: "ready" },
 ];
 
+// Couple variant (non-solo parents): includes A2 partner age between A1 and A3
+const clinicIntakeCouple: Msg[] = [
+  { send: "35" },            // A1 age
+  { send: "33" },            // A2 partner age
+  { send: "No" },            // A3 twins
+  { send: "First time" },    // A4 IVF experience
+  { send: "Success rates" }, // A5 priorities
+  { send: "ready" },         // CURATION
+];
+
+const clinicMatchCouple: Msg[] = [
+  { send: "35" },
+  { send: "33" },
+  { send: "No" },
+  { send: "First time" },
+  { send: "Success rates" },
+  { send: "ready", assert: { hasMatchCard: true } },
+];
+
 // Helper: build assertions that certain sperm questions never appear
 const noSpermQ = { notContains: ["will you be using your own sperm", "for sperm, will you", "sperm donor or your own"] };
 const noEggQ   = { notContains: ["what's your plan for eggs", "using your own eggs or", "egg source"] };
@@ -605,6 +624,7 @@ const TEST_CASES: TestCase[] = [
       EMB_NO,
       { send: "I'll be using my own eggs", assert: noSpermQ },
       CARRIER_SURROGATE, SURR_NEED,
+      ...clinicIntake,
       ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
       ...spermDonorMatch,
     ),
@@ -668,6 +688,7 @@ const TEST_CASES: TestCase[] = [
       EMB_NO,
       { send: "I need help finding an egg donor", assert: noSpermQ },
       CARRIER_SURROGATE, SURR_NEED,
+      ...clinicIntake,
       ...agencyMatch("Colombia"),
       ...eggDonorIntake,  // intermediate: don't assert card
       ...spermDonorMatch, // final cycle: assert card
@@ -706,6 +727,7 @@ const TEST_CASES: TestCase[] = [
       ...EMB_YES("3", "Yes"),
       EMB_CONFLICT_USE,
       CARRIER_SURROGATE, SURR_NEED,
+      ...clinicIntake,
       ...surrogateMatch("USA", "Pro-life surrogate", "Singleton only"),
     ),
     db: [
@@ -745,6 +767,7 @@ const TEST_CASES: TestCase[] = [
       P0, I_SOLO_WOMAN, CLINIC_NEED, EMB_NO,
       { send: "I'll be using my own eggs", assert: noSpermQ },
       CARRIER_SURROGATE, SURR_NEED,
+      ...clinicIntake,
       ...surrogateMatch("USA", "No preference", "No preference"),
     ),
     db: [
@@ -826,6 +849,7 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_TWO_DADS, CLINIC_NEED, EMB_NO,
       EGG_DONOR, SPERM_PART, SURR_NEED,
+      ...clinicIntakeCouple,
       ...surrogateMatch("USA", "Pro-choice surrogate", "Hoping for twins"),
       ...eggDonorMatch,
     ),
@@ -877,6 +901,7 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_TWO_DADS, CLINIC_NEED, EMB_NO,
       EGG_HAVE, SPERM_OWN, SURR_NEED,
+      ...clinicIntakeCouple,
       ...surrogateMatch("USA", "Pro-life surrogate", "No preference"),
     ),
     db: [
@@ -912,6 +937,7 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_DADS, CLINIC_NEED,
       ...EMB_YES("2", "Yes"),
       "My own", SURR_NEED,
+      ...clinicIntakeCouple,
       ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
     ),
     db: [
@@ -949,6 +975,7 @@ const TEST_CASES: TestCase[] = [
       ...EMB_YES("2", "Yes"),
       SPERM_CONFLICT_USE,
       SURR_NEED,
+      ...clinicIntakeCouple,
       ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
     ),
     db: [
@@ -982,6 +1009,7 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_TWO_DADS, CLINIC_NEED, EMB_NO,
       EGG_DONOR, SPERM_OWN, SURR_NEED,
+      ...clinicIntakeCouple,
       { send: "USA, Colombia" },
       { send: "Pro-choice surrogate" },
       { send: "Hoping for twins", assert: { hasMatchCard: true } },
@@ -1000,6 +1028,7 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_TWO_DADS, CLINIC_NEED, EMB_NO,
       EGG_DONOR, SPERM_DONOR, SPERM_NEED, SURR_NEED,
+      ...clinicIntakeCouple,
       ...surrogateMatch("USA", "No preference", "No preference"),
     ),
     db: [
@@ -1154,6 +1183,7 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
       { send: "My own eggs", assert: noSpermQ },
       CARRIER_SURROGATE, SURR_NEED,
+      ...clinicIntakeCouple,
       ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
       ...spermDonorMatch,
     ),
@@ -1231,6 +1261,7 @@ const TEST_CASES: TestCase[] = [
       ...EMB_YES("2", "Yes"),
       EMB_CONFLICT_USE,
       CARRIER_SURROGATE, SURR_NEED,
+      ...clinicIntakeCouple,
       ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
     ),
     db: [
@@ -1395,8 +1426,8 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
       "My own eggs", "My partner's", CARRIER_SURROGATE, SURR_NEED,
+      ...clinicIntakeCouple,
       ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
-      ...clinicMatch,
     ),
     db: [
       { field: "eggSource", expected: "Own eggs" },
@@ -1430,8 +1461,8 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
       EGG_DONOR, "My partner's", CARRIER_SURROGATE, SURR_NEED,
+      ...clinicIntakeCouple,
       ...surrogateMatch("USA", "Pro-choice surrogate", "No preference"),
-      ...clinicMatch,
       ...eggDonorMatch,
     ),
     db: [
@@ -1465,8 +1496,8 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_MW_MAN, CLINIC_NEED, EMB_NO,
       EGG_DONOR, SPERM_DONOR, CARRIER_SURROGATE, SPERM_NEED, SURR_NEED,
+      ...clinicIntakeCouple,
       ...surrogateMatch("USA", "Pro-life surrogate", "Singleton only"),
-      ...clinicMatch,
       ...eggDonorMatch,
       ...spermDonorMatch,
     ),
@@ -1522,6 +1553,7 @@ const TEST_CASES: TestCase[] = [
       P0, I_MW_MAN, CLINIC_NEED,
       ...EMB_YES("4", "Yes"),
       "My partner's eggs", "My own", CARRIER_SURROGATE, SURR_NEED,
+      ...clinicIntakeCouple,
       ...surrogateMatch("USA", "Pro-choice surrogate", "Singleton only"),
     ),
     db: [
@@ -1559,8 +1591,8 @@ const TEST_CASES: TestCase[] = [
       ...EMB_YES("2", "Yes"),
       EMB_CONFLICT_NEW,
       EGG_DONOR, "My partner's", CARRIER_SURROGATE, SURR_NEED,
+      ...clinicIntakeCouple,
       ...surrogateMatch("USA", "Pro-choice surrogate", "No preference"),
-      ...clinicMatch,
       ...eggDonorMatch,
     ),
     db: [
@@ -1597,8 +1629,8 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_MW_MAN, CLINIC_NEED, EMB_NO,
       EGG_DONOR, "My own", CARRIER_SURROGATE, SURR_NEED,
+      ...clinicIntakeCouple,
       ...agencyMatch("Mexico"),
-      ...clinicMatch,
       ...eggDonorMatch,
     ),
     db: [

@@ -148,7 +148,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "SW-05: No embryos - Own eggs - Surrogate - Needs surrogate + sperm donor + clinic - USA",
     desc: "Solo woman with surrogate - all services needed",
     interestedServices: ["Surrogate", "Sperm Donor", "Fertility Clinic"],
-    messageCount: 19,
+    messageCount: 24,
   },
   {
     id: "SW-06", persona: "solo-woman",
@@ -169,7 +169,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "SW-08: No embryos - Donor eggs - Surrogate - All services - Colombia",
     desc: "Solo woman Colombia path - agency search instead of individual surrogate",
     interestedServices: ["Surrogate", "Egg Donor", "Sperm Donor"],
-    messageCount: 19,
+    messageCount: 24,
   },
   {
     id: "SW-09", persona: "solo-woman",
@@ -183,7 +183,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "SW-10: Has embryos - Step 1c fires - Uses existing - Surrogate - USA - Pro-life",
     desc: "Step 1c: registered for egg donation but has embryos - uses existing embryos",
     interestedServices: ["Surrogate", "Egg Donor"],
-    messageCount: 16,
+    messageCount: 21,
   },
   {
     id: "SW-11", persona: "solo-woman",
@@ -197,7 +197,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "SW-12: No embryos - Own eggs - Surrogate - USA - No preference",
     desc: "Solo woman verifying no-preference answers on D2 and D3",
     interestedServices: ["Surrogate", "Sperm Donor"],
-    messageCount: 15,
+    messageCount: 20,
   },
   {
     id: "SW-13", persona: "solo-woman",
@@ -227,7 +227,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "TD-02: No embryos - Partner's sperm - Needs all - USA - Pro-choice - Twins",
     desc: "Two dads with partner's sperm - verifies partner's sperm option available",
     interestedServices: ["Surrogate", "Egg Donor"],
-    messageCount: 17,
+    messageCount: 23,
   },
   {
     id: "TD-03", persona: "two-dads",
@@ -248,7 +248,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "TD-05: No embryos - My own sperm - Already has egg donor - USA - Pro-life",
     desc: "Two dads with existing egg donor - egg match skipped, pro-life surrogate",
     interestedServices: ["Surrogate"],
-    messageCount: 14,
+    messageCount: 20,
   },
   {
     id: "TD-06", persona: "two-dads",
@@ -262,7 +262,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "TD-07: Has embryos (2, tested) - My own sperm - Needs surrogate - USA",
     desc: "Two dads with existing tested embryos - past-tense sperm question",
     interestedServices: ["Surrogate"],
-    messageCount: 15,
+    messageCount: 21,
   },
   {
     id: "TD-08", persona: "two-dads",
@@ -276,7 +276,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "TD-09: Has embryos - Registered sperm donor - Step 3b use existing",
     desc: "Step 3b conflict for two dads - chooses to use existing embryos",
     interestedServices: ["Surrogate", "Sperm Donor"],
-    messageCount: 14,
+    messageCount: 20,
   },
   {
     id: "TD-10", persona: "two-dads",
@@ -290,14 +290,14 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "TD-11: No embryos - My own sperm - Mixed USA + Colombia - Twins",
     desc: "Two dads Path C mixed countries with twins preference",
     interestedServices: ["Surrogate", "Egg Donor"],
-    messageCount: 14,
+    messageCount: 20,
   },
   {
     id: "TD-12", persona: "two-dads",
     name: "TD-12: No embryos - Donor sperm - All services - USA - No preference",
     desc: "Two dads embryo donation with all no-preference answers",
     interestedServices: ["Surrogate", "Egg Donor", "Sperm Donor"],
-    messageCount: 17,
+    messageCount: 23,
   },
 
   // ── TWO MOMS (TM-01 to TM-13) ─────────────────────────────────────────────
@@ -355,7 +355,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "TM-08: No embryos - Partner A eggs - Surrogate carries - Needs surrogate + sperm donor + clinic",
     desc: "Two moms using surrogate with own eggs",
     interestedServices: ["Surrogate", "Sperm Donor"],
-    messageCount: 19,
+    messageCount: 25,
   },
   {
     id: "TM-09", persona: "two-moms",
@@ -383,7 +383,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "TM-12: Has embryos - Step 1c fires - Uses existing - Surrogate - USA",
     desc: "Step 1c for two moms: registered for egg donation + has embryos - use existing",
     interestedServices: ["Surrogate", "Egg Donor"],
-    messageCount: 16,
+    messageCount: 22,
   },
   {
     id: "TM-13", persona: "two-moms",
@@ -448,7 +448,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "MW-08: No embryos - Her eggs - His sperm - Surrogate carries - USA - Pro-choice (Woman speaking)",
     desc: "MW couple own genetics with surrogate",
     interestedServices: ["Surrogate"],
-    messageCount: 19,
+    messageCount: 20,
   },
   {
     id: "MW-09", persona: "man-woman",
@@ -462,7 +462,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "MW-10: No embryos - Donor eggs - His sperm - Surrogate carries - Needs egg + surrogate + clinic - USA (Woman speaking)",
     desc: "MW couple donor eggs with surrogate, no preference answers",
     interestedServices: ["Surrogate", "Egg Donor"],
-    messageCount: 21,
+    messageCount: 22,
   },
   {
     id: "MW-11", persona: "man-woman",
@@ -476,7 +476,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "MW-12: No embryos - Donor eggs - Donor sperm - Surrogate - All services - USA - Pro-life (Man speaking)",
     desc: "All-donor + surrogate for MW couple, pro-life termination, man speaking",
     interestedServices: ["Surrogate", "Egg Donor", "Sperm Donor"],
-    messageCount: 24,
+    messageCount: 25,
   },
   {
     id: "MW-13", persona: "man-woman",
@@ -497,7 +497,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "MW-15: Has embryos (4, tested) - Her eggs - His sperm - Surrogate carries - USA (Man speaking)",
     desc: "MW couple with existing embryos, using surrogate, man speaking",
     interestedServices: ["Surrogate"],
-    messageCount: 17,
+    messageCount: 23,
   },
   {
     id: "MW-16", persona: "man-woman",
@@ -511,7 +511,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "MW-17: Has embryos - Step 1c create new embryos - Surrogate - USA (Woman speaking)",
     desc: "Step 1c MW: creates new embryos with fresh donor, uses surrogate",
     interestedServices: ["Surrogate", "Egg Donor"],
-    messageCount: 20,
+    messageCount: 21,
   },
   {
     id: "MW-18", persona: "man-woman",
@@ -525,7 +525,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "MW-19: No embryos - Donor eggs - His sperm - Surrogate carries - Mexico (Man speaking)",
     desc: "MW couple Mexico international path, man speaking",
     interestedServices: ["Surrogate", "Egg Donor"],
-    messageCount: 20,
+    messageCount: 21,
   },
 ];
 
