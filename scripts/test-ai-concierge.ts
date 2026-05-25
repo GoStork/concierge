@@ -1321,7 +1321,7 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_MW_MAN, CLINIC_NEED, EMB_NO,
       "My partner's eggs", "My own", CARRIER_PARTNER,
-      ...clinicMatch,
+      ...clinicMatchCouple,
     ),
     db: [
       { field: "eggSource", expected: "Partner eggs" },

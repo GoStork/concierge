@@ -406,7 +406,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "MW-02: No embryos - Her eggs - His sperm - She carries - Needs clinic (Man speaking)",
     desc: "Same biology as MW-01 but man is speaking - verifies correct option framing",
     interestedServices: [],
-    messageCount: 14,
+    messageCount: 15,
   },
   {
     id: "MW-03", persona: "man-woman",
