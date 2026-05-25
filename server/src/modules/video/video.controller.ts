@@ -896,6 +896,9 @@ export class VideoController {
               role: "assistant",
               content: `Great call! ${providerName}, based on your consultation with ${parentFirstName}, what are your initial thoughts? Share your assessment so we can guide next steps.`,
               senderType: "ai",
+              // Tag as provider_assessment so it is filtered from parent chat view and
+              // left-pane preview - parents shouldn't see this prompt directed at providers.
+              uiCardType: "provider_assessment",
             },
           });
         }

@@ -985,6 +985,8 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       // System messages: show plain-text ones (join/escalation notices) and specific card types; hide everything else
       const allowedSystemCardTypes = ["agreement", "readiness_prompt", "invoice"];
       if (m.senderType === "system" && !allowedSystemCardTypes.includes(m.uiCardType) && m.uiCardType != null) return false;
+      // Provider assessment prompts are only shown to providers, not parents
+      if (!isProvider && m.uiCardType === "provider_assessment") return false;
       return true;
     });
 
@@ -1055,6 +1057,8 @@ aiRouter.get("/my-session", async (req: Request, res: Response) => {
       // System messages: show plain-text ones (join/escalation notices) and specific card types; hide everything else
       const allowedSystemCardTypes = ["agreement", "readiness_prompt", "invoice"];
       if (m.senderType === "system" && !allowedSystemCardTypes.includes(m.uiCardType) && m.uiCardType != null) return false;
+      // Provider assessment prompts are only shown to providers, not parents
+      if (!isProvider && m.uiCardType === "provider_assessment") return false;
       return true;
     });
     res.json({

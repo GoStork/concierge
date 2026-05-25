@@ -116,7 +116,7 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       where: { userId: { in: accountUserIds } },
       orderBy: { updatedAt: "desc" },
       include: {
-        messages: { orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         provider: { select: { id: true, name: true, logoUrl: true } },
       },
     });
@@ -322,7 +322,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
         provider: { select: { id: true, name: true, logoUrl: true } },
-        messages: { orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { messages: true } },
       },
       orderBy: [{ humanRequested: "desc" }, { updatedAt: "desc" }],
@@ -735,7 +735,7 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       },
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
-        messages: { orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { messages: true } },
       },
       orderBy: { updatedAt: "desc" },

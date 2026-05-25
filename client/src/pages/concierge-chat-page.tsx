@@ -4404,6 +4404,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   ? (msg.senderName === "GoStork" ? "GoStork" : aiName || "AI")
                   : (aiName || "AI");
                 const alignRight = isOwnMessage || (!isOtherParent && msg.role === "user");
+                // These card types render the full message content inside the card itself.
+                // Suppress the plain-text bubble so the content doesn't appear twice.
+                const cardReplacesbubble = ["readiness_prompt", "invoice"].includes(msg.uiCardType ?? "");
                 return (
                   <>
                     {!alignRight && msg.matchCards && msg.matchCards.length > 0 && (
@@ -4428,7 +4431,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                         </span>
                       </div>
                     )}
-                    <div
+                    {!cardReplacesbubble && <div
                       className={`flex flex-col ${alignRight ? "items-end" : "items-start"}`}
                       data-testid={`chat-message-${msg.role}-${i}`}
                     >
@@ -4503,7 +4506,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                           )}
                         </span>
                       )}
-                    </div>
+                    </div>}
                   </>
                 );
               })()}
