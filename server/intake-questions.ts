@@ -202,9 +202,18 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
   // -----------------------------------------------------------------------
   // STEP 0: Clinic status
   // -----------------------------------------------------------------------
-  // Skip if: only egg/sperm donor (no clinic, no surrogate registered)
-  const onlyDonors = !registeredForClinic && !registeredForSurrogate && !needsClinic && !needsSurrogate;
-  if (!onlyDonors && (clinicCycleApplies || registeredForSurrogate || needsSurrogate)) {
+  // Ask the clinic question UNLESS we already know whether the parent needs
+  // help finding one. Previously the guard `!registeredForClinic &&
+  // !registeredForSurrogate && !needsClinic && !needsSurrogate` evaluated true
+  // for any new user before they'd said anything, treating them as donor-only
+  // and skipping Phase 2 entirely. That caused the bypass to jump to Step 2
+  // (eggs) and the conversation to misalign. Real "donor-only" users will
+  // either say "I already have a clinic" (alreadyHasClinic=true so Step 0
+  // doesn't repeat) or answer the question naturally.
+  const clinicStatusKnown = needsClinic || alreadyHasClinic ||
+    profile?.needsClinic != null ||
+    userSaid(allUserMessages, /i need help finding a clinic|i already have a clinic|need help.*clinic/i);
+  if (!clinicStatusKnown) {
     const step0Asked = aiAsked(chatHistory, /do you already have a fertility clinic.*need help finding one|need help finding.*clinic.*already have a clinic/i);
     const step0Answered = userSaid(allUserMessages, /i need help finding a clinic|i already have a clinic|already have a clinic|need help.*clinic/i)
       || profile?.needsClinic != null;
@@ -241,7 +250,13 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
   // -----------------------------------------------------------------------
   const skipEmbryoQuestion = isGayOrSingleMale && (needsEggDonor || registeredForEggDonor);
 
-  if (!skipEmbryoQuestion && !embryoStatusKnown && !onlyDonors) {
+  // donorOnlyParent: registered ONLY for egg/sperm donor (no clinic, no surrogate, no
+  // clinic/surrogate mention). Skip embryo question because pure donor-only browsing
+  // doesn't need embryo context.
+  const donorOnlyParent = (registeredForEggDonor || registeredForSpermDonor)
+    && !registeredForClinic && !registeredForSurrogate
+    && !needsClinic && !needsSurrogate && !alreadyHasClinic;
+  if (!skipEmbryoQuestion && !embryoStatusKnown && !donorOnlyParent) {
     const step1Asked = aiAsked(chatHistory, /do you already have frozen embryos|already have frozen embryos/i);
     if (!step1Asked) {
       return {
