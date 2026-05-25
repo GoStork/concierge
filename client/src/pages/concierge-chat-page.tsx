@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -3265,6 +3265,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     return () => container.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Synchronously scroll to bottom before the first paint to prevent the booking card
+  // (or any early message) from flashing visible while the async useEffect fires.
+  useLayoutEffect(() => {
+    if (newSessionInitRef.current || initialScrollDone.current) return;
+    if (!messages.length) return;
+    scrollToBottom.current();
+  }, [messages.length, sessionBookings?.length]);
+
   // Scroll to bottom on messages change
   useEffect(() => {
     if (!messages.length) return;
@@ -4607,7 +4615,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               )}
 
               {msg.uiCardType && msg.uiCardData && (
-                <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} mt-2`}>
+                <div className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"} mt-2`}>
                   <div className="max-w-[75%]">
                     {(() => {
                       // For readiness_prompt: derive answered state from the message
@@ -4623,6 +4631,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       return <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} sessionId={sessionId} isAnswered={isAnswered} />;
                     })()}
                   </div>
+                  {["readiness_prompt", "invoice"].includes(msg.uiCardType ?? "") && msg.createdAt && (
+                    <span
+                      className="whitespace-nowrap select-none flex items-center gap-0.5 mt-0.5 px-1"
+                      style={{ fontSize: "var(--chat-timestamp-font-size, 11px)", lineHeight: "16px", opacity: "var(--chat-timestamp-opacity, 0.45)" as unknown as number }}
+                    >
+                      {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                    </span>
+                  )}
                 </div>
               )}
 

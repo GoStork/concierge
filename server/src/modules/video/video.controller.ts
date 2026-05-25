@@ -32,6 +32,9 @@ import { hasProviderRole } from "../../../../shared/roles";
 export class VideoController {
   private readonly logger = new Logger(VideoController.name);
   private readonly waitingNotificationSent = new Set<string>();
+  // In-memory dedup: prevents duplicate readiness prompts when multiple participants
+  // call markCallEnded simultaneously (race condition on actualEndedAt check).
+  private readonly billingPromptInFlight = new Set<string>();
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -951,6 +954,12 @@ export class VideoController {
     if (!providerEntity) return;
     // Readiness prompt goes to the private concierge chat - if there's no session, skip
     if (!parentMainSessionId) return;
+
+    // In-memory lock: multiple participants calling markCallEnded concurrently can all
+    // pass the wasInProgress guard before the DB update commits, so we deduplicate here.
+    if (this.billingPromptInFlight.has(bookingId)) return;
+    this.billingPromptInFlight.add(bookingId);
+    setTimeout(() => this.billingPromptInFlight.delete(bookingId), 60_000);
 
     // Get the booking with meetingSubtype to determine if this is a decision call
     const booking = await this.prisma.booking.findUnique({
