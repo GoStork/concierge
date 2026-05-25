@@ -105,7 +105,18 @@ export class StorageService {
   ): Promise<string> {
     this.ensureConfigured();
     const file = this.bucket.file(destPath);
-    await file.save(buffer, { contentType });
+    try {
+      // Fine-grained ACL buckets: set per-object public read
+      await file.save(buffer, { contentType, predefinedAcl: "publicRead" });
+    } catch (err: any) {
+      // Uniform bucket-level access disables per-object ACLs; upload without ACL
+      // and rely on bucket-level IAM (allUsers Storage Object Viewer) for public access
+      if (err?.code === 400 || err?.message?.includes("uniform") || err?.message?.includes("ACL") || err?.message?.includes("BucketPolicyOnlyEnabled")) {
+        await file.save(buffer, { contentType });
+      } else {
+        throw err;
+      }
+    }
     return `https://storage.googleapis.com/${this.bucketName}/${destPath}`;
   }
 
