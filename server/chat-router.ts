@@ -2305,6 +2305,19 @@ chatRouter.post("/api/billing/parent-confirm-ready", requireAuth, async (req, re
       return res.json({ message: "Payment already in progress", invoiceId: existing.id, paymentToken: existing.paymentToken });
     }
 
+    // Dedup: skip if a "Thank you" confirmation message was already posted in this session
+    const existingConfirm = await prisma.aiChatMessage.findFirst({
+      where: {
+        sessionId: session.id,
+        senderName: "GoStork",
+        content: { contains: "Thank you for letting us know" },
+        createdAt: { gte: new Date(Date.now() - 2 * 60 * 60 * 1000) },
+      },
+    });
+    if (existingConfirm) {
+      return res.json({ success: true, message: "Already confirmed" });
+    }
+
     // Post a confirmation message to the chat
     await prisma.aiChatMessage.create({
       data: {
@@ -2345,6 +2358,44 @@ chatRouter.post("/api/billing/parent-confirm-ready", requireAuth, async (req, re
     res.json({ success: true, message: "Confirmed. GoStork will send your invoice shortly." });
   } catch (e: any) {
     console.error("[parent-confirm-ready]", e.message);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// Mark a readiness_prompt message as answered so the card shows disabled on reload
+chatRouter.patch("/api/billing/readiness-prompt-respond", requireAuth, async (req, res) => {
+  try {
+    const user = req.user as any;
+    const { messageId, answer } = req.body; // answer: "yes" | "no"
+    if (!messageId || !["yes", "no"].includes(answer)) {
+      return res.status(400).json({ message: "messageId and answer (yes|no) required" });
+    }
+    const msg = await prisma.aiChatMessage.findUnique({
+      where: { id: messageId },
+      select: { id: true, sessionId: true, uiCardType: true, uiCardData: true },
+    });
+    if (!msg || msg.uiCardType !== "readiness_prompt") {
+      return res.status(404).json({ message: "Readiness prompt message not found" });
+    }
+    // Verify the user owns this session
+    const session = await prisma.aiChatSession.findUnique({
+      where: { id: msg.sessionId },
+      select: { userId: true },
+    });
+    if (!session) return res.status(404).json({ message: "Session not found" });
+    const sessionOwner = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
+    const requestUser = await prisma.user.findUnique({ where: { id: user.id }, select: { parentAccountId: true } });
+    const isOwner = session.userId === user.id ||
+      (sessionOwner?.parentAccountId && requestUser?.parentAccountId && sessionOwner.parentAccountId === requestUser.parentAccountId);
+    if (!isOwner) return res.status(403).json({ message: "Not authorized" });
+
+    await prisma.aiChatMessage.update({
+      where: { id: messageId },
+      data: { uiCardData: { ...(msg.uiCardData as object || {}), answered: answer } },
+    });
+    res.json({ success: true });
+  } catch (e: any) {
+    console.error("[readiness-prompt-respond]", e.message);
     res.status(500).json({ message: e.message });
   }
 });

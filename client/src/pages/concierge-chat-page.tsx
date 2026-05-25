@@ -2395,6 +2395,7 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId }:
     return (
       <ReadinessPromptCard
         data={data}
+        messageId={msg.id || ""}
         sessionId={sessionId || ""}
         messageContent={msg.content || ""}
         isParent={true}
