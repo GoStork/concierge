@@ -1398,37 +1398,48 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
     cursor: "pointer",
   };
 
+  const doneChipStyle: CSSProperties = {
+    ...chipBase,
+    backgroundColor: primary,
+    color: "#ffffff",
+    border: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    fontWeight: 600,
+    cursor: "pointer",
+  };
+
   return (
     <div className="space-y-3">
       <Label className="text-xs text-muted-foreground block">Chat Preview</Label>
-      <div className="border rounded-[var(--radius)] overflow-hidden bg-card flex flex-col" style={{ height: "380px" }}>
+      <div className="border rounded-[var(--radius)] overflow-hidden bg-card flex flex-col" style={{ height: "400px" }}>
         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-background/50">
-          {messages.map((msg, i) => (
-            <div key={i} className={`flex flex-col ${msg.own ? "items-end" : "items-start"}`}>
-              <div style={msg.own ? outgoing : incoming}>
-                {msg.text}
-                {msg.chips === "binary" && binaryChosen === null && (
-                  <div className="flex flex-wrap gap-2 mt-3">
-                    <span
-                      style={{ ...chipPositive, display: "inline-flex", alignItems: "center", gap: "5px", cursor: "pointer" }}
-                      onClick={() => setBinaryChosen(0)}
-                    >
-                      <ThumbsUp style={{ width: "12px", height: "12px", flexShrink: 0 }} />
-                      {binaryChips[0]}
-                    </span>
-                    <span
-                      style={{ ...chipSecondary, cursor: "pointer" }}
-                      onClick={() => setBinaryChosen(1)}
-                    >
-                      {binaryChips[1]}
-                    </span>
-                  </div>
-                )}
-              </div>
-              <span style={tsStyle}>{msg.time}</span>
-            </div>
-          ))}
 
+          {/* AI: binary question */}
+          <div className="flex flex-col items-start">
+            <div style={incoming}>
+              Does that make sense so far?
+              <div className="flex flex-wrap gap-2 mt-3">
+                <span
+                  style={{ ...chipPositive, display: "inline-flex", alignItems: "center", gap: "5px", cursor: binaryChosen === null ? "pointer" : "default", opacity: binaryChosen !== null && binaryChosen !== 0 ? 0.4 : 1 }}
+                  onClick={() => binaryChosen === null && setBinaryChosen(0)}
+                >
+                  <ThumbsUp style={{ width: "12px", height: "12px", flexShrink: 0 }} />
+                  {binaryChips[0]}
+                </span>
+                <span
+                  style={{ ...chipSecondary, cursor: binaryChosen === null ? "pointer" : "default", opacity: binaryChosen !== null && binaryChosen !== 1 ? 0.4 : 1 }}
+                  onClick={() => binaryChosen === null && setBinaryChosen(1)}
+                >
+                  {binaryChips[1]}
+                </span>
+              </div>
+            </div>
+            <span style={tsStyle}>1:38 PM</span>
+          </div>
+
+          {/* User reply + follow-up */}
           {binaryChosen !== null && (
             <>
               <div className="flex flex-col items-end">
@@ -1456,20 +1467,7 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
                         );
                       })}
                       {selectedMulti.size > 0 && (
-                        <span
-                          style={{
-                            ...chipBase,
-                            backgroundColor: primary,
-                            color: "#ffffff",
-                            border: "none",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "4px",
-                            fontWeight: 600,
-                            cursor: "pointer",
-                          }}
-                          onClick={() => setSelectedMulti(new Set())}
-                        >
+                        <span style={doneChipStyle} onClick={() => setSelectedMulti(new Set())}>
                           Done ({selectedMulti.size})
                         </span>
                       )}
@@ -1482,14 +1480,7 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
           )}
 
           {binaryChosen === null && (
-            <div className="flex flex-col items-center">
-              <span
-                className="text-xs text-muted-foreground"
-                style={{ fontSize: "10px", opacity: 0.6, cursor: "default" }}
-              >
-                tap a chip to interact
-              </span>
-            </div>
+            <p className="text-center" style={{ fontSize: "10px", opacity: 0.45 }}>tap a chip to interact</p>
           )}
         </div>
         <div className="border-t bg-card px-3 flex items-center gap-2" style={{ minHeight: inputHeight }}>
@@ -1499,7 +1490,7 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
           <Send
             className="w-4 h-4 shrink-0"
             style={{ color: primary, cursor: "pointer" }}
-            onClick={() => { setBinaryChosen(null); setSelectedMulti(new Set([0, 2])); }}
+            onClick={() => { setBinaryChosen(null); setSelectedMulti(new Set()); }}
           />
         </div>
       </div>
