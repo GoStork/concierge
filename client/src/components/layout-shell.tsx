@@ -321,6 +321,36 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     }
   }, [toast, dismiss, navigate]);
 
+  const handleParentReadyEvent = useCallback((data: any) => {
+    if (data.type !== "parent_ready_to_proceed") return;
+    playNotificationChime();
+    const { id: toastId } = toast({
+      title: `${data.parentName || "A parent"} is ready to proceed`,
+      description: `${data.providerName || "Provider"} - create their invoice now`,
+      variant: "success",
+      action: (
+        <Button
+          size="sm"
+          variant="default"
+          className="gap-1 shrink-0"
+          onClick={() => { dismiss(toastId); navigate("/admin/billing"); }}
+        >
+          Create Invoice
+        </Button>
+      ),
+      duration: 30000,
+    });
+    if ("Notification" in window && Notification.permission === "granted") {
+      try {
+        new Notification(`${data.parentName || "A parent"} is ready to proceed`, {
+          body: `${data.providerName || "Provider"} - create their invoice`,
+          icon: "/favicon.ico",
+          tag: `parent-ready-${data.sessionId}`,
+        });
+      } catch {}
+    }
+  }, [toast, dismiss, navigate]);
+
   const handleChatSessionUpdatedEvent = useCallback((data: any) => {
     if (data.type !== "chat_session_updated") return;
     // A new chat message was posted server-side (e.g. post-call readiness prompt).
@@ -403,6 +433,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         handleHumanConcludedEvent(data);
         handleProfileUpdatedEvent(data);
         handleChatSessionUpdatedEvent(data);
+        handleParentReadyEvent(data);
       } catch {}
     };
 
@@ -422,7 +453,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       es.close();
       sseRef.current = null;
     };
-  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent, handleProfileUpdatedEvent, handleChatSessionUpdatedEvent]);
+  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent, handleProfileUpdatedEvent, handleChatSessionUpdatedEvent, handleParentReadyEvent]);
 
   const dispatch = useAppDispatch();
   const marketplaceTab = useAppSelector((state) => state.ui.marketplaceTab);
