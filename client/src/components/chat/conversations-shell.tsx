@@ -103,7 +103,10 @@ export function ConversationsShell({
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
             </div>
           ) : sidebarItems ? (
-            sidebarItems
+            <>
+              {sidebarItems}
+              <div style={{ height: 'calc(5rem + env(safe-area-inset-bottom))' }} aria-hidden />
+            </>
           ) : (
             <div className="flex flex-col items-center justify-center py-16 text-center px-6" data-testid="inbox-empty">
               <MessageSquare className="w-10 h-10 text-muted-foreground mb-3" />
