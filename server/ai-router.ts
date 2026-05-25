@@ -3455,8 +3455,22 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
     // post-generation interceptors. Declared here (outer scope) to avoid TDZ errors.
     // MW phrasing variants: the QR button reads "Man and a woman" but free-text answers
     // commonly invert to "A woman and a man" or just "woman and a man" - match both.
-    const phase1Complete = !!(profile?.familyType) ||
-      chatHistory.some((m: any) => m.role === "user" && /\b(solo man|solo woman|two dads|two moms|man and a woman|a woman and a man|woman and a man)\b/i.test(m.content || ""));
+    // CRITICAL: For MW (straight couple), Phase 1 is NOT complete until gender is also
+    // known. The relationship answer alone leaves us unable to ask gender-specific
+    // questions (egg source for male speaker vs female speaker has different QR options).
+    // Without the gender gate, Step 0 (clinic) fires immediately after "A woman and a
+    // man" but BEFORE the gender follow-up is asked, causing the test's gender-answer
+    // message to misalign as a Step 0 answer.
+    const mentionedStraightCouple = chatHistory.some((m: any) =>
+      m.role === "user" && /\b(man and a woman|a woman and a man|woman and a man|straight couple)\b/i.test(m.content || ""));
+    const mentionedOtherFamilyType = chatHistory.some((m: any) =>
+      m.role === "user" && /\b(solo man|solo woman|two dads|two moms)\b/i.test(m.content || ""));
+    const familyTypeKnown = !!(profile?.familyType) || mentionedStraightCouple || mentionedOtherFamilyType;
+    // MW requires gender too - other family types have implicit/single-option gender.
+    const mwGenderKnown = !mentionedStraightCouple ||
+      !!(profile?.gender) ||
+      /\bi('?m| am) (?:a |the )?(?:woman|man)\b/i.test(allUserMessages);
+    const phase1Complete = familyTypeKnown && mwGenderKnown;
 
     if (useTier2) {
       // Tier 2: Claude Sonnet 4.6 with full prompt + caching + tools
