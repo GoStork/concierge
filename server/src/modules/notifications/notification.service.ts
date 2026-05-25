@@ -252,10 +252,27 @@ export class NotificationService implements OnModuleInit {
         const rawLogo = s.logoWithNameUrl || s.logoUrl || "";
         const imageBaseUrl = getBaseUrl();
         let logoUrl = rawLogo && rawLogo.startsWith("/") ? `${imageBaseUrl}${rawLogo}` : rawLogo;
-        // GCS objects in a uniform-access bucket are private - route through the
-        // public proxy endpoint so email clients can load the image without auth.
+        // GCS bucket uses uniform bucket-level access - objects are private.
+        // Generate a short-lived signed URL so email clients can load the logo directly.
         if (logoUrl && logoUrl.includes("storage.googleapis.com")) {
-          logoUrl = `${imageBaseUrl}/api/uploads/proxy?url=${encodeURIComponent(logoUrl)}`;
+          try {
+            const { Storage } = await import("@google-cloud/storage");
+            const keyJson = process.env.GCS_SERVICE_ACCOUNT_KEY;
+            if (keyJson) {
+              const credentials = JSON.parse(keyJson);
+              const storage = new Storage({ credentials });
+              const bucketName = process.env.GCS_BUCKET_NAME || "gostork-recordings";
+              const urlObj = new URL(logoUrl);
+              const objectPath = decodeURIComponent(urlObj.pathname.slice(`/${bucketName}/`.length + 1));
+              const [signed] = await storage.bucket(bucketName).file(objectPath).getSignedUrl({
+                action: "read",
+                expires: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
+              });
+              logoUrl = signed;
+            }
+          } catch {
+            // fall back to raw URL if signing fails
+          }
         }
         defaults.logoUrl = logoUrl;
         defaults.primaryForegroundColor = s.primaryForegroundColor || defaults.primaryForegroundColor;
