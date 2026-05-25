@@ -975,7 +975,7 @@ export class NotificationService implements OnModuleInit {
         const html = buildBrandedEmail(brandData, {
           title: "Your Meeting is Starting",
           greeting: `Hi ${esc(getFirstName(attendeeName))},`,
-          body: `<strong>${esc(staffMember || providerName)}</strong> is waiting for you in the video room. Join now!`,
+          body: `<strong>${esc(staffMember || providerName)}</strong>${staffMember && providerName && staffMember !== providerName ? ` from <strong>${esc(providerName)}</strong>` : ""} is waiting for you in the video room. Join now!`,
           alertBox: { text: "Your provider is in the meeting room and waiting for you.", type: "success" },
           buttons: [{ label: "Join Now", url: roomLink }],
         });
