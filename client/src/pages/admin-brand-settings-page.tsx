@@ -1326,14 +1326,32 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
   const incoming: CSSProperties = { ...bubbleBase, backgroundColor: "hsl(var(--muted))", color: "hsl(var(--foreground))", border: "1px solid hsl(var(--border))" };
   const tsStyle: CSSProperties = { fontSize: tsFontSize, opacity: tsOpacity, marginTop: "3px", paddingLeft: "4px", paddingRight: "4px" };
 
-  const quickReplies = ["Yes, show me options", "Tell me more", "Not yet"];
+  const chipBase: CSSProperties = {
+    fontSize: qrFontSize,
+    borderRadius: qrRadius,
+    paddingLeft: qrPx,
+    paddingRight: qrPx,
+    paddingTop: qrPy,
+    paddingBottom: qrPy,
+    fontFamily: bodyFont,
+    cursor: "default",
+    display: "inline-block",
+    lineHeight: "1.2",
+    border: "1px solid",
+    fontWeight: 500,
+  };
+  const chipPrimary: CSSProperties = { ...chipBase, backgroundColor: primary, color: "#ffffff", borderColor: primary };
+  const chipSecondary: CSSProperties = { ...chipBase, backgroundColor: "transparent", color: "hsl(var(--muted-foreground))", borderColor: "hsl(var(--border))" };
+  const chipUniform: CSSProperties = { ...chipBase, backgroundColor: `${primary}18`, color: primary, borderColor: `${primary}50` };
 
-  const messages = [
-    { text: "Hi! I'm Ariel, your fertility concierge. How can I help you today?", own: false, time: "1:38 PM" },
-    { text: "Hi", own: true, time: "1:39 PM" },
-    { text: "I'm looking for an egg donor in New York.", own: true, time: "1:39 PM" },
-    { text: "Great! I have several donors who match your profile. Would you like me to show you some options?", own: false, time: "1:40 PM", showChips: true },
+  const messages: { text: string; own: boolean; time: string; chips?: "binary" | "multi" }[] = [
+    { text: "Does that make sense so far?", own: false, time: "1:38 PM", chips: "binary" },
+    { text: "Yes, makes sense!", own: true, time: "1:39 PM" },
+    { text: "What type of egg donor are you looking for?", own: false, time: "1:40 PM", chips: "multi" },
   ];
+
+  const binaryChips = ["Yes, makes sense!", "I have a question"];
+  const multiChips = ["Fresh donor", "Frozen eggs", "Open to both"];
 
   return (
     <div className="space-y-3">
@@ -1344,29 +1362,16 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
             <div key={i} className={`flex flex-col ${msg.own ? "items-end" : "items-start"}`}>
               <div style={msg.own ? outgoing : incoming}>{msg.text}</div>
               <span style={tsStyle}>{msg.time}</span>
-              {msg.showChips && (
+              {msg.chips === "binary" && (
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {quickReplies.map((qr, qi) => (
-                    <span
-                      key={qi}
-                      style={{
-                        fontSize: qrFontSize,
-                        borderRadius: qrRadius,
-                        paddingLeft: qrPx,
-                        paddingRight: qrPx,
-                        paddingTop: qrPy,
-                        paddingBottom: qrPy,
-                        border: `1px solid ${primary}${qrBorderHex}`,
-                        backgroundColor: `${primary}${qrBgHex}`,
-                        color: primary,
-                        fontFamily: bodyFont,
-                        cursor: "default",
-                        display: "inline-block",
-                        lineHeight: "1.2",
-                      }}
-                    >
-                      {qr}
-                    </span>
+                  <span style={chipPrimary}>{binaryChips[0]}</span>
+                  <span style={chipSecondary}>{binaryChips[1]}</span>
+                </div>
+              )}
+              {msg.chips === "multi" && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {multiChips.map((qr, qi) => (
+                    <span key={qi} style={chipUniform}>{qr}</span>
                   ))}
                 </div>
               )}

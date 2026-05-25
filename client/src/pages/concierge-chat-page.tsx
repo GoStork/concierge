@@ -4702,24 +4702,44 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       {msg.quickReplies.map((qr, qi) => {
                         const isMulti = msg.multiSelect;
                         const isSelected = isMulti && multiSelectChoices.has(qr);
+                        const isBinary = msg.quickReplies!.length === 2 && !isMulti;
+
+                        // Binary (2 options): first = filled primary, second = muted outline
+                        // Multi (3+ or multiselect): uniform light-fill chips
+                        const chipStyle = isBinary
+                          ? qi === 0
+                            ? {
+                                backgroundColor: brandColor,
+                                color: "#ffffff",
+                                border: "none",
+                              }
+                            : {
+                                backgroundColor: "transparent",
+                                color: "hsl(var(--muted-foreground))",
+                                borderColor: "hsl(var(--border))",
+                              }
+                          : {
+                              backgroundColor: isSelected ? `${brandColor}30` : `${brandColor}18`,
+                              color: brandColor,
+                              borderColor: isSelected ? brandColor : `${brandColor}50`,
+                            };
+
                         return (
                           <Button
                             key={qi}
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="transition-all hover:shadow-sm"
+                            className="transition-all hover:shadow-sm font-medium"
                             style={{
                               borderRadius: "var(--quick-reply-radius, 999px)",
-                              borderColor: isSelected ? brandColor : `${brandColor}var(--quick-reply-border-opacity, 40)`,
-                              backgroundColor: isSelected ? `${brandColor}15` : `${brandColor}var(--quick-reply-bg-opacity, 00)`,
-                              color: brandColor,
                               fontSize: "var(--quick-reply-font-size, 13px)",
                               paddingLeft: "var(--quick-reply-px, 14px)",
                               paddingRight: "var(--quick-reply-px, 14px)",
                               paddingTop: "var(--quick-reply-py, 6px)",
                               paddingBottom: "var(--quick-reply-py, 6px)",
                               touchAction: "manipulation",
+                              ...chipStyle,
                             }}
                             onClick={(e) => {
                               e.preventDefault();
