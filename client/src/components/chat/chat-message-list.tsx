@@ -170,7 +170,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
 
                 {/* Message bubble + timestamp below */}
                 {showBubble && (
-                  <div className={`flex ${own ? "justify-end" : "justify-start"}`}>
+                  <div className={`flex w-full ${own ? "justify-end" : "justify-start"}`}>
                     <div className={`flex flex-col max-w-[75%] ${own ? "items-end" : "items-start"}`}>
                       <div
                         className={`overflow-hidden px-4 py-2.5 text-base leading-relaxed font-ui ${

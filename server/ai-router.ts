@@ -953,7 +953,7 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
     const after = req.query.after as string | undefined;
     const session = await prisma.aiChatSession.findUnique({
       where: { id: sessionId },
-      select: { userId: true, providerId: true, title: true, status: true, providerJoinedAt: true, subjectProfileId: true, subjectType: true, profilePhotoUrl: true, matchmakerId: true, humanRequested: true, humanJoinedAt: true, humanConcludedAt: true, provider: { select: { name: true, logoUrl: true } } },
+      select: { userId: true, providerId: true, title: true, status: true, providerJoinedAt: true, subjectProfileId: true, subjectType: true, profilePhotoUrl: true, matchmakerId: true, humanRequested: true, humanJoinedAt: true, humanConcludedAt: true, humanAgentId: true, provider: { select: { name: true, logoUrl: true } } },
     });
     if (!session) return res.status(403).json({ message: "Forbidden" });
     const isOwner = session.userId === user.id;
@@ -1009,6 +1009,11 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       const mm = await prisma.matchmaker.findUnique({ where: { id: session.matchmakerId }, select: { name: true } });
       matchmakerName = mm?.name || null;
     }
+    let humanAgentPhotoUrl: string | null = null;
+    if ((session as any).humanAgentId) {
+      const agent = await prisma.user.findUnique({ where: { id: (session as any).humanAgentId }, select: { photoUrl: true } });
+      humanAgentPhotoUrl = agent?.photoUrl || null;
+    }
     res.json({
       messages: filteredMessages,
       sessionTitle: cleanTitle(session.title) || null,
@@ -1024,6 +1029,7 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       sessionProviderId: session.providerId || null,
       matchmakerId: session.matchmakerId || null,
       matchmakerName,
+      humanAgentPhotoUrl,
     });
   } catch (e: any) {
     res.status(500).json({ message: e.message });

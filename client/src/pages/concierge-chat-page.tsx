@@ -2609,6 +2609,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const curationAwaitingRef = useRef(false);
   const [humanEscalated, setHumanEscalated] = useState(false);
   const [humanInChat, setHumanInChat] = useState(false);
+  const [humanAgentPhotoUrl, setHumanAgentPhotoUrl] = useState<string | null>(null);
   const [bookingCard, setBookingCard] = useState<ConsultationCardData | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [greetingSet, setGreetingSet] = useState(false);
@@ -2990,6 +2991,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         setHumanEscalated(data.humanRequested && !data.humanConcludedAt);
         setHumanInChat(!!data.humanJoinedAt && !data.humanConcludedAt);
       }
+      if (data.humanAgentPhotoUrl) setHumanAgentPhotoUrl(data.humanAgentPhotoUrl);
       if (data.subjectProfileId && data.subjectType) {
         setSessionSubjectInfo({
           subjectProfileId: data.subjectProfileId,
@@ -3414,6 +3416,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               setHumanEscalated(statusData.humanRequested && !statusData.humanConcludedAt);
               setHumanInChat(!!statusData.humanJoinedAt && !statusData.humanConcludedAt);
             }
+            if (statusData.humanAgentPhotoUrl) setHumanAgentPhotoUrl(statusData.humanAgentPhotoUrl);
             const allMsgs: any[] = Array.isArray(statusData) ? statusData : (statusData.messages || []);
             const statusMap = new Map(allMsgs.map((m: any) => [m.id, { deliveredAt: m.deliveredAt, readAt: m.readAt }]));
             setMessages(prev => {
@@ -4421,7 +4424,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 ? (msg.senderType === "provider"
                     ? (getPhotoSrc(sessionSubjectInfo?.providerLogo) || null)
                     : msg.senderType === "human"
-                    ? null
+                    ? (getPhotoSrc(humanAgentPhotoUrl) || null)
                     : resolvedAvatarUrl)
                 : null;
               const msgAvatarInitial = !alignRight
