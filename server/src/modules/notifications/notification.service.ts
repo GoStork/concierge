@@ -250,10 +250,14 @@ export class NotificationService implements OnModuleInit {
         defaults.errorColor = s.errorColor || defaults.errorColor;
         defaults.companyName = s.companyName || defaults.companyName;
         const rawLogo = s.logoWithNameUrl || s.logoUrl || "";
-        // For email images, always use a publicly accessible URL (not localhost)
-        // Prefer APP_URL or Replit deployment URL for image hosting
         const imageBaseUrl = getBaseUrl();
-        defaults.logoUrl = rawLogo && rawLogo.startsWith("/") ? `${imageBaseUrl}${rawLogo}` : rawLogo;
+        let logoUrl = rawLogo && rawLogo.startsWith("/") ? `${imageBaseUrl}${rawLogo}` : rawLogo;
+        // GCS objects in a uniform-access bucket are private - route through the
+        // public proxy endpoint so email clients can load the image without auth.
+        if (logoUrl && logoUrl.includes("storage.googleapis.com")) {
+          logoUrl = `${imageBaseUrl}/api/uploads/proxy?url=${encodeURIComponent(logoUrl)}`;
+        }
+        defaults.logoUrl = logoUrl;
         defaults.primaryForegroundColor = s.primaryForegroundColor || defaults.primaryForegroundColor;
         defaults.foregroundColor = s.foregroundColor || defaults.foregroundColor;
         defaults.mutedForegroundColor = s.mutedForegroundColor || defaults.mutedForegroundColor;
