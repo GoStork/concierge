@@ -1358,17 +1358,17 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
   const chipPositive: CSSProperties = qrIsOutline
     ? { ...chipBase, backgroundColor: "transparent", color: qrColor, border: `1px solid ${qrColor}` }
     : qrIsSecondary
-    ? { ...chipBase, backgroundColor: qrColor, color: "hsl(var(--foreground))", border: showBorder ? `1px solid hsl(var(--border))` : "none" }
-    : { ...chipBase, backgroundColor: qrColor, color: "#ffffff", border: showBorder ? `1px solid ${qrColor}` : "none" };
+    ? { ...chipBase, backgroundColor: qrColor, color: "hsl(var(--foreground))", border: showBorder ? `1px solid ${primary}50` : "none" }
+    : { ...chipBase, backgroundColor: qrColor, color: "#ffffff", border: "none" };
   const chipSecondary: CSSProperties = decIsOutline
     ? { ...chipBase, backgroundColor: "transparent", color: decColor, border: `1px solid ${decColor}` }
     : decIsSecondary
-    ? { ...chipBase, backgroundColor: decColor, color: "hsl(var(--foreground))", border: showBorder ? `1px solid hsl(var(--border))` : "none" }
-    : { ...chipBase, backgroundColor: decColor, color: "#ffffff", border: showBorder ? `1px solid ${decColor}` : "none" };
+    ? { ...chipBase, backgroundColor: decColor, color: "hsl(var(--foreground))", border: showBorder ? `1px solid ${primary}50` : "none" }
+    : { ...chipBase, backgroundColor: decColor, color: "#ffffff", border: "none" };
   const chipUniform: CSSProperties = qrIsOutline
     ? { ...chipBase, backgroundColor: "transparent", color: qrColor, border: `1px solid ${qrColor}` }
     : qrIsSecondary
-    ? { ...chipBase, backgroundColor: qrColor, color: "hsl(var(--foreground))", border: showBorder ? `1px solid hsl(var(--border))` : "none" }
+    ? { ...chipBase, backgroundColor: qrColor, color: "hsl(var(--foreground))", border: showBorder ? `1px solid ${primary}50` : "none" }
     : { ...chipBase, backgroundColor: `${qrColor}18`, color: qrColor, border: showBorder ? `1px solid ${qrColor}50` : "none" };
 
   const messages: { text: string; own: boolean; time: string; chips?: "binary" | "multi" }[] = [
