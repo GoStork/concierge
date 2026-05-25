@@ -4358,26 +4358,40 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             return timeline.map((item, idx) => {
               if (item.type === "booking") {
                 return (
-                  <div key={`booking-${item.booking.id}`} className="px-1 pb-2" data-testid="parent-standalone-booking-card">
-                    <div
-                      className="w-full overflow-hidden border border-border bg-card"
-                      style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 420px)" }}
-                    >
-                      <div className="p-1.5" style={{ backgroundColor: brandColor }}>
-                        <div className="flex items-center gap-2 px-3 py-1.5">
-                          <CalendarCheck className="w-4 h-4 text-primary-foreground" />
-                          <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
-                            {`Consultation Call with ${item.booking.providerUser?.provider?.name || item.booking.providerUser?.name || "Provider"}`}
-                          </span>
+                  <div key={`booking-${item.booking.id}`} className="flex items-start gap-2 px-1 pb-2" data-testid="parent-standalone-booking-card">
+                    <div className="w-8 h-8 rounded-full shrink-0 overflow-hidden mt-0.5">
+                      {resolvedAvatarUrl ? (
+                        <img src={resolvedAvatarUrl} alt={aiName || "AI"} className="w-full h-full object-cover" />
+                      ) : (
+                        <div
+                          className="w-full h-full flex items-center justify-center text-primary-foreground text-xs font-semibold"
+                          style={{ backgroundColor: brandColor }}
+                        >
+                          {aiName?.charAt(0) || "A"}
                         </div>
-                      </div>
-                      <div className="px-4 pb-4">
-                        <InlineBookingCalendar
-                          slug={sessionCalendarSlug?.slug || "__none__"}
-                          memberName={sessionCalendarSlug?.memberName || item.booking.providerUser?.name || "Provider"}
-                          brandColor={brandColor}
-                          existingBooking={item.booking}
-                        />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div
+                        className="w-full overflow-hidden border border-border bg-card"
+                        style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 420px)" }}
+                      >
+                        <div className="p-1.5" style={{ backgroundColor: brandColor }}>
+                          <div className="flex items-center gap-2 px-3 py-1.5">
+                            <CalendarCheck className="w-4 h-4 text-primary-foreground" />
+                            <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
+                              {`Consultation Call with ${item.booking.providerUser?.provider?.name || item.booking.providerUser?.name || "Provider"}`}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="px-4 pb-4">
+                          <InlineBookingCalendar
+                            slug={sessionCalendarSlug?.slug || "__none__"}
+                            memberName={sessionCalendarSlug?.memberName || item.booking.providerUser?.name || "Provider"}
+                            brandColor={brandColor}
+                            existingBooking={item.booking}
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
