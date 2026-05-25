@@ -2044,18 +2044,33 @@ async function main() {
       results.push(r);
     }
   } else {
-    // Run in batches of 5 to avoid overwhelming the server and AI API rate limits.
-    // Full parallel (14 at once) causes Gemini/Anthropic rate limiting → timeouts.
-    const BATCH_SIZE = 5;
+    // Concurrency pool: keep exactly CONCURRENCY tests running at all times.
+    // As soon as one finishes the next queued test starts immediately - no idle slots.
+    const CONCURRENCY = 5;
     results = [];
-    for (let i = 0; i < toRun.length; i += BATCH_SIZE) {
-      const batch = toRun.slice(i, i + BATCH_SIZE);
-      const batchResults = await Promise.all(batch.map(tc => {
-        console.log(`  ▶ Starting: ${tc.id}`);
-        reportToDashboard({ type: "test_start", id: tc.id });
-        return runTest(tc).then(r => { reportResult(r); return r; });
-      }));
-      results.push(...batchResults);
+    const queue = [...toRun];
+    const active = new Set<Promise<void>>();
+
+    const startNext = () => {
+      if (queue.length === 0) return;
+      const tc = queue.shift()!;
+      console.log(`  ▶ Starting: ${tc.id}`);
+      reportToDashboard({ type: "test_start", id: tc.id });
+      const p: Promise<void> = runTest(tc).then(r => {
+        reportResult(r);
+        results.push(r);
+        active.delete(p);
+        startNext();
+      });
+      active.add(p);
+    };
+
+    // Fill the pool up to CONCURRENCY
+    for (let i = 0; i < Math.min(CONCURRENCY, toRun.length); i++) startNext();
+
+    // Wait until all tests complete
+    while (active.size > 0) {
+      await Promise.race(active);
     }
   }
 
