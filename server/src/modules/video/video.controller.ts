@@ -848,9 +848,9 @@ export class VideoController {
     const { parentUserId, providerUserId } = booking;
     if (!parentUserId) return;
 
-    // Resolve parent first name and provider entity in parallel
+    // Resolve parent info and provider entity in parallel
     const [parentUser, providerEntity] = await Promise.all([
-      this.prisma.user.findUnique({ where: { id: parentUserId }, select: { firstName: true, name: true } }),
+      this.prisma.user.findUnique({ where: { id: parentUserId }, select: { firstName: true, name: true, email: true, mobileNumber: true } }),
       this.prisma.provider.findFirst({
         where: { users: { some: { id: providerUserId } } },
         select: { id: true, name: true },
@@ -917,7 +917,20 @@ export class VideoController {
       },
     }).catch(() => { /* non-critical */ });
 
-    // --- 4. GoStork Billing: post readiness prompt card in the PRIVATE concierge chat ---
+    // --- 4. Email + SMS to parent: same readiness prompt via out-of-app channels ---
+    if (parentUser?.email) {
+      const chatUrl = `${process.env.APP_URL || "https://app.gostork.com"}/chat/concierge${parentMainSession ? `?session=${parentMainSession.id}` : ""}`;
+      this.notificationService.sendPostCallReadinessNotification({
+        parentUserId,
+        parentName: parentUser.name || parentUser.firstName || "there",
+        parentEmail: parentUser.email,
+        parentPhone: parentUser.mobileNumber || null,
+        providerName,
+        chatUrl,
+      }).catch(err => this.logger.error(`Post-call email/SMS failed: ${err.message}`));
+    }
+
+    // --- 5. GoStork Billing: post readiness prompt card in the PRIVATE concierge chat ---
     // The readiness prompt goes to the parent's private AI session, not the 3-way chat,
     // so the parent can answer honestly without the provider seeing their response.
     await this.firePostCallBillingPrompt({

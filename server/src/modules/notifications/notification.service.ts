@@ -22,7 +22,8 @@ export type NotificationChannel =
   | "agreement_signed"
   | "invoice_payment_request"
   | "invoice_reminder"
-  | "invoice_paid_admin";
+  | "invoice_paid_admin"
+  | "consultation_ended";
 
 
 const TWILIO_TEMPLATES = {
@@ -45,6 +46,7 @@ const TWILIO_TEMPLATES = {
   VIDEO_WAITING_PROVIDER: "HX7a0d4fa0fca197607ea546e80eb5750b",
   MEMBER_INVITATION: "HXe69876a807739e3d399e2f5f33ed8f0a",
   AGREEMENT_READY_PARENT: "HXfcae315df1af6c9ca650ee7908ee8574",
+  POST_CALL_FOLLOWUP_PARENT: "PLACEHOLDER", // TODO: create Twilio Content Template; falls back to sendRawSms
 };
 
 function getBaseUrl(): string {
@@ -2043,6 +2045,56 @@ export class NotificationService implements OnModuleInit {
       await this.sendRawSms(params.parentPhone, smsBody).catch(e =>
         this.logger.error(`Failed to send reminder SMS (${params.reminderType}): ${e.message}`),
       );
+    }
+  }
+
+  async sendPostCallReadinessNotification(params: {
+    parentUserId: string;
+    parentName: string;
+    parentEmail: string;
+    parentPhone?: string | null;
+    providerName: string;
+    chatUrl: string; // deep link back to the private Ariel chat session
+  }) {
+    const brandData = await this.getBrandData();
+    const firstName = getFirstName(params.parentName) || "there";
+    const providerName = this.escapeHtml(params.providerName);
+    const subject = `How did your consultation with ${params.providerName} go?`;
+
+    const html = buildBrandedEmail(brandData, {
+      title: "How did your consultation go?",
+      greeting: `Hi ${esc(firstName)},`,
+      body: `Your consultation with <strong>${providerName}</strong> has just ended. We'd love to hear how it went and help you decide on next steps.`,
+      buttons: [{ label: "Share Your Thoughts", url: params.chatUrl }],
+      footer: "You can reply directly in your GoStork AI Concierge chat. Your response is private.",
+    });
+
+    await this.dispatchNotification({
+      userId: params.parentUserId,
+      type: "EMAIL",
+      channel: "consultation_ended",
+      recipient: params.parentEmail,
+      subject,
+      body: html,
+    }).catch(e => this.logger.error(`Failed to send post-call email to ${params.parentEmail}: ${e.message}`));
+
+    // SMS - use Twilio Content Template if configured, otherwise fall back to raw SMS
+    if (params.parentPhone) {
+      const smsSid = TWILIO_TEMPLATES.POST_CALL_FOLLOWUP_PARENT;
+      if (smsSid && !smsSid.includes("PLACEHOLDER")) {
+        this.dispatchSmsTemplate({
+          userId: params.parentUserId,
+          channel: "consultation_ended",
+          recipient: params.parentPhone,
+          contentSid: smsSid,
+          contentVars: { "1": firstName, "2": params.providerName, "3": params.chatUrl },
+        }).catch(e => this.logger.error(`Failed to send post-call SMS: ${e.message}`));
+      } else {
+        this.sendRawSms(
+          params.parentPhone,
+          `Hi ${firstName}, your consultation with ${params.providerName} just ended. How did it go? Let Ariel know: ${params.chatUrl}`,
+        ).catch(e => this.logger.error(`Failed to send post-call SMS (raw): ${e.message}`));
+      }
     }
   }
 
