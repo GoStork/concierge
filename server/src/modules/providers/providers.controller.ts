@@ -739,6 +739,7 @@ export class ProvidersController {
         await tx.surrogacyAgencyProfile.delete({ where: { id: surrogacyProfile.id } });
       }
       await tx.aiChatSession.updateMany({ where: { providerId: id }, data: { providerId: null } });
+      await tx.syncLog.deleteMany({ where: { providerId: id } });
       await tx.ivfSuccessRate.deleteMany({ where: { providerId: id } });
       await tx.providerBrandSettings.deleteMany({ where: { providerId: id } });
       await tx.providerLocation.deleteMany({ where: { providerId: id } });
