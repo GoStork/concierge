@@ -339,43 +339,50 @@ export class TestRunnerService {
   }
 
   stopRun(): { stopped: boolean } {
-    if (this.childProcesses.size > 0) {
-      // SIGKILL (not SIGTERM): the test-ai-concierge.ts script awaits long Tier 2
-      // HTTP requests (up to 3 min each). SIGTERM is ignored while awaiting fetch,
-      // so the subprocess never actually exits. SIGKILL is the only reliable stop.
-      for (const [, proc] of this.childProcesses) {
-        try { proc?.kill("SIGKILL"); } catch {}
-      }
-      this.childProcesses.clear();
-
-      // Reap any tests still marked "running" - their subprocess just died so
-      // they won't update themselves. Without this they sit as ghosts in the UI
-      // until the next server restart (where loadPersistedState reaps them).
-      for (const [id, t] of Object.entries(this.state.tests)) {
-        if (t.status === "running") {
-          this.state.tests[id] = {
-            ...t,
-            status: "fail",
-            errors: [...(t.errors || []), `Stopped by user (was on msg ${t.currentMessage || 0}/${t.totalMessages || 0})`],
-            durationMs: t.startedAt ? Date.now() - t.startedAt : t.durationMs,
-          };
-        }
-      }
-
-      this.state.status = "done";
-      this.state.endedAt = new Date().toISOString();
-      // Emit individual test_done events so the SSE clients update their tiles,
-      // then emit the run_stopped signal.
-      for (const [id, t] of Object.entries(this.state.tests)) {
-        if (t.status === "fail" && t.errors.some(e => e.startsWith("Stopped by user"))) {
-          this.emit({ type: "test_done", id, status: "fail", durationMs: t.durationMs, errors: t.errors });
-        }
-      }
-      this.emit({ type: "run_stopped" });
-      this.emit({ type: "state", state: this.state });
-      return { stopped: true };
+    // SIGKILL (not SIGTERM) any live subprocesses: the test-ai-concierge.ts script
+    // awaits long Tier 2 HTTP requests (up to 3 min each). SIGTERM is ignored while
+    // awaiting fetch, so the subprocess never actually exits. SIGKILL is the only
+    // reliable stop.
+    const hadSubprocesses = this.childProcesses.size > 0;
+    for (const [, proc] of this.childProcesses) {
+      try { proc?.kill("SIGKILL"); } catch {}
     }
-    return { stopped: false };
+    this.childProcesses.clear();
+
+    // ALSO reap any tests still marked "running" or "pending" - even when no live
+    // subprocess remains (e.g. it died on a prior server restart and the in-memory
+    // state has ghosts). The previous bail-on-empty-childProcesses behavior left
+    // the Stop button looking dead for the user.
+    let reapedAny = false;
+    for (const [id, t] of Object.entries(this.state.tests)) {
+      if (t.status === "running" || t.status === "pending") {
+        reapedAny = true;
+        this.state.tests[id] = {
+          ...t,
+          status: "fail",
+          errors: [...(t.errors || []), `Stopped by user (was on msg ${t.currentMessage || 0}/${t.totalMessages || 0})`],
+          durationMs: t.startedAt ? Date.now() - t.startedAt : t.durationMs,
+        };
+      }
+    }
+
+    if (!hadSubprocesses && !reapedAny) {
+      // Truly nothing to stop - probably a double-click after the run already finished.
+      return { stopped: false };
+    }
+
+    this.state.status = "done";
+    this.state.endedAt = new Date().toISOString();
+    // Emit individual test_done events so the SSE clients update their tiles,
+    // then emit the run_stopped signal.
+    for (const [id, t] of Object.entries(this.state.tests)) {
+      if (t.status === "fail" && t.errors.some(e => e.startsWith("Stopped by user"))) {
+        this.emit({ type: "test_done", id, status: "fail", durationMs: t.durationMs, errors: t.errors });
+      }
+    }
+    this.emit({ type: "run_stopped" });
+    this.emit({ type: "state", state: this.state });
+    return { stopped: true };
   }
 
   clearResults(): void {

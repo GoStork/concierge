@@ -287,8 +287,25 @@ export default function AdminTestRunnerPage() {
     });
   };
 
+  const [stopping, setStopping] = useState(false);
   const stopRun = async () => {
-    await fetch("/api/admin/test-runner/stop", { method: "POST", credentials: "include" });
+    if (stopping) return;
+    setStopping(true);
+    try {
+      const res = await fetch("/api/admin/test-runner/stop", { method: "POST", credentials: "include" });
+      const body = await res.json().catch(() => ({}));
+      console.log("[stopRun] response:", body);
+      // Force a state refresh in case SSE missed the broadcast
+      const stateRes = await fetch("/api/admin/test-runner/state", { credentials: "include" });
+      if (stateRes.ok) {
+        const fresh = await stateRes.json();
+        setState(fresh);
+      }
+    } catch (e) {
+      console.error("[stopRun] failed:", e);
+    } finally {
+      setStopping(false);
+    }
   };
 
   const clearResults = async () => {
@@ -365,10 +382,10 @@ export default function AdminTestRunnerPage() {
               </Button>
             </>
           ) : (
-            <Button onClick={stopRun}
-              style={{ background: "hsl(var(--brand-error))", color: "#fff", borderRadius: "var(--radius)", fontSize: "13px" }}>
+            <Button onClick={stopRun} disabled={stopping}
+              style={{ background: "hsl(var(--brand-error))", color: "#fff", borderRadius: "var(--radius)", fontSize: "13px", opacity: stopping ? 0.6 : 1 }}>
               <Square style={{ width: "13px", height: "13px", marginRight: "5px" }} />
-              Stop
+              {stopping ? "Stopping..." : "Stop"}
             </Button>
           )}
         </div>
