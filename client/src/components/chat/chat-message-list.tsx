@@ -18,6 +18,8 @@ interface ChatMessageListProps {
   isOwnMessage: (msg: SessionMessage) => boolean;
   /** Return a display name label for the message sender, or null to hide */
   nameLabel: (msg: SessionMessage) => string | null;
+  /** Return the avatar URL for a left-side message, or null for initials fallback */
+  msgAvatarUrl?: (msg: SessionMessage) => string | null;
   onOpenInlineVideo?: (bookingId: string) => void;
   onBookingUpdate?: () => void;
   /** Test-ID prefix for message bubbles (default: "provider-msg") */
@@ -44,7 +46,7 @@ function renderMessageContent(text: string): ReactNode {
 /**
  * Shared chat message list component used by provider chat and admin concierge monitor.
  * Handles merging messages with booking cards chronologically,
- * date separator pills, sender name labels, message bubbles,
+ * date separator pills, sender avatar + name labels, message bubbles,
  * WhisperProfileCards, SpecialMessageCards, and read receipts.
  */
 export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(function ChatMessageList(
@@ -57,6 +59,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
     viewerRole,
     isOwnMessage,
     nameLabel,
+    msgAvatarUrl,
     onOpenInlineVideo,
     onBookingUpdate,
     msgTestIdPrefix = "provider-msg",
@@ -101,6 +104,18 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
         const msg = item.msg;
         const own = isOwnMessage(msg);
         const label = nameLabel(msg);
+        const avatarUrl = !own && msgAvatarUrl ? msgAvatarUrl(msg) : null;
+        const avatarInitial = !own ? (label?.charAt(0) || "?") : null;
+
+        // For attachment messages, strip auto-generated placeholder text so only the card shows
+        const isAttachmentMsg = msg.uiCardType === "attachment";
+        const displayContent = isAttachmentMsg
+          ? (msg.content || "")
+              .replace(/\s*\[Attached file:[^\]]*\]/gi, "")
+              .replace(/^(Shared a file:|I've shared a file with you:)[^\n]*/i, "")
+              .trim()
+          : msg.content;
+        const showBubble = !isAttachmentMsg || displayContent.length > 0;
 
         return (
           <div key={msg.id}>
@@ -121,34 +136,40 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
               return null;
             })()}
 
-            {/* Sender name label */}
-            {label && !own && (
-              <div className="flex justify-start mb-0.5">
-                <span className="text-[11px] font-medium text-muted-foreground" data-testid={`name-label-${msgTestIdPrefix}-${i}`}>
-                  {label}
-                </span>
-              </div>
-            )}
+            {/* Avatar row - wraps all message content */}
+            <div className={own ? "flex justify-end" : "flex items-start gap-2"}>
+              {/* Avatar - left-aligned messages only */}
+              {!own && (
+                <div className="w-8 h-8 rounded-full shrink-0 overflow-hidden mt-0.5">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt={label ?? ""} className="w-full h-full object-cover" />
+                  ) : (
+                    <div
+                      className="w-full h-full flex items-center justify-center text-primary-foreground text-xs font-semibold"
+                      style={{ backgroundColor: brandColor }}
+                    >
+                      {avatarInitial}
+                    </div>
+                  )}
+                </div>
+              )}
 
-            {/* Whisper profile card */}
-            {msg.uiCardData?.whisperMatchCard && (
-              <WhisperProfileCard card={msg.uiCardData.whisperMatchCard} brandColor={brandColor} />
-            )}
+              {/* Content column: name, whisper card, bubble, special card */}
+              <div className={`flex flex-col ${own ? "items-end" : "items-start"}`}>
+                {/* Sender name label */}
+                {label && !own && (
+                  <span className="text-[11px] font-medium text-muted-foreground mb-0.5" data-testid={`name-label-${msgTestIdPrefix}-${i}`}>
+                    {label}
+                  </span>
+                )}
 
-            {/* Message bubble + special card */}
-            {(() => {
-              // For attachment messages, strip auto-generated placeholder text so only the card shows
-              const isAttachmentMsg = msg.uiCardType === "attachment";
-              const displayContent = isAttachmentMsg
-                ? (msg.content || "")
-                    .replace(/\s*\[Attached file:[^\]]*\]/gi, "") // strip [Attached file: ...] suffix
-                    .replace(/^(Shared a file:|I've shared a file with you:)[^\n]*/i, "") // strip placeholder lines
-                    .trim()
-                : msg.content;
-              const showBubble = !isAttachmentMsg || displayContent.length > 0;
-              return (
-                <>
-                  {showBubble && (
+                {/* Whisper profile card */}
+                {msg.uiCardData?.whisperMatchCard && (
+                  <WhisperProfileCard card={msg.uiCardData.whisperMatchCard} brandColor={brandColor} />
+                )}
+
+                {/* Message bubble */}
+                {showBubble && (
                   <div className={`flex ${own ? "justify-end" : "justify-start"}`}>
                     <div
                       className={`relative max-w-[75%] overflow-hidden px-4 py-2.5 text-base leading-relaxed font-ui ${
@@ -189,26 +210,27 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                       )}
                     </div>
                   </div>
-                  )}
-                  {msg.uiCardType && (
-                    <div className={`flex flex-col ${own ? "items-end" : "items-start"}`}>
-                      <SpecialMessageCard
-                        msg={msg}
-                        brandColor={brandColor}
-                        viewerRole={viewerRole}
-                        onOpenInlineVideo={onOpenInlineVideo}
-                      />
-                      {!showBubble && msg.createdAt && (
-                        <span className="flex items-center gap-0.5 mt-0.5 px-1" style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55 }}>
-                          {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
-                          {own && <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </>
-              );
-            })()}
+                )}
+
+                {/* Special card (attachment, video, calendar, etc.) */}
+                {msg.uiCardType && (
+                  <div className={`flex flex-col ${own ? "items-end" : "items-start"}`}>
+                    <SpecialMessageCard
+                      msg={msg}
+                      brandColor={brandColor}
+                      viewerRole={viewerRole}
+                      onOpenInlineVideo={onOpenInlineVideo}
+                    />
+                    {!showBubble && msg.createdAt && (
+                      <span className="flex items-center gap-0.5 mt-0.5 px-1" style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55 }}>
+                        {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                        {own && <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         );
       })}

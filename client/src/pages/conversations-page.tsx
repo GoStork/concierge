@@ -2006,6 +2006,14 @@ export default function ConversationsPage() {
                   if (msg.role === "user") return msg.senderName || detail?.user?.name || "Parent";
                   return "GoStork AI Concierge";
                 }}
+                msgAvatarUrl={(msg) => {
+                  if (msg.role === "assistant" || (msg.role !== "user" && msg.senderType !== "provider")) {
+                    const mm = brand?.matchmakers?.find((m: any) => m.id === detail.matchmakerId);
+                    if (mm?.avatarUrl) return getPhotoSrc(mm.avatarUrl) || mm.avatarUrl;
+                  }
+                  if (msg.role === "user") return getPhotoSrc((detail.user as any)?.photoUrl) || null;
+                  return null;
+                }}
                 onOpenInlineVideo={setInlineVideoBookingId}
                 onBookingUpdate={() => sessionBookingsQuery.refetch()}
                 msgTestIdPrefix="provider-msg"

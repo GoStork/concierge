@@ -485,6 +485,14 @@ export default function AdminConciergeMonitor() {
                 if (msg.senderType === "provider") return msg.senderName || "Provider";
                 return detailAiName || "AI";
               }}
+              msgAvatarUrl={(msg) => {
+                if (msg.role === "assistant" || (msg.role !== "user" && msg.senderType !== "human")) {
+                  const mm = brand?.matchmakers?.find((m: any) => m.id === detail.matchmakerId);
+                  if (mm?.avatarUrl) return getPhotoSrc(mm.avatarUrl) || mm.avatarUrl;
+                }
+                if (msg.role === "user") return getPhotoSrc((detail.user as any)?.photoUrl) || null;
+                return null;
+              }}
               onBookingUpdate={() => sessionBookingsQuery.refetch()}
               msgTestIdPrefix="monitor-msg"
             />
