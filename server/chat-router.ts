@@ -627,7 +627,10 @@ chatRouter.post("/api/admin/concierge-sessions/:id/message", requireAuth, async 
         ...(uiCardData ? { uiCardData } : {}),
       },
     });
-    await prisma.aiChatSession.update({ where: { id: session.id }, data: { updatedAt: new Date() } });
+    await prisma.aiChatSession.update({
+      where: { id: session.id },
+      data: { updatedAt: new Date(), ...(!session.humanAgentId ? { humanAgentId: user.id } : {}) },
+    });
 
     await prisma.inAppNotification.create({
       data: {
