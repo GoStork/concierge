@@ -1754,45 +1754,93 @@ async function fetchWithServerRetry(url: string, options: RequestInit, maxWaitMs
 async function sendMessage(cookie: string, message: string, sessionId: string | null): Promise<TurnResult> {
   const body: Record<string, unknown> = { message };
   if (sessionId) body.sessionId = sessionId;
-
   const authHeaders: Record<string, string> = cookie.startsWith("Bearer ")
     ? { Authorization: cookie }
     : { Cookie: cookie };
-  const res = await fetchWithServerRetry(`${BASE_URL}/api/ai-concierge/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`Chat API ${res.status}: ${await res.text()}`);
 
-  const contentType = res.headers.get("content-type") || "";
-  if (contentType.includes("text/event-stream")) {
-    const text = await res.text();
-    let content = "", newSid: string | null = null, qr: string[] = [], hasCard = false;
-    for (const line of text.split("\n")) {
-      if (!line.startsWith("data: ")) continue;
-      try {
-        const d = JSON.parse(line.slice(6));
-        if (d.type === "token") content += d.delta;
-        else if (d.type === "done") {
-          newSid = d.sessionId || newSid;
-          qr = d.quickReplies || [];
-          hasCard = !!(d.matchCards?.length);
-          // Use post-processed content (even empty string = sperm Q was stripped by server)
-          if (d.message !== undefined && d.message !== null) content = d.message.content || "";
-        }
-      } catch {}
+  // Retry the entire fetch+body-read cycle up to 3 times.
+  // This covers two failure modes:
+  //   1. ECONNREFUSED - server mid-restart (fetchWithServerRetry handles initial connect)
+  //   2. Stream truncated mid-body - server restarted after headers sent; res.text()
+  //      either hangs or returns a partial response with no "done" event.
+  //      AbortController kills the hang; gotDone check triggers a retry.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      const wait = 4000 * attempt;
+      console.log(`  [retry] Lost server connection mid-response - waiting ${wait / 1000}s before retry...`);
+      await new Promise(r => setTimeout(r, wait));
     }
-    if (/\[\[MATCH_CARD:/i.test(content)) hasCard = true;
-    return { content, quickReplies: qr, hasMatchCard: hasCard, sessionId: newSid };
+
+    // Per-attempt timeout: abort after 100s if the body never finishes.
+    // (The outer withTimeout at MSG_TIMEOUT_MS=180s is the hard deadline for all attempts combined.)
+    const controller = new AbortController();
+    const abortTimer = setTimeout(() => controller.abort(), 100_000);
+
+    try {
+      const res = await fetchWithServerRetry(`${BASE_URL}/api/ai-concierge/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        clearTimeout(abortTimer);
+        throw new Error(`Chat API ${res.status}: ${await res.text()}`);
+      }
+
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("text/event-stream")) {
+        // res.text() reads the full SSE body. If the server restarts mid-stream
+        // the TCP connection closes and text() returns a truncated body (no "done").
+        const text = await res.text();
+        clearTimeout(abortTimer);
+        let content = "", newSid: string | null = null, qr: string[] = [], hasCard = false, gotDone = false;
+        for (const line of text.split("\n")) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const d = JSON.parse(line.slice(6));
+            if (d.type === "token") content += d.delta;
+            else if (d.type === "done") {
+              gotDone = true;
+              newSid = d.sessionId || newSid;
+              qr = d.quickReplies || [];
+              hasCard = !!(d.matchCards?.length);
+              if (d.message !== undefined && d.message !== null) content = d.message.content || "";
+            } else if (d.type === "retry_needed") {
+              // Server signalled a retry - treat same as incomplete
+              gotDone = false;
+            }
+          } catch {}
+        }
+        if (!gotDone) {
+          // Truncated stream - server restarted while AI was processing.
+          // Retry: the session is in the DB so the AI will have full context.
+          if (attempt < 2) continue;
+          throw new Error("Incomplete SSE response: server restarted mid-stream (3 attempts exhausted)");
+        }
+        if (/\[\[MATCH_CARD:/i.test(content)) hasCard = true;
+        return { content, quickReplies: qr, hasMatchCard: hasCard, sessionId: newSid };
+      }
+
+      const d = await res.json();
+      clearTimeout(abortTimer);
+      return {
+        content: d.message?.content || "",
+        quickReplies: d.quickReplies || [],
+        hasMatchCard: !!(d.matchCards?.length),
+        sessionId: d.sessionId || null,
+      };
+    } catch (err: any) {
+      clearTimeout(abortTimer);
+      const isAbort = err.name === "AbortError" || err.message?.includes("aborted") || err.message?.includes("AbortError");
+      const isConn = err.code === "ECONNREFUSED" || err.code === "ECONNRESET" ||
+        err.message?.includes("ECONNREFUSED") || err.message?.includes("ECONNRESET") ||
+        err.message?.includes("fetch failed") || err.message?.includes("socket hang up");
+      if ((isAbort || isConn) && attempt < 2) continue; // retry
+      throw err;
+    }
   }
-  const d = await res.json();
-  return {
-    content: d.message?.content || "",
-    quickReplies: d.quickReplies || [],
-    hasMatchCard: !!(d.matchCards?.length),
-    sessionId: d.sessionId || null,
-  };
+  throw new Error("sendMessage: max retries exceeded");
 }
 
 async function getProfile(userId: string): Promise<Record<string, unknown> | null> {
