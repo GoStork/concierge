@@ -413,14 +413,14 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "MW-03: No embryos - Donor eggs - His sperm - She carries - Needs egg donor + clinic (Woman speaking)",
     desc: "MW couple with donor eggs, self-carry",
     interestedServices: ["Egg Donor"],
-    messageCount: 17,
+    messageCount: 18,
   },
   {
     id: "MW-04", persona: "man-woman",
     name: "MW-04: No embryos - Donor eggs - His sperm - She carries - Already has egg donor - Needs clinic (Man speaking)",
     desc: "Already has egg donor - egg match skipped, man speaking",
     interestedServices: [],
-    messageCount: 13,
+    messageCount: 14,
   },
   {
     id: "MW-05", persona: "man-woman",
@@ -441,7 +441,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "MW-07: No embryos - Donor eggs - Donor sperm - She carries - All services (Woman speaking)",
     desc: "Full embryo donation, self-carry for MW couple",
     interestedServices: ["Egg Donor", "Sperm Donor"],
-    messageCount: 20,
+    messageCount: 21,
   },
   {
     id: "MW-08", persona: "man-woman",
@@ -469,7 +469,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "MW-11: No embryos - Her eggs - Donor sperm - Already has surrogate - Needs sperm donor + clinic (Woman speaking)",
     desc: "MW couple already has surrogate - Phase 3 D-cycle skipped",
     interestedServices: ["Sperm Donor"],
-    messageCount: 18,
+    messageCount: 19,
   },
   {
     id: "MW-12", persona: "man-woman",
@@ -490,7 +490,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "MW-14: Has embryos (2, tested) - Her eggs - His sperm - She carries - Needs clinic (Woman speaking)",
     desc: "MW couple with existing tested embryos, self-carry - past-tense questions, clinic only",
     interestedServices: [],
-    messageCount: 15,
+    messageCount: 16,
   },
   {
     id: "MW-15", persona: "man-woman",
@@ -518,7 +518,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "MW-18: Has embryos - Step 3b fires - Use existing - She carries - Needs clinic (Woman speaking)",
     desc: "Step 3b MW: registered for sperm donation + has embryos - use existing",
     interestedServices: ["Sperm Donor"],
-    messageCount: 14,
+    messageCount: 15,
   },
   {
     id: "MW-19", persona: "man-woman",
