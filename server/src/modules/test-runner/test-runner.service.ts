@@ -90,37 +90,22 @@ export class TestRunnerService {
   };
 
   constructor() {
-    // If tests were running when we last stopped, give the child processes up to
-    // 10 minutes to reconnect and report back before marking them as orphaned.
-    // This covers the "server restarted mid-run" case - the child process keeps
-    // running and will POST events here once the server is back up.
+    // If tests were running when the server stopped, auto-restart them after a short
+    // delay to let the server fully initialize. Since test users are ephemeral and
+    // sessions are recreated fresh each run, restarting from scratch gives correct results.
+    // This is more reliable than waiting for detached child processes to reconnect,
+    // because the child's stdout pipe is broken after a server restart.
     const runningOnLoad = Object.values(this.state.tests).filter(t => t.status === "running");
     if (runningOnLoad.length > 0) {
-      const serverStartMs = Date.now();
+      this.logger.log(`[TestRunner] Found ${runningOnLoad.length} interrupted test(s) - auto-restarting in 5s`);
+      // Group by persona so we restart at the persona level (one process per persona)
+      const personasToRestart = [...new Set(runningOnLoad.map(t => t.persona))];
       setTimeout(() => {
-        let changed = false;
-        for (const [id, t] of Object.entries(this.state.tests)) {
-          if (t.status !== "running") continue;
-          const lastHeard = (t as any).lastProgressAt || serverStartMs;
-          const silentMs = Date.now() - lastHeard;
-          if (silentMs >= 9 * 60 * 1000) {
-            // No update for 9+ minutes after server start - child process is gone
-            this.state.tests[id] = {
-              ...t,
-              status: "fail",
-              errors: [
-                ...(t.errors || []).filter(e => !e.includes("Interrupted")),
-                `Test process lost - no updates received after server restart (was on msg ${t.currentMessage}/${t.totalMessages})`,
-              ],
-            };
-            changed = true;
-          }
+        for (const persona of personasToRestart) {
+          this.logger.log(`[TestRunner] Auto-restarting interrupted persona: ${persona}`);
+          this.startRun(persona);
         }
-        if (changed) {
-          this.emit({ type: "state", state: this.state });
-          saveState(this.state);
-        }
-      }, 10 * 60 * 1000); // wait 10 minutes
+      }, 5000);
     }
   }
 
