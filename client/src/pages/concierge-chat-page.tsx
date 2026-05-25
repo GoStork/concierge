@@ -4463,7 +4463,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 )}
 
                 {/* Content column: name, match cards, bubble, all special cards, quick replies */}
-                <div className={`flex flex-col ${alignRight ? "items-end" : "items-start"}`}>
+                <div className={`flex flex-col min-w-0 flex-1 ${alignRight ? "items-end" : "items-start"}`}>
                   {/* Name label */}
                   {!alignRight && (
                     <span className="text-[11px] font-medium text-muted-foreground mb-0.5" data-testid={`name-label-${i}`}>
