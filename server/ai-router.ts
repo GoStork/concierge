@@ -2896,7 +2896,7 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // "Man and a woman" answer in Phase 1 saves familyType=straight_couple but does NOT save
     // sameSexCouple, so D0b skips must also check familyType and current conversation.
     const straightCoupleFromPhase1 = profile?.familyType === "straight_couple" ||
-      chatHistory.some((m: any) => m.role === "user" && /\bman and a woman\b/i.test(m.content || ""));
+      chatHistory.some((m: any) => m.role === "user" && /\b(man and a woman|a woman and a man|woman and a man)\b/i.test(m.content || ""));
     const sameSexCoupleFromPhase1 = profile?.familyType === "two_dads" || profile?.familyType === "two_moms" ||
       chatHistory.some((m: any) => m.role === "user" && /\b(two dads|two moms)\b/i.test(m.content || ""));
     const soloFromPhase1 = profile?.familyType === "solo_man" || profile?.familyType === "solo_woman" ||
@@ -3851,8 +3851,11 @@ ${phase0Section}`;
       // doesn't loop: when user says "I am a man", chatHistory doesn't include it yet.
       // Also check userMessage directly: when user JUST answered "Man and a woman" this turn,
       // profile.familyType hasn't been saved to DB yet so we must detect it from the message.
+      // Match both the QR button text ("Man and a woman") and the natural-language
+      // variants ("A woman and a man", "woman and a man") that users / test scripts
+      // often send instead of the exact button label.
       const straightCoupleFollowUpNeeded = phase0Done
-        && (profile?.familyType === "straight_couple" || /\bman and a woman\b/i.test(userMessage))
+        && (profile?.familyType === "straight_couple" || /\b(man and a woman|a woman and a man|woman and a man)\b/i.test(userMessage))
         && !profile?.gender
         && !/i('m| am) (the )?(woman|man)\b/i.test(allUserMessages)
         && !isMaleGender && !isFemaleGender // also skip if gender already known from DB
@@ -5384,7 +5387,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           // so no "My partner's eggs". In lesbian couple partner CAN provide eggs but we show
           // same set since the question will clarify.
           const isStraightCouple = /familyType.*straight_couple/i.test(JSON.stringify(profile || {})) ||
-            chatHistory.some((m: any) => m.role === "user" && /\bman and a woman\b/i.test(m.content || ""));
+            chatHistory.some((m: any) => m.role === "user" && /\b(man and a woman|a woman and a man|woman and a man)\b/i.test(m.content || ""));
           quickReplies = isStraightCouple
             ? ["My own eggs", "Donor eggs", "I'm not sure yet"]
             : ["My own eggs", "My partner's eggs", "Donor eggs", "I'm not sure yet"];
