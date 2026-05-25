@@ -1048,6 +1048,13 @@ export class VideoController {
       dueAt,
     });
 
+    // Push a live SSE signal so the parent's chat inbox unread counter updates immediately
+    // instead of waiting for the next 30-second poll cycle.
+    this.bookingEvents.emit({
+      type: "chat_session_updated",
+      targetUserIds: [parentUserId],
+    }).catch(() => {});
+
     // Schedule follow-up reminders
     if (isSurrogacyAgency && isMatchCall && dueAt) {
       // 24h countdown reminders - but we don't have an invoice yet, schedule after parent confirms

@@ -321,6 +321,14 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     }
   }, [toast, dismiss, navigate]);
 
+  const handleChatSessionUpdatedEvent = useCallback((data: any) => {
+    if (data.type !== "chat_session_updated") return;
+    // A new chat message was posted server-side (e.g. post-call readiness prompt).
+    // Immediately invalidate the sessions list so the unread counter updates without
+    // waiting for the next poll cycle.
+    queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
+  }, [queryClient]);
+
   const handleHumanConcludedEvent = useCallback((data: any) => {
     if (data.type !== "human_concluded") return;
     // Dispatch a browser event so conversations-page can immediately refetch sessions
@@ -394,6 +402,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         handleHumanEscalationEvent(data);
         handleHumanConcludedEvent(data);
         handleProfileUpdatedEvent(data);
+        handleChatSessionUpdatedEvent(data);
       } catch {}
     };
 
@@ -413,7 +422,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       es.close();
       sseRef.current = null;
     };
-  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent, handleProfileUpdatedEvent]);
+  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent, handleProfileUpdatedEvent, handleChatSessionUpdatedEvent]);
 
   const dispatch = useAppDispatch();
   const marketplaceTab = useAppSelector((state) => state.ui.marketplaceTab);

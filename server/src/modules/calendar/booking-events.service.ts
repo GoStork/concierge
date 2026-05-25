@@ -5,8 +5,8 @@ import { PrismaService } from "../prisma/prisma.service";
 import { trackConnect, trackDisconnect, isUserOnline } from "../../../online-tracker";
 
 export interface BookingEvent {
-  type: "booking_created" | "booking_confirmed" | "booking_declined" | "booking_cancelled" | "booking_rescheduled" | "booking_new_time" | "video_participant_joined";
-  booking: {
+  type: "booking_created" | "booking_confirmed" | "booking_declined" | "booking_cancelled" | "booking_rescheduled" | "booking_new_time" | "video_participant_joined" | "chat_session_updated";
+  booking?: {
     id: string;
     subject: string | null;
     status: string;
@@ -31,7 +31,8 @@ export class BookingEventsService {
   async emit(event: BookingEvent) {
     this.subject.next(event);
 
-    if (event.type === "video_participant_joined") return;
+    // These event types are ephemeral signals for live clients only - no DB notification needed
+    if (event.type === "video_participant_joined" || event.type === "chat_session_updated") return;
 
     for (const userId of event.targetUserIds) {
       if (userId === event.actorUserId) continue;
