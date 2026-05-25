@@ -4385,8 +4385,35 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               }
               const msg = item.msg;
               const i = messages.indexOf(msg);
+              // Compute identity/alignment here so every child element shares the same avatar row.
+              const isOwnMessage = msg.role === "user" && (!msg.senderName || msg.senderName === myDisplayName);
+              const isOtherParent = msg.role === "user" && msg.senderName && msg.senderName !== myDisplayName;
+              const msgNameLabel = isOwnMessage
+                ? (myDisplayName || "You")
+                : isOtherParent
+                ? (msg.senderName || "Partner")
+                : msg.role === "user"
+                ? (msg.senderName || myDisplayName || "You")
+                : msg.senderType === "human"
+                ? (msg.senderName || "GoStork Expert")
+                : msg.senderType === "provider"
+                ? (msg.senderName || "Agency Expert")
+                : msg.senderType === "system"
+                ? (msg.senderName === "GoStork" ? "GoStork" : aiName || "AI")
+                : (aiName || "AI");
+              const alignRight = isOwnMessage || (!isOtherParent && msg.role === "user");
+              const cardReplacesbubble = ["readiness_prompt", "invoice"].includes(msg.uiCardType ?? "");
+              const msgAvatarUrl = !alignRight
+                ? (msg.senderType === "provider"
+                    ? (getPhotoSrc(sessionSubjectInfo?.providerLogo) || null)
+                    : resolvedAvatarUrl)
+                : null;
+              const msgAvatarInitial = !alignRight
+                ? (msg.senderType === "provider" ? "P" : (aiName?.charAt(0) || "A"))
+                : null;
               return (
             <div key={i}>
+              {/* Date separator - full width, outside the avatar row */}
               {msg.createdAt && (() => {
                 const msgDate = new Date(msg.createdAt).toDateString();
                 const prevMsgItem = timeline.slice(0, idx).reverse().find((x) => x.type === "message");
@@ -4402,345 +4429,313 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 }
                 return null;
               })()}
-              {(() => {
-                const isOwnMessage = msg.role === "user" && (!msg.senderName || msg.senderName === myDisplayName);
-                const isOtherParent = msg.role === "user" && msg.senderName && msg.senderName !== myDisplayName;
-                const nameLabel = isOwnMessage
-                  ? (myDisplayName || "You")
-                  : isOtherParent
-                  ? (msg.senderName || "Partner")
-                  : msg.role === "user"
-                  ? (msg.senderName || myDisplayName || "You")
-                  : msg.senderType === "human"
-                  ? (msg.senderName || "GoStork Expert")
-                  : msg.senderType === "provider"
-                  ? (msg.senderName || "Agency Expert")
-                  : msg.senderType === "system"
-                  ? (msg.senderName === "GoStork" ? "GoStork" : aiName || "AI")
-                  : (aiName || "AI");
-                const alignRight = isOwnMessage || (!isOtherParent && msg.role === "user");
-                // These card types render the full message content inside the card itself.
-                // Suppress the plain-text bubble so the content doesn't appear twice.
-                const cardReplacesbubble = ["readiness_prompt", "invoice"].includes(msg.uiCardType ?? "");
-                // Resolve avatar for left-side messages
-                const msgAvatarUrl = !alignRight
-                  ? (msg.senderType === "provider"
-                      ? (getPhotoSrc(sessionSubjectInfo?.providerLogo) || null)
-                      : resolvedAvatarUrl)
-                  : null;
-                const msgAvatarInitial = !alignRight
-                  ? (msg.senderType === "provider" ? "P" : (aiName?.charAt(0) || "A"))
-                  : null;
-                return (
-                  <>
-                    {!alignRight && msg.matchCards && msg.matchCards.length > 0 && (
-                      <div className="flex justify-start mb-2 ml-0">
-                        <div className="space-y-3 w-[320px] sm:w-[380px]">
-                          {msg.matchCards.map((card, ci) => (
-                            <MatchCardComponent
-                              key={ci}
-                              card={card}
-                              brandColor={brandColor}
-                              onAction={handleQuickReply}
-                              onViewProfile={handleViewProfile}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {!cardReplacesbubble && (
+
+              {/* Avatar row - wraps every element of this message */}
+              <div className={alignRight ? "flex justify-end" : "flex items-start gap-2"}>
+                {/* Avatar - left-aligned messages only */}
+                {!alignRight && (
+                  <div className="w-8 h-8 rounded-full shrink-0 overflow-hidden mt-0.5">
+                    {msgAvatarUrl ? (
+                      <img src={msgAvatarUrl} alt={msgNameLabel} className="w-full h-full object-cover" />
+                    ) : (
                       <div
-                        className={`flex ${alignRight ? "justify-end" : "items-end gap-2"}`}
-                        data-testid={`chat-message-${msg.role}-${i}`}
+                        className="w-full h-full flex items-center justify-center text-primary-foreground text-xs font-semibold"
+                        style={{ backgroundColor: brandColor }}
                       >
-                        {/* Avatar - left side only */}
-                        {!alignRight && (
-                          <div className="w-8 h-8 rounded-full shrink-0 overflow-hidden self-end mb-0.5">
-                            {msgAvatarUrl ? (
-                              <img src={msgAvatarUrl} alt={nameLabel ?? ""} className="w-full h-full object-cover" />
-                            ) : (
-                              <div
-                                className="w-full h-full flex items-center justify-center text-primary-foreground text-xs font-semibold"
-                                style={{ backgroundColor: brandColor }}
-                              >
-                                {msgAvatarInitial}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        {/* Content column: name + bubble + timestamp */}
-                        <div className={`flex flex-col ${alignRight ? "items-end" : "items-start"}`}>
-                          {!alignRight && (
-                            <span className="text-[11px] font-medium text-muted-foreground mb-0.5" data-testid={`name-label-${i}`}>
-                              {nameLabel}
-                            </span>
-                          )}
-                          <div
-                            className={`overflow-hidden ${
-                              isOwnMessage
-                                ? "text-primary-foreground chat-bubble-dark"
-                                : isOtherParent
-                                ? "text-foreground"
-                                : msg.role === "user"
-                                ? "text-primary-foreground chat-bubble-dark"
-                                : "text-foreground"
-                            }`}
-                            style={{
-                              fontSize: "var(--chat-bubble-font-size, 21px)",
-                              lineHeight: "var(--chat-bubble-line-height, 1.35)",
-                              borderRadius: "var(--chat-bubble-radius, 20px)",
-                              paddingLeft: "var(--chat-bubble-px, 16px)",
-                              paddingRight: "var(--chat-bubble-px, 16px)",
-                              paddingTop: "var(--chat-bubble-py, 11px)",
-                              paddingBottom: "var(--chat-bubble-py, 11px)",
-                              maxWidth: "var(--chat-bubble-max-width, 85%)",
-                              ...(isOwnMessage
-                                ? { backgroundColor: brandColor }
-                                : isOtherParent
-                                ? {
-                                    backgroundColor: chatPalette.partnerBg,
-                                    border: `1px solid ${chatPalette.partnerBorder}`,
-                                  }
-                                : msg.role === "user"
-                                ? { backgroundColor: brandColor }
-                                : msg.senderType === "human"
-                                ? {
-                                    backgroundColor: `${brandColor}14`,
-                                    border: `1px solid ${brandColor}33`,
-                                  }
-                                : msg.senderType === "provider"
-                                ? {
-                                    backgroundColor: chatPalette.expertBg,
-                                    border: `1px solid ${chatPalette.expertBorder}`,
-                                  }
-                                : {
-                                    backgroundColor: `${brandColor}14`,
-                                    border: `1px solid ${brandColor}33`,
-                                  }),
-                            }}
-                          >
-                            <span style={{ overflowWrap: "break-word", wordBreak: "break-word" }}>
-                              {msg.content.split("\n").map((line, li) => {
-                                const parts = line.split(/(\*\*[^*]+\*\*)/g);
-                                return (
-                                  <Fragment key={li}>
-                                    {li > 0 && <br />}
-                                    {parts.map((part, pi) =>
-                                      part.startsWith("**") && part.endsWith("**")
-                                        ? <strong key={pi}>{part.slice(2, -2)}</strong>
-                                        : <Fragment key={pi}>{part}</Fragment>
-                                    )}
-                                  </Fragment>
-                                );
-                              })}
-                            </span>
-                          </div>
-                          {msg.createdAt && (
-                            <span
-                              className="whitespace-nowrap select-none flex items-center gap-0.5 mt-0.5 px-1"
-                              style={{ fontSize: "var(--chat-timestamp-font-size, 11px)", lineHeight: "16px", opacity: "var(--chat-timestamp-opacity, 0.45)" as unknown as number }}
-                            >
-                              {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
-                              {alignRight && (
-                                <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />
-                              )}
-                            </span>
-                          )}
-                        </div>
+                        {msgAvatarInitial}
                       </div>
                     )}
-                  </>
-                );
-              })()}
-
-              {msg.prepDoc && (
-                <div className="flex justify-start mt-3 ml-0">
-                  <PrepDocCard brandColor={brandColor} />
-                </div>
-              )}
-
-              {msg.agreementCard && (
-                <div className="flex justify-start mt-3 ml-0">
-                  <AgreementSignCard card={msg.agreementCard} brandColor={brandColor} createdAt={msg.createdAt} />
-                </div>
-              )}
-
-              {msg.consultationCard && (() => {
-                // Only show consultation card on the LAST message that has one for this provider.
-                // Must check m.consultationCard != null first - otherwise messages without a card
-                // match via optional chaining returning undefined === undefined, causing admin
-                // cards (no providerId) to never render if any later message exists.
-                const lastMsgWithCard = [...messages].reverse().find(
-                  m => m.consultationCard != null && m.consultationCard?.providerId === msg.consultationCard?.providerId
-                );
-                if (lastMsgWithCard && lastMsgWithCard !== msg) return null;
-                return true;
-              })() && (
-                <div className="flex justify-start mt-3 ml-0">
-                  <ConsultationBookingCard
-                    card={msg.consultationCard}
-                    brandColor={brandColor}
-                    userEmail={(user as any)?.email || ""}
-                    userName={(user as any)?.name || ""}
-                    onCallbackSubmitted={() => {
-                      setTimeout(async () => {
-                        if (sessionId) {
-                          await loadMessagesForSession(sessionId);
-                          fetch("/api/ai-concierge/chat", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
-                            credentials: "include",
-                            body: JSON.stringify({
-                              message: "consultation_callback_submitted",
-                              sessionId,
-                              matchmakerId: effectiveMatchmakerIdRef.current,
-                              isSystemTrigger: true,
-                            }),
-                          }).then(async (r) => {
-                            if (!r.ok || !r.body) return;
-                            const rd = r.body.getReader();
-                            const dc = new TextDecoder();
-                            let b = "";
-                            while (true) {
-                              const { done, value } = await rd.read();
-                              if (done) break;
-                              b += dc.decode(value, { stream: true });
-                              const ls = b.split("\n");
-                              b = ls.pop() ?? "";
-                              for (const l of ls) {
-                                if (!l.startsWith("data: ")) continue;
-                                let ev: any;
-                                try { ev = JSON.parse(l.slice(6).trim()); } catch { continue; }
-                                if (ev.type === "done" && sessionId) loadMessagesForSession(sessionId);
-                              }
-                            }
-                          }).catch(() => {});
-                        }
-                      }, 800);
-                    }}
-                    onSchedule={(c) => setBookingCard(c)}
-                    onBookingConfirmed={onBookingConfirmed}
-                    existingBooking={(() => {
-                      if (!sessionBookings) return undefined;
-                      // Use ?? null to normalise both undefined and null to null before comparing,
-                      // because Prisma returns null for missing relations while JS optional chaining
-                      // returns undefined - strict === would make them unequal.
-                      const cardProviderId = msg.consultationCard?.providerId ?? null;
-                      // Also match by providerUserId for admin calendar cards (no providerId).
-                      const cardProviderUserId = msg.consultationCard?.providerUserId ?? null;
-                      const providerBookings = sessionBookings.filter(
-                        (b: any) => {
-                          const bookingProviderId = (b.providerUser?.provider?.id ?? null);
-                          const bookingProviderUserId = (b.providerUser?.id ?? b.providerUserId ?? null);
-                          const idMatch = bookingProviderId === cardProviderId;
-                          const userIdMatch = cardProviderUserId && bookingProviderUserId === cardProviderUserId;
-                          return (idMatch || userIdMatch) && b.status !== "CANCELLED";
-                        }
-                      );
-                      // Prefer the most recent non-cancelled booking
-                      return providerBookings.sort((a: any, b: any) =>
-                        new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()
-                      )[0];
-                    })()}
-                  />
-                </div>
-              )}
-
-              {msg.uiCardType && msg.uiCardData && (
-                <div className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"} mt-2`}>
-                  <div className="max-w-[75%]">
-                    {(() => {
-                      // For readiness_prompt: derive answered state from the message
-                      // history (a GoStork Thank you message after this one = answered)
-                      // This is more reliable than DB-only state which can be stale.
-                      const isAnswered = msg.uiCardType === "readiness_prompt"
-                        ? !!(msg.uiCardData as any)?.answered ||
-                          messages.slice(i + 1).some(m =>
-                            m.senderName === "GoStork" &&
-                            (m.content || "").includes("Thank you for letting us know")
-                          )
-                        : undefined;
-                      return <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} sessionId={sessionId} isAnswered={isAnswered} />;
-                    })()}
                   </div>
-                  {["readiness_prompt", "invoice"].includes(msg.uiCardType ?? "") && msg.createdAt && (
+                )}
+
+                {/* Content column: name, match cards, bubble, all special cards, quick replies */}
+                <div className={`flex flex-col ${alignRight ? "items-end" : "items-start"}`}>
+                  {/* Name label */}
+                  {!alignRight && (
+                    <span className="text-[11px] font-medium text-muted-foreground mb-0.5" data-testid={`name-label-${i}`}>
+                      {msgNameLabel}
+                    </span>
+                  )}
+
+                  {/* Match cards */}
+                  {!alignRight && msg.matchCards && msg.matchCards.length > 0 && (
+                    <div className="mb-2 space-y-3 w-[320px] sm:w-[380px]">
+                      {msg.matchCards.map((card, ci) => (
+                        <MatchCardComponent
+                          key={ci}
+                          card={card}
+                          brandColor={brandColor}
+                          onAction={handleQuickReply}
+                          onViewProfile={handleViewProfile}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Text bubble */}
+                  {!cardReplacesbubble && (
+                    <div
+                      className={`overflow-hidden ${
+                        isOwnMessage
+                          ? "text-primary-foreground chat-bubble-dark"
+                          : isOtherParent
+                          ? "text-foreground"
+                          : msg.role === "user"
+                          ? "text-primary-foreground chat-bubble-dark"
+                          : "text-foreground"
+                      }`}
+                      style={{
+                        fontSize: "var(--chat-bubble-font-size, 21px)",
+                        lineHeight: "var(--chat-bubble-line-height, 1.35)",
+                        borderRadius: "var(--chat-bubble-radius, 20px)",
+                        paddingLeft: "var(--chat-bubble-px, 16px)",
+                        paddingRight: "var(--chat-bubble-px, 16px)",
+                        paddingTop: "var(--chat-bubble-py, 11px)",
+                        paddingBottom: "var(--chat-bubble-py, 11px)",
+                        maxWidth: "var(--chat-bubble-max-width, 85%)",
+                        ...(isOwnMessage
+                          ? { backgroundColor: brandColor }
+                          : isOtherParent
+                          ? {
+                              backgroundColor: chatPalette.partnerBg,
+                              border: `1px solid ${chatPalette.partnerBorder}`,
+                            }
+                          : msg.role === "user"
+                          ? { backgroundColor: brandColor }
+                          : msg.senderType === "human"
+                          ? {
+                              backgroundColor: `${brandColor}14`,
+                              border: `1px solid ${brandColor}33`,
+                            }
+                          : msg.senderType === "provider"
+                          ? {
+                              backgroundColor: chatPalette.expertBg,
+                              border: `1px solid ${chatPalette.expertBorder}`,
+                            }
+                          : {
+                              backgroundColor: `${brandColor}14`,
+                              border: `1px solid ${brandColor}33`,
+                            }),
+                      }}
+                      data-testid={`chat-message-${msg.role}-${i}`}
+                    >
+                      <span style={{ overflowWrap: "break-word", wordBreak: "break-word" }}>
+                        {msg.content.split("\n").map((line, li) => {
+                          const parts = line.split(/(\*\*[^*]+\*\*)/g);
+                          return (
+                            <Fragment key={li}>
+                              {li > 0 && <br />}
+                              {parts.map((part, pi) =>
+                                part.startsWith("**") && part.endsWith("**")
+                                  ? <strong key={pi}>{part.slice(2, -2)}</strong>
+                                  : <Fragment key={pi}>{part}</Fragment>
+                              )}
+                            </Fragment>
+                          );
+                        })}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Timestamp for regular bubble */}
+                  {!cardReplacesbubble && msg.createdAt && (
                     <span
                       className="whitespace-nowrap select-none flex items-center gap-0.5 mt-0.5 px-1"
                       style={{ fontSize: "var(--chat-timestamp-font-size, 11px)", lineHeight: "16px", opacity: "var(--chat-timestamp-opacity, 0.45)" as unknown as number }}
                     >
                       {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                      {alignRight && (
+                        <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />
+                      )}
                     </span>
                   )}
-                </div>
-              )}
 
-              {msg.quickReplies && msg.quickReplies.length > 0 && i === messages.length - 1 && (
-                <div className="flex flex-wrap gap-2 mt-2 ml-0" data-testid="quick-replies">
-                  {msg.quickReplies.map((qr, qi) => {
-                    const isMulti = msg.multiSelect;
-                    const isSelected = isMulti && multiSelectChoices.has(qr);
-                    return (
-                      <Button
-                        key={qi}
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="text-sm transition-all hover:shadow-sm"
-                        style={{
-                          borderRadius: "999px",
-                          borderColor: isSelected ? brandColor : `${brandColor}40`,
-                          backgroundColor: isSelected ? `${brandColor}15` : "transparent",
-                          color: brandColor,
-                          touchAction: "manipulation",
-                        }}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (isMulti) {
-                            setMultiSelectChoices((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(qr)) {
-                                next.delete(qr);
-                              } else {
-                                next.add(qr);
-                              }
-                              return next;
-                            });
-                          } else {
-                            handleQuickReply(qr, msg.content ?? "");
-                          }
-                        }}
-                        disabled={sending}
-                        data-testid={`quick-reply-${qi}`}
-                      >
-                        {isSelected && <span className="mr-1">✓</span>}
-                        {qr}
-                      </Button>
+                  {/* PrepDoc */}
+                  {msg.prepDoc && (
+                    <div className="mt-3">
+                      <PrepDocCard brandColor={brandColor} />
+                    </div>
+                  )}
+
+                  {/* Agreement card */}
+                  {msg.agreementCard && (
+                    <div className="mt-3">
+                      <AgreementSignCard card={msg.agreementCard} brandColor={brandColor} createdAt={msg.createdAt} />
+                    </div>
+                  )}
+
+                  {/* Consultation / calendar card */}
+                  {msg.consultationCard && (() => {
+                    // Only show on the LAST message that has one for this provider.
+                    const lastMsgWithCard = [...messages].reverse().find(
+                      m => m.consultationCard != null && m.consultationCard?.providerId === msg.consultationCard?.providerId
                     );
-                  })}
-                  {msg.multiSelect && multiSelectChoices.size > 0 && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="text-sm font-medium"
-                      style={{
-                        borderRadius: "999px",
-                        backgroundColor: brandColor,
-                        color: "white",
-                      }}
-                      onClick={() => {
-                        const selected = Array.from(multiSelectChoices).join(", ");
-                        setMultiSelectChoices(new Set());
-                        handleQuickReply(selected);
-                      }}
-                      disabled={sending}
-                      data-testid="multi-select-done"
-                    >
-                      Done
-                    </Button>
+                    if (lastMsgWithCard && lastMsgWithCard !== msg) return null;
+                    return true;
+                  })() && (
+                    <div className="mt-3 w-full">
+                      <ConsultationBookingCard
+                        card={msg.consultationCard}
+                        brandColor={brandColor}
+                        userEmail={(user as any)?.email || ""}
+                        userName={(user as any)?.name || ""}
+                        onCallbackSubmitted={() => {
+                          setTimeout(async () => {
+                            if (sessionId) {
+                              await loadMessagesForSession(sessionId);
+                              fetch("/api/ai-concierge/chat", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+                                credentials: "include",
+                                body: JSON.stringify({
+                                  message: "consultation_callback_submitted",
+                                  sessionId,
+                                  matchmakerId: effectiveMatchmakerIdRef.current,
+                                  isSystemTrigger: true,
+                                }),
+                              }).then(async (r) => {
+                                if (!r.ok || !r.body) return;
+                                const rd = r.body.getReader();
+                                const dc = new TextDecoder();
+                                let b = "";
+                                while (true) {
+                                  const { done, value } = await rd.read();
+                                  if (done) break;
+                                  b += dc.decode(value, { stream: true });
+                                  const ls = b.split("\n");
+                                  b = ls.pop() ?? "";
+                                  for (const l of ls) {
+                                    if (!l.startsWith("data: ")) continue;
+                                    let ev: any;
+                                    try { ev = JSON.parse(l.slice(6).trim()); } catch { continue; }
+                                    if (ev.type === "done" && sessionId) loadMessagesForSession(sessionId);
+                                  }
+                                }
+                              }).catch(() => {});
+                            }
+                          }, 800);
+                        }}
+                        onSchedule={(c) => setBookingCard(c)}
+                        onBookingConfirmed={onBookingConfirmed}
+                        existingBooking={(() => {
+                          if (!sessionBookings) return undefined;
+                          // Use ?? null to normalise both undefined and null to null before comparing,
+                          // because Prisma returns null for missing relations while JS optional chaining
+                          // returns undefined - strict === would make them unequal.
+                          const cardProviderId = msg.consultationCard?.providerId ?? null;
+                          // Also match by providerUserId for admin calendar cards (no providerId).
+                          const cardProviderUserId = msg.consultationCard?.providerUserId ?? null;
+                          const providerBookings = sessionBookings.filter(
+                            (b: any) => {
+                              const bookingProviderId = (b.providerUser?.provider?.id ?? null);
+                              const bookingProviderUserId = (b.providerUser?.id ?? b.providerUserId ?? null);
+                              const idMatch = bookingProviderId === cardProviderId;
+                              const userIdMatch = cardProviderUserId && bookingProviderUserId === cardProviderUserId;
+                              return (idMatch || userIdMatch) && b.status !== "CANCELLED";
+                            }
+                          );
+                          return providerBookings.sort((a: any, b: any) =>
+                            new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime()
+                          )[0];
+                        })()}
+                      />
+                    </div>
+                  )}
+
+                  {/* Special cards: readiness_prompt, invoice, calendar_share, video_invite, etc. */}
+                  {msg.uiCardType && msg.uiCardData && (
+                    <div className="mt-2">
+                      {(() => {
+                        const isAnswered = msg.uiCardType === "readiness_prompt"
+                          ? !!(msg.uiCardData as any)?.answered ||
+                            messages.slice(i + 1).some(m =>
+                              m.senderName === "GoStork" &&
+                              (m.content || "").includes("Thank you for letting us know")
+                            )
+                          : undefined;
+                        return <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} sessionId={sessionId} isAnswered={isAnswered} />;
+                      })()}
+                      {cardReplacesbubble && msg.createdAt && (
+                        <span
+                          className="whitespace-nowrap select-none flex items-center gap-0.5 mt-0.5 px-1"
+                          style={{ fontSize: "var(--chat-timestamp-font-size, 11px)", lineHeight: "16px", opacity: "var(--chat-timestamp-opacity, 0.45)" as unknown as number }}
+                        >
+                          {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Quick replies */}
+                  {msg.quickReplies && msg.quickReplies.length > 0 && i === messages.length - 1 && (
+                    <div className="flex flex-wrap gap-2 mt-2" data-testid="quick-replies">
+                      {msg.quickReplies.map((qr, qi) => {
+                        const isMulti = msg.multiSelect;
+                        const isSelected = isMulti && multiSelectChoices.has(qr);
+                        return (
+                          <Button
+                            key={qi}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="text-sm transition-all hover:shadow-sm"
+                            style={{
+                              borderRadius: "999px",
+                              borderColor: isSelected ? brandColor : `${brandColor}40`,
+                              backgroundColor: isSelected ? `${brandColor}15` : "transparent",
+                              color: brandColor,
+                              touchAction: "manipulation",
+                            }}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (isMulti) {
+                                setMultiSelectChoices((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(qr)) {
+                                    next.delete(qr);
+                                  } else {
+                                    next.add(qr);
+                                  }
+                                  return next;
+                                });
+                              } else {
+                                handleQuickReply(qr, msg.content ?? "");
+                              }
+                            }}
+                            disabled={sending}
+                            data-testid={`quick-reply-${qi}`}
+                          >
+                            {isSelected && <span className="mr-1">✓</span>}
+                            {qr}
+                          </Button>
+                        );
+                      })}
+                      {msg.multiSelect && multiSelectChoices.size > 0 && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="text-sm font-medium"
+                          style={{
+                            borderRadius: "999px",
+                            backgroundColor: brandColor,
+                            color: "white",
+                          }}
+                          onClick={() => {
+                            const selected = Array.from(multiSelectChoices).join(", ");
+                            setMultiSelectChoices(new Set());
+                            handleQuickReply(selected);
+                          }}
+                          disabled={sending}
+                          data-testid="multi-select-done"
+                        >
+                          Done
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
+              </div>
             </div>
               );
             })
