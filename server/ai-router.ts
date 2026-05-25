@@ -67,6 +67,7 @@ function setupSSE(res: Response) {
     sendToken: (delta: string) => { res.write(`data: ${JSON.stringify({ type: "token", delta })}\n\n`); flush(); },
     sendDone: (payload: object) => { res.write(`data: ${JSON.stringify({ type: "done", ...payload })}\n\n`); flush(); res.end(); },
     sendError: (msg: string) => { res.write(`data: ${JSON.stringify({ type: "error", message: msg })}\n\n`); flush(); res.end(); },
+    sendRetry: () => { res.write(`data: ${JSON.stringify({ type: "retry_needed" })}\n\n`); flush(); res.end(); },
   };
 }
 type SSEHandle = ReturnType<typeof setupSSE>;
@@ -3414,6 +3415,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
     // -------------------------------------------------------------------------
     const useTier2 = !!(currentSession?.tier2Active);
     let finalContent = "";
+    let needsRetry = false; // true when all AI tiers failed - tell client to silently retry
     let serverBypassServed = false; // true when a server-side hardcoded bypass served the response
     let lastSearchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] = [];
     const tierCallStart = Date.now();
@@ -3472,8 +3474,11 @@ Rules: Use real values from the data. The providerId = the "id" UUID field. Neve
           tier2Result.content = retryResult.content;
         }
       }
-      finalContent = tier2Result.content || "I ran into a brief issue - could you send that again? [[QUICK_REPLY:Try again]]";
-      finalContent = injectMissingQuickReplies(finalContent);
+      if (tier2Result.content) {
+        finalContent = injectMissingQuickReplies(tier2Result.content);
+      } else {
+        needsRetry = true;
+      }
       // Populate lastSearchToolResults from Tier2 tool calls for fallback MATCH_CARD injection
       if (tier2Result.searchToolResults.length > 0) {
         lastSearchToolResults.push(...tier2Result.searchToolResults);
@@ -4021,13 +4026,13 @@ ${phase0Section}`;
           console.error("[Tier1] Gemini threw, falling back to Tier 2:", tier1Error?.message);
           try {
             const tier2Fallback = await callTier2Claude(systemPromptForTiers, messages, [], sse, mcpClient, false);
-            finalContent = tier2Fallback.content || "I had a brief connection hiccup - could you send that again?";
+            if (tier2Fallback.content) { finalContent = tier2Fallback.content; }
+            else { needsRetry = true; }
           } catch {
-            finalContent = "I had a brief connection hiccup - could you send that again?";
-            sse.sendToken(finalContent);
+            needsRetry = true;
           }
         }
-        if (!finalContent) finalContent = "I ran into a brief issue - could you send that again? [[QUICK_REPLY:Try again]]";
+        if (!finalContent && !needsRetry) needsRetry = true;
         const beforeInject = finalContent;
         finalContent = injectMissingQuickReplies(finalContent);
         // Stream the injected suffix so the client receives the QR tag.
@@ -6157,6 +6162,13 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }
     }
 
+    // If all AI tiers failed, tell the client to silently retry rather than saving an error message
+    if (needsRetry) {
+      console.warn("[AI Router] All tiers failed - sending retry_needed to client");
+      sse.sendRetry();
+      return;
+    }
+
     const uiExtras: Record<string, any> = {};
     if (matchCards.length > 0) uiExtras.matchCards = matchCards;
     if (consultationCard) uiExtras.consultationCard = consultationCard;
@@ -6204,38 +6216,12 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     });
   } catch (error: any) {
     console.error("AI Router Error:", error);
-    // Try to recover gracefully by saving a fallback AI message and sending {type: "done"}
-    // instead of the error banner, so the conversation doesn't dead-end.
-    const fallbackSessionId = req.body?.sessionId;
+    // Tell the client to silently retry - don't save an error message to the session
     try {
-      if (fallbackSessionId) {
-        const fallbackContent = "I ran into a brief connection issue - could you send that again?";
-        const fallbackMsg = await prisma.aiChatMessage.create({
-          data: {
-            sessionId: fallbackSessionId,
-            role: "assistant",
-            content: fallbackContent,
-            senderType: "ai",
-          },
-        });
-        const now = new Date();
-        const donePayload = JSON.stringify({
-          type: "done",
-          sessionId: fallbackSessionId,
-          userMessageId: null,
-          userMessageDeliveredAt: now.toISOString(),
-          userMessageReadAt: now.toISOString(),
-          message: fallbackMsg,
-          quickReplies: ["Try again"],
-        });
-        res.write(`data: ${donePayload}\n\n`);
-        res.end();
-      } else {
-        res.write(`data: ${JSON.stringify({ type: "error", message: error.message })}\n\n`);
-        res.end();
-      }
+      res.write(`data: ${JSON.stringify({ type: "retry_needed" })}\n\n`);
+      res.end();
     } catch {
-      if (!res.headersSent) res.status(500).json({ error: error.message });
+      if (!res.headersSent) res.status(500).json({ error: "Internal error" });
       else res.end();
     }
   }

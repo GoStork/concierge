@@ -2567,6 +2567,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [multiSelectChoices, setMultiSelectChoices] = useState<Set<string>>(new Set());
   const [sessionId, setSessionId] = useState<string | null>(existingSessionId);
   const [showCuration, setShowCuration] = useState(false);
@@ -2864,6 +2865,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
+  const reconnectPendingRef = useRef(false); // true when connection dropped mid-request
+  const sessionIdRef = useRef<string | null>(null); // stable ref for use in event listeners
   const lastSentRef = useRef<{ text: string; time: number } | null>(null);
   const lastQrClickRef = useRef<number>(0); // timestamp of last QR button click
   const lastPollTimeRef = useRef<string | null>(null);
@@ -2878,6 +2881,33 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   effectiveMatchmakerIdRef.current = effectiveMatchmakerId;
   const selectedMatchmaker = matchmakers.find((m) => m.id === effectiveMatchmakerId);
   const aiName = selectedMatchmaker?.name || resolvedMatchmakerName || null;
+
+  // Keep sessionIdRef in sync so the online/offline handlers always see the current session
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+
+  // Online/offline detection - mirrors Claude Code behavior:
+  // when connection is lost mid-request, keep the loading indicator and refetch on reconnect
+  useEffect(() => {
+    const handleOnline = async () => {
+      setIsOnline(true);
+      if (reconnectPendingRef.current) {
+        reconnectPendingRef.current = false;
+        const sid = sessionIdRef.current;
+        if (sid) {
+          await loadMessagesForSession(sid);
+        }
+        setSending(false);
+        sendingRef.current = false;
+      }
+    };
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync resolvedMatchmakerName from brand settings when effectiveMatchmakerId resolves
   useEffect(() => {
@@ -3470,10 +3500,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
   const noMatchmakerYet = !effectiveMatchmakerId && !existingSessionId && !sessionId && sessionLoaded;
 
-  const sendMessage = async (text: string) => {
+  const sendMessage = async (text: string, retryCount = 0) => {
     const hasFiles = stagedFiles.length > 0;
     if (!text.trim() && !hasFiles) return;
-    if (sending || sendingRef.current || showCurationRef.current) return;
+    // On auto-retry (retryCount > 0), bypass the sending guard - we're continuing an in-flight request
+    if (retryCount === 0 && (sending || sendingRef.current || showCurationRef.current)) return;
     // "ready" must never appear as a visible user message - it's always sent silently by
     // the curation animation. If it arrives here through any path, redirect to silent send.
     if (/^ready$/i.test(text.trim())) {
@@ -3519,27 +3550,33 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     }
 
     if (!text.trim()) return;
-    if (sendingRef.current) return; // block double-sends (e.g. double-tap on QR button)
+    // On retry, sendingRef is already true (we kept it set to hold the loading indicator)
+    if (retryCount === 0 && sendingRef.current) return; // block double-sends (e.g. double-tap on QR button)
     sendingRef.current = true;
     const userMessage = text.trim();
-    setInput("");
     const now = new Date().toISOString();
-    setMessages((prev) => {
-      const updated = prev.map((m, i) =>
-        i === prev.length - 1 && m.quickReplies ? { ...m, quickReplies: undefined } : m
-      );
-      return [...updated, { role: "user" as const, content: userMessage, createdAt: now }];
-    });
-    // Optimistically update sidebar with latest message (reset delivery status for new msg)
-    if (sessionId) {
-      queryClient.setQueryData<any[]>(["/api/my/chat-sessions"], (old) =>
-        old?.map(s => s.id === sessionId ? { ...s, lastMessage: userMessage, lastMessageAt: now, lastMessageRole: "user", lastMessageSenderType: "parent", lastMessageDeliveredAt: null, lastMessageReadAt: null } : s)
-      );
+
+    // Only add the user message to state and update sidebar on the initial send.
+    // On retry the message is already in state from the first attempt.
+    if (retryCount === 0) {
+      setInput("");
+      setMessages((prev) => {
+        const updated = prev.map((m, i) =>
+          i === prev.length - 1 && m.quickReplies ? { ...m, quickReplies: undefined } : m
+        );
+        return [...updated, { role: "user" as const, content: userMessage, createdAt: now }];
+      });
+      if (sessionId) {
+        queryClient.setQueryData<any[]>(["/api/my/chat-sessions"], (old) =>
+          old?.map(s => s.id === sessionId ? { ...s, lastMessage: userMessage, lastMessageAt: now, lastMessageRole: "user", lastMessageSenderType: "parent", lastMessageDeliveredAt: null, lastMessageReadAt: null } : s)
+        );
+      }
+      setSending(true);
     }
-    setSending(true);
 
     // Unique key to track the streaming placeholder message
     const streamingId = `streaming-${Date.now()}`;
+    let skipFinallyReset = false;
 
     try {
       const res = await fetch("/api/ai-concierge/chat", {
@@ -3700,27 +3737,54 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               forceScrollRef.current = false;
               applyFinalMsg();
             }
-          } else if (event.type === "error") {
+          } else if (event.type === "retry_needed" || event.type === "error") {
+            // Server hit a transient error - silently retry rather than showing an error message
             stopTypingAnimation(false);
             setMessages((prev) => prev.filter((m) => m.id !== streamingId));
-            setMessages((prev) => [
-              ...prev,
-              { role: "assistant" as const, content: "I'm sorry, I'm having trouble connecting right now. Please try again.", createdAt: new Date().toISOString() },
-            ]);
+            if (retryCount < 2) {
+              skipFinallyReset = true;
+              const delay = 800 + retryCount * 600;
+              setTimeout(() => {
+                sendingRef.current = false;
+                sendMessage(userMessage, retryCount + 1);
+              }, delay);
+            } else {
+              setMessages((prev) => [...prev, {
+                role: "assistant" as const,
+                content: "Something went wrong. Please try again.",
+                createdAt: new Date().toISOString(),
+              }]);
+            }
           }
         }
       }
     } catch {
       stopTypingAnimation(false);
-      // Remove streaming placeholder on error
       setMessages((prev) => prev.filter((m) => m.id !== streamingId));
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant" as const, content: "I'm sorry, I'm having trouble connecting right now. Please try again.", createdAt: new Date().toISOString() },
-      ]);
+      if (!navigator.onLine) {
+        // Connection dropped - keep loading state, refetch messages when back online
+        reconnectPendingRef.current = true;
+        skipFinallyReset = true;
+      } else if (retryCount < 2) {
+        // Online but transient error - silently retry
+        skipFinallyReset = true;
+        const delay = 800 + retryCount * 600;
+        setTimeout(() => {
+          sendingRef.current = false;
+          sendMessage(userMessage, retryCount + 1);
+        }, delay);
+      } else {
+        setMessages((prev) => [...prev, {
+          role: "assistant" as const,
+          content: "Something went wrong. Please try again.",
+          createdAt: new Date().toISOString(),
+        }]);
+      }
     } finally {
-      setSending(false);
-      sendingRef.current = false;
+      if (!skipFinallyReset) {
+        setSending(false);
+        sendingRef.current = false;
+      }
     }
   };
 
@@ -4625,6 +4689,16 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           <div ref={messagesEndRef} />
         </div>
 
+        {!isOnline && (
+          <div className="flex items-center justify-center gap-2 px-3 py-2 text-xs text-muted-foreground border-t bg-muted/40">
+            <div className="flex gap-0.5">
+              <div className="w-1 h-1 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "0ms" }} />
+              <div className="w-1 h-1 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "150ms" }} />
+              <div className="w-1 h-1 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "300ms" }} />
+            </div>
+            <span>Connection lost - waiting to reconnect</span>
+          </div>
+        )}
         <div className="border-t px-3 py-2" data-testid="concierge-input-area">
           {stagedFiles.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-2">
@@ -4669,7 +4743,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              disabled={sending || parentUploading}
+              disabled={sending || parentUploading || !isOnline}
               className="flex-1 border border-input bg-background text-foreground placeholder:text-muted-foreground rounded-full resize-none overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:opacity-50"
               style={{
                 fontSize: "var(--chat-input-font-size, 17px)",
@@ -4685,7 +4759,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             <Button
               size="sm"
               onClick={handleSend}
-              disabled={(!input.trim() && stagedFiles.length === 0) || sending || parentUploading}
+              disabled={(!input.trim() && stagedFiles.length === 0) || sending || parentUploading || !isOnline}
               className="h-9 w-9 p-0 rounded-full text-primary-foreground shrink-0"
               style={{ backgroundColor: brandColor }}
               data-testid="btn-send-message"
