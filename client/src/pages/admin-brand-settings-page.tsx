@@ -1294,6 +1294,60 @@ const NAV_PREVIEW_TABS: Array<{ icon: any; label: string }> = [
   { icon: User, label: "Profile" },
 ];
 
+function ChatBubblePreview({ form }: { form: BrandSettings }) {
+  const primary = form.primaryColor ?? "#004D4D";
+  const radius = `${form.chatBubbleRadius ?? 20}px`;
+  const px = `${form.chatBubblePaddingX ?? 16}px`;
+  const py = `${form.chatBubblePaddingY ?? 11}px`;
+  const fontSize = `${form.chatBubbleFontSizeDesktop ?? 15}px`;
+  const lineHeight = String(form.chatBubbleLineHeight ?? 1.35);
+  const maxWidth = `${form.chatBubbleMaxWidth ?? 85}%`;
+  const tsFontSize = `${form.chatTimestampFontSize ?? 11}px`;
+  const tsOpacity = form.chatTimestampOpacity ?? 0.45;
+  const inputFontSize = `${form.chatInputFontSizeDesktop ?? 15}px`;
+  const inputHeight = `${form.chatInputHeight ?? 36}px`;
+  const bodyFont = form.bodyFont ?? "DM Sans";
+
+  const bubbleBase: CSSProperties = {
+    paddingLeft: px, paddingRight: px, paddingTop: py, paddingBottom: py,
+    fontSize, lineHeight, borderRadius: radius, maxWidth,
+    fontFamily: bodyFont,
+    overflowWrap: "break-word" as const, wordBreak: "break-word" as const,
+  };
+  const outgoing: CSSProperties = { ...bubbleBase, backgroundColor: primary, color: "#ffffff" };
+  const incoming: CSSProperties = { ...bubbleBase, backgroundColor: "hsl(var(--muted))", color: "hsl(var(--foreground))", border: "1px solid hsl(var(--border))" };
+  const tsStyle: CSSProperties = { fontSize: tsFontSize, opacity: tsOpacity, marginTop: "3px", paddingLeft: "4px", paddingRight: "4px" };
+
+  const messages = [
+    { text: "Hi! I'm Ariel, your fertility concierge. How can I help you today?", own: false, time: "1:38 PM" },
+    { text: "Hi", own: true, time: "1:39 PM" },
+    { text: "I'm looking for an egg donor in New York.", own: true, time: "1:39 PM" },
+    { text: "Great! I have several donors based in New York who match your profile. Would you like me to show you some options?", own: false, time: "1:40 PM" },
+  ];
+
+  return (
+    <div className="space-y-3">
+      <Label className="text-xs text-muted-foreground block">Chat Preview</Label>
+      <div className="border rounded-[var(--radius)] overflow-hidden bg-card flex flex-col" style={{ height: "340px" }}>
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-background/50">
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex flex-col ${msg.own ? "items-end" : "items-start"}`}>
+              <div style={msg.own ? outgoing : incoming}>{msg.text}</div>
+              <span style={tsStyle}>{msg.time}</span>
+            </div>
+          ))}
+        </div>
+        <div className="border-t bg-card px-3 flex items-center gap-2" style={{ minHeight: inputHeight }}>
+          <span className="flex-1 text-muted-foreground" style={{ fontSize: inputFontSize, fontFamily: bodyFont }}>
+            Message Ariel...
+          </span>
+          <Send className="w-4 h-4 shrink-0" style={{ color: primary }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function NavPreview({ form }: { form: BrandSettings }) {
   const [activeIdx, setActiveIdx] = useState(0);
   const isIconOnly = (form.bottomNavStyle || "icon-label") === "icon-only";
@@ -2103,6 +2157,7 @@ export function BrandSettingsForm({
                 <Slider min={28} max={56} step={2} value={[form.chatInputHeight ?? 36]} onValueChange={([v]) => updateField("chatInputHeight", v)} disabled={formDisabled} />
               </div>
             </div>
+            <ChatBubblePreview form={form} />
           </Card>
 
           <Card className="rounded-[var(--container-radius)] p-6 space-y-8">

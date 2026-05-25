@@ -91,6 +91,18 @@ const DEFAULTS = {
   sliderThumbSize: 24,
   enableAiConcierge: false,
   parentExperienceMode: "MARKETPLACE_ONLY",
+  chatBubbleFontSize: 21,
+  chatBubbleFontSizeDesktop: 15,
+  chatBubbleLineHeight: 1.35,
+  chatBubblePaddingX: 16,
+  chatBubblePaddingY: 11,
+  chatBubbleMaxWidth: 85,
+  chatBubbleRadius: 20,
+  chatTimestampFontSize: 11,
+  chatTimestampOpacity: 0.45,
+  chatInputFontSize: 17,
+  chatInputFontSizeDesktop: 15,
+  chatInputHeight: 36,
 };
 
 const ADVANCED_COLOR_FIELDS = [
@@ -118,6 +130,9 @@ const ALLOWED_FIELDS = [
   "drawerTitleSize", "drawerBodySize", "drawerHandleWidth", "sliderValueSize", "sliderThumbSize",
   "enableAiConcierge", "parentExperienceMode",
   "onboardingClinicImageUrl", "onboardingEggDonorImageUrl", "onboardingSurrogateImageUrl", "onboardingSpermDonorImageUrl",
+  "chatBubbleFontSize", "chatBubbleFontSizeDesktop", "chatBubbleLineHeight",
+  "chatBubblePaddingX", "chatBubblePaddingY", "chatBubbleMaxWidth", "chatBubbleRadius",
+  "chatTimestampFontSize", "chatTimestampOpacity", "chatInputFontSize", "chatInputFontSizeDesktop", "chatInputHeight",
   ...ADVANCED_COLOR_FIELDS,
 ];
 
@@ -247,6 +262,44 @@ function validateBrandBody(body: any) {
   const validLinkDeco = ["always", "hover"];
   if (body.linkDecoration !== undefined && !validLinkDeco.includes(body.linkDecoration)) {
     throw new ForbiddenException("linkDecoration must be always or hover");
+  }
+
+  const intFields: Record<string, [number, number]> = {
+    chatBubbleFontSize: [13, 28],
+    chatBubbleFontSizeDesktop: [13, 24],
+    chatBubblePaddingX: [8, 28],
+    chatBubblePaddingY: [4, 20],
+    chatBubbleMaxWidth: [50, 95],
+    chatBubbleRadius: [4, 32],
+    chatTimestampFontSize: [8, 16],
+    chatInputFontSize: [13, 22],
+    chatInputFontSizeDesktop: [13, 20],
+    chatInputHeight: [28, 56],
+  };
+  for (const [field, [min, max]] of Object.entries(intFields)) {
+    if (body[field] !== undefined && body[field] !== null) {
+      const v = Number(body[field]);
+      if (isNaN(v) || v < min || v > max) {
+        throw new ForbiddenException(`${field} must be between ${min} and ${max}`);
+      }
+      body[field] = Math.round(v);
+    }
+  }
+
+  if (body.chatBubbleLineHeight !== undefined && body.chatBubbleLineHeight !== null) {
+    const v = Number(body.chatBubbleLineHeight);
+    if (isNaN(v) || v < 1.0 || v > 2.0) {
+      throw new ForbiddenException("chatBubbleLineHeight must be between 1.0 and 2.0");
+    }
+    body.chatBubbleLineHeight = v;
+  }
+
+  if (body.chatTimestampOpacity !== undefined && body.chatTimestampOpacity !== null) {
+    const v = Number(body.chatTimestampOpacity);
+    if (isNaN(v) || v < 0.1 || v > 1.0) {
+      throw new ForbiddenException("chatTimestampOpacity must be between 0.1 and 1.0");
+    }
+    body.chatTimestampOpacity = v;
   }
 
   const data: Record<string, any> = {};

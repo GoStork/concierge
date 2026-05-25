@@ -173,13 +173,19 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                   <div className={`flex w-full ${own ? "justify-end" : "justify-start"}`}>
                     <div className={`flex flex-col max-w-[75%] ${own ? "items-end" : "items-start"}`}>
                       <div
-                        className={`overflow-hidden px-4 py-2.5 text-base leading-relaxed font-ui ${
+                        className={`overflow-hidden font-ui ${
                           own
                             ? "text-primary-foreground"
                             : "text-foreground"
                         }`}
                         style={{
                           borderRadius: resolvedRadius,
+                          paddingLeft: "var(--chat-bubble-px, 16px)",
+                          paddingRight: "var(--chat-bubble-px, 16px)",
+                          paddingTop: "var(--chat-bubble-py, 11px)",
+                          paddingBottom: "var(--chat-bubble-py, 11px)",
+                          fontSize: "var(--chat-bubble-font-size, 15px)",
+                          lineHeight: "var(--chat-bubble-line-height, 1.35)",
                           ...(own
                             ? { backgroundColor: brandColor }
                             : msg.role === "user"
