@@ -203,7 +203,7 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
   // -----------------------------------------------------------------------
   // Skip if: only egg/sperm donor (no clinic, no surrogate registered)
   const onlyDonors = !registeredForClinic && !registeredForSurrogate && !needsClinic && !needsSurrogate;
-  if (!onlyDonors && clinicCycleApplies) {
+  if (!onlyDonors && (clinicCycleApplies || registeredForSurrogate || needsSurrogate)) {
     const step0Asked = aiAsked(chatHistory, /do you already have a fertility clinic.*need help finding one|need help finding.*clinic.*already have a clinic/i);
     const step0Answered = userSaid(allUserMessages, /i need help finding a clinic|i already have a clinic|already have a clinic|need help.*clinic/i)
       || profile?.needsClinic != null;
