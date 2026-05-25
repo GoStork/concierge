@@ -1839,13 +1839,23 @@ export function BrandSettingsForm({
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FileDropZone
-                  label="Icon Logo"
+                  label="Light Mode Icon Logo"
                   currentUrl={form.logoUrl}
                   onUpload={(url) => updateField("logoUrl", url)}
                   accept="image/svg+xml,image/png,image/jpeg,image/webp"
                   testId="upload-icon-logo"
                   disabled={formDisabled}
                 />
+                <FileDropZone
+                  label="Dark Mode Icon Logo"
+                  currentUrl={form.darkLogoUrl}
+                  onUpload={(url) => updateField("darkLogoUrl", url)}
+                  accept="image/svg+xml,image/png,image/jpeg,image/webp"
+                  testId="upload-dark-icon-logo"
+                  disabled={formDisabled}
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FileDropZone
                   label="Favicon"
                   currentUrl={form.faviconUrl}
