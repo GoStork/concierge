@@ -723,8 +723,8 @@ export class ProvidersController {
       await tx.booking.deleteMany({ where: { providerUser: { providerId: id } } });
       await tx.user.deleteMany({ where: { providerId: id } });
       await tx.providerService.deleteMany({ where: { providerId: id } });
-      await tx.costItem.deleteMany({ where: { sheet: { providerId: id } } });
       await tx.providerCostSheet.deleteMany({ where: { providerId: id } });
+      await tx.costProgram.deleteMany({ where: { providerId: id } });
       await tx.providerMemberLocation.deleteMany({ where: { member: { providerId: id } } });
       await tx.providerMember.deleteMany({ where: { providerId: id } });
       await tx.eggDonor.deleteMany({ where: { providerId: id } });
