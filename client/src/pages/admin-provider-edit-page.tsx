@@ -658,7 +658,7 @@ export default function AdminProviderEditPage() {
   const isIvfClinic = svcNames.some((n: string) => n.includes("ivf") || n.includes("in vitro"));
   const isSurrogacyAgency = showSurrogates;
   const ivfOffersEggDonors = showEggDonors;
-  const tabTriggerClass = "flex-1 h-full text-sm font-ui rounded-[var(--radius)] data-[state=active]:bg-background dark:data-[state=active]:bg-foreground/90 data-[state=active]:shadow data-[state=active]:text-primary data-[state=inactive]:text-muted-foreground dark:data-[state=inactive]:text-muted-foreground";
+  const tabTriggerClass = "shrink-0 whitespace-nowrap h-full text-sm font-ui rounded-[var(--radius)] px-3 data-[state=active]:bg-background dark:data-[state=active]:bg-foreground/90 data-[state=active]:shadow data-[state=active]:text-primary data-[state=inactive]:text-muted-foreground dark:data-[state=inactive]:text-muted-foreground";
 
 
   return (
@@ -677,7 +677,7 @@ export default function AdminProviderEditPage() {
       </div>
 
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="w-full h-12 bg-muted dark:bg-muted p-1 rounded-[var(--radius)] border border-border dark:border-border">
+        <TabsList className="w-full h-12 bg-muted dark:bg-muted p-1 rounded-[var(--radius)] border border-border dark:border-border overflow-x-auto flex-nowrap justify-start">
           <TabsTrigger value="profile" className={tabTriggerClass} data-testid="tab-edit-profile">Profile</TabsTrigger>
           <TabsTrigger value="users" className={tabTriggerClass} data-testid="tab-edit-users">Team</TabsTrigger>
           {showEggDonors && <TabsTrigger value="egg-donors" className={tabTriggerClass} data-testid="tab-edit-egg-donors">Egg Donors</TabsTrigger>}

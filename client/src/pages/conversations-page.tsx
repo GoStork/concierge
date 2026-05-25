@@ -1237,7 +1237,7 @@ export default function ConversationsPage() {
 
     const hasSessions = allSessions.length > 0;
     const sidebarContent = hasSessions ? (
-      <div className="pb-24">
+      <div style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))' }}>
         {filteredEva.length > 0 && (
           <div data-testid="section-concierge">
             <div
