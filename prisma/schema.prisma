@@ -864,6 +864,14 @@ model SiteSettings {
   chatInputFontSizeDesktop   Int?
   chatInputHeight            Int?
 
+  // Quick reply chip styling
+  quickReplyFontSize         Int?
+  quickReplyRadius           Int?
+  quickReplyPaddingX         Int?
+  quickReplyPaddingY         Int?
+  quickReplyBorderOpacity    Int?
+  quickReplyBgOpacity        Int?
+
   // Onboarding intro page images (per service type)
   onboardingClinicImageUrl   String?
   onboardingEggDonorImageUrl String?
@@ -985,6 +993,14 @@ model ProviderBrandSettings {
   chatInputFontSize          Int?
   chatInputFontSizeDesktop   Int?
   chatInputHeight            Int?
+
+  // Quick reply chip styling
+  quickReplyFontSize         Int?
+  quickReplyRadius           Int?
+  quickReplyPaddingX         Int?
+  quickReplyPaddingY         Int?
+  quickReplyBorderOpacity    Int?
+  quickReplyBgOpacity        Int?
 
   provider                   Provider @relation(fields: [providerId], references: [id])
 }

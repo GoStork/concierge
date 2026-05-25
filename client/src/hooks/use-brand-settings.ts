@@ -100,6 +100,12 @@ export interface BrandSettings {
   chatInputFontSize: number;
   chatInputFontSizeDesktop: number;
   chatInputHeight: number;
+  quickReplyFontSize: number;
+  quickReplyRadius: number;
+  quickReplyPaddingX: number;
+  quickReplyPaddingY: number;
+  quickReplyBorderOpacity: number;
+  quickReplyBgOpacity: number;
   onboardingClinicImageUrl: string | null;
   onboardingEggDonorImageUrl: string | null;
   onboardingSurrogateImageUrl: string | null;
@@ -195,6 +201,12 @@ export const BRAND_DEFAULTS: BrandSettings = {
   chatInputFontSize: 17,
   chatInputFontSizeDesktop: 15,
   chatInputHeight: 36,
+  quickReplyFontSize: 13,
+  quickReplyRadius: 999,
+  quickReplyPaddingX: 14,
+  quickReplyPaddingY: 6,
+  quickReplyBorderOpacity: 40,
+  quickReplyBgOpacity: 0,
   onboardingClinicImageUrl: null,
   onboardingEggDonorImageUrl: null,
   onboardingSurrogateImageUrl: null,
@@ -396,6 +408,12 @@ export function applyBrandToDocument(settings: BrandSettings) {
   root.style.setProperty("--chat-timestamp-opacity", String(settings.chatTimestampOpacity ?? 0.45));
   root.style.setProperty("--chat-input-font-size", `${chatInputSize}px`);
   root.style.setProperty("--chat-input-height", `${settings.chatInputHeight ?? 36}px`);
+  root.style.setProperty("--quick-reply-font-size", `${settings.quickReplyFontSize ?? 13}px`);
+  root.style.setProperty("--quick-reply-radius", `${settings.quickReplyRadius ?? 999}px`);
+  root.style.setProperty("--quick-reply-px", `${settings.quickReplyPaddingX ?? 14}px`);
+  root.style.setProperty("--quick-reply-py", `${settings.quickReplyPaddingY ?? 6}px`);
+  root.style.setProperty("--quick-reply-border-opacity", String(Math.round((settings.quickReplyBorderOpacity ?? 40) * 2.55).toString(16).padStart(2, "0")));
+  root.style.setProperty("--quick-reply-bg-opacity", String(Math.round((settings.quickReplyBgOpacity ?? 0) * 2.55).toString(16).padStart(2, "0")));
 
   // Remove any previously injected media query style (no longer needed).
   document.getElementById("brand-chat-responsive")?.remove();

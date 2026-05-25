@@ -61,6 +61,7 @@ import {
   Send,
   Crown,
   ImageIcon,
+  Zap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, SpermIcon } from "@/components/icons/marketplace-icons";
@@ -1308,6 +1309,13 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
   const inputHeight = `${form.chatInputHeight ?? 36}px`;
   const bodyFont = form.bodyFont ?? "DM Sans";
 
+  const qrFontSize = `${form.quickReplyFontSize ?? 13}px`;
+  const qrRadius = `${form.quickReplyRadius ?? 999}px`;
+  const qrPx = `${form.quickReplyPaddingX ?? 14}px`;
+  const qrPy = `${form.quickReplyPaddingY ?? 6}px`;
+  const qrBorderHex = Math.round((form.quickReplyBorderOpacity ?? 40) * 2.55).toString(16).padStart(2, "0");
+  const qrBgHex = Math.round((form.quickReplyBgOpacity ?? 0) * 2.55).toString(16).padStart(2, "0");
+
   const bubbleBase: CSSProperties = {
     paddingLeft: px, paddingRight: px, paddingTop: py, paddingBottom: py,
     fontSize, lineHeight, borderRadius: radius, maxWidth,
@@ -1318,22 +1326,50 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
   const incoming: CSSProperties = { ...bubbleBase, backgroundColor: "hsl(var(--muted))", color: "hsl(var(--foreground))", border: "1px solid hsl(var(--border))" };
   const tsStyle: CSSProperties = { fontSize: tsFontSize, opacity: tsOpacity, marginTop: "3px", paddingLeft: "4px", paddingRight: "4px" };
 
+  const quickReplies = ["Yes, show me options", "Tell me more", "Not yet"];
+
   const messages = [
     { text: "Hi! I'm Ariel, your fertility concierge. How can I help you today?", own: false, time: "1:38 PM" },
     { text: "Hi", own: true, time: "1:39 PM" },
     { text: "I'm looking for an egg donor in New York.", own: true, time: "1:39 PM" },
-    { text: "Great! I have several donors based in New York who match your profile. Would you like me to show you some options?", own: false, time: "1:40 PM" },
+    { text: "Great! I have several donors who match your profile. Would you like me to show you some options?", own: false, time: "1:40 PM", showChips: true },
   ];
 
   return (
     <div className="space-y-3">
       <Label className="text-xs text-muted-foreground block">Chat Preview</Label>
-      <div className="border rounded-[var(--radius)] overflow-hidden bg-card flex flex-col" style={{ height: "340px" }}>
+      <div className="border rounded-[var(--radius)] overflow-hidden bg-card flex flex-col" style={{ height: "380px" }}>
         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-background/50">
           {messages.map((msg, i) => (
             <div key={i} className={`flex flex-col ${msg.own ? "items-end" : "items-start"}`}>
               <div style={msg.own ? outgoing : incoming}>{msg.text}</div>
               <span style={tsStyle}>{msg.time}</span>
+              {msg.showChips && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {quickReplies.map((qr, qi) => (
+                    <span
+                      key={qi}
+                      style={{
+                        fontSize: qrFontSize,
+                        borderRadius: qrRadius,
+                        paddingLeft: qrPx,
+                        paddingRight: qrPx,
+                        paddingTop: qrPy,
+                        paddingBottom: qrPy,
+                        border: `1px solid ${primary}${qrBorderHex}`,
+                        backgroundColor: `${primary}${qrBgHex}`,
+                        color: primary,
+                        fontFamily: bodyFont,
+                        cursor: "default",
+                        display: "inline-block",
+                        lineHeight: "1.2",
+                      }}
+                    >
+                      {qr}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -2157,6 +2193,62 @@ export function BrandSettingsForm({
                 <Slider min={28} max={56} step={2} value={[form.chatInputHeight ?? 36]} onValueChange={([v]) => updateField("chatInputHeight", v)} disabled={formDisabled} />
               </div>
             </div>
+
+            {/* Quick Reply Chips subsection */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-muted-foreground" />
+                <Label className="text-sm font-medium">Quick Reply Chips</Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Style the suggestion chips shown below AI messages.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Font Size</Label>
+                    <span className="text-sm text-muted-foreground">{form.quickReplyFontSize ?? 13}px</span>
+                  </div>
+                  <Slider min={10} max={18} step={1} value={[form.quickReplyFontSize ?? 13]} onValueChange={([v]) => updateField("quickReplyFontSize", v)} disabled={formDisabled} />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Corner Radius</Label>
+                    <span className="text-sm text-muted-foreground">{form.quickReplyRadius ?? 999}px</span>
+                  </div>
+                  <Slider min={0} max={999} step={1} value={[form.quickReplyRadius ?? 999]} onValueChange={([v]) => updateField("quickReplyRadius", v)} disabled={formDisabled} />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Horizontal Padding</Label>
+                    <span className="text-sm text-muted-foreground">{form.quickReplyPaddingX ?? 14}px</span>
+                  </div>
+                  <Slider min={6} max={28} step={1} value={[form.quickReplyPaddingX ?? 14]} onValueChange={([v]) => updateField("quickReplyPaddingX", v)} disabled={formDisabled} />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Vertical Padding</Label>
+                    <span className="text-sm text-muted-foreground">{form.quickReplyPaddingY ?? 6}px</span>
+                  </div>
+                  <Slider min={2} max={16} step={1} value={[form.quickReplyPaddingY ?? 6]} onValueChange={([v]) => updateField("quickReplyPaddingY", v)} disabled={formDisabled} />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Border Opacity</Label>
+                    <span className="text-sm text-muted-foreground">{form.quickReplyBorderOpacity ?? 40}%</span>
+                  </div>
+                  <Slider min={0} max={100} step={5} value={[form.quickReplyBorderOpacity ?? 40]} onValueChange={([v]) => updateField("quickReplyBorderOpacity", v)} disabled={formDisabled} />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Background Fill</Label>
+                    <span className="text-sm text-muted-foreground">{form.quickReplyBgOpacity ?? 0}%</span>
+                  </div>
+                  <Slider min={0} max={100} step={5} value={[form.quickReplyBgOpacity ?? 0]} onValueChange={([v]) => updateField("quickReplyBgOpacity", v)} disabled={formDisabled} />
+                </div>
+              </div>
+            </div>
+
             <ChatBubblePreview form={form} />
           </Card>
 

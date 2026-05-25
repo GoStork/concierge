@@ -103,6 +103,12 @@ const DEFAULTS = {
   chatInputFontSize: 17,
   chatInputFontSizeDesktop: 15,
   chatInputHeight: 36,
+  quickReplyFontSize: 13,
+  quickReplyRadius: 999,
+  quickReplyPaddingX: 14,
+  quickReplyPaddingY: 6,
+  quickReplyBorderOpacity: 40,
+  quickReplyBgOpacity: 0,
 };
 
 const ADVANCED_COLOR_FIELDS = [
@@ -133,6 +139,8 @@ const ALLOWED_FIELDS = [
   "chatBubbleFontSize", "chatBubbleFontSizeDesktop", "chatBubbleLineHeight",
   "chatBubblePaddingX", "chatBubblePaddingY", "chatBubbleMaxWidth", "chatBubbleRadius",
   "chatTimestampFontSize", "chatTimestampOpacity", "chatInputFontSize", "chatInputFontSizeDesktop", "chatInputHeight",
+  "quickReplyFontSize", "quickReplyRadius", "quickReplyPaddingX", "quickReplyPaddingY",
+  "quickReplyBorderOpacity", "quickReplyBgOpacity",
   ...ADVANCED_COLOR_FIELDS,
 ];
 
@@ -275,6 +283,12 @@ function validateBrandBody(body: any) {
     chatInputFontSize: [13, 22],
     chatInputFontSizeDesktop: [13, 20],
     chatInputHeight: [28, 56],
+    quickReplyFontSize: [10, 18],
+    quickReplyRadius: [0, 999],
+    quickReplyPaddingX: [6, 28],
+    quickReplyPaddingY: [2, 16],
+    quickReplyBorderOpacity: [0, 100],
+    quickReplyBgOpacity: [0, 100],
   };
   for (const [field, [min, max]] of Object.entries(intFields)) {
     if (body[field] !== undefined && body[field] !== null) {

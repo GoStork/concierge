@@ -4708,12 +4708,17 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="text-sm transition-all hover:shadow-sm"
+                            className="transition-all hover:shadow-sm"
                             style={{
-                              borderRadius: "999px",
-                              borderColor: isSelected ? brandColor : `${brandColor}40`,
-                              backgroundColor: isSelected ? `${brandColor}15` : "transparent",
+                              borderRadius: "var(--quick-reply-radius, 999px)",
+                              borderColor: isSelected ? brandColor : `${brandColor}var(--quick-reply-border-opacity, 40)`,
+                              backgroundColor: isSelected ? `${brandColor}15` : `${brandColor}var(--quick-reply-bg-opacity, 00)`,
                               color: brandColor,
+                              fontSize: "var(--quick-reply-font-size, 13px)",
+                              paddingLeft: "var(--quick-reply-px, 14px)",
+                              paddingRight: "var(--quick-reply-px, 14px)",
+                              paddingTop: "var(--quick-reply-py, 6px)",
+                              paddingBottom: "var(--quick-reply-py, 6px)",
                               touchAction: "manipulation",
                             }}
                             onClick={(e) => {
