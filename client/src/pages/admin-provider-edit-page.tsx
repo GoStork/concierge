@@ -677,7 +677,8 @@ export default function AdminProviderEditPage() {
       </div>
 
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="w-full h-12 bg-muted dark:bg-muted p-1 rounded-[var(--radius)] border border-border dark:border-border overflow-x-auto flex-nowrap justify-start">
+        <div className="overflow-x-auto w-full">
+        <TabsList className="h-12 bg-muted dark:bg-muted p-1 rounded-[var(--radius)] border border-border dark:border-border min-w-full justify-start">
           <TabsTrigger value="profile" className={tabTriggerClass} data-testid="tab-edit-profile">Profile</TabsTrigger>
           <TabsTrigger value="users" className={tabTriggerClass} data-testid="tab-edit-users">Team</TabsTrigger>
           {showEggDonors && <TabsTrigger value="egg-donors" className={tabTriggerClass} data-testid="tab-edit-egg-donors">Egg Donors</TabsTrigger>}
@@ -695,6 +696,7 @@ export default function AdminProviderEditPage() {
             Branding
           </TabsTrigger>
         </TabsList>
+        </div>
 
         <TabsContent value="profile">
           <form onSubmit={handleEdit} className="space-y-6">
