@@ -200,11 +200,17 @@ export class TestRunnerService {
     this.logger.log(`Spawning test runner: npx ${args.join(" ")}`);
     this.childProcesses.set(runId, null as any); // placeholder
 
+    // detached: true gives the child its own process group so it survives
+    // a NestJS restart. proc.unref() lets the parent exit without waiting for it.
+    // The child reports progress via POST /api/admin/test-runner/event so results
+    // are preserved even if we can no longer read stdout.
     const proc = spawn("npx", args, {
       cwd: process.cwd(),
       env: { ...process.env },
       stdio: ["ignore", "pipe", "pipe"],
+      detached: true,
     });
+    proc.unref();
 
     this.childProcesses.set(runId, proc);
     let buffer = "";
@@ -299,6 +305,10 @@ export class TestRunnerService {
 
     proc.stdout?.on("data", onData);
     proc.stderr?.on("data", onData);
+    // Pipe errors are non-fatal: they happen when the parent restarts while the
+    // child is still running. The child POSTs results via HTTP so nothing is lost.
+    proc.stdout?.on("error", () => {});
+    proc.stderr?.on("error", () => {});
 
     proc.on("close", (code) => {
       if (buffer.trim()) processLine(buffer.trim());

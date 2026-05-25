@@ -47,6 +47,12 @@ async function getDB() {
   return _dbModule.prisma;
 }
 
+// ─── Resilience: survive server restarts ─────────────────────────────────────
+// This process runs detached from the NestJS server (proc.unref() in service).
+// Suppress stdout/stderr pipe errors so we don't crash when the parent restarts.
+process.stdout.on("error", () => {});
+process.stderr.on("error", () => {});
+
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:5001";
@@ -1655,7 +1661,7 @@ function getTestsToRun(): TestCase[] {
 
 async function createTestUser(testId: string, interestedServices: string[]): Promise<{ userId: string; cookie: string }> {
   const email = `test-${testId.toLowerCase()}-${Date.now()}@gostork-test.com`;
-  const regRes = await fetch(`${BASE_URL}/api/users`, {
+  const regRes = await fetchWithServerRetry(`${BASE_URL}/api/users`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password: TEST_PASSWORD, name: `Test ${testId}` }),
@@ -1663,7 +1669,7 @@ async function createTestUser(testId: string, interestedServices: string[]): Pro
   if (!regRes.ok) throw new Error(`Register failed: ${await regRes.text()}`);
   const user = await regRes.json();
 
-  const loginRes = await fetch(`${BASE_URL}/api/auth/login`, {
+  const loginRes = await fetchWithServerRetry(`${BASE_URL}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password: TEST_PASSWORD }),
@@ -1725,6 +1731,26 @@ async function deleteTestUser(userId: string): Promise<void> {
   }
 }
 
+// Retry a fetch when the server is temporarily unreachable (e.g. server restart).
+// Waits up to ~90s total with exponential backoff, then gives up.
+async function fetchWithServerRetry(url: string, options: RequestInit, maxWaitMs = 90_000): Promise<Response> {
+  const start = Date.now();
+  let delay = 2000;
+  while (true) {
+    try {
+      return await fetch(url, options);
+    } catch (err: any) {
+      const isConnErr = err.code === "ECONNREFUSED" || err.cause?.code === "ECONNREFUSED" ||
+        err.message?.includes("fetch failed") || err.message?.includes("ECONNREFUSED") ||
+        err.message?.includes("ECONNRESET");
+      if (!isConnErr || Date.now() - start + delay > maxWaitMs) throw err;
+      console.log(`  [retry] Server unreachable, waiting ${delay / 1000}s before retry...`);
+      await new Promise(r => setTimeout(r, delay));
+      delay = Math.min(delay * 1.5, 15_000);
+    }
+  }
+}
+
 async function sendMessage(cookie: string, message: string, sessionId: string | null): Promise<TurnResult> {
   const body: Record<string, unknown> = { message };
   if (sessionId) body.sessionId = sessionId;
@@ -1732,7 +1758,7 @@ async function sendMessage(cookie: string, message: string, sessionId: string | 
   const authHeaders: Record<string, string> = cookie.startsWith("Bearer ")
     ? { Authorization: cookie }
     : { Cookie: cookie };
-  const res = await fetch(`${BASE_URL}/api/ai-concierge/chat`, {
+  const res = await fetchWithServerRetry(`${BASE_URL}/api/ai-concierge/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders },
     body: JSON.stringify(body),
