@@ -470,11 +470,20 @@ export class VideoController {
       user.roles?.includes("GOSTORK_ADMIN");
     if (!isParticipant) throw new ForbiddenException("Not a participant");
 
-    if (!booking.actualEndedAt && booking.status === "CONFIRMED") {
+    // Only fire follow-up on the FIRST call-ended event (wasInProgress guard)
+    const wasInProgress = !booking.actualEndedAt && booking.status === "CONFIRMED";
+
+    if (wasInProgress) {
       await this.prisma.booking.update({
         where: { id: bookingId },
         data: { actualEndedAt: new Date() },
       });
+      // Fire post-call follow-up immediately - the Daily.co webhook arrives AFTER
+      // call-ended, so this is the primary trigger. The webhook keeps wasInProgress=false
+      // and skips to avoid duplicates.
+      this.firePostCallFollowUp(booking).catch((err) =>
+        this.logger.error(`Post-call follow-up failed: ${err.message}`),
+      );
     }
 
     return { success: true };

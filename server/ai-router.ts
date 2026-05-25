@@ -1624,8 +1624,17 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         inf.spermSource = "Sperm donor";
       }
 
-      // --- SOLO MAN / TWO DADS (gender=male) ---
-      if (genderIsMale) {
+      // --- SOLO MAN / TWO DADS (gender=male, NO female partner) ---
+      // CRITICAL: these defaults assume the male user has no female partner who could provide
+      // eggs or carry. They apply only to:
+      //   - Solo Man (isSingle=true)
+      //   - Two Dads / gay male couple (orientationIsGay=true, not single)
+      // They must NOT apply to Man & Woman couples (straight male with female partner) because
+      // the partner can be the egg source ("Partner eggs") and the partner can carry the
+      // pregnancy ("My partner"). Defaulting to "Egg donor"/"Gestational surrogate" for an
+      // MW male overwrites these correct choices before the user can answer the intake Qs.
+      const maleHasNoFemalePartner = genderIsMale && (isSingle || orientationIsGay);
+      if (maleHasNoFemalePartner) {
         if (curEggSource == null) inf.eggSource = "Egg donor";
         if (curCarrier == null && !inf.carrier) inf.carrier = "Gestational surrogate";
         if (curNeedsSurrogate == null && !inf.needsSurrogate) inf.needsSurrogate = true;
@@ -2051,9 +2060,9 @@ STEP 5-CLINIC (only if user is looking for a Fertility Clinic - ask ALL of these
     - If FEMALE: "Will you be using your own eggs or donor eggs?" [[QUICK_REPLY:My own eggs|Donor eggs|I'm not sure yet]]
     - If MALE with female partner: "Will you be using your partner's eggs or donor eggs?" [[QUICK_REPLY:My partner's eggs|Donor eggs|I'm not sure yet]]
     - If MALE single or same-sex couple: "Will you be using donor eggs?" (They must use donor eggs)
-  → Egg source mapping:
-    - "my partner's eggs" or "partner's eggs" → OWN EGGS (eggSource = "own_eggs"). Ask for PARTNER's age in the next step.
-    - "my own eggs" → OWN EGGS (eggSource = "own_eggs"). Ask for the parent's age in the next step.
+  → Egg source mapping (each option saves a DISTINCT enum value - do not conflate):
+    - "my own eggs" → eggSource = "own_eggs". Ask for the parent's age in the next step.
+    - "my partner's eggs" or "partner's eggs" → eggSource = "partner_eggs". Ask for PARTNER's age in the next step.
     - "donor eggs" → eggSource = "donor". Skip the age question (donor rates are not age-specific). Go to 5-CLINIC-D.
   5-CLINIC-C: Ask for the AGE of whoever is providing the eggs:
     - If female parent using own eggs and age NOT in USER CONTEXT: "How old are you? Clinic success rates are reported by age group, so this helps me find the most accurate match for you."
