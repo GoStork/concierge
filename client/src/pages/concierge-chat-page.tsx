@@ -4653,13 +4653,13 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                               <Button
                                 type="button"
                                 size="sm"
-                                className="font-medium"
-                                style={{ borderRadius: "var(--quick-reply-radius, 999px)", backgroundColor: brandColor, color: "white", height: "auto", paddingLeft: "var(--quick-reply-px, 14px)", paddingRight: "var(--quick-reply-px, 14px)", paddingTop: "var(--quick-reply-py, 6px)", paddingBottom: "var(--quick-reply-py, 6px)" }}
+                                className="font-semibold"
+                                style={{ borderRadius: "var(--quick-reply-radius, 999px)", backgroundColor: brandColor, color: "white", border: "none", height: "auto", paddingLeft: "var(--quick-reply-px, 14px)", paddingRight: "var(--quick-reply-px, 14px)", paddingTop: "var(--quick-reply-py, 6px)", paddingBottom: "var(--quick-reply-py, 6px)", fontSize: "var(--quick-reply-font-size, 13px)" }}
                                 onClick={() => { const selected = Array.from(multiSelectChoices).join(", "); setMultiSelectChoices(new Set()); handleQuickReply(selected); }}
                                 disabled={sending}
                                 data-testid="multi-select-done"
                               >
-                                Done
+                                Done ({multiSelectChoices.size})
                               </Button>
                             )}
                           </div>
