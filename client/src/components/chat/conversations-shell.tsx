@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { Search, Loader2, MessageSquare } from "lucide-react";
 
@@ -35,6 +35,13 @@ export function ConversationsShell({
 }: ConversationsShellProps) {
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Lock body scroll on mobile so the page body doesn't compete with the inner list scroll
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
 
   // Left sidebar is visible when:
   // - no selection (user needs to pick a conversation), OR
