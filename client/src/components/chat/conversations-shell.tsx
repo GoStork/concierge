@@ -59,7 +59,7 @@ export function ConversationsShell({
       : "flex";
 
   return (
-    <div className="flex fixed inset-0 md:static md:h-[calc(100dvh-64px)] w-full overflow-hidden" data-testid="conversations-page">
+    <div className="flex fixed inset-x-0 top-0 md:static md:h-[calc(100dvh-64px)] w-full overflow-hidden" style={{ height: '100dvh' }} data-testid="conversations-page">
       <div className={`${sidebarClass} flex-col shrink-0 ${sidebarAlwaysVisible ? "w-64 md:w-80 lg:w-96" : "w-full md:w-80 lg:w-96"} border-r bg-background overflow-hidden`}>
         <div className="shrink-0 bg-background border-b px-4 pt-4 pb-3 space-y-3">
           <div className="flex items-center justify-between">
