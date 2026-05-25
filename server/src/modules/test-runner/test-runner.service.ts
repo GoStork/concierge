@@ -93,17 +93,19 @@ export class TestRunnerService {
     // If tests were running when the server stopped, auto-restart them after a short
     // delay to let the server fully initialize. Since test users are ephemeral and
     // sessions are recreated fresh each run, restarting from scratch gives correct results.
-    // This is more reliable than waiting for detached child processes to reconnect,
-    // because the child's stdout pipe is broken after a server restart.
+    //
+    // CRITICAL: restart INDIVIDUAL tests by ID, not their personas. Previously this
+    // batched by persona ("if SW-01 was interrupted, restart all 14 solo-woman tests")
+    // which silently kicked off tests the user never asked for. Per-test restarts
+    // respect the user's actual intent (e.g. if they only clicked Run on SW-01 and
+    // SW-02, only those two get restarted after a server hiccup).
     const runningOnLoad = Object.values(this.state.tests).filter(t => t.status === "running");
     if (runningOnLoad.length > 0) {
-      this.logger.log(`[TestRunner] Found ${runningOnLoad.length} interrupted test(s) - auto-restarting in 5s`);
-      // Group by persona so we restart at the persona level (one process per persona)
-      const personasToRestart = [...new Set(runningOnLoad.map(t => t.persona))];
+      this.logger.log(`[TestRunner] Found ${runningOnLoad.length} interrupted test(s) - auto-restarting in 5s: ${runningOnLoad.map(t => t.id).join(", ")}`);
       setTimeout(() => {
-        for (const persona of personasToRestart) {
-          this.logger.log(`[TestRunner] Auto-restarting interrupted persona: ${persona}`);
-          this.startRun(persona);
+        for (const test of runningOnLoad) {
+          this.logger.log(`[TestRunner] Auto-restarting interrupted test: ${test.id}`);
+          this.startRun(test.id);
         }
       }, 5000);
     }
