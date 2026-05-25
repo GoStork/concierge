@@ -1403,14 +1403,18 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
                   <div className="flex flex-wrap gap-2 mt-3">
                     {multiChips.map((qr, qi) => {
                       const isSelected = multiSelected.has(qi);
-                      const selectedStyle: CSSProperties = qrIsOutline
-                        ? { ...chipBase, backgroundColor: `${qrColor}18`, color: qrColor, border: `1px solid ${qrColor}` }
-                        : qrIsSecondary
-                        ? { ...chipBase, backgroundColor: `${qrColor}cc`, color: "hsl(var(--foreground))", border: showBorder ? `1px solid hsl(var(--border))` : "none" }
-                        : { ...chipBase, backgroundColor: `${qrColor}30`, color: qrColor, border: showBorder ? `1px solid ${qrColor}` : "none" };
+                      const selectedStyle: CSSProperties = {
+                        ...chipBase,
+                        backgroundColor: qrColor,
+                        color: qrIsSecondary ? "hsl(var(--foreground))" : "#ffffff",
+                        border: "none",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      };
                       return (
                         <span key={qi} style={isSelected ? selectedStyle : chipUniform}>
-                          {isSelected && <span style={{ marginRight: "4px", fontSize: "10px" }}>✓</span>}
+                          {isSelected && <Check style={{ width: "11px", height: "11px", flexShrink: 0 }} />}
                           {qr}
                         </span>
                       );

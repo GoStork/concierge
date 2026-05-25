@@ -4604,11 +4604,15 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                                 : qrIsOutline
                                 ? { backgroundColor: "transparent", color: qrColor, border: `1px solid ${qrColor}` }
                                 : qrIsSecondary
-                                ? { backgroundColor: isSelected ? `${qrColor}cc` : qrColor, color: "hsl(var(--foreground))", border: qrShowBorder ? `1px solid ${brandColor}50` : "none" }
+                                ? {
+                                    backgroundColor: isSelected ? qrColor : qrColor,
+                                    color: "hsl(var(--foreground))",
+                                    border: isSelected ? "none" : (qrShowBorder ? `1px solid ${brandColor}50` : "none"),
+                                  }
                                 : {
-                                    backgroundColor: isSelected ? `${qrColor}30` : `${qrColor}18`,
-                                    color: qrColor,
-                                    border: qrShowBorder ? `1px solid ${isSelected ? qrColor : `${qrColor}50`}` : "none",
+                                    backgroundColor: isSelected ? qrColor : `${qrColor}18`,
+                                    color: isSelected ? "#ffffff" : qrColor,
+                                    border: isSelected ? "none" : (qrShowBorder ? `1px solid ${qrColor}50` : "none"),
                                   };
                               return (
                                 <Button
@@ -4646,7 +4650,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
                                 >
                                   {isBinary && qi === 0 && <ThumbsUp className="shrink-0" style={{ width: "13px", height: "13px", marginRight: "5px" }} />}
-                                  {isSelected && <span className="mr-1">✓</span>}
+                                  {isSelected && <Check className="shrink-0" style={{ width: "11px", height: "11px", marginRight: "4px" }} />}
                                   {qr}
                                 </Button>
                               );
