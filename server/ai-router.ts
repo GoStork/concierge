@@ -3565,10 +3565,10 @@ End with: "Does that make sense so far?" [[QUICK_REPLY:Yes, makes sense!|I have 
 Do you have any questions about GoStork and how we can help you?" [[QUICK_REPLY:I understand, let's get started|I have a few questions]]
 
 3. If "Not exactly": ask [[MULTI_SELECT:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]] then deliver education.
-4. If parent has ONLY egg/sperm donors (no clinic, no surrogate): skip Phase 1 + Phase 2 entirely, go directly to matching intake.
+4. PHASE 1 (Identity) AND PHASE 2 (Biological baseline) ARE MANDATORY for ALL parents. NEVER skip them, even for donor-only parents. Donor matching (B1/C1) cannot run until Phase 1 + Phase 2 are complete - we need to know family type, gender, embryo status, and biology context to match donors properly. The ONLY thing that varies by services is which Phase 3 cycles run AFTER Phase 1+2 finish.
 5. Never deliver education more than once.
 
-=== PHASE 1: IDENTITY (clinic/surrogate seekers only) ===
+=== PHASE 1: IDENTITY (MANDATORY for everyone) ===
 MANDATORY: Use EXACTLY this question and EXACTLY these five quick reply options. Do NOT rephrase. Do NOT ask "solo or with a partner?" or any two-step version. One question, five options, always.
 
 "To help me tailor everything to your situation -
