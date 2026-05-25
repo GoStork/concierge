@@ -211,6 +211,18 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.agreement;
   }
 
+  get invoice() {
+    return prisma.invoice;
+  }
+
+  get invoiceReminder() {
+    return prisma.invoiceReminder;
+  }
+
+  get referralFeeConfig() {
+    return prisma.referralFeeConfig;
+  }
+
   get $transaction() {
     return prisma.$transaction.bind(prisma);
   }

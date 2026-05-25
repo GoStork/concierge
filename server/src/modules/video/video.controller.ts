@@ -696,6 +696,8 @@ export class VideoController {
     const payload = event?.payload;
     const roomName = payload?.room_name;
 
+    this.logger.log(`[WEBHOOK] eventType=${eventType} roomName=${roomName} rawKeys=${JSON.stringify(Object.keys(event || {}))}, payloadKeys=${JSON.stringify(Object.keys(payload || {}))}`);
+
     if (!roomName) return { ok: true };
 
     // Try to find provider user by their persistent Daily room URL
