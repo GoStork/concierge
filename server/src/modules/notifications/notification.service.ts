@@ -1935,8 +1935,9 @@ export class NotificationService implements OnModuleInit {
     const twilioSid = process.env.TWILIO_ACCOUNT_SID;
     const twilioToken = process.env.TWILIO_AUTH_TOKEN;
     const twilioFrom = process.env.TWILIO_PHONE_NUMBER;
+    const twilioMessagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
 
-    if (!twilioSid || !twilioToken || !twilioFrom) {
+    if (!twilioSid || !twilioToken || (!twilioFrom && !twilioMessagingServiceSid)) {
       this.logger.log(`[SMS MOCK] To: ${to}, Body: ${body}`);
       return;
     }
@@ -1948,7 +1949,16 @@ export class NotificationService implements OnModuleInit {
     }
 
     const url = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`;
-    const params = new URLSearchParams({ To: normalizedTo, From: twilioFrom, Body: body });
+    // Prefer MessagingServiceSid (better deliverability) over raw From number
+    const paramsInit: Record<string, string> = { To: normalizedTo, Body: body };
+    if (twilioMessagingServiceSid) {
+      paramsInit.MessagingServiceSid = twilioMessagingServiceSid;
+    } else {
+      paramsInit.From = twilioFrom!;
+    }
+    const params = new URLSearchParams(paramsInit);
+
+    this.logger.log(`[SMS] Sending raw SMS to ${normalizedTo} via ${twilioMessagingServiceSid ? "MessagingService" : "From"}`);
 
     const response = await fetch(url, {
       method: "POST",
@@ -1963,6 +1973,7 @@ export class NotificationService implements OnModuleInit {
       const text = await response.text();
       throw new Error(`Twilio error: ${response.status} - ${text}`);
     }
+    this.logger.log(`[SMS] Raw SMS sent successfully to ${normalizedTo}`);
   }
 
   // ─── Billing notifications ──────────────────────────────────────────────────
