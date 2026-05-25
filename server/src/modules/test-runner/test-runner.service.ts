@@ -22,11 +22,37 @@ import { TEST_CASES } from "./test-cases";
 
 const STATE_FILE = path.resolve(process.cwd(), ".test-runner-state.json");
 
+// Mark any "running" tests as failed (interrupted) - used both on save and load
+// so a server restart never leaves zombie tests stuck in "running" status forever.
+function reapZombieRunningTests(state: RunnerState): RunnerState {
+  const overallDone = state.status === "running";
+  const tests: Record<string, TestProgress> = {};
+  for (const [id, t] of Object.entries(state.tests)) {
+    if (t.status === "running") {
+      tests[id] = {
+        ...t,
+        status: "fail",
+        errors: [...(t.errors || []), `Interrupted by server restart (was on msg ${t.currentMessage || 0}/${t.totalMessages || 0})`],
+      };
+    } else {
+      tests[id] = t;
+    }
+  }
+  return {
+    ...state,
+    status: overallDone ? "done" : state.status,
+    tests,
+  };
+}
+
 function loadPersistedState(): RunnerState | null {
   try {
     if (fs.existsSync(STATE_FILE)) {
       const raw = fs.readFileSync(STATE_FILE, "utf8");
-      return JSON.parse(raw) as RunnerState;
+      const parsed = JSON.parse(raw) as RunnerState;
+      // Defensive: also reap zombies on load in case state was saved by an older
+      // version of this code that only updated the overall status.
+      return reapZombieRunningTests(parsed);
     }
   } catch {}
   return null;
@@ -34,8 +60,10 @@ function loadPersistedState(): RunnerState | null {
 
 function saveState(state: RunnerState): void {
   try {
-    // Don't persist "running" state - server restart means process is dead
-    const toSave = { ...state, status: state.status === "running" ? "done" as const : state.status };
+    // Only reap when persisting a final state - mid-run state must keep "running" status
+    // so the UI shows live progress. Reaping happens on overall status === "done"/"idle"
+    // (e.g. when the runner finishes or the process exits).
+    const toSave = state.status === "running" ? state : reapZombieRunningTests(state);
     fs.writeFileSync(STATE_FILE, JSON.stringify(toSave, null, 2));
   } catch {}
 }

@@ -860,13 +860,13 @@ export class VideoController {
       select: { id: true },
     });
 
-    // --- 2. The 3-way PROVIDER_JOINED session ---
+    // --- 2. The 3-way session (PROVIDER_JOINED or CONSULTATION_BOOKED) ---
     // Let the provider know the call ended and ask for their assessment.
     // This message is visible to the provider - do NOT include the parent's readiness
     // question here (parent needs a private space to be honest about the call).
     if (providerEntity) {
       const providerSession = await this.prisma.aiChatSession.findFirst({
-        where: { userId: parentUserId, providerId: providerEntity.id, status: "PROVIDER_JOINED" },
+        where: { userId: parentUserId, providerId: providerEntity.id, status: { in: ["PROVIDER_JOINED", "CONSULTATION_BOOKED"] } },
         select: { id: true },
       });
 
@@ -935,12 +935,12 @@ export class VideoController {
     const providerTypeName = provider.services[0]?.providerType?.name || "";
     const isSurrogacyAgency = providerTypeName === "Surrogacy Agency";
 
-    // Find the provider session (PROVIDER_JOINED) - needed for invoice dedup check
+    // Find the provider session (PROVIDER_JOINED or CONSULTATION_BOOKED) - needed for invoice dedup check
     const providerSession = await this.prisma.aiChatSession.findFirst({
       where: {
         userId: parentUserId,
         providerId: providerEntity.id,
-        status: "PROVIDER_JOINED",
+        status: { in: ["PROVIDER_JOINED", "CONSULTATION_BOOKED"] },
       },
       select: { id: true },
     });
@@ -1011,8 +1011,8 @@ export class VideoController {
     if (isSurrogacyAgency && isMatchCall && dueAt) {
       // 24h countdown reminders - but we don't have an invoice yet, schedule after parent confirms
       // The countdown gets scheduled when the invoice is created (after parent clicks "Yes")
-    } else {
-      // Non-surrogacy: schedule 24h/48h/72h gentle follow-ups
+    } else if (providerSession) {
+      // Non-surrogacy: schedule 24h/48h/72h gentle follow-ups (only if provider session exists)
       this.billingService.scheduleFollowUpReminders({
         sessionId: providerSession.id,
         providerName: providerEntity.name,
@@ -1020,7 +1020,7 @@ export class VideoController {
       });
     }
 
-    this.logger.log(`Post-call billing readiness prompt sent to session ${providerSession.id} for ${providerEntity.name}`);
+    this.logger.log(`Post-call billing readiness prompt sent to private session ${parentMainSessionId} for ${providerEntity.name}`);
   }
 
 
