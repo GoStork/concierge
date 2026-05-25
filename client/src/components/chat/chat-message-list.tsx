@@ -155,7 +155,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
               )}
 
               {/* Content column: name, whisper card, bubble, special card */}
-              <div className={`flex flex-col ${own ? "items-end" : "items-start"}`}>
+              <div className={`flex flex-col flex-1 min-w-0 ${own ? "items-end" : "items-start"}`}>
                 {/* Sender name label */}
                 {label && !own && (
                   <span className="text-[11px] font-medium text-muted-foreground mb-0.5" data-testid={`name-label-${msgTestIdPrefix}-${i}`}>
@@ -168,45 +168,44 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                   <WhisperProfileCard card={msg.uiCardData.whisperMatchCard} brandColor={brandColor} />
                 )}
 
-                {/* Message bubble */}
+                {/* Message bubble + timestamp below */}
                 {showBubble && (
                   <div className={`flex ${own ? "justify-end" : "justify-start"}`}>
-                    <div
-                      className={`relative max-w-[75%] overflow-hidden px-4 py-2.5 text-base leading-relaxed font-ui ${
-                        own
-                          ? "text-primary-foreground"
-                          : "text-foreground"
-                      }`}
-                      style={{
-                        borderRadius: resolvedRadius,
-                        ...(own
-                          ? { backgroundColor: brandColor }
-                          : msg.role === "user"
-                          ? { backgroundColor: chatPalette.partnerBg, border: `1px solid ${chatPalette.partnerBorder}` }
-                          : msg.senderType === "provider"
-                          ? { backgroundColor: chatPalette.expertBg, border: `1px solid ${chatPalette.expertBorder}` }
-                          : msg.senderType === "human"
-                          ? { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }
-                          : msg.senderType === "system"
-                          ? { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }
-                          : { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }),
-                      }}
-                      data-testid={`${msgTestIdPrefix}-${i}`}
-                    >
-                      <span style={{ overflowWrap: "break-word", wordBreak: "break-word" }}>{renderMessageContent(displayContent)}</span>
+                    <div className={`flex flex-col max-w-[75%] ${own ? "items-end" : "items-start"}`}>
+                      <div
+                        className={`overflow-hidden px-4 py-2.5 text-base leading-relaxed font-ui ${
+                          own
+                            ? "text-primary-foreground"
+                            : "text-foreground"
+                        }`}
+                        style={{
+                          borderRadius: resolvedRadius,
+                          ...(own
+                            ? { backgroundColor: brandColor }
+                            : msg.role === "user"
+                            ? { backgroundColor: chatPalette.partnerBg, border: `1px solid ${chatPalette.partnerBorder}` }
+                            : msg.senderType === "provider"
+                            ? { backgroundColor: chatPalette.expertBg, border: `1px solid ${chatPalette.expertBorder}` }
+                            : msg.senderType === "human"
+                            ? { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }
+                            : msg.senderType === "system"
+                            ? { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }
+                            : { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }),
+                        }}
+                        data-testid={`${msgTestIdPrefix}-${i}`}
+                      >
+                        <span style={{ overflowWrap: "break-word", wordBreak: "break-word" }}>{renderMessageContent(displayContent)}</span>
+                      </div>
                       {msg.createdAt && (
-                        <>
-                          <span className={`inline-block ${own ? "w-[4.75rem]" : "w-[3.5rem]"}`} aria-hidden="true">&nbsp;</span>
-                          <span
-                            className="absolute bottom-1.5 right-3 whitespace-nowrap select-none flex items-center gap-0.5"
-                            style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55 }}
-                          >
-                            {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
-                            {own && (
-                              <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />
-                            )}
-                          </span>
-                        </>
+                        <span
+                          className="whitespace-nowrap select-none flex items-center gap-0.5 mt-0.5 px-1"
+                          style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55 }}
+                        >
+                          {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                          {own && (
+                            <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />
+                          )}
+                        </span>
                       )}
                     </div>
                   </div>
