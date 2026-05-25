@@ -925,7 +925,7 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_TWO_DADS, CLINIC_NEED, EMB_NO,
       EGG_DONOR, SPERM_OWN, SURR_HAVE,
-      ...clinicMatch,
+      ...clinicMatchCouple,
       ...eggDonorMatch,
     ),
     db: [
@@ -1057,7 +1057,7 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
       { send: "My own eggs", assert: noSpermQ },
       CARRIER_ME, SPERM_NEED,
-      ...clinicMatch,
+      ...clinicMatchCouple,
       ...spermDonorMatch,
     ),
     db: [
@@ -1078,7 +1078,7 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
       { send: "My own eggs", assert: noSpermQ },
       CARRIER_ME, SPERM_HAVE,
-      ...clinicMatch,
+      ...clinicMatchCouple,
     ),
     db: [
       { field: "spermSource", expected: "Sperm donor" },
@@ -1095,7 +1095,7 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
       { send: "My partner's eggs", assert: noSpermQ },
       CARRIER_ME, SPERM_NEED,
-      ...clinicMatch,
+      ...clinicMatchCouple,
       ...spermDonorMatch,
     ),
     db: [
@@ -1114,7 +1114,7 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
       { send: "I need help finding an egg donor", assert: noSpermQ },
       CARRIER_ME, SPERM_NEED,
-      ...clinicMatch,
+      ...clinicMatchCouple,
       ...eggDonorMatch,
       ...spermDonorMatch,
     ),
@@ -1151,7 +1151,7 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
       { send: "My own eggs", assert: noSpermQ },
       CARRIER_PARTNER, SPERM_NEED,
-      ...clinicMatch,
+      ...clinicMatchCouple,
       ...spermDonorMatch,
     ),
     db: [
@@ -1170,7 +1170,7 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
       { send: "My partner's eggs", assert: noSpermQ },
       CARRIER_PARTNER, SPERM_NEED,
-      ...clinicMatch,
+      ...clinicMatchCouple,
       ...spermDonorMatch,
     ),
     db: [
@@ -1286,7 +1286,7 @@ const TEST_CASES: TestCase[] = [
       P0, I_TWO_MOMS, CLINIC_NEED, EMB_NO,
       { send: "I need help finding an egg donor", assert: noSpermQ },
       CARRIER_SURROGATE, SURR_HAVE,
-      ...clinicMatch,
+      ...clinicMatchCouple,
       ...eggDonorMatch,
       ...spermDonorMatch,
     ),

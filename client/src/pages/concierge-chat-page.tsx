@@ -2400,6 +2400,7 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
         messageContent={msg.content || ""}
         isParent={true}
         isAnswered={isAnswered}
+        brandColor={brandColor}
       />
     );
   }

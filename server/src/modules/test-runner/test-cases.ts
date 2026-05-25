@@ -255,7 +255,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "TD-06: No embryos - My own sperm - Needs egg donor - Already has surrogate",
     desc: "Two dads already have surrogate - Phase 3 D-cycle skipped entirely",
     interestedServices: ["Egg Donor"],
-    messageCount: 16,
+    messageCount: 17,
   },
   {
     id: "TD-07", persona: "two-dads",
@@ -306,28 +306,28 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "TM-01: No embryos - Partner A eggs - Partner A carries - Needs sperm donor - Needs clinic",
     desc: "Simplest two-moms path: same person provides eggs and carries",
     interestedServices: ["Sperm Donor"],
-    messageCount: 17,
+    messageCount: 18,
   },
   {
     id: "TM-02", persona: "two-moms",
     name: "TM-02: No embryos - Partner A eggs - Partner A carries - Already has sperm donor - Needs clinic",
     desc: "Two moms already have sperm donor - sperm match cycle skipped",
     interestedServices: [],
-    messageCount: 14,
+    messageCount: 15,
   },
   {
     id: "TM-03", persona: "two-moms",
     name: "TM-03: No embryos - Partner B eggs - Partner A carries (Reciprocal IVF) - Needs sperm donor + clinic",
     desc: "Reciprocal IVF: Partner A carries, Partner B provides eggs",
     interestedServices: ["Sperm Donor"],
-    messageCount: 17,
+    messageCount: 18,
   },
   {
     id: "TM-04", persona: "two-moms",
     name: "TM-04: No embryos - Donor eggs - Partner A carries - Needs egg donor + sperm donor + clinic",
     desc: "Two moms with third-party egg donor, self-carry - embryo donation path",
     interestedServices: ["Egg Donor", "Sperm Donor"],
-    messageCount: 20,
+    messageCount: 21,
   },
   {
     id: "TM-05", persona: "two-moms",
@@ -341,14 +341,14 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "TM-06: No embryos - Partner A eggs - Partner B carries - Needs sperm donor + clinic",
     desc: "Partner B carries with Partner A's eggs - carrier = My partner",
     interestedServices: ["Sperm Donor"],
-    messageCount: 17,
+    messageCount: 18,
   },
   {
     id: "TM-07", persona: "two-moms",
     name: "TM-07: No embryos - Partner B eggs - Partner B carries (both) - Needs sperm donor + clinic",
     desc: "Partner B provides eggs AND carries - full partner path",
     interestedServices: ["Sperm Donor"],
-    messageCount: 17,
+    messageCount: 18,
   },
   {
     id: "TM-08", persona: "two-moms",
@@ -390,7 +390,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "TM-13: No embryos - Donor eggs - Surrogate carries - Already has surrogate - Needs sperm donor + clinic",
     desc: "Two moms already have surrogate - Phase 3 D-cycle skipped",
     interestedServices: ["Egg Donor", "Sperm Donor"],
-    messageCount: 21,
+    messageCount: 22,
   },
 
   // ── MAN & WOMAN (MW-01 to MW-19) ──────────────────────────────────────────
