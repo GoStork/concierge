@@ -742,6 +742,7 @@ export class ProvidersController {
       await tx.ivfSuccessRate.deleteMany({ where: { providerId: id } });
       await tx.providerBrandSettings.deleteMany({ where: { providerId: id } });
       await tx.providerLocation.deleteMany({ where: { providerId: id } });
+      await tx.invoice.deleteMany({ where: { providerId: id } });
       await tx.provider.delete({ where: { id } });
     });
     return { message: "Provider deleted" };
