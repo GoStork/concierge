@@ -263,7 +263,7 @@ export class NotificationService implements OnModuleInit {
               const storage = new Storage({ credentials });
               const bucketName = process.env.GCS_BUCKET_NAME || "gostork-recordings";
               const urlObj = new URL(logoUrl);
-              const objectPath = decodeURIComponent(urlObj.pathname.slice(`/${bucketName}/`.length + 1));
+              const objectPath = decodeURIComponent(urlObj.pathname.slice(`/${bucketName}/`.length));
               const [signed] = await storage.bucket(bucketName).file(objectPath).getSignedUrl({
                 action: "read",
                 expires: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
