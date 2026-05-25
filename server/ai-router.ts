@@ -3547,7 +3547,7 @@ Rules: Use real values from the data. The providerId = the "id" UUID field. Neve
         ];
         // Up to 2 retries. Gemini intermittently returns empty after tool calls (high flake
         // rate especially on surrogate D-cycle responses). Second attempt with a short pause
-        // recovers in most of the cases the first retry missed.
+        // gives Gemini another shot before we give up and surface the failure to the client.
         let retryResult = await callTier2Claude(minimalRetrySystem, retryMessages, [], sse, mcpClient, false);
         if (!retryResult.content) {
           console.log("[TIER2 RETRY] First retry also empty - second attempt in 500ms");
@@ -3556,33 +3556,11 @@ Rules: Use real values from the data. The providerId = the "id" UUID field. Neve
         }
         if (retryResult.content) {
           tier2Result.content = retryResult.content;
-        } else {
-          // Final fallback: synthesize the match card directly from search-result JSON.
-          // Avoids sending retry_needed when we KNOW we have data - the user shouldn't
-          // suffer from Gemini's empty-response flake when results are sitting right here.
-          console.warn("[TIER2 RETRY] Both Gemini retries empty - synthesizing match card from search data");
-          try {
-            const parsed = JSON.parse(firstResult.resultText);
-            const arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.results) ? parsed.results : []);
-            const first = arr[0];
-            if (first && first.id) {
-              const name = first.displayName || first.name || `${serviceType} match`;
-              const location = first.location || first.country || first.state || "USA";
-              const reasons: string[] = [
-                first.bio ? String(first.bio).slice(0, 80) : `Compatible ${serviceType.toLowerCase()}`,
-                first.successRate ? `${first.successRate}% success rate` : (first.age ? `Age ${first.age}` : "Highly rated"),
-                "Available now",
-              ].filter(Boolean).slice(0, 3);
-              const card = `[[MATCH_CARD:${JSON.stringify({ name, type: serviceType, location, photo: first.photo || "", reasons, providerId: first.id })}]]`;
-              const lead = `I found a wonderful ${serviceType.toLowerCase()} that matches what you're looking for.`;
-              const cta = ` Does this feel like a good match? [[QUICK_REPLY:I have questions|Schedule a consultation|I don't like this one]]`;
-              tier2Result.content = `${lead}\n\n${card}\n\n${cta}`;
-              console.log(`[TIER2 RETRY] Synthesized fallback card for providerId=${first.id}`);
-            }
-          } catch (e: any) {
-            console.error("[TIER2 RETRY] Failed to synthesize fallback card:", e?.message);
-          }
         }
+        // No hardcoded fallback - if Gemini won't produce content with the real search
+        // results in front of it, that's a server bug we want to surface (the client will
+        // get retry_needed and the test will fail loudly) rather than paper over with a
+        // deterministic stub that bypasses the AI's actual reasoning.
       }
       if (tier2Result.content) {
         finalContent = injectMissingQuickReplies(tier2Result.content);
