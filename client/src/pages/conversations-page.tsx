@@ -1611,7 +1611,7 @@ export default function ConversationsPage() {
           detailContent={parentDetailContent}
           brandColor={brandColor}
           showSidebar={parentShowSidebar}
-          sidebarAlwaysVisible={parentShowSidebar}
+          sidebarAlwaysVisible={parentShowRightPanel}
         />
         {inlineVideoBookingId && (
           <InlineVideoOverlay
