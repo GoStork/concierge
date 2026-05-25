@@ -2046,7 +2046,7 @@ async function main() {
   } else {
     // Concurrency pool: always keep up to CONCURRENCY tests running.
     // As each test finishes it immediately starts the next one - no waiting for a whole batch.
-    const CONCURRENCY = 5;
+    const CONCURRENCY = 8;
     results = [];
     let running = 0;
     const queue = [...toRun];
