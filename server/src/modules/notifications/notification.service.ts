@@ -249,8 +249,9 @@ export class NotificationService implements OnModuleInit {
         defaults.warningColor = s.warningColor || defaults.warningColor;
         defaults.errorColor = s.errorColor || defaults.errorColor;
         defaults.companyName = s.companyName || defaults.companyName;
-        // Email header has a dark (brandColor) background - prefer dark-mode logo
-        const rawLogo = s.darkLogoWithNameUrl || s.darkLogoUrl || s.logoWithNameUrl || s.logoUrl || "";
+        // Email header has a dark (brandColor) background - prefer dark-mode icon logo.
+        // Priority: dark icon > light icon > dark full > light full
+        const rawLogo = s.darkLogoUrl || s.logoUrl || s.darkLogoWithNameUrl || s.logoWithNameUrl || "";
         const imageBaseUrl = getBaseUrl();
         let logoUrl = rawLogo && rawLogo.startsWith("/") ? `${imageBaseUrl}${rawLogo}` : rawLogo;
         // GCS bucket uses uniform bucket-level access - objects are private.
