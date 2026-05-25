@@ -25,7 +25,7 @@ import {
   buildSidebarSections,
   type SidebarSection,
 } from "@/components/marketplace/swipe-mappers";
-import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2 } from "lucide-react";
+import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2, ThumbsUp } from "lucide-react";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 import { ReadinessPromptCard } from "@/components/readiness-prompt-card";
@@ -4642,7 +4642,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                                   }}
                                   disabled={sending}
                                   data-testid={`quick-reply-${qi}`}
+
                                 >
+                                  {isBinary && qi === 0 && <ThumbsUp className="shrink-0" style={{ width: "13px", height: "13px", marginRight: "5px" }} />}
                                   {isSelected && <span className="mr-1">✓</span>}
                                   {qr}
                                 </Button>

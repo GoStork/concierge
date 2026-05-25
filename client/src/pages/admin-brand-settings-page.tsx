@@ -62,6 +62,7 @@ import {
   Crown,
   ImageIcon,
   Zap,
+  ThumbsUp,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, SpermIcon } from "@/components/icons/marketplace-icons";
@@ -1388,7 +1389,10 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
                 {msg.text}
                 {msg.chips === "binary" && (
                   <div className="flex flex-wrap gap-2 mt-3">
-                    <span style={chipPositive}>{binaryChips[0]}</span>
+                    <span style={{ ...chipPositive, display: "inline-flex", alignItems: "center", gap: "5px" }}>
+                      <ThumbsUp style={{ width: "12px", height: "12px", flexShrink: 0 }} />
+                      {binaryChips[0]}
+                    </span>
                     <span style={chipSecondary}>{binaryChips[1]}</span>
                   </div>
                 )}
