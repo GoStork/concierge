@@ -927,12 +927,16 @@ export class VideoController {
     const provider = await this.prisma.provider.findUnique({
       where: { id: providerEntity.id },
       include: {
-        services: { include: { providerType: true }, take: 1 },
+        services: { include: { providerType: true } },
       },
     });
     if (!provider) return;
 
-    const providerTypeName = provider.services[0]?.providerType?.name || "";
+    // When a provider has multiple service types, pick the most specific one.
+    // Priority: IVF Clinic > Egg Donor Agency > Egg Bank > Sperm Bank > Surrogacy Agency
+    const serviceTypeNames = provider.services.map(s => s.providerType?.name).filter(Boolean) as string[];
+    const typePriority = ["IVF Clinic", "Egg Donor Agency", "Egg Bank", "Sperm Bank", "Surrogacy Agency"];
+    const providerTypeName = typePriority.find(t => serviceTypeNames.includes(t)) || serviceTypeNames[0] || "";
     const isSurrogacyAgency = providerTypeName === "Surrogacy Agency";
 
     // Find the provider session (PROVIDER_JOINED or CONSULTATION_BOOKED) - needed for invoice dedup check
