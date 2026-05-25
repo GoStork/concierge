@@ -209,6 +209,13 @@ export default function VideoRoomPage() {
         }
       });
 
+      callFrame.on("participant-left", (e: any) => {
+        // When the provider (owner) leaves, automatically end the call for the parent too
+        if (!isProviderOrAdmin && e?.participant?.owner === true) {
+          callFrame.leave();
+        }
+      });
+
       callFrame.on("left-meeting", () => {
         try { callFrame.stopRecording().catch(() => {}); } catch {}
         callFrame.destroy();
