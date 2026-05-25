@@ -538,6 +538,28 @@ export default function AdminTestRunnerPage() {
                       {displayName}
                     </div>
                   </div>
+                  {/* Per-card Run button - reruns just this single test. Disabled while any
+                      run is in progress so we don't fight the running subprocess. */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); startRun(tc.id); }}
+                    disabled={isRunning || status === "running"}
+                    title={status === "running" ? "Test already running" : isRunning ? "Stop the current run first" : `Run ${tc.id} only`}
+                    style={{
+                      flexShrink: 0,
+                      display: "inline-flex", alignItems: "center", gap: "3px",
+                      padding: "4px 8px",
+                      fontSize: "11px", fontWeight: 500,
+                      background: status === "fail" ? "hsl(var(--brand-error) / 0.15)" : "hsl(var(--primary) / 0.12)",
+                      color: status === "fail" ? "hsl(var(--brand-error))" : "hsl(var(--primary))",
+                      border: `1px solid ${status === "fail" ? "hsl(var(--brand-error) / 0.3)" : "hsl(var(--primary) / 0.3)"}`,
+                      borderRadius: "var(--radius)",
+                      cursor: (isRunning || status === "running") ? "not-allowed" : "pointer",
+                      opacity: (isRunning || status === "running") ? 0.4 : 1,
+                      whiteSpace: "nowrap",
+                    }}>
+                    <Play style={{ width: "10px", height: "10px" }} />
+                    {status === "fail" ? "Rerun" : "Run"}
+                  </button>
                 </div>
 
                 {/* Description (from test-cases.ts desc field) */}
