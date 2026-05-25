@@ -1341,7 +1341,7 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
     fontWeight: 500,
   };
   const chipPrimary: CSSProperties = { ...chipBase, backgroundColor: primary, color: "#ffffff", borderColor: primary };
-  const chipSecondary: CSSProperties = { ...chipBase, backgroundColor: "transparent", color: "hsl(var(--muted-foreground))", borderColor: "hsl(var(--border))" };
+  const chipSecondary: CSSProperties = { ...chipBase, backgroundColor: form.secondaryColor ?? "#F0FAF5", color: "hsl(var(--secondary-foreground))", borderColor: "hsl(var(--border))" };
   const chipUniform: CSSProperties = { ...chipBase, backgroundColor: `${primary}18`, color: primary, borderColor: `${primary}50` };
 
   const messages: { text: string; own: boolean; time: string; chips?: "binary" | "multi" }[] = [
@@ -1360,21 +1360,23 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-background/50">
           {messages.map((msg, i) => (
             <div key={i} className={`flex flex-col ${msg.own ? "items-end" : "items-start"}`}>
-              <div style={msg.own ? outgoing : incoming}>{msg.text}</div>
+              <div style={msg.own ? outgoing : incoming}>
+                {msg.text}
+                {msg.chips === "binary" && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <span style={chipPrimary}>{binaryChips[0]}</span>
+                    <span style={chipSecondary}>{binaryChips[1]}</span>
+                  </div>
+                )}
+                {msg.chips === "multi" && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {multiChips.map((qr, qi) => (
+                      <span key={qi} style={chipUniform}>{qr}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
               <span style={tsStyle}>{msg.time}</span>
-              {msg.chips === "binary" && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  <span style={chipPrimary}>{binaryChips[0]}</span>
-                  <span style={chipSecondary}>{binaryChips[1]}</span>
-                </div>
-              )}
-              {msg.chips === "multi" && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {multiChips.map((qr, qi) => (
-                    <span key={qi} style={chipUniform}>{qr}</span>
-                  ))}
-                </div>
-              )}
             </div>
           ))}
         </div>

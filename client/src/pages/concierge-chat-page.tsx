@@ -4564,6 +4564,78 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                           );
                         })}
                       </span>
+                      {/* Quick replies - inside bubble */}
+                      {msg.quickReplies && msg.quickReplies.length > 0 && i === messages.length - 1 && (() => {
+                        const isMulti = msg.multiSelect;
+                        const isBinary = msg.quickReplies.length === 2 && !isMulti;
+                        return (
+                          <div className="flex flex-wrap gap-2 mt-3" data-testid="quick-replies">
+                            {msg.quickReplies.map((qr, qi) => {
+                              const isSelected = isMulti && multiSelectChoices.has(qr);
+                              const chipStyle = isBinary
+                                ? qi === 0
+                                  ? { backgroundColor: brandColor, color: "#ffffff", border: "none" }
+                                  : { backgroundColor: "hsl(var(--secondary))", color: "hsl(var(--secondary-foreground))", border: "1px solid hsl(var(--border))" }
+                                : {
+                                    backgroundColor: isSelected ? `${brandColor}30` : `${brandColor}18`,
+                                    color: brandColor,
+                                    borderColor: isSelected ? brandColor : `${brandColor}50`,
+                                  };
+                              return (
+                                <Button
+                                  key={qi}
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="transition-all hover:shadow-sm font-medium"
+                                  style={{
+                                    borderRadius: "var(--quick-reply-radius, 999px)",
+                                    fontSize: "var(--quick-reply-font-size, 13px)",
+                                    paddingLeft: "var(--quick-reply-px, 14px)",
+                                    paddingRight: "var(--quick-reply-px, 14px)",
+                                    paddingTop: "var(--quick-reply-py, 6px)",
+                                    paddingBottom: "var(--quick-reply-py, 6px)",
+                                    touchAction: "manipulation",
+                                    height: "auto",
+                                    ...chipStyle,
+                                  }}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    if (isMulti) {
+                                      setMultiSelectChoices((prev) => {
+                                        const next = new Set(prev);
+                                        if (next.has(qr)) next.delete(qr); else next.add(qr);
+                                        return next;
+                                      });
+                                    } else {
+                                      handleQuickReply(qr, msg.content ?? "");
+                                    }
+                                  }}
+                                  disabled={sending}
+                                  data-testid={`quick-reply-${qi}`}
+                                >
+                                  {isSelected && <span className="mr-1">✓</span>}
+                                  {qr}
+                                </Button>
+                              );
+                            })}
+                            {isMulti && multiSelectChoices.size > 0 && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="font-medium"
+                                style={{ borderRadius: "var(--quick-reply-radius, 999px)", backgroundColor: brandColor, color: "white", height: "auto", paddingLeft: "var(--quick-reply-px, 14px)", paddingRight: "var(--quick-reply-px, 14px)", paddingTop: "var(--quick-reply-py, 6px)", paddingBottom: "var(--quick-reply-py, 6px)" }}
+                                onClick={() => { const selected = Array.from(multiSelectChoices).join(", "); setMultiSelectChoices(new Set()); handleQuickReply(selected); }}
+                                disabled={sending}
+                                data-testid="multi-select-done"
+                              >
+                                Done
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
 
@@ -4696,99 +4768,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                     </div>
                   )}
 
-                  {/* Quick replies */}
-                  {msg.quickReplies && msg.quickReplies.length > 0 && i === messages.length - 1 && (
-                    <div className="flex flex-wrap gap-2 mt-2" data-testid="quick-replies">
-                      {msg.quickReplies.map((qr, qi) => {
-                        const isMulti = msg.multiSelect;
-                        const isSelected = isMulti && multiSelectChoices.has(qr);
-                        const isBinary = msg.quickReplies!.length === 2 && !isMulti;
-
-                        // Binary (2 options): first = filled primary, second = muted outline
-                        // Multi (3+ or multiselect): uniform light-fill chips
-                        const chipStyle = isBinary
-                          ? qi === 0
-                            ? {
-                                backgroundColor: brandColor,
-                                color: "#ffffff",
-                                border: "none",
-                              }
-                            : {
-                                backgroundColor: "transparent",
-                                color: "hsl(var(--muted-foreground))",
-                                borderColor: "hsl(var(--border))",
-                              }
-                          : {
-                              backgroundColor: isSelected ? `${brandColor}30` : `${brandColor}18`,
-                              color: brandColor,
-                              borderColor: isSelected ? brandColor : `${brandColor}50`,
-                            };
-
-                        return (
-                          <Button
-                            key={qi}
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="transition-all hover:shadow-sm font-medium"
-                            style={{
-                              borderRadius: "var(--quick-reply-radius, 999px)",
-                              fontSize: "var(--quick-reply-font-size, 13px)",
-                              paddingLeft: "var(--quick-reply-px, 14px)",
-                              paddingRight: "var(--quick-reply-px, 14px)",
-                              paddingTop: "var(--quick-reply-py, 6px)",
-                              paddingBottom: "var(--quick-reply-py, 6px)",
-                              touchAction: "manipulation",
-                              ...chipStyle,
-                            }}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              if (isMulti) {
-                                setMultiSelectChoices((prev) => {
-                                  const next = new Set(prev);
-                                  if (next.has(qr)) {
-                                    next.delete(qr);
-                                  } else {
-                                    next.add(qr);
-                                  }
-                                  return next;
-                                });
-                              } else {
-                                handleQuickReply(qr, msg.content ?? "");
-                              }
-                            }}
-                            disabled={sending}
-                            data-testid={`quick-reply-${qi}`}
-                          >
-                            {isSelected && <span className="mr-1">✓</span>}
-                            {qr}
-                          </Button>
-                        );
-                      })}
-                      {msg.multiSelect && multiSelectChoices.size > 0 && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="text-sm font-medium"
-                          style={{
-                            borderRadius: "999px",
-                            backgroundColor: brandColor,
-                            color: "white",
-                          }}
-                          onClick={() => {
-                            const selected = Array.from(multiSelectChoices).join(", ");
-                            setMultiSelectChoices(new Set());
-                            handleQuickReply(selected);
-                          }}
-                          disabled={sending}
-                          data-testid="multi-select-done"
-                        >
-                          Done
-                        </Button>
-                      )}
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
