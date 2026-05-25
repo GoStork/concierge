@@ -10,6 +10,7 @@
  * Local useState is only used for optimistic updates within the current session.
  */
 
+import type React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ThumbsUp, Clock, Loader2, CheckCircle } from "lucide-react";
 import { useState } from "react";
@@ -85,51 +86,59 @@ export function ReadinessPromptCard({ data, messageId, sessionId, messageContent
   };
 
   // Show disabled / confirmed state
+  const bubbleStyle: React.CSSProperties = {
+    fontSize: "var(--chat-bubble-font-size, 14px)",
+    lineHeight: "var(--chat-bubble-line-height, 1.35)",
+    borderRadius: "var(--chat-bubble-radius, 20px)",
+    paddingLeft: "var(--chat-bubble-px, 16px)",
+    paddingRight: "var(--chat-bubble-px, 16px)",
+    paddingTop: "var(--chat-bubble-py, 11px)",
+    paddingBottom: "var(--chat-bubble-py, 11px)",
+    maxWidth: "var(--chat-bubble-max-width, 85%)",
+    backgroundColor: brandColor ? `${brandColor}14` : "hsl(var(--background))",
+    border: brandColor ? `1px solid ${brandColor}33` : "1px solid hsl(var(--border))",
+  };
+
   if (responded || !isParent) {
     const wasYes = response === "yes" || (alreadyAnswered && data.answered !== "no");
     return (
-      <div
-        className="rounded-xl px-4 py-3 max-w-sm text-sm"
-        style={{
-          backgroundColor: brandColor ? `${brandColor}14` : "hsl(var(--background))",
-          border: brandColor ? `1px solid ${brandColor}33` : "1px solid hsl(var(--border))",
-        }}
-      >
+      <div style={bubbleStyle}>
         <p className="text-muted-foreground">{messageContent}</p>
         {wasYes ? (
-          <p className="mt-2 flex items-center gap-1.5 text-sm font-medium" style={{ color: "hsl(var(--brand-success))" }}>
+          <p className="mt-2 flex items-center gap-1.5 font-medium" style={{ color: "hsl(var(--brand-success))" }}>
             <CheckCircle className="w-3.5 h-3.5" />
             Ready to move forward - invoice coming shortly.
           </p>
         ) : (
-          <p className="mt-2 text-sm text-muted-foreground">No problem - take your time. We'll follow up with you soon.</p>
+          <p className="mt-2 text-muted-foreground">No problem - take your time. We'll follow up with you soon.</p>
         )}
       </div>
     );
   }
 
   return (
-    <div
-      className="rounded-xl overflow-hidden max-w-sm"
-      style={{
-        backgroundColor: brandColor ? `${brandColor}14` : "hsl(var(--background))",
-        border: brandColor ? `1px solid ${brandColor}33` : "1px solid hsl(var(--border))",
-      }}
-    >
+    <div style={{ ...bubbleStyle, padding: 0, overflow: "hidden" }}>
       {data.isMatchCall && data.dueAt && (
-        <div className="px-4 py-2 flex items-center gap-2 text-xs font-medium border-b" style={{ background: "hsl(var(--brand-warning) / 0.1)", color: "hsl(var(--brand-warning))" }}>
+        <div
+          className="flex items-center gap-2 font-medium border-b"
+          style={{
+            padding: "8px var(--chat-bubble-px, 16px)",
+            fontSize: "var(--chat-bubble-font-size, 12px)",
+            background: "hsl(var(--brand-warning) / 0.1)",
+            color: "hsl(var(--brand-warning))",
+          }}
+        >
           <Clock className="w-3.5 h-3.5" />
           <span>24-hour hold - surrogate reserved for you</span>
         </div>
       )}
-      <div className="px-4 py-4 space-y-4">
-        <p className="text-sm">{messageContent}</p>
+      <div style={{ padding: "var(--chat-bubble-py, 11px) var(--chat-bubble-px, 16px)" }} className="space-y-4">
+        <p>{messageContent}</p>
         <div className="flex gap-2">
           <Button
             disabled={confirmMutation.isPending}
             onClick={() => confirmMutation.mutate()}
             className="flex-1"
-            style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}
           >
             {confirmMutation.isPending ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
@@ -138,7 +147,7 @@ export function ReadinessPromptCard({ data, messageId, sessionId, messageContent
             )}
             {data.buttonLabel}
           </Button>
-          <Button variant="outline" className="flex-1" onClick={handleNotYet}>
+          <Button variant="secondary" className="flex-1" onClick={handleNotYet}>
             Not Yet
           </Button>
         </div>

@@ -4849,18 +4849,35 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             autoProfileData.needsClinic = false;
           }
         }
-        if (extractedProfile?.needsSurrogate == null) {
-          if (/\b(need|want|looking for|find) (a |an )?surrogate\b/.test(msg)) {
-            autoProfileData.needsSurrogate = true;
-          } else if (/\balready have (a |an )?surrogate\b/.test(msg)) {
-            autoProfileData.needsSurrogate = false;
-          }
+        // needsSurrogate / needsEggDonor: ALWAYS extract from the user's explicit
+        // statement, even when the existing profile already has a value. The immediate
+        // profile inference at registration time defaults needsSurrogate=true for any
+        // gay/solo male and needsEggDonor=true for anyone registered for Egg Donor; the
+        // user saying "I already have a surrogate" / "I already have an egg donor" MUST
+        // be able to flip those defaults back to false. Previously the `== null` guard
+        // prevented any override, leaving TD-06 etc. with stale defaults.
+        if (/\b(need|want|looking for|find) (a |an )?surrogate\b/.test(msg)) {
+          autoProfileData.needsSurrogate = true;
+        } else if (/\balready have (a |an )?surrogate\b/.test(msg)) {
+          autoProfileData.needsSurrogate = false;
         }
-        if (extractedProfile?.needsEggDonor == null) {
-          if (/\b(need|want|looking for|find) (a |an )?egg donor\b/.test(msg)) {
-            autoProfileData.needsEggDonor = true;
-          } else if (/\balready have (a |an )?egg donor\b/.test(msg)) {
-            autoProfileData.needsEggDonor = false;
+        if (/\b(need|want|looking for|find) (a |an )?egg donor\b/.test(msg)) {
+          autoProfileData.needsEggDonor = true;
+        } else if (/\balready have (a |an )?egg donor\b/.test(msg)) {
+          autoProfileData.needsEggDonor = false;
+        }
+
+        // isLGBTQ: auto-extract from explicit user statement. The Phase 1 prompt asks
+        // "Solo man / Solo woman / Two dads / Two moms / Man and a woman?" but does NOT
+        // ask a follow-up LGBTQ+ question for solo personas - the test scripts send
+        // "Yes, I identify as LGBTQ+" or "No, I'm not LGBTQ+" right after the family
+        // type answer expecting that signal to be saved. Without this regex,
+        // profile.isLGBTQ stayed null for SM-13 / SW-14 tests (gay solo man / woman).
+        if (extractedProfile?.isLGBTQ == null) {
+          if (/yes.*identify.*lgbtq|i('?m| am)? ?lgbtq|i identify as lgbtq/i.test(msg)) {
+            autoProfileData.isLGBTQ = true;
+          } else if (/no.*not (?:lgbtq|an lgbtq)|i'?m not lgbtq|not lgbtq|we'?re not lgbtq|we are not lgbtq|i don'?t identify.*lgbtq/i.test(msg)) {
+            autoProfileData.isLGBTQ = false;
           }
         }
 
