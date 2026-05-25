@@ -528,7 +528,9 @@ export class NotificationService implements OnModuleInit {
     const attendeeEmail = booking.attendeeEmails?.[0] || booking.parentUser?.email;
     const attendeeName = booking.attendeeName || booking.parentUser?.name || attendeeEmail;
     const providerEmail = providerUser?.email;
-    const providerName = providerUser?.provider?.name || providerUser?.name || "Provider";
+    const staffMemberName = providerUser?.name || "";
+    const clinicName = providerUser?.provider?.name || "";
+    const providerName = clinicName || staffMemberName || "Provider";
     const scheduledAt = new Date(booking.scheduledAt);
     const base = getBaseUrl();
     const brandData = await this.getBrandData();
@@ -539,7 +541,7 @@ export class NotificationService implements OnModuleInit {
     const parentEmailBuilder = (firstName: string) => buildBrandedEmail(brandData, {
       title: "Meeting Cancelled",
       greeting: `Hi ${esc(firstName)},`,
-      body: `Your meeting with <strong>${esc(providerName)}</strong> has been cancelled.`,
+      body: `Your meeting with <strong>${esc(staffMemberName || clinicName)}</strong>${staffMemberName && clinicName ? ` from <strong>${esc(clinicName)}</strong>` : ""} has been cancelled.`,
       detailRows: [
         { label: "Date", value: dateStr },
         { label: "Time", value: timeStr },
