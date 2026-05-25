@@ -2079,11 +2079,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }));
 
       const agencyRelaxedNote = agencyRelaxedFilter
-        ? ` NOTE: No 100% match found. Search broadened by relaxing "${agencyRelaxedFilter}" - present the best available agency as a close match and clearly tell the parent which property differs.`
+        ? ` NOTE: The "${agencyRelaxedFilter}" filter was relaxed because no agencies fully matched. The returned results may NOT satisfy that preference - you MUST run the AGENCY HARD-REJECT CHECK on each result and skip any that violate the parent's requirements.`
         : "";
 
       return {
-        content: [{ type: "text", text: `Found ${results.length} surrogacy agencies:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Present ONE agency as a MATCH_CARD with type "Agency". Use the "id" as providerId. Mention specific locations from the locations array.${agencyRelaxedNote}` }],
+        content: [{ type: "text", text: `Found ${results.length} surrogacy agencies:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Before showing any MATCH_CARD, run the AGENCY HARD-REJECT CHECK on each result:\n- If parent wants twins AND surrogacyTwinsAllowed = false → REJECT that agency, skip to next.\n- If parent's citizenship country appears in surrogacyCitizensNotAllowed → REJECT that agency, skip to next.\nOnly show a MATCH_CARD (type "SurrogacyAgency") for agencies that pass ALL checks. Use the "id" as providerId. Mention specific locations from the locations array. If ALL results fail the check, educate the parent about the constraint and offer alternatives.${agencyRelaxedNote}` }],
       };
     }
 
