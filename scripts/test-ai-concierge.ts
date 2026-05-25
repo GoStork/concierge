@@ -1373,7 +1373,7 @@ const TEST_CASES: TestCase[] = [
     interestedServices: ["Sperm Donor"],
     messages: msgs(
       P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
-      "My own eggs", SPERM_DONOR, CARRIER_ME, SPERM_NEED,
+      "My own eggs", SPERM_DONOR, SPERM_NEED, CARRIER_ME,
       ...clinicMatchCouple,
       ...spermDonorMatch,
     ),

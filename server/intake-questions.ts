@@ -143,6 +143,7 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
     registeredForClinic,
     registeredForSurrogate,
     registeredForEggDonor,
+    registeredForSpermDonor,
     alreadyHasClinic,
     alreadyHasSurrogate,
     alreadyHasEggDonor,
@@ -372,10 +373,36 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
   }
 
   // -----------------------------------------------------------------------
+  // STEP 3b: Sperm conflict (only if has embryos AND registered for sperm donation)
+  // Mirrors Step 1c (egg conflict) for the sperm-donor + existing-embryos case.
+  // Must fire BEFORE Step 3 because the user already has embryos - we need to
+  // know whether they're keeping them or creating new ones with donor sperm
+  // before we can ask the standard sperm-source question.
+  // -----------------------------------------------------------------------
+  if (hasEmbryos && (registeredForSpermDonor || needsSpermDonor) && !registeredForEggDonor) {
+    const step3bAsked = aiAsked(chatHistory, /looking to create new embryos with donor sperm|use your existing embryos.*donor sperm|create new embryos.*donor sperm/i);
+    const step3bAnswered = userAnsweredAfter(
+      chatHistory,
+      /create new embryos with donor sperm|use your existing embryos.*donor sperm/i,
+      /use my existing embryos|create new embryos/i
+    );
+    if (!step3bAsked && !step3bAnswered) {
+      return {
+        step: "step3b_sperm_conflict",
+        text: "You're looking for a sperm donor but already have frozen embryos. Just to confirm - are you looking to create new embryos with donor sperm, or will you use your existing embryos? [[QUICK_REPLY:Use my existing embryos|Create new embryos with donor sperm]]",
+      };
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // STEP 3: Sperm source
   // Skip for: solo woman + two moms (always sperm donor - save silently)
+  // Also skip when 3b was answered with "Use my existing embryos" - the sperm
+  // source is already baked into the existing embryos, no question needed.
   // -----------------------------------------------------------------------
-  const skipSpermQuestion = isSoloWoman || isTwoMoms;
+  const chose3bExisting = hasEmbryos && (registeredForSpermDonor || needsSpermDonor) &&
+    userSaid(allUserMessages, /use my existing embryos/i);
+  const skipSpermQuestion = isSoloWoman || isTwoMoms || chose3bExisting;
   const spermSourceKnown = chatMentionsSpermSource; // intentionally NOT || profile?.spermSource (stale)
 
   if (!skipSpermQuestion && !spermSourceKnown) {
@@ -438,13 +465,18 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
 
   // -----------------------------------------------------------------------
   // STEP 4: Carrier
-  // Skip for: male/gay/needs surrogate (handled by carrier bypass in ai-router.ts)
+  // Skip for: solo male / gay male / already-needs-surrogate
+  // DO ASK for: female (any) AND straight male in a couple (his female partner can carry).
+  // For MW male the partner is female and CAN carry, so we MUST ask. Previously the
+  // guard was `isMaleGender` which over-skipped for MW male and left the AI to infer
+  // surrogate from biology - giving the wrong carrier="Gestational surrogate" save.
   // -----------------------------------------------------------------------
-  const skipCarrierQuestion = isMaleGender || isGayMale || needsSurrogate || alreadyHasSurrogate
+  const maleWithoutFemalePartner = isMaleGender && (isGayMale || isSoloSkip);
+  const skipCarrierQuestion = maleWithoutFemalePartner || needsSurrogate || alreadyHasSurrogate
     || chatMentionsCarrier; // intentionally NOT || profile?.carrier (stale)
 
-  if (!skipCarrierQuestion && isFemaleGender) {
-    // Female registered for surrogacy - skip and save silently
+  if (!skipCarrierQuestion && (isFemaleGender || isStraightMale)) {
+    // Female or straight male registered for surrogacy - skip and save silently
     if (registeredForSurrogate) {
       // Skip step 4 entirely - will be saved silently by caller
     } else {
@@ -454,9 +486,18 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
           /who is planning to carry|who.*carrying/i,
           /\bme\b|my partner|gestational surrogate/i);
       if (!step4Asked && !step4Answered) {
+        // Each persona has different valid carriers:
+        //   - Straight male in couple: partner (female) or surrogate. HE cannot carry.
+        //   - Female solo: herself or surrogate. No partner.
+        //   - Female in couple (incl. Two Moms): herself, partner, or surrogate.
+        const carrierQR = isStraightMale
+          ? "[[QUICK_REPLY:My partner|A gestational surrogate]]"
+          : isSoloSkip
+            ? "[[QUICK_REPLY:Me|A gestational surrogate]]"
+            : "[[QUICK_REPLY:Me|My partner|A gestational surrogate]]";
         return {
           step: "step4_carrier",
-          text: "And who is planning to carry the pregnancy? [[QUICK_REPLY:Me|My partner|A gestational surrogate]]",
+          text: `And who is planning to carry the pregnancy? ${carrierQR}`,
         };
       }
 

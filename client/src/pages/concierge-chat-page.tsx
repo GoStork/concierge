@@ -28,6 +28,8 @@ import {
 import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2 } from "lucide-react";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
+import { ReadinessPromptCard } from "@/components/readiness-prompt-card";
+import { InvoiceCard } from "@/components/invoice-card";
 
 interface MatchCard {
   name: string;
@@ -2280,7 +2282,7 @@ function ConciergeInlineVideoOverlay({ bookingId, onClose }: { bookingId: string
   );
 }
 
-function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo }: { msg: ChatMessage; brandColor: string; onOpenInlineVideo?: (bookingId: string) => void }) {
+function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId }: { msg: ChatMessage; brandColor: string; onOpenInlineVideo?: (bookingId: string) => void; sessionId?: string | null }) {
   const data = msg.uiCardData as any;
   if (!data) return null;
 
@@ -2387,6 +2389,21 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo }: { msg: Cha
         <Download className="w-4 h-4 text-muted-foreground shrink-0" />
       </a>
     );
+  }
+
+  if (msg.uiCardType === "readiness_prompt") {
+    return (
+      <ReadinessPromptCard
+        data={data}
+        sessionId={sessionId || ""}
+        messageContent={msg.content || ""}
+        isParent={true}
+      />
+    );
+  }
+
+  if (msg.uiCardType === "invoice") {
+    return <InvoiceCard data={data} isParent={true} />;
   }
 
   return null;
@@ -4587,7 +4604,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               {msg.uiCardType && msg.uiCardData && (
                 <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} mt-2`}>
                   <div className="max-w-[75%]">
-                    <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} />
+                    <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} sessionId={sessionId} />
                   </div>
                 </div>
               )}
