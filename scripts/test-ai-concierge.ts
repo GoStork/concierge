@@ -1304,7 +1304,7 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
       "My own eggs", ...SPERM_PART, CARRIER_ME,
-      ...clinicMatch,
+      ...clinicMatchCouple,
     ),
     db: [
       { field: "eggSource", expected: "Own eggs" },
@@ -1357,7 +1357,7 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_MW_MAN, CLINIC_NEED, EMB_NO,
       EGG_HAVE, "My own", CARRIER_PARTNER,
-      ...clinicMatchCouple,
+      ...clinicMatch,
     ),
     db: [
       { field: "eggSource", expected: "Egg donor" },
@@ -1374,7 +1374,7 @@ const TEST_CASES: TestCase[] = [
     messages: msgs(
       P0, I_MW_WOMAN, CLINIC_NEED, EMB_NO,
       "My own eggs", SPERM_DONOR, CARRIER_ME, SPERM_NEED,
-      ...clinicMatch,
+      ...clinicMatchCouple,
       ...spermDonorMatch,
     ),
     db: [
@@ -1572,7 +1572,7 @@ const TEST_CASES: TestCase[] = [
       ...EMB_YES("2", "Yes"),
       EMB_CONFLICT_USE,
       "My partner's", CARRIER_ME,
-      ...clinicMatch,
+      ...clinicMatchCouple,
     ),
     db: [
       // hasEmbryos removed - scripted messages unreliable

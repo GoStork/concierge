@@ -399,7 +399,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "MW-01: No embryos - Her eggs - His sperm - She carries - Needs clinic (Woman speaking)",
     desc: "Simplest MW path - own genetics, self-carry, clinic only",
     interestedServices: [],
-    messageCount: 13,
+    messageCount: 14,
   },
   {
     id: "MW-02", persona: "man-woman",
@@ -420,14 +420,14 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "MW-04: No embryos - Donor eggs - His sperm - She carries - Already has egg donor - Needs clinic (Man speaking)",
     desc: "Already has egg donor - egg match skipped, man speaking",
     interestedServices: [],
-    messageCount: 14,
+    messageCount: 13,
   },
   {
     id: "MW-05", persona: "man-woman",
     name: "MW-05: No embryos - Her eggs - Donor sperm - She carries - Needs sperm donor + clinic (Woman speaking)",
     desc: "MW couple with donor sperm, her own eggs, self-carry",
     interestedServices: ["Sperm Donor"],
-    messageCount: 17,
+    messageCount: 18,
   },
   {
     id: "MW-06", persona: "man-woman",
@@ -504,7 +504,7 @@ export const TEST_CASES: TestCaseDef[] = [
     name: "MW-16: Has embryos - Step 1c fires - Use existing embryos - She carries - Needs clinic (Woman speaking)",
     desc: "Step 1c for MW: registered for egg donation + has embryos - uses existing",
     interestedServices: ["Egg Donor"],
-    messageCount: 14,
+    messageCount: 15,
   },
   {
     id: "MW-17", persona: "man-woman",
