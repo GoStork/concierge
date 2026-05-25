@@ -114,8 +114,8 @@ const I_SOLO_MAN_GAY      = ["Solo man", "Yes, I identify as LGBTQ+"];
 const I_SOLO_WOMAN        = ["Solo woman", "No, I'm not LGBTQ+"];
 const I_TWO_DADS          = ["Two dads"];
 const I_TWO_MOMS          = ["Two moms"];
-const I_MW_WOMAN          = ["A woman and a man", "No, we're not LGBTQ+"];  // woman speaking
-const I_MW_MAN            = ["A woman and a man", "No, we're not LGBTQ+"];  // man speaking (same answer, different framing perspective tested via DB assertions)
+const I_MW_WOMAN          = ["A woman and a man", "I'm the woman", "No, we're not LGBTQ+"];  // woman speaking - explicit gender answer needed for deterministic flow
+const I_MW_MAN            = ["A woman and a man", "I'm the man", "No, we're not LGBTQ+"];  // man speaking - explicit gender answer needed for deterministic flow
 
 // Step 0 - Clinic
 const CLINIC_NEED  = ["I need help finding a clinic"];

@@ -807,13 +807,23 @@ export class VideoController {
   }
 
   private async findActiveBooking(providerUserId: string) {
+    // Prefer a booking that is still in-progress (not yet ended)
+    const active = await this.prisma.booking.findFirst({
+      where: { providerUserId, status: "CONFIRMED", actualEndedAt: null },
+      orderBy: { scheduledAt: "desc" },
+    });
+    if (active) return active;
+
+    // Fall back to the most recent booking that ended within the last 2 hours.
+    // Handles re-triggers from the same call (provider briefly disconnects and
+    // reconnects) so post-call follow-up still fires correctly.
     return this.prisma.booking.findFirst({
       where: {
         providerUserId,
         status: "CONFIRMED",
-        actualEndedAt: null,
+        actualEndedAt: { gte: new Date(Date.now() - 2 * 60 * 60 * 1000) },
       },
-      orderBy: { scheduledAt: "desc" },
+      orderBy: { actualEndedAt: "desc" },
     });
   }
 
@@ -909,21 +919,15 @@ export class VideoController {
       select: { meetingSubtype: true },
     });
 
-    // Get provider type
+    // Get provider type and deposit milestone (fee config not required - readiness prompt
+    // always fires; admin can set up billing after the fact)
     const provider = await this.prisma.provider.findUnique({
       where: { id: providerEntity.id },
       include: {
         services: { include: { providerType: true }, take: 1 },
-        referralFeeConfig: { select: { isActive: true } },
       },
     });
     if (!provider) return;
-
-    // Only trigger if provider has a fee config set up - otherwise GoStork admin needs to configure first
-    if (!provider.referralFeeConfig?.isActive) {
-      this.logger.log(`Skipping billing prompt for ${providerEntity.name} - no active referral fee config`);
-      return;
-    }
 
     const providerTypeName = provider.services[0]?.providerType?.name || "";
     const isSurrogacyAgency = providerTypeName === "Surrogacy Agency";
