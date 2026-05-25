@@ -982,8 +982,9 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       const data = m.uiCardData as any;
       if (data?.whisperQuestionId) return false;
       if (m.uiCardType === "provider_only") return false;
-      // System messages: show plain-text ones (join/escalation notices) and agreement cards; hide everything else
-      if (m.senderType === "system" && m.uiCardType !== "agreement" && m.uiCardType != null) return false;
+      // System messages: show plain-text ones (join/escalation notices) and specific card types; hide everything else
+      const allowedSystemCardTypes = ["agreement", "readiness_prompt", "invoice"];
+      if (m.senderType === "system" && !allowedSystemCardTypes.includes(m.uiCardType) && m.uiCardType != null) return false;
       return true;
     });
 
@@ -1051,8 +1052,9 @@ aiRouter.get("/my-session", async (req: Request, res: Response) => {
     const filteredMessages = messages.filter((m: any) => {
       const data = m.uiCardData as any;
       if (data?.whisperQuestionId) return false;
-      // System messages: show plain-text ones (join/escalation notices) and agreement cards; hide everything else
-      if (m.senderType === "system" && m.uiCardType !== "agreement" && m.uiCardType != null) return false;
+      // System messages: show plain-text ones (join/escalation notices) and specific card types; hide everything else
+      const allowedSystemCardTypes = ["agreement", "readiness_prompt", "invoice"];
+      if (m.senderType === "system" && !allowedSystemCardTypes.includes(m.uiCardType) && m.uiCardType != null) return false;
       return true;
     });
     res.json({

@@ -880,14 +880,25 @@ export class VideoController {
       });
 
       if (providerSession) {
-        await this.prisma.aiChatMessage.create({
-          data: {
+        // Dedup guard: only send once per session (race between markCallEnded and webhook)
+        const existingAssessment = await this.prisma.aiChatMessage.findFirst({
+          where: {
             sessionId: providerSession.id,
-            role: "assistant",
-            content: `Great call! ${providerName}, based on your consultation with ${parentFirstName}, what are your initial thoughts? Share your assessment so we can guide next steps.`,
             senderType: "ai",
+            content: { contains: "Great call!" },
+            createdAt: { gte: new Date(Date.now() - 2 * 60 * 60 * 1000) },
           },
         });
+        if (!existingAssessment) {
+          await this.prisma.aiChatMessage.create({
+            data: {
+              sessionId: providerSession.id,
+              role: "assistant",
+              content: `Great call! ${providerName}, based on your consultation with ${parentFirstName}, what are your initial thoughts? Share your assessment so we can guide next steps.`,
+              senderType: "ai",
+            },
+          });
+        }
       }
     }
 
