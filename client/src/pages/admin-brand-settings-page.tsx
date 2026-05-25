@@ -65,6 +65,7 @@ import {
   ThumbsUp,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, SpermIcon } from "@/components/icons/marketplace-icons";
 import { SYSTEM_FONT_STACK } from "@/hooks/use-brand-settings";
 
@@ -1328,6 +1329,7 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
     : (form.primaryColor ?? "#004D4D");
   const decIsOutline = decStyle === "outline";
   const decIsSecondary = decStyle === "secondary";
+  const showBorder = form.quickReplyShowBorder ?? true;
 
   const bubbleBase: CSSProperties = {
     paddingLeft: px, paddingRight: px, paddingTop: py, paddingBottom: py,
@@ -1350,24 +1352,24 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
     cursor: "default",
     display: "inline-block",
     lineHeight: "1.2",
-    border: "1px solid",
     fontWeight: 500,
   };
+  const bw = showBorder ? "1px solid" : "none";
   const chipPositive: CSSProperties = qrIsOutline
-    ? { ...chipBase, backgroundColor: "transparent", color: qrColor, borderColor: qrColor }
+    ? { ...chipBase, backgroundColor: "transparent", color: qrColor, border: `1px solid ${qrColor}` }
     : qrIsSecondary
-    ? { ...chipBase, backgroundColor: qrColor, color: "hsl(var(--foreground))", borderColor: "hsl(var(--border))" }
-    : { ...chipBase, backgroundColor: qrColor, color: "#ffffff", borderColor: qrColor };
+    ? { ...chipBase, backgroundColor: qrColor, color: "hsl(var(--foreground))", border: showBorder ? `1px solid hsl(var(--border))` : "none" }
+    : { ...chipBase, backgroundColor: qrColor, color: "#ffffff", border: showBorder ? `1px solid ${qrColor}` : "none" };
   const chipSecondary: CSSProperties = decIsOutline
-    ? { ...chipBase, backgroundColor: "transparent", color: decColor, borderColor: decColor }
+    ? { ...chipBase, backgroundColor: "transparent", color: decColor, border: `1px solid ${decColor}` }
     : decIsSecondary
-    ? { ...chipBase, backgroundColor: decColor, color: "hsl(var(--foreground))", borderColor: "hsl(var(--border))" }
-    : { ...chipBase, backgroundColor: decColor, color: "#ffffff", borderColor: decColor };
+    ? { ...chipBase, backgroundColor: decColor, color: "hsl(var(--foreground))", border: showBorder ? `1px solid hsl(var(--border))` : "none" }
+    : { ...chipBase, backgroundColor: decColor, color: "#ffffff", border: showBorder ? `1px solid ${decColor}` : "none" };
   const chipUniform: CSSProperties = qrIsOutline
-    ? { ...chipBase, backgroundColor: "transparent", color: qrColor, borderColor: qrColor }
+    ? { ...chipBase, backgroundColor: "transparent", color: qrColor, border: `1px solid ${qrColor}` }
     : qrIsSecondary
-    ? { ...chipBase, backgroundColor: qrColor, color: "hsl(var(--foreground))", borderColor: "hsl(var(--border))" }
-    : { ...chipBase, backgroundColor: `${qrColor}18`, color: qrColor, borderColor: `${qrColor}50` };
+    ? { ...chipBase, backgroundColor: qrColor, color: "hsl(var(--foreground))", border: showBorder ? `1px solid hsl(var(--border))` : "none" }
+    : { ...chipBase, backgroundColor: `${qrColor}18`, color: qrColor, border: showBorder ? `1px solid ${qrColor}50` : "none" };
 
   const messages: { text: string; own: boolean; time: string; chips?: "binary" | "multi" }[] = [
     { text: "Does that make sense so far?", own: false, time: "1:38 PM", chips: "binary" },
@@ -2267,6 +2269,18 @@ export function BrandSettingsForm({
                   </div>
                   <Slider min={2} max={16} step={1} value={[form.quickReplyPaddingY ?? 6]} onValueChange={([v]) => updateField("quickReplyPaddingY", v)} disabled={formDisabled} />
                 </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm font-medium">Show chip border</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">Border visible on filled and secondary chips. Outline chips always keep their border.</p>
+                </div>
+                <Switch
+                  checked={form.quickReplyShowBorder ?? true}
+                  onCheckedChange={(v) => updateField("quickReplyShowBorder", v)}
+                  disabled={formDisabled}
+                />
               </div>
 
               {/* Color Style picker */}

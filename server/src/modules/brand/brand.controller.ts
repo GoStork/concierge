@@ -109,6 +109,7 @@ const DEFAULTS = {
   quickReplyPaddingY: 6,
   quickReplyColorStyle: "primary",
   quickReplyDeclineStyle: "secondary",
+  quickReplyShowBorder: true,
 };
 
 const ADVANCED_COLOR_FIELDS = [
@@ -140,7 +141,7 @@ const ALLOWED_FIELDS = [
   "chatBubblePaddingX", "chatBubblePaddingY", "chatBubbleMaxWidth", "chatBubbleRadius",
   "chatTimestampFontSize", "chatTimestampOpacity", "chatInputFontSize", "chatInputFontSizeDesktop", "chatInputHeight",
   "quickReplyFontSize", "quickReplyRadius", "quickReplyPaddingX", "quickReplyPaddingY",
-  "quickReplyColorStyle", "quickReplyDeclineStyle",
+  "quickReplyColorStyle", "quickReplyDeclineStyle", "quickReplyShowBorder",
   ...ADVANCED_COLOR_FIELDS,
 ];
 
@@ -308,6 +309,10 @@ function validateBrandBody(body: any) {
     if (!["primary", "accent", "secondary", "outline"].includes(body.quickReplyDeclineStyle)) {
       body.quickReplyDeclineStyle = "secondary";
     }
+  }
+
+  if (body.quickReplyShowBorder !== undefined && body.quickReplyShowBorder !== null) {
+    body.quickReplyShowBorder = body.quickReplyShowBorder === true || body.quickReplyShowBorder === "true";
   }
 
   if (body.chatBubbleLineHeight !== undefined && body.chatBubbleLineHeight !== null) {

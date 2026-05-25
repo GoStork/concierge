@@ -2990,6 +2990,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     : brandColor;
   const decIsOutline = decStyle === "outline";
   const decIsSecondary = decStyle === "secondary";
+  const qrShowBorder = brand?.quickReplyShowBorder ?? true;
 
   const loadMessagesForSession = async (sid: string): Promise<boolean> => {
     try {
@@ -4589,25 +4590,25 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                               const positiveStyle = qrIsOutline
                                 ? { backgroundColor: "transparent", color: qrColor, border: `1px solid ${qrColor}` }
                                 : qrIsSecondary
-                                ? { backgroundColor: qrColor, color: "hsl(var(--foreground))", border: "1px solid hsl(var(--border))" }
-                                : { backgroundColor: qrColor, color: "#ffffff", border: "none" };
+                                ? { backgroundColor: qrColor, color: "hsl(var(--foreground))", border: qrShowBorder ? "1px solid hsl(var(--border))" : "none" }
+                                : { backgroundColor: qrColor, color: "#ffffff", border: qrShowBorder ? `1px solid ${qrColor}` : "none" };
                               const declineStyle = decIsOutline
                                 ? { backgroundColor: "transparent", color: decColor, border: `1px solid ${decColor}` }
                                 : decIsSecondary
-                                ? { backgroundColor: decColor, color: "hsl(var(--foreground))", border: "1px solid hsl(var(--border))" }
-                                : { backgroundColor: decColor, color: "#ffffff", border: "none" };
+                                ? { backgroundColor: decColor, color: "hsl(var(--foreground))", border: qrShowBorder ? "1px solid hsl(var(--border))" : "none" }
+                                : { backgroundColor: decColor, color: "#ffffff", border: qrShowBorder ? `1px solid ${decColor}` : "none" };
                               const chipStyle = isBinary
                                 ? qi === 0
                                   ? positiveStyle
                                   : declineStyle
                                 : qrIsOutline
-                                ? { backgroundColor: "transparent", color: qrColor, borderColor: qrColor }
+                                ? { backgroundColor: "transparent", color: qrColor, border: `1px solid ${qrColor}` }
                                 : qrIsSecondary
-                                ? { backgroundColor: isSelected ? `${qrColor}cc` : qrColor, color: "hsl(var(--foreground))", borderColor: "hsl(var(--border))" }
+                                ? { backgroundColor: isSelected ? `${qrColor}cc` : qrColor, color: "hsl(var(--foreground))", border: qrShowBorder ? "1px solid hsl(var(--border))" : "none" }
                                 : {
                                     backgroundColor: isSelected ? `${qrColor}30` : `${qrColor}18`,
                                     color: qrColor,
-                                    borderColor: isSelected ? qrColor : `${qrColor}50`,
+                                    border: qrShowBorder ? `1px solid ${isSelected ? qrColor : `${qrColor}50`}` : "none",
                                   };
                               return (
                                 <Button
