@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { FlaskConical, Play, Square, Trash2, ExternalLink } from "lucide-react";
+import { FlaskConical, Play, Square, Trash2, ExternalLink, WifiOff } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -173,6 +173,7 @@ export default function AdminTestRunnerPage() {
   });
   const [connected, setConnected] = useState(false);
   const [showLog, setShowLog] = useState(false);
+  const [disconnectedWhileRunning, setDisconnectedWhileRunning] = useState(false);
   const [testCases, setTestCases] = useState<TestCaseInfo[]>(ALL_TESTS_FALLBACK);
 
   // Fetch full test metadata from backend on mount (names, descs, services)
@@ -191,9 +192,20 @@ export default function AdminTestRunnerPage() {
     const es = new EventSource("/api/admin/test-runner/stream", { withCredentials: true });
     esRef.current = es;
 
-    es.onopen = () => setConnected(true);
+    es.onopen = () => {
+      setConnected(true);
+      // When we reconnect, the service immediately sends the full current state,
+      // so disconnectedWhileRunning clears itself via the state update below
+    };
     es.onerror = () => {
       setConnected(false);
+      // If tests were running when we lost connection, flag it so we show
+      // the "tests still running" banner instead of a generic error
+      setState(prev => {
+        const hasRunning = Object.values(prev.tests).some(t => t.status === "running");
+        if (hasRunning) setDisconnectedWhileRunning(true);
+        return prev;
+      });
       setTimeout(connect, 3000);
     };
 
@@ -202,6 +214,7 @@ export default function AdminTestRunnerPage() {
         const ev = JSON.parse(e.data);
         if (ev.type === "state") {
           setState(ev.state);
+          setDisconnectedWhileRunning(false); // fresh state received - banner no longer needed
         } else if (ev.type === "log") {
           setState(prev => ({ ...prev, log: [...prev.log.slice(-499), ev.line] }));
           // Auto-scroll log
@@ -387,6 +400,31 @@ export default function AdminTestRunnerPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Connection-lost banner - shown when SSE drops while tests are running */}
+      {(!connected && disconnectedWhileRunning) && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: "10px",
+          padding: "10px 14px", marginBottom: "16px",
+          borderRadius: "8px",
+          border: "1px solid hsl(var(--brand-warning) / 0.4)",
+          background: "hsl(var(--brand-warning) / 0.08)",
+          fontSize: "13px", color: "hsl(var(--foreground))",
+        }}>
+          <WifiOff style={{ width: "16px", height: "16px", color: "hsl(var(--brand-warning))", flexShrink: 0 }} />
+          <div>
+            <span style={{ fontWeight: "600" }}>Connection to server lost</span>
+            <span style={{ color: "hsl(var(--muted-foreground))", marginLeft: "6px" }}>
+              Tests are still running in the background - reconnecting...
+            </span>
+          </div>
+          <div style={{ marginLeft: "auto", display: "flex", gap: "4px" }}>
+            <div className="animate-bounce" style={{ width: "6px", height: "6px", borderRadius: "50%", background: "hsl(var(--brand-warning))", animationDelay: "0ms" }} />
+            <div className="animate-bounce" style={{ width: "6px", height: "6px", borderRadius: "50%", background: "hsl(var(--brand-warning))", animationDelay: "150ms" }} />
+            <div className="animate-bounce" style={{ width: "6px", height: "6px", borderRadius: "50%", background: "hsl(var(--brand-warning))", animationDelay: "300ms" }} />
           </div>
         </div>
       )}

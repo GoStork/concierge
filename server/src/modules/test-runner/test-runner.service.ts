@@ -50,9 +50,11 @@ function loadPersistedState(): RunnerState | null {
     if (fs.existsSync(STATE_FILE)) {
       const raw = fs.readFileSync(STATE_FILE, "utf8");
       const parsed = JSON.parse(raw) as RunnerState;
-      // Defensive: also reap zombies on load in case state was saved by an older
-      // version of this code that only updated the overall status.
-      return reapZombieRunningTests(parsed);
+      // Do NOT reap running tests here. The child process (test-ai-concierge.ts) is a
+      // separate OS process that survives NestJS restarts and keeps POSTing progress events.
+      // Marking tests as "fail" on load would overwrite real in-progress work.
+      // If the child is truly gone, tests stay "running" until the user clicks Stop.
+      return parsed;
     }
   } catch {}
   return null;
@@ -86,6 +88,41 @@ export class TestRunnerService {
     totalCount: 0,
     log: [],
   };
+
+  constructor() {
+    // If tests were running when we last stopped, give the child processes up to
+    // 10 minutes to reconnect and report back before marking them as orphaned.
+    // This covers the "server restarted mid-run" case - the child process keeps
+    // running and will POST events here once the server is back up.
+    const runningOnLoad = Object.values(this.state.tests).filter(t => t.status === "running");
+    if (runningOnLoad.length > 0) {
+      const serverStartMs = Date.now();
+      setTimeout(() => {
+        let changed = false;
+        for (const [id, t] of Object.entries(this.state.tests)) {
+          if (t.status !== "running") continue;
+          const lastHeard = (t as any).lastProgressAt || serverStartMs;
+          const silentMs = Date.now() - lastHeard;
+          if (silentMs >= 9 * 60 * 1000) {
+            // No update for 9+ minutes after server start - child process is gone
+            this.state.tests[id] = {
+              ...t,
+              status: "fail",
+              errors: [
+                ...(t.errors || []).filter(e => !e.includes("Interrupted")),
+                `Test process lost - no updates received after server restart (was on msg ${t.currentMessage}/${t.totalMessages})`,
+              ],
+            };
+            changed = true;
+          }
+        }
+        if (changed) {
+          this.emit({ type: "state", state: this.state });
+          saveState(this.state);
+        }
+      }, 10 * 60 * 1000); // wait 10 minutes
+    }
+  }
 
   // ─── SSE subscription ───────────────────────────────────────────────────────
 
@@ -383,6 +420,7 @@ export class TestRunnerService {
       }
       this.state.tests[id].status = "pass";
       this.state.tests[id].durationMs = dur;
+      this.state.tests[id].errors = []; // clear any stale errors from a previous run/restart
       this.state.passCount++;
       const line = `  ✅ ${id} PASS (${(dur / 1000).toFixed(1)}s)`;
       this.state.log.push(line);
@@ -423,6 +461,9 @@ export class TestRunnerService {
       if (event.lastUserMsg) t.lastUserMsg = event.lastUserMsg as string;
       if (event.lastAiSnippet) t.lastAiSnippet = event.lastAiSnippet as string;
       if (event.status) t.currentStatus = event.status as string;
+      t.lastProgressAt = Date.now(); // track last heard from child process
+      // Clear any stale errors (e.g. from a previous interrupted run) once progress resumes
+      t.errors = (t.errors || []).filter(e => !e.includes("Interrupted by server restart"));
       this.emit({ type: "test_progress", id, currentMessage: t.currentMessage, totalMessages: t.totalMessages, lastUserMsg: t.lastUserMsg, lastAiSnippet: t.lastAiSnippet, currentStatus: t.currentStatus });
 
     } else if (type === "run_done") {
