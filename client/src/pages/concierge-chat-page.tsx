@@ -2282,7 +2282,7 @@ function ConciergeInlineVideoOverlay({ bookingId, onClose }: { bookingId: string
   );
 }
 
-function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId }: { msg: ChatMessage; brandColor: string; onOpenInlineVideo?: (bookingId: string) => void; sessionId?: string | null }) {
+function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, isAnswered }: { msg: ChatMessage; brandColor: string; onOpenInlineVideo?: (bookingId: string) => void; sessionId?: string | null; isAnswered?: boolean }) {
   const data = msg.uiCardData as any;
   if (!data) return null;
 
@@ -2399,6 +2399,7 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId }:
         sessionId={sessionId || ""}
         messageContent={msg.content || ""}
         isParent={true}
+        isAnswered={isAnswered}
       />
     );
   }
@@ -4608,7 +4609,19 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               {msg.uiCardType && msg.uiCardData && (
                 <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} mt-2`}>
                   <div className="max-w-[75%]">
-                    <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} sessionId={sessionId} />
+                    {(() => {
+                      // For readiness_prompt: derive answered state from the message
+                      // history (a GoStork Thank you message after this one = answered)
+                      // This is more reliable than DB-only state which can be stale.
+                      const isAnswered = msg.uiCardType === "readiness_prompt"
+                        ? !!(msg.uiCardData as any)?.answered ||
+                          messages.slice(i + 1).some(m =>
+                            m.senderName === "GoStork" &&
+                            (m.content || "").includes("Thank you for letting us know")
+                          )
+                        : undefined;
+                      return <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} sessionId={sessionId} isAnswered={isAnswered} />;
+                    })()}
                   </div>
                 </div>
               )}

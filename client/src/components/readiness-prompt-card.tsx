@@ -3,11 +3,14 @@
  * Rendered when a chat message has uiCardType === "readiness_prompt".
  * Shown after a video call ends - asks parent if they're ready to move forward.
  *
- * Answered state is persisted in uiCardData.answered (DB) so the card stays
- * disabled across page reloads. Local state is only used for optimistic updates.
+ * Answered state is derived from two sources (most reliable first):
+ *  1. isAnswered prop - computed by the parent from the message history
+ *     ("Thank you" system message after this card = already answered).
+ *  2. data.answered - DB-persisted flag written by the PATCH endpoint.
+ * Local useState is only used for optimistic updates within the current session.
  */
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ThumbsUp, Clock, Loader2, CheckCircle } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -21,18 +24,19 @@ interface ReadinessPromptData {
   buttonLabel: string;
   yesAction: string;
   noAction: string;
-  answered?: "yes" | "no"; // persisted in DB after parent responds
+  answered?: "yes" | "no"; // DB-persisted
 }
 
 interface ReadinessPromptCardProps {
   data: ReadinessPromptData;
-  messageId: string;       // DB message ID - used to persist answered state
+  messageId: string;
   sessionId: string;
   messageContent: string;
   isParent?: boolean;
+  isAnswered?: boolean; // derived from message history by the parent component
 }
 
-/** Persist answered state to DB so the card stays disabled on reload */
+/** Persist answered state to DB so data.answered is correct on next load */
 async function markAnswered(messageId: string, answer: "yes" | "no") {
   await fetch("/api/billing/readiness-prompt-respond", {
     method: "PATCH",
@@ -42,16 +46,19 @@ async function markAnswered(messageId: string, answer: "yes" | "no") {
   });
 }
 
-export function ReadinessPromptCard({ data, messageId, sessionId, messageContent, isParent = true }: ReadinessPromptCardProps) {
-  // Initialize from DB-persisted value so state survives page reloads
-  const [responded, setResponded] = useState(!!data.answered);
-  const [response, setResponse] = useState<"yes" | "no" | null>(data.answered ?? null);
+export function ReadinessPromptCard({ data, messageId, sessionId, messageContent, isParent = true, isAnswered }: ReadinessPromptCardProps) {
+  // Priority: isAnswered (history-based) > data.answered (DB flag) > local state
+  const alreadyAnswered = isAnswered ?? !!data.answered;
+  const [responded, setResponded] = useState(alreadyAnswered);
+  const [response, setResponse] = useState<"yes" | "no" | null>(
+    alreadyAnswered ? (data.answered === "no" ? "no" : "yes") : null
+  );
+
+  const queryClient = useQueryClient();
 
   const confirmMutation = useMutation({
     mutationFn: async () => {
-      // 1. Mark the card as answered in the DB (optimistic - do first)
       await markAnswered(messageId, "yes");
-      // 2. Trigger the billing flow
       const res = await fetch("/api/billing/parent-confirm-ready", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -64,27 +71,30 @@ export function ReadinessPromptCard({ data, messageId, sessionId, messageContent
     onSuccess: () => {
       setResponded(true);
       setResponse("yes");
+      // Refresh messages so the "Thank you" system message appears and
+      // the isAnswered derivation picks it up on the next render
+      queryClient.invalidateQueries({ queryKey: [`/api/ai-concierge/session/${sessionId}/messages`] });
     },
   });
 
   const handleNotYet = async () => {
     setResponded(true);
     setResponse("no");
-    markAnswered(messageId, "no").catch(() => {}); // fire and forget
+    markAnswered(messageId, "no").catch(() => {});
   };
 
-  // Already answered (either from DB state or this session's interaction)
+  // Show disabled / confirmed state
   if (responded || !isParent) {
+    const wasYes = response === "yes" || (alreadyAnswered && data.answered !== "no");
     return (
       <div className="rounded-xl border px-4 py-3 max-w-sm text-sm" style={{ background: "hsl(var(--background))" }}>
         <p className="text-muted-foreground">{messageContent}</p>
-        {(responded || data.answered) && (response === "yes" || data.answered === "yes") && (
+        {wasYes ? (
           <p className="mt-2 flex items-center gap-1.5 text-sm font-medium" style={{ color: "hsl(var(--brand-success))" }}>
             <CheckCircle className="w-3.5 h-3.5" />
             Ready to move forward - invoice coming shortly.
           </p>
-        )}
-        {(responded || data.answered) && (response === "no" || data.answered === "no") && (
+        ) : (
           <p className="mt-2 text-sm text-muted-foreground">No problem - take your time. We'll follow up with you soon.</p>
         )}
       </div>
@@ -93,17 +103,14 @@ export function ReadinessPromptCard({ data, messageId, sessionId, messageContent
 
   return (
     <div className="rounded-xl border overflow-hidden max-w-sm" style={{ background: "hsl(var(--background))" }}>
-      {/* Urgency indicator for surrogacy */}
       {data.isMatchCall && data.dueAt && (
         <div className="px-4 py-2 flex items-center gap-2 text-xs font-medium border-b" style={{ background: "hsl(var(--brand-warning) / 0.1)", color: "hsl(var(--brand-warning))" }}>
           <Clock className="w-3.5 h-3.5" />
           <span>24-hour hold - surrogate reserved for you</span>
         </div>
       )}
-
       <div className="px-4 py-4 space-y-4">
         <p className="text-sm">{messageContent}</p>
-
         <div className="flex gap-2">
           <Button
             disabled={confirmMutation.isPending}
@@ -118,12 +125,7 @@ export function ReadinessPromptCard({ data, messageId, sessionId, messageContent
             )}
             {data.buttonLabel}
           </Button>
-
-          <Button
-            variant="outline"
-            className="flex-1"
-            onClick={handleNotYet}
-          >
+          <Button variant="outline" className="flex-1" onClick={handleNotYet}>
             Not Yet
           </Button>
         </div>
