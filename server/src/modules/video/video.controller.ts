@@ -728,14 +728,20 @@ export class VideoController {
         ? await this.findActiveBooking(providerUser.id)
         : await findBookingByRoom();
       if (activeBooking) {
+        // Only fire follow-up on the first meeting.ended event (when transitioning
+        // from in-progress to ended). If actualEndedAt is already set (2-hour fallback
+        // match), the call already ended and we skip to avoid duplicates.
+        const wasInProgress = activeBooking.actualEndedAt === null;
         await this.prisma.booking.update({
           where: { id: activeBooking.id },
           data: { actualEndedAt: new Date() },
         });
-        // Fire post-call follow-up asynchronously - don't block the webhook response
-        this.firePostCallFollowUp(activeBooking).catch((err) =>
-          this.logger.error(`Post-call follow-up failed: ${err.message}`),
-        );
+        if (wasInProgress) {
+          // Fire post-call follow-up asynchronously - don't block the webhook response
+          this.firePostCallFollowUp(activeBooking).catch((err) =>
+            this.logger.error(`Post-call follow-up failed: ${err.message}`),
+          );
+        }
       }
     } else if (eventType === "recording.ready-to-download") {
       const recordingId = payload?.recording_id;
@@ -845,27 +851,19 @@ export class VideoController {
     const parentFirstName = parentUser?.firstName || parentUser?.name?.split(" ")[0] || "there";
     const providerName = providerEntity?.name || "the agency";
 
-    // --- 1. Parent's main AI concierge session (ACTIVE) ---
-    // This is their primary matchmaking chat - follow up to guide next steps
+    // --- 1. Parent's private AI concierge session ---
+    // Look this up so we can pass it to the billing prompt (readiness card goes here,
+    // keeping the parent's response private from the provider).
     const parentMainSession = await this.prisma.aiChatSession.findFirst({
       where: { userId: parentUserId, status: "ACTIVE", sessionType: "PARENT" },
       orderBy: { updatedAt: "desc" },
       select: { id: true },
     });
 
-    if (parentMainSession) {
-      await this.prisma.aiChatMessage.create({
-        data: {
-          sessionId: parentMainSession.id,
-          role: "assistant",
-          content: `Your consultation with ${providerName} just wrapped up - that's a big step! How did it go? Did you feel a good connection with them? [[QUICK_REPLY:It went great!|I have some questions|Not the right fit]]`,
-          senderType: "ai",
-        },
-      });
-    }
-
     // --- 2. The 3-way PROVIDER_JOINED session ---
-    // Ask the provider for their assessment so they can update the session status
+    // Let the provider know the call ended and ask for their assessment.
+    // This message is visible to the provider - do NOT include the parent's readiness
+    // question here (parent needs a private space to be honest about the call).
     if (providerEntity) {
       const providerSession = await this.prisma.aiChatSession.findFirst({
         where: { userId: parentUserId, providerId: providerEntity.id, status: "PROVIDER_JOINED" },
@@ -873,36 +871,37 @@ export class VideoController {
       });
 
       if (providerSession) {
-        // Message seen by provider in the 3-way chat
         await this.prisma.aiChatMessage.create({
           data: {
             sessionId: providerSession.id,
             role: "assistant",
-            content: `Great call! ${providerName}, based on your consultation with ${parentFirstName}, what are your initial thoughts? Use the buttons below to update the status and let ${parentFirstName} know next steps. [[QUICK_REPLY:Ready to proceed|Need more information|Not the right fit]]`,
+            content: `Great call! ${providerName}, based on your consultation with ${parentFirstName}, what are your initial thoughts? Share your assessment so we can guide next steps.`,
             senderType: "ai",
           },
         });
       }
     }
 
-    // --- 3. In-app notification to prompt parent back to chat ---
+    // --- 3. In-app notification to prompt parent back to their private chat ---
     await this.prisma.inAppNotification.create({
       data: {
         userId: parentUserId,
         eventType: "CONSULTATION_CALL_ENDED",
         payload: {
           providerName,
-          message: `Your consultation with ${providerName} has ended. The concierge has a follow-up for you.`,
+          message: `Your consultation with ${providerName} has ended. Check your AI Concierge chat for a follow-up.`,
         },
       },
     }).catch(() => { /* non-critical */ });
 
-    // --- 4. GoStork Billing: post readiness prompt in provider session ---
-    // Determine if this is a "decision call" that should trigger the payment flow
+    // --- 4. GoStork Billing: post readiness prompt card in the PRIVATE concierge chat ---
+    // The readiness prompt goes to the parent's private AI session, not the 3-way chat,
+    // so the parent can answer honestly without the provider seeing their response.
     await this.firePostCallBillingPrompt({
       bookingId: booking.id,
       parentUserId,
       providerEntity,
+      parentMainSessionId: parentMainSession?.id ?? null,
     }).catch(err => this.logger.error(`Post-call billing prompt failed: ${err.message}`));
   }
 
@@ -910,9 +909,12 @@ export class VideoController {
     bookingId: string;
     parentUserId: string;
     providerEntity: { id: string; name: string } | null;
+    parentMainSessionId: string | null;
   }) {
-    const { bookingId, parentUserId, providerEntity } = params;
+    const { bookingId, parentUserId, providerEntity, parentMainSessionId } = params;
     if (!providerEntity) return;
+    // Readiness prompt goes to the private concierge chat - if there's no session, skip
+    if (!parentMainSessionId) return;
 
     // Get the booking with meetingSubtype to determine if this is a decision call
     const booking = await this.prisma.booking.findUnique({
@@ -933,7 +935,7 @@ export class VideoController {
     const providerTypeName = provider.services[0]?.providerType?.name || "";
     const isSurrogacyAgency = providerTypeName === "Surrogacy Agency";
 
-    // Find the provider session (PROVIDER_JOINED) for this parent + provider
+    // Find the provider session (PROVIDER_JOINED) - needed for invoice dedup check
     const providerSession = await this.prisma.aiChatSession.findFirst({
       where: {
         userId: parentUserId,
@@ -942,16 +944,27 @@ export class VideoController {
       },
       select: { id: true },
     });
-    if (!providerSession) return;
 
-    // Check if there's already a pending or paid invoice for this session
-    const existingInvoice = await this.prisma.invoice.findFirst({
+    // Check if there's already a pending or paid invoice for this provider session
+    if (providerSession) {
+      const existingInvoice = await this.prisma.invoice.findFirst({
+        where: {
+          sessionId: providerSession.id,
+          status: { notIn: ["EXPIRED", "CANCELLED"] },
+        },
+      });
+      if (existingInvoice) return; // Already in payment flow
+    }
+
+    // Also check if a readiness prompt was already sent to the parent's private chat
+    const existingPrompt = await this.prisma.aiChatMessage.findFirst({
       where: {
-        sessionId: providerSession.id,
-        status: { notIn: ["EXPIRED", "CANCELLED"] },
+        sessionId: parentMainSessionId,
+        uiCardType: "readiness_prompt",
+        createdAt: { gte: new Date(Date.now() - 2 * 60 * 60 * 1000) },
       },
     });
-    if (existingInvoice) return; // Already in payment flow
+    if (existingPrompt) return; // Already sent within the last 2 hours
 
     // Determine if this is a decision call
     let isDecisionCall = false;
@@ -984,9 +997,10 @@ export class VideoController {
       dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     }
 
-    // Post readiness prompt in the provider session chat
+    // Post readiness prompt in the parent's PRIVATE concierge chat (not the 3-way provider
+    // session) so the parent can answer honestly without the provider seeing their response.
     await this.billingService.postReadinessPromptToChat({
-      sessionId: providerSession.id,
+      sessionId: parentMainSessionId,
       providerName: providerEntity.name,
       providerType: providerTypeName,
       isMatchCall,
