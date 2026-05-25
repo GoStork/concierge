@@ -1225,17 +1225,23 @@ export default function ConversationsPage() {
 
     const hasParentSession = !!selectedParentSession;
 
-    // Show left sidebar and right profile panel only when a booking exists (consultation mode).
-    // AI-only chats (no booking yet) show full-width centered middle pane with no sidebars.
-    // Also immediately show sidebar when the selected session is already a provider thread
-    // (CONSULTATION_BOOKED / PROVIDER_JOINED) - avoids a flash of missing sidebar while the
-    // inline ConciergeChatPage loads and calls onSidePanelChange for the new session.
-    const parentShowSidebar =
+    // Right profile panel: show only when actively in a provider session with booking data.
+    const parentShowRightPanel =
       (selectedParentSession && isProviderThread(selectedParentSession)) ||
       (
         (parentSidePanelData?.providerInChat === true) &&
         (parentSidePanelData.sessionBookings?.length ?? 0) > 0
       );
+
+    // Left sessions sidebar: once the parent has ever been connected to a provider (any
+    // provider thread exists), always keep the sidebar visible on desktop so the layout
+    // stays 3-column. Parents with only an AI concierge session still get the full-width
+    // centered concierge view (sidebar hidden) until their first provider connection.
+    const hasAnyProviderSession = providerConversations.length > 0;
+    const parentShowLeftSidebar = !!(parentShowRightPanel || hasAnyProviderSession);
+
+    // Legacy alias used by the centering wrapper and ConversationsShell props below.
+    const parentShowSidebar = parentShowLeftSidebar;
 
     const hasSessions = allSessions.length > 0;
     const sidebarContent = hasSessions ? (
@@ -1567,7 +1573,7 @@ export default function ConversationsPage() {
           />
         </div>
         </div>{/* end centering wrapper */}
-        {parentShowSidebar && parentSidePanelData && (
+        {parentShowRightPanel && parentSidePanelData && (
           <ParentChatSidePanel
             subjectInfo={parentSidePanelData.subjectInfo}
             subjectSections={parentSidePanelData.subjectSections}
