@@ -2280,21 +2280,18 @@ chatRouter.post("/api/billing/parent-confirm-ready", requireAuth, async (req, re
 
     if (!sessionId) return res.status(400).json({ message: "sessionId is required" });
 
-    const session = await prisma.aiChatSession.findUnique({
-      where: { id: sessionId },
-      include: {
-        provider: {
-          include: {
-            referralFeeConfig: true,
-            services: { include: { providerType: true }, take: 1 },
-          },
-        },
-      },
-    });
+    const session = await prisma.aiChatSession.findUnique({ where: { id: sessionId } });
 
     if (!session) return res.status(404).json({ message: "Session not found" });
-    if (session.userId !== user.id && session.user?.parentAccountId !== user.parentAccountId) {
-      return res.status(403).json({ message: "Not authorized" });
+    // Auth: must be the session owner or a member of the same parent account
+    if (session.userId !== user.id) {
+      const [sessionOwner, requestUser] = await Promise.all([
+        prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } }),
+        prisma.user.findUnique({ where: { id: user.id }, select: { parentAccountId: true } }),
+      ]);
+      if (!sessionOwner?.parentAccountId || sessionOwner.parentAccountId !== requestUser?.parentAccountId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
     }
 
     // Check if invoice already exists for this session
@@ -2305,94 +2302,106 @@ chatRouter.post("/api/billing/parent-confirm-ready", requireAuth, async (req, re
       return res.json({ message: "Payment already in progress", invoiceId: existing.id, paymentToken: existing.paymentToken });
     }
 
-    // Dedup: skip if a "Thank you" confirmation message was already posted in this session
-    const existingConfirm = await prisma.aiChatMessage.findFirst({
-      where: {
-        sessionId: session.id,
-        senderName: "GoStork",
-        content: { contains: "Thank you for letting us know" },
-        createdAt: { gte: new Date(Date.now() - 2 * 60 * 60 * 1000) },
-      },
+    // Get provider name + type from the readiness_prompt card's uiCardData.
+    // The readiness prompt lives in the parent's PRIVATE session which has no provider linked,
+    // so session.provider is always null here - we must read from the card data.
+    const readinessMsg = await prisma.aiChatMessage.findFirst({
+      where: { sessionId: session.id, uiCardType: "readiness_prompt" },
+      orderBy: { createdAt: "desc" },
     });
-    if (existingConfirm) {
-      return res.json({ success: true, message: "Already confirmed" });
-    }
+    const cardData = readinessMsg?.uiCardData as any;
+    const providerName = cardData?.providerName || "the provider";
+    const providerTypeName = cardData?.providerType || "";
 
-    // Post a confirmation message to the chat
-    await prisma.aiChatMessage.create({
-      data: {
-        sessionId: session.id,
-        role: "assistant",
-        content: `Thank you for letting us know! We're preparing your payment invoice now. Our team will send it to you shortly.`,
-        senderType: "system",
-        senderName: "GoStork",
-      },
-    });
-
-    // Notify all GoStork admins so they can create the invoice (or it auto-creates if cost sheet available)
     const admins = await prisma.user.findMany({
       where: { roles: { has: "GOSTORK_ADMIN" } },
       select: { id: true, email: true },
     });
-    const providerName = session.provider?.name || "the provider";
-    const providerTypeName = session.provider?.services?.[0]?.providerType?.name || "";
     const parentName = user.name || user.email;
     const notifMessage = `${parentName} is ready to move forward with ${providerName}. Create an invoice in the billing dashboard.`;
     const billingUrl = `/admin/billing`;
 
-    // Push live SSE to connected admins + persist for offline admins via AppEventsService
-    try {
-      const { getNestApp } = await import("./nest-app-ref");
-      const nestApp = getNestApp();
-      if (nestApp) {
-        const { AppEventsService } = await import("./src/modules/notifications/app-events.service");
-        let appEvents: any = null;
-        try { appEvents = nestApp.get(AppEventsService); } catch {}
-        if (appEvents) {
-          await appEvents.emit({
-            type: "parent_ready_to_proceed",
-            payload: {
-              sessionId: session.id,
-              parentUserId: user.id,
-              parentName,
-              providerName,
-              providerType: providerTypeName,
-              message: notifMessage,
-              billingUrl,
-            },
-            targetUserIds: admins.map((a: any) => a.id),
-          });
-        }
-      }
-    } catch (sseErr: any) {
-      console.error("[parent-confirm-ready] SSE emit failed:", sseErr.message);
-    }
+    // --- Admin notification (SSE + email) ---
+    // Dedup: only notify admins once per session (24h window) so repeat clicks don't spam.
+    const alreadyNotified = await prisma.inAppNotification.findFirst({
+      where: {
+        eventType: "PARENT_READY_TO_PROCEED",
+        payload: { path: ["sessionId"], equals: session.id },
+        createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      },
+    });
 
-    // Email all admins
-    try {
-      const { getNestApp } = await import("./nest-app-ref");
-      const nestApp = getNestApp();
-      if (nestApp) {
-        const { NotificationService } = await import("./src/modules/notifications/notification.service");
-        let notifService: any = null;
-        try { notifService = nestApp.get(NotificationService); } catch {}
-        if (notifService) {
-          const appBase = (process.env.APP_URL || "https://app.gostork.com").replace(/\/$/, "");
-          for (const admin of admins) {
-            if (!admin.email) continue;
-            notifService.sendParentReadyAdminNotification({
-              adminUserId: admin.id,
-              adminEmail: admin.email,
-              parentName,
-              providerName,
-              providerType: providerTypeName,
-              billingUrl: `${appBase}${billingUrl}`,
-            }).catch((e: any) => console.error("[parent-confirm-ready] Admin email failed:", e.message));
+    if (!alreadyNotified) {
+      // Live SSE push to connected admins; offline admins get it on next connect
+      try {
+        const { getNestApp } = await import("./nest-app-ref");
+        const nestApp = getNestApp();
+        if (nestApp) {
+          const { AppEventsService } = await import("./src/modules/notifications/app-events.service");
+          let appEvents: any = null;
+          try { appEvents = nestApp.get(AppEventsService); } catch {}
+          if (appEvents) {
+            await appEvents.emit({
+              type: "parent_ready_to_proceed",
+              payload: { sessionId: session.id, parentUserId: user.id, parentName, providerName, providerType: providerTypeName, message: notifMessage, billingUrl },
+              targetUserIds: admins.map((a: any) => a.id),
+            });
+            console.log(`[parent-confirm-ready] SSE emitted to ${admins.length} admin(s) for session ${session.id}`);
+          } else {
+            console.warn("[parent-confirm-ready] AppEventsService not available - SSE not sent");
           }
         }
+      } catch (sseErr: any) {
+        console.error("[parent-confirm-ready] SSE emit failed:", sseErr.message);
       }
-    } catch (emailErr: any) {
-      console.error("[parent-confirm-ready] Admin email setup failed:", emailErr.message);
+
+      // Email all admins
+      try {
+        const { getNestApp } = await import("./nest-app-ref");
+        const nestApp = getNestApp();
+        if (nestApp) {
+          const { NotificationService } = await import("./src/modules/notifications/notification.service");
+          let notifService: any = null;
+          try { notifService = nestApp.get(NotificationService); } catch {}
+          if (notifService) {
+            const appBase = (process.env.APP_URL || "https://app.gostork.com").replace(/\/$/, "");
+            for (const admin of admins) {
+              if (!admin.email) continue;
+              notifService.sendParentReadyAdminNotification({
+                adminUserId: admin.id,
+                adminEmail: admin.email,
+                parentName,
+                providerName,
+                providerType: providerTypeName,
+                billingUrl: `${appBase}${billingUrl}`,
+              }).catch((e: any) => console.error("[parent-confirm-ready] Admin email failed:", e.message));
+            }
+            console.log(`[parent-confirm-ready] Admin emails dispatched for session ${session.id}`);
+          } else {
+            console.warn("[parent-confirm-ready] NotificationService not available - email not sent");
+          }
+        }
+      } catch (emailErr: any) {
+        console.error("[parent-confirm-ready] Admin email setup failed:", emailErr.message);
+      }
+    } else {
+      console.log(`[parent-confirm-ready] Admin already notified for session ${session.id} - skipping duplicate notification`);
+    }
+
+    // --- "Thank you" chat message (one per session, no time limit) ---
+    const existingConfirm = await prisma.aiChatMessage.findFirst({
+      where: { sessionId: session.id, senderName: "GoStork", content: { contains: "Thank you for letting us know" } },
+    });
+    if (!existingConfirm) {
+      await prisma.aiChatMessage.create({
+        data: {
+          sessionId: session.id,
+          role: "assistant",
+          content: `Thank you for letting us know! We're preparing your payment invoice now. Our team will send it to you shortly.`,
+          senderType: "system",
+          senderName: "GoStork",
+        },
+      });
     }
 
     res.json({ success: true, message: "Confirmed. GoStork will send your invoice shortly." });
