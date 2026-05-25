@@ -23,7 +23,8 @@ export type NotificationChannel =
   | "invoice_payment_request"
   | "invoice_reminder"
   | "invoice_paid_admin"
-  | "consultation_ended";
+  | "consultation_ended"
+  | "billing_admin";
 
 
 const TWILIO_TEMPLATES = {
@@ -2107,6 +2108,36 @@ export class NotificationService implements OnModuleInit {
         ).catch(e => this.logger.error(`Failed to send post-call SMS (raw): ${e.message}`));
       }
     }
+  }
+
+  async sendParentReadyAdminNotification(params: {
+    adminUserId: string;
+    adminEmail: string;
+    parentName: string;
+    providerName: string;
+    providerType: string;
+    billingUrl: string;
+  }) {
+    const brandData = await this.getBrandData();
+    const subject = `${params.parentName} is ready to move forward with ${params.providerName}`;
+    const providerLabel = params.providerType ? `${params.providerName} (${params.providerType})` : params.providerName;
+
+    const html = buildBrandedEmail(brandData, {
+      title: "Parent Ready to Proceed",
+      greeting: "Hi GoStork Team,",
+      body: `<strong>${esc(params.parentName)}</strong> has confirmed they are ready to move forward with <strong>${esc(providerLabel)}</strong>. Please create their invoice in the billing dashboard.`,
+      buttons: [{ label: "Create Invoice", url: params.billingUrl }],
+      footer: "This is an automated notification from the GoStork billing system.",
+    });
+
+    await this.dispatchNotification({
+      userId: params.adminUserId,
+      type: "EMAIL",
+      channel: "billing_admin",
+      recipient: params.adminEmail,
+      subject,
+      body: html,
+    }).catch(e => this.logger.error(`Failed to send parent-ready admin email to ${params.adminEmail}: ${e.message}`));
   }
 
   async sendInvoicePaidAdminNotification(params: {

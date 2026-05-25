@@ -2332,27 +2332,67 @@ chatRouter.post("/api/billing/parent-confirm-ready", requireAuth, async (req, re
     // Notify all GoStork admins so they can create the invoice (or it auto-creates if cost sheet available)
     const admins = await prisma.user.findMany({
       where: { roles: { has: "GOSTORK_ADMIN" } },
-      select: { id: true },
+      select: { id: true, email: true },
     });
     const providerName = session.provider?.name || "the provider";
     const providerTypeName = session.provider?.services?.[0]?.providerType?.name || "";
+    const parentName = user.name || user.email;
+    const notifMessage = `${parentName} is ready to move forward with ${providerName}. Create an invoice in the billing dashboard.`;
+    const billingUrl = `/admin/billing`;
 
-    for (const admin of admins) {
-      await prisma.inAppNotification.create({
-        data: {
-          userId: admin.id,
-          eventType: "PARENT_READY_TO_PROCEED",
-          payload: {
-            sessionId: session.id,
-            parentUserId: user.id,
-            parentName: user.name || user.email,
-            providerName,
-            providerType: providerTypeName,
-            message: `${user.name || user.email} is ready to move forward with ${providerName}. Create an invoice in the billing dashboard.`,
-            billingUrl: `/admin/billing`,
-          },
-        },
-      });
+    // Push live SSE to connected admins + persist for offline admins via AppEventsService
+    try {
+      const { getNestApp } = await import("./nest-app-ref");
+      const nestApp = getNestApp();
+      if (nestApp) {
+        const { AppEventsService } = await import("./src/modules/notifications/app-events.service");
+        let appEvents: any = null;
+        try { appEvents = nestApp.get(AppEventsService); } catch {}
+        if (appEvents) {
+          await appEvents.emit({
+            type: "parent_ready_to_proceed",
+            payload: {
+              sessionId: session.id,
+              parentUserId: user.id,
+              parentName,
+              providerName,
+              providerType: providerTypeName,
+              message: notifMessage,
+              billingUrl,
+            },
+            targetUserIds: admins.map((a: any) => a.id),
+          });
+        }
+      }
+    } catch (sseErr: any) {
+      console.error("[parent-confirm-ready] SSE emit failed:", sseErr.message);
+    }
+
+    // Email all admins
+    try {
+      const { getNestApp } = await import("./nest-app-ref");
+      const nestApp = getNestApp();
+      if (nestApp) {
+        const { NotificationService } = await import("./src/modules/notifications/notification.service");
+        let notifService: any = null;
+        try { notifService = nestApp.get(NotificationService); } catch {}
+        if (notifService) {
+          const appBase = (process.env.APP_URL || "https://app.gostork.com").replace(/\/$/, "");
+          for (const admin of admins) {
+            if (!admin.email) continue;
+            notifService.sendParentReadyAdminNotification({
+              adminUserId: admin.id,
+              adminEmail: admin.email,
+              parentName,
+              providerName,
+              providerType: providerTypeName,
+              billingUrl: `${appBase}${billingUrl}`,
+            }).catch((e: any) => console.error("[parent-confirm-ready] Admin email failed:", e.message));
+          }
+        }
+      }
+    } catch (emailErr: any) {
+      console.error("[parent-confirm-ready] Admin email setup failed:", emailErr.message);
     }
 
     res.json({ success: true, message: "Confirmed. GoStork will send your invoice shortly." });

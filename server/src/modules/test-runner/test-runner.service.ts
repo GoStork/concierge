@@ -340,13 +340,39 @@ export class TestRunnerService {
 
   stopRun(): { stopped: boolean } {
     if (this.childProcesses.size > 0) {
+      // SIGKILL (not SIGTERM): the test-ai-concierge.ts script awaits long Tier 2
+      // HTTP requests (up to 3 min each). SIGTERM is ignored while awaiting fetch,
+      // so the subprocess never actually exits. SIGKILL is the only reliable stop.
       for (const [, proc] of this.childProcesses) {
-        try { proc?.kill("SIGTERM"); } catch {}
+        try { proc?.kill("SIGKILL"); } catch {}
       }
       this.childProcesses.clear();
+
+      // Reap any tests still marked "running" - their subprocess just died so
+      // they won't update themselves. Without this they sit as ghosts in the UI
+      // until the next server restart (where loadPersistedState reaps them).
+      for (const [id, t] of Object.entries(this.state.tests)) {
+        if (t.status === "running") {
+          this.state.tests[id] = {
+            ...t,
+            status: "fail",
+            errors: [...(t.errors || []), `Stopped by user (was on msg ${t.currentMessage || 0}/${t.totalMessages || 0})`],
+            durationMs: t.startedAt ? Date.now() - t.startedAt : t.durationMs,
+          };
+        }
+      }
+
       this.state.status = "done";
       this.state.endedAt = new Date().toISOString();
+      // Emit individual test_done events so the SSE clients update their tiles,
+      // then emit the run_stopped signal.
+      for (const [id, t] of Object.entries(this.state.tests)) {
+        if (t.status === "fail" && t.errors.some(e => e.startsWith("Stopped by user"))) {
+          this.emit({ type: "test_done", id, status: "fail", durationMs: t.durationMs, errors: t.errors });
+        }
+      }
       this.emit({ type: "run_stopped" });
+      this.emit({ type: "state", state: this.state });
       return { stopped: true };
     }
     return { stopped: false };
