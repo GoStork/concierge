@@ -2902,6 +2902,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const reconnectPendingRef = useRef(false); // true when connection dropped mid-request
   const sessionIdRef = useRef<string | null>(null); // stable ref for use in event listeners
   const lastSentRef = useRef<{ text: string; time: number } | null>(null);
+  const pendingClientMsgIdRef = useRef<string | null>(null); // idempotency key for retry dedup
   const lastQrClickRef = useRef<number>(0); // timestamp of last QR button click
   const lastPollTimeRef = useRef<string | null>(null);
   const knownMessageIds = useRef<Set<string>>(new Set());
@@ -3544,7 +3545,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
   const noMatchmakerYet = !effectiveMatchmakerId && !existingSessionId && !sessionId && sessionLoaded;
 
-  const sendMessage = async (text: string, retryCount = 0) => {
+  const sendMessage = async (text: string, retryCount = 0, clientMsgId?: string) => {
     const hasFiles = stagedFiles.length > 0;
     if (!text.trim() && !hasFiles) return;
     // On auto-retry (retryCount > 0), bypass the sending guard - we're continuing an in-flight request
@@ -3560,10 +3561,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       }).catch(() => {});
       return;
     }
-    // Deduplicate: block the same message if sent within 1.5 seconds (double-tap protection)
+    // Deduplicate: block the same message if sent within 3 seconds (double-tap / fast-click protection)
     const sendNow = Date.now();
-    if (lastSentRef.current && lastSentRef.current.text === text.trim() && sendNow - lastSentRef.current.time < 1500) return;
-    lastSentRef.current = { text: text.trim(), time: sendNow };
+    if (retryCount === 0 && lastSentRef.current && lastSentRef.current.text === text.trim() && sendNow - lastSentRef.current.time < 3000) return;
+    if (retryCount === 0) lastSentRef.current = { text: text.trim(), time: sendNow };
+    // Generate an idempotency key on the first send; reuse it on retries so the server
+    // can deduplicate and not create a second DB record if the stream failed mid-response.
+    const msgId = retryCount === 0 ? crypto.randomUUID() : (clientMsgId || crypto.randomUUID());
+    if (retryCount === 0) pendingClientMsgIdRef.current = msgId;
 
     // User just sent a message - they want to follow the AI response.
     // forceScrollRef bypasses userNearBottom (which smooth-scroll intermediate events can reset).
@@ -3634,6 +3639,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           message: userMessage,
           sessionId,
           matchmakerId: effectiveMatchmakerId,
+          clientMsgId: msgId,
         }),
       });
 
@@ -3790,7 +3796,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               const delay = 800 + retryCount * 600;
               setTimeout(() => {
                 sendingRef.current = false;
-                sendMessage(userMessage, retryCount + 1);
+                sendMessage(userMessage, retryCount + 1, msgId);
               }, delay);
             } else {
               setMessages((prev) => [...prev, {
@@ -3815,7 +3821,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         const delay = 800 + retryCount * 600;
         setTimeout(() => {
           sendingRef.current = false;
-          sendMessage(userMessage, retryCount + 1);
+          sendMessage(userMessage, retryCount + 1, msgId);
         }, delay);
       } else {
         setMessages((prev) => [...prev, {

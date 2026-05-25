@@ -1368,21 +1368,53 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       : parentNameParts[0] || "Parent";
 
     const attachmentData = req.body.attachmentData || null;
+    const clientMsgId: string | undefined = req.body.clientMsgId;
     const isPhase0Init = req.body.isSystemTrigger === true && req.body.message === "phase0_init";
     const isPhase1Init = req.body.isSystemTrigger === true && req.body.message === "phase1_init";
     const isSystemTrigger = (req.body.isSystemTrigger === true && req.body.message === "consultation_callback_submitted") || isPhase0Init || isPhase1Init;
 
-    // For system triggers, don't save a user message - just inject context and let AI respond
-    const savedUserMsg = isSystemTrigger ? null : await prisma.aiChatMessage.create({
-      data: {
-        sessionId: currentSessionId,
-        role: "user",
-        content: req.body.message,
-        senderType: "parent",
-        senderName: parentDisplayName,
-        ...(attachmentData ? { uiCardType: "attachment", uiCardData: attachmentData } : {}),
-      },
-    });
+    // For system triggers, don't save a user message - just inject context and let AI respond.
+    // For normal messages, deduplicate by clientMsgId (retry guard): if the client retries after
+    // a stream failure, the first request's message is already in the DB - reuse it instead of
+    // creating a second record with identical content.
+    let savedUserMsg: { id: string } | null = null;
+    if (!isSystemTrigger) {
+      let existing: { id: string } | null = null;
+      if (clientMsgId) {
+        // Query recent user messages in this session and filter by clientMsgId in JS,
+        // avoiding Prisma JSON-path filter type issues across different Prisma versions.
+        const recentMsgs = await prisma.aiChatMessage.findMany({
+          where: {
+            sessionId: currentSessionId,
+            role: "user",
+            createdAt: { gte: new Date(Date.now() - 120_000) },
+          },
+          select: { id: true, uiCardData: true },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+        });
+        const match = recentMsgs.find(m => (m.uiCardData as any)?.clientMsgId === clientMsgId);
+        if (match) existing = { id: match.id };
+      }
+      if (existing) {
+        savedUserMsg = existing;
+      } else {
+        const cardData = attachmentData
+          ? { ...attachmentData, ...(clientMsgId ? { clientMsgId } : {}) }
+          : clientMsgId ? { clientMsgId } : null;
+        savedUserMsg = await prisma.aiChatMessage.create({
+          data: {
+            sessionId: currentSessionId,
+            role: "user",
+            content: req.body.message,
+            senderType: "parent",
+            senderName: parentDisplayName,
+            ...(attachmentData ? { uiCardType: "attachment" } : {}),
+            ...(cardData ? { uiCardData: cardData } : {}),
+          },
+        });
+      }
+    }
 
     const currentSession = await prisma.aiChatSession.findUnique({
       where: { id: currentSessionId },
