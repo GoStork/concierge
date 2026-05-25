@@ -4612,9 +4612,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                                 <Button
                                   key={qi}
                                   type="button"
-                                  variant="outline"
+                                  variant="ghost"
                                   size="sm"
-                                  className="transition-all hover:shadow-sm font-medium"
+                                  className="transition-all hover:opacity-90 font-medium"
                                   style={{
                                     borderRadius: "var(--quick-reply-radius, 999px)",
                                     fontSize: "var(--quick-reply-font-size, 13px)",
@@ -4652,8 +4652,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                             {isMulti && multiSelectChoices.size > 0 && (
                               <Button
                                 type="button"
+                                variant="ghost"
                                 size="sm"
-                                className="font-semibold"
+                                className="font-semibold hover:opacity-90"
                                 style={{ borderRadius: "var(--quick-reply-radius, 999px)", backgroundColor: brandColor, color: "white", border: "none", height: "auto", paddingLeft: "var(--quick-reply-px, 14px)", paddingRight: "var(--quick-reply-px, 14px)", paddingTop: "var(--quick-reply-py, 6px)", paddingBottom: "var(--quick-reply-py, 6px)", fontSize: "var(--quick-reply-font-size, 13px)" }}
                                 onClick={() => { const selected = Array.from(multiSelectChoices).join(", "); setMultiSelectChoices(new Set()); handleQuickReply(selected); }}
                                 disabled={sending}
