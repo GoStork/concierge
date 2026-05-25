@@ -4336,7 +4336,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             const activeBooking = shouldInlineBooking
               ? sessionBookings!.find((b: any) =>
                   !consultationCardProviderIds.has(b.providerUser?.provider?.id) &&
-                  !consultationCardProviderUserIds.has(b.providerUserId ?? b.providerUser?.id)
+                  !consultationCardProviderUserIds.has(b.providerUserId ?? b.providerUser?.id) &&
+                  // Confirmed bookings already have a dedicated provider session with the full
+                  // booking UI. Only show the card in the AI concierge timeline while PENDING
+                  // so the parent can track a booking awaiting confirmation. In provider-specific
+                  // sessions (providerInChat set) always show regardless of status.
+                  (b.status === "PENDING" || !!providerInChat)
                 ) || null
               : null;
             type TimelineItem = { type: "message"; msg: ChatMessage; ts: string } | { type: "booking"; booking: any; ts: string };
