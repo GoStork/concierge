@@ -1365,11 +1365,7 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
     : decIsSecondary
     ? { ...chipBase, backgroundColor: decColor, color: "hsl(var(--foreground))", border: showBorder ? `1px solid ${primary}50` : "none" }
     : { ...chipBase, backgroundColor: decColor, color: "#ffffff", border: "none" };
-  const chipUniform: CSSProperties = qrIsOutline
-    ? { ...chipBase, backgroundColor: "transparent", color: qrColor, border: `1px solid ${qrColor}` }
-    : qrIsSecondary
-    ? { ...chipBase, backgroundColor: qrColor, color: "hsl(var(--foreground))", border: showBorder ? `1px solid ${primary}50` : "none" }
-    : { ...chipBase, backgroundColor: `${qrColor}18`, color: qrColor, border: showBorder ? `1px solid ${qrColor}50` : "none" };
+  const chipUniform: CSSProperties = { ...chipBase, backgroundColor: "transparent", color: qrColor, border: `1px solid ${qrColor}` };
 
   const messages: { text: string; own: boolean; time: string; chips?: "binary" | "multi" }[] = [
     { text: "Does that make sense so far?", own: false, time: "1:38 PM", chips: "binary" },

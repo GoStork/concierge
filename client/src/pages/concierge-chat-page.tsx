@@ -4603,16 +4603,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                                   : declineStyle
                                 : qrIsOutline
                                 ? { backgroundColor: "transparent", color: qrColor, border: `1px solid ${qrColor}` }
-                                : qrIsSecondary
-                                ? {
-                                    backgroundColor: isSelected ? qrColor : qrColor,
-                                    color: "hsl(var(--foreground))",
-                                    border: isSelected ? "none" : (qrShowBorder ? `1px solid ${brandColor}50` : "none"),
-                                  }
                                 : {
-                                    backgroundColor: isSelected ? qrColor : `${qrColor}18`,
-                                    color: isSelected ? "#ffffff" : qrColor,
-                                    border: isSelected ? "none" : (qrShowBorder ? `1px solid ${qrColor}50` : "none"),
+                                    backgroundColor: isSelected ? qrColor : "transparent",
+                                    color: isSelected ? (qrIsSecondary ? "hsl(var(--foreground))" : "#ffffff") : qrColor,
+                                    border: isSelected ? "none" : `1px solid ${qrColor}`,
                                   };
                               return (
                                 <Button
