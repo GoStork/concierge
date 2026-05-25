@@ -4417,6 +4417,15 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 // These card types render the full message content inside the card itself.
                 // Suppress the plain-text bubble so the content doesn't appear twice.
                 const cardReplacesbubble = ["readiness_prompt", "invoice"].includes(msg.uiCardType ?? "");
+                // Resolve avatar for left-side messages
+                const msgAvatarUrl = !alignRight
+                  ? (msg.senderType === "provider"
+                      ? (getPhotoSrc(sessionSubjectInfo?.providerLogo) || null)
+                      : resolvedAvatarUrl)
+                  : null;
+                const msgAvatarInitial = !alignRight
+                  ? (msg.senderType === "provider" ? "P" : (aiName?.charAt(0) || "A"))
+                  : null;
                 return (
                   <>
                     {!alignRight && msg.matchCards && msg.matchCards.length > 0 && (
@@ -4434,89 +4443,107 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                         </div>
                       </div>
                     )}
-                    {!alignRight && (
-                      <div className="flex justify-start mb-0.5">
-                        <span className="text-[11px] font-medium text-muted-foreground" data-testid={`name-label-${i}`}>
-                          {nameLabel}
-                        </span>
+                    {!cardReplacesbubble && (
+                      <div
+                        className={`flex ${alignRight ? "justify-end" : "items-end gap-2"}`}
+                        data-testid={`chat-message-${msg.role}-${i}`}
+                      >
+                        {/* Avatar - left side only */}
+                        {!alignRight && (
+                          <div className="w-8 h-8 rounded-full shrink-0 overflow-hidden self-end mb-0.5">
+                            {msgAvatarUrl ? (
+                              <img src={msgAvatarUrl} alt={nameLabel ?? ""} className="w-full h-full object-cover" />
+                            ) : (
+                              <div
+                                className="w-full h-full flex items-center justify-center text-primary-foreground text-xs font-semibold"
+                                style={{ backgroundColor: brandColor }}
+                              >
+                                {msgAvatarInitial}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {/* Content column: name + bubble + timestamp */}
+                        <div className={`flex flex-col ${alignRight ? "items-end" : "items-start"}`}>
+                          {!alignRight && (
+                            <span className="text-[11px] font-medium text-muted-foreground mb-0.5" data-testid={`name-label-${i}`}>
+                              {nameLabel}
+                            </span>
+                          )}
+                          <div
+                            className={`overflow-hidden ${
+                              isOwnMessage
+                                ? "text-primary-foreground chat-bubble-dark"
+                                : isOtherParent
+                                ? "text-foreground"
+                                : msg.role === "user"
+                                ? "text-primary-foreground chat-bubble-dark"
+                                : "text-foreground"
+                            }`}
+                            style={{
+                              fontSize: "var(--chat-bubble-font-size, 21px)",
+                              lineHeight: "var(--chat-bubble-line-height, 1.35)",
+                              borderRadius: "var(--chat-bubble-radius, 20px)",
+                              paddingLeft: "var(--chat-bubble-px, 16px)",
+                              paddingRight: "var(--chat-bubble-px, 16px)",
+                              paddingTop: "var(--chat-bubble-py, 11px)",
+                              paddingBottom: "var(--chat-bubble-py, 11px)",
+                              maxWidth: "var(--chat-bubble-max-width, 85%)",
+                              ...(isOwnMessage
+                                ? { backgroundColor: brandColor }
+                                : isOtherParent
+                                ? {
+                                    backgroundColor: chatPalette.partnerBg,
+                                    border: `1px solid ${chatPalette.partnerBorder}`,
+                                  }
+                                : msg.role === "user"
+                                ? { backgroundColor: brandColor }
+                                : msg.senderType === "human"
+                                ? {
+                                    backgroundColor: `${brandColor}14`,
+                                    border: `1px solid ${brandColor}33`,
+                                  }
+                                : msg.senderType === "provider"
+                                ? {
+                                    backgroundColor: chatPalette.expertBg,
+                                    border: `1px solid ${chatPalette.expertBorder}`,
+                                  }
+                                : {
+                                    backgroundColor: `${brandColor}14`,
+                                    border: `1px solid ${brandColor}33`,
+                                  }),
+                            }}
+                          >
+                            <span style={{ overflowWrap: "break-word", wordBreak: "break-word" }}>
+                              {msg.content.split("\n").map((line, li) => {
+                                const parts = line.split(/(\*\*[^*]+\*\*)/g);
+                                return (
+                                  <Fragment key={li}>
+                                    {li > 0 && <br />}
+                                    {parts.map((part, pi) =>
+                                      part.startsWith("**") && part.endsWith("**")
+                                        ? <strong key={pi}>{part.slice(2, -2)}</strong>
+                                        : <Fragment key={pi}>{part}</Fragment>
+                                    )}
+                                  </Fragment>
+                                );
+                              })}
+                            </span>
+                          </div>
+                          {msg.createdAt && (
+                            <span
+                              className="whitespace-nowrap select-none flex items-center gap-0.5 mt-0.5 px-1"
+                              style={{ fontSize: "var(--chat-timestamp-font-size, 11px)", lineHeight: "16px", opacity: "var(--chat-timestamp-opacity, 0.45)" as unknown as number }}
+                            >
+                              {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                              {alignRight && (
+                                <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />
+                              )}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     )}
-                    {!cardReplacesbubble && <div
-                      className={`flex flex-col ${alignRight ? "items-end" : "items-start"}`}
-                      data-testid={`chat-message-${msg.role}-${i}`}
-                    >
-                      <div
-                        className={`overflow-hidden ${
-                          isOwnMessage
-                            ? "text-primary-foreground chat-bubble-dark"
-                            : isOtherParent
-                            ? "text-foreground"
-                            : msg.role === "user"
-                            ? "text-primary-foreground chat-bubble-dark"
-                            : "text-foreground"
-                        }`}
-                        style={{
-                          fontSize: "var(--chat-bubble-font-size, 21px)",
-                          lineHeight: "var(--chat-bubble-line-height, 1.35)",
-                          borderRadius: "var(--chat-bubble-radius, 20px)",
-                          paddingLeft: "var(--chat-bubble-px, 16px)",
-                          paddingRight: "var(--chat-bubble-px, 16px)",
-                          paddingTop: "var(--chat-bubble-py, 11px)",
-                          paddingBottom: "var(--chat-bubble-py, 11px)",
-                          maxWidth: "var(--chat-bubble-max-width, 85%)",
-                          ...(isOwnMessage
-                            ? { backgroundColor: brandColor }
-                            : isOtherParent
-                            ? {
-                                backgroundColor: chatPalette.partnerBg,
-                                border: `1px solid ${chatPalette.partnerBorder}`,
-                              }
-                            : msg.role === "user"
-                            ? { backgroundColor: brandColor }
-                            : msg.senderType === "human"
-                            ? {
-                                backgroundColor: `${brandColor}14`,
-                                border: `1px solid ${brandColor}33`,
-                              }
-                            : msg.senderType === "provider"
-                            ? {
-                                backgroundColor: chatPalette.expertBg,
-                                border: `1px solid ${chatPalette.expertBorder}`,
-                              }
-                            : {
-                                backgroundColor: `${brandColor}14`,
-                                border: `1px solid ${brandColor}33`,
-                              }),
-                        }}
-                      >
-                        <span style={{ overflowWrap: "break-word", wordBreak: "break-word" }}>
-                          {msg.content.split("\n").map((line, li) => {
-                            const parts = line.split(/(\*\*[^*]+\*\*)/g);
-                            return (
-                              <Fragment key={li}>
-                                {li > 0 && <br />}
-                                {parts.map((part, pi) =>
-                                  part.startsWith("**") && part.endsWith("**")
-                                    ? <strong key={pi}>{part.slice(2, -2)}</strong>
-                                    : <Fragment key={pi}>{part}</Fragment>
-                                )}
-                              </Fragment>
-                            );
-                          })}
-                        </span>
-                      </div>
-                      {msg.createdAt && (
-                        <span
-                          className="whitespace-nowrap select-none flex items-center gap-0.5 mt-0.5 px-1"
-                          style={{ fontSize: "var(--chat-timestamp-font-size, 11px)", lineHeight: "16px", opacity: "var(--chat-timestamp-opacity, 0.45)" as unknown as number }}
-                        >
-                          {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
-                          {alignRight && (
-                            <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />
-                          )}
-                        </span>
-                      )}
-                    </div>}
                   </>
                 );
               })()}
