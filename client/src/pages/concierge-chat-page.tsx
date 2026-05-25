@@ -4420,10 +4420,16 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               const msgAvatarUrl = !alignRight
                 ? (msg.senderType === "provider"
                     ? (getPhotoSrc(sessionSubjectInfo?.providerLogo) || null)
+                    : msg.senderType === "human"
+                    ? null
                     : resolvedAvatarUrl)
                 : null;
               const msgAvatarInitial = !alignRight
-                ? (msg.senderType === "provider" ? "P" : (aiName?.charAt(0) || "A"))
+                ? (msg.senderType === "provider"
+                    ? "P"
+                    : msg.senderType === "human"
+                    ? (msg.senderName?.charAt(0) || "G")
+                    : (aiName?.charAt(0) || "A"))
                 : null;
               return (
             <div key={i}>
