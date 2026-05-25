@@ -237,7 +237,9 @@ export default function AdminConciergeMonitor() {
     }
   }, [lastChatKey, selectedSessionId, sessionsQuery.isLoading, sessionsQuery.data]);
 
-  const sessions = sessionsQuery.data || [];
+  const sessions = [...(sessionsQuery.data || [])].sort((a, b) =>
+    new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
+  );
   const detail = sessionDetailQuery.data;
   const detailAiName = detail
     ? (detail.matchmakerName || brand?.matchmakers?.find((m: any) => m.id === detail.matchmakerId)?.name || null)

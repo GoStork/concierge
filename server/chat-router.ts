@@ -627,6 +627,7 @@ chatRouter.post("/api/admin/concierge-sessions/:id/message", requireAuth, async 
         ...(uiCardData ? { uiCardData } : {}),
       },
     });
+    await prisma.aiChatSession.update({ where: { id: session.id }, data: { updatedAt: new Date() } });
 
     await prisma.inAppNotification.create({
       data: {
@@ -1106,6 +1107,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
     }
 
     const message = await prisma.aiChatMessage.create({ data: messageData });
+    await prisma.aiChatSession.update({ where: { id: session.id }, data: { updatedAt: new Date() } });
 
     if (isJoined) {
       const sessionOwner = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
@@ -1340,6 +1342,7 @@ chatRouter.post("/api/chat-session/:id/message", requireAuth, async (req, res) =
     }
 
     const message = await prisma.aiChatMessage.create({ data: messageData });
+    await prisma.aiChatSession.update({ where: { id: session.id }, data: { updatedAt: new Date() } });
     res.json(message);
   } catch (e: any) {
     console.error("Parent chat message error:", e);

@@ -1198,7 +1198,9 @@ export default function ConversationsPage() {
       new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()
     );
     const evaConversations = sortedEva.length > 0 ? [sortedEva[0]] : [];
-    const providerConversations = allSessions.filter(s => isProviderThread(s));
+    const providerConversations = allSessions
+      .filter(s => isProviderThread(s))
+      .sort((a, b) => new Date(b.lastMessageAt || b.updatedAt).getTime() - new Date(a.lastMessageAt || a.updatedAt).getTime());
 
     const filteredEva = evaConversations.filter(s =>
       !searchQuery || (s.matchmakerName || "Eva").toLowerCase().includes(searchQuery.toLowerCase()) ||
