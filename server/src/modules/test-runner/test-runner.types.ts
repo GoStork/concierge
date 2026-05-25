@@ -1,5 +1,14 @@
 export type TestStatus = "pending" | "running" | "pass" | "fail";
 
+export interface TestCaseInfo {
+  id: string;
+  persona: string;
+  name: string;
+  desc: string;
+  interestedServices: string[];
+  messageCount: number;
+}
+
 export interface TestProgress {
   id: string;
   persona: string;

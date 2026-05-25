@@ -1,11 +1,20 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { FlaskConical, Play, Square, Trash2, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
+import { FlaskConical, Play, Square, Trash2, ExternalLink } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type TestStatus = "pending" | "running" | "pass" | "fail";
+
+interface TestCaseInfo {
+  id: string;
+  persona: string;
+  name: string;
+  desc: string;
+  interestedServices: string[];
+  messageCount: number;
+}
 
 interface TestProgress {
   id: string;
@@ -35,86 +44,88 @@ interface RunnerState {
   reportPath?: string;
 }
 
-// ─── Test metadata (for showing all 72 tests even before a run) ───────────────
+// ─── Test metadata fallback (used until /api/admin/test-runner/cases responds) ───
+// The authoritative source is server/src/modules/test-runner/test-cases.ts, fetched
+// at mount time. This stub preserves grid layout on first paint.
 
-const ALL_TESTS = [
+const ALL_TESTS_FALLBACK: TestCaseInfo[] = [
   // SOLO MAN
-  { id: "SM-01", persona: "solo-man", name: "No embryos · Own sperm · All services · Intake only", messageCount: 7 },
-  { id: "SM-02", persona: "solo-man", name: "No embryos · Own sperm · Has egg donor · CLINIC_HAVE · USA", messageCount: 14 },
-  { id: "SM-03", persona: "solo-man", name: "No embryos · Own sperm · Has surrogate · CLINIC_HAVE", messageCount: 6 },
-  { id: "SM-04", persona: "solo-man", name: "No embryos · Donor sperm · All services · Intake only", messageCount: 8 },
-  { id: "SM-05", persona: "solo-man", name: "No embryos · Donor sperm · Has sperm donor · Colombia", messageCount: 8 },
-  { id: "SM-06", persona: "solo-man", name: "No embryos · Donor sperm · CLINIC_HAVE · Mexico", messageCount: 9 },
-  { id: "SM-07", persona: "solo-man", name: "No embryos · Own sperm · Mixed USA+Colombia · Twins", messageCount: 10 },
-  { id: "SM-08", persona: "solo-man", name: "Has embryos (2, tested) · Own sperm · Has egg donor · USA", messageCount: 17 },
-  { id: "SM-09", persona: "solo-man", name: "Has embryos (1, not tested) · CLINIC_HAVE · Colombia", messageCount: 10 },
-  { id: "SM-10", persona: "solo-man", name: "Has embryos · Step 3b → Use existing · Intake only", messageCount: 6 },
-  { id: "SM-11", persona: "solo-man", name: "Has embryos · Step 3b → Create new embryos · Intake only", messageCount: 7 },
-  { id: "SM-12", persona: "solo-man", name: "No embryos · Own sperm · CLINIC_HAVE · USA · Cost education", messageCount: 9 },
-  { id: "SM-13", persona: "solo-man", name: "LGBTQ+ · No embryos · Own sperm · CLINIC_HAVE · USA · Twins", messageCount: 12 },
-  { id: "SM-14", persona: "solo-man", name: "No embryos · Donor sperm · CLINIC_HAVE · Colombia", messageCount: 9 },
+  { id: "SM-01", persona: "solo-man", name: "No embryos · Own sperm · All services · Intake only", messageCount: 7, desc: "", interestedServices: [] },
+  { id: "SM-02", persona: "solo-man", name: "No embryos · Own sperm · Has egg donor · CLINIC_HAVE · USA", messageCount: 14, desc: "", interestedServices: [] },
+  { id: "SM-03", persona: "solo-man", name: "No embryos · Own sperm · Has surrogate · CLINIC_HAVE", messageCount: 6, desc: "", interestedServices: [] },
+  { id: "SM-04", persona: "solo-man", name: "No embryos · Donor sperm · All services · Intake only", messageCount: 8, desc: "", interestedServices: [] },
+  { id: "SM-05", persona: "solo-man", name: "No embryos · Donor sperm · Has sperm donor · Colombia", messageCount: 8, desc: "", interestedServices: [] },
+  { id: "SM-06", persona: "solo-man", name: "No embryos · Donor sperm · CLINIC_HAVE · Mexico", messageCount: 9, desc: "", interestedServices: [] },
+  { id: "SM-07", persona: "solo-man", name: "No embryos · Own sperm · Mixed USA+Colombia · Twins", messageCount: 10, desc: "", interestedServices: [] },
+  { id: "SM-08", persona: "solo-man", name: "Has embryos (2, tested) · Own sperm · Has egg donor · USA", messageCount: 17, desc: "", interestedServices: [] },
+  { id: "SM-09", persona: "solo-man", name: "Has embryos (1, not tested) · CLINIC_HAVE · Colombia", messageCount: 10, desc: "", interestedServices: [] },
+  { id: "SM-10", persona: "solo-man", name: "Has embryos · Step 3b → Use existing · Intake only", messageCount: 6, desc: "", interestedServices: [] },
+  { id: "SM-11", persona: "solo-man", name: "Has embryos · Step 3b → Create new embryos · Intake only", messageCount: 7, desc: "", interestedServices: [] },
+  { id: "SM-12", persona: "solo-man", name: "No embryos · Own sperm · CLINIC_HAVE · USA · Cost education", messageCount: 9, desc: "", interestedServices: [] },
+  { id: "SM-13", persona: "solo-man", name: "LGBTQ+ · No embryos · Own sperm · CLINIC_HAVE · USA · Twins", messageCount: 12, desc: "", interestedServices: [] },
+  { id: "SM-14", persona: "solo-man", name: "No embryos · Donor sperm · CLINIC_HAVE · Colombia", messageCount: 9, desc: "", interestedServices: [] },
   // SOLO WOMAN
-  { id: "SW-01", persona: "solo-woman", name: "No embryos · Own eggs · Self carry · Needs sperm donor", messageCount: 10 },
-  { id: "SW-02", persona: "solo-woman", name: "No embryos · Own eggs · Self carry · Has sperm donor · Clinic", messageCount: 11 },
-  { id: "SW-03", persona: "solo-woman", name: "No embryos · Donor eggs · Self carry · Needs egg+sperm donor", messageCount: 13 },
-  { id: "SW-04", persona: "solo-woman", name: "No embryos · Donor eggs · Has egg donor · Self carry · Sperm", messageCount: 12 },
-  { id: "SW-05", persona: "solo-woman", name: "No embryos · Own eggs · Surrogate · All services · USA", messageCount: 14 },
-  { id: "SW-06", persona: "solo-woman", name: "No embryos · Own eggs · Has surrogate · Needs sperm donor", messageCount: 12 },
-  { id: "SW-07", persona: "solo-woman", name: "No embryos · Donor eggs · Surrogate · All three · USA · Twins", messageCount: 14 },
-  { id: "SW-08", persona: "solo-woman", name: "No embryos · Donor eggs · Surrogate · All services · Colombia", messageCount: 12 },
-  { id: "SW-09", persona: "solo-woman", name: "Has embryos (2, tested) · Own eggs · Self carry", messageCount: 9 },
-  { id: "SW-10", persona: "solo-woman", name: "Has embryos · Step 1c → Uses existing · Surrogate · USA", messageCount: 10 },
-  { id: "SW-11", persona: "solo-woman", name: "Has embryos · Step 1c → Create new embryos · Surrogate", messageCount: 13 },
-  { id: "SW-12", persona: "solo-woman", name: "No embryos · Own eggs · Surrogate · USA · No preference", messageCount: 8 },
-  { id: "SW-13", persona: "solo-woman", name: "No embryos · Donor eggs · Surrogate · Mexico", messageCount: 11 },
-  { id: "SW-14", persona: "solo-woman", name: "LGBTQ+ · No embryos · Own eggs · Self carry · Sperm donor", messageCount: 12 },
+  { id: "SW-01", persona: "solo-woman", name: "No embryos · Own eggs · Self carry · Needs sperm donor", messageCount: 10, desc: "", interestedServices: [] },
+  { id: "SW-02", persona: "solo-woman", name: "No embryos · Own eggs · Self carry · Has sperm donor · Clinic", messageCount: 11, desc: "", interestedServices: [] },
+  { id: "SW-03", persona: "solo-woman", name: "No embryos · Donor eggs · Self carry · Needs egg+sperm donor", messageCount: 13, desc: "", interestedServices: [] },
+  { id: "SW-04", persona: "solo-woman", name: "No embryos · Donor eggs · Has egg donor · Self carry · Sperm", messageCount: 12, desc: "", interestedServices: [] },
+  { id: "SW-05", persona: "solo-woman", name: "No embryos · Own eggs · Surrogate · All services · USA", messageCount: 14, desc: "", interestedServices: [] },
+  { id: "SW-06", persona: "solo-woman", name: "No embryos · Own eggs · Has surrogate · Needs sperm donor", messageCount: 12, desc: "", interestedServices: [] },
+  { id: "SW-07", persona: "solo-woman", name: "No embryos · Donor eggs · Surrogate · All three · USA · Twins", messageCount: 14, desc: "", interestedServices: [] },
+  { id: "SW-08", persona: "solo-woman", name: "No embryos · Donor eggs · Surrogate · All services · Colombia", messageCount: 12, desc: "", interestedServices: [] },
+  { id: "SW-09", persona: "solo-woman", name: "Has embryos (2, tested) · Own eggs · Self carry", messageCount: 9, desc: "", interestedServices: [] },
+  { id: "SW-10", persona: "solo-woman", name: "Has embryos · Step 1c → Uses existing · Surrogate · USA", messageCount: 10, desc: "", interestedServices: [] },
+  { id: "SW-11", persona: "solo-woman", name: "Has embryos · Step 1c → Create new embryos · Surrogate", messageCount: 13, desc: "", interestedServices: [] },
+  { id: "SW-12", persona: "solo-woman", name: "No embryos · Own eggs · Surrogate · USA · No preference", messageCount: 8, desc: "", interestedServices: [] },
+  { id: "SW-13", persona: "solo-woman", name: "No embryos · Donor eggs · Surrogate · Mexico", messageCount: 11, desc: "", interestedServices: [] },
+  { id: "SW-14", persona: "solo-woman", name: "LGBTQ+ · No embryos · Own eggs · Self carry · Sperm donor", messageCount: 12, desc: "", interestedServices: [] },
   // TWO DADS
-  { id: "TD-01", persona: "two-dads", name: "No embryos · Own sperm · Needs egg+surrogate · Has clinic · USA", messageCount: 13 },
-  { id: "TD-02", persona: "two-dads", name: "No embryos · Partner sperm · All services · USA · Twins", messageCount: 13 },
-  { id: "TD-03", persona: "two-dads", name: "No embryos · Donor sperm · All services · USA", messageCount: 14 },
-  { id: "TD-04", persona: "two-dads", name: "No embryos · Has sperm donor · Egg+surrogate · Colombia", messageCount: 10 },
-  { id: "TD-05", persona: "two-dads", name: "No embryos · Own sperm · Has egg donor · USA · Pro-life", messageCount: 9 },
-  { id: "TD-06", persona: "two-dads", name: "No embryos · Own sperm · Needs egg donor · Has surrogate", messageCount: 11 },
-  { id: "TD-07", persona: "two-dads", name: "Has embryos (2, tested) · Own sperm · Surrogate · USA", messageCount: 10 },
-  { id: "TD-08", persona: "two-dads", name: "Has embryos (3) · Partner sperm · Surrogate · Colombia", messageCount: 9 },
-  { id: "TD-09", persona: "two-dads", name: "Has embryos · Registered sperm donor · Step 3b → Use existing", messageCount: 8 },
-  { id: "TD-10", persona: "two-dads", name: "No embryos · Partner sperm · Egg+surrogate · Mexico", messageCount: 9 },
-  { id: "TD-11", persona: "two-dads", name: "No embryos · Own sperm · Mixed USA+Colombia · Twins", messageCount: 9 },
-  { id: "TD-12", persona: "two-dads", name: "No embryos · Donor sperm · All services · USA · No preference", messageCount: 13 },
+  { id: "TD-01", persona: "two-dads", name: "No embryos · Own sperm · Needs egg+surrogate · Has clinic · USA", messageCount: 13, desc: "", interestedServices: [] },
+  { id: "TD-02", persona: "two-dads", name: "No embryos · Partner sperm · All services · USA · Twins", messageCount: 13, desc: "", interestedServices: [] },
+  { id: "TD-03", persona: "two-dads", name: "No embryos · Donor sperm · All services · USA", messageCount: 14, desc: "", interestedServices: [] },
+  { id: "TD-04", persona: "two-dads", name: "No embryos · Has sperm donor · Egg+surrogate · Colombia", messageCount: 10, desc: "", interestedServices: [] },
+  { id: "TD-05", persona: "two-dads", name: "No embryos · Own sperm · Has egg donor · USA · Pro-life", messageCount: 9, desc: "", interestedServices: [] },
+  { id: "TD-06", persona: "two-dads", name: "No embryos · Own sperm · Needs egg donor · Has surrogate", messageCount: 11, desc: "", interestedServices: [] },
+  { id: "TD-07", persona: "two-dads", name: "Has embryos (2, tested) · Own sperm · Surrogate · USA", messageCount: 10, desc: "", interestedServices: [] },
+  { id: "TD-08", persona: "two-dads", name: "Has embryos (3) · Partner sperm · Surrogate · Colombia", messageCount: 9, desc: "", interestedServices: [] },
+  { id: "TD-09", persona: "two-dads", name: "Has embryos · Registered sperm donor · Step 3b → Use existing", messageCount: 8, desc: "", interestedServices: [] },
+  { id: "TD-10", persona: "two-dads", name: "No embryos · Partner sperm · Egg+surrogate · Mexico", messageCount: 9, desc: "", interestedServices: [] },
+  { id: "TD-11", persona: "two-dads", name: "No embryos · Own sperm · Mixed USA+Colombia · Twins", messageCount: 9, desc: "", interestedServices: [] },
+  { id: "TD-12", persona: "two-dads", name: "No embryos · Donor sperm · All services · USA · No preference", messageCount: 13, desc: "", interestedServices: [] },
   // TWO MOMS
-  { id: "TM-01", persona: "two-moms", name: "No embryos · Partner A eggs · Partner A carries · Sperm donor · Clinic", messageCount: 12 },
-  { id: "TM-02", persona: "two-moms", name: "No embryos · Partner A eggs · Self carry · Has sperm donor · Clinic", messageCount: 10 },
-  { id: "TM-03", persona: "two-moms", name: "No embryos · Reciprocal IVF (Partner B eggs) · Sperm donor", messageCount: 12 },
-  { id: "TM-04", persona: "two-moms", name: "No embryos · Donor eggs · Self carry · Egg+sperm donor · Clinic", messageCount: 13 },
-  { id: "TM-05", persona: "two-moms", name: "No embryos · Has egg donor · Self carry · Sperm donor", messageCount: 10 },
-  { id: "TM-06", persona: "two-moms", name: "No embryos · Partner A eggs · Partner B carries · Sperm donor", messageCount: 12 },
-  { id: "TM-07", persona: "two-moms", name: "No embryos · Partner B eggs · Partner B carries · Sperm donor", messageCount: 12 },
-  { id: "TM-08", persona: "two-moms", name: "No embryos · Own eggs · Surrogate · Sperm donor · USA", messageCount: 13 },
-  { id: "TM-09", persona: "two-moms", name: "No embryos · Donor eggs · Surrogate · All services · USA · Twins", messageCount: 13 },
-  { id: "TM-10", persona: "two-moms", name: "No embryos · Partner B eggs · Surrogate · Colombia · Sperm donor", messageCount: 11 },
-  { id: "TM-11", persona: "two-moms", name: "Has embryos (2, tested) · Partner A eggs · Partner B carries", messageCount: 9 },
-  { id: "TM-12", persona: "two-moms", name: "Has embryos · Step 1c → Uses existing · Surrogate · USA", messageCount: 9 },
-  { id: "TM-13", persona: "two-moms", name: "No embryos · Donor eggs · Has surrogate · Sperm donor · Clinic", messageCount: 13 },
+  { id: "TM-01", persona: "two-moms", name: "No embryos · Partner A eggs · Partner A carries · Sperm donor · Clinic", messageCount: 12, desc: "", interestedServices: [] },
+  { id: "TM-02", persona: "two-moms", name: "No embryos · Partner A eggs · Self carry · Has sperm donor · Clinic", messageCount: 10, desc: "", interestedServices: [] },
+  { id: "TM-03", persona: "two-moms", name: "No embryos · Reciprocal IVF (Partner B eggs) · Sperm donor", messageCount: 12, desc: "", interestedServices: [] },
+  { id: "TM-04", persona: "two-moms", name: "No embryos · Donor eggs · Self carry · Egg+sperm donor · Clinic", messageCount: 13, desc: "", interestedServices: [] },
+  { id: "TM-05", persona: "two-moms", name: "No embryos · Has egg donor · Self carry · Sperm donor", messageCount: 10, desc: "", interestedServices: [] },
+  { id: "TM-06", persona: "two-moms", name: "No embryos · Partner A eggs · Partner B carries · Sperm donor", messageCount: 12, desc: "", interestedServices: [] },
+  { id: "TM-07", persona: "two-moms", name: "No embryos · Partner B eggs · Partner B carries · Sperm donor", messageCount: 12, desc: "", interestedServices: [] },
+  { id: "TM-08", persona: "two-moms", name: "No embryos · Own eggs · Surrogate · Sperm donor · USA", messageCount: 13, desc: "", interestedServices: [] },
+  { id: "TM-09", persona: "two-moms", name: "No embryos · Donor eggs · Surrogate · All services · USA · Twins", messageCount: 13, desc: "", interestedServices: [] },
+  { id: "TM-10", persona: "two-moms", name: "No embryos · Partner B eggs · Surrogate · Colombia · Sperm donor", messageCount: 11, desc: "", interestedServices: [] },
+  { id: "TM-11", persona: "two-moms", name: "Has embryos (2, tested) · Partner A eggs · Partner B carries", messageCount: 9, desc: "", interestedServices: [] },
+  { id: "TM-12", persona: "two-moms", name: "Has embryos · Step 1c → Uses existing · Surrogate · USA", messageCount: 9, desc: "", interestedServices: [] },
+  { id: "TM-13", persona: "two-moms", name: "No embryos · Donor eggs · Has surrogate · Sperm donor · Clinic", messageCount: 13, desc: "", interestedServices: [] },
   // MAN & WOMAN
-  { id: "MW-01", persona: "man-woman", name: "No embryos · Her eggs · His sperm · She carries · Clinic (Woman)", messageCount: 9 },
-  { id: "MW-02", persona: "man-woman", name: "No embryos · Her eggs · His sperm · She carries · Clinic (Man)", messageCount: 9 },
-  { id: "MW-03", persona: "man-woman", name: "No embryos · Donor eggs · His sperm · She carries · Egg+clinic (Woman)", messageCount: 12 },
-  { id: "MW-04", persona: "man-woman", name: "No embryos · Has egg donor · His sperm · She carries · Clinic (Man)", messageCount: 10 },
-  { id: "MW-05", persona: "man-woman", name: "No embryos · Her eggs · Donor sperm · She carries · Sperm+clinic", messageCount: 12 },
-  { id: "MW-06", persona: "man-woman", name: "No embryos · Her eggs · Has sperm donor · Has clinic (Man)", messageCount: 8 },
-  { id: "MW-07", persona: "man-woman", name: "No embryos · Donor eggs · Donor sperm · She carries · All", messageCount: 13 },
-  { id: "MW-08", persona: "man-woman", name: "No embryos · Her eggs · His sperm · Surrogate · USA (Woman)", messageCount: 12 },
-  { id: "MW-09", persona: "man-woman", name: "No embryos · Her eggs · His sperm · Surrogate · USA · Twins (Man)", messageCount: 8 },
-  { id: "MW-10", persona: "man-woman", name: "No embryos · Donor eggs · His sperm · Surrogate · USA (Woman)", messageCount: 13 },
-  { id: "MW-11", persona: "man-woman", name: "No embryos · Her eggs · Donor sperm · Has surrogate · Clinic", messageCount: 12 },
-  { id: "MW-12", persona: "man-woman", name: "No embryos · All donor · Surrogate · USA · Pro-life (Man)", messageCount: 14 },
-  { id: "MW-13", persona: "man-woman", name: "No embryos · All donor · Surrogate · Colombia (Woman)", messageCount: 12 },
-  { id: "MW-14", persona: "man-woman", name: "Has embryos (2, tested) · Her eggs · His sperm · She carries", messageCount: 11 },
-  { id: "MW-15", persona: "man-woman", name: "Has embryos (4, tested) · Surrogate · USA · Pro-choice (Man)", messageCount: 10 },
-  { id: "MW-16", persona: "man-woman", name: "Has embryos · Step 1c → Use existing · She carries (Woman)", messageCount: 10 },
-  { id: "MW-17", persona: "man-woman", name: "Has embryos · Step 1c → New embryos · Surrogate · USA", messageCount: 14 },
-  { id: "MW-18", persona: "man-woman", name: "Has embryos · Step 3b → Use existing · She carries", messageCount: 9 },
-  { id: "MW-19", persona: "man-woman", name: "No embryos · Donor eggs · His sperm · Surrogate · Mexico (Man)", messageCount: 13 },
+  { id: "MW-01", persona: "man-woman", name: "No embryos · Her eggs · His sperm · She carries · Clinic (Woman)", messageCount: 9, desc: "", interestedServices: [] },
+  { id: "MW-02", persona: "man-woman", name: "No embryos · Her eggs · His sperm · She carries · Clinic (Man)", messageCount: 9, desc: "", interestedServices: [] },
+  { id: "MW-03", persona: "man-woman", name: "No embryos · Donor eggs · His sperm · She carries · Egg+clinic (Woman)", messageCount: 12, desc: "", interestedServices: [] },
+  { id: "MW-04", persona: "man-woman", name: "No embryos · Has egg donor · His sperm · She carries · Clinic (Man)", messageCount: 10, desc: "", interestedServices: [] },
+  { id: "MW-05", persona: "man-woman", name: "No embryos · Her eggs · Donor sperm · She carries · Sperm+clinic", messageCount: 12, desc: "", interestedServices: [] },
+  { id: "MW-06", persona: "man-woman", name: "No embryos · Her eggs · Has sperm donor · Has clinic (Man)", messageCount: 8, desc: "", interestedServices: [] },
+  { id: "MW-07", persona: "man-woman", name: "No embryos · Donor eggs · Donor sperm · She carries · All", messageCount: 13, desc: "", interestedServices: [] },
+  { id: "MW-08", persona: "man-woman", name: "No embryos · Her eggs · His sperm · Surrogate · USA (Woman)", messageCount: 12, desc: "", interestedServices: [] },
+  { id: "MW-09", persona: "man-woman", name: "No embryos · Her eggs · His sperm · Surrogate · USA · Twins (Man)", messageCount: 8, desc: "", interestedServices: [] },
+  { id: "MW-10", persona: "man-woman", name: "No embryos · Donor eggs · His sperm · Surrogate · USA (Woman)", messageCount: 13, desc: "", interestedServices: [] },
+  { id: "MW-11", persona: "man-woman", name: "No embryos · Her eggs · Donor sperm · Has surrogate · Clinic", messageCount: 12, desc: "", interestedServices: [] },
+  { id: "MW-12", persona: "man-woman", name: "No embryos · All donor · Surrogate · USA · Pro-life (Man)", messageCount: 14, desc: "", interestedServices: [] },
+  { id: "MW-13", persona: "man-woman", name: "No embryos · All donor · Surrogate · Colombia (Woman)", messageCount: 12, desc: "", interestedServices: [] },
+  { id: "MW-14", persona: "man-woman", name: "Has embryos (2, tested) · Her eggs · His sperm · She carries", messageCount: 11, desc: "", interestedServices: [] },
+  { id: "MW-15", persona: "man-woman", name: "Has embryos (4, tested) · Surrogate · USA · Pro-choice (Man)", messageCount: 10, desc: "", interestedServices: [] },
+  { id: "MW-16", persona: "man-woman", name: "Has embryos · Step 1c → Use existing · She carries (Woman)", messageCount: 10, desc: "", interestedServices: [] },
+  { id: "MW-17", persona: "man-woman", name: "Has embryos · Step 1c → New embryos · Surrogate · USA", messageCount: 14, desc: "", interestedServices: [] },
+  { id: "MW-18", persona: "man-woman", name: "Has embryos · Step 3b → Use existing · She carries", messageCount: 9, desc: "", interestedServices: [] },
+  { id: "MW-19", persona: "man-woman", name: "No embryos · Donor eggs · His sperm · Surrogate · Mexico (Man)", messageCount: 13, desc: "", interestedServices: [] },
 ];
 
 const PERSONAS = [
@@ -161,8 +172,16 @@ export default function AdminTestRunnerPage() {
     tests: {}, passCount: 0, failCount: 0, totalCount: 0, log: [],
   });
   const [connected, setConnected] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showLog, setShowLog] = useState(false);
+  const [testCases, setTestCases] = useState<TestCaseInfo[]>(ALL_TESTS_FALLBACK);
+
+  // Fetch full test metadata from backend on mount (names, descs, services)
+  useEffect(() => {
+    fetch("/api/admin/test-runner/cases", { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (Array.isArray(data)) setTestCases(data); })
+      .catch(() => {});
+  }, []);
   const logRef = useRef<HTMLDivElement>(null);
   const esRef = useRef<EventSource | null>(null);
 
@@ -265,7 +284,7 @@ export default function AdminTestRunnerPage() {
 
   // Derived display
   const isRunning = state.status === "running";
-  const visibleTests = persona === "all" ? ALL_TESTS : ALL_TESTS.filter(t => t.persona === persona);
+  const visibleTests = persona === "all" ? testCases : testCases.filter(t => t.persona === persona);
 
   // Compute stats from actual test states (not counters which can overflow)
   const allTestStates = Object.values(state.tests);
@@ -287,8 +306,7 @@ export default function AdminTestRunnerPage() {
     <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto" }}>
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
-        .test-card { transition: border-color 0.2s, background 0.2s; cursor: pointer; }
-        .test-card:hover { border-color: hsl(var(--primary) / 0.4) !important; }
+        .test-card { transition: border-color 0.2s, background 0.2s; }
       `}</style>
 
       {/* Header */}
@@ -413,35 +431,42 @@ export default function AdminTestRunnerPage() {
         ))}
       </div>
 
-      {/* Test grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "10px" }}>
+      {/* Test grid - cards always show full details (no click-to-expand) */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: "12px" }}>
         {visibleTests.map(tc => {
           const ts = getTestState(tc.id);
           const status: TestStatus = ts?.status || "pending";
           const errors = ts?.errors || [];
           const dur = ts?.durationMs || 0;
-          const isExpanded = expandedId === tc.id;
+          // Backend-provided name has the "MW-01: " prefix; strip it for display (id chip already shows the code)
+          const displayName = tc.name.replace(new RegExp(`^${tc.id}:?\\s*`), "");
 
           return (
             <div key={tc.id} className="test-card"
-              onClick={() => setExpandedId(isExpanded ? null : tc.id)}
               style={{
                 border: `1px solid ${statusBorder(status)}`,
                 borderRadius: "8px",
                 background: statusBg(status),
                 overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
               }}>
               {/* Card header */}
               <div style={{ padding: "10px 12px" }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
                   <StatusIcon status={status} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "2px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px", flexWrap: "wrap" }}>
                       <span style={{
                         fontSize: "10px", fontWeight: "700", fontFamily: "monospace",
                         background: "hsl(var(--muted))", padding: "1px 5px", borderRadius: "3px",
                         color: "hsl(var(--foreground))",
                       }}>{tc.id}</span>
+                      <span style={{
+                        fontSize: "10px", fontFamily: "monospace",
+                        background: "hsl(var(--muted) / 0.5)", padding: "1px 5px", borderRadius: "3px",
+                        color: "hsl(var(--muted-foreground))",
+                      }}>{tc.messageCount} msgs</span>
                       {dur > 0 && (
                         <span style={{ fontSize: "10px", color: "hsl(var(--muted-foreground))" }}>
                           {(dur / 1000).toFixed(1)}s
@@ -454,18 +479,38 @@ export default function AdminTestRunnerPage() {
                         }}>{errors.length} error{errors.length > 1 ? "s" : ""}</span>
                       )}
                     </div>
-                    <div style={{ fontSize: "12px", fontWeight: "500", color: "hsl(var(--foreground))", lineHeight: "1.4" }}>
-                      {tc.name}
+                    <div style={{ fontSize: "12px", fontWeight: "600", color: "hsl(var(--foreground))", lineHeight: "1.4" }}>
+                      {displayName}
                     </div>
-                  </div>
-                  <div style={{ color: "hsl(var(--muted-foreground))", flexShrink: 0 }}>
-                    {isExpanded ? <ChevronUp style={{ width: "14px", height: "14px" }} /> : <ChevronDown style={{ width: "14px", height: "14px" }} />}
                   </div>
                 </div>
 
+                {/* Description (from test-cases.ts desc field) */}
+                {tc.desc && (
+                  <div style={{ fontSize: "11px", color: "hsl(var(--muted-foreground))", marginTop: "6px", lineHeight: "1.4", fontStyle: "italic" }}>
+                    {tc.desc}
+                  </div>
+                )}
+
+                {/* interestedServices chips */}
+                {tc.interestedServices && tc.interestedServices.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "6px" }}>
+                    {tc.interestedServices.map(svc => (
+                      <span key={svc} style={{
+                        fontSize: "10px",
+                        background: "hsl(var(--primary) / 0.1)",
+                        color: "hsl(var(--primary))",
+                        padding: "1px 6px",
+                        borderRadius: "10px",
+                        border: "1px solid hsl(var(--primary) / 0.2)",
+                      }}>{svc}</span>
+                    ))}
+                  </div>
+                )}
+
                 {/* Progress bar + live status (running only) */}
                 {status === "running" && ts && (
-                  <div style={{ marginTop: "6px" }}>
+                  <div style={{ marginTop: "8px" }}>
                     {ts.totalMessages > 0 && (
                       <div style={{ height: "3px", background: "hsl(var(--muted))", borderRadius: "2px", overflow: "hidden", marginBottom: "4px" }}>
                         <div style={{ height: "100%", width: `${Math.round(((ts.currentMessage || 0) / ts.totalMessages) * 100)}%`, background: "hsl(var(--primary))", borderRadius: "2px", transition: "width 0.3s" }} />
@@ -483,27 +528,28 @@ export default function AdminTestRunnerPage() {
                 )}
               </div>
 
-              {/* Status detail - always visible for failed tests (so errors are seen at-a-glance);
-                  pass/pending/running details still gated behind expansion to keep the grid compact. */}
-              {(errors.length > 0 || isExpanded) && (
-                <div style={{ borderTop: "1px solid hsl(var(--border))", padding: "10px 12px", background: "hsl(var(--background) / 0.5)" }}>
-                  {errors.length > 0 ? (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                      {errors.map((e, i) => (
-                        <div key={i} style={{ fontSize: "11px", color: "hsl(var(--brand-error))", padding: "3px 6px", background: "hsl(var(--brand-error) / 0.08)", borderRadius: "4px", fontFamily: "monospace" }}>
-                          {e}
-                        </div>
-                      ))}
-                    </div>
-                  ) : status === "pass" ? (
-                    <div style={{ fontSize: "11px", color: "hsl(var(--brand-success))" }}>All assertions passed ✓</div>
-                  ) : (
-                    <div style={{ fontSize: "11px", color: "hsl(var(--muted-foreground))" }}>
-                      {status === "pending" ? "Waiting to run..." : status === "running" ? `Message ${ts?.currentMessage || 0} of ${tc.messageCount}` : "No details"}
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* Status detail - always visible */}
+              <div style={{ borderTop: "1px solid hsl(var(--border))", padding: "8px 12px", background: "hsl(var(--background) / 0.5)", marginTop: "auto" }}>
+                {errors.length > 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    {errors.map((e, i) => (
+                      <div key={i} style={{ fontSize: "11px", color: "hsl(var(--brand-error))", padding: "3px 6px", background: "hsl(var(--brand-error) / 0.08)", borderRadius: "4px", fontFamily: "monospace" }}>
+                        {e}
+                      </div>
+                    ))}
+                  </div>
+                ) : status === "pass" ? (
+                  <div style={{ fontSize: "11px", color: "hsl(var(--brand-success))", fontWeight: "500" }}>All assertions passed ✓</div>
+                ) : status === "running" ? (
+                  <div style={{ fontSize: "11px", color: "hsl(var(--primary))" }}>
+                    Running — message {ts?.currentMessage || 0} of {ts?.totalMessages || tc.messageCount}
+                  </div>
+                ) : status === "pending" ? (
+                  <div style={{ fontSize: "11px", color: "hsl(var(--muted-foreground))" }}>Waiting to run...</div>
+                ) : (
+                  <div style={{ fontSize: "11px", color: "hsl(var(--muted-foreground))" }}>No details</div>
+                )}
+              </div>
             </div>
           );
         })}

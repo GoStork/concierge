@@ -535,6 +535,7 @@ export function getTestCaseInfo(): TestCaseInfo[] {
     persona: tc.persona,
     name: tc.name,
     desc: tc.desc,
+    interestedServices: tc.interestedServices,
     messageCount: tc.messageCount,
   }));
 }

@@ -15,6 +15,7 @@ import {
 import { Request, Response } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { TestRunnerService } from "./test-runner.service";
+import { getTestCaseInfo } from "./test-cases";
 
 @Controller()
 export class TestRunnerController {
@@ -42,6 +43,18 @@ export class TestRunnerController {
   getState(@Req() req: Request) {
     this.assertAdmin(req);
     return this.testRunnerService.getState();
+  }
+
+  // ─── GET /api/admin/test-runner/cases ─────────────────────────────────────
+  // Returns full metadata (name, desc, interestedServices, messageCount) for
+  // all 72 test cases. Used by the admin UI to render expanded cards without
+  // duplicating the test definitions.
+
+  @Get("api/admin/test-runner/cases")
+  @UseGuards(SessionOrJwtGuard)
+  getCases(@Req() req: Request) {
+    this.assertAdmin(req);
+    return getTestCaseInfo();
   }
 
   // ─── GET /api/admin/test-runner/stream (SSE) ──────────────────────────────
