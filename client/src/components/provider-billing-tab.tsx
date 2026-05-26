@@ -218,7 +218,7 @@ export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "
   if (loadingConfig) return <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>;
 
   return (
-    <div className="space-y-8 max-w-xl">
+    <div className="space-y-8">
 
       {/* Fee configuration */}
       <section className="space-y-4">
