@@ -130,7 +130,7 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
 
         {/* Fee type toggle */}
         <div className="space-y-2">
-          <Label>Fee Type</Label>
+          <Label>GoStork Referral Fee Type</Label>
           <div className="flex gap-2">
             <button
               onClick={() => setFeeType("PERCENTAGE")}
@@ -141,7 +141,7 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
                 borderColor: feeType === "PERCENTAGE" ? "hsl(var(--primary))" : "hsl(var(--border))",
               }}
             >
-              <Percent className="w-4 h-4" /> Percentage
+              <Percent className="w-4 h-4" /> Percentage From Total
             </button>
             <button
               onClick={() => setFeeType("FLAT")}
@@ -158,12 +158,9 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
         </div>
 
         {/* Fee amount input */}
-        <div className="pt-1">
-          <h4 className="text-sm font-semibold">GoStork Referral Fee</h4>
-        </div>
         {feeType === "PERCENTAGE" ? (
           <div className="space-y-1.5">
-            <Label>Percentage (%)</Label>
+            <Label>GoStork Referral Percentage (%)</Label>
             <Input
               type="number"
               min="0"
