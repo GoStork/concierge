@@ -47,7 +47,12 @@ export function MeetingReminderPopup() {
   const [visible, setVisible] = useState(false);
   const brandColor = brand?.primaryColor || "#26584A";
 
-  const isOnVideoPage = location.pathname.startsWith("/video/") || location.pathname.startsWith("/room/");
+  // Suppress on routes where a meeting popup would interrupt - video calls,
+  // and the Stripe payment page (the parent has navigated there to pay, not
+  // to join a call).
+  const isOnVideoPage = location.pathname.startsWith("/video/")
+    || location.pathname.startsWith("/room/")
+    || location.pathname.startsWith("/pay/");
 
   const checkImminent = useCallback(async () => {
     if (!user || isOnVideoPage) return;

@@ -114,7 +114,23 @@ export function InvoiceCard({ data, isParent = true }: InvoiceCardProps) {
             className="w-full"
             style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}
           >
-            <a href={data.paymentUrl} target="_blank" rel="noopener noreferrer">
+            <a
+              href={(() => {
+                // Carry the current chat URL through to the payment page so
+                // "Return to GoStork" after a successful payment lands the
+                // parent back in the exact chat they were in, not the
+                // generic /chat landing.
+                try {
+                  const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
+                  const sep = data.paymentUrl.includes("?") ? "&" : "?";
+                  return `${data.paymentUrl}${sep}returnTo=${returnTo}`;
+                } catch {
+                  return data.paymentUrl;
+                }
+              })()}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
               Pay Now Securely
             </a>

@@ -664,6 +664,7 @@ export class BillingService {
         where: { id: invoice.id },
         data: { status: "AUTHORIZED", authorizedAt: new Date(), paymentMethod: "CARD" },
       });
+      await this.reflectPaymentInChat(invoice.id, "AUTHORIZED");
       this.logger.log(`Invoice ${invoice.id} AUTHORIZED via Stripe (AT_CLEARANCE)`);
       return;
     }
@@ -697,8 +698,74 @@ export class BillingService {
       },
     });
 
+    await this.reflectPaymentInChat(invoice.id, "PAID");
     await this.notifyAdminInvoicePaid(invoice.id);
     this.logger.log(`Invoice ${invoice.id} marked PAID via Stripe`);
+  }
+
+  /**
+   * After an invoice transitions to PAID (or AUTHORIZED), keep the chat in
+   * sync with reality:
+   *   1. Update the existing invoice card message's uiCardData.status so the
+   *      "Pay Now Securely" CTA disappears and the card shows the paid state
+   *      ("Payment complete" / "Funds securely held").
+   *   2. Post a fresh system message in the chat confirming the payment so
+   *      the parent and provider both see explicit confirmation.
+   */
+  private async reflectPaymentInChat(
+    invoiceId: string,
+    newStatus: "PAID" | "AUTHORIZED",
+  ) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { parentUser: true },
+    });
+    if (!invoice) return;
+
+    // Find the existing invoice card message for this invoice and update its
+    // uiCardData.status. Prisma JSON filtering via path lets us target the
+    // exact card row without scanning the whole session.
+    try {
+      const existingCardMsg = await this.prisma.aiChatMessage.findFirst({
+        where: {
+          sessionId: invoice.sessionId,
+          uiCardType: "invoice",
+          uiCardData: { path: ["invoiceId"], equals: invoice.id },
+        },
+        select: { id: true, uiCardData: true },
+      });
+      if (existingCardMsg) {
+        const updatedData = {
+          ...((existingCardMsg.uiCardData as any) || {}),
+          status: newStatus,
+        };
+        await this.prisma.aiChatMessage.update({
+          where: { id: existingCardMsg.id },
+          data: { uiCardData: updatedData },
+        });
+      }
+    } catch (e: any) {
+      this.logger.warn(`Failed to update invoice card status in chat: ${e?.message}`);
+    }
+
+    // Post a confirmation system message so the chat thread shows explicit
+    // proof of payment to both parent and provider.
+    try {
+      const amount = formatCents(invoice.serviceAmount, invoice.currency);
+      const parentLabel = invoice.parentUser?.firstName || invoice.parentUser?.name || "The parent";
+      const verb = newStatus === "AUTHORIZED" ? "authorized" : "paid";
+      await this.prisma.aiChatMessage.create({
+        data: {
+          sessionId: invoice.sessionId,
+          role: "assistant",
+          content: `${parentLabel} has ${verb} ${amount} for ${invoice.serviceType} via ${invoice.providerName}. Thank you!`,
+          senderType: "system",
+          senderName: "GoStork",
+        },
+      });
+    } catch (e: any) {
+      this.logger.warn(`Failed to post payment confirmation message: ${e?.message}`);
+    }
   }
 
   // ─── Admin notifications on payment ─────────────────────────────────────────
@@ -764,6 +831,7 @@ export class BillingService {
     });
 
     this.logger.log(`Invoice ${invoiceId} manually marked PAID by admin ${adminUserId}`);
+    await this.reflectPaymentInChat(invoiceId, "PAID");
     await this.notifyAdminInvoicePaid(invoiceId);
     return updated;
   }

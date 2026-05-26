@@ -103,10 +103,14 @@ function StripePaymentForm({ invoice, isMock, onSuccess }: {
     if (!stripe || !elements) return;
     setProcessing(true);
 
+    // Preserve the chat returnTo across the Stripe redirect so the
+    // success state can navigate the parent back to the exact chat.
+    const incomingReturnTo = new URLSearchParams(window.location.search).get("returnTo");
+    const returnToQS = incomingReturnTo ? `&returnTo=${encodeURIComponent(incomingReturnTo)}` : "";
     const { error } = await stripe.confirmPayment({
       elements,
       confirmParams: {
-        return_url: `${window.location.origin}/pay/${invoice.paymentToken}?success=1`,
+        return_url: `${window.location.origin}/pay/${invoice.paymentToken}?success=1${returnToQS}`,
       },
       redirect: "if_required",
     });
@@ -238,6 +242,20 @@ export default function PaymentPage() {
   }
 
   if (paymentSuccess || invoice.status === "PAID") {
+    // Prefer the chat URL we were redirected from (passed via ?returnTo=) so
+    // the parent lands back in the exact chat. Fall back to the generic /chat
+    // landing when no returnTo was supplied.
+    const returnTo = new URLSearchParams(window.location.search).get("returnTo");
+    const safeReturn = (() => {
+      if (!returnTo) return "/chat";
+      try {
+        const decoded = decodeURIComponent(returnTo);
+        // Only accept same-origin paths to avoid open-redirects.
+        return decoded.startsWith("/") ? decoded : "/chat";
+      } catch {
+        return "/chat";
+      }
+    })();
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-4 text-center">
         <CheckCircle2 className="w-14 h-14" style={{ color: "hsl(var(--brand-success))" }} />
@@ -245,8 +263,8 @@ export default function PaymentPage() {
         <p className="text-sm text-muted-foreground max-w-sm">
           Your payment for {invoice.providerName} has been received. You will receive a confirmation email shortly.
         </p>
-        <Button onClick={() => navigate("/chat")} style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}>
-          Return to GoStork
+        <Button onClick={() => navigate(safeReturn)} style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}>
+          Return to Chat
         </Button>
       </div>
     );
