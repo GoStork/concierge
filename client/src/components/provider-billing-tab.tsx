@@ -566,6 +566,23 @@ export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "
                 </Button>
               )}
 
+              {/* Admin: always allow editing/replacing the template, even when
+                  fully configured. Small ghost button so it doesn't compete
+                  with the primary Send/Resend action. */}
+              {!isProviderMode && w9?.templateConfigured && !w9Loading && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowW9Setup(s => !s)}
+                  className="shrink-0 text-muted-foreground"
+                  title={showW9Setup ? "Hide template setup" : "Edit W-9 template"}
+                >
+                  {showW9Setup ? <ChevronUp className="w-4 h-4 mr-1.5" /> : <ChevronDown className="w-4 h-4 mr-1.5" />}
+                  {showW9Setup ? "Hide template" : "Edit template"}
+                </Button>
+              )}
+
               {/* Provider actions */}
               {isProviderMode && w9?.templateConfigured && w9.status !== "COMPLETED" && (
                 <Button
