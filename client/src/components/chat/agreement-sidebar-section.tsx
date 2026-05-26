@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FileText, Loader2 } from "lucide-react";
+import { FileText, Loader2, X } from "lucide-react";
 import type { SessionAgreement } from "./chat-types";
 
 interface AgreementSidebarSectionProps {
@@ -22,6 +22,9 @@ interface AgreementSidebarSectionProps {
    * e.g. "/api/provider/concierge-sessions" or "/api/admin/concierge-sessions"
    */
   sessionQueryKey?: string;
+  /** Inline-above-composer mode: hides the agreement-status widget, shows X close. */
+  embedded?: boolean;
+  onClose?: () => void;
 }
 
 export function AgreementSidebarSection({
@@ -31,6 +34,8 @@ export function AgreementSidebarSection({
   relationshipStatus,
   readOnly = false,
   sessionQueryKey,
+  embedded = false,
+  onClose,
 }: AgreementSidebarSectionProps) {
   const queryClient = useQueryClient();
 
@@ -95,8 +100,22 @@ export function AgreementSidebarSection({
   const sorted = [...signers].sort(([, a], [, b]) => (a.signingOrder ?? 999) - (b.signingOrder ?? 999));
 
   return (
-    <div className="border-t pt-4 mt-4" data-testid="agreement-section">
-      <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Agreement</h4>
+    <div className={embedded ? "" : "border-t pt-4 mt-4"} data-testid="agreement-section">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="font-semibold text-sm" style={{ fontFamily: "var(--font-display)" }}>Agreement</h4>
+        {embedded && onClose && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 shrink-0"
+            aria-label="Close"
+            data-testid="btn-close-agreement"
+          >
+            <X className="w-3.5 h-3.5" />
+          </Button>
+        )}
+      </div>
 
       <Button
         size="sm"
@@ -236,8 +255,8 @@ export function AgreementSidebarSection({
         </p>
       )}
 
-      {/* Agreement status widget */}
-      {agr && agr.status !== "DRAFT" && agr.status !== "CREATED" && (() => {
+      {/* Agreement status widget - hidden in embedded mode */}
+      {!embedded && agr && agr.status !== "DRAFT" && agr.status !== "CREATED" && (() => {
         if (signers.length === 0) {
           const docLabel = agr.status === "SIGNED" ? "Signed" : "Sent";
           const docColor = agr.status === "SIGNED" ? "text-[hsl(var(--brand-success))]" : "text-muted-foreground";

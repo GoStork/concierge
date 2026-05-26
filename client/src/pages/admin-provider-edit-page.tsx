@@ -42,6 +42,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import ManageServicesDialog, { SERVICE_STATUS_STYLES } from "@/components/manage-services-dialog";
 
 type ScrapedTeamMember = {
   id?: string;
@@ -167,6 +168,8 @@ export default function AdminProviderEditPage() {
   const { data: providerTypes } = useQuery<any[]>({
     queryKey: ["/api/provider-types"],
   });
+
+  const [manageServicesOpen, setManageServicesOpen] = useState(false);
 
   const [editName, setEditName] = useState("");
   const [editAbout, setEditAbout] = useState("");
@@ -658,7 +661,7 @@ export default function AdminProviderEditPage() {
   const isIvfClinic = svcNames.some((n: string) => n.includes("ivf") || n.includes("in vitro"));
   const isSurrogacyAgency = showSurrogates;
   const ivfOffersEggDonors = showEggDonors;
-  const tabTriggerClass = "shrink-0 whitespace-nowrap h-full text-sm font-ui rounded-[var(--radius)] px-3 data-[state=active]:bg-background dark:data-[state=active]:bg-foreground/90 data-[state=active]:shadow data-[state=active]:text-primary data-[state=inactive]:text-muted-foreground dark:data-[state=inactive]:text-muted-foreground";
+  const tabTriggerClass = "shrink-0 md:shrink md:flex-1 whitespace-nowrap h-full text-sm font-ui rounded-[var(--radius)] px-3 data-[state=active]:bg-background dark:data-[state=active]:bg-foreground/90 data-[state=active]:shadow data-[state=active]:text-primary data-[state=inactive]:text-muted-foreground dark:data-[state=inactive]:text-muted-foreground";
 
 
   return (
@@ -857,29 +860,37 @@ export default function AdminProviderEditPage() {
             </Card>
 
             <Card className="p-6 space-y-4">
-              <Label>Services</Label>
-              <div className="flex flex-wrap gap-2">
-                {(provider.services || []).map((svc: any) => (
-                  <Badge key={svc.id} variant="outline" className="flex items-center gap-1" data-testid={`edit-service-${svc.id}`}>
-                    <Check className="w-3 h-3 text-[hsl(var(--brand-success))]" />
-                    {svc.providerType?.name || "Service"}
-                    <button
-                      type="button"
-                      className="ml-1 text-muted-foreground hover:text-destructive"
-                      onClick={async () => {
-                        try {
-                          await apiRequest("POST", `/api/providers/${provider.id}/services/${svc.id}/delete`);
-                          queryClient.invalidateQueries({ queryKey: ["/api/providers", id] });
-                        } catch {}
-                      }}
-                      data-testid={`button-remove-service-${svc.id}`}
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </Badge>
-                ))}
+              <div className="flex items-center justify-between gap-2">
+                <Label>Services</Label>
+                {isGostorkAdmin && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setManageServicesOpen(true)}
+                    data-testid="button-manage-services"
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    {(provider.services || []).length > 0 ? "Manage Services" : "Add Service"}
+                  </Button>
+                )}
               </div>
-              {providerTypes && (() => {
+              {(provider.services || []).length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {(provider.services || []).map((svc: any) => (
+                    <Badge
+                      key={svc.id}
+                      className={`text-xs ${SERVICE_STATUS_STYLES[svc.status] || ""}`}
+                      data-testid={`edit-service-${svc.id}`}
+                    >
+                      {svc.providerType?.name || "Service"}: {svc.status?.replace("_", " ")}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No services registered yet.</p>
+              )}
+              {!isGostorkAdmin && providerTypes && (() => {
                 const existingNames = new Set((provider.services || []).map((s: any) => s.providerType?.name));
                 const available = providerTypes.filter((t: any) => !existingNames.has(t.name));
                 if (available.length === 0) return null;
@@ -1442,6 +1453,12 @@ export default function AdminProviderEditPage() {
           />
         </TabsContent>
       </Tabs>
+
+      <ManageServicesDialog
+        provider={provider ? { id: provider.id, name: provider.name, services: provider.services } : null}
+        open={manageServicesOpen}
+        onOpenChange={setManageServicesOpen}
+      />
     </div>
   );
 }

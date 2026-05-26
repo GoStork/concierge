@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Receipt, Loader2, Paperclip, Send, ChevronDown, ChevronUp } from "lucide-react";
+import { Receipt, Loader2, Paperclip, Send, ChevronDown, ChevronUp, X } from "lucide-react";
 
 interface CostSheetSidebarSectionProps {
   sessionId: string | null;
@@ -11,6 +11,13 @@ interface CostSheetSidebarSectionProps {
   readOnly?: boolean;
   /** Query key to invalidate after sending so the session detail refreshes. */
   sessionQueryKey?: string;
+  /**
+   * When true, render in "form-only" mode for inline use above the chat
+   * composer: no collapse toggle, form always open, X button calls onClose.
+   * History is hidden (the chat already shows sent cost sheets).
+   */
+  embedded?: boolean;
+  onClose?: () => void;
 }
 
 interface PreviewResponse {
@@ -45,9 +52,11 @@ export function CostSheetSidebarSection({
   brandColor,
   readOnly = false,
   sessionQueryKey,
+  embedded = false,
+  onClose,
 }: CostSheetSidebarSectionProps) {
   const queryClient = useQueryClient();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(embedded);
   const [totalCostInput, setTotalCostInput] = useState("");
   const [notes, setNotes] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -134,6 +143,7 @@ export function CostSheetSidebarSection({
       if (sessionQueryKey && sessionId) {
         queryClient.invalidateQueries({ queryKey: [sessionQueryKey, sessionId] });
       }
+      if (embedded) onClose?.();
     },
     onError: (err: any) => setError(err?.message || "Send failed"),
   });
@@ -145,9 +155,9 @@ export function CostSheetSidebarSection({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Receipt className="w-4 h-4" style={{ color: brandColor }} />
-          <h3 className="text-sm font-semibold">Cost Sheets</h3>
+          <h3 className="text-sm font-semibold">{embedded ? "Send Cost Sheet" : "Cost Sheets"}</h3>
         </div>
-        {!disabled && (
+        {!disabled && !embedded && (
           <Button
             variant="ghost"
             size="sm"
@@ -163,6 +173,18 @@ export function CostSheetSidebarSection({
                 <ChevronDown className="w-3.5 h-3.5 mr-1" /> Send Cost Sheet
               </>
             )}
+          </Button>
+        )}
+        {embedded && onClose && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 shrink-0"
+            aria-label="Close"
+            data-testid="btn-close-cost-sheet"
+          >
+            <X className="w-3.5 h-3.5" />
           </Button>
         )}
       </div>
@@ -259,8 +281,8 @@ export function CostSheetSidebarSection({
         </div>
       )}
 
-      {/* History */}
-      {quotes.length > 0 && (
+      {/* History - hidden in embedded mode (chat already shows sent cost sheets) */}
+      {!embedded && quotes.length > 0 && (
         <div className="space-y-1.5">
           {quotes.map(q => (
             <div

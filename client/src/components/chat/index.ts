@@ -10,5 +10,7 @@ export { ConversationsShell } from "./conversations-shell";
 export type { FilterTab } from "./conversations-shell";
 export { ChatMessageList } from "./chat-message-list";
 export { ChatInputBar, WhisperDisclaimer, ExpertSenderLabel } from "./chat-input-bar";
+export { ChatPlusDrawer } from "./chat-plus-drawer";
+export type { ChatPlusAction } from "./chat-plus-drawer";
 export { ChatProfileSidebar } from "./chat-profile-sidebar";
 export { ChatBookingCard } from "./chat-booking-card";

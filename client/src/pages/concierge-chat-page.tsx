@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
+import { ChatPlusDrawer, type ChatPlusAction } from "@/components/chat/chat-plus-drawer";
 import { createPortal } from "react-dom";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -26,7 +27,7 @@ import {
   buildSidebarSections,
   type SidebarSection,
 } from "@/components/marketplace/swipe-mappers";
-import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2, ThumbsUp } from "lucide-react";
+import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2, ThumbsUp, Image as ImageIcon, Camera } from "lucide-react";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 import { ReadinessPromptCard } from "@/components/readiness-prompt-card";
@@ -2686,8 +2687,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [sessionSubjectInfo, setSessionSubjectInfo] = useState<{ subjectProfileId: string; subjectType: string; profilePhotoUrl?: string | null; providerLogo?: string | null; providerId?: string } | null>(null);
   const [conciergeBookingSlug, setConciergeBookingSlug] = useState<{ slug: string; memberName: string } | null>(null);
   const parentFileInputRef = useRef<HTMLInputElement>(null);
+  const parentPhotoInputRef = useRef<HTMLInputElement>(null);
+  const parentCameraInputRef = useRef<HTMLInputElement>(null);
   const [parentUploading, setParentUploading] = useState(false);
   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
+  const [parentPlusOpen, setParentPlusOpen] = useState(false);
   // Ref so uploadAndSendFiles can access the current matchmaker ID without TDZ issues
   const effectiveMatchmakerIdRef = useRef<string | null>(null);
 
@@ -4379,34 +4383,17 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           )}
           <div className="flex items-center gap-1 shrink-0 ml-auto">
             {providerInChat && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-9 sm:h-8 px-2.5 sm:px-2 gap-1.5 font-ui text-xs"
-                  style={{ color: brandColor }}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-                  onClick={handleConciergeMeeting}
-                  data-testid="btn-meeting"
-                >
-                  <CalendarDays className="w-5 h-5 sm:w-3.5 sm:h-3.5" />
-                  <span className="hidden sm:inline">Meeting</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-9 sm:h-8 px-2.5 sm:px-2 gap-1.5 font-ui text-xs"
-                  style={{ color: brandColor }}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-                  onClick={handleConciergeVideo}
-                  data-testid="btn-video"
-                >
-                  <Video className="w-5 h-5 sm:w-3.5 sm:h-3.5" />
-                  <span className="hidden sm:inline">Video</span>
-                </Button>
-              </>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-10 w-10 p-0 rounded-full"
+                style={{ color: "white", backgroundColor: brandColor }}
+                onClick={handleConciergeVideo}
+                aria-label="Video call"
+                data-testid="btn-video"
+              >
+                <Video className="!w-5 !h-5" strokeWidth={2.25} />
+              </Button>
             )}
             {!providerInChat && sessionLoaded && (
               humanInChat ? (
@@ -4527,6 +4514,16 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 : (aiName || "AI");
               const alignRight = isOwnMessage || (!isOtherParent && msg.role === "user");
               const cardReplacesbubble = ["readiness_prompt", "invoice"].includes(msg.uiCardType ?? "");
+              // For attachment messages, strip auto-generated placeholder text so only the file card shows
+              const isAttachmentMsg = msg.uiCardType === "attachment";
+              const displayContent = isAttachmentMsg
+                ? (msg.content || "")
+                    .replace(/\s*\[Attached file:[^\]]*\]/gi, "")
+                    .replace(/^(Shared a file:|I've shared a file with you:)[^\n]*/i, "")
+                    .trim()
+                : (msg.content || "");
+              const hasQuickReplies = !!(msg.quickReplies && msg.quickReplies.length > 0);
+              const showBubble = !isAttachmentMsg || displayContent.length > 0 || hasQuickReplies;
               const msgAvatarUrl = !alignRight
                 ? (msg.senderType === "provider"
                     ? (getPhotoSrc(sessionSubjectInfo?.providerLogo) || null)
@@ -4603,7 +4600,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   )}
 
                   {/* Text bubble */}
-                  {!cardReplacesbubble && (
+                  {!cardReplacesbubble && showBubble && (
                     <div
                       className={`overflow-hidden ${
                         isOwnMessage
@@ -4650,7 +4647,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       data-testid={`chat-message-${msg.role}-${i}`}
                     >
                       <span style={{ overflowWrap: "break-word", wordBreak: "break-word" }}>
-                        {msg.content.split("\n").map((line, li) => {
+                        {displayContent.split("\n").map((line, li) => {
                           const parts = line.split(/(\*\*[^*]+\*\*)/g);
                           return (
                             <Fragment key={li}>
@@ -4745,7 +4742,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   )}
 
                   {/* Timestamp for regular bubble */}
-                  {!cardReplacesbubble && msg.createdAt && (
+                  {!cardReplacesbubble && showBubble && msg.createdAt && (
                     <span
                       className="whitespace-nowrap select-none flex items-center gap-0.5 mt-0.5 px-1"
                       style={{ fontSize: "var(--chat-timestamp-font-size, 11px)", lineHeight: "16px", opacity: "var(--chat-timestamp-opacity, 0.45)" as unknown as number }}
@@ -4862,12 +4859,15 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                           : undefined;
                         return <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} sessionId={sessionId} isAnswered={isAnswered} positiveChipStyle={chipPositiveStyle} declineChipStyle={chipDeclineStyle} onAnswer={handleQuickReply} onYesReady={handleReadinessYes} />;
                       })()}
-                      {cardReplacesbubble && msg.createdAt && (
+                      {(cardReplacesbubble || !showBubble) && msg.createdAt && (
                         <span
                           className="whitespace-nowrap select-none flex items-center gap-0.5 mt-0.5 px-1"
                           style={{ fontSize: "var(--chat-timestamp-font-size, 11px)", lineHeight: "16px", opacity: "var(--chat-timestamp-opacity, 0.45)" as unknown as number }}
                         >
                           {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                          {alignRight && (
+                            <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />
+                          )}
                         </span>
                       )}
                     </div>
@@ -4929,7 +4929,56 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             <span>Connection lost - waiting to reconnect</span>
           </div>
         )}
-        <div className="border-t px-3 py-2" data-testid="concierge-input-area">
+        <div className="border-t px-3 py-2 relative" data-testid="concierge-input-area">
+          {(() => {
+            const closeAfter = (fn: () => void) => () => {
+              setParentPlusOpen(false);
+              fn();
+            };
+            const tiles: ChatPlusAction[] = [
+              {
+                id: "photo",
+                label: "Photo",
+                icon: ImageIcon,
+                onClick: closeAfter(() => parentPhotoInputRef.current?.click()),
+                disabled: parentUploading,
+                testId: "btn-attach-photo",
+              },
+              {
+                id: "camera",
+                label: "Camera",
+                icon: Camera,
+                onClick: closeAfter(() => parentCameraInputRef.current?.click()),
+                disabled: parentUploading,
+                testId: "btn-attach-camera",
+              },
+              {
+                id: "file",
+                label: "File",
+                icon: Paperclip,
+                onClick: closeAfter(() => parentFileInputRef.current?.click()),
+                disabled: parentUploading,
+                testId: "btn-attach-file",
+              },
+            ];
+            if (providerInChat) {
+              tiles.push({
+                id: "meeting",
+                label: "Meeting",
+                icon: CalendarDays,
+                onClick: closeAfter(() => handleConciergeMeeting()),
+                disabled: parentUploading || sending,
+                testId: "btn-meeting",
+              });
+            }
+            return (
+              <div className="absolute left-2 bottom-full mb-2 z-40 pointer-events-none">
+                <div className={parentPlusOpen ? "pointer-events-auto" : ""}>
+                  <ChatPlusDrawer open={parentPlusOpen} actions={tiles} brandColor={brandColor} />
+                </div>
+              </div>
+            );
+          })()}
           {stagedFiles.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-2">
               {stagedFiles.map((file, i) => (
@@ -4943,28 +4992,63 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               ))}
             </div>
           )}
+          <input
+            ref={parentFileInputRef}
+            type="file"
+            className="hidden"
+            accept="application/pdf,.doc,.docx,.txt,.csv,.xlsx"
+            multiple
+            onChange={handleParentFileSelect}
+            data-testid="input-parent-file"
+          />
+          <input
+            ref={parentPhotoInputRef}
+            type="file"
+            className="hidden"
+            accept="image/*"
+            multiple
+            onChange={handleParentFileSelect}
+            data-testid="input-parent-photo"
+          />
+          <input
+            ref={parentCameraInputRef}
+            type="file"
+            className="hidden"
+            accept="image/*"
+            capture="environment"
+            onChange={handleParentFileSelect}
+            data-testid="input-parent-camera"
+          />
           <div className="flex items-end gap-1.5">
-            <input
-              ref={parentFileInputRef}
-              type="file"
-              className="hidden"
-              accept="image/*,application/pdf,.doc,.docx,.txt"
-              multiple
-              onChange={handleParentFileSelect}
-              data-testid="input-parent-file"
-            />
             <Button
               variant="ghost"
               size="sm"
-              className="h-9 w-9 p-0 shrink-0 rounded-full"
-              style={{ color: brandColor }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-              onClick={() => parentFileInputRef.current?.click()}
+              className="h-10 w-10 p-0 shrink-0 rounded-full border"
+              style={{
+                color: parentPlusOpen ? "white" : brandColor,
+                backgroundColor: parentPlusOpen ? brandColor : `${brandColor}14`,
+                borderColor: parentPlusOpen ? brandColor : `${brandColor}40`,
+              }}
+              onMouseEnter={(e) => {
+                if (!parentPlusOpen) e.currentTarget.style.backgroundColor = `${brandColor}26`;
+              }}
+              onMouseLeave={(e) => {
+                if (!parentPlusOpen) e.currentTarget.style.backgroundColor = `${brandColor}14`;
+              }}
+              onClick={() => setParentPlusOpen(v => !v)}
               disabled={parentUploading}
+              aria-label={parentPlusOpen ? "Close actions" : "More actions"}
               data-testid="btn-attach"
             >
-              {parentUploading ? <Loader2 className="w-[18px] h-[18px] animate-spin" /> : <Paperclip className="w-[18px] h-[18px]" />}
+              {parentUploading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Plus
+                  className="w-[22px] h-[22px] transition-transform duration-200"
+                  strokeWidth={2.5}
+                  style={{ transform: parentPlusOpen ? "rotate(45deg)" : "rotate(0deg)" }}
+                />
+              )}
             </Button>
             <textarea
               ref={chatInputRef}
@@ -4974,7 +5058,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={sending || parentUploading || !isOnline}
-              className="flex-1 border border-input bg-background text-foreground placeholder:text-muted-foreground rounded-full resize-none overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:opacity-50"
+              className="flex-1 border border-input bg-background text-foreground placeholder:text-muted-foreground rounded-full shadow-sm resize-none overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:opacity-50"
               style={{
                 fontSize: "var(--chat-input-font-size, 17px)",
                 minHeight: "var(--chat-input-height, 36px)",
@@ -4990,14 +5074,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               size="sm"
               onClick={handleSend}
               disabled={(!input.trim() && stagedFiles.length === 0) || sending || parentUploading || !isOnline}
-              className="h-9 w-9 p-0 rounded-full text-primary-foreground shrink-0"
+              className="h-10 w-10 p-0 rounded-full text-primary-foreground shrink-0"
               style={{ backgroundColor: brandColor }}
               data-testid="btn-send-message"
             >
               {(sending || parentUploading) ? (
-                <Loader2 className="w-[18px] h-[18px] animate-spin" />
+                <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
-                <ArrowUp className="w-[18px] h-[18px]" strokeWidth={2.5} />
+                <ArrowUp className="w-5 h-5" strokeWidth={2.5} />
               )}
             </Button>
           </div>

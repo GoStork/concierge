@@ -10,7 +10,7 @@ import { deriveChatPalette } from "@/lib/chat-palette";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
-  ArrowLeft, Headphones, MessageCircle, User, Clock, CheckCircle2, Loader2, UserPlus, LogOut, Trash2,
+  ArrowLeft, Headphones, MessageCircle, User, Clock, CheckCircle2, Loader2, UserPlus, LogOut, Trash2, Video,
 } from "lucide-react";
 import {
   timeAgo,
@@ -73,6 +73,8 @@ export default function AdminConciergeMonitor() {
   };
   const [uploading, setUploading] = useState(false);
   const [inlineVideoBookingId, setInlineVideoBookingId] = useState<string | null>(null);
+  type AdminInlinePanel = null | "costSheet" | "invoice" | "agreement";
+  const [adminInlinePanel, setAdminInlinePanel] = useState<AdminInlinePanel>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -249,21 +251,40 @@ export default function AdminConciergeMonitor() {
 
   const handleSend = async (text: string, files: File[]) => {
     if (!selectedSessionId) return;
-    // Upload files first
     if (files.length > 0) {
       setUploading(true);
       try {
+        // Upload all files first
+        const uploaded: Array<{ originalName?: string; [k: string]: any }> = [];
         for (const file of files) {
           const formData = new FormData();
           formData.append("file", file);
           const res = await fetch("/api/chat-upload", { method: "POST", credentials: "include", body: formData });
           if (!res.ok) throw new Error("Upload failed");
-          const data = await res.json();
+          uploaded.push(await res.json());
+        }
+
+        // Merge text with the FIRST file so the message text renders before the
+        // attachment card on the receiving side. Additional files go as separate
+        // placeholder messages after it.
+        const firstFile = uploaded[0];
+        const firstContent = text?.trim()
+          ? text.trim()
+          : firstFile.originalName ? `Shared a file: ${firstFile.originalName}` : "Shared a file";
+        await sendMessageMutation.mutateAsync({
+          sessionId: selectedSessionId,
+          content: firstContent,
+          uiCardType: "attachment",
+          uiCardData: firstFile,
+        });
+
+        for (let i = 1; i < uploaded.length; i++) {
+          const f = uploaded[i];
           await sendMessageMutation.mutateAsync({
             sessionId: selectedSessionId,
-            content: data.originalName ? `Shared a file: ${data.originalName}` : "Shared a file",
+            content: f.originalName ? `Shared a file: ${f.originalName}` : "Shared a file",
             uiCardType: "attachment",
-            uiCardData: data,
+            uiCardData: f,
           });
         }
       } catch {
@@ -272,8 +293,9 @@ export default function AdminConciergeMonitor() {
         return;
       }
       setUploading(false);
+      return;
     }
-    // Send text message
+    // Text-only message
     if (text) {
       sendMessageMutation.mutate({ sessionId: selectedSessionId, content: text });
     }
@@ -440,16 +462,28 @@ export default function AdminConciergeMonitor() {
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-10 w-10 p-0 rounded-full"
+            style={{ color: "white", backgroundColor: brandColor }}
+            onClick={handleAdminVideo}
+            aria-label="Video call"
+            data-testid="btn-admin-video"
+          >
+            <Video className="!w-5 !h-5" strokeWidth={2.25} />
+          </Button>
           {(!detail.humanJoinedAt || !!(detail as any).humanConcludedAt) && (
             <Button
               size="sm"
               onClick={() => joinSessionMutation.mutate(selectedSessionId!)}
               disabled={joinSessionMutation.isPending}
-              className="gap-1.5 text-xs"
+              className="h-9 px-4 rounded-full text-xs text-primary-foreground gap-1.5"
+              style={{ backgroundColor: brandColor }}
               data-testid="btn-join-group-chat"
             >
-              {joinSessionMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
-              {detail.humanRequested ? "Join Group Chat" : "Join Chat"}
+              {joinSessionMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
+              Join Chat
             </Button>
           )}
           {detail.humanJoinedAt && !(detail as any).humanConcludedAt && (
@@ -512,11 +546,12 @@ export default function AdminConciergeMonitor() {
                   size="sm"
                   onClick={() => joinSessionMutation.mutate(selectedSessionId!)}
                   disabled={joinSessionMutation.isPending}
-                  className="gap-1.5 text-xs flex-shrink-0"
+                  className="h-9 px-4 rounded-full text-xs text-primary-foreground gap-1.5 flex-shrink-0"
+                  style={{ backgroundColor: brandColor }}
                   data-testid="btn-join-inline"
                 >
-                  {joinSessionMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
-                  Join Group Chat
+                  {joinSessionMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
+                  Join Chat
                 </Button>
               </div>
             </div>
@@ -537,8 +572,31 @@ export default function AdminConciergeMonitor() {
             placeholder="Type a message as GoStork Expert..."
             senderLabel={<ExpertSenderLabel adminName={(user as any)?.name || "Admin"} />}
             enableFileUpload
-            onCalendarClick={handleAdminCalendar}
-            onVideoClick={handleAdminVideo}
+            onMeetingClick={handleAdminCalendar}
+            onCostSheetClick={() => setAdminInlinePanel("costSheet")}
+            onInvoiceClick={() => setAdminInlinePanel("invoice")}
+            // Agreement is read-only for admin (only providers can generate), so omit the tile.
+            inlinePanel={
+              adminInlinePanel === "costSheet" ? (
+                <CostSheetSidebarSection
+                  key={`cs-embed-${selectedSessionId || "none"}`}
+                  sessionId={selectedSessionId}
+                  brandColor={brandColor}
+                  sessionQueryKey="/api/admin/concierge-sessions"
+                  embedded
+                  onClose={() => setAdminInlinePanel(null)}
+                />
+              ) : adminInlinePanel === "invoice" ? (
+                <InvoiceSidebarSection
+                  key={`inv-embed-${selectedSessionId || "none"}`}
+                  sessionId={selectedSessionId}
+                  brandColor={brandColor}
+                  sessionQueryKey="/api/admin/concierge-sessions"
+                  embedded
+                  onClose={() => setAdminInlinePanel(null)}
+                />
+              ) : undefined
+            }
             testIdPrefix="expert"
           />
         </div>
@@ -573,26 +631,7 @@ export default function AdminConciergeMonitor() {
                     </div>
                   </div>
                 )}
-                <CostSheetSidebarSection
-                  key={`cs-${selectedSessionId || "none"}`}
-                  sessionId={selectedSessionId}
-                  brandColor={brandColor}
-                  sessionQueryKey="/api/admin/concierge-sessions"
-                />
-                <InvoiceSidebarSection
-                  key={`inv-${selectedSessionId || "none"}`}
-                  sessionId={selectedSessionId}
-                  brandColor={brandColor}
-                  sessionQueryKey="/api/admin/concierge-sessions"
-                />
-                <AgreementSidebarSection
-                  key={selectedSessionId || "none"}
-                  agreement={detail.agreements?.[0]}
-                  brandColor={brandColor}
-                  sessionId={selectedSessionId}
-                  readOnly
-                  sessionQueryKey="/api/admin/concierge-sessions"
-                />
+                {/* Cost Sheet / Invoice / Agreement sections moved into the + drawer above the composer */}
               </>
             );
           })()}

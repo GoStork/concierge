@@ -1444,11 +1444,22 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         const cardData = attachmentData
           ? { ...attachmentData, ...(clientMsgId ? { clientMsgId } : {}) }
           : clientMsgId ? { clientMsgId } : null;
+        // Strip the "[Attached file: ...]" marker the client appends so the LLM sees
+        // attachment context, but the SAVED bubble only shows the user's actual text.
+        // The receiver's chat bubble renders msg.content verbatim; without this strip
+        // the bracket leaks into the visible message next to the attachment card.
+        const rawContent = String(req.body.message ?? "");
+        const cleanedContent = attachmentData
+          ? rawContent
+              .replace(/\s*\[Attached file:[^\]]*\]/gi, "")
+              .replace(/^\s*I've shared a file with you:[^\n]*\.?\s*Please acknowledge it\.?\s*$/i, "")
+              .trim() || `Shared a file: ${(attachmentData as any)?.originalName || "file"}`
+          : rawContent;
         savedUserMsg = await prisma.aiChatMessage.create({
           data: {
             sessionId: currentSessionId,
             role: "user",
-            content: req.body.message,
+            content: cleanedContent,
             senderType: "parent",
             senderName: parentDisplayName,
             ...(attachmentData ? { uiCardType: "attachment" } : {}),

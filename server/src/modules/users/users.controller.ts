@@ -64,17 +64,19 @@ export class UsersController {
     });
   }
 
-  private async provisionVideoRoom(userId: string, roles: string[]): Promise<void> {
+  private async provisionVideoRoom(userId: string, roles: string[]): Promise<string | null> {
     const needsRoom = roles.some(r => ROLES_NEEDING_VIDEO_ROOM.includes(r));
-    if (!needsRoom) return;
+    if (!needsRoom) return null;
     try {
       const room = await this.videoService.createRoom();
       await this.prisma.user.update({
         where: { id: userId },
         data: { dailyRoomUrl: room.url },
       });
+      return room.url;
     } catch (err) {
       console.error(`[video] Failed to provision Daily.co room for user ${userId}:`, err);
+      return null;
     }
   }
 
@@ -713,9 +715,9 @@ export class UsersController {
         },
         include: { provider: { select: { id: true, name: true } }, assignedLocations: { include: { location: true } } },
       });
-      this.provisionVideoRoom(created.id, roles).catch(() => {});
+      const dailyRoomUrl = await this.provisionVideoRoom(created.id, roles);
       const { password: _, ...safe } = created;
-      return safe;
+      return { ...safe, dailyRoomUrl: dailyRoomUrl ?? safe.dailyRoomUrl };
     } catch (err) {
       if (err instanceof z.ZodError) throw new BadRequestException({ message: "Validation error", errors: err.errors });
       throw err;
@@ -1056,9 +1058,9 @@ export class UsersController {
           assignedLocations: { include: { location: true } },
         },
       });
-      this.provisionVideoRoom(created.id, roles).catch(() => {});
+      const dailyRoomUrl = await this.provisionVideoRoom(created.id, roles);
       const { password: _, ...safe } = created;
-      return safe;
+      return { ...safe, dailyRoomUrl: dailyRoomUrl ?? safe.dailyRoomUrl };
     } catch (err) {
       if (err instanceof z.ZodError) {
         throw new BadRequestException({ message: "Validation error", errors: err.errors });
@@ -1248,9 +1250,9 @@ export class UsersController {
           parentAccountRole: isParent ? "INTENDED_PARENT_1" : null,
         },
       });
-      this.provisionVideoRoom(created.id, roles).catch(() => {});
+      const dailyRoomUrl = await this.provisionVideoRoom(created.id, roles);
       const { password: _, ...safe } = created;
-      return safe;
+      return { ...safe, dailyRoomUrl: dailyRoomUrl ?? safe.dailyRoomUrl };
     } catch (err) {
       if (err instanceof z.ZodError) {
         throw new BadRequestException({ message: "Validation error", errors: err.errors });

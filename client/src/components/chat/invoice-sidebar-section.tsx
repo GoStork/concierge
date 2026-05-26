@@ -2,13 +2,16 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { DollarSign, Loader2, Send, ChevronDown, ChevronUp, AlertCircle } from "lucide-react";
+import { DollarSign, Loader2, Send, ChevronDown, ChevronUp, AlertCircle, X } from "lucide-react";
 
 interface InvoiceSidebarSectionProps {
   sessionId: string | null;
   brandColor: string;
   readOnly?: boolean;
   sessionQueryKey?: string;
+  /** When true, render in inline-above-composer mode (form always open, X to close). */
+  embedded?: boolean;
+  onClose?: () => void;
 }
 
 interface PreviewResponse {
@@ -39,9 +42,11 @@ export function InvoiceSidebarSection({
   brandColor,
   readOnly = false,
   sessionQueryKey,
+  embedded = false,
+  onClose,
 }: InvoiceSidebarSectionProps) {
   const queryClient = useQueryClient();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(embedded);
   const [overrideInput, setOverrideInput] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +129,7 @@ export function InvoiceSidebarSection({
       if (sessionQueryKey && sessionId) {
         queryClient.invalidateQueries({ queryKey: [sessionQueryKey, sessionId] });
       }
+      if (embedded) onClose?.();
     },
     onError: (err: any) => setError(err?.message || "Send failed"),
   });
@@ -138,7 +144,7 @@ export function InvoiceSidebarSection({
           <DollarSign className="w-4 h-4" style={{ color: brandColor }} />
           <h3 className="text-sm font-semibold">Invoice</h3>
         </div>
-        {!disabled && (
+        {!disabled && !embedded && (
           <Button
             variant="ghost"
             size="sm"
@@ -154,6 +160,18 @@ export function InvoiceSidebarSection({
                 <ChevronDown className="w-3.5 h-3.5 mr-1" /> Send Invoice
               </>
             )}
+          </Button>
+        )}
+        {embedded && onClose && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="h-7 w-7 p-0 shrink-0"
+            aria-label="Close"
+            data-testid="btn-close-invoice"
+          >
+            <X className="w-3.5 h-3.5" />
           </Button>
         )}
       </div>

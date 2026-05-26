@@ -6,14 +6,13 @@ import { getPhotoSrc } from "@/lib/profile-utils";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { MessageStatus } from "@/components/ui/message-status";
 import { OnlineIndicator } from "@/components/ui/online-indicator";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import {
   ArrowLeft, MessageSquare, User, Loader2, FileText, X,
   CheckCircle2, UserPlus, Shield, ThumbsUp, ThumbsDown,
-  Sparkles, Building2, ChevronDown, MessageCircle,
+  Sparkles, Building2, MessageCircle,
   CalendarDays, Video, Trash2, Headphones,
   // Used by legacy dead code pending removal
   CalendarClock, Check, Clock, Crown, Download, ExternalLink, Paperclip, Send,
@@ -669,13 +668,7 @@ export default function ConversationsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
   const [replyText, setReplyText] = useState("");
-  const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
-  const [expandedParents, setExpandedParents] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
-    dispatch(setHideBottomNav(!!selectedSessionId));
-    return () => { dispatch(setHideBottomNav(false)); };
-  }, [selectedSessionId, dispatch]);
 
   const parentSessionsQuery = useQuery<ChatSession[]>({
     queryKey: ["/api/my/chat-sessions"],
@@ -847,6 +840,8 @@ export default function ConversationsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [providerStagedFiles, setProviderStagedFiles] = useState<File[]>([]);
   const [providerUploading, setProviderUploading] = useState(false);
+  type ProviderInlinePanel = null | "costSheet" | "invoice" | "agreement";
+  const [providerInlinePanel, setProviderInlinePanel] = useState<ProviderInlinePanel>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -1056,6 +1051,11 @@ export default function ConversationsPage() {
     if (lastChatKey && url !== "/chat") localStorage.setItem(lastChatKey, url);
     navigate(url, { replace: true });
   };
+
+  useEffect(() => {
+    dispatch(setHideBottomNav(!!selectedSessionId || !!selectedParentSession));
+    return () => { dispatch(setHideBottomNav(false)); };
+  }, [selectedSessionId, selectedParentSession, dispatch]);
 
   // When the fallback path selects a session (no ?session= in URL), immediately lock the
   // session ID into the URL. This prevents the sort-order-dependent fallback from switching
@@ -1270,10 +1270,6 @@ export default function ConversationsPage() {
       providerGroups[key].push(s);
     });
 
-    const toggleProvider = (id: string) => {
-      setExpandedProviders(prev => ({ ...prev, [id]: !prev[id] }));
-    };
-
     const hasParentSession = !!selectedParentSession;
 
     // Right profile panel: show only when actively in a provider session with booking data.
@@ -1358,81 +1354,83 @@ export default function ConversationsPage() {
         {Object.keys(providerGroups).length > 0 && (
           <div className="mt-2" data-testid="section-provider-chats">
             <div className="px-4 py-2">
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Provider Conversations</span>
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Your Matches</span>
             </div>
             {Object.entries(providerGroups).map(([providerId, sessions]) => {
               const first = sessions[0];
-              const isExpanded = expandedProviders[providerId] !== false;
               return (
-                <Collapsible key={providerId} open={isExpanded} onOpenChange={() => toggleProvider(providerId)}>
-                  <CollapsibleTrigger className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted/30 transition-colors text-left" data-testid={`provider-group-${providerId}`}>
-                    <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
+                <div key={providerId} data-testid={`provider-group-${providerId}`}>
+                  {/* Section header - agency name (not a chat row) */}
+                  <div className="flex items-center gap-2 px-4 pt-3 pb-1.5 bg-muted/20 border-y border-border/30">
+                    <div className="w-5 h-5 rounded flex-shrink-0 overflow-hidden bg-background flex items-center justify-center border border-border/40">
                       {first.providerLogo ? (
-                        <img src={getPhotoSrc(first.providerLogo) || undefined} alt="" className="w-12 h-12 rounded-full object-cover border" />
+                        <img src={getPhotoSrc(first.providerLogo) || undefined} alt="" className="w-5 h-5 object-contain" />
                       ) : (
-                        <div className="w-12 h-12 rounded-full flex items-center justify-center bg-muted text-muted-foreground">
-                          <Building2 className="w-4 h-4" />
-                        </div>
+                        <Building2 className="w-3 h-3 text-muted-foreground" />
                       )}
-                      {first.providerId && onlineStatuses[first.providerId] && <OnlineIndicator size="sm" />}
                     </div>
-                    <span className="font-medium text-sm font-ui flex-1">{first.providerName}</span>
-                    <span className="text-[11px] text-muted-foreground mr-1">{sessions.length}</span>
-                    <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    {sessions.map(session => {
-                      const photoSrc = getPhotoSrc(session.profilePhotoUrl);
-                      return (
-                        <button
-                          key={session.id}
-                          className="w-full flex items-center gap-3 pl-10 pr-4 py-3 hover:bg-muted/50 transition-colors text-left border-b border-border/10"
-                          onClick={() => handleParentSessionClick(session)}
-                          data-testid={`chat-session-provider-${session.id}`}
-                        >
-                          <div className="w-12 h-12 rounded-full flex-shrink-0 relative overflow-hidden">
-                            {photoSrc ? (
-                              <img
-                                src={photoSrc}
-                                alt={session.title || ""}
-                                className="w-12 h-12 rounded-full object-cover"
-                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling && ((e.target as HTMLImageElement).nextElementSibling as HTMLElement)?.style && ((e.target as HTMLImageElement).nextElementSibling as HTMLElement).style.setProperty('display', 'flex'); }}
-                              />
-                            ) : (
-                              <div
-                                className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
-                                style={{ backgroundColor: brandColor }}
-                              >
-                                {(session.title || "C").charAt(0)}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-medium text-sm font-ui truncate">{session.title || session.matchmakerName || "Conversation"}</span>
-                              <div className="flex items-center gap-1.5 flex-shrink-0">
-                                <span className={`text-[11px] ${session.unreadCount > 0 ? "font-semibold" : "text-muted-foreground"}`} style={session.unreadCount > 0 ? { color: brandColor } : undefined}>{timeAgo(session.lastMessageAt)}</span>
-                                {session.unreadCount > 0 && (
-                                  <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-primary-foreground px-1" style={{ backgroundColor: brandColor }}>
-                                    {session.unreadCount}
-                                  </span>
-                                )}
-                              </div>
+                    <span className="text-[11px] font-semibold text-foreground uppercase tracking-wider truncate flex-1">
+                      {first.providerName}
+                    </span>
+                    {first.providerId && onlineStatuses[first.providerId] && (
+                      <span className="text-[10px] font-medium text-[hsl(var(--brand-success))]">Online</span>
+                    )}
+                    <span className="text-[10px] text-muted-foreground">
+                      {sessions.length} {sessions.length === 1 ? "match" : "matches"}
+                    </span>
+                  </div>
+                  {/* Donor/surrogate rows - flat, full-width chat rows */}
+                  {sessions.map(session => {
+                    const photoSrc = getPhotoSrc(session.profilePhotoUrl);
+                    return (
+                      <button
+                        key={session.id}
+                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors text-left border-b border-border/10"
+                        onClick={() => handleParentSessionClick(session)}
+                        data-testid={`chat-session-provider-${session.id}`}
+                      >
+                        <div className="w-12 h-12 rounded-full flex-shrink-0 relative overflow-hidden">
+                          {photoSrc ? (
+                            <img
+                              src={photoSrc}
+                              alt={session.title || ""}
+                              className="w-12 h-12 rounded-full object-cover"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling && ((e.target as HTMLImageElement).nextElementSibling as HTMLElement)?.style && ((e.target as HTMLImageElement).nextElementSibling as HTMLElement).style.setProperty('display', 'flex'); }}
+                            />
+                          ) : (
+                            <div
+                              className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
+                              style={{ backgroundColor: brandColor }}
+                            >
+                              {(session.title || "C").charAt(0)}
                             </div>
-                            {session.lastMessage && (
-                              <p className="text-sm text-muted-foreground truncate mt-0.5 flex items-center gap-1">
-                                {session.lastMessageRole === "user" && (
-                                  <MessageStatus deliveredAt={session.lastMessageDeliveredAt} readAt={session.lastMessageReadAt} brandColor={brandColor} className="flex-shrink-0" />
-                                )}
-                                <span className="truncate">{truncateMessage(session.lastMessage)}</span>
-                              </p>
-                            )}
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium text-sm font-ui truncate">{session.title || session.matchmakerName || "Conversation"}</span>
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <span className={`text-[11px] ${session.unreadCount > 0 ? "font-semibold" : "text-muted-foreground"}`} style={session.unreadCount > 0 ? { color: brandColor } : undefined}>{timeAgo(session.lastMessageAt)}</span>
+                              {session.unreadCount > 0 && (
+                                <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-primary-foreground px-1" style={{ backgroundColor: brandColor }}>
+                                  {session.unreadCount}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </button>
-                      );
-                    })}
-                  </CollapsibleContent>
-                </Collapsible>
+                          {session.lastMessage && (
+                            <p className="text-sm text-muted-foreground truncate mt-0.5 flex items-center gap-1">
+                              {session.lastMessageRole === "user" && (
+                                <MessageStatus deliveredAt={session.lastMessageDeliveredAt} readAt={session.lastMessageReadAt} brandColor={brandColor} className="flex-shrink-0" />
+                              )}
+                              <span className="truncate">{truncateMessage(session.lastMessage)}</span>
+                            </p>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               );
             })}
           </div>
@@ -1463,10 +1461,10 @@ export default function ConversationsPage() {
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          {/* Subject photo + ID (left side, only for provider sessions with a subject) */}
+          {/* Provider session: stacked layout - donor (primary) + provider (subtitle) */}
           {selectedParentSession!.providerId && selectedParentSession!.title ? (
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-muted">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-muted relative">
                 {selectedParentSession!.profilePhotoUrl ? (
                   <img src={getPhotoSrc(selectedParentSession!.profilePhotoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
                 ) : (
@@ -1475,42 +1473,39 @@ export default function ConversationsPage() {
                   </div>
                 )}
               </div>
-              <span className="font-semibold text-sm font-ui truncate" data-testid="parent-chat-subject-label">{selectedParentSession!.title}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-sm font-ui truncate" data-testid="parent-chat-subject-label">{selectedParentSession!.title}</span>
+                  {selectedParentSession!.providerId && onlineStatuses[selectedParentSession!.providerId] && (
+                    <span className="w-2 h-2 rounded-full bg-[hsl(var(--brand-success))] flex-shrink-0" aria-label="Provider online" />
+                  )}
+                </div>
+                <div className="flex items-center gap-1 mt-0.5 min-w-0">
+                  <span className="text-[11px] text-muted-foreground flex-shrink-0">via</span>
+                  {parentHeaderAvatar && (
+                    <img src={parentHeaderAvatar} alt="" className="w-3.5 h-3.5 rounded-sm object-contain flex-shrink-0 bg-white border border-border/40" />
+                  )}
+                  <span className="text-[11px] text-muted-foreground truncate">{parentHeaderName}</span>
+                </div>
+              </div>
             </div>
           ) : (
-            /* Concierge or no-subject: show the standard avatar */
-            <div className="w-10 h-10 rounded-full flex-shrink-0 relative">
-              {parentHeaderAvatar ? (
-                <img src={parentHeaderAvatar} alt={parentHeaderName} className="w-10 h-10 rounded-full object-cover" />
-              ) : (
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold" style={{ backgroundColor: brandColor }}>
-                  {parentHeaderName.charAt(0)}
-                </div>
-              )}
-            </div>
-          )}
-          {/* Separator */}
-          {selectedParentSession!.providerId && selectedParentSession!.title && (
-            <span className="text-muted-foreground text-base font-medium flex-shrink-0 px-1" aria-hidden>x</span>
-          )}
-          {/* Provider logo + name (right side) OR concierge name */}
-          {selectedParentSession!.providerId && selectedParentSession!.title ? (
-            <div className="flex items-center gap-2 min-w-0">
-              {parentHeaderAvatar ? (
-                <img src={parentHeaderAvatar} alt={parentHeaderName} className="w-10 h-10 rounded-full object-contain flex-shrink-0 border border-border bg-white" />
-              ) : (
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold flex-shrink-0" style={{ backgroundColor: brandColor }}>
-                  {parentHeaderName.charAt(0)}
-                </div>
-              )}
-              {selectedParentSession!.providerId && onlineStatuses[selectedParentSession!.providerId] && <OnlineIndicator size="md" />}
-              <span className="font-semibold text-sm font-ui truncate">{parentHeaderName}</span>
-            </div>
-          ) : (
-            <div className="flex-1 min-w-0">
-              <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>{parentHeaderName}</h2>
-              <p className="text-[11px] font-ui text-muted-foreground truncate">AI Concierge Chat</p>
-            </div>
+            /* Concierge or no-subject: single line */
+            <>
+              <div className="w-10 h-10 rounded-full flex-shrink-0 relative">
+                {parentHeaderAvatar ? (
+                  <img src={parentHeaderAvatar} alt={parentHeaderName} className="w-10 h-10 rounded-full object-cover" />
+                ) : (
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold" style={{ backgroundColor: brandColor }}>
+                    {parentHeaderName.charAt(0)}
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>{parentHeaderName}</h2>
+                <p className="text-[11px] font-ui text-muted-foreground truncate">AI Concierge Chat</p>
+              </div>
+            </>
           )}
           {!selectedParentSession!.providerId && (
             <div className="flex items-center gap-1 shrink-0 ml-auto">
@@ -1584,28 +1579,13 @@ export default function ConversationsPage() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 px-2 gap-1.5 font-ui text-xs"
-              style={{ color: brandColor }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-              onClick={handleParentMeeting}
-              data-testid="btn-parent-meeting"
-            >
-              <CalendarDays className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Meeting</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2 gap-1.5 font-ui text-xs"
-              style={{ color: brandColor }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+              className="h-10 w-10 p-0 rounded-full"
+              style={{ color: "white", backgroundColor: brandColor }}
               onClick={handleParentVideo}
+              aria-label="Video call"
               data-testid="btn-parent-video"
             >
-              <Video className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Video</span>
+              <Video className="!w-5 !h-5" strokeWidth={2.25} />
             </Button>
           </div>
           )}
@@ -1710,211 +1690,110 @@ export default function ConversationsPage() {
       return bLatest - aLatest;
     });
 
-    const toggleParent = (userId: string) => {
-      setExpandedParents(prev => ({ ...prev, [userId]: !prev[userId] }));
-    };
-
     const hasSessions = filteredSessions.length > 0;
     const sidebarContent = hasSessions ? (
       <>
         {sortedGroupEntries.map(([parentUserId, groupSessions]) => {
           const first = groupSessions[0];
-          const totalUnread = groupSessions.reduce((sum, s) => {
-            const unread = s.status === "CONSULTATION_BOOKED" ? Math.max(1, s.unreadCount || 0) : (s.unreadCount || 0);
-            return sum + unread;
-          }, 0);
-          const latestMsg = groupSessions.reduce((latest, s) =>
-            new Date(s.lastMessageAt).getTime() > new Date(latest.lastMessageAt).getTime() ? s : latest
-          , groupSessions[0]);
-          const hasOnlyOne = groupSessions.length === 1;
-          const isExpanded = expandedParents[parentUserId] !== false;
-
-          // If only one session for this parent, render it flat (no collapsible)
-          if (hasOnlyOne) {
-            const s = first;
-            const sIsJoined = s.status === "PROVIDER_JOINED";
-            const sIsBooked = s.status === "CONSULTATION_BOOKED";
-            const hasPending = s.pendingQuestions > 0;
-            const sUnread = sIsBooked ? Math.max(1, s.unreadCount || 0) : (s.unreadCount || 0);
-            return (
-              <button
-                key={s.id}
-                className={`w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left border-b border-border/20 ${
-                  selectedSessionId === s.id ? "bg-muted/70" : ""
-                } ${sIsBooked ? "bg-primary/5" : ""}`}
-                onClick={() => setSelectedSessionId(s.id, s)}
-                data-testid={`provider-session-${s.id}`}
-              >
-                <div className="w-11 h-11 rounded-full flex-shrink-0 relative">
-                  {s.userAvatar ? (
-                    <img src={getPhotoSrc(s.userAvatar) || undefined} alt="" className="w-11 h-11 rounded-full object-cover" />
-                  ) : (
-                    <div className="w-11 h-11 rounded-full bg-muted flex items-center justify-center">
-                      {sIsJoined || sIsBooked ? (
-                        <User className="w-5 h-5 text-muted-foreground" />
-                      ) : (
-                        <Sparkles className="w-5 h-5" style={{ color: brandColor }} />
-                      )}
-                    </div>
-                  )}
-                  {onlineStatuses[s.userId] && <OnlineIndicator size="md" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="font-semibold text-sm font-ui truncate">{s.userName || "Prospective Parent"}</span>
-                      {sIsJoined ? (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[9px] font-bold uppercase flex-shrink-0">
-                          <CheckCircle2 className="w-2.5 h-2.5" />
-                          Joined
-                        </span>
-                      ) : sIsBooked ? (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase flex-shrink-0" style={{ backgroundColor: `${brandColor}15`, color: brandColor }}>
-                          <UserPlus className="w-2.5 h-2.5" />
-                          Ready to Join
-                        </span>
-                      ) : hasPending ? (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] text-[9px] font-bold uppercase flex-shrink-0">
-                          {s.pendingQuestions} pending
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground text-[9px] font-bold uppercase flex-shrink-0">
-                          <MessageCircle className="w-2.5 h-2.5" />
-                          Q&A
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <span className={`text-[11px] ${sUnread > 0 ? "font-semibold" : "text-muted-foreground"}`} style={sUnread > 0 ? { color: brandColor } : undefined}>{timeAgo(s.lastMessageAt)}</span>
-                      {sUnread > 0 && (
-                        <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-primary-foreground px-1" style={{ backgroundColor: brandColor }}>
-                          {sUnread}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  {s.lastMessage && (
-                    <p className="text-sm text-muted-foreground truncate mt-0.5 flex items-center gap-1">
-                      {s.lastMessageSenderType === "provider" && (
-                        <MessageStatus deliveredAt={null} readAt={null} brandColor={brandColor} className="flex-shrink-0" />
-                      )}
-                      <span className="truncate">{truncateMessage(s.lastMessage)}</span>
-                    </p>
-                  )}
-                </div>
-              </button>
-            );
-          }
-
-          // Multiple sessions - collapsible parent group
           return (
-            <Collapsible key={parentUserId} open={isExpanded} onOpenChange={() => toggleParent(parentUserId)}>
-              <CollapsibleTrigger className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted/30 transition-colors text-left border-b border-border/20" data-testid={`parent-group-${parentUserId}`}>
-                <div className="w-11 h-11 rounded-full flex-shrink-0 relative">
+            <div key={parentUserId} data-testid={`parent-group-${parentUserId}`}>
+              {/* Section header - parent name (not a chat row) */}
+              <div className="flex items-center gap-2 px-4 pt-3 pb-1.5 bg-muted/20 border-y border-border/30">
+                <div className="w-5 h-5 rounded-full flex-shrink-0 overflow-hidden bg-background flex items-center justify-center border border-border/40 relative">
                   {first.userAvatar ? (
-                    <img src={getPhotoSrc(first.userAvatar) || undefined} alt="" className="w-11 h-11 rounded-full object-cover" />
+                    <img src={getPhotoSrc(first.userAvatar) || undefined} alt="" className="w-5 h-5 object-cover" />
                   ) : (
-                    <div className="w-11 h-11 rounded-full bg-muted flex items-center justify-center">
-                      <User className="w-5 h-5 text-muted-foreground" />
-                    </div>
+                    <User className="w-3 h-3 text-muted-foreground" />
                   )}
-                  {onlineStatuses[first.userId] && <OnlineIndicator size="md" />}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-sm font-ui truncate">{first.userName || "Prospective Parent"}</span>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <span className={`text-[11px] ${totalUnread > 0 ? "font-semibold" : "text-muted-foreground"}`} style={totalUnread > 0 ? { color: brandColor } : undefined}>{timeAgo(latestMsg.lastMessageAt)}</span>
-                      {totalUnread > 0 && (
-                        <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-primary-foreground px-1" style={{ backgroundColor: brandColor }}>
-                          {totalUnread}
-                        </span>
+                <span className="text-[11px] font-semibold text-foreground uppercase tracking-wider truncate flex-1">
+                  {first.userName || "Prospective Parent"}
+                </span>
+                {onlineStatuses[first.userId] && (
+                  <span className="text-[10px] font-medium text-[hsl(var(--brand-success))]">Online</span>
+                )}
+                <span className="text-[10px] text-muted-foreground">
+                  {groupSessions.length} {groupSessions.length === 1 ? "match" : "matches"}
+                </span>
+              </div>
+              {/* Donor/surrogate rows - flat, full-width chat rows */}
+              {groupSessions.map(s => {
+                const sIsJoined = s.status === "PROVIDER_JOINED";
+                const sIsBooked = s.status === "CONSULTATION_BOOKED";
+                const hasPending = s.pendingQuestions > 0;
+                const sUnread = s.unreadCount || 0;
+                const photoSrc = getPhotoSrc(s.profilePhotoUrl);
+                return (
+                  <button
+                    key={s.id}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors text-left border-b border-border/10"
+                    onClick={() => setSelectedSessionId(s.id, s)}
+                    data-testid={`provider-session-${s.id}`}
+                  >
+                    <div className="w-12 h-12 rounded-full flex-shrink-0 relative overflow-hidden">
+                      {photoSrc ? (
+                        <img
+                          src={photoSrc}
+                          alt={s.title || ""}
+                          className="w-12 h-12 rounded-full object-cover"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      ) : (
+                        <div
+                          className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
+                          style={{ backgroundColor: brandColor }}
+                        >
+                          {(s.title || "C").charAt(0)}
+                        </div>
                       )}
                     </div>
-                  </div>
-                  <p className="text-sm text-muted-foreground truncate mt-0.5">{latestMsg.lastMessage ? truncateMessage(latestMsg.lastMessage) : ""}</p>
-                </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <span className="text-[11px] text-muted-foreground">{groupSessions.length}</span>
-                  <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-                </div>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                {groupSessions.map(s => {
-                  const sIsJoined = s.status === "PROVIDER_JOINED";
-                  const sIsBooked = s.status === "CONSULTATION_BOOKED";
-                  const hasPending = s.pendingQuestions > 0;
-                  const sUnread = sIsBooked ? Math.max(1, s.unreadCount || 0) : (s.unreadCount || 0);
-                  const photoSrc = getPhotoSrc(s.profilePhotoUrl);
-                  return (
-                    <button
-                      key={s.id}
-                      className={`w-full flex items-center gap-3 pl-10 pr-4 py-3 hover:bg-muted/50 transition-colors text-left border-b border-border/10 ${
-                        selectedSessionId === s.id ? "bg-muted/70" : ""
-                      }`}
-                      onClick={() => setSelectedSessionId(s.id)}
-                      data-testid={`provider-session-${s.id}`}
-                    >
-                      <div className="w-12 h-12 rounded-full flex-shrink-0 relative overflow-hidden">
-                        {photoSrc ? (
-                          <img
-                            src={photoSrc}
-                            alt={s.title || ""}
-                            className="w-12 h-12 rounded-full object-cover"
-                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                          />
-                        ) : (
-                          <div
-                            className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
-                            style={{ backgroundColor: brandColor }}
-                          >
-                            {(s.title || "C").charAt(0)}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="font-medium text-sm font-ui truncate">{s.title || "Conversation"}</span>
-                            {sIsJoined ? (
-                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[9px] font-bold uppercase flex-shrink-0">
-                                <CheckCircle2 className="w-2.5 h-2.5" />
-                                Joined
-                              </span>
-                            ) : sIsBooked ? (
-                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase flex-shrink-0" style={{ backgroundColor: `${brandColor}15`, color: brandColor }}>
-                                <UserPlus className="w-2.5 h-2.5" />
-                                Ready
-                              </span>
-                            ) : hasPending ? (
-                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] text-[9px] font-bold uppercase flex-shrink-0">
-                                {s.pendingQuestions}
-                              </span>
-                            ) : null}
-                          </div>
-                          <div className="flex items-center gap-1.5 flex-shrink-0">
-                            <span className={`text-[11px] ${sUnread > 0 ? "font-semibold" : "text-muted-foreground"}`} style={sUnread > 0 ? { color: brandColor } : undefined}>{timeAgo(s.lastMessageAt)}</span>
-                            {sUnread > 0 && (
-                              <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-primary-foreground px-1" style={{ backgroundColor: brandColor }}>
-                                {sUnread}
-                              </span>
-                            )}
-                          </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-medium text-sm font-ui truncate">{s.title || "Conversation"}</span>
+                          {sIsJoined ? (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[9px] font-bold uppercase flex-shrink-0">
+                              <CheckCircle2 className="w-2.5 h-2.5" />
+                              Joined
+                            </span>
+                          ) : sIsBooked ? (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase flex-shrink-0" style={{ backgroundColor: `${brandColor}15`, color: brandColor }}>
+                              <UserPlus className="w-2.5 h-2.5" />
+                              Ready
+                            </span>
+                          ) : hasPending ? (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] text-[9px] font-bold uppercase flex-shrink-0">
+                              {s.pendingQuestions}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground text-[9px] font-bold uppercase flex-shrink-0">
+                              <MessageCircle className="w-2.5 h-2.5" />
+                              Q&A
+                            </span>
+                          )}
                         </div>
-                        {s.lastMessage && (
-                          <p className="text-sm text-muted-foreground truncate mt-0.5 flex items-center gap-1">
-                            {s.lastMessageSenderType === "provider" && (
-                              <MessageStatus deliveredAt={null} readAt={null} brandColor={brandColor} className="flex-shrink-0" />
-                            )}
-                            <span className="truncate">{truncateMessage(s.lastMessage)}</span>
-                          </p>
-                        )}
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <span className={`text-[11px] ${sUnread > 0 ? "font-semibold" : "text-muted-foreground"}`} style={sUnread > 0 ? { color: brandColor } : undefined}>{timeAgo(s.lastMessageAt)}</span>
+                          {sUnread > 0 && (
+                            <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-primary-foreground px-1" style={{ backgroundColor: brandColor }}>
+                              {sUnread}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </button>
-                  );
-                })}
-              </CollapsibleContent>
-            </Collapsible>
+                      {s.lastMessage && (
+                        <p className="text-sm text-muted-foreground truncate mt-0.5 flex items-center gap-1">
+                          {s.lastMessageSenderType === "provider" && (
+                            <MessageStatus deliveredAt={null} readAt={null} brandColor={brandColor} className="flex-shrink-0" />
+                          )}
+                          <span className="truncate">{truncateMessage(s.lastMessage)}</span>
+                        </p>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           );
         })}
       </>
@@ -1936,74 +1815,70 @@ export default function ConversationsPage() {
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            {/* Parent photo + name */}
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-10 h-10 rounded-full flex-shrink-0 relative">
-                {detail.user.photoUrl ? (
-                  <img src={getPhotoSrc(detail.user.photoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                    {hasJoined || isConsultationBooked ? (
-                      <User className="w-4 h-4 text-muted-foreground" />
-                    ) : (
-                      <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
-                    )}
-                  </div>
-                )}
-                {onlineStatuses[detail.user.id] && <OnlineIndicator size="sm" />}
-              </div>
-              <span className="font-semibold text-sm font-ui truncate">{detail.user.name || "Prospective Parent"}</span>
-            </div>
-            {/* Separator */}
-            {(detail.title || selectedSession?.profilePhotoUrl) && (
-              <span className="text-muted-foreground text-base font-medium flex-shrink-0 px-1" aria-hidden>x</span>
-            )}
-            {/* Subject photo + ID */}
-            {(detail.title || selectedSession?.profilePhotoUrl) && (
-              <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            {(detail.title || selectedSession?.profilePhotoUrl) ? (
+              /* Stacked: parent (primary, who you're talking with) + donor (subtitle, what about) */
+              <>
                 <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-muted">
-                  {selectedSession?.profilePhotoUrl ? (
-                    <img src={getPhotoSrc(selectedSession.profilePhotoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
+                  {detail.user.photoUrl ? (
+                    <img src={getPhotoSrc(detail.user.photoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
                   ) : (
                     <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
                       <User className="w-4 h-4 text-muted-foreground" />
                     </div>
                   )}
                 </div>
-                <span className="font-semibold text-sm font-ui truncate" data-testid="provider-subject-label">{detail.title}</span>
-              </div>
-            )}
-            {!detail.title && !hasJoined && !isConsultationBooked && (
-              <p className="text-[11px] text-muted-foreground">Anonymous Q&A via AI Concierge</p>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-sm font-ui truncate">{detail.user.name || "Prospective Parent"}</span>
+                    {onlineStatuses[detail.user.id] && (
+                      <span className="w-2 h-2 rounded-full bg-[hsl(var(--brand-success))] flex-shrink-0" aria-label="Parent online" />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 mt-0.5 min-w-0">
+                    <span className="text-[11px] text-muted-foreground flex-shrink-0">re:</span>
+                    {selectedSession?.profilePhotoUrl ? (
+                      <img src={getPhotoSrc(selectedSession.profilePhotoUrl) || undefined} alt="" className="w-3.5 h-3.5 rounded-full object-cover flex-shrink-0" />
+                    ) : (
+                      <div className="w-3.5 h-3.5 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                        <User className="w-2 h-2 text-muted-foreground" />
+                      </div>
+                    )}
+                    <span className="text-[11px] text-muted-foreground truncate" data-testid="provider-subject-label">{detail.title || "Conversation"}</span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              /* Anonymous whisper phase: just the parent name + Q&A label */
+              <>
+                <div className="w-10 h-10 rounded-full flex-shrink-0 relative">
+                  {detail.user.photoUrl ? (
+                    <img src={getPhotoSrc(detail.user.photoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                      <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
+                    </div>
+                  )}
+                  {onlineStatuses[detail.user.id] && <OnlineIndicator size="sm" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="font-semibold text-sm font-ui truncate block">{detail.user.name || "Prospective Parent"}</span>
+                  <p className="text-[11px] text-muted-foreground truncate">Anonymous Q&A via AI Concierge</p>
+                </div>
+              </>
             )}
           </div>
           <div className="flex items-center gap-1 shrink-0">
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 px-2 gap-1.5 font-ui text-xs"
-              style={{ color: brandColor }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-              onClick={handleProviderMeeting}
-              data-testid="btn-provider-meeting"
-            >
-              <CalendarDays className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Meeting</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2 gap-1.5 font-ui text-xs"
-              style={{ color: brandColor }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${brandColor}1A`)}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+              className="h-10 w-10 p-0 rounded-full"
+              style={{ color: "white", backgroundColor: brandColor }}
               onClick={handleProviderVideo}
+              aria-label="Video call"
               data-testid="btn-provider-video"
             >
-              <Video className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Video</span>
+              <Video className="!w-5 !h-5" strokeWidth={2.25} />
             </Button>
           {hasJoined ? (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium" data-testid="badge-provider-joined">
@@ -2013,13 +1888,14 @@ export default function ConversationsPage() {
           ) : isConsultationBooked ? (
             <Button
               size="sm"
-              className="gap-1.5 text-xs"
+              className="h-9 px-4 rounded-full text-xs text-primary-foreground gap-1.5"
+              style={{ backgroundColor: brandColor }}
               onClick={() => joinMutation.mutate(selectedSessionId!)}
               disabled={joinMutation.isPending}
               data-testid="btn-join-group-chat"
             >
-              {joinMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
-              Join Group Chat
+              {joinMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
+              Join Chat
             </Button>
           ) : isWhisperPhase ? (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] text-xs font-medium" data-testid="badge-pending-questions">
@@ -2082,19 +1958,56 @@ export default function ConversationsPage() {
                 senderLabel={!hasJoined ? <WhisperDisclaimer /> : undefined}
                 enableFileUpload
                 testIdPrefix="provider"
+                onMeetingClick={handleProviderMeeting}
+                onCostSheetClick={hasJoined ? () => setProviderInlinePanel("costSheet") : undefined}
+                onInvoiceClick={hasJoined ? () => setProviderInlinePanel("invoice") : undefined}
+                onAgreementClick={hasJoined ? () => setProviderInlinePanel("agreement") : undefined}
+                inlinePanel={
+                  providerInlinePanel === "costSheet" ? (
+                    <CostSheetSidebarSection
+                      key={`cs-embed-${selectedSessionId || "none"}`}
+                      sessionId={selectedSessionId}
+                      brandColor={brandColor}
+                      sessionQueryKey="/api/provider/concierge-sessions"
+                      embedded
+                      onClose={() => setProviderInlinePanel(null)}
+                    />
+                  ) : providerInlinePanel === "invoice" ? (
+                    <InvoiceSidebarSection
+                      key={`inv-embed-${selectedSessionId || "none"}`}
+                      sessionId={selectedSessionId}
+                      brandColor={brandColor}
+                      sessionQueryKey="/api/provider/concierge-sessions"
+                      embedded
+                      onClose={() => setProviderInlinePanel(null)}
+                    />
+                  ) : providerInlinePanel === "agreement" ? (
+                    <AgreementSidebarSection
+                      key={`agr-embed-${selectedSessionId || "none"}`}
+                      agreement={detail?.agreements?.[0]}
+                      brandColor={brandColor}
+                      sessionId={selectedSessionId}
+                      relationshipStatus={detail?.user?.relationshipStatus}
+                      sessionQueryKey="/api/provider/concierge-sessions"
+                      embedded
+                      onClose={() => setProviderInlinePanel(null)}
+                    />
+                  ) : undefined
+                }
               />
             ) : isConsultationBooked ? (
               <div className="border-t px-4 py-4 bg-muted/30 text-center shrink-0" data-testid="provider-join-prompt">
-                <p className="text-sm text-muted-foreground mb-2">This parent has booked a consultation. Join the group chat to communicate directly.</p>
+                <p className="text-sm text-muted-foreground mb-2">This parent has booked a consultation. Join the chat to communicate directly.</p>
                 <Button
                   size="sm"
-                  className="gap-1.5 text-xs"
+                  className="h-9 px-4 rounded-full text-xs text-primary-foreground gap-1.5"
+                  style={{ backgroundColor: brandColor }}
                   onClick={() => joinMutation.mutate(selectedSessionId!)}
                   disabled={joinMutation.isPending}
                   data-testid="btn-join-group-chat-bottom"
                 >
-                  {joinMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
-                  Join Group Chat
+                  {joinMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
+                  Join Chat
                 </Button>
               </div>
             ) : (
@@ -2123,7 +2036,7 @@ export default function ConversationsPage() {
                 {isConsultationBooked && (
                   <div className="rounded-[var(--radius)] p-3 bg-primary/5 border border-primary/20">
                     <p className="text-sm font-medium" style={{ color: brandColor }}>Consultation Booked</p>
-                    <p className="text-xs text-muted-foreground mt-1">Click "Join Group Chat" to start communicating directly with this parent</p>
+                    <p className="text-xs text-muted-foreground mt-1">Click "Join Chat" to start communicating directly with this parent</p>
                   </div>
                 )}
               </div>
@@ -2189,30 +2102,7 @@ export default function ConversationsPage() {
                       </div>
                     </div>
                   )}
-                  {hasJoined && (
-                    <>
-                      <CostSheetSidebarSection
-                        key={`cs-${selectedSessionId || "none"}`}
-                        sessionId={selectedSessionId}
-                        brandColor={brandColor}
-                        sessionQueryKey="/api/provider/concierge-sessions"
-                      />
-                      <InvoiceSidebarSection
-                        key={`inv-${selectedSessionId || "none"}`}
-                        sessionId={selectedSessionId}
-                        brandColor={brandColor}
-                        sessionQueryKey="/api/provider/concierge-sessions"
-                      />
-                      <AgreementSidebarSection
-                        key={selectedSessionId || "none"}
-                        agreement={detail?.agreements?.[0]}
-                        brandColor={brandColor}
-                        sessionId={selectedSessionId}
-                        relationshipStatus={detail?.user?.relationshipStatus}
-                        sessionQueryKey="/api/provider/concierge-sessions"
-                      />
-                    </>
-                  )}
+                  {/* Cost Sheet / Invoice / Agreement sections moved into the + drawer above the composer */}
                 </>
               }
             />
