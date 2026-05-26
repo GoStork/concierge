@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
 import { ChatPlusDrawer, type ChatPlusAction } from "@/components/chat/chat-plus-drawer";
+import { InlineBookingNotification } from "@/components/chat/inline-booking-notification";
 import { createPortal } from "react-dom";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -929,226 +930,27 @@ export function InlineBookingCalendar({
       participants.push({ name: m.name || m.email, email: m.email });
     }
 
+    // Display branch - shared with provider/admin via InlineBookingNotification.
+    // `embedded` skips the outer wrapper since the parent timeline already provides
+    // the brand-color header + card border (see line ~4470).
     return (
-      <div className="space-y-4 py-3" data-testid={isConfirmed ? "inline-booking-confirmed" : "inline-booking-pending"}>
-        <div className="text-center space-y-1">
-          {isParentCancelled ? (
-            <>
-              <div className="w-12 h-12 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
-                <X className="w-6 h-6 text-destructive" />
-              </div>
-              <p className="font-bold text-sm">Parent Cancelled</p>
-              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">
-                Parent Cancelled
-              </span>
-            </>
-          ) : isProviderCancelled ? (
-            <>
-              <div className="w-12 h-12 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
-                <X className="w-6 h-6 text-destructive" />
-              </div>
-              <p className="font-bold text-sm">Provider Cancelled</p>
-              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">
-                Provider Cancelled
-              </span>
-            </>
-          ) : isCancelledStatus ? (
-            <>
-              <div className="w-12 h-12 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
-                <X className="w-6 h-6 text-destructive" />
-              </div>
-              <p className="font-bold text-sm">Meeting Cancelled</p>
-              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">
-                Cancelled
-              </span>
-            </>
-          ) : wasCompleted ? (
-            <>
-              <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
-                <Check className="w-6 h-6 text-muted-foreground" />
-              </div>
-              <p className="font-bold text-sm">Meeting Completed</p>
-              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-                Completed
-              </span>
-            </>
-          ) : isParentNoShow ? (
-            <>
-              <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
-                <Clock className="w-6 h-6 text-muted-foreground" />
-              </div>
-              <p className="font-bold text-sm">Parent No Show</p>
-              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-                Parent No Show
-              </span>
-            </>
-          ) : isProviderNoShow ? (
-            <>
-              <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
-                <Clock className="w-6 h-6 text-muted-foreground" />
-              </div>
-              <p className="font-bold text-sm">Provider No Show</p>
-              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-                Provider No Show
-              </span>
-            </>
-          ) : isNoShow ? (
-            <>
-              <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
-                <Clock className="w-6 h-6 text-muted-foreground" />
-              </div>
-              <p className="font-bold text-sm">No Show</p>
-              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-                No Show
-              </span>
-            </>
-          ) : isConfirmed ? (
-            <>
-              <div className="w-12 h-12 mx-auto rounded-full bg-[hsl(var(--brand-success,142_71%_45%)/0.12)] flex items-center justify-center">
-                <Check className="w-6 h-6 text-[hsl(var(--brand-success,142_71%_45%))]" />
-              </div>
-              <p className="font-bold text-sm">Confirmed</p>
-              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--brand-success,142_71%_45%)/0.12)] text-[hsl(var(--brand-success,142_71%_45%))]">
-                Confirmed
-              </span>
-            </>
-          ) : (
-            <>
-              <div className="w-12 h-12 mx-auto rounded-full bg-[hsl(var(--brand-warning,40_96%_53%)/0.12)] flex items-center justify-center">
-                <Clock className="w-6 h-6 text-[hsl(var(--brand-warning,40_96%_53%))]" />
-              </div>
-              <p className="font-bold text-sm">Awaiting Confirmation</p>
-              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning,40_96%_53%)/0.12)] text-[hsl(var(--brand-warning,40_96%_53%))]">
-                Pending
-              </span>
-            </>
-          )}
-        </div>
-
-        <div className="bg-muted/40 rounded-[var(--radius)] p-3 space-y-2.5 border border-border">
-          <div className="flex items-center gap-3">
-            {providerPhotoSrc ? (
-              <img src={providerPhotoSrc} alt={providerName} className="w-12 h-12 rounded-full object-cover" />
-            ) : (
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
-                {providerName.charAt(0)}
-              </div>
-            )}
-            <div>
-              <p className="text-sm font-semibold">{providerName}</p>
-              {providerOrgName && <p className="text-xs text-muted-foreground">{providerOrgName}</p>}
-            </div>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <CalendarCheck className="w-4 h-4 text-muted-foreground shrink-0" />
-            <span>{format(start, "EEEE, MMMM d, yyyy")}</span>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
-            <span>{format(start, "h:mm a")} ({booking.duration || pageInfo?.meetingDuration || 30} min)</span>
-          </div>
-        </div>
-
-        {participants.length > 0 && (
-          <div className="bg-muted/40 rounded-[var(--radius)] p-3 border border-border">
-            <div className="flex items-center gap-2 mb-2">
-              <Globe className="w-3.5 h-3.5 text-primary" />
-              <span className="text-xs font-semibold">Participants</span>
-            </div>
-            <div className="space-y-1.5">
-              {participants.map((p, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm pl-1">
-                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                    <Check className="w-3 h-3 text-primary" />
-                  </div>
-                  <span className="font-medium text-xs">{p.name}</span>
-                  {p.email && p.name !== p.email && <span className="text-xs text-muted-foreground">({p.email})</span>}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {isParentCancelled ? (
-          <div className="bg-destructive/5 border border-destructive/20 rounded-[var(--radius)] p-3">
-            <p className="text-xs font-medium text-destructive">Parent cancelled</p>
-            <p className="text-[11px] text-destructive/80 mt-0.5">This meeting was cancelled by the parent.</p>
-          </div>
-        ) : isProviderCancelled ? (
-          <div className="bg-destructive/5 border border-destructive/20 rounded-[var(--radius)] p-3">
-            <p className="text-xs font-medium text-destructive">Provider cancelled</p>
-            <p className="text-[11px] text-destructive/80 mt-0.5">This meeting was cancelled by the provider.</p>
-          </div>
-        ) : isCancelledStatus ? (
-          <div className="bg-destructive/5 border border-destructive/20 rounded-[var(--radius)] p-3">
-            <p className="text-xs font-medium text-destructive">Meeting cancelled</p>
-            <p className="text-[11px] text-destructive/80 mt-0.5">This meeting has been cancelled.</p>
-          </div>
-        ) : wasCompleted ? (
-          <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-            <p className="text-xs font-medium text-muted-foreground">Meeting completed</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">Both parties joined this consultation with {providerName}.</p>
-          </div>
-        ) : isParentNoShow ? (
-          <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-            <p className="text-xs font-medium text-muted-foreground">Parent no show</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">The provider joined the meeting room but the parent did not.</p>
-          </div>
-        ) : isProviderNoShow ? (
-          <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-            <p className="text-xs font-medium text-muted-foreground">Provider no show</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">The parent joined the meeting room but the provider did not.</p>
-          </div>
-        ) : isNoShow ? (
-          <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-            <p className="text-xs font-medium text-muted-foreground">No show</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">The scheduled time has passed and no one joined the meeting room.</p>
-          </div>
-        ) : isConfirmed ? (
-          <div className="bg-[hsl(var(--brand-success,142_71%_45%)/0.08)] border border-[hsl(var(--brand-success,142_71%_45%)/0.3)] rounded-[var(--radius)] p-3">
-            <p className="text-xs font-medium text-[hsl(var(--brand-success,142_71%_45%))]">Meeting confirmed</p>
-            <p className="text-[11px] text-[hsl(var(--brand-success,142_71%_45%))] mt-0.5">Your consultation with {providerName} is confirmed. You'll receive a reminder before the meeting.</p>
-          </div>
-        ) : (
-          <div className="bg-[hsl(var(--brand-warning,40_96%_53%)/0.08)] border border-[hsl(var(--brand-warning,40_96%_53%)/0.3)] rounded-[var(--radius)] p-3">
-            <p className="text-xs font-medium text-[hsl(var(--brand-warning,40_96%_53%))]">Awaiting provider confirmation</p>
-            <p className="text-[11px] text-[hsl(var(--brand-warning,40_96%_53%))] mt-0.5">We'll send you an email once {providerName} confirms your booking.</p>
-          </div>
-        )}
-
-        {isConfirmed && !hasPassed && booking.providerUser?.dailyRoomUrl && booking.meetingType !== "phone" && (
-          <a
-            href={`/room/${booking.id}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 w-full py-2.5 rounded-[var(--radius)] text-xs font-medium text-primary-foreground transition-colors hover:opacity-90"
-            style={{ backgroundColor: brandColor }}
-            data-testid="btn-join-meeting-inline"
-          >
-            <Video className="w-3.5 h-3.5" />
-            Join Meeting
-          </a>
-        )}
-
-        {booking.publicToken && !wasCompleted && !isNoShow && !isParentNoShow && !isProviderNoShow && !isCancelledStatus && (
-          <div className="flex gap-2">
-            <button
-              onClick={() => { setSelectedDate(null); setSelectedSlot(null); setCurrentMonth(new Date()); setStep("reschedule"); }}
-              className="flex-1 text-center text-xs font-medium py-2 rounded-[var(--radius)] border border-border hover:bg-muted transition-colors cursor-pointer"
-              data-testid="btn-reschedule-inline"
-            >
-              Reschedule
-            </button>
-            <button
-              onClick={() => setStep("cancel_confirm")}
-              className="flex-1 text-center text-xs font-medium py-2 rounded-[var(--radius)] border border-destructive/30 text-destructive hover:bg-destructive/5 transition-colors cursor-pointer"
-              data-testid="btn-cancel-inline"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-      </div>
+      <InlineBookingNotification
+        booking={booking}
+        brandColor={brandColor}
+        viewerRole="parent"
+        embedded
+        onUpdate={() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/chat-session"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+        }}
+        onRequestReschedule={() => {
+          setSelectedDate(null);
+          setSelectedSlot(null);
+          setCurrentMonth(new Date());
+          setStep("reschedule");
+        }}
+        onRequestCancel={() => setStep("cancel_confirm")}
+      />
     );
   }
 
@@ -2417,12 +2219,19 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
 
   if (msg.uiCardType === "cost_sheet") {
     const totalCents: number = data.totalCostCents ?? 0;
-    const fileUrl: string | null = data.costSheetFileUrl || null;
+    const hasFile: boolean = !!data.costSheetFileUrl;
+    const quoteId: string | null = data.quoteId || null;
     const fileName: string | null = data.costSheetFileName || null;
     const providerName: string = data.providerName || "Your provider";
     const notes: string | null = data.notes || null;
     const sentAt: string | null = data.sentAt || null;
     const totalFormatted = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(totalCents / 100);
+    // Route through our authenticated download endpoint which mints a fresh
+    // signed URL each click. The raw GCS URL returned by uploadBufferPublic
+    // 403s when the bucket has uniform bucket-level access enabled.
+    const downloadUrl = hasFile && sessionId && quoteId
+      ? `/api/sessions/${sessionId}/cost-sheets/${quoteId}/file`
+      : null;
     return (
       <div
         className="rounded-[var(--radius)] border-2 bg-background overflow-hidden max-w-md"
@@ -2442,11 +2251,11 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
           </div>
           <p className="text-lg font-bold shrink-0" style={{ color: brandColor }}>{totalFormatted}</p>
         </div>
-        {(fileUrl || notes) && (
+        {(downloadUrl || notes) && (
           <div className="border-t px-4 py-2.5 space-y-2 bg-muted/30">
-            {fileUrl && (
+            {downloadUrl && (
               <a
-                href={fileUrl}
+                href={downloadUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 text-xs hover:underline"

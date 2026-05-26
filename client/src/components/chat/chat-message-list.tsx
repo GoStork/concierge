@@ -29,6 +29,8 @@ interface ChatMessageListProps {
   onBookingUpdate?: () => void;
   /** Test-ID prefix for message bubbles (default: "provider-msg") */
   msgTestIdPrefix?: string;
+  /** Chat session id - threaded through to SpecialMessageCard for signed cost-sheet links. */
+  sessionId?: string | null;
 }
 
 /** Renders a chat message with **bold** and line break support. */
@@ -70,6 +72,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
     onOpenInlineVideo,
     onBookingUpdate,
     msgTestIdPrefix = "provider-msg",
+    sessionId,
   },
   ref,
 ) {
@@ -102,8 +105,8 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
     <>
       {merged.map((item, i) => {
         if (item.type === "booking") {
-          // Match the parent /chat layout: left-anchored with the AI/matchmaker
-          // avatar so the booking card reads as "the AI delivered this".
+          // Match the parent /chat layout exactly: avatar + flex-1 wrapper.
+          // The maxWidth is applied on the card border div inside InlineBookingNotification.
           return (
             <div key={`booking-${item.booking.id}`} className="flex items-start gap-2 px-1 pb-2">
               <div className="w-8 h-8 rounded-full shrink-0 overflow-hidden mt-0.5">
@@ -118,10 +121,11 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                   </div>
                 )}
               </div>
-              <div className="flex-1 min-w-0" style={{ maxWidth: "min(100%, 420px)" }}>
+              <div className="flex-1 min-w-0">
                 <InlineBookingNotification
                   booking={item.booking}
                   brandColor={brandColor}
+                  viewerRole={viewerRole === "admin" ? "admin" : "provider"}
                   onUpdate={() => onBookingUpdate?.()}
                 />
               </div>
@@ -255,6 +259,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                       brandColor={brandColor}
                       viewerRole={viewerRole}
                       onOpenInlineVideo={onOpenInlineVideo}
+                      sessionId={sessionId}
                     />
                     {(!showBubble || isAttachmentMsg) && msg.createdAt && (
                       <span className="flex items-center gap-0.5 mt-0.5 px-1" style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55 }}>

@@ -308,9 +308,9 @@ export function CostSheetSidebarSection({
               </div>
               <div className="flex items-center justify-between text-muted-foreground">
                 <span>{new Date(q.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
-                {q.costSheetFileUrl && (
+                {q.costSheetFileUrl && sessionId && (
                   <a
-                    href={q.costSheetFileUrl}
+                    href={`/api/sessions/${sessionId}/cost-sheets/${q.id}/file`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="hover:underline flex items-center gap-1"

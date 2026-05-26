@@ -1937,6 +1937,7 @@ export default function ConversationsPage() {
                 chatPalette={chatPalette}
                 borderRadius={brand?.borderRadius ?? 1}
                 viewerRole="provider"
+                sessionId={selectedSessionId}
                 isOwnMessage={(msg) => msg.senderType === "provider"}
                 nameLabel={(msg) => {
                   const isOwn = msg.senderType === "provider";

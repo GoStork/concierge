@@ -7,9 +7,11 @@ interface SpecialMessageCardProps {
   brandColor: string;
   viewerRole?: "provider" | "parent" | "admin";
   onOpenInlineVideo?: (bookingId: string) => void;
+  /** Chat session id - required for cost-sheet download links to mint a signed GCS URL. */
+  sessionId?: string | null;
 }
 
-export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: SpecialMessageCardProps) {
+export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo, sessionId }: SpecialMessageCardProps) {
   const data = msg.uiCardData as any;
   if (!data) return null;
 
@@ -156,12 +158,19 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
 
   if (msg.uiCardType === "cost_sheet") {
     const totalCents: number = data.totalCostCents ?? 0;
-    const fileUrl: string | null = data.costSheetFileUrl || null;
+    const hasFile: boolean = !!data.costSheetFileUrl;
+    const quoteId: string | null = data.quoteId || null;
     const fileName: string | null = data.costSheetFileName || null;
     const providerName: string = data.providerName || "Your provider";
     const notes: string | null = data.notes || null;
     const sentAt: string | null = data.sentAt || null;
     const totalFormatted = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(totalCents / 100);
+    // Route through our authenticated download endpoint which mints a fresh
+    // signed URL each click. The raw GCS URL returned by uploadBufferPublic
+    // 403s when the bucket has uniform bucket-level access enabled.
+    const downloadUrl = hasFile && sessionId && quoteId
+      ? `/api/sessions/${sessionId}/cost-sheets/${quoteId}/file`
+      : null;
 
     return (
       <div className="mt-1" data-testid="cost-sheet-card">
@@ -187,11 +196,11 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
               <p className="text-lg font-bold" style={{ color: brandColor }}>{totalFormatted}</p>
             </div>
           </div>
-          {(fileUrl || notes) && (
+          {(downloadUrl || notes) && (
             <div className="border-t px-4 py-2.5 space-y-2 bg-muted/30">
-              {fileUrl && (
+              {downloadUrl && (
                 <a
-                  href={fileUrl}
+                  href={downloadUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-2 text-xs hover:underline"

@@ -11,12 +11,13 @@ import {
   Param,
   Post,
   Req,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { Request } from "express";
+import { Request, Response } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { BillingService } from "./billing.service";
 import { NotificationService } from "../notifications/notification.service";
@@ -192,6 +193,66 @@ export class CostSheetController {
       orderBy: { createdAt: "desc" },
     });
     return { quotes };
+  }
+
+  // ─── Download a cost-sheet file via signed URL ─────────────────────────────
+  //
+  // The raw URL returned by uploadBufferPublic only works when the GCS bucket
+  // grants allUsers read access. With uniform bucket-level access enabled the
+  // upload still succeeds but anonymous viewers get AccessDenied. This route
+  // verifies the caller is a participant in the session, mints a 1-hour
+  // signed URL on demand, and 302-redirects so the browser fetches the PDF
+  // with proper authentication.
+  @Get("api/sessions/:sessionId/cost-sheets/:quoteId/file")
+  @UseGuards(SessionOrJwtGuard)
+  async downloadCostSheetFile(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Param("sessionId") sessionId: string,
+    @Param("quoteId") quoteId: string,
+  ) {
+    const user = req.user as any;
+    const session = await this.db.aiChatSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, userId: true, providerId: true },
+    });
+    if (!session) throw new NotFoundException("Session not found");
+
+    const roles: string[] = user?.roles || [];
+    const isAdmin = roles.includes("GOSTORK_ADMIN");
+    const isProviderMember = user?.providerId && user.providerId === session.providerId;
+    const isParent = user?.id === session.userId;
+    if (!isAdmin && !isProviderMember && !isParent) {
+      throw new ForbiddenException("You don't have access to this session");
+    }
+
+    const quote = await this.db.providerQuote.findUnique({
+      where: { id: quoteId },
+      select: { id: true, sessionId: true, costSheetFileUrl: true, costSheetFileName: true },
+    });
+    if (!quote || quote.sessionId !== sessionId) {
+      throw new NotFoundException("Cost sheet not found");
+    }
+    if (!quote.costSheetFileUrl) {
+      throw new NotFoundException("This cost sheet has no attached file");
+    }
+
+    // Strip the "https://storage.googleapis.com/{bucket}/" prefix to recover
+    // the GCS object path. Works whether the bucket is the default one or
+    // overridden via env.
+    const m = quote.costSheetFileUrl.match(/^https?:\/\/storage\.googleapis\.com\/[^/]+\/(.+)$/);
+    if (!m) {
+      throw new HttpException("Stored cost-sheet URL is not a GCS object", HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+    const objectPath = decodeURIComponent(m[1]);
+
+    try {
+      const signed = await this.storage.getSignedUrl(objectPath, 60);
+      return res.redirect(302, signed);
+    } catch (err: any) {
+      this.logger.error(`Cost-sheet signed URL failed for quote ${quoteId}: ${err?.message}`);
+      throw new HttpException("Failed to generate download link", HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 
   // ─── Manually trigger an invoice (provider or admin) ───────────────────────

@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Loader2, X, CalendarClock, Clock, Crown, Check, Video } from "lucide-react";
+import { Loader2, X, CalendarClock, Clock, Crown, Check, Video, Globe } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -9,19 +9,51 @@ import { format } from "date-fns";
 import { InlineSuggestTimeForm } from "./inline-suggest-time-form";
 import { RescheduleCalendarPicker } from "@/pages/concierge-chat-page";
 
+/**
+ * Shared booking widget used by parent (/chat), provider (conversations-page),
+ * and admin (concierge-monitor) views. Only the action buttons differ by role;
+ * the visual layout, hero, counterparty info, date/time, participants, and
+ * status message are identical across all three.
+ */
 interface InlineBookingNotificationProps {
   booking: any;
   brandColor: string;
   onUpdate: () => void;
+  /** Who's looking at this widget. Drives counterparty calc, header title, and
+   *  which action buttons render. Falls back to user==providerUser detection
+   *  when not provided (matches the pre-refactor behavior). */
+  viewerRole?: "parent" | "provider" | "admin";
+  /** When true, skips the outer card border + brand-color header strip so the
+   *  caller can provide its own wrapper. Used by the parent's
+   *  InlineBookingCalendar which already wraps in the timeline. */
+  embedded?: boolean;
+  /** Parent-only: clicking Reschedule fires this; the parent's calendar widget
+   *  uses it to swap to its date-picker step. */
+  onRequestReschedule?: () => void;
+  /** Parent-only: clicking Cancel fires this; the parent's calendar widget
+   *  uses it to swap to its cancel-confirm step. */
+  onRequestCancel?: () => void;
 }
 
-export function InlineBookingNotification({ booking, brandColor, onUpdate }: InlineBookingNotificationProps) {
+export function InlineBookingNotification({
+  booking,
+  brandColor,
+  onUpdate,
+  viewerRole,
+  embedded = false,
+  onRequestReschedule,
+  onRequestCancel,
+}: InlineBookingNotificationProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [showSuggestForm, setShowSuggestForm] = useState(false);
   const [showRescheduleForm, setShowRescheduleForm] = useState(false);
-  const isProvider = booking?.providerUserId === user?.id;
+  // Provider detection: explicit viewerRole wins, else fall back to user==providerUser.
+  const isProvider = viewerRole
+    ? (viewerRole === "provider" || viewerRole === "admin")
+    : booking?.providerUserId === user?.id;
+  const isParent = viewerRole === "parent";
   const isPending = booking?.status === "PENDING";
   const isConfirmed = booking?.status === "CONFIRMED";
   const isCancelled = booking?.status === "CANCELLED";
@@ -87,28 +119,37 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
     ? [booking.parentUser]
     : [];
 
-  return (
+  const headerTitle = isAdminHost && isProvider
+    ? `GoStork Concierge Call with ${booking.parentUser?.name || booking.attendeeName || "Parent"}`
+    : isAdminHost
+    ? `GoStork Concierge Call - ${adminName}`
+    : isProvider
+    ? `Consultation Call with ${booking.parentUser?.name || booking.attendeeName || "Parent"}`
+    : orgName ? `Consultation Call with ${orgName}` : "Consultation Call";
+
+  const cardChrome = (children: ReactNode) => embedded ? (
+    <div className="space-y-3" data-testid={`inline-booking-card-${booking.id}`}>{children}</div>
+  ) : (
     <div className="my-3" data-testid={`inline-booking-card-${booking.id}`}>
       <div
-        className="bg-card border border-border overflow-hidden"
-        style={{ borderRadius: "var(--container-radius, 0.5rem)" }}
+        className="w-full overflow-hidden border border-border bg-card"
+        style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 420px)" }}
       >
         <div className="p-1.5" style={{ backgroundColor: brandColor }}>
           <div className="flex items-center gap-2 px-3 py-1.5">
             <CalendarClock className="w-4 h-4 text-primary-foreground" />
             <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
-              {isAdminHost && isProvider
-                ? `GoStork Concierge Call with ${booking.parentUser?.name || booking.attendeeName || "Parent"}`
-                : isAdminHost
-                ? `GoStork Concierge Call - ${adminName}`
-                : isProvider
-                ? `Consultation Call with ${booking.parentUser?.name || booking.attendeeName || "Parent"}`
-                : orgName ? `Consultation Call with ${orgName}` : "Consultation Call"}
+              {headerTitle}
             </span>
           </div>
         </div>
+        <div className="p-4 space-y-3">{children}</div>
+      </div>
+    </div>
+  );
 
-        <div className="p-4 space-y-3">
+  return cardChrome(<>
+        <div className="space-y-3">
           {/* Hero status display - matches parent /chat InlineBookingCalendar so all
               three views (parent, provider, admin) show the same state visual. */}
           <div className="text-center space-y-1 py-1">
@@ -207,15 +248,46 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
                 <div className="w-12 h-12 mx-auto rounded-full bg-[hsl(var(--brand-warning)/0.12)] flex items-center justify-center">
                   <Clock className="w-6 h-6 text-[hsl(var(--brand-warning))]" />
                 </div>
-                <p className="font-bold text-sm">{isAdminHost ? "Awaiting Confirmation" : "Pending Approval"}</p>
+                <p className="font-bold text-sm">Awaiting Confirmation</p>
                 <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]">
-                  {isAdminHost ? "Awaiting Confirmation" : "Pending Approval"}
+                  Pending
                 </span>
               </>
             ) : null}
           </div>
 
+          {/* Counterparty info + date/time - mirrors parent /chat InlineBookingCalendar
+              so all three views (parent, provider, admin) show the same structure.
+              From this viewer's perspective the counterparty is the OTHER party:
+              for parent: the provider; for provider/admin: the parent. */}
           <div className="bg-muted/40 rounded-[var(--radius)] p-3 space-y-2.5 border border-border">
+            {(() => {
+              // Counterparty = the party the viewer is meeting with.
+              const counterpartyName = isProvider
+                ? (booking.parentUser?.name || booking.attendeeName || booking.attendeeEmails?.[0] || "Parent")
+                : (isAdminHost ? adminName : providerName);
+              const counterpartySubtitle = isProvider
+                ? (booking.parentUser?.email || booking.attendeeEmails?.[0] || "")
+                : (isAdminHost ? "" : orgName);
+              const counterpartyPhoto = isProvider
+                ? (booking.parentUser?.photoUrl || null)
+                : (booking.providerUser?.photoUrl || null);
+              return (
+                <div className="flex items-center gap-3">
+                  {counterpartyPhoto ? (
+                    <img src={counterpartyPhoto} alt={counterpartyName} className="w-12 h-12 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
+                      {counterpartyName.charAt(0)}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate">{counterpartyName}</p>
+                    {counterpartySubtitle && <p className="text-xs text-muted-foreground truncate">{counterpartySubtitle}</p>}
+                  </div>
+                </div>
+              );
+            })()}
             <div className="flex items-center gap-2 text-sm">
               <CalendarClock className="w-4 h-4 text-muted-foreground shrink-0" />
               <span>{format(start, "EEEE, MMMM d, yyyy")}</span>
@@ -228,7 +300,7 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
 
           <div className="bg-muted/40 rounded-[var(--radius)] p-3 border border-border">
             <div className="flex items-center gap-2 mb-2">
-              <Crown className="w-3.5 h-3.5" style={{ color: brandColor }} />
+              <Globe className="w-3.5 h-3.5 text-primary" />
               <span className="text-xs font-semibold">Participants</span>
             </div>
             <div className="space-y-1.5">
@@ -394,7 +466,25 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
             </Button>
           </div>
         )}
-      </div>
-    </div>
-  );
+
+        {/* Parent-only action buttons - matches parent /chat InlineBookingCalendar */}
+        {isParent && booking.publicToken && !wasCompleted && !isNoShow && !isParentNoShow && !isProviderNoShow && !isCancelled && (
+          <div className="flex gap-2 px-4 py-3 border-t bg-muted/20">
+            <button
+              onClick={() => onRequestReschedule?.()}
+              className="flex-1 text-center text-xs font-medium py-2 rounded-[var(--radius)] border border-border hover:bg-muted transition-colors cursor-pointer"
+              data-testid="button-reschedule-parent-inline"
+            >
+              Reschedule
+            </button>
+            <button
+              onClick={() => onRequestCancel?.()}
+              className="flex-1 text-center text-xs font-medium py-2 rounded-[var(--radius)] border border-destructive/30 text-destructive hover:bg-destructive/5 transition-colors cursor-pointer"
+              data-testid="button-cancel-parent-inline"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+      </>);
 }

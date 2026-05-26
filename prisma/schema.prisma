@@ -960,9 +960,9 @@ model ProviderBrandSettings {
   secondaryForegroundColor   String?
   accentForegroundColor      String?
   destructiveForegroundColor String?
-  borderRadius               Float    @default(0.5)
-  containerRadius            Float    @default(0.5)
-  bottomNavRadius            Float    @default(0)
+  borderRadius               Float?
+  containerRadius            Float?
+  bottomNavRadius            Float?
   bottomNavBgColor           String?
   bottomNavSafeAreaColor     String?
   bottomNavFgColor           String?

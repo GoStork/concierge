@@ -515,6 +515,7 @@ export default function AdminConciergeMonitor() {
               chatPalette={chatPalette}
               borderRadius={brand?.borderRadius ?? 1}
               viewerRole="admin"
+              sessionId={selectedSessionId}
               isOwnMessage={(msg) => msg.senderType === "human"}
               nameLabel={(msg) => {
                 if (msg.role === "user") return null;
