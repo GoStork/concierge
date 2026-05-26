@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useProvider } from "@/hooks/use-providers";
-import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { api } from "@shared/routes";
 import { hasProviderRole } from "@shared/roles";
@@ -24,6 +24,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import LocationAutocomplete from "@/components/location-autocomplete";
 import { CountryAutocompleteInput } from "@/components/ui/country-autocomplete-input";
+import ManageServicesDialog, { SERVICE_STATUS_STYLES } from "@/components/manage-services-dialog";
 import {
   DndContext,
   closestCenter,
@@ -173,65 +174,9 @@ export default function CompanyTab() {
   const [surrogacyBirthCertificateListing, setSurrogacyBirthCertificateListing] = useState<string[]>([]);
   const [surrogacySurrogateRemovableFromCert, setSurrogacySurrogateRemovableFromCert] = useState(false);
   const isInitializingRef = useRef(false);
-  const [selectedServiceTypeId, setSelectedServiceTypeId] = useState("");
+  const [manageServicesOpen, setManageServicesOpen] = useState(false);
 
-  const { data: services } = useQuery<any[]>({
-    queryKey: ["/api/providers", providerId, "services"],
-    queryFn: async () => {
-      const res = await fetch(`/api/providers/${providerId}/services`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch services");
-      return res.json();
-    },
-    enabled: !!providerId,
-  });
-
-  const { data: providerTypes } = useQuery<any[]>({
-    queryKey: ["/api/provider-types"],
-  });
-
-  const requestServiceMutation = useMutation({
-    mutationFn: async (providerTypeId: string) => {
-      const res = await apiRequest("POST", `/api/providers/${providerId}/services`, {
-        providerTypeId,
-        status: "NEW",
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/providers", providerId, "services"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/providers", providerId] });
-      setSelectedServiceTypeId("");
-      toast({ title: "Service requested", description: "Your service request has been submitted.", variant: "success" });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const removeServiceMutation = useMutation({
-    mutationFn: async (serviceId: string) => {
-      const res = await apiRequest("POST", `/api/providers/${providerId}/services/${serviceId}/delete`);
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/providers", providerId, "services"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/providers", providerId] });
-      toast({ title: "Service removed", variant: "success" });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Error removing service", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const existingServiceTypeIds = new Set(services?.map((s: any) => s.providerTypeId) || []);
-  const availableServiceTypes = providerTypes?.filter((t: any) => !existingServiceTypeIds.has(t.id)) || [];
-
-  const SERVICE_STATUS_STYLES: Record<string, string> = {
-    NEW: "bg-muted text-muted-foreground",
-    IN_PROGRESS: "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]",
-    APPROVED: "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))]",
-    DECLINED: "bg-destructive/15 text-destructive",
-  };
+  const services = provider?.services as any[] | undefined;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -746,60 +691,36 @@ export default function CompanyTab() {
       </Card>
 
       <Card className="p-6 space-y-4">
-        <h2 className="text-lg font-heading flex items-center gap-2">
-          <Settings className="w-5 h-5 text-primary" /> Services
-        </h2>
-        {services && services.length > 0 && (
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-lg font-heading flex items-center gap-2">
+            <Settings className="w-5 h-5 text-primary" /> Services
+          </h2>
+          {isGostorkAdmin && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setManageServicesOpen(true)}
+              data-testid="button-manage-services"
+            >
+              <Plus className="w-3 h-3 mr-1" />
+              {services && services.length > 0 ? "Manage Services" : "Add Service"}
+            </Button>
+          )}
+        </div>
+        {services && services.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {services.map((service: any) => (
               <Badge
                 key={service.id}
-                className={`${SERVICE_STATUS_STYLES[service.status] || ""} gap-1.5 py-1 px-2.5`}
+                className={`text-xs ${SERVICE_STATUS_STYLES[service.status] || ""}`}
                 data-testid={`badge-service-${service.id}`}
               >
-                <Check className="w-3 h-3" />
-                {service.providerType?.name || "Service"}
-                <span className="text-[10px] opacity-70 ml-1">{service.status?.replace("_", " ")}</span>
-                {!readOnly && (
-                  <button
-                    type="button"
-                    className="ml-1 opacity-60 hover:opacity-100 transition-opacity"
-                    onClick={() => removeServiceMutation.mutate(service.id)}
-                    disabled={removeServiceMutation.isPending}
-                    data-testid={`btn-remove-service-${service.id}`}
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
+                {service.providerType?.name || "Service"}: {service.status?.replace("_", " ")}
               </Badge>
             ))}
           </div>
-        )}
-        {!readOnly && availableServiceTypes.length > 0 && (
-          <div className="flex items-end gap-3">
-            <div className="flex-1 min-w-[200px]">
-              <Select value={selectedServiceTypeId} onValueChange={setSelectedServiceTypeId}>
-                <SelectTrigger data-testid="select-request-service-type">
-                  <SelectValue placeholder="Add a service type..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableServiceTypes.map((t: any) => (
-                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button
-              type="button"
-              onClick={() => selectedServiceTypeId && requestServiceMutation.mutate(selectedServiceTypeId)}
-              disabled={!selectedServiceTypeId || requestServiceMutation.isPending}
-              data-testid="button-submit-service-request"
-            >
-              {requestServiceMutation.isPending ? "Submitting..." : "Submit Request"}
-            </Button>
-          </div>
-        )}
-        {(!services || services.length === 0) && (readOnly || availableServiceTypes.length === 0) && (
+        ) : (
           <p className="text-sm text-muted-foreground py-2">No services registered yet.</p>
         )}
       </Card>
@@ -1295,6 +1216,16 @@ export default function CompanyTab() {
         </div>
       )}
     </form>
+    <ManageServicesDialog
+      provider={provider ? { id: provider.id, name: provider.name, services: provider.services } : null}
+      open={manageServicesOpen}
+      onOpenChange={(open) => {
+        setManageServicesOpen(open);
+        if (!open) {
+          queryClient.invalidateQueries({ queryKey: [api.providers.get.path, providerId] });
+        }
+      }}
+    />
     </>
   );
 }
