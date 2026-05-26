@@ -106,6 +106,7 @@ model ProviderService {
   providerType   ProviderType @relation(fields: [providerTypeId], references: [id])
 
   @@unique([providerId, providerTypeId])
+  @@index([providerTypeId, status])
 }
 
 model ProviderLocation {
@@ -119,6 +120,8 @@ model ProviderLocation {
   provider      Provider                 @relation(fields: [providerId], references: [id])
   members       ProviderMemberLocation[]
   userLocations UserLocation[]
+
+  @@index([providerId])
 }
 
 model IvfSuccessRate {
