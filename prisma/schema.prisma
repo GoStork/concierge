@@ -9,32 +9,32 @@ datasource db {
 }
 
 model Provider {
-  id                   String                  @id @default(uuid())
-  name                 String
-  about                String?
-  logoUrl              String?
-  websiteUrl           String?
-  cdcClinicId          String?
-  email                String?
-  phone                String?
-  yearFounded          Int?
-  createdAt            DateTime                @default(now())
-  updatedAt            DateTime                @updatedAt
-  brandingEnabled              Boolean                 @default(false)
-  consultationBookingUrl       String?
-  consultationIframeEnabled    Boolean                 @default(false)
-  agreementTemplateUrl         String?
-  agreementTemplateOriginalName String?
-  pandaDocTemplateId           String?
-  pandaDocRoles                String?  // JSON array of role names in signing order, e.g. ["Client","Client2","Agency"]
+  id                                    String                      @id @default(uuid())
+  name                                  String
+  about                                 String?
+  logoUrl                               String?
+  websiteUrl                            String?
+  cdcClinicId                           String?
+  email                                 String?
+  phone                                 String?
+  yearFounded                           Int?
+  createdAt                             DateTime                    @default(now())
+  updatedAt                             DateTime                    @updatedAt
+  brandingEnabled                       Boolean                     @default(false)
+  consultationBookingUrl                String?
+  consultationIframeEnabled             Boolean                     @default(false)
+  agreementTemplateUrl                  String?
+  agreementTemplateOriginalName         String?
+  pandaDocTemplateId                    String?
+  pandaDocRoles                         String? // JSON array of role names in signing order, e.g. ["Client","Client2","Agency"]
   // IVF Clinic matching requirements
-  ivfTwinsAllowed              Boolean                 @default(false)
-  ivfTransferFromOtherClinics  Boolean                 @default(false)
-  ivfMaxAgeIp1                 Int?
-  ivfMaxAgeIp2                 Int?
-  ivfBiologicalConnection      String?
-  ivfAcceptingPatients         Json?
-  ivfEggDonorType              String?
+  ivfTwinsAllowed                       Boolean                     @default(false)
+  ivfTransferFromOtherClinics           Boolean                     @default(false)
+  ivfMaxAgeIp1                          Int?
+  ivfMaxAgeIp2                          Int?
+  ivfBiologicalConnection               String?
+  ivfAcceptingPatients                  Json?
+  ivfEggDonorType                       String?
   // IVF Clinic surrogate matching requirements
   ivfSurrogateMinAge                    Int?
   ivfSurrogateMaxAge                    Int?
@@ -54,38 +54,39 @@ model Provider {
   ivfSurrogatePreeclampsia              Boolean?
   ivfSurrogateMentalHealthHistory       String?
   // Surrogacy Agency matching requirements
-  surrogacyCitizensNotAllowed          Json?
-  surrogacyTwinsAllowed                Boolean                 @default(false)
-  surrogacyStayAfterBirthMonths        Int?
-  surrogacyBirthCertificateListing     Json?
-  surrogacySurrogateRemovableFromCert  Boolean?
+  surrogacyCitizensNotAllowed           Json?
+  surrogacyTwinsAllowed                 Boolean                     @default(false)
+  surrogacyStayAfterBirthMonths         Int?
+  surrogacyBirthCertificateListing      Json?
+  surrogacySurrogateRemovableFromCert   Boolean?
   // Billing settings
-  depositMilestone     String?  // "AT_MATCH" | "AT_CLEARANCE" (surrogacy agencies only)
-  averageClearanceDays Int?     // used for AT_CLEARANCE milestone scheduling
-  eggDonors            EggDonor[]
-  agreements           Agreement[]
-  eggDonorSyncConfig   EggDonorSyncConfig?
-  brandSettings        ProviderBrandSettings?
-  costSheets           ProviderCostSheet[]
-  costPrograms         CostProgram[]
-  locations            ProviderLocation[]
-  members              ProviderMember[]
-  services             ProviderService[]
-  spermDonors          SpermDonor[]
-  spermDonorSyncConfig SpermDonorSyncConfig?
-  surrogacyProfile     SurrogacyAgencyProfile?
-  surrogates           Surrogate[]
-  surrogateSyncConfig  SurrogateSyncConfig?
-  users                User[]
-  ivfSuccessRates      IvfSuccessRate[]
-  knowledgeChunks      KnowledgeChunk[]
-  silentQueries        SilentQuery[]
-  chatSessions         AiChatSession[]
-  syncLogs             SyncLog[]
-  profileEmbedding     Unsupported("vector(768)")?
-  referralFeeConfig    ReferralFeeConfig?
-  invoices             Invoice[]
-  bankAccount          ProviderBankAccount?
+  depositMilestone                      String? // "AT_MATCH" | "AT_CLEARANCE" (surrogacy agencies only)
+  averageClearanceDays                  Int? // used for AT_CLEARANCE milestone scheduling
+  eggDonors                             EggDonor[]
+  agreements                            Agreement[]
+  eggDonorSyncConfig                    EggDonorSyncConfig?
+  brandSettings                         ProviderBrandSettings?
+  costSheets                            ProviderCostSheet[]
+  costPrograms                          CostProgram[]
+  locations                             ProviderLocation[]
+  members                               ProviderMember[]
+  services                              ProviderService[]
+  spermDonors                           SpermDonor[]
+  spermDonorSyncConfig                  SpermDonorSyncConfig?
+  surrogacyProfile                      SurrogacyAgencyProfile?
+  surrogates                            Surrogate[]
+  surrogateSyncConfig                   SurrogateSyncConfig?
+  users                                 User[]
+  ivfSuccessRates                       IvfSuccessRate[]
+  knowledgeChunks                       KnowledgeChunk[]
+  silentQueries                         SilentQuery[]
+  chatSessions                          AiChatSession[]
+  syncLogs                              SyncLog[]
+  profileEmbedding                      Unsupported("vector(768)")?
+  referralFeeConfig                     ReferralFeeConfig?
+  invoices                              Invoice[]
+  providerQuotes                        ProviderQuote[]
+  bankAccount                           ProviderBankAccount?
 }
 
 model ProviderType {
@@ -145,22 +146,22 @@ model CdcDatasetMap {
 }
 
 model CdcSyncJob {
-  id                      String    @id @default(uuid())
-  year                    Int
-  status                  String    @default("PENDING")
-  clinicsProcessed        Int       @default(0)
-  recordsProcessed        Int       @default(0)
-  estimatedTotalRecords   Int?
-  estimatedTotalClinics   Int?
-  errorMessage            String?
-  startedAt               DateTime  @default(now())
-  completedAt             DateTime?
-  enrichmentStatus        String?
-  enrichmentProcessed     Int       @default(0)
-  enrichmentTotal         Int       @default(0)
-  enrichmentErrors        Int       @default(0)
-  enrichmentSkipped       Int       @default(0)
-  enrichmentErrorMessage  String?
+  id                     String    @id @default(uuid())
+  year                   Int
+  status                 String    @default("PENDING")
+  clinicsProcessed       Int       @default(0)
+  recordsProcessed       Int       @default(0)
+  estimatedTotalRecords  Int?
+  estimatedTotalClinics  Int?
+  errorMessage           String?
+  startedAt              DateTime  @default(now())
+  completedAt            DateTime?
+  enrichmentStatus       String?
+  enrichmentProcessed    Int       @default(0)
+  enrichmentTotal        Int       @default(0)
+  enrichmentErrors       Int       @default(0)
+  enrichmentSkipped      Int       @default(0)
+  enrichmentErrorMessage String?
 }
 
 model RawCdcData {
@@ -173,10 +174,10 @@ model RawCdcData {
 }
 
 model ParentAccount {
-  id                     String   @id @default(uuid())
-  createdAt              DateTime @default(now())
-  customEthnicities      String[] @default([])
-  customFilterTags       Json     @default("{}")
+  id                     String                 @id @default(uuid())
+  createdAt              DateTime               @default(now())
+  customEthnicities      String[]               @default([])
+  customFilterTags       Json                   @default("{}")
   preferredAppExperience String?
   members                User[]
   intendedParentProfile  IntendedParentProfile?
@@ -184,60 +185,62 @@ model ParentAccount {
 }
 
 model User {
-  id                    String                 @id @default(uuid())
-  email                 String                 @unique
-  password              String?
-  name                  String?
-  firstName             String?
-  lastName              String?
-  photoUrl              String?
-  mobileNumber          String?
-  mobileNumberDisplay   String?
-  dateOfBirth           DateTime?
-  gender                String?
-  sexualOrientation     String?
-  relationshipStatus    String?
-  partnerFirstName      String?
-  partnerAge            Int?
-  referralSource        String?
-  roles                 String[]               @default(["PARENT"])
-  providerId            String?
-  allLocations          Boolean                @default(false)
-  mustCompleteProfile   Boolean                @default(false)
-  createdAt             DateTime               @default(now())
-  dailyRoomUrl          String?
-  calendarLink          String?
-  isDisabled            Boolean                @default(false)
-  parentAccountId       String?
-  parentAccountRole     String?
-  city                  String?
-  country               String?
-  state                 String?
-  address               String?
-  zip                   String?
-  ssn                   String?
-  passport              String?
+  id                     String                 @id @default(uuid())
+  email                  String                 @unique
+  password               String?
+  name                   String?
+  firstName              String?
+  lastName               String?
+  photoUrl               String?
+  mobileNumber           String?
+  mobileNumberDisplay    String?
+  dateOfBirth            DateTime?
+  gender                 String?
+  sexualOrientation      String?
+  relationshipStatus     String?
+  partnerFirstName       String?
+  partnerAge             Int?
+  referralSource         String?
+  roles                  String[]               @default(["PARENT"])
+  providerId             String?
+  allLocations           Boolean                @default(false)
+  mustCompleteProfile    Boolean                @default(false)
+  createdAt              DateTime               @default(now())
+  dailyRoomUrl           String?
+  calendarLink           String?
+  isDisabled             Boolean                @default(false)
+  parentAccountId        String?
+  parentAccountRole      String?
+  city                   String?
+  country                String?
+  state                  String?
+  address                String?
+  zip                    String?
+  ssn                    String?
+  passport               String?
   passportCountryOfIssue String?
-  nationality           String?
-  availabilityOverrides AvailabilityOverride[]
-  bookingsAsParent      Booking[]              @relation("ParentBookings")
-  bookingsAsProvider    Booking[]              @relation("ProviderBookings")
-  calendarBlocks        CalendarBlock[]
-  calendarConnections   CalendarConnection[]
-  eventFreeOverrides    EventFreeOverride[]
-  notifications         Notification[]
-  scheduleConfig        ScheduleConfig?
-  parentAccount         ParentAccount?         @relation(fields: [parentAccountId], references: [id])
-  provider              Provider?              @relation(fields: [providerId], references: [id])
-  assignedLocations     UserLocation[]
-  passwordResetTokens   PasswordResetToken[]
-  donorPreferences      UserDonorPreference[]
-  costSheetQuotes       ProviderCostSheet[]    @relation("CostSheetQuotes")
-  inAppNotifications    InAppNotification[]
-  aiChatSessions        AiChatSession[]
-  silentQueries         SilentQuery[]          @relation("SilentQueryParent")
-  agreements            Agreement[]
-  invoices              Invoice[]
+  nationality            String?
+  availabilityOverrides  AvailabilityOverride[]
+  bookingsAsParent       Booking[]              @relation("ParentBookings")
+  bookingsAsProvider     Booking[]              @relation("ProviderBookings")
+  calendarBlocks         CalendarBlock[]
+  calendarConnections    CalendarConnection[]
+  eventFreeOverrides     EventFreeOverride[]
+  notifications          Notification[]
+  scheduleConfig         ScheduleConfig?
+  parentAccount          ParentAccount?         @relation(fields: [parentAccountId], references: [id])
+  provider               Provider?              @relation(fields: [providerId], references: [id])
+  assignedLocations      UserLocation[]
+  passwordResetTokens    PasswordResetToken[]
+  donorPreferences       UserDonorPreference[]
+  costSheetQuotes        ProviderCostSheet[]    @relation("CostSheetQuotes")
+  inAppNotifications     InAppNotification[]
+  aiChatSessions         AiChatSession[]
+  silentQueries          SilentQuery[]          @relation("SilentQueryParent")
+  agreements             Agreement[]
+  invoices               Invoice[]
+  providerQuotes         ProviderQuote[]        @relation("ProviderQuoteParent")
+  createdProviderQuotes  ProviderQuote[]        @relation("ProviderQuoteCreatedBy")
 }
 
 model UserDonorPreference {
@@ -415,46 +418,47 @@ model AvailabilitySlot {
 }
 
 model Booking {
-  id                   String         @id @default(uuid())
-  publicToken          String         @unique @default(uuid())
-  providerUserId       String
-  parentUserId         String?
-  scheduledAt          DateTime
-  duration             Int
-  meetingType          String         @default("video")
-  meetingSubtype       String?        // "DOCTOR_CONSULTATION" | "MATCH_CALL" | null
-  status               String         @default("PENDING")
-  meetingUrl           String?
-  notes                String?
-  subject              String?
-  attendeeEmails       String[]       @default([])
-  attendeeName         String?
-  invitedByUserId      String?
+  id                      String              @id @default(uuid())
+  publicToken             String              @unique @default(uuid())
+  providerUserId          String
+  parentUserId            String?
+  scheduledAt             DateTime
+  duration                Int
+  meetingType             String              @default("video")
+  meetingSubtype          String? // "DOCTOR_CONSULTATION" | "MATCH_CALL" | null
+  status                  String              @default("PENDING")
+  meetingUrl              String?
+  notes                   String?
+  subject                 String?
+  attendeeEmails          String[]            @default([])
+  attendeeName            String?
+  invitedByUserId         String?
   cancelledAt             DateTime?
   cancelledByRole         String?
   parentJoinedMeetingAt   DateTime?
   providerJoinedMeetingAt DateTime?
-  rescheduledFromId    String?
-  bookerTimezone       String?
-  createdAt            DateTime       @default(now())
-  updatedAt            DateTime       @updatedAt
-  googleEventId        String?
-  confirmToken         String?        @unique
-  parentConfirmed      Boolean        @default(false)
-  providerConfirmed    Boolean        @default(false)
-  actualEndedAt        DateTime?
-  actualStartedAt      DateTime?
-  consentGiven         Boolean        @default(false)
-  parentGoogleEventId  String?
-  attendeeDetails      Json?
-  outlookEventId       String?
-  parentOutlookEventId String?
-  parentUser           User?          @relation("ParentBookings", fields: [parentUserId], references: [id])
-  providerUser         User           @relation("ProviderBookings", fields: [providerUserId], references: [id])
-  rescheduledFrom      Booking?       @relation("RescheduledBookings", fields: [rescheduledFromId], references: [id])
-  rescheduledTo        Booking[]      @relation("RescheduledBookings")
-  notifications        Notification[]
-  recordings           Recording[]
+  rescheduledFromId       String?
+  bookerTimezone          String?
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  googleEventId           String?
+  confirmToken            String?             @unique
+  parentConfirmed         Boolean             @default(false)
+  providerConfirmed       Boolean             @default(false)
+  actualEndedAt           DateTime?
+  actualStartedAt         DateTime?
+  consentGiven            Boolean             @default(false)
+  parentGoogleEventId     String?
+  attendeeDetails         Json?
+  outlookEventId          String?
+  parentOutlookEventId    String?
+  parentUser              User?               @relation("ParentBookings", fields: [parentUserId], references: [id])
+  providerUser            User                @relation("ProviderBookings", fields: [providerUserId], references: [id])
+  rescheduledFrom         Booking?            @relation("RescheduledBookings", fields: [rescheduledFromId], references: [id])
+  rescheduledTo           Booking[]           @relation("RescheduledBookings")
+  notifications           Notification[]
+  recordings              Recording[]
+  costSheetReminders      CostSheetReminder[]
 }
 
 model Recording {
@@ -514,7 +518,7 @@ model InAppNotification {
 }
 
 model EggDonor {
-  id                   String    @id @default(uuid())
+  id                   String                      @id @default(uuid())
   providerId           String
   externalId           String?
   donorType            String?
@@ -543,22 +547,22 @@ model EggDonor {
   photoCount           Int?
   hasVideo             Boolean?
   profileUrl           String?
-  status               String    @default("AVAILABLE")
+  status               String                      @default("AVAILABLE")
   profileData          Json?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
   videoUrl             String?
   cardHash             String?
   lastEditedAt         DateTime?
   lastEditedBy         String?
-  manuallyEditedFields String[]  @default([])
-  photos               String[]  @default([])
-  hiddenFromSearch     Boolean   @default(false)
-  isPremium            Boolean   @default(false)
-  isExperienced        Boolean   @default(false)
+  manuallyEditedFields String[]                    @default([])
+  photos               String[]                    @default([])
+  hiddenFromSearch     Boolean                     @default(false)
+  isPremium            Boolean                     @default(false)
+  isExperienced        Boolean                     @default(false)
   lastFullSyncAt       DateTime?
   profileEmbedding     Unsupported("vector(768)")?
-  provider             Provider  @relation(fields: [providerId], references: [id])
+  provider             Provider                    @relation(fields: [providerId], references: [id])
 
   @@unique([providerId, externalId])
 }
@@ -578,7 +582,7 @@ model EggDonorSyncConfig {
 }
 
 model Surrogate {
-  id                           String    @id @default(uuid())
+  id                           String                      @id @default(uuid())
   providerId                   String
   externalId                   String?
   firstName                    String?
@@ -607,22 +611,22 @@ model Surrogate {
   agreesToInternationalParents Boolean?
   photoUrl                     String?
   profileUrl                   String?
-  status                       String    @default("AVAILABLE")
+  status                       String                      @default("AVAILABLE")
   profileData                  Json?
-  createdAt                    DateTime  @default(now())
-  updatedAt                    DateTime  @updatedAt
+  createdAt                    DateTime                    @default(now())
+  updatedAt                    DateTime                    @updatedAt
   videoUrl                     String?
   cardHash                     String?
   lastEditedAt                 DateTime?
   lastEditedBy                 String?
-  manuallyEditedFields         String[]  @default([])
-  photos                       String[]  @default([])
-  hiddenFromSearch             Boolean   @default(false)
-  isPremium                    Boolean   @default(false)
-  isExperienced                Boolean   @default(false)
+  manuallyEditedFields         String[]                    @default([])
+  photos                       String[]                    @default([])
+  hiddenFromSearch             Boolean                     @default(false)
+  isPremium                    Boolean                     @default(false)
+  isExperienced                Boolean                     @default(false)
   lastFullSyncAt               DateTime?
   profileEmbedding             Unsupported("vector(768)")?
-  provider                     Provider  @relation(fields: [providerId], references: [id])
+  provider                     Provider                    @relation(fields: [providerId], references: [id])
 
   @@unique([providerId, externalId])
 }
@@ -642,7 +646,7 @@ model SurrogateSyncConfig {
 }
 
 model SpermDonor {
-  id                   String    @id @default(uuid())
+  id                   String                      @id @default(uuid())
   providerId           String
   externalId           String?
   donorType            String?
@@ -664,26 +668,26 @@ model SpermDonor {
   totalCost            Int?
   photoUrl             String?
   profileUrl           String?
-  status               String    @default("AVAILABLE")
+  status               String                      @default("AVAILABLE")
   profileData          Json?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
   videoUrl             String?
   cardHash             String?
   lastEditedAt         DateTime?
   lastEditedBy         String?
-  manuallyEditedFields String[]  @default([])
-  photos               String[]  @default([])
-  hiddenFromSearch     Boolean   @default(false)
-  isPremium            Boolean   @default(false)
-  isExperienced        Boolean   @default(false)
+  manuallyEditedFields String[]                    @default([])
+  photos               String[]                    @default([])
+  hiddenFromSearch     Boolean                     @default(false)
+  isPremium            Boolean                     @default(false)
+  isExperienced        Boolean                     @default(false)
   lastFullSyncAt       DateTime?
-  vialTypes            String[]  @default([])
+  vialTypes            String[]                    @default([])
   iciCost              Int?
   iuiCost              Int?
   ivfCost              Int?
   profileEmbedding     Unsupported("vector(768)")?
-  provider             Provider  @relation(fields: [providerId], references: [id])
+  provider             Provider                    @relation(fields: [providerId], references: [id])
 
   @@unique([providerId, externalId])
 }
@@ -704,23 +708,23 @@ model SpermDonorSyncConfig {
 }
 
 model SyncLog {
-  id            String    @id @default(uuid())
-  providerId    String
-  type          String    // "egg-donor" | "surrogate" | "sperm-donor"
-  jobId         String
-  source        String    // "nightly" | "manual" | "auto-resume"
-  status        String    // "completed" | "partial" | "failed"
-  startedAt     DateTime
-  completedAt   DateTime?
-  total         Int       @default(0)
-  processed     Int       @default(0)
-  succeeded     Int       @default(0)
-  failed        Int       @default(0)
-  skipped       Int       @default(0)
-  newProfiles   Int       @default(0)
-  staleMarked   Int       @default(0)
-  errors        Json?
-  provider      Provider  @relation(fields: [providerId], references: [id])
+  id          String    @id @default(uuid())
+  providerId  String
+  type        String // "egg-donor" | "surrogate" | "sperm-donor"
+  jobId       String
+  source      String // "nightly" | "manual" | "auto-resume"
+  status      String // "completed" | "partial" | "failed"
+  startedAt   DateTime
+  completedAt DateTime?
+  total       Int       @default(0)
+  processed   Int       @default(0)
+  succeeded   Int       @default(0)
+  failed      Int       @default(0)
+  skipped     Int       @default(0)
+  newProfiles Int       @default(0)
+  staleMarked Int       @default(0)
+  errors      Json?
+  provider    Provider  @relation(fields: [providerId], references: [id])
 
   @@index([providerId])
   @@index([startedAt])
@@ -851,37 +855,37 @@ model SiteSettings {
   sliderThumbSize            Int?
 
   // Chat bubble & input styling
-  chatBubbleFontSize         Int?
-  chatBubbleFontSizeDesktop  Int?
-  chatBubbleLineHeight       Float?
-  chatBubblePaddingX         Int?
-  chatBubblePaddingY         Int?
-  chatBubbleMaxWidth         Int?
-  chatBubbleRadius           Int?
-  chatTimestampFontSize      Int?
-  chatTimestampOpacity       Float?
-  chatInputFontSize          Int?
-  chatInputFontSizeDesktop   Int?
-  chatInputHeight            Int?
+  chatBubbleFontSize        Int?
+  chatBubbleFontSizeDesktop Int?
+  chatBubbleLineHeight      Float?
+  chatBubblePaddingX        Int?
+  chatBubblePaddingY        Int?
+  chatBubbleMaxWidth        Int?
+  chatBubbleRadius          Int?
+  chatTimestampFontSize     Int?
+  chatTimestampOpacity      Float?
+  chatInputFontSize         Int?
+  chatInputFontSizeDesktop  Int?
+  chatInputHeight           Int?
 
   // Quick reply chip styling
-  quickReplyFontSize         Int?
-  quickReplyRadius           Int?
-  quickReplyPaddingX         Int?
-  quickReplyPaddingY         Int?
-  quickReplyColorStyle       String?
-  quickReplyDeclineStyle     String?
-  quickReplyShowBorder       Boolean?
+  quickReplyFontSize     Int?
+  quickReplyRadius       Int?
+  quickReplyPaddingX     Int?
+  quickReplyPaddingY     Int?
+  quickReplyColorStyle   String?
+  quickReplyDeclineStyle String?
+  quickReplyShowBorder   Boolean?
 
   // Onboarding intro page images (per service type)
-  onboardingClinicImageUrl   String?
-  onboardingEggDonorImageUrl String?
-  onboardingSurrogateImageUrl String?
+  onboardingClinicImageUrl     String?
+  onboardingEggDonorImageUrl   String?
+  onboardingSurrogateImageUrl  String?
   onboardingSpermDonorImageUrl String?
 
   // GoStork AI Concierge Feature Flags
-  enableAiConcierge          Boolean  @default(false)
-  parentExperienceMode       String   @default("MARKETPLACE_ONLY")
+  enableAiConcierge    Boolean @default(false)
+  parentExperienceMode String  @default("MARKETPLACE_ONLY")
 }
 
 model Matchmaker {
@@ -982,29 +986,29 @@ model ProviderBrandSettings {
   sliderThumbSize            Int?
 
   // Chat bubble & input styling
-  chatBubbleFontSize         Int?
-  chatBubbleFontSizeDesktop  Int?
-  chatBubbleLineHeight       Float?
-  chatBubblePaddingX         Int?
-  chatBubblePaddingY         Int?
-  chatBubbleMaxWidth         Int?
-  chatBubbleRadius           Int?
-  chatTimestampFontSize      Int?
-  chatTimestampOpacity       Float?
-  chatInputFontSize          Int?
-  chatInputFontSizeDesktop   Int?
-  chatInputHeight            Int?
+  chatBubbleFontSize        Int?
+  chatBubbleFontSizeDesktop Int?
+  chatBubbleLineHeight      Float?
+  chatBubblePaddingX        Int?
+  chatBubblePaddingY        Int?
+  chatBubbleMaxWidth        Int?
+  chatBubbleRadius          Int?
+  chatTimestampFontSize     Int?
+  chatTimestampOpacity      Float?
+  chatInputFontSize         Int?
+  chatInputFontSizeDesktop  Int?
+  chatInputHeight           Int?
 
   // Quick reply chip styling
-  quickReplyFontSize         Int?
-  quickReplyRadius           Int?
-  quickReplyPaddingX         Int?
-  quickReplyPaddingY         Int?
-  quickReplyColorStyle       String?
-  quickReplyDeclineStyle     String?
-  quickReplyShowBorder       Boolean?
+  quickReplyFontSize     Int?
+  quickReplyRadius       Int?
+  quickReplyPaddingX     Int?
+  quickReplyPaddingY     Int?
+  quickReplyColorStyle   String?
+  quickReplyDeclineStyle String?
+  quickReplyShowBorder   Boolean?
 
-  provider                   Provider @relation(fields: [providerId], references: [id])
+  provider Provider @relation(fields: [providerId], references: [id])
 }
 
 // ==========================================
@@ -1012,12 +1016,12 @@ model ProviderBrandSettings {
 // ==========================================
 
 model AiChatSession {
-  id               String          @id @default(uuid())
+  id               String    @id @default(uuid())
   userId           String
   title            String?
-  status           String          @default("ACTIVE")
-  sessionType      String          @default("PARENT")
-  humanRequested   Boolean         @default(false)
+  status           String    @default("ACTIVE")
+  sessionType      String    @default("PARENT")
+  humanRequested   Boolean   @default(false)
   humanJoinedAt    DateTime?
   humanConcludedAt DateTime?
   humanAgentId     String?
@@ -1028,16 +1032,18 @@ model AiChatSession {
   subjectProfileId String?
   subjectType      String?
   matchmakerId     String?
-  tier2Active      Boolean         @default(false)
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-  
-  messages      AiChatMessage[]
-  silentQueries SilentQuery[]
-  agreements    Agreement[]
-  invoices      Invoice[]
-  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  provider      Provider?       @relation(fields: [providerId], references: [id])
+  tier2Active      Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  messages           AiChatMessage[]
+  silentQueries      SilentQuery[]
+  agreements         Agreement[]
+  invoices           Invoice[]
+  providerQuotes     ProviderQuote[]
+  costSheetReminders CostSheetReminder[]
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider           Provider?           @relation(fields: [providerId], references: [id])
 
   @@index([userId])
   @@index([humanRequested])
@@ -1047,19 +1053,19 @@ model AiChatSession {
 }
 
 model AiChatMessage {
-  id          String        @id @default(uuid())
+  id          String    @id @default(uuid())
   sessionId   String
   role        String
   content     String
-  senderType  String        @default("ai")
+  senderType  String    @default("ai")
   senderName  String?
   uiCardType  String?
   uiCardData  Json?
   deliveredAt DateTime?
   readAt      DateTime?
-  createdAt   DateTime      @default(now())
+  createdAt   DateTime  @default(now())
 
-  session     AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId])
 }
@@ -1069,69 +1075,69 @@ model AiChatMessage {
 // ==========================================
 
 model IntendedParentProfile {
-  id                  String        @id @default(uuid())
-  parentAccountId     String        @unique
-  
-  interestedServices  String[]      @default([])
-  journeyStage        String?       
-  
+  id              String @id @default(uuid())
+  parentAccountId String @unique
+
+  interestedServices String[] @default([])
+  journeyStage       String?
+
   // Biological Matrix - nullable so null means "not yet asked" vs false/0 meaning "answered: no"
-  hasEmbryos          Boolean?
-  embryoCount         Int?
-  embryosTested       Boolean?
-  eggSource           String?
-  spermSource         String?
-  carrier             String?
+  hasEmbryos    Boolean?
+  embryoCount   Int?
+  embryosTested Boolean?
+  eggSource     String?
+  spermSource   String?
+  carrier       String?
 
   // Service-Specific Preferences
-  clinicReason        String?
-  clinicPriority      String?
-  donorEyeColor       String?
-  donorHairColor      String?
-  donorHeight         String?
-  donorEducation      String?
-  donorEthnicity      String?
-  surrogateBudget     String?
-  surrogateMedPrefs   String?
+  clinicReason      String?
+  clinicPriority    String?
+  donorEyeColor     String?
+  donorHairColor    String?
+  donorHeight       String?
+  donorEducation    String?
+  donorEthnicity    String?
+  surrogateBudget   String?
+  surrogateMedPrefs String?
 
   // Needs flags - nullable so null means "not yet asked" vs false meaning "answered: no"
-  needsSurrogate      Boolean?
-  needsEggDonor       Boolean?
-  needsClinic         Boolean?
+  needsSurrogate Boolean?
+  needsEggDonor  Boolean?
+  needsClinic    Boolean?
 
   // Surrogate preferences
-  surrogateTwins              String?
-  surrogateCountries          String?
-  surrogateTermination        String?
-  surrogateAgeRange           String?
-  surrogateExperience         String?
-  surrogateRace               String?
-  surrogateEthnicity          String?
-  surrogateRelationship       String?
-  surrogateBmiRange           String?
-  surrogateTotalCostRange     String?
-  surrogateLiveBirthsRange    String?
-  surrogateMaxCSections       Int?
-  surrogateMaxMiscarriages    Int?
-  surrogateMaxAbortions       Int?
-  surrogateLastDeliveryYear   Int?
-  surrogateCovidVaccinated    Boolean?
-  surrogateSelectiveReduction Boolean?
+  surrogateTwins                String?
+  surrogateCountries            String?
+  surrogateTermination          String?
+  surrogateAgeRange             String?
+  surrogateExperience           String?
+  surrogateRace                 String?
+  surrogateEthnicity            String?
+  surrogateRelationship         String?
+  surrogateBmiRange             String?
+  surrogateTotalCostRange       String?
+  surrogateLiveBirthsRange      String?
+  surrogateMaxCSections         Int?
+  surrogateMaxMiscarriages      Int?
+  surrogateMaxAbortions         Int?
+  surrogateLastDeliveryYear     Int?
+  surrogateCovidVaccinated      Boolean?
+  surrogateSelectiveReduction   Boolean?
   surrogateInternationalParents Boolean?
 
   // Donor preferences (open-ended from AI conversation)
-  donorPreferences        String?
-  spermDonorType          String?
-  spermDonorPreferences   String?
-  spermDonorAgeRange      String?
-  spermDonorEyeColor      String?
-  spermDonorHairColor     String?
-  spermDonorHeightRange   String?
-  spermDonorRace          String?
-  spermDonorEthnicity     String?
-  spermDonorEducation     String?
-  spermDonorMaxPrice      Int?
-  spermDonorVialType      String?
+  donorPreferences          String?
+  spermDonorType            String?
+  spermDonorPreferences     String?
+  spermDonorAgeRange        String?
+  spermDonorEyeColor        String?
+  spermDonorHairColor       String?
+  spermDonorHeightRange     String?
+  spermDonorRace            String?
+  spermDonorEthnicity       String?
+  spermDonorEducation       String?
+  spermDonorMaxPrice        Int?
+  spermDonorVialType        String?
   spermDonorCovidVaccinated Boolean?
 
   // Egg donor specific preferences
@@ -1143,67 +1149,67 @@ model IntendedParentProfile {
   eggDonorDonationType      String?
 
   // Clinic preferences
-  clinicAgeGroup            String?
-  clinicPriorityTags        String?
+  clinicAgeGroup     String?
+  clinicPriorityTags String?
 
   // Surrogate family type / LGBTQ+ identity
-  sameSexCouple        Boolean?
-  isLGBTQ              Boolean?
+  sameSexCouple Boolean?
+  isLGBTQ       Boolean?
 
   // IVF history
-  isFirstIvf           Boolean?
+  isFirstIvf Boolean?
 
   // Lead Status
-  hotLeadProviderId   String?
-  hotLeadAt           DateTime?
+  hotLeadProviderId String?
+  hotLeadAt         DateTime?
 
   // Current Professionals Network
   currentClinicName   String?
   currentAgencyName   String?
   currentAttorneyName String?
 
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  parentAccount       ParentAccount @relation(fields: [parentAccountId], references: [id], onDelete: Cascade)
+  parentAccount ParentAccount @relation(fields: [parentAccountId], references: [id], onDelete: Cascade)
 }
 
 model JourneyPreferences {
-  id                      String        @id @default(uuid())
-  parentAccountId         String        @unique
-  
+  id              String @id @default(uuid())
+  parentAccountId String @unique
+
   // Cost and Geography
-  maxBudget               Int?          
-  targetCountries         String[]      @default(["US"]) 
-  
+  maxBudget       Int?
+  targetCountries String[] @default(["US"])
+
   // Deal-breakers
   requiresAbortionSupport Boolean?
   requiresTwinsSupport    Boolean?
   maxSurrogateBmi         Decimal?
 
   // Clinic Priorities
-  preferredPhysicianType  String?       
-  clinicPriority          String?       
+  preferredPhysicianType String?
+  clinicPriority         String?
 
-  createdAt               DateTime      @default(now())
-  updatedAt               DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  parentAccount           ParentAccount @relation(fields: [parentAccountId], references: [id], onDelete: Cascade)
+  parentAccount ParentAccount @relation(fields: [parentAccountId], references: [id], onDelete: Cascade)
 }
 
 model KnowledgeChunk {
-  id              String   @id @default(uuid())
-  content         String
-  metadata        Json?
-  embedding       Unsupported("vector(768)")?
-  sourceTier      Int      @default(1)
-  providerId      String?
-  sourceType      String   @default("DOCUMENT")
-  sourceFileName  String?
-  sourceUrl       String?
-  createdAt       DateTime @default(now())
+  id             String                      @id @default(uuid())
+  content        String
+  metadata       Json?
+  embedding      Unsupported("vector(768)")?
+  sourceTier     Int                         @default(1)
+  providerId     String?
+  sourceType     String                      @default("DOCUMENT")
+  sourceFileName String?
+  sourceUrl      String?
+  createdAt      DateTime                    @default(now())
 
-  provider        Provider? @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  provider Provider? @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
   @@index([providerId])
   @@index([sourceTier])
@@ -1232,19 +1238,19 @@ model ExpertGuidanceRule {
 }
 
 model SilentQuery {
-  id             String   @id @default(uuid())
-  parentUserId   String
-  providerId     String
-  sessionId      String
-  questionText   String
-  answerText     String?
-  status         String   @default("PENDING")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id           String   @id @default(uuid())
+  parentUserId String
+  providerId   String
+  sessionId    String
+  questionText String
+  answerText   String?
+  status       String   @default("PENDING")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  parentUser     User     @relation("SilentQueryParent", fields: [parentUserId], references: [id], onDelete: Cascade)
-  provider       Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
-  session        AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  parentUser User          @relation("SilentQueryParent", fields: [parentUserId], references: [id], onDelete: Cascade)
+  provider   Provider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  session    AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([providerId, status])
   @@index([parentUserId, status])
@@ -1256,92 +1262,97 @@ model SilentQuery {
 // ==========================================
 
 model Agreement {
-  id                  String        @id @default(uuid())
-  providerId          String
-  parentUserId        String
-  sessionId           String
-  generatedByUserId   String?       // userId of the provider staff member who clicked Generate & Send Agreement
-  pandaDocDocumentId  String?       @unique
-  pandaDocViewUrl     String?
-  status              String        @default("DRAFT")
-  documentType        String        @default("Agency Agreement")
-  signerStatus        Json?         // { "email": { completed: boolean, completedAt: string|null, role: string|null, firstName: string|null, lastName: string|null } }
-  guestSigningTokens  Json?         // { "token": "email" } - one-time tokens for non-GoStork signers
-  signerOrder         Json?         // [{ email, name, userId, guestToken, signingOrder, notified }] ordered list for sequential notifications
-  invoiceId           String?       @unique  // GoStork payment gate - must be PAID before agreement can be signed
-  signedAt            DateTime?
-  rejectedAt          DateTime?
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
+  id                 String    @id @default(uuid())
+  providerId         String
+  parentUserId       String
+  sessionId          String
+  generatedByUserId  String? // userId of the provider staff member who clicked Generate & Send Agreement
+  pandaDocDocumentId String?   @unique
+  pandaDocViewUrl    String?
+  status             String    @default("DRAFT")
+  documentType       String    @default("Agency Agreement")
+  signerStatus       Json? // { "email": { completed: boolean, completedAt: string|null, role: string|null, firstName: string|null, lastName: string|null } }
+  guestSigningTokens Json? // { "token": "email" } - one-time tokens for non-GoStork signers
+  signerOrder        Json? // [{ email, name, userId, guestToken, signingOrder, notified }] ordered list for sequential notifications
+  invoiceId          String?   @unique // GoStork payment gate - must be PAID before agreement can be signed
+  signedAt           DateTime?
+  rejectedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  provider            Provider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
-  parentUser          User          @relation(fields: [parentUserId], references: [id], onDelete: Cascade)
-  session             AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  invoice             Invoice?      @relation(fields: [invoiceId], references: [id])
+  provider   Provider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  parentUser User          @relation(fields: [parentUserId], references: [id], onDelete: Cascade)
+  session    AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  invoice    Invoice?      @relation(fields: [invoiceId], references: [id])
 
   @@index([providerId])
   @@index([parentUserId])
   @@index([sessionId])
 }
+
 // ==========================================
 // BILLING & PAYMENT MODELS
 // ==========================================
 
 model ReferralFeeConfig {
-  id                    String    @id @default(uuid())
-  providerId            String    @unique
-  feeType               String    // "FLAT" | "PERCENTAGE"
-  flatAmount            Decimal?  // in cents (e.g. 50000 = $500.00)
-  percentage            Decimal?  // e.g. 5.0 = 5%
-  defaultServiceAmount  Decimal?  // default first payment in cents - admin can override per invoice
-  currency              String    @default("USD")
-  isActive              Boolean   @default(true)
-  notes                 String?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  id                   String   @id @default(uuid())
+  providerId           String   @unique
+  feeType              String // "FLAT" | "PERCENTAGE"
+  flatAmount           Decimal? // in cents (e.g. 50000 = $500.00)
+  percentage           Decimal? // e.g. 5.0 = 5%
+  defaultServiceAmount Decimal? // pre-fill for first payment in cents - used when parentPaysBasis = DEFAULT_FIRST_PAYMENT
+  parentPaysBasis      String   @default("DEFAULT_FIRST_PAYMENT") // "DEFAULT_FIRST_PAYMENT" | "TOTAL_COST" - which value the parent's invoice charges
+  currency             String   @default("USD")
+  isActive             Boolean  @default(true)
+  notes                String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
-  provider  Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
-  invoices  Invoice[]
+  provider Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  invoices Invoice[]
 }
 
 model Invoice {
-  id                   String   @id @default(uuid())
-  paymentToken         String   @unique @default(uuid())
-  providerId           String
-  parentUserId         String
-  sessionId            String
-  referralFeeConfigId  String?
+  id                  String  @id @default(uuid())
+  paymentToken        String  @unique @default(uuid())
+  providerId          String
+  parentUserId        String
+  sessionId           String
+  referralFeeConfigId String?
 
   // Amounts stored in cents to avoid floating point issues
-  serviceAmount        Int
-  referralFeeAmount    Int
-  providerPayoutAmount Int
-  currency             String   @default("USD")
+  serviceAmount        Int // what the parent pays for this invoice
+  referralFeeAmount    Int // GoStork's cut
+  providerPayoutAmount Int // serviceAmount - referralFeeAmount
+  quotedTotalCostCents Int? // snapshot of the ProviderQuote.totalCostCents used as the fee basis (PERCENTAGE configs)
+  providerQuoteId      String? // FK to the ProviderQuote that was active when this invoice was created
+  triggerSource        String  @default("PROVIDER_MANUAL") // "PROVIDER_MANUAL" | "ADMIN_MANUAL" | "AUTO_READINESS"
+  currency             String  @default("USD")
 
   // Invoice metadata shown to parent
-  serviceType          String   // "IVF Treatment" | "Egg Donation" | "Sperm Donation" | "Surrogacy"
-  providerName         String   // snapshot at invoice creation time
-  description          String?
-  dueAt                DateTime? // 24h for surrogacy AT_MATCH, null otherwise
+  serviceType  String // "IVF Treatment" | "Egg Donation" | "Sperm Donation" | "Surrogacy"
+  providerName String // snapshot at invoice creation time
+  description  String?
+  dueAt        DateTime? // 24h for surrogacy AT_MATCH, null otherwise
 
   // Status: AWAITING_PAYMENT | AUTHORIZED | PAID | CLEARANCE_FAILED | EXPIRED | CANCELLED | REFUNDED
-  status               String   @default("AWAITING_PAYMENT")
-  paymentMethod        String?  // "CARD" | "ACH"
+  status        String  @default("AWAITING_PAYMENT")
+  paymentMethod String? // "CARD" | "ACH"
 
   // Stripe
-  stripeTransactionId    String?  @unique
-  stripePaymentIntentId  String?  // AT_CLEARANCE: pre-auth PI ID before capture
-  stripePaymentLinkUrl   String?
+  stripeTransactionId   String? @unique
+  stripePaymentIntentId String? // AT_CLEARANCE: pre-auth PI ID before capture
+  stripePaymentLinkUrl  String?
 
   // GoStork Guarantee / Escrow
-  isProtected                  Boolean  @default(true)
-  medicalClearanceStatus       String?  // null | "PENDING" | "CLEARED" | "FAILED"
+  isProtected                  Boolean   @default(true)
+  medicalClearanceStatus       String? // null | "PENDING" | "CLEARED" | "FAILED"
   clearanceConfirmedAt         DateTime?
   creditTransferredToInvoiceId String?
 
   // Dwolla (Phase 2 - ACH)
-  dwollaPaymentTransferUrl  String?
-  dwollaPayoutTransferUrl   String?
+  dwollaPaymentTransferUrl String?
+  dwollaPayoutTransferUrl  String?
 
   // Timestamps
   authorizedAt      DateTime?
@@ -1359,6 +1370,7 @@ model Invoice {
   parentUser        User               @relation(fields: [parentUserId], references: [id])
   session           AiChatSession      @relation(fields: [sessionId], references: [id])
   referralFeeConfig ReferralFeeConfig? @relation(fields: [referralFeeConfigId], references: [id])
+  providerQuote     ProviderQuote?     @relation(fields: [providerQuoteId], references: [id])
   reminders         InvoiceReminder[]
   agreement         Agreement?
 
@@ -1369,12 +1381,51 @@ model Invoice {
   @@index([paymentToken])
 }
 
+model ProviderQuote {
+  id                String    @id @default(uuid())
+  sessionId         String
+  providerId        String
+  parentUserId      String
+  totalCostCents    Int
+  costSheetFileUrl  String?
+  costSheetFileName String?
+  notes             String?
+  source            String    @default("PROVIDER") // "PROVIDER" | "ADMIN_OVERRIDE"
+  createdByUserId   String?
+  supersededAt      DateTime?
+  createdAt         DateTime  @default(now())
+
+  session       AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  provider      Provider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  parentUser    User          @relation("ProviderQuoteParent", fields: [parentUserId], references: [id], onDelete: Cascade)
+  createdByUser User?         @relation("ProviderQuoteCreatedBy", fields: [createdByUserId], references: [id])
+  invoices      Invoice[]
+
+  @@index([sessionId])
+  @@index([providerId])
+  @@index([sessionId, createdAt])
+}
+
+model CostSheetReminder {
+  id        String   @id @default(uuid())
+  sessionId String
+  bookingId String? // null for POST_READINESS_BLOCKED reminders
+  window    String // "24H_BEFORE" | "1H_BEFORE" | "POST_READINESS_BLOCKED"
+  sentAt    DateTime @default(now())
+
+  session AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  booking Booking?      @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@unique([sessionId, bookingId, window])
+  @@index([sessionId])
+}
+
 model InvoiceReminder {
   id           String   @id @default(uuid())
   invoiceId    String
   sentAt       DateTime @default(now())
-  channel      String   // "chat" | "email" | "sms"
-  reminderType String   // "initial" | "followup_24h" | "followup_48h" | "followup_72h" | "12h_remaining" | "4h_remaining" | "1h_remaining" | "expired" | "clearance_day14" | "clearance_day21"
+  channel      String // "chat" | "email" | "sms"
+  reminderType String // "initial" | "followup_24h" | "followup_48h" | "followup_72h" | "12h_remaining" | "4h_remaining" | "1h_remaining" | "expired" | "clearance_day14" | "clearance_day21"
 
   invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
@@ -1388,7 +1439,7 @@ model ProviderBankAccount {
   dwollaFundingSourceId String?
   bankName              String?
   accountLast4          String?
-  accountType           String?   // "checking" | "savings"
+  accountType           String? // "checking" | "savings"
   status                String    @default("PENDING") // PENDING | VERIFIED | SUSPENDED
   verifiedAt            DateTime?
   createdAt             DateTime  @default(now())
