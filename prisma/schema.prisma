@@ -1328,10 +1328,10 @@ model Invoice {
   status               String   @default("AWAITING_PAYMENT")
   paymentMethod        String?  // "CARD" | "ACH"
 
-  // Braintree
-  braintreeTransactionId    String?  @unique
-  braintreeAuthorizationId  String?  // AT_CLEARANCE: pre-auth ID before capture
-  braintreePaymentLinkUrl   String?
+  // Stripe
+  stripeTransactionId    String?  @unique
+  stripePaymentIntentId  String?  // AT_CLEARANCE: pre-auth PI ID before capture
+  stripePaymentLinkUrl   String?
 
   // GoStork Guarantee / Escrow
   isProtected                  Boolean  @default(true)

@@ -413,14 +413,14 @@ export class BillingService {
     });
   }
 
-  // ─── Braintree authorization / capture / void (AT_CLEARANCE flow) ───────────
+  // ─── Stripe authorization / capture / void (AT_CLEARANCE flow) ───────────
 
   async placeAuthorization(invoiceId: string, authorizationId: string) {
     await this.prisma.invoice.update({
       where: { id: invoiceId },
       data: {
         status: "AUTHORIZED",
-        braintreeAuthorizationId: authorizationId,
+        stripePaymentIntentId: authorizationId,
         authorizedAt: new Date(),
         medicalClearanceStatus: "PENDING",
       },
@@ -460,7 +460,7 @@ export class BillingService {
       where: { id: invoiceId },
       data: {
         status: "PAID",
-        braintreeTransactionId: transactionId,
+        stripeTransactionId: transactionId,
         capturedAt: new Date(),
         paidAt: new Date(),
         medicalClearanceStatus: "CLEARED",
@@ -524,17 +524,13 @@ export class BillingService {
     this.logger.log(`Invoice ${invoiceId} voided - clearance failed`);
   }
 
-  // ─── Braintree webhook handler ───────────────────────────────────────────────
-
-  async handleBraintreeWebhook(transactionId: string, status: string) {
-    return this.handleStripeWebhook(transactionId, status === "settled" ? "succeeded" : status);
-  }
+  // ─── Stripe webhook handler ───────────────────────────────────────────────
 
   async handleStripeWebhook(paymentIntentId: string, status: string) {
     if (status === "authorized") {
       // AT_CLEARANCE: funds held, mark invoice as AUTHORIZED
       const invoice = await this.prisma.invoice.findFirst({
-        where: { braintreeAuthorizationId: paymentIntentId },
+        where: { stripePaymentIntentId: paymentIntentId },
       });
       if (!invoice) return;
       if (invoice.status === "AUTHORIZED") return;
@@ -548,13 +544,13 @@ export class BillingService {
 
     if (!["succeeded"].includes(status)) return;
 
-    // Try to find by transaction ID first, then by authorization/PI ID
+    // Try to find by transaction ID first, then by PaymentIntent ID
     let invoice = await this.prisma.invoice.findFirst({
-      where: { braintreeTransactionId: paymentIntentId },
+      where: { stripeTransactionId: paymentIntentId },
     });
     if (!invoice) {
       invoice = await this.prisma.invoice.findFirst({
-        where: { braintreeAuthorizationId: paymentIntentId },
+        where: { stripePaymentIntentId: paymentIntentId },
       });
     }
     if (!invoice) {
@@ -570,7 +566,7 @@ export class BillingService {
         status: "PAID",
         paidAt: new Date(),
         paymentMethod: "CARD",
-        braintreeTransactionId: paymentIntentId,
+        stripeTransactionId: paymentIntentId,
         capturedAt: new Date(),
       },
     });

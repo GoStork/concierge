@@ -136,7 +136,7 @@ export class BillingController {
       status: invoice.status,
       isProtected: invoice.isProtected,
       dueAt: invoice.dueAt,
-      braintreePaymentLinkUrl: invoice.braintreePaymentLinkUrl,
+      stripePaymentLinkUrl: invoice.stripePaymentLinkUrl,
       medicalClearanceStatus: invoice.medicalClearanceStatus,
     };
   }
@@ -218,16 +218,14 @@ export class BillingController {
     const inv = await this.db.invoice.findUnique({ where: { id: invoiceId } });
     if (!inv) throw new HttpException("Invoice not found", HttpStatus.NOT_FOUND);
 
+    const paymentIntentId = inv.stripePaymentIntentId;
+    if (!paymentIntentId) throw new HttpException("No payment authorization on file", HttpStatus.BAD_REQUEST);
+
     if (cleared) {
-      if (!inv.braintreeAuthorizationId) throw new HttpException("No authorization to capture", HttpStatus.BAD_REQUEST);
-      const { captureAuthorization } = await import("../../../braintree-service");
-      const { transactionId } = await captureAuthorization(inv.braintreeAuthorizationId);
+      const { transactionId } = await stripeService.capturePaymentIntent(paymentIntentId);
       await this.billingService.captureAuthorization(invoiceId, transactionId);
     } else {
-      if (inv.braintreeAuthorizationId) {
-        const { voidAuthorization } = await import("../../../braintree-service");
-        await voidAuthorization(inv.braintreeAuthorizationId).catch(() => {});
-      }
+      await stripeService.voidPaymentIntent(paymentIntentId);
       await this.billingService.voidAuthorization(invoiceId);
     }
 
@@ -270,7 +268,7 @@ export class BillingController {
       // Store the PaymentIntent ID on the invoice for later capture/void
       await this.db.invoice.update({
         where: { id: invoice.id },
-        data: { braintreeAuthorizationId: paymentIntentId }, // reusing field for Stripe PI ID
+        data: { stripePaymentIntentId: paymentIntentId },
       });
 
       return res.json({ clientSecret, paymentIntentId });
@@ -324,28 +322,4 @@ export class BillingController {
     }
   }
 
-  // ─── Confirm clearance (AT_CLEARANCE) ────────────────────────────────────
-  // Overrides the existing confirmClearance endpoint to use Stripe capture/void
-  @Post("api/billing/confirm-clearance-stripe")
-  @UseGuards(SessionOrJwtGuard)
-  async confirmClearanceStripe(@Req() req: Request, @Body() body: { invoiceId: string; cleared: boolean }) {
-    const { invoiceId, cleared } = body;
-    if (!invoiceId) throw new HttpException("invoiceId required", HttpStatus.BAD_REQUEST);
-
-    const inv = await this.db.invoice.findUnique({ where: { id: invoiceId } });
-    if (!inv) throw new HttpException("Invoice not found", HttpStatus.NOT_FOUND);
-
-    const paymentIntentId = inv.braintreeAuthorizationId; // stores Stripe PI ID
-    if (!paymentIntentId) throw new HttpException("No payment authorization on file", HttpStatus.BAD_REQUEST);
-
-    if (cleared) {
-      const { transactionId } = await stripeService.capturePaymentIntent(paymentIntentId);
-      await this.billingService.captureAuthorization(invoiceId, transactionId);
-    } else {
-      await stripeService.voidPaymentIntent(paymentIntentId);
-      await this.billingService.voidAuthorization(invoiceId);
-    }
-
-    return { success: true };
-  }
 }
