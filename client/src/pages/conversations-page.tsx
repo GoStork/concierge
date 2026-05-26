@@ -12,7 +12,7 @@ import { useOnlineStatus } from "@/hooks/use-online-status";
 import {
   ArrowLeft, MessageSquare, User, Loader2, FileText, X,
   CheckCircle2, UserPlus, Shield, ThumbsUp, ThumbsDown,
-  Sparkles, Building2, MessageCircle,
+  Sparkles, Building2, MessageCircle, Heart, CornerRightDown,
   CalendarDays, Video, Trash2, Headphones,
   // Used by legacy dead code pending removal
   CalendarClock, Check, Clock, Crown, Download, ExternalLink, Paperclip, Send,
@@ -1352,24 +1352,36 @@ export default function ConversationsPage() {
         )}
 
         {Object.keys(providerGroups).length > 0 && (
-          <div className="mt-2" data-testid="section-provider-chats">
-            <div className="px-4 py-2">
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Your Matches</span>
+          <div className="mt-3" data-testid="section-provider-chats">
+            <div className="px-4 pt-3 pb-1 flex items-center gap-2">
+              <Heart className="w-4 h-4 fill-current" style={{ color: brandColor }} />
+              <h2 className="font-display text-base font-bold text-foreground">Your Matches</h2>
+              <svg
+                width="20"
+                height="30"
+                viewBox="0 0 20 30"
+                fill="none"
+                aria-hidden
+                style={{ color: brandColor, opacity: 0.6 }}
+              >
+                <path d="M3 14 Q 14 17, 14 26" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" fill="none" />
+                <path d="M10 23 L 14 27 L 18 23" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              </svg>
             </div>
             {Object.entries(providerGroups).map(([providerId, sessions]) => {
               const first = sessions[0];
               return (
                 <div key={providerId} data-testid={`provider-group-${providerId}`}>
-                  {/* Section header - agency name (not a chat row) */}
-                  <div className="flex items-center gap-2 px-4 pt-3 pb-1.5 bg-muted/20 border-y border-border/30">
-                    <div className="w-5 h-5 rounded flex-shrink-0 overflow-hidden bg-background flex items-center justify-center border border-border/40">
+                  {/* Section header - agency name (neutral pill, distinct from AI Concierge brand pill) */}
+                  <div className="mx-4 mt-3 mb-2 px-3 py-1.5 rounded-[var(--radius)] flex items-center gap-2 bg-secondary/40">
+                    <div className="w-4 h-4 rounded flex-shrink-0 overflow-hidden bg-background flex items-center justify-center">
                       {first.providerLogo ? (
-                        <img src={getPhotoSrc(first.providerLogo) || undefined} alt="" className="w-5 h-5 object-contain" />
+                        <img src={getPhotoSrc(first.providerLogo) || undefined} alt="" className="w-4 h-4 object-contain" />
                       ) : (
                         <Building2 className="w-3 h-3 text-muted-foreground" />
                       )}
                     </div>
-                    <span className="text-[11px] font-semibold text-foreground uppercase tracking-wider truncate flex-1">
+                    <span className="text-xs font-medium truncate flex-1 text-foreground/80">
                       {first.providerName}
                     </span>
                     {first.providerId && onlineStatuses[first.providerId] && (
@@ -1697,16 +1709,16 @@ export default function ConversationsPage() {
           const first = groupSessions[0];
           return (
             <div key={parentUserId} data-testid={`parent-group-${parentUserId}`}>
-              {/* Section header - parent name (not a chat row) */}
-              <div className="flex items-center gap-2 px-4 pt-3 pb-1.5 bg-muted/20 border-y border-border/30">
-                <div className="w-5 h-5 rounded-full flex-shrink-0 overflow-hidden bg-background flex items-center justify-center border border-border/40 relative">
+              {/* Section header - parent name (secondary-color pill, consistent with parent-side agency pills) */}
+              <div className="mx-4 mt-3 mb-2 px-3 py-1.5 rounded-[var(--radius)] flex items-center gap-2 bg-secondary/40">
+                <div className="w-4 h-4 rounded-full flex-shrink-0 overflow-hidden bg-background flex items-center justify-center">
                   {first.userAvatar ? (
-                    <img src={getPhotoSrc(first.userAvatar) || undefined} alt="" className="w-5 h-5 object-cover" />
+                    <img src={getPhotoSrc(first.userAvatar) || undefined} alt="" className="w-4 h-4 object-cover" />
                   ) : (
                     <User className="w-3 h-3 text-muted-foreground" />
                   )}
                 </div>
-                <span className="text-[11px] font-semibold text-foreground uppercase tracking-wider truncate flex-1">
+                <span className="text-xs font-medium truncate flex-1 text-foreground/80">
                   {first.userName || "Prospective Parent"}
                 </span>
                 {onlineStatuses[first.userId] && (
