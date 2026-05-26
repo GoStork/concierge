@@ -214,24 +214,33 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
         await editor.open();
         if (destroyed) return;
 
-        // CRITICAL: the PandaDoc SDK creates its iframe with NO width/height
-        // style attribute unless you pass `width`/`height` to the constructor
-        // as numeric pixel values (which we can't, because we want responsive).
-        // Without an explicit style, the iframe falls back to HTML's default
-        // iframe size of 300x150px - which is exactly the narrow strip users
-        // were seeing. Force the iframe to fill its container.
+        // CRITICAL: the PandaDoc SDK REPLACES our container div in the DOM with
+        // its own iframe (SDK source: `p.parentNode.replaceChild(iframe, p)`),
+        // keeping the same element id. The iframe inherits NO width/height
+        // style unless the caller passed numeric pixel values to the Editor
+        // constructor - so it falls back to HTML's default 300x150px iframe.
+        // That's the narrow strip with empty white space we kept seeing.
+        //
+        // Because the SDK replaces our div, `editorContainerRef.current` is
+        // now detached from the document. We have to look the iframe up by ID
+        // (the SDK preserves it) every time we want to mutate its style.
         const forceIframeSize = () => {
-          const iframe = el.querySelector("iframe") as HTMLIFrameElement | null;
-          if (iframe) {
+          const iframe = document.getElementById(containerId) as HTMLIFrameElement | null;
+          if (iframe && iframe.tagName === "IFRAME") {
+            // Make the iframe fill the remaining vertical space in the flex
+            // column parent and stretch to the full breakout width.
             iframe.style.width = "100%";
             iframe.style.height = "100%";
+            iframe.style.flex = "1";
+            iframe.style.minHeight = "0";
             iframe.style.border = "0";
             iframe.style.display = "block";
           }
         };
         forceIframeSize();
-        // Re-apply on a few delays in case PandaDoc replaces the iframe element.
-        [50, 200, 600, 1500].forEach(ms => {
+        // Re-apply on a few delays. PandaDoc may re-render the iframe during
+        // its own initialization, or browsers may apply styles asynchronously.
+        [50, 200, 600, 1500, 3000].forEach(ms => {
           const id = window.setTimeout(forceIframeSize, ms);
           resizeTimers.push(id);
         });
@@ -444,7 +453,7 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
         </p>
       </div>
       <div
-        className="rounded-[var(--radius)] border overflow-hidden bg-background"
+        className="rounded-[var(--radius)] border overflow-hidden bg-background flex flex-col"
         style={{
           height: "800px",
           width: "calc(100vw - 2rem)",
@@ -452,16 +461,18 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
           marginRight: "calc(-50vw + 50% + 1rem)",
         }}
       >
-        <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/40">
+        <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/40 shrink-0">
           <p className="text-xs text-muted-foreground">Changes are saved automatically. When done, click Save.</p>
           <Button variant="outline" size="sm" onClick={handleSaveFields}>
             Save
           </Button>
         </div>
+        {/* PandaDoc SDK will replace this div with its iframe in-place, keeping
+            our id. The flex-1 + min-h-0 lets the iframe fill remaining height. */}
         <div
           ref={editorContainerRef}
           id={containerId}
-          style={{ width: "100%", height: "calc(100% - 41px)" }}
+          style={{ flex: 1, minHeight: 0, width: "100%" }}
         />
       </div>
     </>
