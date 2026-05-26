@@ -158,6 +158,9 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
         </div>
 
         {/* Fee amount input */}
+        <div className="pt-1">
+          <h4 className="text-sm font-semibold">GoStork Referral Fee</h4>
+        </div>
         {feeType === "PERCENTAGE" ? (
           <div className="space-y-1.5">
             <Label>Percentage (%)</Label>
