@@ -1965,6 +1965,7 @@ export function BrandSettingsForm({
                 This name appears in the navigation header and throughout the platform
               </p>
             </div>
+
           </Card>
 
           <Card className="rounded-[var(--container-radius)] p-6 space-y-6">

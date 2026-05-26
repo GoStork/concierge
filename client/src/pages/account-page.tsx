@@ -18,6 +18,7 @@ import ImageCropPreview from "@/components/image-crop-preview";
 import CompanyTab from "@/components/company-tab";
 import ProfileDatabasePanel from "@/components/profile-database-panel";
 import ProviderCostsTab from "@/components/provider-costs-tab";
+import { ProviderBillingTab } from "@/components/provider-billing-tab";
 import { CalendarSettings as CalendarSettingsComponent } from "@/components/calendar/calendar-settings";
 import BrandSettingsTab, { BrandSettingsForm } from "@/pages/admin-brand-settings-page";
 import AdminConciergePage from "@/pages/admin-concierge-page";
@@ -38,6 +39,7 @@ const allTabs = [
   { to: '/account/team', label: 'Team', icon: Users, roles: 'provider' as const },
   { to: '/account/members', label: 'Members', icon: Users, roles: 'parent' as const },
   { to: '/account/calendar', label: 'Calendar', icon: Calendar, roles: null },
+  { to: '/account/billing', label: 'Billing', icon: DollarSign, roles: 'billing' as const },
   { to: '/account/branding', label: 'Branding', icon: Palette, roles: 'branding' as const },
   { to: '/account/knowledge', label: 'Knowledge', icon: Brain, roles: 'knowledge' as const },
   { to: '/account/concierge', label: 'AI Concierge', icon: Sparkles, roles: 'concierge' as const },
@@ -2097,7 +2099,7 @@ export default function AccountPage() {
     '/account', '/account/company', '/account/team', '/account/members',
     '/account/calendar', '/account/costs', '/account/documents',
     '/account/egg-donors', '/account/surrogates', '/account/sperm-donors',
-    '/account/knowledge', '/account/concierge', '/account/branding', '/account/scrapers',
+    '/account/knowledge', '/account/concierge', '/account/billing', '/account/branding', '/account/scrapers',
   ];
 
   const tabs = [...allTabs, ...donorTabs].filter(tab => {
@@ -2107,6 +2109,7 @@ export default function AccountPage() {
     }
     if (tab.roles === 'provider') return isProviderOrAdmin;
     if (tab.roles === 'parent') return isParent;
+    if (tab.roles === 'billing') return (isProvider || isAdmin) && !!providerId;
     if (tab.roles === 'branding') return showBranding;
     if (tab.roles === 'knowledge') return isProvider && !isAdmin;
     if (tab.roles === 'concierge') return isAdmin || isParent || isProvider;
@@ -2191,6 +2194,15 @@ export default function AccountPage() {
         <Route path="team" element={<TeamTab />} />
         <Route path="members" element={<ParentMembersTab />} />
         <Route path="calendar" element={isParentOnly ? <ParentCalendarTab /> : <CalendarTab />} />
+        {(isProvider || isAdmin) && providerId && (
+          <Route path="billing" element={
+            <ProviderBillingTab
+              providerId={providerId}
+              providerTypeName={firstApprovedSvcName}
+              mode={isProvider && !isAdmin ? "provider" : "admin"}
+            />
+          } />
+        )}
         <Route path="branding" element={
           isAdmin ? <BrandSettingsTab /> :
           isProvider && providerId ? <BrandSettingsForm

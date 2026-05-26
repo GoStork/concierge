@@ -114,6 +114,9 @@ export interface BrandSettings {
   enableAiConcierge?: boolean;
   parentExperienceMode?: string;
   matchmakers?: Matchmaker[];
+  // Billing identity for payment-receipt PDFs (agency-level)
+  legalName?: string | null;
+  taxId?: string | null;
 }
 
 export const BRAND_DEFAULTS: BrandSettings = {
@@ -213,6 +216,8 @@ export const BRAND_DEFAULTS: BrandSettings = {
   onboardingEggDonorImageUrl: null,
   onboardingSurrogateImageUrl: null,
   onboardingSpermDonorImageUrl: null,
+  legalName: null,
+  taxId: null,
 };
 
 export const SYSTEM_FONT_STACK = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif';

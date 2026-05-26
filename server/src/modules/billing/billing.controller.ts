@@ -220,6 +220,69 @@ export class BillingController {
     return config;
   }
 
+  // ─── Provider: self-service fee config (read + edit own row) ──────────────
+  //
+  // Mirrors the admin endpoints above but derives the providerId from the
+  // logged-in user. The provider can edit everything EXCEPT the GoStork
+  // referral fee economics (feeType / percentage / flatAmount) - those are
+  // negotiated with GoStork and locked from the provider side. Any attempt
+  // to change them is silently dropped server-side.
+
+  @Get("api/provider/fee-config")
+  @UseGuards(SessionOrJwtGuard)
+  async getOwnProviderFeeConfig(@Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+
+    const config = await this.db.referralFeeConfig.findUnique({
+      where: { providerId: user.providerId },
+    });
+    if (!config) throw new HttpException("Not found", HttpStatus.NOT_FOUND);
+    return config;
+  }
+
+  @Put("api/provider/fee-config")
+  @Patch("api/provider/fee-config")
+  @UseGuards(SessionOrJwtGuard)
+  async upsertOwnProviderFeeConfig(@Req() req: Request, @Body() body: any) {
+    const user = req.user as any;
+    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const providerId = user.providerId as string;
+
+    // Provider can NOT change the GoStork referral fee economics. Strip those
+    // fields and re-use the existing row's values (or sensible defaults if
+    // the row does not exist yet).
+    const existing = await this.db.referralFeeConfig.findUnique({ where: { providerId } });
+    const feeType = existing?.feeType ?? "PERCENTAGE";
+    const flatAmount = existing?.flatAmount ?? null;
+    const percentage = existing?.percentage ?? null;
+
+    const { defaultServiceAmount, parentPaysBasis, sampleTotalCostCents, isActive, notes, depositMilestone, averageClearanceDays } = body;
+    const normalizedBasis: "DEFAULT_FIRST_PAYMENT" | "TOTAL_COST" =
+      parentPaysBasis === "TOTAL_COST" ? "TOTAL_COST" : "DEFAULT_FIRST_PAYMENT";
+    const normalizedSample = sampleTotalCostCents != null && Number.isFinite(Number(sampleTotalCostCents))
+      ? Math.round(Number(sampleTotalCostCents))
+      : null;
+
+    const config = await this.db.referralFeeConfig.upsert({
+      where: { providerId },
+      create: { providerId, feeType, flatAmount, percentage, defaultServiceAmount: defaultServiceAmount ?? null, parentPaysBasis: normalizedBasis, sampleTotalCostCents: normalizedSample, isActive: isActive ?? true, notes },
+      update: { defaultServiceAmount: defaultServiceAmount ?? null, parentPaysBasis: normalizedBasis, sampleTotalCostCents: normalizedSample, isActive: isActive ?? true, notes, updatedAt: new Date() },
+    });
+
+    if (depositMilestone !== undefined || averageClearanceDays !== undefined) {
+      await this.db.provider.update({
+        where: { id: providerId },
+        data: {
+          ...(depositMilestone !== undefined ? { depositMilestone } : {}),
+          ...(averageClearanceDays !== undefined ? { averageClearanceDays } : {}),
+        },
+      });
+    }
+
+    return config;
+  }
+
   // ─── Billing: confirm medical clearance ───────────────────────────────────
 
   @Post("api/billing/confirm-clearance")

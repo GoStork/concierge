@@ -19,26 +19,52 @@ function formatCents(cents: number, currency = "USD"): string {
 interface ProviderBillingTabProps {
   providerId: string;
   providerTypeName?: string;
+  /**
+   * "admin" - GoStork admin editing any provider. Full edit rights.
+   * "provider" - Provider editing their own row. GoStork referral fee
+   *   economics (feeType/percentage/flatAmount) are read-only.
+   */
+  mode?: "admin" | "provider";
 }
 
-export function ProviderBillingTab({ providerId, providerTypeName = "" }: ProviderBillingTabProps) {
+export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "admin" }: ProviderBillingTabProps) {
   const queryClient = useQueryClient();
   const isSurrogacy = providerTypeName === "Surrogacy Agency";
+  const isProviderMode = mode === "provider";
+  const feeConfigGetUrl = isProviderMode
+    ? `/api/provider/fee-config`
+    : `/api/admin/providers/${providerId}/fee-config`;
+  const feeConfigPutUrl = feeConfigGetUrl;
+  const brandGetUrl = isProviderMode
+    ? `/api/brand/provider/${providerId}`
+    : `/api/brand/provider/${providerId}`;
+  const brandPutUrl = brandGetUrl;
 
   // ── Load existing fee config ────────────────────────────────────────────
   const { data: feeConfig, isLoading: loadingConfig } = useQuery<any>({
-    queryKey: ["/api/admin/provider-fee-config", providerId],
+    queryKey: [feeConfigGetUrl],
     queryFn: async () => {
-      const res = await fetch(`/api/admin/providers/${providerId}/fee-config`, { credentials: "include" });
+      const res = await fetch(feeConfigGetUrl, { credentials: "include" });
       if (res.status === 404) return null;
       if (!res.ok) throw new Error("Failed to load fee config");
       return res.json();
     },
   });
 
-  // ── Load provider invoices ───────────────────────────────────────────────
+  // ── Load brand settings (legalName + taxId live here) ────────────────────
+  const { data: brandSettings } = useQuery<any>({
+    queryKey: [brandGetUrl],
+    queryFn: async () => {
+      const res = await fetch(brandGetUrl, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load brand settings");
+      return res.json();
+    },
+  });
+
+  // ── Load provider invoices (admin-only) ─────────────────────────────────
   const { data: invoices = [] } = useQuery<any[]>({
     queryKey: ["/api/admin/invoices", providerId],
+    enabled: !isProviderMode,
     queryFn: async () => {
       const res = await fetch(`/api/admin/invoices?providerId=${providerId}&pageSize=50`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load invoices");
@@ -57,6 +83,8 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
   const [notes, setNotes] = useState("");
   const [depositMilestone, setDepositMilestone] = useState<"AT_MATCH" | "AT_CLEARANCE">("AT_MATCH");
   const [averageClearanceDays, setAverageClearanceDays] = useState("21");
+  const [legalName, setLegalName] = useState("");
+  const [taxId, setTaxId] = useState("");
 
   useEffect(() => {
     if (feeConfig) {
@@ -69,6 +97,13 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
       setNotes(feeConfig.notes || "");
     }
   }, [feeConfig]);
+
+  useEffect(() => {
+    if (brandSettings) {
+      setLegalName(brandSettings.legalName || "");
+      setTaxId(brandSettings.taxId || "");
+    }
+  }, [brandSettings]);
 
   // ── Live split preview ───────────────────────────────────────────────────
   // The fee basis is the Sample Total Quoted Cost (what the % is taken from).
@@ -104,17 +139,32 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
         body.averageClearanceDays = parseInt(averageClearanceDays, 10) || 21;
       }
 
-      const res = await fetch(`/api/admin/providers/${providerId}/fee-config`, {
+      const res = await fetch(feeConfigPutUrl, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Failed to save");
+
+      // Persist billing identity fields (legalName + taxId) on the same Save click.
+      // These live on ProviderBrandSettings so the receipt PDF generator can read them.
+      const brandRes = await fetch(brandPutUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          legalName: legalName.trim() || null,
+          taxId: taxId.trim() || null,
+        }),
+      });
+      if (!brandRes.ok) throw new Error((await brandRes.json().catch(() => ({}))).message || "Failed to save billing identity");
+
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/provider-fee-config", providerId] });
+      queryClient.invalidateQueries({ queryKey: [feeConfigGetUrl] });
+      queryClient.invalidateQueries({ queryKey: [brandGetUrl] });
     },
   });
 
@@ -132,11 +182,16 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
 
         {/* Fee type toggle */}
         <div className="space-y-2">
-          <Label>GoStork Referral Fee Type</Label>
+          <Label>
+            GoStork Referral Fee Type
+            {isProviderMode && <span className="text-xs text-muted-foreground ml-2 font-normal">(set by GoStork)</span>}
+          </Label>
           <div className="flex gap-2">
             <button
-              onClick={() => setFeeType("PERCENTAGE")}
-              className="flex-1 flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors"
+              type="button"
+              disabled={isProviderMode}
+              onClick={() => !isProviderMode && setFeeType("PERCENTAGE")}
+              className="flex-1 flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-70"
               style={{
                 background: feeType === "PERCENTAGE" ? "hsl(var(--primary))" : "transparent",
                 color: feeType === "PERCENTAGE" ? "hsl(var(--primary-foreground))" : "hsl(var(--foreground))",
@@ -146,8 +201,10 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
               <Percent className="w-4 h-4" /> Percentage From Total
             </button>
             <button
-              onClick={() => setFeeType("FLAT")}
-              className="flex-1 flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors"
+              type="button"
+              disabled={isProviderMode}
+              onClick={() => !isProviderMode && setFeeType("FLAT")}
+              className="flex-1 flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-70"
               style={{
                 background: feeType === "FLAT" ? "hsl(var(--primary))" : "transparent",
                 color: feeType === "FLAT" ? "hsl(var(--primary-foreground))" : "hsl(var(--foreground))",
@@ -162,7 +219,10 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
         {/* Fee amount input */}
         {feeType === "PERCENTAGE" ? (
           <div className="space-y-1.5">
-            <Label>GoStork Referral Percentage (%)</Label>
+            <Label>
+              GoStork Referral Percentage (%)
+              {isProviderMode && <span className="text-xs text-muted-foreground ml-2 font-normal">(set by GoStork)</span>}
+            </Label>
             <Input
               type="number"
               min="0"
@@ -171,12 +231,16 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
               placeholder="e.g. 10"
               value={percentage}
               onChange={e => setPercentage(e.target.value)}
+              disabled={isProviderMode}
             />
             <p className="text-xs text-muted-foreground">GoStork keeps this % of the Total Quoted Cost the provider sends the parent</p>
           </div>
         ) : (
           <div className="space-y-1.5">
-            <Label>Flat Amount ($)</Label>
+            <Label>
+              Flat Amount ($)
+              {isProviderMode && <span className="text-xs text-muted-foreground ml-2 font-normal">(set by GoStork)</span>}
+            </Label>
             <Input
               type="number"
               min="0"
@@ -184,6 +248,7 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
               placeholder="e.g. 500"
               value={flatAmount}
               onChange={e => setFlatAmount(e.target.value)}
+              disabled={isProviderMode}
             />
             <p className="text-xs text-muted-foreground">GoStork keeps this fixed dollar amount regardless of service cost</p>
           </div>
@@ -336,6 +401,43 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
             )}
           </div>
         )}
+
+        {/* Billing identity - used in the payment-receipt PDF sent to parents
+            after they pay an invoice. Both fields are optional. */}
+        <div className="space-y-4 border-t pt-4">
+          <div>
+            <h4 className="text-sm font-medium">Billing Identity</h4>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Used on the receipt PDF parents download for FSA / HSA / insurance reimbursement.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Legal Name <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Input
+              placeholder="e.g. Eggceptional Fertility LLC"
+              value={legalName}
+              onChange={e => setLegalName(e.target.value)}
+              data-testid="input-legal-name"
+            />
+            <p className="text-xs text-muted-foreground">
+              Full legal entity name shown in the &quot;Issued By&quot; block on payment receipts. Falls back to the Company Name when blank.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Tax ID / EIN <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Input
+              placeholder="e.g. 12-3456789"
+              value={taxId}
+              onChange={e => setTaxId(e.target.value)}
+              data-testid="input-tax-id"
+            />
+            <p className="text-xs text-muted-foreground">
+              Shown in the receipt footer so parents can submit it for reimbursement. Leave blank to omit.
+            </p>
+          </div>
+        </div>
 
         {/* Notes */}
         <div className="space-y-1.5">
