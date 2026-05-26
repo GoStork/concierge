@@ -2282,7 +2282,7 @@ function ConciergeInlineVideoOverlay({ bookingId, onClose }: { bookingId: string
   );
 }
 
-function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, isAnswered, positiveChipStyle, declineChipStyle, onAnswer }: { msg: ChatMessage; brandColor: string; onOpenInlineVideo?: (bookingId: string) => void; sessionId?: string | null; isAnswered?: boolean; positiveChipStyle?: React.CSSProperties; declineChipStyle?: React.CSSProperties; onAnswer?: (text: string) => void }) {
+function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, isAnswered, positiveChipStyle, declineChipStyle, onAnswer, onYesReady }: { msg: ChatMessage; brandColor: string; onOpenInlineVideo?: (bookingId: string) => void; sessionId?: string | null; isAnswered?: boolean; positiveChipStyle?: React.CSSProperties; declineChipStyle?: React.CSSProperties; onAnswer?: (text: string) => void; onYesReady?: (text: string) => void }) {
   const data = msg.uiCardData as any;
   if (!data) return null;
 
@@ -2404,6 +2404,7 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
         positiveChipStyle={positiveChipStyle}
         declineChipStyle={declineChipStyle}
         onAnswer={onAnswer}
+        onYesReady={onYesReady}
       />
     );
   }
@@ -3576,7 +3577,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
   const noMatchmakerYet = !effectiveMatchmakerId && !existingSessionId && !sessionId && sessionLoaded;
 
-  const sendMessage = async (text: string, retryCount = 0, clientMsgId?: string) => {
+  const sendMessage = async (text: string, retryCount = 0, clientMsgId?: string, fixedReply?: string) => {
     const hasFiles = stagedFiles.length > 0;
     if (!text.trim() && !hasFiles) return;
     // On auto-retry (retryCount > 0), bypass the sending guard - we're continuing an in-flight request
@@ -3671,6 +3672,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           sessionId,
           matchmakerId: effectiveMatchmakerId,
           clientMsgId: msgId,
+          ...(fixedReply ? { fixedReply } : {}),
         }),
       });
 
@@ -4074,6 +4076,13 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
     // Already descriptive (e.g. "My own eggs", "Donor sperm", "A gestational surrogate")
     return option;
+  };
+
+  const handleReadinessYes = (text: string) => {
+    const now = Date.now();
+    if (now - lastQrClickRef.current < 1500) return;
+    lastQrClickRef.current = now;
+    sendMessage(text, 0, undefined, "Ready to move forward - invoice coming shortly.");
   };
 
   const handleQuickReply = (text: string, aiMessage = "") => {
@@ -4790,7 +4799,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                               (m.content || "").includes("Thank you for letting us know")
                             )
                           : undefined;
-                        return <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} sessionId={sessionId} isAnswered={isAnswered} positiveChipStyle={chipPositiveStyle} declineChipStyle={chipDeclineStyle} onAnswer={handleQuickReply} />;
+                        return <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} sessionId={sessionId} isAnswered={isAnswered} positiveChipStyle={chipPositiveStyle} declineChipStyle={chipDeclineStyle} onAnswer={handleQuickReply} onYesReady={handleReadinessYes} />;
                       })()}
                       {cardReplacesbubble && msg.createdAt && (
                         <span

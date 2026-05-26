@@ -338,6 +338,11 @@ async function callTier2Claude(
   console.log(`[TIER2] start: history=${chatHistory.length} turns, system=${fullSystem.length} chars, tools=${openAiTools.length}`);
 
   let currentMessage: any = userMessage;
+  // Multi-step tool chain support. Gemini frequently chains 2-4 tool calls before
+  // producing the final text (e.g. search_surrogates -> resolve_match_card ->
+  // search_knowledge_base -> text). Hard cap to prevent infinite loops.
+  const MAX_TOOL_ROUNDS = 6;
+  let toolRoundCount = 0;
 
   while (true) {
     if (!toolCallsExecuted) {
@@ -364,6 +369,7 @@ async function callTier2Claude(
 
       if (functionCalls && functionCalls.length > 0) {
         toolCallsExecuted = true;
+        toolRoundCount = 1;
         const functionResponses: any[] = [];
         for (const fc of functionCalls) {
           if (mcpClientRef) {
@@ -400,62 +406,82 @@ async function callTier2Claude(
         return { content: text, toolCallsExecuted: false, searchToolResults };
       }
     } else {
-      // After tool calls - stream final text response.
-      // Use the same tools-enabled model but pass toolConfig.mode = "NONE" to tell Gemini
-      // "don't call any more tools, just respond with text." This keeps the functionCall/
-      // functionResponse parts valid in history while preventing recursive tool calls.
+      // ROOT CAUSE FIX for "Stream AND response.text() both empty - Gemini produced no
+      // content after tool call":
+      //
+      // The previous code passed toolConfig.mode="NONE" to tell Gemini "don't call any
+      // more tools, just respond with text." Diagnostic logging revealed Gemini IGNORES
+      // that setting - the model returns a fresh functionCall part (e.g. resolve_match_
+      // card, search_knowledge_base, search_surrogates again) accompanied by an empty
+      // text part `{"text":""}`. So the "empty response" was actually the model
+      // legitimately wanting to chain more tool calls; our code just ignored the
+      // functionCall and surfaced the empty text.
+      //
+      // Fix: loop through tool calls until the model produces text. Each iteration we
+      // sendMessage with the previous functionResponses, check whether the model called
+      // more tools, execute those if so, otherwise extract text. A MAX_TOOL_ROUNDS cap
+      // (declared above the while) prevents infinite tool chains.
       const tStream2 = Date.now();
-      const result = await chat.sendMessageStream(currentMessage, {
-        // @ts-ignore - toolConfig is a valid Gemini API parameter not yet typed in SDK
-        toolConfig: { functionCallingConfig: { mode: "NONE" } },
-      } as any);
-      let fullText = "";
-      let firstEvent2Ms: number | null = null;
-      for await (const chunk of result.stream) {
-        if (firstEvent2Ms === null) firstEvent2Ms = Date.now() - tStream2;
-        try {
-          const text = chunk.text();
-          if (text) { fullText += text; sse.sendToken(text); }
-        } catch (chunkErr: any) {
-          // Log the real error so we can diagnose future 0-char failures
-          if (chunkErr?.message) console.warn(`[TIER2] chunk.text() threw: ${chunkErr.message}`);
+      const response = await chat.sendMessage(currentMessage);
+      const moreFunctionCalls = response.response.functionCalls();
+
+      if (moreFunctionCalls && moreFunctionCalls.length > 0) {
+        if (toolRoundCount >= MAX_TOOL_ROUNDS) {
+          console.warn(`[TIER2] Hit MAX_TOOL_ROUNDS=${MAX_TOOL_ROUNDS} - bailing. Attempted: ${moreFunctionCalls.map(f => f.name).join(",")}`);
+          return { content: "", toolCallsExecuted: true, searchToolResults };
         }
-      }
-      // If streaming produced nothing, try extracting text from the resolved response object.
-      // This happens when Gemini returns a finish chunk with no text parts (context overflow,
-      // safety stop, or empty generation after large tool results).
-      if (!fullText) {
-        try {
-          const finalResponse = await result.response;
-          const fallbackText = finalResponse.text();
-          if (fallbackText) {
-            fullText = fallbackText;
-            sse.sendToken(fallbackText);
-            console.warn("[TIER2] Stream was empty - recovered text from response object");
-          } else {
-            // Diagnostic dump - log everything we can about why Gemini returned nothing
-            const candidates = (finalResponse as any)?.candidates || [];
-            const cand0 = candidates[0] || {};
-            const finishReason = cand0?.finishReason || "UNKNOWN";
-            const safetyRatings = cand0?.safetyRatings || [];
-            const partsCount = cand0?.content?.parts?.length || 0;
-            const partKinds = (cand0?.content?.parts || []).map((p: any) =>
-              p.text ? `text(${p.text.length})` :
-              p.functionCall ? `fnCall(${p.functionCall.name})` :
-              p.functionResponse ? `fnResp(${p.functionResponse.name})` :
-              p.executableCode ? "execCode" :
-              p.codeExecutionResult ? "codeResult" :
-              JSON.stringify(p).slice(0, 80)
-            );
-            const promptFeedback = (finalResponse as any)?.promptFeedback;
-            const usageMetadata = (finalResponse as any)?.usageMetadata;
-            console.warn(`[TIER2] Stream AND response.text() both empty - finishReason=${finishReason} parts=${partsCount} [${partKinds.join(",")}]${promptFeedback ? ` promptFeedback=${JSON.stringify(promptFeedback)}` : ""}${safetyRatings.length ? ` safety=${JSON.stringify(safetyRatings)}` : ""}${usageMetadata ? ` tokens(in=${usageMetadata.promptTokenCount},out=${usageMetadata.candidatesTokenCount},total=${usageMetadata.totalTokenCount})` : ""}`);
+        toolRoundCount += 1;
+        console.log(`[TIER2] Round ${toolRoundCount}/${MAX_TOOL_ROUNDS} - model chained ${moreFunctionCalls.length} more tool call(s): ${moreFunctionCalls.map(f => f.name).join(",")}`);
+        const moreResponses: any[] = [];
+        for (const fc of moreFunctionCalls) {
+          if (mcpClientRef) {
+            const tMcp = Date.now();
+            try {
+              const toolResult = await mcpClientRef.callTool({ name: fc.name, arguments: fc.args as Record<string, unknown> });
+              let resultText = (toolResult.content as any)?.[0]?.text || JSON.stringify(toolResult);
+              const MAX_TOOL_RESULT = 8000;
+              if (searchToolNames.includes(fc.name) && resultText.length > MAX_TOOL_RESULT) {
+                resultText = resultText.slice(0, MAX_TOOL_RESULT) + "\n\n[Results truncated - present the first result above as a [[MATCH_CARD]] only]";
+                console.log(`[TIER2] Truncated ${fc.name} result to ${MAX_TOOL_RESULT} chars`);
+              }
+              console.log(`[TIER2] MCP ${fc.name} in ${Date.now() - tMcp}ms (result=${resultText.length} chars)`);
+              moreResponses.push({ functionResponse: { name: fc.name, response: { output: resultText } } });
+              if (searchToolNames.includes(fc.name)) {
+                searchToolResults.push({ toolName: fc.name, resultText, toolArgs: fc.args });
+              }
+            } catch (e: any) {
+              console.log(`[TIER2] MCP ${fc.name} FAILED in ${Date.now() - tMcp}ms: ${e.message}`);
+              moreResponses.push({ functionResponse: { name: fc.name, response: { output: `Error: ${e.message}` } } });
+            }
           }
-        } catch (fallbackErr: any) {
-          console.warn(`[TIER2] response.text() fallback also threw: ${fallbackErr?.message}`);
         }
+        currentMessage = moreResponses;
+        continue; // loop back for another round
       }
-      console.log(`[TIER2] DONE (after tools) stream=${Date.now() - tStream2}ms (firstEvent=${firstEvent2Ms}ms, ${fullText.length} chars). Total TIER2 ${Date.now() - t0}ms`);
+
+      // Model produced text (no more tools) - extract and stream it.
+      const textContent = response.response.text();
+      let fullText = textContent || "";
+      if (fullText) {
+        // Fake-stream the text - we used non-streaming sendMessage to detect chained tool calls
+        const words = fullText.split(" ");
+        for (const word of words) { sse.sendToken(word + " "); await new Promise((r) => setTimeout(r, 0)); }
+      } else {
+        // Truly empty after no more tool calls. Diagnostic log so the next dev knows why.
+        const candidates = (response.response as any)?.candidates || [];
+        const cand0 = candidates[0] || {};
+        const finishReason = cand0?.finishReason || "UNKNOWN";
+        const partsCount = cand0?.content?.parts?.length || 0;
+        const partKinds = (cand0?.content?.parts || []).map((p: any) =>
+          p.text ? `text(${p.text.length})` :
+          p.functionCall ? `fnCall(${p.functionCall.name})` :
+          p.functionResponse ? `fnResp(${p.functionResponse.name})` :
+          JSON.stringify(p).slice(0, 80)
+        );
+        const usageMetadata = (response.response as any)?.usageMetadata;
+        console.warn(`[TIER2] After ${toolRoundCount} tool round(s), Gemini returned no text - finishReason=${finishReason} parts=${partsCount} [${partKinds.join(",")}]${usageMetadata ? ` tokens(in=${usageMetadata.promptTokenCount},out=${usageMetadata.candidatesTokenCount})` : ""}`);
+      }
+      console.log(`[TIER2] DONE (after ${toolRoundCount} tool round(s)) in ${Date.now() - tStream2}ms (${fullText.length} chars). Total TIER2 ${Date.now() - t0}ms`);
       return { content: fullText, toolCallsExecuted: true, searchToolResults };
     }
   }
@@ -1539,6 +1565,28 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         userMessageDeliveredAt: userMsgDeliveredAt,
         skipAiResponse: true,
         humanNeeded: humanEscalationTriggered,
+      });
+      return;
+    }
+
+    // If the client supplied a fixed reply (e.g. readiness-prompt card confirmation),
+    // skip the LLM entirely and stream that text as the AI response.
+    const fixedReply = req.body.fixedReply as string | undefined;
+    if (fixedReply) {
+      const aiMsg = await prisma.aiChatMessage.create({
+        data: {
+          sessionId: currentSessionId,
+          role: "assistant",
+          content: fixedReply,
+          senderType: "ai",
+        },
+      });
+      const sse = setupSSE(res);
+      sse.sendToken(fixedReply);
+      sse.sendDone({
+        message: { id: aiMsg.id, content: fixedReply, senderType: "ai", role: "assistant" },
+        sessionId: currentSessionId,
+        userMessageId: savedUserMsg?.id,
       });
       return;
     }
