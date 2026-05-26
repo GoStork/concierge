@@ -224,7 +224,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       data: {
         sessionId: targetSessionId,
         role: "assistant",
-        content: `Great news! ${parentName} has scheduled a consultation. You can now join their group chat to communicate directly.`,
+        content: `Great news! ${parentName} has scheduled a consultation. You can chat with them directly here.`,
         senderType: "system",
         uiCardType: "provider_only",
       },
@@ -235,7 +235,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       data: {
         sessionId: targetSessionId,
         role: "assistant",
-        content: `${parentName} is asking you to join the chat`,
+        content: `${parentName} scheduled a consultation - you can now chat with them directly.`,
         senderType: "system",
         senderName: "GoStork",
       },
@@ -254,7 +254,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
           payload: {
             sessionId: targetSessionId,
             parentName,
-            message: `${parentName} has scheduled a consultation - click "Join Group Chat" to start chatting directly`,
+            message: `${parentName} scheduled a consultation - you can chat with them directly.`,
           },
         },
       });

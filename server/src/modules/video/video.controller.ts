@@ -872,13 +872,13 @@ export class VideoController {
       select: { id: true },
     });
 
-    // --- 2. The 3-way session (PROVIDER_JOINED or CONSULTATION_BOOKED) ---
+    // --- 2. The 3-way session (PROVIDER_CONNECTED or CONSULTATION_BOOKED) ---
     // Let the provider know the call ended and ask for their assessment.
     // This message is visible to the provider - do NOT include the parent's readiness
     // question here (parent needs a private space to be honest about the call).
     if (providerEntity) {
       const providerSession = await this.prisma.aiChatSession.findFirst({
-        where: { userId: parentUserId, providerId: providerEntity.id, status: { in: ["PROVIDER_JOINED", "CONSULTATION_BOOKED"] } },
+        where: { userId: parentUserId, providerId: providerEntity.id, status: { in: ["PROVIDER_CONNECTED", "CONSULTATION_BOOKED"] } },
         select: { id: true },
       });
 
@@ -984,12 +984,12 @@ export class VideoController {
     const providerTypeName = typePriority.find(t => serviceTypeNames.includes(t)) || serviceTypeNames[0] || "";
     const isSurrogacyAgency = providerTypeName === "Surrogacy Agency";
 
-    // Find the provider session (PROVIDER_JOINED or CONSULTATION_BOOKED) - needed for invoice dedup check
+    // Find the provider session (PROVIDER_CONNECTED or CONSULTATION_BOOKED) - needed for invoice dedup check
     const providerSession = await this.prisma.aiChatSession.findFirst({
       where: {
         userId: parentUserId,
         providerId: providerEntity.id,
-        status: { in: ["PROVIDER_JOINED", "CONSULTATION_BOOKED"] },
+        status: { in: ["PROVIDER_CONNECTED", "CONSULTATION_BOOKED"] },
       },
       select: { id: true },
     });

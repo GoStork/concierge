@@ -11,7 +11,7 @@ import { OnlineIndicator } from "@/components/ui/online-indicator";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import {
   ArrowLeft, MessageSquare, User, Loader2, FileText, X,
-  CheckCircle2, UserPlus, Shield, ThumbsUp, ThumbsDown,
+  CheckCircle2, Shield, ThumbsUp, ThumbsDown,
   Sparkles, Building2, MessageCircle, Heart, CornerRightDown,
   CalendarDays, Video, Trash2, Headphones,
   // Used by legacy dead code pending removal
@@ -636,12 +636,12 @@ export default function ConversationsPage() {
     if (!session) return "/chat";
     // AI concierge sessions - use the same "isProviderThread" logic as the sidebar:
     // a session is a concierge-only session if it has a matchmakerId and has NOT yet
-    // had the provider join (providerJoinedAt null, status not CONSULTATION_BOOKED/PROVIDER_JOINED).
+    // had the provider join (providerJoinedAt null, status not CONSULTATION_BOOKED/PROVIDER_CONNECTED).
     // Note: providerId may be set on concierge sessions (for whisper/silent passthrough) but
     // that alone does NOT make it a provider thread.
     if ("matchmakerId" in session && session.matchmakerId) {
       const cs = session as ChatSession;
-      const isProviderThread = !!cs.providerJoinedAt || cs.status === "CONSULTATION_BOOKED" || cs.status === "PROVIDER_JOINED";
+      const isProviderThread = !!cs.providerJoinedAt || cs.status === "CONSULTATION_BOOKED" || cs.status === "PROVIDER_CONNECTED";
       if (!isProviderThread) {
         return `/chat/concierge?session=${session.id}`;
       }
@@ -782,23 +782,7 @@ export default function ConversationsPage() {
     refetchInterval: 15000,
   });
 
-  const joinMutation = useMutation({
-    mutationFn: async (sessionId: string) => {
-      const res = await fetch(`/api/provider/concierge-sessions/${sessionId}/join`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to join");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions", selectedSessionId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions"] });
-    },
-  });
-
-  const sendMessageMutation = useMutation({
+const sendMessageMutation = useMutation({
     mutationFn: async ({ sessionId, content, uiCardType, uiCardData }: { sessionId: string; content: string; uiCardType?: string; uiCardData?: any }) => {
       const res = await fetch(`/api/provider/concierge-sessions/${sessionId}/message`, {
         method: "POST",
@@ -1022,7 +1006,7 @@ export default function ConversationsPage() {
   // Resolve selected parent session from URL params
   const selectedParentSession = useMemo(() => {
     const isConciergeSession = (s: ChatSession) =>
-      !!s.matchmakerId && !s.providerJoinedAt && s.status !== "CONSULTATION_BOOKED" && s.status !== "PROVIDER_JOINED";
+      !!s.matchmakerId && !s.providerJoinedAt && s.status !== "CONSULTATION_BOOKED" && s.status !== "PROVIDER_CONNECTED";
     if (isConciergeUrl) {
       const sessionId = searchParams.get("session");
       if (sessionId) {
@@ -1117,13 +1101,13 @@ export default function ConversationsPage() {
   }, [selectedParentSession?.id]);
 
   // Auto-navigate when the current concierge session transitions to a provider thread
-  // (status becomes CONSULTATION_BOOKED or PROVIDER_JOINED after booking is submitted)
+  // (status becomes CONSULTATION_BOOKED or PROVIDER_CONNECTED after booking is submitted)
   useEffect(() => {
     if (!selectedParentSession || !isConciergeUrl) return;
     const isNowProviderThread =
       !!selectedParentSession.providerJoinedAt ||
       selectedParentSession.status === "CONSULTATION_BOOKED" ||
-      selectedParentSession.status === "PROVIDER_JOINED";
+      selectedParentSession.status === "PROVIDER_CONNECTED";
     if (!isNowProviderThread) return;
     const targetUrl = buildChatUrl(selectedParentSession);
     if (targetUrl && targetUrl !== "/chat") {
@@ -1183,7 +1167,7 @@ export default function ConversationsPage() {
         s => s.providerId === meta.providerId && (
           !s.matchmakerId ||
           s.status === "CONSULTATION_BOOKED" ||
-          s.status === "PROVIDER_JOINED" ||
+          s.status === "PROVIDER_CONNECTED" ||
           !!s.providerJoinedAt
         )
       );
@@ -1243,7 +1227,7 @@ export default function ConversationsPage() {
     const isProviderThread = (s: ChatSession) =>
       s.providerJoinedAt != null ||
       s.status === "CONSULTATION_BOOKED" ||
-      s.status === "PROVIDER_JOINED";
+      s.status === "PROVIDER_CONNECTED";
     const allEvaConversations = allSessions.filter(s => !isProviderThread(s));
     const sortedEva = [...allEvaConversations].sort((a, b) =>
       new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()
@@ -1558,7 +1542,7 @@ export default function ConversationsPage() {
           )}
           {selectedParentSession!.providerId && (
           <div className="flex items-center gap-1 shrink-0 ml-auto">
-            {selectedParentSession!.status === "PROVIDER_JOINED" && (
+            {selectedParentSession!.status === "PROVIDER_CONNECTED" && (
               selectedParentSession!.humanJoinedAt && !selectedParentSession!.humanConcludedAt ? (
                 <div
                   className="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium"
@@ -1686,11 +1670,11 @@ export default function ConversationsPage() {
       parentGroups[key].push(s);
     });
 
-    // Once a parent has a PROVIDER_JOINED session, hide the anonymous whisper session (no subjectProfileId)
+    // Once a parent has a PROVIDER_CONNECTED session, hide the anonymous whisper session (no subjectProfileId)
     // so the provider only sees the actual donor/surrogate sessions in the folder
     for (const userId of Object.keys(parentGroups)) {
       const group = parentGroups[userId];
-      const hasJoined = group.some(s => s.status === "PROVIDER_JOINED");
+      const hasJoined = group.some(s => s.status === "PROVIDER_CONNECTED");
       if (hasJoined) {
         const withProfile = group.filter(s => s.subjectProfileId);
         if (withProfile.length > 0) parentGroups[userId] = withProfile;
@@ -1732,7 +1716,7 @@ export default function ConversationsPage() {
               </div>
               {/* Donor/surrogate rows - flat, full-width chat rows */}
               {groupSessions.map(s => {
-                const sIsJoined = s.status === "PROVIDER_JOINED";
+                const sIsConnected = s.status === "PROVIDER_CONNECTED";
                 const sIsBooked = s.status === "CONSULTATION_BOOKED";
                 const hasPending = s.pendingQuestions > 0;
                 const sUnread = s.unreadCount || 0;
@@ -1766,15 +1750,15 @@ export default function ConversationsPage() {
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <span className="font-medium text-sm font-ui truncate">{s.title || "Conversation"}</span>
-                          {sIsJoined ? (
+                          {sIsConnected ? (
                             <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[9px] font-bold uppercase flex-shrink-0">
                               <CheckCircle2 className="w-2.5 h-2.5" />
-                              Joined
+                              Connected
                             </span>
                           ) : sIsBooked ? (
                             <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase flex-shrink-0" style={{ backgroundColor: `${brandColor}15`, color: brandColor }}>
-                              <UserPlus className="w-2.5 h-2.5" />
-                              Ready
+                              <CalendarDays className="w-2.5 h-2.5" />
+                              Call Booked
                             </span>
                           ) : hasPending ? (
                             <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] text-[9px] font-bold uppercase flex-shrink-0">
@@ -1896,22 +1880,15 @@ export default function ConversationsPage() {
               <Video className="!w-5 !h-5" strokeWidth={2.25} />
             </Button>
           {hasJoined ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium" data-testid="badge-provider-joined">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium" data-testid="badge-provider-connected">
               <CheckCircle2 className="w-3 h-3" />
-              Joined
+              Connected
             </div>
           ) : isConsultationBooked ? (
-            <Button
-              size="sm"
-              className="h-9 px-4 rounded-full text-xs text-primary-foreground gap-1.5"
-              style={{ backgroundColor: brandColor }}
-              onClick={() => joinMutation.mutate(selectedSessionId!)}
-              disabled={joinMutation.isPending}
-              data-testid="btn-join-group-chat"
-            >
-              {joinMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
-              Join Chat
-            </Button>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium" data-testid="badge-call-booked">
+              <CheckCircle2 className="w-3 h-3" />
+              Call Booked
+            </div>
           ) : isWhisperPhase ? (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] text-xs font-medium" data-testid="badge-pending-questions">
               <MessageCircle className="w-3 h-3" />
@@ -1978,14 +1955,14 @@ export default function ConversationsPage() {
                 isLoading={sendMessageMutation.isPending}
                 isUploading={providerUploading}
                 brandColor={brandColor}
-                placeholder={hasJoined ? "Type a message to the parent..." : "Type your answer..."}
-                senderLabel={!hasJoined ? <WhisperDisclaimer /> : undefined}
+                placeholder={(hasJoined || isConsultationBooked) ? "Type a message to the parent..." : "Type your answer..."}
+                senderLabel={!hasJoined && !isConsultationBooked ? <WhisperDisclaimer /> : undefined}
                 enableFileUpload
                 testIdPrefix="provider"
                 onMeetingClick={handleProviderMeeting}
-                onCostSheetClick={hasJoined ? () => setProviderInlinePanel("costSheet") : undefined}
-                onInvoiceClick={hasJoined ? () => setProviderInlinePanel("invoice") : undefined}
-                onAgreementClick={hasJoined ? () => setProviderInlinePanel("agreement") : undefined}
+                onCostSheetClick={(hasJoined || isConsultationBooked) ? () => setProviderInlinePanel("costSheet") : undefined}
+                onInvoiceClick={(hasJoined || isConsultationBooked) ? () => setProviderInlinePanel("invoice") : undefined}
+                onAgreementClick={(hasJoined || isConsultationBooked) ? () => setProviderInlinePanel("agreement") : undefined}
                 inlinePanel={
                   providerInlinePanel === "costSheet" ? (
                     <CostSheetSidebarSection
@@ -2019,21 +1996,6 @@ export default function ConversationsPage() {
                   ) : undefined
                 }
               />
-            ) : isConsultationBooked ? (
-              <div className="border-t px-4 py-4 bg-muted/30 text-center shrink-0" data-testid="provider-join-prompt">
-                <p className="text-sm text-muted-foreground mb-2">This parent has booked a consultation. Join the chat to communicate directly.</p>
-                <Button
-                  size="sm"
-                  className="h-9 px-4 rounded-full text-xs text-primary-foreground gap-1.5"
-                  style={{ backgroundColor: brandColor }}
-                  onClick={() => joinMutation.mutate(selectedSessionId!)}
-                  disabled={joinMutation.isPending}
-                  data-testid="btn-join-group-chat-bottom"
-                >
-                  {joinMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
-                  Join Chat
-                </Button>
-              </div>
             ) : (
               <div className="border-t px-4 py-4 bg-muted/30 text-center shrink-0" data-testid="provider-waiting-prompt">
                 <p className="text-sm text-muted-foreground">No pending questions. When the AI concierge receives questions from this parent, they'll appear here.</p>
@@ -2055,12 +2017,6 @@ export default function ConversationsPage() {
                   <div className="rounded-[var(--radius)] p-3 bg-[hsl(var(--brand-warning))]/10 border border-[hsl(var(--brand-warning))]/20">
                     <p className="text-sm font-medium text-[hsl(var(--brand-warning))]">{selectedSession.pendingQuestions} question{selectedSession.pendingQuestions > 1 ? "s" : ""} pending</p>
                     <p className="text-xs text-muted-foreground mt-1">Reply below to answer the most recent question</p>
-                  </div>
-                )}
-                {isConsultationBooked && (
-                  <div className="rounded-[var(--radius)] p-3 bg-primary/5 border border-primary/20">
-                    <p className="text-sm font-medium" style={{ color: brandColor }}>Consultation Booked</p>
-                    <p className="text-xs text-muted-foreground mt-1">Click "Join Chat" to start communicating directly with this parent</p>
                   </div>
                 )}
               </div>

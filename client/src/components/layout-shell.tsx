@@ -612,19 +612,16 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   });
   const totalUnread = useMemo(() => {
     const parentUnread = (chatSessions || []).reduce((sum, s) => sum + (s.unreadCount || 0), 0);
-    // For providers: count unread messages, plus pending whisper questions only for pre-join sessions.
-    // PROVIDER_JOINED sessions show "Joined" in the sidebar (never "pending"), so counting
-    // pendingQuestions there would create a ghost badge the provider can never clear.
+    // For providers: count unread messages + pending whisper questions while still in ACTIVE state.
+    // Once a session is CONSULTATION_BOOKED or PROVIDER_CONNECTED, whispers don't apply (provider
+    // chats directly), so we don't double-count them in the badge.
     const providerUnread = (providerChatSessions || []).reduce((sum, s) => {
-      const pending = s.status === "PROVIDER_JOINED" ? 0 : (s.pendingQuestions || 0);
-      // "Ready to Join": CONSULTATION_BOOKED means parent requested provider to join - show at least 1 unread
-      const unread = s.status === "CONSULTATION_BOOKED" ? Math.max(1, s.unreadCount || 0) : (s.unreadCount || 0);
-      return sum + unread + pending;
+      const pending = (s.status === "PROVIDER_CONNECTED" || s.status === "CONSULTATION_BOOKED") ? 0 : (s.pendingQuestions || 0);
+      return sum + (s.unreadCount || 0) + pending;
     }, 0);
-    // Pending bookings (parent scheduled a meeting, awaiting provider confirmation)
-    const pendingBookings = providerPendingBookings?.count || 0;
-    return parentUnread + providerUnread + pendingBookings;
-  }, [chatSessions, providerChatSessions, providerPendingBookings]);
+    return parentUnread + providerUnread;
+  }, [chatSessions, providerChatSessions]);
+  const pendingMeetings = providerPendingBookings?.count || 0;
 
   // Admin: fetch concierge sessions to compute badge count
   const { data: adminConciergeSessions } = useQuery<{ unreadCount: number; humanRequested: boolean; humanJoinedAt: string | null; humanConcludedAt: string | null }[]>({
@@ -713,7 +710,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     { show: isAdmin, to: '/admin/concierge-monitor', icon: Headphones, label: 'Concierge', mobileLabel: 'Concierge', badge: conciergeUnread },
     { show: isAdmin, to: '/admin/test-runner', icon: FlaskConical, label: 'Test Runner', mobileLabel: 'Tests' },
     { show: isAdmin || isProvider, to: '/users', icon: Users, label: 'Parents', mobileLabel: 'Parents' },
-    { show: !((user as any).parentAccountRole === 'VIEWER'), to: '/calendar', icon: Calendar, label: 'Meetings', mobileLabel: 'Meetings' },
+    { show: !((user as any).parentAccountRole === 'VIEWER'), to: '/calendar', icon: Calendar, label: 'Meetings', mobileLabel: 'Meetings', badge: isProvider ? pendingMeetings : undefined },
     { show: true, to: '/account', icon: User, label: 'Profile', mobileLabel: 'Profile', mobileOnly: true },
   ];
 

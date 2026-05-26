@@ -318,7 +318,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
   if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
   try {
     const sessions = await prisma.aiChatSession.findMany({
-      where: { status: { in: ["ACTIVE", "HUMAN_JOINED", "PROVIDER_JOINED"] } },
+      where: { status: { in: ["ACTIVE", "HUMAN_JOINED", "PROVIDER_CONNECTED"] } },
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
         provider: { select: { id: true, name: true, logoUrl: true } },
@@ -412,8 +412,8 @@ chatRouter.post("/api/admin/concierge-sessions/:id/join", requireAuth, async (re
 
     const expertName = user.name || "GoStork Expert";
     const expertFirstName = expertName.split(" ")[0];
-    // Preserve PROVIDER_JOINED status if provider is already in the chat
-    const newStatus = session.status === "PROVIDER_JOINED" ? "PROVIDER_JOINED" : "HUMAN_JOINED";
+    // Preserve PROVIDER_CONNECTED status if provider is already in the chat
+    const newStatus = session.status === "PROVIDER_CONNECTED" ? "PROVIDER_CONNECTED" : "HUMAN_JOINED";
     await prisma.aiChatSession.update({
       where: { id: session.id },
       data: { humanJoinedAt: new Date(), humanConcludedAt: null, humanAgentId: user.id, status: newStatus },
@@ -468,7 +468,7 @@ chatRouter.post("/api/admin/concierge-sessions/:id/exit-human", requireAuth, asy
       data: {
         humanConcludedAt: new Date(),
         humanRequested: false,
-        status: session.status === "PROVIDER_JOINED" ? "PROVIDER_JOINED" : "ACTIVE",
+        status: session.status === "PROVIDER_CONNECTED" ? "PROVIDER_CONNECTED" : "ACTIVE",
       },
     });
 
@@ -734,7 +734,7 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
     const sessions = await prisma.aiChatSession.findMany({
       where: {
         providerId: user.providerId,
-        status: { in: ["ACTIVE", "HUMAN_JOINED", "CONSULTATION_BOOKED", "PROVIDER_JOINED"] },
+        status: { in: ["ACTIVE", "HUMAN_JOINED", "CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] },
         sessionType: { not: "PROVIDER_CONCIERGE" },
       },
       include: {
@@ -773,7 +773,7 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
     for (const uc of unreadCounts) unreadMap[uc.sessionId] = uc._count;
 
     const result = sessions.map(s => {
-      const isJoined = s.status === "PROVIDER_JOINED";
+      const isJoined = s.status === "PROVIDER_CONNECTED";
       const isConsultationBooked = s.status === "CONSULTATION_BOOKED";
       return {
         id: s.id,
@@ -895,7 +895,7 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
     if (!session) return res.status(404).json({ message: "Session not found" });
     if (session.providerId !== user.providerId) return res.status(403).json({ message: "Forbidden" });
 
-    const isJoined = session.status === "PROVIDER_JOINED";
+    const isJoined = session.status === "PROVIDER_CONNECTED";
     const isConsultationBooked = session.status === "CONSULTATION_BOOKED";
     const showIdentity = isJoined || isConsultationBooked;
 
@@ -952,74 +952,6 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
   }
 });
 
-chatRouter.post("/api/provider/concierge-sessions/:id/join", requireAuth, async (req, res) => {
-  const user = req.user as any;
-  if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
-  try {
-    const session = await prisma.aiChatSession.findUnique({
-      where: { id: req.params.id },
-      include: { provider: { select: { name: true } } },
-    });
-    if (!session) return res.status(404).json({ message: "Session not found" });
-    if (session.providerId !== user.providerId) return res.status(403).json({ message: "Forbidden" });
-    if (session.providerJoinedAt) return res.json({ message: "Already joined", alreadyJoined: true });
-    if (session.status !== "CONSULTATION_BOOKED") {
-      return res.status(400).json({ message: "Cannot join - parent has not booked a consultation yet" });
-    }
-
-    await prisma.aiChatSession.update({
-      where: { id: session.id },
-      data: { providerJoinedAt: new Date(), status: "PROVIDER_JOINED" },
-    });
-
-    const providerName = session.provider?.name || user.name || "Your matched provider";
-    const profileCardData = (session as any).subjectProfileId && (session as any).subjectType
-      ? {
-          whisperMatchCard: {
-            type: (session as any).subjectType,
-            ownerProviderId: session.providerId,
-            providerId: (session as any).subjectProfileId,
-            reasons: [],
-            photo: (session as any).profilePhotoUrl || undefined,
-            name: session.title || undefined,
-          },
-        }
-      : undefined;
-    await prisma.aiChatMessage.create({
-      data: {
-        sessionId: session.id,
-        role: "assistant",
-        content: `Exciting news! ${providerName} has joined our conversation. They can now answer your questions directly here.`,
-        senderName: "Eva",
-        ...(profileCardData ? { uiCardData: profileCardData } : {}),
-      },
-    });
-
-    const sessionOwner = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
-    const notifyUserIds = sessionOwner?.parentAccountId
-      ? (await prisma.user.findMany({ where: { parentAccountId: sessionOwner.parentAccountId }, select: { id: true } })).map(u => u.id)
-      : [session.userId];
-    for (const notifyId of notifyUserIds) {
-      await prisma.inAppNotification.create({
-        data: {
-          userId: notifyId,
-          eventType: "PROVIDER_JOINED_CHAT",
-          payload: {
-            sessionId: session.id,
-            providerName,
-            message: `${providerName} has joined your conversation`,
-          },
-        },
-      });
-    }
-
-    res.json({ success: true });
-  } catch (e: any) {
-    console.error("Provider join session error:", e);
-    res.status(500).json({ message: e.message });
-  }
-});
-
 chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
@@ -1032,7 +964,8 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
     if (!session) return res.status(404).json({ message: "Session not found" });
     if (session.providerId !== user.providerId) return res.status(403).json({ message: "Forbidden" });
 
-    const isJoined = session.status === "PROVIDER_JOINED";
+    const isConnected = session.status === "PROVIDER_CONNECTED";
+    const isConsultationBooked = session.status === "CONSULTATION_BOOKED";
 
     const provider = await prisma.provider.findUnique({ where: { id: user.providerId }, select: { name: true } });
     const nameParts = (user.firstName && user.lastName)
@@ -1042,16 +975,15 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
       ? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}.`
       : nameParts[0] || provider?.name || "Agency Expert";
 
-    // Check for pending whispers FIRST - if this is a whisper answer (not a joined 3-way session),
-    // the provider's message should be intercepted silently so the AI can relay it naturally.
-    // Only in a PROVIDER_JOINED session should provider messages appear directly in the parent chat.
+    // Whisper answer flow only runs while the parent is still in anonymous Q&A (ACTIVE).
+    // Once they book a consultation, parent identity is revealed and the provider chats directly.
     const pendingWhispers = await prisma.silentQuery.findMany({
       where: { sessionId: session.id, providerId: user.providerId, status: "PENDING" },
       orderBy: { createdAt: "asc" },
       take: 1,
     });
 
-    if (pendingWhispers.length > 0 && !isJoined) {
+    if (pendingWhispers.length > 0 && session.status === "ACTIVE") {
       const whisper = pendingWhispers[0];
       // Silently record the answer - do NOT create a visible provider message in the parent's chat
       await prisma.silentQuery.update({
@@ -1137,9 +1069,19 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
     }
 
     const message = await prisma.aiChatMessage.create({ data: messageData });
-    await prisma.aiChatSession.update({ where: { id: session.id }, data: { updatedAt: new Date() } });
 
-    if (isJoined) {
+    // Auto-transition: first provider message after booking flips the session to PROVIDER_CONNECTED.
+    // CONSULTATION_BOOKED means a call is on the calendar; PROVIDER_CONNECTED means active dialogue.
+    if (isConsultationBooked && !session.providerJoinedAt) {
+      await prisma.aiChatSession.update({
+        where: { id: session.id },
+        data: { providerJoinedAt: new Date(), status: "PROVIDER_CONNECTED", updatedAt: new Date() },
+      });
+    } else {
+      await prisma.aiChatSession.update({ where: { id: session.id }, data: { updatedAt: new Date() } });
+    }
+
+    if (isConnected || isConsultationBooked) {
       const sessionOwner = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
       const notifyUserIds = sessionOwner?.parentAccountId
         ? (await prisma.user.findMany({ where: { parentAccountId: sessionOwner.parentAccountId }, select: { id: true } })).map(u => u.id)
@@ -2438,7 +2380,7 @@ chatRouter.post("/api/billing/parent-confirm-ready", requireAuth, async (req, re
           where: {
             userId: user.id,
             providerId,
-            status: { in: ["PROVIDER_JOINED", "CONSULTATION_BOOKED"] },
+            status: { in: ["PROVIDER_CONNECTED", "CONSULTATION_BOOKED"] },
           },
           orderBy: { updatedAt: "desc" },
           select: { id: true },

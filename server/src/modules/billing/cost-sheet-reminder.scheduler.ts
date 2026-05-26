@@ -68,7 +68,7 @@ export async function runCostSheetReminderCheck(prisma: PrismaService, notificat
           where: {
             userId: parentUserId,
             providerId,
-            status: { in: ["PROVIDER_JOINED", "CONSULTATION_BOOKED"] },
+            status: { in: ["PROVIDER_CONNECTED", "CONSULTATION_BOOKED"] },
           },
           orderBy: { updatedAt: "desc" },
           select: { id: true },

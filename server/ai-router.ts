@@ -1031,7 +1031,7 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       if (!isProvider && m.uiCardType === "provider_assessment") return false;
       // In a 3-way provider chat, hide AI concierge messages from before the provider joined -
       // the provider session is a direct parent-provider channel; pre-join AI chatter is irrelevant.
-      if (session.status === "PROVIDER_JOINED" && session.providerJoinedAt && m.senderType === "ai") {
+      if (session.status === "PROVIDER_CONNECTED" && session.providerJoinedAt && m.senderType === "ai") {
         const msgTime = new Date(m.createdAt).getTime();
         const joinTime = new Date(session.providerJoinedAt).getTime();
         if (msgTime < joinTime) return false;
@@ -1068,7 +1068,7 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       sessionTitle: cleanTitle(session.title) || null,
       providerName: session.provider?.name || null,
       providerLogo: session.provider?.logoUrl || null,
-      providerJoined: !!session.providerJoinedAt || session.status === "CONSULTATION_BOOKED" || session.status === "PROVIDER_JOINED",
+      providerJoined: !!session.providerJoinedAt || session.status === "CONSULTATION_BOOKED" || session.status === "PROVIDER_CONNECTED",
       humanRequested: session.humanRequested,
       humanJoinedAt: (session as any).humanJoinedAt || null,
       humanConcludedAt: (session as any).humanConcludedAt || null,
@@ -1094,7 +1094,7 @@ aiRouter.get("/my-session", async (req: Request, res: Response) => {
       ? (await prisma.user.findMany({ where: { parentAccountId: user.parentAccountId }, select: { id: true } })).map((u: any) => u.id)
       : [userId];
     const session = await prisma.aiChatSession.findFirst({
-      where: { userId: { in: accountUserIds }, providerJoinedAt: null, status: { notIn: ["CONSULTATION_BOOKED", "PROVIDER_JOINED"] } },
+      where: { userId: { in: accountUserIds }, providerJoinedAt: null, status: { notIn: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] } },
       orderBy: { updatedAt: "desc" },
       select: { id: true, matchmakerId: true, title: true, provider: { select: { name: true } } },
     });
@@ -1177,7 +1177,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       : [userId];
 
     const existing = await prisma.aiChatSession.findFirst({
-      where: { userId: { in: accountUserIds }, providerJoinedAt: null, status: { notIn: ["CONSULTATION_BOOKED", "PROVIDER_JOINED"] } },
+      where: { userId: { in: accountUserIds }, providerJoinedAt: null, status: { notIn: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] } },
       orderBy: { updatedAt: "desc" },
       select: { id: true },
     });
@@ -1383,7 +1383,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         ? (await prisma.user.findMany({ where: { parentAccountId: currentUser.parentAccountId }, select: { id: true } })).map(u => u.id)
         : [userId];
       const existingSession = await prisma.aiChatSession.findFirst({
-        where: { userId: { in: accountUserIds }, providerJoinedAt: null, status: { notIn: ["CONSULTATION_BOOKED", "PROVIDER_JOINED"] } },
+        where: { userId: { in: accountUserIds }, providerJoinedAt: null, status: { notIn: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] } },
         orderBy: { updatedAt: "desc" },
       });
       if (existingSession) {
@@ -1486,7 +1486,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       return;
     }
 
-    if (currentSession?.providerId && (currentSession.status === "PROVIDER_JOINED" || currentSession.status === "CONSULTATION_BOOKED")) {
+    if (currentSession?.providerId && (currentSession.status === "PROVIDER_CONNECTED" || currentSession.status === "CONSULTATION_BOOKED")) {
       let userMsgDeliveredAt: string | null = null;
       if (currentSession.providerId) {
         const providerUsers = await prisma.user.findMany({
@@ -1565,7 +1565,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
             console.error("[PROVIDER_SESSION ESCALATION] Notification failed:", notifErr);
           }
         } catch (e) {
-          console.error("Failed to process human request in PROVIDER_JOINED session:", e);
+          console.error("Failed to process human request in PROVIDER_CONNECTED session:", e);
         }
       }
 

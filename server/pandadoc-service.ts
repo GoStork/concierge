@@ -1160,7 +1160,7 @@ export async function getAgreementSigningSession(agreementId: string, userId: st
   const isProviderThread = !!(
     session?.providerJoinedAt ||
     session?.status === "CONSULTATION_BOOKED" ||
-    session?.status === "PROVIDER_JOINED"
+    session?.status === "PROVIDER_CONNECTED"
   );
 
   return {
