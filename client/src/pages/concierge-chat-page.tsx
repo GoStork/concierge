@@ -4850,7 +4850,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
                   {/* Special cards: readiness_prompt, invoice, calendar_share, video_invite, etc. */}
                   {msg.uiCardType && msg.uiCardData && (
-                    <div className="mt-2">
+                    <div className={`mt-2 flex flex-col ${alignRight ? "items-end" : "items-start"}`}>
                       {(() => {
                         const isAnswered = msg.uiCardType === "readiness_prompt"
                           ? !!(msg.uiCardData as any)?.answered ||
