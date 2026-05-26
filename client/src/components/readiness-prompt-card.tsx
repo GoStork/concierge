@@ -115,7 +115,7 @@ export function ReadinessPromptCard({ data, messageId, sessionId, messageContent
     const wasYes = response === "yes" || (alreadyAnswered && data.answered !== "no");
     return (
       <div style={bubbleStyle}>
-        <p className="text-muted-foreground">{messageContent}</p>
+        <p>{messageContent}</p>
         {wasYes ? (
           <p className="mt-2 flex items-center gap-1.5 font-medium" style={{ color: "hsl(var(--brand-success))" }}>
             <CheckCircle className="w-3.5 h-3.5" />
