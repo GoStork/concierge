@@ -364,7 +364,8 @@ export default function AdminConciergeMonitor() {
       {sessions.map((s) => (
         <button
           key={s.id}
-          className={`w-full flex items-start gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left ${selectedSessionId === s.id ? "bg-muted/70" : ""}`}
+          className="w-full flex items-start gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left"
+          style={selectedSessionId === s.id ? { backgroundColor: `${brandColor}15` } : undefined}
           onClick={() => setSelectedSessionId(s.id)}
           data-testid={`session-card-${s.id}`}
         >

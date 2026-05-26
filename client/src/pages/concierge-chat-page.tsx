@@ -4741,8 +4741,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                     </div>
                   )}
 
-                  {/* Timestamp for regular bubble */}
-                  {!cardReplacesbubble && showBubble && msg.createdAt && (
+                  {/* Timestamp for regular bubble - suppressed on attachment
+                      messages so the single timestamp renders under the image
+                      instead of between the text and the image */}
+                  {!cardReplacesbubble && showBubble && !isAttachmentMsg && msg.createdAt && (
                     <span
                       className="whitespace-nowrap select-none flex items-center gap-0.5 mt-0.5 px-1"
                       style={{ fontSize: "var(--chat-timestamp-font-size, 11px)", lineHeight: "16px", opacity: "var(--chat-timestamp-opacity, 0.45)" as unknown as number }}
@@ -4859,7 +4861,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                           : undefined;
                         return <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} sessionId={sessionId} isAnswered={isAnswered} positiveChipStyle={chipPositiveStyle} declineChipStyle={chipDeclineStyle} onAnswer={handleQuickReply} onYesReady={handleReadinessYes} />;
                       })()}
-                      {(cardReplacesbubble || !showBubble) && msg.createdAt && (
+                      {(cardReplacesbubble || !showBubble || isAttachmentMsg) && msg.createdAt && (
                         <span
                           className="whitespace-nowrap select-none flex items-center gap-0.5 mt-0.5 px-1"
                           style={{ fontSize: "var(--chat-timestamp-font-size, 11px)", lineHeight: "16px", opacity: "var(--chat-timestamp-opacity, 0.45)" as unknown as number }}
@@ -4935,6 +4937,13 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               setParentPlusOpen(false);
               fn();
             };
+            // Camera tile only works on devices that honor <input capture>
+            // (mobile). On desktop the attribute is ignored and falls back to
+            // a file picker - matches iMessage/WhatsApp which hide Camera on
+            // desktop.
+            const isTouchDevice =
+              typeof window !== "undefined" &&
+              window.matchMedia?.("(pointer: coarse)").matches;
             const tiles: ChatPlusAction[] = [
               {
                 id: "photo",
@@ -4944,14 +4953,16 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 disabled: parentUploading,
                 testId: "btn-attach-photo",
               },
-              {
-                id: "camera",
-                label: "Camera",
-                icon: Camera,
-                onClick: closeAfter(() => parentCameraInputRef.current?.click()),
-                disabled: parentUploading,
-                testId: "btn-attach-camera",
-              },
+              ...(isTouchDevice
+                ? [{
+                    id: "camera",
+                    label: "Camera",
+                    icon: Camera,
+                    onClick: closeAfter(() => parentCameraInputRef.current?.click()),
+                    disabled: parentUploading,
+                    testId: "btn-attach-camera",
+                  } as ChatPlusAction]
+                : []),
               {
                 id: "file",
                 label: "File",

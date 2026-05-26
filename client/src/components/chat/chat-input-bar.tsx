@@ -126,6 +126,12 @@ export function ChatInputBar({
   };
 
   const busy = isLoading || isUploading;
+  // Camera tile only works on devices that honor <input capture> (mobile).
+  // Desktop browsers ignore it and fall back to a file picker, so hide the
+  // tile there - matches iMessage/WhatsApp which only show Camera on mobile.
+  const isTouchDevice =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(pointer: coarse)").matches;
 
   const builtinActions: ChatPlusAction[] = [];
   if (enableFileUpload) {
@@ -137,14 +143,16 @@ export function ChatInputBar({
       disabled: busy,
       testId: `btn-${testIdPrefix}-attach-photo`,
     });
-    builtinActions.push({
-      id: "camera",
-      label: PLUS_TILE_LABELS.camera,
-      icon: Camera,
-      onClick: () => cameraInputRef.current?.click(),
-      disabled: busy,
-      testId: `btn-${testIdPrefix}-attach-camera`,
-    });
+    if (isTouchDevice) {
+      builtinActions.push({
+        id: "camera",
+        label: PLUS_TILE_LABELS.camera,
+        icon: Camera,
+        onClick: () => cameraInputRef.current?.click(),
+        disabled: busy,
+        testId: `btn-${testIdPrefix}-attach-camera`,
+      });
+    }
     builtinActions.push({
       id: "file",
       label: PLUS_TILE_LABELS.file,

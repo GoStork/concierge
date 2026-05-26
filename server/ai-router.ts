@@ -1519,6 +1519,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
       // If the parent is requesting a human in a provider session, notify GoStork admins
       let humanEscalationTriggered = false;
+      const userMessage = String(req.body.message ?? "");
       const humanRequestPatternInProvider = /talk to (?:a )?(?:real|human|actual) person|talk to (?:the )?gostork team|speak (?:to|with) (?:a )?human|connect me with (?:a )?(?:human|person|someone)|i want (?:a )?human|i'd like to talk to a real person/i;
       if (humanRequestPatternInProvider.test(userMessage) && !currentSession.humanRequested) {
         try {

@@ -931,7 +931,11 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
         state: null,
         parentAccount: null,
       },
-      messages: isJoined ? session.messages : providerMessages,
+      // Once the consultation is booked, the parent's identity is already
+      // revealed - show all messages (parent + provider + system). Before that
+      // (whisper Q&A phase), only show system + provider messages to keep the
+      // parent anonymous.
+      messages: showIdentity ? session.messages : providerMessages,
       accountMembers: showIdentity ? accountMembers.map(m => ({ id: m.id, displayName: formatInitials(m) })) : [],
     };
 

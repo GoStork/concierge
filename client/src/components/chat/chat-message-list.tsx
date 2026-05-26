@@ -202,7 +202,10 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                       >
                         <span style={{ overflowWrap: "break-word", wordBreak: "break-word" }}>{renderMessageContent(displayContent)}</span>
                       </div>
-                      {msg.createdAt && (
+                      {/* Suppress bubble timestamp on attachment messages so the
+                          single timestamp renders below the image instead of
+                          between the text and the image */}
+                      {msg.createdAt && !isAttachmentMsg && (
                         <span
                           className="whitespace-nowrap select-none flex items-center gap-0.5 mt-0.5 px-1"
                           style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55 }}
@@ -226,7 +229,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                       viewerRole={viewerRole}
                       onOpenInlineVideo={onOpenInlineVideo}
                     />
-                    {!showBubble && msg.createdAt && (
+                    {(!showBubble || isAttachmentMsg) && msg.createdAt && (
                       <span className="flex items-center gap-0.5 mt-0.5 px-1" style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55 }}>
                         {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
                         {own && <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />}

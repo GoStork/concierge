@@ -1305,7 +1305,8 @@ export default function ConversationsPage() {
             {filteredEva.map(session => (
               <button
                 key={session.id}
-                className={`w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left border-b border-border/20 ${selectedParentSession?.id === session.id ? "bg-muted/70" : ""}`}
+                className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left border-b border-border/20"
+                style={selectedParentSession?.id === session.id ? { backgroundColor: `${brandColor}15` } : undefined}
                 onClick={() => handleParentSessionClick(session)}
                 data-testid={`chat-session-${session.id}`}
               >
@@ -1398,6 +1399,7 @@ export default function ConversationsPage() {
                       <button
                         key={session.id}
                         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors text-left border-b border-border/10"
+                        style={selectedParentSession?.id === session.id ? { backgroundColor: `${brandColor}15` } : undefined}
                         onClick={() => handleParentSessionClick(session)}
                         data-testid={`chat-session-provider-${session.id}`}
                       >
@@ -1739,6 +1741,7 @@ export default function ConversationsPage() {
                   <button
                     key={s.id}
                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors text-left border-b border-border/10"
+                    style={selectedSessionId === s.id ? { backgroundColor: `${brandColor}15` } : undefined}
                     onClick={() => setSelectedSessionId(s.id, s)}
                     data-testid={`provider-session-${s.id}`}
                   >
