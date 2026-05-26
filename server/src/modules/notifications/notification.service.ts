@@ -17,6 +17,8 @@ export type NotificationChannel =
   | "cost_sheet_submitted"
   | "cost_sheet_approved"
   | "cost_sheet_rejected"
+  | "cost_sheet_ready"
+  | "cost_sheet_missing"
   | "human_escalation"
   | "agreement_ready"
   | "agreement_signed"
@@ -2193,6 +2195,113 @@ export class NotificationService implements OnModuleInit {
         subject,
         body: html,
       });
+    }
+  }
+
+  // ─── Cost sheet notifications ───────────────────────────────────────────────
+
+  async sendCostSheetReadyToParent(params: {
+    parentUserId: string;
+    parentName: string;
+    parentEmail: string;
+    parentPhone?: string | null;
+    providerName: string;
+    providerId: string;
+    sessionId: string;
+    totalCostFormatted: string;
+    hasFile: boolean;
+  }) {
+    const brandData = await this.getBrandData();
+    const firstName = getFirstName(params.parentName) || "there";
+    const providerName = this.escapeHtml(params.providerName);
+    const chatUrl = `${getBaseUrl()}/chat/${params.providerId}/${params.sessionId}`;
+    const subject = `${params.providerName} sent you a cost sheet`;
+
+    const html = buildBrandedEmail(brandData, {
+      title: "Cost Sheet from Your Provider",
+      greeting: `Hi ${esc(firstName)},`,
+      body: `<strong>${providerName}</strong> has sent you ${params.hasFile ? "a cost sheet and" : ""} a total quoted cost for your service. You can review the details in your GoStork chat.`,
+      detailRows: [
+        { label: "Provider",           value: params.providerName },
+        { label: "Total Quoted Cost",  value: params.totalCostFormatted },
+      ],
+      buttons: [{ label: "View in Chat", url: chatUrl }],
+    });
+
+    await this.dispatchNotification({
+      userId: params.parentUserId,
+      type: "EMAIL",
+      channel: "cost_sheet_ready",
+      recipient: params.parentEmail,
+      subject,
+      body: html,
+    }).catch(e => this.logger.error(`Failed to send cost sheet email to ${params.parentEmail}: ${e.message}`));
+
+    if (params.parentPhone) {
+      await this.sendRawSms(
+        params.parentPhone,
+        `Hi ${firstName}, ${params.providerName} sent a cost sheet (${params.totalCostFormatted}) via GoStork. View it here: ${chatUrl}`,
+      ).catch(e => this.logger.error(`Failed to send cost sheet SMS: ${e.message}`));
+    }
+  }
+
+  async sendCostSheetMissingToProvider(params: {
+    providerUserIds: string[];
+    providerName: string;
+    parentName: string;
+    sessionId: string;
+    providerId: string;
+    reason: "pre_meeting_24h" | "pre_meeting_1h" | "post_readiness";
+    meetingTimeFormatted?: string;
+  }) {
+    const brandData = await this.getBrandData();
+    const chatUrl = `${getBaseUrl()}/chat/${params.providerId}/${params.sessionId}`;
+    const reasonCopy = {
+      pre_meeting_24h: {
+        title: "Send a cost sheet before tomorrow's meeting",
+        body: `Your meeting with <strong>${esc(params.parentName)}</strong>${params.meetingTimeFormatted ? ` (${params.meetingTimeFormatted})` : ""} is coming up. Send a cost sheet now so the parent's invoice can be issued automatically once they're ready to proceed.`,
+        smsBody: `Reminder: your meeting with ${params.parentName}${params.meetingTimeFormatted ? ` (${params.meetingTimeFormatted})` : ""} is in ~24h. Send a cost sheet on GoStork so we can invoice them when they're ready: ${chatUrl}`,
+      },
+      pre_meeting_1h: {
+        title: "Your meeting starts in 1 hour - send a cost sheet",
+        body: `Your meeting with <strong>${esc(params.parentName)}</strong>${params.meetingTimeFormatted ? ` (${params.meetingTimeFormatted})` : ""} starts soon. Send a cost sheet so the invoice can flow automatically afterwards.`,
+        smsBody: `Your meeting with ${params.parentName} starts in ~1h. Send a cost sheet on GoStork: ${chatUrl}`,
+      },
+      post_readiness: {
+        title: "Parent is ready - please send a cost sheet",
+        body: `<strong>${esc(params.parentName)}</strong> has confirmed they are ready to proceed, but no cost sheet has been sent yet. Send one now so we can issue their invoice.`,
+        smsBody: `${params.parentName} is ready to proceed but no cost sheet has been sent. Send one on GoStork to issue their invoice: ${chatUrl}`,
+      },
+    }[params.reason];
+
+    const html = buildBrandedEmail(brandData, {
+      title: reasonCopy.title,
+      greeting: `Hi,`,
+      body: reasonCopy.body,
+      buttons: [{ label: "Send Cost Sheet", url: chatUrl }],
+    });
+
+    for (const userId of params.providerUserIds) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true, mobileNumber: true },
+      });
+      if (!user?.email) continue;
+
+      await this.dispatchNotification({
+        userId,
+        type: "EMAIL",
+        channel: "cost_sheet_missing",
+        recipient: user.email,
+        subject: reasonCopy.title,
+        body: html,
+      }).catch(e => this.logger.error(`Failed to send cost-sheet reminder email: ${e.message}`));
+
+      if (user.mobileNumber) {
+        await this.sendRawSms(user.mobileNumber, reasonCopy.smsBody).catch(e =>
+          this.logger.error(`Failed to send cost-sheet reminder SMS: ${e.message}`),
+        );
+      }
     }
   }
 }
