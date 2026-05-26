@@ -51,11 +51,17 @@ function appBaseUrl(): string {
 
 async function buildW9Status(providerId: string) {
   const [settings, w9] = await Promise.all([
-    prisma.siteSettings.findFirst({ select: { w9TemplateUrl: true, w9TemplateOriginalName: true, w9PandaDocTemplateId: true } }),
+    prisma.siteSettings.findFirst({ select: { w9TemplateUrl: true, w9TemplateOriginalName: true, w9PandaDocTemplateId: true, w9PandaDocRoles: true } }),
     (prisma as any).providerW9.findUnique({ where: { providerId } }),
   ]);
+  // "Configured" means: file uploaded, synced to PandaDoc, AND at least one field
+  // assigned to a role (w9PandaDocRoles set by refreshW9TemplateRoles after Save).
+  // Without the field assignment step, sending the W-9 produces an unsignable doc.
+  const templateUploaded = !!(settings?.w9TemplateUrl && settings?.w9PandaDocTemplateId);
+  const fieldsConfigured = !!settings?.w9PandaDocRoles;
   return {
-    templateConfigured: !!(settings?.w9TemplateUrl && settings?.w9PandaDocTemplateId),
+    templateConfigured: templateUploaded && fieldsConfigured,
+    templateNeedsFields: templateUploaded && !fieldsConfigured,
     templateName: settings?.w9TemplateOriginalName || null,
     w9Id: w9?.id || null,
     status: w9?.status || "NOT_SENT",
@@ -174,6 +180,19 @@ export class W9Controller {
   async sendW9Request(@Req() req: Request, @Param("providerId") providerId: string) {
     if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     const user = req.user as any;
+
+    // Block send if the template isn't fully configured - otherwise providers
+    // get a W-9 with no signature field to fill in.
+    const settings = await prisma.siteSettings.findFirst({
+      select: { w9TemplateUrl: true, w9PandaDocTemplateId: true, w9PandaDocRoles: true },
+    });
+    if (!settings?.w9TemplateUrl || !settings?.w9PandaDocTemplateId) {
+      throw new HttpException("Upload a W-9 template first.", HttpStatus.BAD_REQUEST);
+    }
+    if (!settings.w9PandaDocRoles) {
+      throw new HttpException("Configure the W-9 signature field before sending.", HttpStatus.BAD_REQUEST);
+    }
+
     try {
       const { w9, signer } = await ensureW9Document({ providerId, requestedByUserId: user.id });
       const provider = await prisma.provider.findUnique({ where: { id: providerId }, select: { name: true } });
@@ -211,6 +230,14 @@ export class W9Controller {
   async fillW9(@Req() req: Request) {
     const user = req.user as any;
     if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+
+    const settings = await prisma.siteSettings.findFirst({
+      select: { w9TemplateUrl: true, w9PandaDocTemplateId: true, w9PandaDocRoles: true },
+    });
+    if (!settings?.w9TemplateUrl || !settings?.w9PandaDocTemplateId || !settings.w9PandaDocRoles) {
+      throw new HttpException("W-9 template is not ready yet. Please contact GoStork.", HttpStatus.BAD_REQUEST);
+    }
+
     try {
       const { w9 } = await ensureW9Document({ providerId: user.providerId, requestedByUserId: null });
       return { success: true, w9Id: w9.id, status: w9.status };

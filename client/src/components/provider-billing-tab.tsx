@@ -16,6 +16,7 @@ import { W9TemplateConfig } from "./w9-template-config";
 
 interface W9Status {
   templateConfigured: boolean;
+  templateNeedsFields?: boolean;
   templateName: string | null;
   w9Id: string | null;
   status: "NOT_SENT" | "SENT" | "COMPLETED" | "ERROR";
@@ -117,6 +118,7 @@ export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "
     }
   }, [brandSettings]);
 
+
   // ── Live split preview ───────────────────────────────────────────────────
   // The fee basis is the Sample Total Quoted Cost (what the % is taken from).
   // The parent-pays amount is either that same total or the Default First Payment.
@@ -191,6 +193,16 @@ export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "
       return res.json();
     },
   });
+
+  // Auto-open the setup panel when admin loads the page and the template is
+  // half-configured (file uploaded but signature field not yet assigned).
+  // Fires once per mount; user can still collapse it with the toggle.
+  useEffect(() => {
+    if (!isProviderMode && w9?.templateNeedsFields) {
+      setShowW9Setup(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [w9?.templateNeedsFields, isProviderMode]);
 
   // Admin sends the W-9 request to the agency.
   const w9SendMutation = useMutation({
@@ -494,6 +506,7 @@ export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "
                 <p className="text-sm font-medium">W-9 Form</p>
                 <p className="text-xs text-muted-foreground">
                   {w9Loading ? "Loading..."
+                    : !w9?.templateConfigured && w9?.templateNeedsFields ? (isProviderMode ? "Not available yet" : "Template uploaded - assign signature field to finish setup")
                     : !w9?.templateConfigured ? (isProviderMode ? "Not available yet" : "No W-9 template configured")
                     : w9.status === "COMPLETED" ? `Completed${w9.completedAt ? ` ${new Date(w9.completedAt).toLocaleDateString()}` : ""}`
                     : w9.status === "SENT" ? (isProviderMode ? "Awaiting your signature" : "Sent - awaiting signature")
@@ -540,13 +553,16 @@ export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "
               {!isProviderMode && !w9?.templateConfigured && !w9Loading && (
                 <Button
                   type="button"
-                  variant="outline"
+                  variant={w9?.templateNeedsFields ? "default" : "outline"}
                   size="sm"
                   onClick={() => setShowW9Setup(s => !s)}
                   className="shrink-0"
+                  style={w9?.templateNeedsFields ? { background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" } : undefined}
                 >
                   {showW9Setup ? <ChevronUp className="w-4 h-4 mr-2" /> : <ChevronDown className="w-4 h-4 mr-2" />}
-                  {showW9Setup ? "Hide template setup" : "Set up template"}
+                  {showW9Setup
+                    ? "Hide template setup"
+                    : w9?.templateNeedsFields ? "Configure signature field" : "Set up template"}
                 </Button>
               )}
 
