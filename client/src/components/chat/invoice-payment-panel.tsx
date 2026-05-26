@@ -18,7 +18,7 @@
  * the webhook + reflectPaymentInChat() do the chat-state updates.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import type { Stripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
@@ -35,6 +35,13 @@ interface InvoicePaymentPanelProps {
   onSuccess: () => void;
 }
 
+interface PublicInvoiceLine {
+  id?: string;
+  serviceType: string;
+  description?: string | null;
+  amountCents: number;
+}
+
 interface PublicInvoice {
   invoiceId: string;
   paymentToken: string;
@@ -44,6 +51,18 @@ interface PublicInvoice {
   currency: string;
   status: string;
   description?: string | null;
+  lineItems?: PublicInvoiceLine[];
+}
+
+const LINE_TYPE_LABELS: Record<string, string> = {
+  SURROGACY: "Surrogacy",
+  EGG_DONATION: "Egg Donation",
+  SPERM_DONATION: "Sperm Donation",
+  IVF_CLINIC: "IVF Clinic",
+  OTHER: "Other",
+};
+function lineLabel(t: string): string {
+  return LINE_TYPE_LABELS[(t || "").toUpperCase()] || t || "Service";
 }
 
 function formatCents(cents: number, currency = "USD"): string {
@@ -61,7 +80,17 @@ export function InvoicePaymentPanel({ paymentToken, brandColor, onClose, onSucce
     return key ? loadStripe(key) : null;
   }, []);
 
-  // Fetch invoice + payment intent in parallel on mount.
+  // Keep the latest onSuccess in a ref so we can call it from the effect
+  // without re-running the effect (and minting a fresh PaymentIntent) when
+  // the parent re-renders with a new callback identity.
+  const onSuccessRef = useRef(onSuccess);
+  onSuccessRef.current = onSuccess;
+
+  // Fetch invoice + payment intent ONCE per paymentToken. Each
+  // create-payment-intent call mints a brand-new Stripe PaymentIntent and
+  // overwrites stripePaymentIntentId on the invoice - so we must not call
+  // it again on every parent render, or the webhook ends up looking for a
+  // PI that has since been overwritten.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -77,7 +106,7 @@ export function InvoicePaymentPanel({ paymentToken, brandColor, onClose, onSucce
 
         if (data.status !== "AWAITING_PAYMENT") {
           // Already paid (or expired/cancelled) - just close.
-          onSuccess();
+          onSuccessRef.current();
           return;
         }
 
@@ -103,7 +132,7 @@ export function InvoicePaymentPanel({ paymentToken, brandColor, onClose, onSucce
     return () => {
       cancelled = true;
     };
-  }, [paymentToken, onSuccess]);
+  }, [paymentToken]);
 
   return (
     <div
@@ -148,6 +177,38 @@ export function InvoicePaymentPanel({ paymentToken, brandColor, onClose, onSucce
           <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
             <Loader2 className="w-4 h-4 animate-spin" />
             Loading invoice...
+          </div>
+        )}
+
+        {/* Line-items summary so the parent confirms what they're paying for
+            before entering card details. Falls back to a single Service line
+            when no line items are present (legacy invoices). */}
+        {invoice && (
+          <div className="mb-3 rounded-md border bg-muted/30 px-3 py-2 text-xs space-y-1">
+            {invoice.lineItems && invoice.lineItems.length > 0 ? (
+              <>
+                {invoice.lineItems.map((li, idx) => (
+                  <div key={li.id ?? idx} className="flex justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{lineLabel(li.serviceType)}</p>
+                      {li.description && (
+                        <p className="text-[11px] text-muted-foreground truncate">{li.description}</p>
+                      )}
+                    </div>
+                    <span className="font-medium shrink-0">{formatCents(li.amountCents, invoice.currency)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between font-semibold border-t pt-1.5 mt-1">
+                  <span>Total</span>
+                  <span style={{ color: brandColor }}>{formatCents(invoice.serviceAmount, invoice.currency)}</span>
+                </div>
+              </>
+            ) : (
+              <div className="flex justify-between font-semibold">
+                <span>{invoice.serviceType}</span>
+                <span style={{ color: brandColor }}>{formatCents(invoice.serviceAmount, invoice.currency)}</span>
+              </div>
+            )}
           </div>
         )}
 

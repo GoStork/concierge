@@ -97,12 +97,16 @@ export async function createPaymentIntent(params: {
 
   const stripe = getStripe();
 
+  // Note: receipt_email is intentionally NOT passed. GoStork sends its own
+  // branded receipt (with itemized line items + agency logo + tax ID via
+  // PDF attachment) from the webhook handler. Letting Stripe ALSO email a
+  // generic receipt would just create a duplicate. Stripe Dashboard ->
+  // Settings -> Customer emails -> "Successful payments" must also be off.
   const intent = await stripe.paymentIntents.create({
     amount: params.amountCents,
     currency: params.currency.toLowerCase(),
     capture_method: params.captureMethod ?? "automatic",
     description: params.description,
-    receipt_email: params.receiptEmail,
     metadata: {
       invoiceId: params.invoiceId,
       paymentToken: params.paymentToken,
@@ -142,6 +146,41 @@ export async function voidPaymentIntent(paymentIntentId: string): Promise<void> 
 
   const stripe = getStripe();
   await stripe.paymentIntents.cancel(paymentIntentId);
+}
+
+// ─── Card details (for receipt PDFs) ─────────────────────────────────────────
+
+/**
+ * Fetches the card brand / last4 / expiry for a successful PaymentIntent so
+ * the receipt PDF can show "Visa ending in 4242" rather than just an opaque
+ * transaction ID. Returns nulls in mock mode or if the PaymentIntent didn't
+ * use a card (Klarna, Affirm, ACH, etc).
+ */
+export async function getCardDetailsForPaymentIntent(paymentIntentId: string): Promise<{
+  brand: string | null;
+  last4: string | null;
+  expMonth: number | null;
+  expYear: number | null;
+}> {
+  const empty = { brand: null, last4: null, expMonth: null, expYear: null };
+  if (!isStripeConfigured() || paymentIntentId.startsWith("mock_")) return empty;
+  try {
+    const stripe = getStripe();
+    const intent = await stripe.paymentIntents.retrieve(paymentIntentId, {
+      expand: ["latest_charge.payment_method_details"],
+    });
+    const charge = (intent as any).latest_charge;
+    const card = charge?.payment_method_details?.card;
+    if (!card) return empty;
+    return {
+      brand: card.brand || null,
+      last4: card.last4 || null,
+      expMonth: card.exp_month || null,
+      expYear: card.exp_year || null,
+    };
+  } catch {
+    return empty;
+  }
 }
 
 // ─── Webhook verification ─────────────────────────────────────────────────────

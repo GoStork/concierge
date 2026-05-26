@@ -1590,26 +1590,47 @@ export class NotificationService implements OnModuleInit {
     await this.sendRawEmail(email, `Reset Your ${companyName} Password`, html);
   }
 
-  private async sendRawEmail(to: string, subject: string, body: string) {
+  private async sendRawEmail(
+    to: string,
+    subject: string,
+    body: string,
+    opts?: { attachments?: Array<{ filename: string; content: Buffer; mimeType?: string }> },
+  ) {
     const sendgridKey = process.env.SENDGRID_API_KEY;
     if (!sendgridKey) {
-      this.logger.log(`[EMAIL MOCK] To: ${to}, Subject: ${subject}`);
+      this.logger.log(
+        `[EMAIL MOCK] To: ${to}, Subject: ${subject}${opts?.attachments?.length ? `, attachments: ${opts.attachments.map(a => a.filename).join(", ")}` : ""}`,
+      );
       return;
     }
 
     const senderName = await this.getCompanyName();
+    const payload: any = {
+      personalizations: [{ to: [{ email: to }] }],
+      from: { email: process.env.SENDGRID_FROM_EMAIL || "noreply@gostork.com", name: senderName },
+      subject,
+      content: [{ type: "text/html", value: body }],
+    };
+
+    // SendGrid v3 attachments: base64-encoded content with filename + MIME
+    // type. Used for the payment-receipt PDF so the parent can save / forward
+    // it to their employer or insurance.
+    if (opts?.attachments?.length) {
+      payload.attachments = opts.attachments.map((a) => ({
+        content: a.content.toString("base64"),
+        filename: a.filename,
+        type: a.mimeType || "application/octet-stream",
+        disposition: "attachment",
+      }));
+    }
+
     const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${sendgridKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        personalizations: [{ to: [{ email: to }] }],
-        from: { email: process.env.SENDGRID_FROM_EMAIL || "noreply@gostork.com", name: senderName },
-        subject,
-        content: [{ type: "text/html", value: body }],
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -2006,6 +2027,10 @@ export class NotificationService implements OnModuleInit {
     dueAt?: Date | null;
     /** Free-text description the provider attached to the invoice. */
     description?: string | null;
+    /** Itemized lines. When provided, an HTML table is added to the body
+     *  in addition to the row-by-row detailRows so the parent sees the same
+     *  itemization they'll see in chat / on the payment page. */
+    lineItems?: Array<{ label: string; description?: string | null; amountFormatted: string }>;
   }) {
     const brandData = await this.getBrandData();
     const firstName = getFirstName(params.parentName) || "there";
@@ -2015,25 +2040,53 @@ export class NotificationService implements OnModuleInit {
       ? `<strong>Please complete payment by ${new Date(params.dueAt).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} to secure your match.</strong>`
       : "";
 
+    const hasLines = Array.isArray(params.lineItems) && params.lineItems.length > 0;
+
+    // Itemized HTML table - rendered above the urgency note when line items
+    // are present. Built with inline styles for email client compatibility.
+    const lineItemsTable = hasLines
+      ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;margin:12px 0;font-family:inherit">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:8px 8px 8px 0;border-bottom:1px solid #e5e7eb;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;font-weight:600">Service</th>
+              <th style="text-align:right;padding:8px 0 8px 8px;border-bottom:1px solid #e5e7eb;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;font-weight:600">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${params.lineItems!.map(li => `
+              <tr>
+                <td style="text-align:left;padding:8px 8px 8px 0;border-bottom:1px solid #f3f4f6;font-size:14px;color:#1f2937;vertical-align:top">
+                  <div style="font-weight:500">${esc(li.label)}</div>
+                  ${li.description && li.description.trim() ? `<div style="font-size:12px;color:#6b7280;margin-top:2px">${esc(li.description.trim())}</div>` : ""}
+                </td>
+                <td style="text-align:right;padding:8px 0 8px 8px;border-bottom:1px solid #f3f4f6;font-size:14px;color:#1f2937;white-space:nowrap;vertical-align:top">${esc(li.amountFormatted)}</td>
+              </tr>
+            `).join("")}
+            <tr>
+              <td style="text-align:left;padding:10px 8px 8px 0;font-size:14px;font-weight:700;color:#1f2937">Total</td>
+              <td style="text-align:right;padding:10px 0 8px 8px;font-size:16px;font-weight:700;color:${esc(brandData.brandColor || "#26584A")};white-space:nowrap">${esc(params.serviceAmountFormatted)}</td>
+            </tr>
+          </tbody>
+        </table>`
+      : "";
+
     const detailRows: Array<{ label: string; value: string }> = [
-      { label: "Provider",      value: params.providerName },
-      { label: "Service",       value: params.serviceType },
+      { label: "Provider", value: params.providerName },
     ];
-    // Slot the provider's invoice description right under Service so it
-    // matches the chat card ("Reserve surrogate towards agency fee") and the
-    // parent has the same context they saw in chat.
-    if (params.description && params.description.trim().length > 0) {
-      detailRows.push({ label: "Description", value: params.description.trim() });
+    if (!hasLines) {
+      // Legacy single-amount layout - keep Service / Total in the detail rows.
+      detailRows.push({ label: "Service", value: params.serviceType });
+      if (params.description && params.description.trim().length > 0) {
+        detailRows.push({ label: "Description", value: params.description.trim() });
+      }
+      detailRows.push({ label: "Total Amount", value: params.serviceAmountFormatted });
     }
-    detailRows.push(
-      { label: "Total Amount",  value: params.serviceAmountFormatted },
-      { label: "GoStork Deposit Protection", value: "Included - your funds are protected" },
-    );
+    detailRows.push({ label: "GoStork Deposit Protection", value: "Included - your funds are protected" });
 
     const html = buildBrandedEmail(brandData, {
       title: "Payment Request",
       greeting: `Hi ${esc(firstName)}, you have a payment request from <strong>${providerName}</strong> via GoStork.`,
-      body: urgencyNote,
+      body: `${lineItemsTable}${urgencyNote}`,
       detailRows,
       alertBox: params.dueAt ? { text: `Time-sensitive: payment required by ${new Date(params.dueAt).toLocaleString()}`, type: "warning" as const } : undefined,
       buttons: [{ label: "Pay Now Securely", url: params.paymentUrl }],
@@ -2056,6 +2109,132 @@ export class NotificationService implements OnModuleInit {
       await this.sendRawSms(params.parentPhone, smsBody).catch(e =>
         this.logger.error(`Failed to send payment request SMS: ${e.message}`),
       );
+    }
+  }
+
+  /**
+   * Sends the payment receipt email (with a detailed PDF attached) to both
+   * the parent who paid and to the provider's billing-recipient email
+   * addresses. Triggered from billing.service after the Stripe webhook
+   * marks the invoice PAID.
+   *
+   * The PDF is rendered once and attached to both emails so parent and
+   * agency see the same document.
+   */
+  async sendPaymentReceiptEmails(params: {
+    parentName: string;
+    parentEmail: string;
+    parentUserId?: string;
+    providerName: string;
+    providerEmails: string[]; // billing-recipient emails for the agency
+    receiptNumber: string;
+    paidAmountFormatted: string;
+    serviceType: string;
+    description?: string | null;
+    paidAtIso: string;
+    pdf: Buffer;
+    /** Itemized lines, rendered as an HTML table in both emails. */
+    lineItems?: Array<{ label: string; description?: string | null; amountFormatted: string }>;
+  }) {
+    const brandData = await this.getBrandData();
+    const firstName = getFirstName(params.parentName) || "there";
+    const filename = `GoStork-Receipt-${params.receiptNumber}.pdf`;
+    const attachments = [{ filename, content: params.pdf, mimeType: "application/pdf" }];
+
+    const hasLines = Array.isArray(params.lineItems) && params.lineItems.length > 0;
+    const lineItemsTable = hasLines
+      ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;margin:12px 0;font-family:inherit">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:8px 8px 8px 0;border-bottom:1px solid #e5e7eb;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;font-weight:600">Service</th>
+              <th style="text-align:right;padding:8px 0 8px 8px;border-bottom:1px solid #e5e7eb;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;font-weight:600">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${params.lineItems!.map(li => `
+              <tr>
+                <td style="text-align:left;padding:8px 8px 8px 0;border-bottom:1px solid #f3f4f6;font-size:14px;color:#1f2937;vertical-align:top">
+                  <div style="font-weight:500">${esc(li.label)}</div>
+                  ${li.description && li.description.trim() ? `<div style="font-size:12px;color:#6b7280;margin-top:2px">${esc(li.description.trim())}</div>` : ""}
+                </td>
+                <td style="text-align:right;padding:8px 0 8px 8px;border-bottom:1px solid #f3f4f6;font-size:14px;color:#1f2937;white-space:nowrap;vertical-align:top">${esc(li.amountFormatted)}</td>
+              </tr>
+            `).join("")}
+            <tr>
+              <td style="text-align:left;padding:10px 8px 8px 0;font-size:14px;font-weight:700;color:#1f2937">Total Paid</td>
+              <td style="text-align:right;padding:10px 0 8px 8px;font-size:16px;font-weight:700;color:${esc(brandData.brandColor || "#26584A")};white-space:nowrap">${esc(params.paidAmountFormatted)}</td>
+            </tr>
+          </tbody>
+        </table>`
+      : "";
+
+    const baseRows: Array<{ label: string; value: string }> = [
+      { label: "Receipt Number", value: params.receiptNumber },
+      { label: "Provider",       value: params.providerName },
+    ];
+    if (!hasLines) {
+      baseRows.push({ label: "Service", value: params.serviceType });
+      if (params.description && params.description.trim()) {
+        baseRows.push({ label: "Description", value: params.description.trim() });
+      }
+      baseRows.push({ label: "Amount Paid", value: params.paidAmountFormatted });
+    }
+    baseRows.push({
+      label: "Date Processed",
+      value: new Date(params.paidAtIso).toLocaleString("en-US", {
+        year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short",
+      }),
+    });
+
+    // ── Parent: receipt + thank-you ─────────────────────────────────────
+    const parentSubject = `Receipt for your payment to ${params.providerName} via GoStork`;
+    const parentHtml = buildBrandedEmail(brandData, {
+      title: "Payment Receipt",
+      greeting: `Hi ${esc(firstName)}, thank you for your payment!`,
+      body: `Your payment to <strong>${esc(params.providerName)}</strong> has been received and processed successfully. A detailed receipt is attached to this email as a PDF - you can save it or forward it to your employer (FSA/HSA), insurance carrier, or accountant as needed.${lineItemsTable}`,
+      detailRows: baseRows,
+      footer: "Need help? Reply to this email or contact billing@gostork.com.",
+    });
+
+    try {
+      await this.sendRawEmail(params.parentEmail, parentSubject, parentHtml, { attachments });
+    } catch (e: any) {
+      this.logger.warn(`Receipt email to parent ${params.parentEmail} failed: ${e?.message}`);
+    }
+
+    // ── Agency: payment-received notice + same PDF ──────────────────────
+    const agencySubject = `Payment received - ${params.paidAmountFormatted} from ${params.parentName}`;
+    const agencyRows: Array<{ label: string; value: string }> = [
+      { label: "Receipt Number", value: params.receiptNumber },
+      { label: "Parent",         value: `${params.parentName} (${params.parentEmail})` },
+    ];
+    if (!hasLines) {
+      agencyRows.push({ label: "Service", value: params.serviceType });
+      if (params.description && params.description.trim()) {
+        agencyRows.push({ label: "Description", value: params.description.trim() });
+      }
+      agencyRows.push({ label: "Amount Paid", value: params.paidAmountFormatted });
+    }
+    agencyRows.push({
+      label: "Date Processed",
+      value: new Date(params.paidAtIso).toLocaleString("en-US", {
+        year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short",
+      }),
+    });
+    const agencyHtml = buildBrandedEmail(brandData, {
+      title: "Payment Received",
+      greeting: `Hi team,`,
+      body: `<strong>${esc(params.parentName)}</strong> has paid <strong>${esc(params.paidAmountFormatted)}</strong> for services with <strong>${esc(params.providerName)}</strong>. A receipt PDF is attached for your records. Your provider payout will be initiated per the GoStork billing schedule.${lineItemsTable}`,
+      detailRows: agencyRows,
+    });
+
+    for (const email of params.providerEmails) {
+      if (!email) continue;
+      try {
+        await this.sendRawEmail(email, agencySubject, agencyHtml, { attachments });
+      } catch (e: any) {
+        this.logger.warn(`Receipt email to agency ${email} failed: ${e?.message}`);
+      }
     }
   }
 

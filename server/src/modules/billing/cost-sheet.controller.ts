@@ -262,7 +262,12 @@ export class CostSheetController {
   async triggerInvoice(
     @Req() req: Request,
     @Param("sessionId") sessionId: string,
-    @Body() body: { parentPaysOverrideCents?: number; description?: string },
+    @Body()
+    body: {
+      parentPaysOverrideCents?: number;
+      description?: string;
+      lineItems?: Array<{ serviceType: string; description?: string | null; amountCents: number }>;
+    },
   ) {
     const user = req.user as any;
     const { session, isAdmin } = await this.loadAuthorisedSession(sessionId, user);
@@ -274,6 +279,7 @@ export class CostSheetController {
       triggerSource: isAdmin ? "ADMIN_MANUAL" : "PROVIDER_MANUAL",
       parentPaysOverrideCents: body?.parentPaysOverrideCents,
       description: body?.description,
+      lineItems: body?.lineItems,
     });
 
     // Post the invoice card + send email/SMS to the parent.

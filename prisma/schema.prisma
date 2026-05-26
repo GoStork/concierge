@@ -1011,6 +1011,12 @@ model ProviderBrandSettings {
   quickReplyDeclineStyle String?
   quickReplyShowBorder   Boolean?
 
+  // Billing / receipt fields. Tax ID is shown in the footer of payment
+  // receipts so parents can submit them for FSA/HSA or insurance reimbursement.
+  // legalName falls back to provider.name when null.
+  legalName String?
+  taxId     String?
+
   provider Provider @relation(fields: [providerId], references: [id])
 }
 
@@ -1377,12 +1383,34 @@ model Invoice {
   providerQuote     ProviderQuote?     @relation(fields: [providerQuoteId], references: [id])
   reminders         InvoiceReminder[]
   agreement         Agreement?
+  lineItems         InvoiceLineItem[]
 
   @@index([providerId])
   @@index([parentUserId])
   @@index([sessionId])
   @@index([status])
   @@index([paymentToken])
+}
+
+// Itemized lines on a single invoice. Lets an agency bill multiple services
+// (e.g. "Surrogacy reservation deposit" + "Legal coordination" + "Genetic
+// counseling") on one invoice. The Invoice.serviceAmount is the sum of all
+// line items, and serviceType on Invoice is the primary/headline service so
+// the rest of the codebase that hasn't been updated to read lineItems still
+// renders something sensible.
+model InvoiceLineItem {
+  id           String  @id @default(uuid())
+  invoiceId    String
+  // Fixed set: "SURROGACY" | "EGG_DONATION" | "SPERM_DONATION" | "IVF_CLINIC" | "OTHER"
+  serviceType  String
+  description  String?
+  amountCents  Int
+  displayOrder Int     @default(0)
+  createdAt    DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
 }
 
 model ProviderQuote {

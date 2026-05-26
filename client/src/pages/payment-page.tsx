@@ -15,6 +15,13 @@ import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-
 import { Loader2, AlertCircle, CheckCircle2, Shield, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+interface InvoiceLineItem {
+  id?: string;
+  serviceType: string;
+  description?: string | null;
+  amountCents: number;
+}
+
 interface PublicInvoice {
   id: string;
   paymentToken: string;
@@ -28,6 +35,18 @@ interface PublicInvoice {
   isProtected: boolean;
   dueAt?: string | null;
   medicalClearanceStatus?: string | null;
+  lineItems?: InvoiceLineItem[];
+}
+
+const LINE_TYPE_LABELS: Record<string, string> = {
+  SURROGACY: "Surrogacy",
+  EGG_DONATION: "Egg Donation",
+  SPERM_DONATION: "Sperm Donation",
+  IVF_CLINIC: "IVF Clinic",
+  OTHER: "Other",
+};
+function lineLabel(serviceType: string): string {
+  return LINE_TYPE_LABELS[(serviceType || "").toUpperCase()] || serviceType || "Service";
 }
 
 function formatCents(cents: number, currency = "USD"): string {
@@ -312,14 +331,29 @@ export default function PaymentPage() {
           <div>
             <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Payment to</p>
             <p className="text-lg font-heading font-semibold mt-0.5">{invoice.providerName}</p>
-            <p className="text-sm text-muted-foreground">{invoice.serviceType}</p>
             {invoice.description && <p className="text-sm text-muted-foreground mt-1">{invoice.description}</p>}
           </div>
           <div className="border-t pt-4 space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Service Total</span>
-              <span className="font-medium">{formatCents(invoice.serviceAmount, invoice.currency)}</span>
-            </div>
+            {invoice.lineItems && invoice.lineItems.length > 0 ? (
+              <>
+                {invoice.lineItems.map((li, idx) => (
+                  <div key={li.id ?? idx} className="flex justify-between gap-3 text-sm">
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{lineLabel(li.serviceType)}</p>
+                      {li.description && (
+                        <p className="text-xs text-muted-foreground truncate">{li.description}</p>
+                      )}
+                    </div>
+                    <span className="font-medium shrink-0">{formatCents(li.amountCents, invoice.currency)}</span>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">{invoice.serviceType}</span>
+                <span className="font-medium">{formatCents(invoice.serviceAmount, invoice.currency)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-sm font-semibold border-t pt-2 mt-2">
               <span>Amount Due Today</span>
               <span style={{ color: "hsl(var(--primary))" }}>{formatCents(invoice.serviceAmount, invoice.currency)}</span>

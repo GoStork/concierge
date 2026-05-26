@@ -138,6 +138,14 @@ export class BillingController {
       dueAt: invoice.dueAt,
       stripePaymentLinkUrl: invoice.stripePaymentLinkUrl,
       medicalClearanceStatus: invoice.medicalClearanceStatus,
+      // Itemized breakdown - parent payment page + embedded panel render
+      // these rows in addition to (or instead of) the headline service.
+      lineItems: ((invoice as any).lineItems || []).map((li: any) => ({
+        id: li.id,
+        serviceType: li.serviceType,
+        description: li.description,
+        amountCents: li.amountCents,
+      })),
     };
   }
 
@@ -317,12 +325,12 @@ export class BillingController {
         this.logger.log(`Stripe webhook: ${event.type} | invoice: ${parsed.invoiceId}`);
 
         if (parsed.status === "succeeded" && parsed.invoiceId) {
-          await this.billingService.handleStripeWebhook(parsed.paymentIntentId, "succeeded");
+          await this.billingService.handleStripeWebhook(parsed.paymentIntentId, "succeeded", parsed.invoiceId);
         } else if (parsed.status === "authorized" && parsed.invoiceId) {
           // AT_CLEARANCE: funds held, update invoice to AUTHORIZED
-          await this.billingService.handleStripeWebhook(parsed.paymentIntentId, "authorized");
+          await this.billingService.handleStripeWebhook(parsed.paymentIntentId, "authorized", parsed.invoiceId);
         } else if (parsed.status === "canceled" && parsed.invoiceId) {
-          await this.billingService.handleStripeWebhook(parsed.paymentIntentId, "canceled");
+          await this.billingService.handleStripeWebhook(parsed.paymentIntentId, "canceled", parsed.invoiceId);
         }
       }
 

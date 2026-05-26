@@ -1,6 +1,8 @@
 import { Injectable, Inject, Logger, NotFoundException, BadRequestException } from "@nestjs/common";
 import { NotificationService } from "../notifications/notification.service";
 import { prisma as prismaClient } from "../../../db";
+import { generateReceiptPdf } from "./receipt-pdf";
+import { getCardDetailsForPaymentIntent } from "../../../stripe-service";
 
 function getBaseUrl(): string {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
@@ -25,6 +27,18 @@ function resolveServiceType(providerTypeName: string | undefined): string {
   if (name.includes("surrogacy")) return "Surrogacy";
   if (name.includes("egg bank")) return "Egg Donation";
   return "Fertility Service";
+}
+
+// Maps the line-item enum (DB-stored) to a parent-facing label.
+export function humanizeLineServiceType(t: string): string {
+  switch ((t || "").toUpperCase()) {
+    case "SURROGACY": return "Surrogacy";
+    case "EGG_DONATION": return "Egg Donation";
+    case "SPERM_DONATION": return "Sperm Donation";
+    case "IVF_CLINIC": return "IVF Clinic";
+    case "OTHER": return "Other";
+    default: return t || "Service";
+  }
 }
 
 @Injectable()
@@ -99,6 +113,18 @@ export class BillingService {
     parentPaysOverrideCents?: number;
     description?: string;
     dueAt?: Date;
+    /**
+     * Optional itemized lines for this invoice. When provided and non-empty,
+     * the parent-pays amount is the SUM of all line items - the legacy
+     * basis/override math is bypassed. Each line: serviceType (one of
+     * SURROGACY / EGG_DONATION / SPERM_DONATION / IVF_CLINIC / OTHER),
+     * description (free text), amountCents (positive integer).
+     */
+    lineItems?: Array<{
+      serviceType: string;
+      description?: string | null;
+      amountCents: number;
+    }>;
   }) {
     const {
       sessionId,
@@ -108,6 +134,7 @@ export class BillingService {
       parentPaysOverrideCents,
       description,
       dueAt,
+      lineItems,
     } = params;
 
     const provider = await this.prisma.provider.findUnique({
@@ -142,9 +169,32 @@ export class BillingService {
       feeBasisCents = latestQuote?.totalCostCents ?? 0;
     }
 
+    // Validate + sum line items if any were supplied. They take precedence
+    // over both the override and the basis math: an agency that itemizes is
+    // telling us exactly what the parent will pay for what.
+    const hasLineItems = Array.isArray(lineItems) && lineItems.length > 0;
+    const VALID_LINE_TYPES = new Set([
+      "SURROGACY", "EGG_DONATION", "SPERM_DONATION", "IVF_CLINIC", "OTHER",
+    ]);
+    if (hasLineItems) {
+      for (const li of lineItems!) {
+        if (!VALID_LINE_TYPES.has(li.serviceType)) {
+          throw new BadRequestException(`Invalid line item serviceType: ${li.serviceType}`);
+        }
+        if (!Number.isFinite(li.amountCents) || li.amountCents <= 0) {
+          throw new BadRequestException("Line item amounts must be positive integers in cents");
+        }
+      }
+    }
+    const lineItemsSumCents = hasLineItems
+      ? lineItems!.reduce((sum, li) => sum + Math.round(li.amountCents), 0)
+      : 0;
+
     // Resolve what the parent actually pays.
     let parentPaysCents: number;
-    if (parentPaysOverrideCents != null) {
+    if (hasLineItems) {
+      parentPaysCents = lineItemsSumCents;
+    } else if (parentPaysOverrideCents != null) {
       parentPaysCents = parentPaysOverrideCents;
     } else if (feeConfig.parentPaysBasis === "TOTAL_COST") {
       if (!latestQuote) {
@@ -167,6 +217,14 @@ export class BillingService {
     const providerTypeName = provider.services[0]?.providerType?.name;
     const serviceType = resolveServiceType(providerTypeName);
 
+    // When line items are supplied, the invoice's primary serviceType comes
+    // from the FIRST line item rather than the provider's first service - so
+    // legacy code paths that read invoice.serviceType still render a sensible
+    // headline (e.g. "Surrogacy" instead of "Egg Donation").
+    const headlineServiceType = hasLineItems
+      ? humanizeLineServiceType(lineItems![0].serviceType)
+      : serviceType;
+
     const invoice = await this.prisma.invoice.create({
       data: {
         providerId,
@@ -179,7 +237,7 @@ export class BillingService {
         quotedTotalCostCents: latestQuote?.totalCostCents ?? null,
         providerQuoteId: latestQuote?.id ?? null,
         triggerSource,
-        serviceType,
+        serviceType: headlineServiceType,
         providerName: provider.name,
         description: description || null,
         dueAt: dueAt || null,
@@ -188,8 +246,27 @@ export class BillingService {
       },
     });
 
+    // Persist line items in the same transaction context (best effort - if
+    // this fails we delete the invoice rather than leaving an orphaned one).
+    if (hasLineItems) {
+      try {
+        await this.prisma.invoiceLineItem.createMany({
+          data: lineItems!.map((li, idx) => ({
+            invoiceId: invoice.id,
+            serviceType: li.serviceType,
+            description: li.description?.trim() || null,
+            amountCents: Math.round(li.amountCents),
+            displayOrder: idx,
+          })),
+        });
+      } catch (e: any) {
+        await this.prisma.invoice.delete({ where: { id: invoice.id } }).catch(() => {});
+        throw new BadRequestException(`Failed to save line items: ${e?.message || "unknown error"}`);
+      }
+    }
+
     this.logger.log(
-      `Invoice ${invoice.id} created (trigger=${triggerSource}): parent pays ${formatCents(parentPaysCents)}, GoStork fee ${formatCents(referralFeeAmount)}, provider payout ${formatCents(providerPayoutAmount)}` +
+      `Invoice ${invoice.id} created (trigger=${triggerSource}, lineItems=${hasLineItems ? lineItems!.length : 0}): parent pays ${formatCents(parentPaysCents)}, GoStork fee ${formatCents(referralFeeAmount)}, provider payout ${formatCents(providerPayoutAmount)}` +
         (latestQuote ? ` (basis: quote ${latestQuote.id} = ${formatCents(latestQuote.totalCostCents)})` : ""),
     );
 
@@ -245,13 +322,26 @@ export class BillingService {
   async sendPaymentNotificationsToParent(invoiceId: string) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
-      include: { parentUser: true },
+      include: {
+        parentUser: true,
+        lineItems: { orderBy: { displayOrder: "asc" } },
+      },
     });
     if (!invoice) throw new NotFoundException("Invoice not found");
 
     const base = getBaseUrl();
     const paymentUrl = `${base}/pay/${invoice.paymentToken}`;
     const parentName = invoice.parentUser.name || invoice.parentUser.firstName || "there";
+
+    // Itemized rows for both the chat card payload and the email body.
+    const lineItems = (invoice as any).lineItems || [];
+    const lineItemsForCard = lineItems.map((li: any) => ({
+      id: li.id,
+      serviceType: li.serviceType,
+      serviceTypeLabel: humanizeLineServiceType(li.serviceType),
+      description: li.description,
+      amountCents: li.amountCents,
+    }));
 
     // 1. Post in-chat invoice card (primary delivery channel)
     await this.prisma.aiChatMessage.create({
@@ -276,6 +366,7 @@ export class BillingService {
           isProtected: invoice.isProtected,
           dueAt: invoice.dueAt?.toISOString() || null,
           description: invoice.description,
+          lineItems: lineItemsForCard,
         },
       },
     });
@@ -295,6 +386,11 @@ export class BillingService {
       sessionId: invoice.sessionId,
       dueAt: invoice.dueAt || null,
       description: invoice.description || null,
+      lineItems: lineItemsForCard.map((li: any) => ({
+        label: li.serviceTypeLabel,
+        description: li.description,
+        amountFormatted: formatCents(li.amountCents),
+      })),
     });
 
     // Track that initial notification was sent
@@ -653,13 +749,34 @@ export class BillingService {
 
   // ─── Stripe webhook handler ───────────────────────────────────────────────
 
-  async handleStripeWebhook(paymentIntentId: string, status: string) {
-    if (status === "authorized") {
-      // AT_CLEARANCE: funds held, mark invoice as AUTHORIZED
-      const invoice = await this.prisma.invoice.findFirst({
+  async handleStripeWebhook(paymentIntentId: string, status: string, invoiceId?: string) {
+    // Resolve the invoice by all known links. Webhook metadata.invoiceId is
+    // the most reliable lookup because the PaymentIntent ID on the invoice
+    // can be overwritten if a new PaymentIntent gets created (e.g. the
+    // inline payment panel remounts and the create-payment-intent endpoint
+    // mints a fresh PI). Fall back to lookup by PaymentIntent ID, then by
+    // transaction ID, so older invoices still resolve.
+    const findInvoice = async () => {
+      if (invoiceId) {
+        const byId = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+        if (byId) return byId;
+      }
+      const byPi = await this.prisma.invoice.findFirst({
         where: { stripePaymentIntentId: paymentIntentId },
       });
-      if (!invoice) return;
+      if (byPi) return byPi;
+      return await this.prisma.invoice.findFirst({
+        where: { stripeTransactionId: paymentIntentId },
+      });
+    };
+
+    if (status === "authorized") {
+      // AT_CLEARANCE: funds held, mark invoice as AUTHORIZED
+      const invoice = await findInvoice();
+      if (!invoice) {
+        this.logger.warn(`No invoice found for Stripe PaymentIntent ${paymentIntentId} (invoiceId hint: ${invoiceId || "none"})`);
+        return;
+      }
       if (invoice.status === "AUTHORIZED") return;
       await this.prisma.invoice.update({
         where: { id: invoice.id },
@@ -672,17 +789,9 @@ export class BillingService {
 
     if (!["succeeded"].includes(status)) return;
 
-    // Try to find by transaction ID first, then by PaymentIntent ID
-    let invoice = await this.prisma.invoice.findFirst({
-      where: { stripeTransactionId: paymentIntentId },
-    });
+    const invoice = await findInvoice();
     if (!invoice) {
-      invoice = await this.prisma.invoice.findFirst({
-        where: { stripePaymentIntentId: paymentIntentId },
-      });
-    }
-    if (!invoice) {
-      this.logger.warn(`No invoice found for Stripe PaymentIntent ${paymentIntentId}`);
+      this.logger.warn(`No invoice found for Stripe PaymentIntent ${paymentIntentId} (invoiceId hint: ${invoiceId || "none"})`);
       return;
     }
 
@@ -701,7 +810,141 @@ export class BillingService {
 
     await this.reflectPaymentInChat(invoice.id, "PAID");
     await this.notifyAdminInvoicePaid(invoice.id);
+    await this.emitPaymentReceipt(invoice.id).catch(e =>
+      this.logger.warn(`Payment receipt emission failed for ${invoice.id}: ${e?.message}`),
+    );
     this.logger.log(`Invoice ${invoice.id} marked PAID via Stripe`);
+  }
+
+  /**
+   * Generates the PDF receipt for a paid invoice and emails it to the parent
+   * and the agency's billing recipients. Best-effort - failures here must not
+   * roll back the PAID state. Called from every success path
+   * (Stripe webhook + admin manual override).
+   */
+  private async emitPaymentReceipt(invoiceId: string) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: {
+        parentUser: true,
+        lineItems: { orderBy: { displayOrder: "asc" } },
+      },
+    });
+    if (!invoice || invoice.status !== "PAID") return;
+
+    const lineItems = (invoice as any).lineItems || [];
+    const emailLineItems = lineItems.map((li: any) => ({
+      label: humanizeLineServiceType(li.serviceType),
+      description: li.description,
+      amountFormatted: formatCents(li.amountCents, invoice.currency || "USD"),
+    }));
+
+    // Look up the agency's billing-recipient emails. Falls back to all
+    // provider users associated with the providerId so the agency reliably
+    // receives the receipt even if no dedicated billing contact is set.
+    let providerEmails: string[] = [];
+    if (invoice.providerId) {
+      const members = await this.prisma.user.findMany({
+        where: { providerId: invoice.providerId, email: { not: null } },
+        select: { email: true, billingRecipient: true },
+      });
+      const billingRecipients = members
+        .filter((m: any) => m.billingRecipient === true && m.email)
+        .map((m: any) => m.email as string);
+      const fallback = members.filter((m: any) => m.email).map((m: any) => m.email as string);
+      providerEmails = Array.from(new Set(billingRecipients.length > 0 ? billingRecipients : fallback));
+    }
+
+    // Card brand + last4 for the receipt.
+    const card = invoice.stripePaymentIntentId
+      ? await getCardDetailsForPaymentIntent(invoice.stripePaymentIntentId)
+      : { brand: null, last4: null, expMonth: null, expYear: null };
+
+    const paidAt = invoice.paidAt || new Date();
+    const receiptNumber = `GS-${paidAt.toISOString().slice(0, 10).replace(/-/g, "")}-${invoice.id.slice(0, 8).toUpperCase()}`;
+
+    // Agency brand settings drive the receipt's primary color, logo, legal
+    // name, and tax ID. Logo bytes are fetched lazily - if the URL fails we
+    // fall back to the wordmark layout.
+    const brandSettings = invoice.providerId
+      ? await this.prisma.providerBrandSettings.findUnique({
+          where: { providerId: invoice.providerId },
+          select: { primaryColor: true, logoUrl: true, legalName: true, taxId: true },
+        })
+      : null;
+
+    let logoBuffer: Buffer | null = null;
+    if (brandSettings?.logoUrl) {
+      try {
+        const res = await fetch(brandSettings.logoUrl);
+        if (res.ok) {
+          const ct = res.headers.get("content-type") || "";
+          // pdfkit only embeds PNG / JPEG. Skip SVGs and other formats.
+          if (/png|jpeg|jpg/i.test(ct)) {
+            const ab = await res.arrayBuffer();
+            logoBuffer = Buffer.from(ab);
+          }
+        }
+      } catch (e: any) {
+        this.logger.warn(`Logo fetch failed for receipt PDF: ${e?.message}`);
+      }
+    }
+
+    const pdf = await generateReceiptPdf({
+      invoice: {
+        id: invoice.id,
+        invoiceNumber: (invoice as any).invoiceNumber ?? null,
+        serviceAmount: invoice.serviceAmount,
+        referralFeeAmount: invoice.referralFeeAmount,
+        providerPayoutAmount: invoice.providerPayoutAmount,
+        currency: invoice.currency || "USD",
+        serviceType: invoice.serviceType,
+        providerName: invoice.providerName,
+        description: invoice.description || null,
+        paidAt,
+        isProtected: invoice.isProtected ?? false,
+        stripeTransactionId: invoice.stripeTransactionId || null,
+        stripePaymentIntentId: invoice.stripePaymentIntentId || null,
+        lineItems: lineItems.map((li: any) => ({
+          serviceType: li.serviceType,
+          serviceTypeLabel: humanizeLineServiceType(li.serviceType),
+          description: li.description,
+          amountCents: li.amountCents,
+        })),
+      },
+      parent: {
+        name: invoice.parentUser?.name || invoice.parentUser?.firstName || "Customer",
+        email: invoice.parentUser?.email || "",
+        city: (invoice.parentUser as any)?.city || null,
+        state: (invoice.parentUser as any)?.state || null,
+      },
+      card,
+      brand: {
+        primaryColor: brandSettings?.primaryColor || null,
+        logoBuffer,
+        legalName: brandSettings?.legalName || invoice.providerName,
+        taxId: brandSettings?.taxId || null,
+      },
+    });
+
+    const paidAmountFormatted = formatCents(invoice.serviceAmount, invoice.currency || "USD");
+
+    await this.notificationService.sendPaymentReceiptEmails({
+      parentName: invoice.parentUser?.name || "Customer",
+      parentEmail: invoice.parentUser?.email || "",
+      parentUserId: invoice.parentUserId,
+      providerName: invoice.providerName,
+      providerEmails,
+      receiptNumber,
+      paidAmountFormatted,
+      serviceType: invoice.serviceType,
+      description: invoice.description || null,
+      paidAtIso: paidAt.toISOString(),
+      pdf,
+      lineItems: emailLineItems.length > 0 ? emailLineItems : undefined,
+    });
+
+    this.logger.log(`Payment receipt sent: invoice=${invoice.id} parent=${invoice.parentUser?.email} agency=${providerEmails.length}`);
   }
 
   /**
@@ -834,6 +1077,9 @@ export class BillingService {
     this.logger.log(`Invoice ${invoiceId} manually marked PAID by admin ${adminUserId}`);
     await this.reflectPaymentInChat(invoiceId, "PAID");
     await this.notifyAdminInvoicePaid(invoiceId);
+    await this.emitPaymentReceipt(invoiceId).catch(e =>
+      this.logger.warn(`Payment receipt emission failed for ${invoiceId}: ${e?.message}`),
+    );
     return updated;
   }
 
@@ -932,6 +1178,7 @@ export class BillingService {
       where: { paymentToken },
       include: {
         parentUser: { select: { id: true, name: true, email: true } },
+        lineItems: { orderBy: { displayOrder: "asc" } },
       },
     });
   }

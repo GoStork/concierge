@@ -38,6 +38,14 @@ function CountdownTimer({ dueAt }: { dueAt: string }) {
   );
 }
 
+interface InvoiceLineItemData {
+  id?: string;
+  serviceType: string; // raw enum value (SURROGACY etc)
+  serviceTypeLabel?: string; // pre-humanized label from server
+  description?: string | null;
+  amountCents: number;
+}
+
 interface InvoiceCardData {
   invoiceId: string;
   paymentToken: string;
@@ -52,6 +60,19 @@ interface InvoiceCardData {
   isProtected: boolean;
   dueAt?: string | null;
   description?: string | null;
+  lineItems?: InvoiceLineItemData[];
+}
+
+function lineLabel(li: InvoiceLineItemData): string {
+  if (li.serviceTypeLabel) return li.serviceTypeLabel;
+  const map: Record<string, string> = {
+    SURROGACY: "Surrogacy",
+    EGG_DONATION: "Egg Donation",
+    SPERM_DONATION: "Sperm Donation",
+    IVF_CLINIC: "IVF Clinic",
+    OTHER: "Other",
+  };
+  return map[(li.serviceType || "").toUpperCase()] || li.serviceType || "Service";
 }
 
 interface InvoiceCardProps {
@@ -79,10 +100,36 @@ export function InvoiceCard({ data, isParent = true, onPayInline }: InvoiceCardP
 
       {/* Body */}
       <div className="px-4 py-3 space-y-3">
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-muted-foreground">{data.serviceType}</span>
-          <span className="font-heading font-bold text-lg">{formatCents(data.serviceAmount, data.currency)}</span>
-        </div>
+        {data.lineItems && data.lineItems.length > 0 ? (
+          <>
+            <div className="space-y-1.5">
+              {data.lineItems.map((li, idx) => (
+                <div key={li.id ?? idx} className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{lineLabel(li)}</p>
+                    {li.description && (
+                      <p className="text-xs text-muted-foreground truncate">{li.description}</p>
+                    )}
+                  </div>
+                  <span className="text-sm font-medium shrink-0">
+                    {formatCents(li.amountCents, data.currency)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-between items-center pt-1.5 border-t">
+              <span className="text-sm font-semibold">Total</span>
+              <span className="font-heading font-bold text-lg">
+                {formatCents(data.serviceAmount, data.currency)}
+              </span>
+            </div>
+          </>
+        ) : (
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-muted-foreground">{data.serviceType}</span>
+            <span className="font-heading font-bold text-lg">{formatCents(data.serviceAmount, data.currency)}</span>
+          </div>
+        )}
 
         {data.description && (
           <p className="text-xs text-muted-foreground">{data.description}</p>
