@@ -425,7 +425,7 @@ export function InlineBookingNotification({
         </div>
 
         {isPending && isProvider && !showSuggestForm && !isNoShow && !isParentNoShow && !isProviderNoShow && (
-          <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-t bg-muted/20">
+          <div className="flex flex-wrap items-center justify-center gap-2 px-4 py-3 border-t bg-muted/20">
             <Button size="sm" onClick={() => confirmMutation.mutate()} disabled={confirmMutation.isPending || declineMutation.isPending} className="gap-1 text-xs" data-testid="button-confirm-booking-inline">
               {confirmMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
               Confirm
@@ -456,7 +456,7 @@ export function InlineBookingNotification({
         )}
 
         {isConfirmed && isProvider && !hasPassed && !showRescheduleForm && (
-          <div className="flex items-center gap-2 px-4 py-3 border-t bg-muted/20">
+          <div className="flex items-center justify-center gap-2 px-4 py-3 border-t bg-muted/20">
             <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => setShowRescheduleForm(true)} data-testid="button-reschedule-booking-inline">
               <CalendarClock className="w-3.5 h-3.5" /> Reschedule
             </Button>
@@ -469,17 +469,17 @@ export function InlineBookingNotification({
 
         {/* Parent-only action buttons - matches parent /chat InlineBookingCalendar */}
         {isParent && booking.publicToken && !wasCompleted && !isNoShow && !isParentNoShow && !isProviderNoShow && !isCancelled && (
-          <div className="flex gap-2 px-4 py-3 border-t bg-muted/20">
+          <div className="flex items-center justify-center gap-2 px-4 py-3 border-t bg-muted/20">
             <button
               onClick={() => onRequestReschedule?.()}
-              className="flex-1 text-center text-xs font-medium py-2 rounded-[var(--radius)] border border-border hover:bg-muted transition-colors cursor-pointer"
+              className="text-center text-xs font-medium px-4 py-2 rounded-[var(--radius)] border border-border hover:bg-muted transition-colors cursor-pointer"
               data-testid="button-reschedule-parent-inline"
             >
               Reschedule
             </button>
             <button
               onClick={() => onRequestCancel?.()}
-              className="flex-1 text-center text-xs font-medium py-2 rounded-[var(--radius)] border border-destructive/30 text-destructive hover:bg-destructive/5 transition-colors cursor-pointer"
+              className="text-center text-xs font-medium px-4 py-2 rounded-[var(--radius)] border border-destructive/30 text-destructive hover:bg-destructive/5 transition-colors cursor-pointer"
               data-testid="button-cancel-parent-inline"
             >
               Cancel

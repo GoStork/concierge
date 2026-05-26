@@ -50,6 +50,9 @@ export function InvoiceSidebarSection({
   const [overrideInput, setOverrideInput] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Tracks whether the override field has been seeded with the default basis
+  // amount from billing settings. Once seeded, the user's edits take over.
+  const [defaultPrefilled, setDefaultPrefilled] = useState(false);
 
   // Latest active quote (used to drive the preview).
   const { data: quotesData } = useQuery<{ quotes: ProviderQuoteRow[] }>({
@@ -93,13 +96,23 @@ export function InvoiceSidebarSection({
         } else {
           setPreview(data);
           setPreviewError(null);
+          // First preview load (no override yet) - seed the input with the
+          // basis-derived parent-pays amount from billing settings so the
+          // agency sees what the parent will be charged by default. They
+          // can still edit it to override.
+          if (!defaultPrefilled && !overrideInput && data?.parentPaysCents) {
+            const dollars = data.parentPaysCents / 100;
+            const formatted = Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
+            setOverrideInput(formatted);
+            setDefaultPrefilled(true);
+          }
         }
       } catch (err: any) {
         setPreviewError(err?.message || "Preview failed");
       }
     }, 350);
     return () => clearTimeout(t);
-  }, [sessionId, activeQuote?.id, activeQuote?.totalCostCents, overrideInput]);
+  }, [sessionId, activeQuote?.id, activeQuote?.totalCostCents, overrideInput, defaultPrefilled]);
 
   const sendMutation = useMutation({
     mutationFn: async () => {
@@ -199,13 +212,13 @@ export function InvoiceSidebarSection({
           {activeQuote && (
             <div className="space-y-1.5">
               <label className="text-xs font-medium">
-                Override Parent-Pays ($) <span className="text-muted-foreground font-normal">(optional)</span>
+                Parent Pays ($) <span className="text-muted-foreground font-normal">(from billing settings - editable)</span>
               </label>
               <Input
                 type="number"
                 min="0"
                 step="100"
-                placeholder="leave blank to use the basis from billing settings"
+                placeholder="Calculating from billing settings..."
                 value={overrideInput}
                 onChange={e => setOverrideInput(e.target.value)}
               />
