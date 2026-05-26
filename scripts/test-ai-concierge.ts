@@ -55,10 +55,24 @@ process.stderr.on("error", () => {});
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
+// Primary URL: used for dashboard reporting, health checks, and as the default test target.
 const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:5001";
+// Optional pool of server URLs for sharding test traffic across multiple backends.
+// Set TEST_SERVER_POOL="http://localhost:5001,http://localhost:5002,http://localhost:5003"
+// to spread the load. If unset, all tests hit BASE_URL.
+// All servers MUST share the same Postgres so test users created on one are visible from any.
+const SERVER_POOL: string[] = (process.env.TEST_SERVER_POOL || "")
+  .split(",").map(s => s.trim()).filter(Boolean);
+function pickServerForTest(testIdx: number): string {
+  return SERVER_POOL.length > 0 ? SERVER_POOL[testIdx % SERVER_POOL.length] : BASE_URL;
+}
 const REPORT_DIR = path.join(process.cwd(), "scripts", "test-results");
 const TEST_PASSWORD = "TestPass123!";
 const MSG_TIMEOUT_MS = 180_000; // 3 min - Tier2 with tool use needs time, but batch-5 prevents rate limiting
+// Per-test overall budget: hard cap on total runtime for a single test (sum of all turns + setup).
+// Without this, a test that hits message-level timeouts on every turn could run 20+ messages × 3 min = 60+ min,
+// blocking the parallel pool. Slowest legitimate tests finish in ~4 min, so 8 min is a safe ceiling.
+const TEST_BUDGET_MS = parseInt(process.env.TEST_BUDGET_MS || "480000", 10);
 const DELAY_BETWEEN_MSGS_MS = 600;
 
 // CLI filters
@@ -1668,9 +1682,9 @@ function getTestsToRun(): TestCase[] {
 
 // ─── HTTP Helpers ─────────────────────────────────────────────────────────────
 
-async function createTestUser(testId: string, interestedServices: string[]): Promise<{ userId: string; cookie: string }> {
+async function createTestUser(testId: string, interestedServices: string[], baseUrl: string = BASE_URL): Promise<{ userId: string; cookie: string }> {
   const email = `test-${testId.toLowerCase()}-${Date.now()}@gostork-test.com`;
-  const regRes = await fetchWithServerRetry(`${BASE_URL}/api/users`, {
+  const regRes = await fetchWithServerRetry(`${baseUrl}/api/users`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password: TEST_PASSWORD, name: `Test ${testId}` }),
@@ -1678,7 +1692,7 @@ async function createTestUser(testId: string, interestedServices: string[]): Pro
   if (!regRes.ok) throw new Error(`Register failed: ${await regRes.text()}`);
   const user = await regRes.json();
 
-  const loginRes = await fetchWithServerRetry(`${BASE_URL}/api/auth/login`, {
+  const loginRes = await fetchWithServerRetry(`${baseUrl}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password: TEST_PASSWORD }),
@@ -1760,7 +1774,7 @@ async function fetchWithServerRetry(url: string, options: RequestInit, maxWaitMs
   }
 }
 
-async function sendMessage(cookie: string, message: string, sessionId: string | null): Promise<TurnResult> {
+async function sendMessage(cookie: string, message: string, sessionId: string | null, baseUrl: string = BASE_URL): Promise<TurnResult> {
   const body: Record<string, unknown> = { message };
   if (sessionId) body.sessionId = sessionId;
   const authHeaders: Record<string, string> = cookie.startsWith("Bearer ")
@@ -1786,7 +1800,7 @@ async function sendMessage(cookie: string, message: string, sessionId: string | 
     const abortTimer = setTimeout(() => controller.abort(), 100_000);
 
     try {
-      const res = await fetchWithServerRetry(`${BASE_URL}/api/ai-concierge/chat`, {
+      const res = await fetchWithServerRetry(`${baseUrl}/api/ai-concierge/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify(body),
@@ -1866,14 +1880,14 @@ async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise
 
 // ─── Run one test case ────────────────────────────────────────────────────────
 
-async function runTest(tc: TestCase): Promise<TestResult> {
+async function runTest(tc: TestCase, baseUrl: string = BASE_URL): Promise<TestResult> {
   const start = Date.now();
   const errors: string[] = [];
   const transcript: TestResult["transcript"] = [];
   let userId: string | undefined;
 
   try {
-    const { userId: uid, cookie } = await createTestUser(tc.id, tc.interestedServices);
+    const { userId: uid, cookie } = await createTestUser(tc.id, tc.interestedServices, baseUrl);
     userId = uid;
     let sessionId: string | null = null;
     let aiMsgIdx = 0;
@@ -1893,7 +1907,7 @@ async function runTest(tc: TestCase): Promise<TestResult> {
       });
 
       const turn = await withTimeout(
-        sendMessage(cookie, step.send, sessionId),
+        sendMessage(cookie, step.send, sessionId, baseUrl),
         MSG_TIMEOUT_MS,
         `"${step.send.slice(0, 40)}"`
       );
@@ -2074,10 +2088,13 @@ async function main() {
 
   console.log(`\n🧪 GoStork AI Concierge Test Suite`);
   console.log(`   Base URL: ${BASE_URL}`);
+  if (SERVER_POOL.length > 0) {
+    console.log(`   Server pool: ${SERVER_POOL.length} backends - ${SERVER_POOL.join(", ")}`);
+  }
   console.log(`   Running: ${toRun.length} of ${TEST_CASES.length} test cases`);
   if (filterPersona) console.log(`   Persona filter: ${filterPersona}`);
   if (filterId) console.log(`   ID filter: ${filterId}`);
-  console.log(`   Mode: ${sequential ? "sequential (--sequential)" : "parallel"}\n`);
+  console.log(`   Mode: ${sequential ? "sequential (--sequential)" : `parallel (concurrency=${process.env.TEST_CONCURRENCY || 24})`}\n`);
 
   // Register run with dashboard (non-blocking)
   reportToDashboard({
@@ -2117,19 +2134,23 @@ async function main() {
     });
   };
 
+  let testIdx = 0; // round-robin index for SERVER_POOL assignment
   if (sequential) {
     results = [];
     for (const tc of toRun) {
-      console.log(`  ▶ Starting: ${tc.id}`);
+      const baseUrl = pickServerForTest(testIdx++);
+      console.log(`  ▶ Starting: ${tc.id}${SERVER_POOL.length > 0 ? ` -> ${baseUrl}` : ""}`);
       reportToDashboard({ type: "test_start", id: tc.id });
-      const r = await runTest(tc);
+      const r = await runTest(tc, baseUrl);
       reportResult(r);
       results.push(r);
     }
   } else {
     // Concurrency pool: always keep up to CONCURRENCY tests running.
     // As each test finishes it immediately starts the next one - no waiting for a whole batch.
-    const CONCURRENCY = 8;
+    // Overridable via TEST_CONCURRENCY env var. If you see 429s from Gemini/Anthropic or
+    // server connection errors, drop back to 16 or 8.
+    const CONCURRENCY = parseInt(process.env.TEST_CONCURRENCY || "24", 10);
     results = [];
     let running = 0;
     const queue = [...toRun];
@@ -2139,10 +2160,18 @@ async function main() {
         if (queue.length === 0 && running === 0) { resolve(); return; }
         while (running < CONCURRENCY && queue.length > 0) {
           const tc = queue.shift()!;
+          const baseUrl = pickServerForTest(testIdx++);
           running++;
-          console.log(`  ▶ Starting: ${tc.id}`);
+          console.log(`  ▶ Starting: ${tc.id}${SERVER_POOL.length > 0 ? ` -> ${baseUrl.replace(/^https?:\/\//, "")}` : ""}`);
           reportToDashboard({ type: "test_start", id: tc.id });
-          runTest(tc).then(r => {
+          // Hard per-test budget. If a single test hangs (message-level timeouts looping),
+          // bail out with a FAIL so it doesn't starve the rest of the queue.
+          withTimeout(runTest(tc, baseUrl), TEST_BUDGET_MS, `${tc.id} exceeded ${TEST_BUDGET_MS / 1000}s budget`)
+            .catch(err => ({
+              tc, passed: false, durationMs: TEST_BUDGET_MS, transcript: [],
+              errors: [`[${tc.id}] ${err?.message || String(err)}`],
+            } as TestResult))
+            .then(r => {
             reportResult(r);
             results.push(r);
             running--;

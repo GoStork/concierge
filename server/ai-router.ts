@@ -375,7 +375,7 @@ async function callTier2Claude(
           if (mcpClientRef) {
             const tMcp = Date.now();
             try {
-              const toolResult = await mcpClientRef.callTool({ name: fc.name, arguments: fc.args as Record<string, unknown> });
+              const toolResult = await mcpClientRef.callTool({ name: fc.name, arguments: fc.args as Record<string, unknown> }, undefined, { timeout: 180_000 });
               let resultText = (toolResult.content as any)?.[0]?.text || JSON.stringify(toolResult);
               // Truncate large search results: 29KB of surrogate data overwhelms Gemini's
               // second-round context, causing it to return 0 chars. We only need the first
@@ -437,7 +437,7 @@ async function callTier2Claude(
           if (mcpClientRef) {
             const tMcp = Date.now();
             try {
-              const toolResult = await mcpClientRef.callTool({ name: fc.name, arguments: fc.args as Record<string, unknown> });
+              const toolResult = await mcpClientRef.callTool({ name: fc.name, arguments: fc.args as Record<string, unknown> }, undefined, { timeout: 180_000 });
               let resultText = (toolResult.content as any)?.[0]?.text || JSON.stringify(toolResult);
               const MAX_TOOL_RESULT = 8000;
               if (searchToolNames.includes(fc.name) && resultText.length > MAX_TOOL_RESULT) {
