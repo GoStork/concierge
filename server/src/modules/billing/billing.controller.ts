@@ -304,7 +304,13 @@ export class BillingController {
       const sig = req.headers["stripe-signature"] as string;
       if (!sig) return res.status(400).json({ error: "Missing stripe-signature header" });
 
-      const event = stripeService.constructWebhookEvent(req.body, sig);
+      // Stripe.webhooks.constructEvent needs the RAW request body (Buffer or
+      // string) so it can verify the signature against the original bytes.
+      // Express's global express.json() middleware already parsed req.body
+      // into a JS object - it stashes the raw buffer at req.rawBody via the
+      // verify callback in server/index.ts.
+      const rawBody = (req as any).rawBody ?? req.body;
+      const event = stripeService.constructWebhookEvent(rawBody, sig);
       const parsed = stripeService.parseWebhookEvent(event);
 
       if (parsed) {
