@@ -1968,40 +1968,69 @@ export class NotificationService implements OnModuleInit {
   }
 
   async sendW9RequestNotification(params: {
-    /** Provider signer userId. Null for non-GoStork signers (email still sends, no Notification row). */
-    signerUserId: string | null;
-    signerEmail: string;
-    signerName: string;
+    providerId: string;
     providerName: string;
     /** GoStork page that loads the embedded signing session. */
     signingUrl: string;
+    /**
+     * Used only when the provider has no PROVIDER_ADMIN / BILLING_MANAGER user
+     * on record - so a request is never silently dropped. Null userId means a
+     * non-GoStork email (provider.email): email still sends, no Notification row.
+     */
+    fallbackSigner: { userId: string | null; email: string; name: string };
   }) {
     const brandData = await this.getBrandData();
-    const firstName = getFirstName(params.signerName) || "there";
     const companyName = brandData.companyName;
     const subject = `Action required: complete your W-9 for ${companyName}`;
 
-    const html = buildBrandedEmail(brandData, {
-      title: "Complete Your W-9",
-      greeting: `Hi ${firstName},`,
-      body: `${this.escapeHtml(companyName)} needs a completed W-9 form for <strong>${this.escapeHtml(params.providerName)}</strong>. Please fill out and sign the form using the button below - it only takes a minute.`,
-      alertBox: { text: "Your W-9 is required before payouts can be processed.", type: "info" },
-      buttons: [{ label: "Fill Out & Sign W-9", url: params.signingUrl }],
-      footer: "If you have any questions about this request, please reply to this email.",
+    // W-9 requests are addressed to the people responsible for billing and
+    // compliance: every PROVIDER_ADMIN and BILLING_MANAGER at the provider.
+    // Anyone at the provider can still open and sign the form - this only
+    // controls who gets asked.
+    const roleUsers = await this.prisma.user.findMany({
+      where: {
+        providerId: params.providerId,
+        isDisabled: false,
+        roles: { hasSome: ["PROVIDER_ADMIN", "BILLING_MANAGER"] },
+      },
+      select: { id: true, email: true, name: true, firstName: true },
     });
 
-    if (params.signerUserId) {
-      await this.dispatchNotification({
-        userId: params.signerUserId,
-        type: "EMAIL",
-        channel: "w9_request",
-        recipient: params.signerEmail,
-        subject,
-        body: html,
-      }).catch(e => this.logger.error(`Failed to send W-9 request email to ${params.signerEmail}: ${e.message}`));
-    } else {
-      await this.sendRawEmail(params.signerEmail, subject, html)
-        .catch(e => this.logger.error(`Failed to send W-9 request email to ${params.signerEmail}: ${e.message}`));
+    let recipients: { userId: string | null; email: string; firstName: string }[] = roleUsers
+      .filter(u => !!u.email)
+      .map(u => ({ userId: u.id, email: u.email as string, firstName: getFirstName(u.firstName || u.name || "") || "there" }));
+
+    if (recipients.length === 0 && params.fallbackSigner.email) {
+      recipients = [{
+        userId: params.fallbackSigner.userId,
+        email: params.fallbackSigner.email,
+        firstName: getFirstName(params.fallbackSigner.name) || "there",
+      }];
+    }
+
+    for (const r of recipients) {
+      const html = buildBrandedEmail(brandData, {
+        title: "Complete Your W-9",
+        greeting: `Hi ${r.firstName},`,
+        body: `${this.escapeHtml(companyName)} needs a completed W-9 form for <strong>${this.escapeHtml(params.providerName)}</strong>. Please fill out and sign the form using the button below - it only takes a minute.`,
+        alertBox: { text: "Your W-9 is required before payouts can be processed.", type: "info" },
+        buttons: [{ label: "Fill Out & Sign W-9", url: params.signingUrl }],
+        footer: "If you have any questions about this request, please reply to this email.",
+      });
+
+      if (r.userId) {
+        await this.dispatchNotification({
+          userId: r.userId,
+          type: "EMAIL",
+          channel: "w9_request",
+          recipient: r.email,
+          subject,
+          body: html,
+        }).catch(e => this.logger.error(`Failed to send W-9 request email to ${r.email}: ${e.message}`));
+      } else {
+        await this.sendRawEmail(r.email, subject, html)
+          .catch(e => this.logger.error(`Failed to send W-9 request email to ${r.email}: ${e.message}`));
+      }
     }
   }
 

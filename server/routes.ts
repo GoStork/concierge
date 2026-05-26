@@ -1181,11 +1181,10 @@ export async function registerRoutes(
           const { NotificationService } = await import("./src/modules/notifications/notification.service");
           const notifService = nestApp.get(NotificationService);
           await notifService.sendW9RequestNotification({
-            signerUserId: signer.userId,
-            signerEmail: signer.email,
-            signerName: signer.name || signer.email,
+            providerId,
             providerName: provider?.name || "Provider",
             signingUrl: `${appBaseUrl()}/w9/${w9.id}`,
+            fallbackSigner: { userId: signer.userId, email: signer.email, name: signer.name || signer.email },
           });
         }
       } catch (notifErr: any) {
