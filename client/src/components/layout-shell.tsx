@@ -475,6 +475,11 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         handleVideoJoinedEvent(data);
         handleBookingEvent(data);
         handleCostSheetEvent(data);
+        // AppEventsService (costs/events) also carries these notification types
+        handleHumanEscalationEvent(data);
+        handleHumanConcludedEvent(data);
+        handleProfileUpdatedEvent(data);
+        handleParentReadyEvent(data);
       } catch {}
     };
 
