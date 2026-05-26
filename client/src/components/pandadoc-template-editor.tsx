@@ -169,14 +169,40 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
     }
   }
 
-  // Mount PandaDoc editor SDK when eToken is set
+  // Mount PandaDoc editor SDK when eToken is set.
+  //
+  // The editor iframe measures its container on mount and picks a responsive
+  // layout (mobile/compact vs full). When this component is rendered inside
+  // a settings form column that hasn't finished laying out yet (or whose
+  // viewport-width breakout hasn't applied), the iframe locks in the narrow
+  // layout and never re-measures. Two safeguards:
+  //   1) Wait for the next animation frame before mounting so the breakout
+  //      CSS has settled and the container has its final width.
+  //   2) After mount, dispatch window resize events at a few intervals AND
+  //      observe the container with ResizeObserver to fire resize whenever
+  //      the container size changes. PandaDoc's editor listens to window
+  //      resize and re-lays out its panels.
   useEffect(() => {
     if (!editorEToken) return;
     let destroyed = false;
+    let resizeObserver: ResizeObserver | null = null;
+    const resizeTimers: number[] = [];
+
+    const kickResize = () => {
+      // Fire a real window resize so PandaDoc re-measures.
+      try {
+        window.dispatchEvent(new Event("resize"));
+      } catch {
+        /* no-op */
+      }
+    };
+
     (async () => {
       try {
         const { Editor } = await import("pandadoc-editor");
-        await new Promise(r => setTimeout(r, 100));
+        // Wait two animation frames so the wrapper's viewport-width breakout
+        // has fully applied before the iframe measures itself.
+        await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
         if (destroyed) return;
         const el = editorContainerRef.current ?? document.getElementById(containerId);
         if (!el) {
@@ -186,6 +212,22 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
         const editor = new Editor(containerId, { token: editorEToken, debugMode: true }, { region: "com" });
         editorInstanceRef.current = editor;
         await editor.open();
+        if (destroyed) return;
+
+        // Kick PandaDoc to re-measure now that the iframe is fully loaded.
+        // Multiple intervals because we don't know exactly when their internal
+        // layout finishes - early kicks catch fast loads, later ones catch slow.
+        [100, 350, 800, 1500].forEach(ms => {
+          const id = window.setTimeout(kickResize, ms);
+          resizeTimers.push(id);
+        });
+
+        // Also re-kick whenever the container's own size changes (e.g. user
+        // resizes the browser window or rotates a tablet).
+        if (typeof ResizeObserver !== "undefined") {
+          resizeObserver = new ResizeObserver(() => kickResize());
+          resizeObserver.observe(el);
+        }
       } catch (err: any) {
         if (!destroyed) {
           console.error("[PandaDoc Editor]", err);
@@ -195,6 +237,11 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
     })();
     return () => {
       destroyed = true;
+      resizeTimers.forEach(id => window.clearTimeout(id));
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+        resizeObserver = null;
+      }
       if (editorInstanceRef.current) {
         editorInstanceRef.current.destroy();
         editorInstanceRef.current = null;
