@@ -249,7 +249,19 @@ export function W9TemplateConfig({ onChange }: W9TemplateConfigProps = {}) {
           </div>
 
           {editorEToken && (
-            <div className="rounded-[var(--radius)] border overflow-hidden -mx-6" style={{ height: "800px" }}>
+            // Break out of the centered form column to full viewport width so
+            // the PandaDoc editor (which needs ~1024px+ to render properly)
+            // isn't squished by the surrounding settings layout. Still inline
+            // in the document flow - not a modal.
+            <div
+              className="rounded-[var(--radius)] border overflow-hidden"
+              style={{
+                height: "800px",
+                width: "calc(100vw - 2rem)",
+                marginLeft: "calc(-50vw + 50% + 1rem)",
+                marginRight: "calc(-50vw + 50% + 1rem)",
+              }}
+            >
               <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/40">
                 <p className="text-xs text-muted-foreground">Changes are saved automatically. When done, click Save.</p>
                 <Button
