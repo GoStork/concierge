@@ -52,6 +52,8 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
   const [flatAmount, setFlatAmount] = useState("");            // dollars
   const [percentage, setPercentage] = useState("");            // e.g. "10"
   const [defaultServiceAmount, setDefaultServiceAmount] = useState(""); // dollars
+  const [parentPaysBasis, setParentPaysBasis] = useState<"DEFAULT_FIRST_PAYMENT" | "TOTAL_COST">("DEFAULT_FIRST_PAYMENT");
+  const [sampleTotalCost, setSampleTotalCost] = useState(""); // dollars - drives the preview's feeBasis
   const [notes, setNotes] = useState("");
   const [depositMilestone, setDepositMilestone] = useState<"AT_MATCH" | "AT_CLEARANCE">("AT_MATCH");
   const [averageClearanceDays, setAverageClearanceDays] = useState("21");
@@ -62,17 +64,25 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
       setFlatAmount(feeConfig.flatAmount ? String(Number(feeConfig.flatAmount) / 100) : "");
       setPercentage(feeConfig.percentage ? String(feeConfig.percentage) : "");
       setDefaultServiceAmount(feeConfig.defaultServiceAmount ? String(Number(feeConfig.defaultServiceAmount) / 100) : "");
+      setParentPaysBasis(feeConfig.parentPaysBasis === "TOTAL_COST" ? "TOTAL_COST" : "DEFAULT_FIRST_PAYMENT");
       setNotes(feeConfig.notes || "");
     }
   }, [feeConfig]);
 
   // ── Live split preview ───────────────────────────────────────────────────
-  const previewServiceCents = Math.round((parseFloat(defaultServiceAmount) || 0) * 100);
+  // The fee basis is the Sample Total Quoted Cost (what the % is taken from).
+  // The parent-pays amount is either that same total or the Default First Payment.
+  const previewBasisCents = Math.round((parseFloat(sampleTotalCost) || 0) * 100);
+  const previewDefaultCents = Math.round((parseFloat(defaultServiceAmount) || 0) * 100);
+  const previewParentPaysCents = parentPaysBasis === "TOTAL_COST" ? previewBasisCents : previewDefaultCents;
   const previewFeeCents = feeType === "FLAT"
     ? Math.round((parseFloat(flatAmount) || 0) * 100)
-    : Math.round(previewServiceCents * ((parseFloat(percentage) || 0) / 100));
-  const previewPayoutCents = Math.max(0, previewServiceCents - previewFeeCents);
-  const showPreview = previewServiceCents > 0 && (feeType === "FLAT" ? parseFloat(flatAmount) > 0 : parseFloat(percentage) > 0);
+    : Math.round(previewBasisCents * ((parseFloat(percentage) || 0) / 100));
+  const clampedFee = Math.min(previewFeeCents, previewParentPaysCents);
+  const previewPayoutCents = Math.max(0, previewParentPaysCents - clampedFee);
+  const showPreview =
+    previewParentPaysCents > 0 &&
+    (feeType === "FLAT" ? parseFloat(flatAmount) > 0 : parseFloat(percentage) > 0 && previewBasisCents > 0);
 
   // ── Save fee config ─────────────────────────────────────────────────────
   const saveMutation = useMutation({
@@ -83,6 +93,7 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
         flatAmount: feeType === "FLAT" ? Math.round(parseFloat(flatAmount) * 100) : null,
         percentage: feeType === "PERCENTAGE" ? parseFloat(percentage) : null,
         defaultServiceAmount: defaultServiceAmount ? Math.round(parseFloat(defaultServiceAmount) * 100) : null,
+        parentPaysBasis,
         isActive: true,
       };
 
@@ -159,7 +170,7 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
               value={percentage}
               onChange={e => setPercentage(e.target.value)}
             />
-            <p className="text-xs text-muted-foreground">GoStork keeps this % of the parent's payment amount</p>
+            <p className="text-xs text-muted-foreground">GoStork keeps this % of the Total Quoted Cost the provider sends the parent</p>
           </div>
         ) : (
           <div className="space-y-1.5">
@@ -175,6 +186,42 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
             <p className="text-xs text-muted-foreground">GoStork keeps this fixed dollar amount regardless of service cost</p>
           </div>
         )}
+
+        {/* Parent-pays basis toggle */}
+        <div className="space-y-2">
+          <Label>Parent Pays Basis</Label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setParentPaysBasis("DEFAULT_FIRST_PAYMENT")}
+              className="flex-1 rounded-lg border py-2.5 text-sm font-medium transition-colors"
+              style={{
+                background: parentPaysBasis === "DEFAULT_FIRST_PAYMENT" ? "hsl(var(--primary))" : "transparent",
+                color: parentPaysBasis === "DEFAULT_FIRST_PAYMENT" ? "hsl(var(--primary-foreground))" : "hsl(var(--foreground))",
+                borderColor: parentPaysBasis === "DEFAULT_FIRST_PAYMENT" ? "hsl(var(--primary))" : "hsl(var(--border))",
+              }}
+            >
+              Default First Payment
+            </button>
+            <button
+              type="button"
+              onClick={() => setParentPaysBasis("TOTAL_COST")}
+              className="flex-1 rounded-lg border py-2.5 text-sm font-medium transition-colors"
+              style={{
+                background: parentPaysBasis === "TOTAL_COST" ? "hsl(var(--primary))" : "transparent",
+                color: parentPaysBasis === "TOTAL_COST" ? "hsl(var(--primary-foreground))" : "hsl(var(--foreground))",
+                borderColor: parentPaysBasis === "TOTAL_COST" ? "hsl(var(--primary))" : "hsl(var(--border))",
+              }}
+            >
+              Total Quoted Cost
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {parentPaysBasis === "TOTAL_COST"
+              ? "Each invoice charges the parent the full Total Quoted Cost from the provider's cost sheet."
+              : "Each invoice charges the parent the Default First Payment (below). The provider can still send a cost sheet that drives the GoStork % calculation."}
+          </p>
+        </div>
 
         {/* Default first payment */}
         <div className="space-y-1.5">
@@ -192,24 +239,47 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
           </p>
         </div>
 
+        {/* Sample Total Quoted Cost (drives preview when basis = TOTAL_COST or fee = PERCENTAGE) */}
+        <div className="space-y-1.5">
+          <Label>Sample Total Quoted Cost ($) <span className="text-muted-foreground font-normal">(preview only)</span></Label>
+          <Input
+            type="number"
+            min="0"
+            step="500"
+            placeholder="e.g. 25000"
+            value={sampleTotalCost}
+            onChange={e => setSampleTotalCost(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Pretend the provider quoted this total - the preview below shows the resulting invoice split.
+          </p>
+        </div>
+
         {/* Live split preview */}
         {showPreview && (
           <div className="rounded-lg border p-4 space-y-2" style={{ background: "hsl(var(--muted) / 0.4)" }}>
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Payment Split Preview</p>
             <div className="space-y-1.5 text-sm">
+              <div className="flex justify-between text-muted-foreground">
+                <span>Total quoted cost</span>
+                <span>{formatCents(previewBasisCents)}</span>
+              </div>
               <div className="flex justify-between">
                 <span>Parent pays</span>
-                <span className="font-semibold">{formatCents(previewServiceCents)}</span>
+                <span className="font-semibold">{formatCents(previewParentPaysCents)}</span>
               </div>
               <div className="flex justify-between" style={{ color: "hsl(var(--brand-success))" }}>
                 <span>GoStork keeps ({feeType === "PERCENTAGE" ? `${percentage}%` : "flat"})</span>
-                <span className="font-semibold">{formatCents(previewFeeCents)}</span>
+                <span className="font-semibold">{formatCents(clampedFee)}</span>
               </div>
               <div className="flex justify-between border-t pt-1.5 font-semibold">
                 <span>Provider receives</span>
                 <span>{formatCents(previewPayoutCents)}</span>
               </div>
             </div>
+            <p className="text-[10px] text-muted-foreground pt-1">
+              Parent-pays basis: {parentPaysBasis === "TOTAL_COST" ? "Total Quoted Cost" : "Default First Payment"}
+            </p>
           </div>
         )}
 
