@@ -2394,6 +2394,103 @@ chatRouter.post("/api/billing/parent-confirm-ready", requireAuth, async (req, re
       console.log(`[parent-confirm-ready] Admin already notified for session ${session.id} - skipping duplicate notification`);
     }
 
+    // --- Auto-trigger invoice on the matching provider session ---
+    // Resolve the provider session (this readiness prompt lives in the parent's *private*
+    // session, but invoices live on the provider session for the (parent, provider) pair).
+    let providerSessionId: string | null = null;
+    try {
+      const booking = cardData?.bookingId
+        ? await prisma.booking.findUnique({
+            where: { id: cardData.bookingId as string },
+            include: { providerUser: { select: { providerId: true } } },
+          })
+        : null;
+      const providerId = booking?.providerUser?.providerId || null;
+      if (providerId) {
+        const providerSession = await prisma.aiChatSession.findFirst({
+          where: {
+            userId: user.id,
+            providerId,
+            status: { in: ["PROVIDER_JOINED", "CONSULTATION_BOOKED"] },
+          },
+          orderBy: { updatedAt: "desc" },
+          select: { id: true },
+        });
+        providerSessionId = providerSession?.id || null;
+      }
+    } catch (resolveErr: any) {
+      console.error("[parent-confirm-ready] provider session resolve failed:", resolveErr.message);
+    }
+
+    if (providerSessionId) {
+      try {
+        const { getNestApp } = await import("./nest-app-ref");
+        const nestApp = getNestApp();
+        if (nestApp) {
+          const { BillingService } = await import("./src/modules/billing/billing.service");
+          const billing = nestApp.get(BillingService);
+
+          const result = await billing.createInvoiceFromReadiness(providerSessionId);
+          if (result.status === "created") {
+            await billing.sendPaymentNotificationsToParent(result.invoice.id);
+            console.log(`[parent-confirm-ready] Invoice ${result.invoice.id} auto-created for session ${providerSessionId}`);
+          } else if (result.status === "skipped") {
+            console.log(`[parent-confirm-ready] Auto-trigger skipped: ${result.reason}`);
+          } else {
+            // Blocked - record the reminder, nudge the provider via chat, email, and SMS.
+            console.warn(`[parent-confirm-ready] Auto-trigger blocked: ${result.reason} - ${result.message}`);
+
+            const reminderExists = await prisma.costSheetReminder.findFirst({
+              where: { sessionId: providerSessionId, bookingId: null, window: "POST_READINESS_BLOCKED" },
+            });
+            if (!reminderExists) {
+              await prisma.costSheetReminder.create({
+                data: { sessionId: providerSessionId, window: "POST_READINESS_BLOCKED" },
+              });
+
+              // System chat message in the provider session prompting them to act.
+              await prisma.aiChatMessage.create({
+                data: {
+                  sessionId: providerSessionId,
+                  role: "assistant",
+                  content: `${parentName} just confirmed they're ready to proceed. Please send a cost sheet so we can issue their invoice.`,
+                  senderType: "system",
+                  senderName: "GoStork",
+                },
+              });
+
+              // Email + SMS to all members of this provider.
+              try {
+                const providerSession = await prisma.aiChatSession.findUnique({
+                  where: { id: providerSessionId },
+                  include: { provider: { include: { users: { select: { id: true } } } } },
+                });
+                const providerUserIds = (providerSession?.provider?.users || []).map(u => u.id);
+                if (providerUserIds.length && providerSession?.provider) {
+                  const { NotificationService } = await import("./src/modules/notifications/notification.service");
+                  const notifService = nestApp.get(NotificationService);
+                  await notifService.sendCostSheetMissingToProvider({
+                    providerUserIds,
+                    providerName: providerSession.provider.name,
+                    parentName,
+                    sessionId: providerSessionId,
+                    providerId: providerSession.provider.id,
+                    reason: "post_readiness",
+                  });
+                }
+              } catch (notifErr: any) {
+                console.error("[parent-confirm-ready] cost-sheet-missing notification failed:", notifErr.message);
+              }
+            }
+          }
+        }
+      } catch (autoErr: any) {
+        console.error("[parent-confirm-ready] auto-invoice path failed:", autoErr.message);
+      }
+    } else {
+      console.warn(`[parent-confirm-ready] No provider session resolved for session ${session.id} - invoice not auto-created`);
+    }
+
     // --- "Thank you" chat message (one per session, no time limit) ---
     const existingConfirm = await prisma.aiChatMessage.findFirst({
       where: { sessionId: session.id, senderName: "GoStork", content: { contains: "Thank you for letting us know" } },
