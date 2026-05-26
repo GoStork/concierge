@@ -27,6 +27,8 @@ import { deriveChatPalette } from "@/lib/chat-palette";
 import { format } from "date-fns";
 import ConciergeChatPage, { ParentChatSidePanel, type ParentSidePanelData } from "@/pages/concierge-chat-page";
 import { AgreementSidebarSection } from "@/components/chat/agreement-sidebar-section";
+import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
+import { InvoiceSidebarSection } from "@/components/chat/invoice-sidebar-section";
 // Legacy imports for dead code pending removal
 import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-deck-card";
 import {
@@ -2141,14 +2143,28 @@ export default function ConversationsPage() {
                     </div>
                   )}
                   {hasJoined && (
-                    <AgreementSidebarSection
-                      key={selectedSessionId || "none"}
-                      agreement={detail?.agreements?.[0]}
-                      brandColor={brandColor}
-                      sessionId={selectedSessionId}
-                      relationshipStatus={detail?.user?.relationshipStatus}
-                      sessionQueryKey="/api/provider/concierge-sessions"
-                    />
+                    <>
+                      <CostSheetSidebarSection
+                        key={`cs-${selectedSessionId || "none"}`}
+                        sessionId={selectedSessionId}
+                        brandColor={brandColor}
+                        sessionQueryKey="/api/provider/concierge-sessions"
+                      />
+                      <InvoiceSidebarSection
+                        key={`inv-${selectedSessionId || "none"}`}
+                        sessionId={selectedSessionId}
+                        brandColor={brandColor}
+                        sessionQueryKey="/api/provider/concierge-sessions"
+                      />
+                      <AgreementSidebarSection
+                        key={selectedSessionId || "none"}
+                        agreement={detail?.agreements?.[0]}
+                        brandColor={brandColor}
+                        sessionId={selectedSessionId}
+                        relationshipStatus={detail?.user?.relationshipStatus}
+                        sessionQueryKey="/api/provider/concierge-sessions"
+                      />
+                    </>
                   )}
                 </>
               }
