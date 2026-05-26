@@ -214,9 +214,29 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
         await editor.open();
         if (destroyed) return;
 
-        // Kick PandaDoc to re-measure now that the iframe is fully loaded.
-        // Multiple intervals because we don't know exactly when their internal
-        // layout finishes - early kicks catch fast loads, later ones catch slow.
+        // CRITICAL: the PandaDoc SDK creates its iframe with NO width/height
+        // style attribute unless you pass `width`/`height` to the constructor
+        // as numeric pixel values (which we can't, because we want responsive).
+        // Without an explicit style, the iframe falls back to HTML's default
+        // iframe size of 300x150px - which is exactly the narrow strip users
+        // were seeing. Force the iframe to fill its container.
+        const forceIframeSize = () => {
+          const iframe = el.querySelector("iframe") as HTMLIFrameElement | null;
+          if (iframe) {
+            iframe.style.width = "100%";
+            iframe.style.height = "100%";
+            iframe.style.border = "0";
+            iframe.style.display = "block";
+          }
+        };
+        forceIframeSize();
+        // Re-apply on a few delays in case PandaDoc replaces the iframe element.
+        [50, 200, 600, 1500].forEach(ms => {
+          const id = window.setTimeout(forceIframeSize, ms);
+          resizeTimers.push(id);
+        });
+
+        // Kick PandaDoc to re-measure now that the iframe is sized correctly.
         [100, 350, 800, 1500].forEach(ms => {
           const id = window.setTimeout(kickResize, ms);
           resizeTimers.push(id);
