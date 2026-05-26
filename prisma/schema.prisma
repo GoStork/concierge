@@ -1302,6 +1302,7 @@ model ReferralFeeConfig {
   percentage           Decimal? // e.g. 5.0 = 5%
   defaultServiceAmount Decimal? // pre-fill for first payment in cents - used when parentPaysBasis = DEFAULT_FIRST_PAYMENT
   parentPaysBasis      String   @default("DEFAULT_FIRST_PAYMENT") // "DEFAULT_FIRST_PAYMENT" | "TOTAL_COST" - which value the parent's invoice charges
+  sampleTotalCostCents Int? // admin-saved sample value for the preview - not used in any live invoice math
   currency             String   @default("USD")
   isActive             Boolean  @default(true)
   notes                String?

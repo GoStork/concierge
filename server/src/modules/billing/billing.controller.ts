@@ -184,15 +184,18 @@ export class BillingController {
     const user = req.user as any;
     if (!user?.roles?.includes("GOSTORK_ADMIN")) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
 
-    const { feeType, flatAmount, percentage, defaultServiceAmount, parentPaysBasis, isActive, notes, depositMilestone, averageClearanceDays } = body;
+    const { feeType, flatAmount, percentage, defaultServiceAmount, parentPaysBasis, sampleTotalCostCents, isActive, notes, depositMilestone, averageClearanceDays } = body;
     const normalizedBasis: "DEFAULT_FIRST_PAYMENT" | "TOTAL_COST" =
       parentPaysBasis === "TOTAL_COST" ? "TOTAL_COST" : "DEFAULT_FIRST_PAYMENT";
+    const normalizedSample = sampleTotalCostCents != null && Number.isFinite(Number(sampleTotalCostCents))
+      ? Math.round(Number(sampleTotalCostCents))
+      : null;
 
     // Upsert fee config
     const config = await this.db.referralFeeConfig.upsert({
       where: { providerId },
-      create: { providerId, feeType, flatAmount, percentage, defaultServiceAmount: defaultServiceAmount ?? null, parentPaysBasis: normalizedBasis, isActive: isActive ?? true, notes },
-      update: { feeType, flatAmount, percentage, defaultServiceAmount: defaultServiceAmount ?? null, parentPaysBasis: normalizedBasis, isActive: isActive ?? true, notes, updatedAt: new Date() },
+      create: { providerId, feeType, flatAmount, percentage, defaultServiceAmount: defaultServiceAmount ?? null, parentPaysBasis: normalizedBasis, sampleTotalCostCents: normalizedSample, isActive: isActive ?? true, notes },
+      update: { feeType, flatAmount, percentage, defaultServiceAmount: defaultServiceAmount ?? null, parentPaysBasis: normalizedBasis, sampleTotalCostCents: normalizedSample, isActive: isActive ?? true, notes, updatedAt: new Date() },
     });
 
     // Also update provider-level surrogacy settings if provided

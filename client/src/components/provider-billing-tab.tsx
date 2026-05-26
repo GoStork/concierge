@@ -65,6 +65,7 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
       setPercentage(feeConfig.percentage ? String(feeConfig.percentage) : "");
       setDefaultServiceAmount(feeConfig.defaultServiceAmount ? String(Number(feeConfig.defaultServiceAmount) / 100) : "");
       setParentPaysBasis(feeConfig.parentPaysBasis === "TOTAL_COST" ? "TOTAL_COST" : "DEFAULT_FIRST_PAYMENT");
+      setSampleTotalCost(feeConfig.sampleTotalCostCents ? String(Number(feeConfig.sampleTotalCostCents) / 100) : "");
       setNotes(feeConfig.notes || "");
     }
   }, [feeConfig]);
@@ -94,6 +95,7 @@ export function ProviderBillingTab({ providerId, providerTypeName = "" }: Provid
         percentage: feeType === "PERCENTAGE" ? parseFloat(percentage) : null,
         defaultServiceAmount: defaultServiceAmount ? Math.round(parseFloat(defaultServiceAmount) * 100) : null,
         parentPaysBasis,
+        sampleTotalCostCents: sampleTotalCost ? Math.round(parseFloat(sampleTotalCost) * 100) : null,
         isActive: true,
       };
 
