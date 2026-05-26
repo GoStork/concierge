@@ -36,7 +36,19 @@ interface ReadinessPromptCardProps {
   isParent?: boolean;
   isAnswered?: boolean; // derived from message history by the parent component
   brandColor?: string;
+  positiveChipStyle?: React.CSSProperties;
+  declineChipStyle?: React.CSSProperties;
 }
+
+const chipBase: React.CSSProperties = {
+  borderRadius: "var(--quick-reply-radius, 999px)",
+  fontSize: "var(--quick-reply-font-size, 13px)",
+  paddingLeft: "var(--quick-reply-px, 14px)",
+  paddingRight: "var(--quick-reply-px, 14px)",
+  paddingTop: "var(--quick-reply-py, 6px)",
+  paddingBottom: "var(--quick-reply-py, 6px)",
+  height: "auto",
+};
 
 /** Persist answered state to DB so data.answered is correct on next load */
 async function markAnswered(messageId: string, answer: "yes" | "no") {
@@ -48,7 +60,7 @@ async function markAnswered(messageId: string, answer: "yes" | "no") {
   });
 }
 
-export function ReadinessPromptCard({ data, messageId, sessionId, messageContent, isParent = true, isAnswered, brandColor }: ReadinessPromptCardProps) {
+export function ReadinessPromptCard({ data, messageId, sessionId, messageContent, isParent = true, isAnswered, brandColor, positiveChipStyle, declineChipStyle }: ReadinessPromptCardProps) {
   // Priority: isAnswered (history-based) > data.answered (DB flag) > local state
   const alreadyAnswered = isAnswered ?? !!data.answered;
   const [responded, setResponded] = useState(alreadyAnswered);
@@ -85,7 +97,7 @@ export function ReadinessPromptCard({ data, messageId, sessionId, messageContent
     markAnswered(messageId, "no").catch(() => {});
   };
 
-  // Show disabled / confirmed state
+  // Bubble style for the answered/provider view
   const bubbleStyle: React.CSSProperties = {
     fontSize: "var(--chat-bubble-font-size, 14px)",
     lineHeight: "var(--chat-bubble-line-height, 1.35)",
@@ -132,25 +144,29 @@ export function ReadinessPromptCard({ data, messageId, sessionId, messageContent
           <span>24-hour hold - surrogate reserved for you</span>
         </div>
       )}
-      <div style={{ padding: "var(--chat-bubble-py, 11px) var(--chat-bubble-px, 16px)" }} className="space-y-4">
+      <div style={{ padding: "var(--chat-bubble-py, 11px) var(--chat-bubble-px, 16px)" }} className="space-y-3">
         <p>{messageContent}</p>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
+            type="button"
+            variant="ghost"
             disabled={confirmMutation.isPending}
             onClick={() => confirmMutation.mutate()}
-            className="flex-1"
+            className="transition-all hover:opacity-90 font-medium"
+            style={{ ...chipBase, ...(positiveChipStyle ?? { backgroundColor: brandColor ?? "#004D4D", color: "#ffffff", border: "none" }) }}
           >
             {confirmMutation.isPending ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+              <Loader2 className="shrink-0 animate-spin" style={{ width: "13px", height: "13px", marginRight: "5px" }} />
             ) : (
-              <ThumbsUp className="w-3.5 h-3.5 mr-1.5" />
+              <ThumbsUp className="shrink-0" style={{ width: "13px", height: "13px", marginRight: "5px" }} />
             )}
             {data.buttonLabel}
           </Button>
           <Button
+            type="button"
             variant="ghost"
-            className="flex-1"
-            style={{ backgroundColor: "hsl(var(--secondary))", color: "hsl(var(--foreground))", border: "none" }}
+            className="transition-all hover:opacity-90 font-medium"
+            style={{ ...chipBase, ...(declineChipStyle ?? { backgroundColor: "hsl(var(--secondary))", color: "hsl(var(--foreground))", border: "none" }) }}
             onClick={handleNotYet}
           >
             Not Yet

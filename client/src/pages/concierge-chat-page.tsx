@@ -2282,7 +2282,7 @@ function ConciergeInlineVideoOverlay({ bookingId, onClose }: { bookingId: string
   );
 }
 
-function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, isAnswered }: { msg: ChatMessage; brandColor: string; onOpenInlineVideo?: (bookingId: string) => void; sessionId?: string | null; isAnswered?: boolean }) {
+function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, isAnswered, positiveChipStyle, declineChipStyle }: { msg: ChatMessage; brandColor: string; onOpenInlineVideo?: (bookingId: string) => void; sessionId?: string | null; isAnswered?: boolean; positiveChipStyle?: React.CSSProperties; declineChipStyle?: React.CSSProperties }) {
   const data = msg.uiCardData as any;
   if (!data) return null;
 
@@ -2401,6 +2401,8 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
         isParent={true}
         isAnswered={isAnswered}
         brandColor={brandColor}
+        positiveChipStyle={positiveChipStyle}
+        declineChipStyle={declineChipStyle}
       />
     );
   }
@@ -2991,6 +2993,18 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const decIsOutline = decStyle === "outline";
   const decIsSecondary = decStyle === "secondary";
   const qrShowBorder = brand?.quickReplyShowBorder ?? true;
+
+  // Chip styles computed at component level - reused by quick reply chips AND ReadinessPromptCard
+  const chipPositiveStyle: React.CSSProperties = qrIsOutline
+    ? { backgroundColor: "transparent", color: qrColor, border: `1px solid ${qrColor}` }
+    : qrIsSecondary
+    ? { backgroundColor: qrColor, color: "hsl(var(--foreground))", border: qrShowBorder ? `1px solid ${brandColor}50` : "none" }
+    : { backgroundColor: qrColor, color: "#ffffff", border: "none" };
+  const chipDeclineStyle: React.CSSProperties = decIsOutline
+    ? { backgroundColor: "transparent", color: decColor, border: `1px solid ${decColor}` }
+    : decIsSecondary
+    ? { backgroundColor: decColor, color: "hsl(var(--foreground))", border: qrShowBorder ? `1px solid ${brandColor}50` : "none" }
+    : { backgroundColor: decColor, color: "#ffffff", border: "none" };
 
   const loadMessagesForSession = async (sid: string): Promise<boolean> => {
     try {
@@ -4587,20 +4601,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                           <div className="flex flex-wrap gap-2 mt-3" data-testid="quick-replies">
                             {msg.quickReplies.map((qr, qi) => {
                               const isSelected = isMulti && multiSelectChoices.has(qr);
-                              const positiveStyle = qrIsOutline
-                                ? { backgroundColor: "transparent", color: qrColor, border: `1px solid ${qrColor}` }
-                                : qrIsSecondary
-                                ? { backgroundColor: qrColor, color: "hsl(var(--foreground))", border: qrShowBorder ? `1px solid ${brandColor}50` : "none" }
-                                : { backgroundColor: qrColor, color: "#ffffff", border: "none" };
-                              const declineStyle = decIsOutline
-                                ? { backgroundColor: "transparent", color: decColor, border: `1px solid ${decColor}` }
-                                : decIsSecondary
-                                ? { backgroundColor: decColor, color: "hsl(var(--foreground))", border: qrShowBorder ? `1px solid ${brandColor}50` : "none" }
-                                : { backgroundColor: decColor, color: "#ffffff", border: "none" };
                               const chipStyle = isBinary
                                 ? qi === 0
-                                  ? positiveStyle
-                                  : declineStyle
+                                  ? chipPositiveStyle
+                                  : chipDeclineStyle
                                 : qrIsOutline
                                 ? { backgroundColor: "transparent", color: qrColor, border: `1px solid ${qrColor}` }
                                 : {
@@ -4785,7 +4789,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                               (m.content || "").includes("Thank you for letting us know")
                             )
                           : undefined;
-                        return <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} sessionId={sessionId} isAnswered={isAnswered} />;
+                        return <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} sessionId={sessionId} isAnswered={isAnswered} positiveChipStyle={chipPositiveStyle} declineChipStyle={chipDeclineStyle} />;
                       })()}
                       {cardReplacesbubble && msg.createdAt && (
                         <span
