@@ -2413,6 +2413,54 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
     return <InvoiceCard data={data} isParent={true} />;
   }
 
+  if (msg.uiCardType === "cost_sheet") {
+    const totalCents: number = data.totalCostCents ?? 0;
+    const fileUrl: string | null = data.costSheetFileUrl || null;
+    const fileName: string | null = data.costSheetFileName || null;
+    const providerName: string = data.providerName || "Your provider";
+    const notes: string | null = data.notes || null;
+    const sentAt: string | null = data.sentAt || null;
+    const totalFormatted = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(totalCents / 100);
+    return (
+      <div
+        className="rounded-[var(--radius)] border-2 bg-background overflow-hidden max-w-md"
+        style={{ borderColor: brandColor }}
+        data-testid="cost-sheet-card"
+      >
+        <div className="flex items-center gap-3 px-4 py-3">
+          <div className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: brandColor }}>
+            <FileText className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Cost Sheet from {providerName}</p>
+            <p className="text-xs text-muted-foreground">
+              Total quoted cost
+              {sentAt ? ` - ${new Date(sentAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}
+            </p>
+          </div>
+          <p className="text-lg font-bold shrink-0" style={{ color: brandColor }}>{totalFormatted}</p>
+        </div>
+        {(fileUrl || notes) && (
+          <div className="border-t px-4 py-2.5 space-y-2 bg-muted/30">
+            {fileUrl && (
+              <a
+                href={fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-xs hover:underline"
+                style={{ color: brandColor }}
+              >
+                <Download className="w-3.5 h-3.5" />
+                {fileName || "Open cost sheet"}
+              </a>
+            )}
+            {notes && <p className="text-xs text-muted-foreground italic">{notes}</p>}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return null;
 }
 
