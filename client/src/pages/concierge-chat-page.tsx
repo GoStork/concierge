@@ -2282,7 +2282,7 @@ function ConciergeInlineVideoOverlay({ bookingId, onClose }: { bookingId: string
   );
 }
 
-function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, isAnswered, positiveChipStyle, declineChipStyle }: { msg: ChatMessage; brandColor: string; onOpenInlineVideo?: (bookingId: string) => void; sessionId?: string | null; isAnswered?: boolean; positiveChipStyle?: React.CSSProperties; declineChipStyle?: React.CSSProperties }) {
+function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, isAnswered, positiveChipStyle, declineChipStyle, onAnswer }: { msg: ChatMessage; brandColor: string; onOpenInlineVideo?: (bookingId: string) => void; sessionId?: string | null; isAnswered?: boolean; positiveChipStyle?: React.CSSProperties; declineChipStyle?: React.CSSProperties; onAnswer?: (text: string) => void }) {
   const data = msg.uiCardData as any;
   if (!data) return null;
 
@@ -2403,6 +2403,7 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
         brandColor={brandColor}
         positiveChipStyle={positiveChipStyle}
         declineChipStyle={declineChipStyle}
+        onAnswer={onAnswer}
       />
     );
   }
@@ -4789,7 +4790,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                               (m.content || "").includes("Thank you for letting us know")
                             )
                           : undefined;
-                        return <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} sessionId={sessionId} isAnswered={isAnswered} positiveChipStyle={chipPositiveStyle} declineChipStyle={chipDeclineStyle} />;
+                        return <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} sessionId={sessionId} isAnswered={isAnswered} positiveChipStyle={chipPositiveStyle} declineChipStyle={chipDeclineStyle} onAnswer={handleQuickReply} />;
                       })()}
                       {cardReplacesbubble && msg.createdAt && (
                         <span

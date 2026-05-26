@@ -8,11 +8,14 @@
  *     ("Thank you" system message after this card = already answered).
  *  2. data.answered - DB-persisted flag written by the PATCH endpoint.
  * Local useState is only used for optimistic updates within the current session.
+ *
+ * When a button is clicked, onAnswer(text) is called so the answer appears as a
+ * regular user message and the AI responds naturally - no inline confirmation text.
  */
 
 import type React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ThumbsUp, Clock, Loader2, CheckCircle } from "lucide-react";
+import { ThumbsUp, Clock, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -38,6 +41,7 @@ interface ReadinessPromptCardProps {
   brandColor?: string;
   positiveChipStyle?: React.CSSProperties;
   declineChipStyle?: React.CSSProperties;
+  onAnswer?: (text: string) => void;
 }
 
 const chipBase: React.CSSProperties = {
@@ -60,13 +64,10 @@ async function markAnswered(messageId: string, answer: "yes" | "no") {
   });
 }
 
-export function ReadinessPromptCard({ data, messageId, sessionId, messageContent, isParent = true, isAnswered, brandColor, positiveChipStyle, declineChipStyle }: ReadinessPromptCardProps) {
+export function ReadinessPromptCard({ data, messageId, sessionId, messageContent, isParent = true, isAnswered, brandColor, positiveChipStyle, declineChipStyle, onAnswer }: ReadinessPromptCardProps) {
   // Priority: isAnswered (history-based) > data.answered (DB flag) > local state
   const alreadyAnswered = isAnswered ?? !!data.answered;
   const [responded, setResponded] = useState(alreadyAnswered);
-  const [response, setResponse] = useState<"yes" | "no" | null>(
-    alreadyAnswered ? (data.answered === "no" ? "no" : "yes") : null
-  );
 
   const queryClient = useQueryClient();
 
@@ -84,20 +85,17 @@ export function ReadinessPromptCard({ data, messageId, sessionId, messageContent
     },
     onSuccess: () => {
       setResponded(true);
-      setResponse("yes");
-      // Refresh messages so the "Thank you" system message appears and
-      // the isAnswered derivation picks it up on the next render
       queryClient.invalidateQueries({ queryKey: [`/api/ai-concierge/session/${sessionId}/messages`] });
+      onAnswer?.(data.buttonLabel);
     },
   });
 
   const handleNotYet = async () => {
     setResponded(true);
-    setResponse("no");
     markAnswered(messageId, "no").catch(() => {});
+    onAnswer?.("Not Yet");
   };
 
-  // Bubble style for the answered/provider view
   const bubbleStyle: React.CSSProperties = {
     fontSize: "var(--chat-bubble-font-size, 14px)",
     lineHeight: "var(--chat-bubble-line-height, 1.35)",
@@ -111,19 +109,11 @@ export function ReadinessPromptCard({ data, messageId, sessionId, messageContent
     border: brandColor ? `1px solid ${brandColor}33` : "1px solid hsl(var(--border))",
   };
 
+  // Answered state: show question text only, buttons gone, AI reply comes as a chat message
   if (responded || !isParent) {
-    const wasYes = response === "yes" || (alreadyAnswered && data.answered !== "no");
     return (
       <div style={bubbleStyle}>
         <p>{messageContent}</p>
-        {wasYes ? (
-          <p className="mt-2 flex items-center gap-1.5 font-medium" style={{ color: "hsl(var(--brand-success))" }}>
-            <CheckCircle className="w-3.5 h-3.5" />
-            Ready to move forward - invoice coming shortly.
-          </p>
-        ) : (
-          <p className="mt-2 text-muted-foreground">No problem - take your time. We'll follow up with you soon.</p>
-        )}
       </div>
     );
   }
