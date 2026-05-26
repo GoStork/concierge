@@ -15,7 +15,6 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -92,7 +91,6 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
   } = props;
 
   const { toast } = useToast();
-  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [uploading, setUploading] = useState(false);
@@ -313,8 +311,8 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
     </>
   );
 
-  // ── Step 2 - Assign Signature Fields ──
-  const stepTwoInner = templateUrl ? (
+  // ── Step 2 - Assign Signature Fields (Card content - heading + open button) ──
+  const stepTwoControls = templateUrl ? (
     <>
       {showStepHeadings && (
         <div className="flex items-center gap-2">
@@ -346,7 +344,7 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
           <>
             <span className="flex items-center gap-1.5 text-sm text-[hsl(var(--brand-success))]">
               <Check className="w-4 h-4" />
-              Editor open
+              Editor open below
             </span>
             <Button
               variant="ghost"
@@ -361,49 +359,52 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
           </>
         )}
       </div>
+    </>
+  ) : null;
 
-      {editorEToken && (
-        <div className="rounded-[var(--radius)] border bg-[hsl(var(--brand-warning)/0.08)] border-[hsl(var(--brand-warning)/0.35)] p-4 text-sm">
-          <p className="font-medium mb-1">Drag fields from the right panel onto your document.</p>
-          <p className="text-muted-foreground">
-            Use the role dropdown on each field to assign it to the correct signer. Click Save when done.
-          </p>
+  // PandaDoc's editor needs ~1024px+ width to render properly. We render it as
+  // a SIBLING of the Step 2 Card (not inside it) so the surrounding Card's
+  // overflow-hidden doesn't clip our breakout. The breakout uses negative
+  // viewport-relative margins so the editor escapes any deeply-nested settings
+  // form column and spans almost the entire viewport - still inline in the
+  // document flow, no modal overlay.
+  const editorBlock = editorEToken ? (
+    <>
+      <div className="rounded-[var(--radius)] border bg-[hsl(var(--brand-warning)/0.08)] border-[hsl(var(--brand-warning)/0.35)] p-4 text-sm">
+        <p className="font-medium mb-1">Drag fields from the right panel onto your document.</p>
+        <p className="text-muted-foreground">
+          Use the role dropdown on each field to assign it to the correct signer. Click Save when done.
+        </p>
+      </div>
+      <div
+        className="rounded-[var(--radius)] border overflow-hidden bg-background"
+        style={{
+          height: "800px",
+          width: "calc(100vw - 2rem)",
+          marginLeft: "calc(-50vw + 50% + 1rem)",
+          marginRight: "calc(-50vw + 50% + 1rem)",
+        }}
+      >
+        <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/40">
+          <p className="text-xs text-muted-foreground">Changes are saved automatically. When done, click Save.</p>
+          <Button variant="outline" size="sm" onClick={handleSaveFields}>
+            Save
+          </Button>
         </div>
-      )}
-      {editorEToken && (
-        // Viewport-width breakout: PandaDoc's editor needs ~1024px+ to render
-        // its document + sidebar tools. When this component is mounted inside
-        // a centered settings form column, fall back to nearly full viewport
-        // width so the embedded editor isn't squished.
         <div
-          className="rounded-[var(--radius)] border overflow-hidden"
-          style={{
-            height: "800px",
-            width: "calc(100vw - 2rem)",
-            marginLeft: "calc(-50vw + 50% + 1rem)",
-            marginRight: "calc(-50vw + 50% + 1rem)",
-          }}
-        >
-          <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/40">
-            <p className="text-xs text-muted-foreground">Changes are saved automatically. When done, click Save.</p>
-            <Button variant="outline" size="sm" onClick={handleSaveFields}>
-              Save
-            </Button>
-          </div>
-          <div
-            ref={editorContainerRef}
-            id={containerId}
-            style={{ width: "100%", height: "calc(100% - 41px)" }}
-          />
-        </div>
-      )}
+          ref={editorContainerRef}
+          id={containerId}
+          style={{ width: "100%", height: "calc(100% - 41px)" }}
+        />
+      </div>
     </>
   ) : null;
 
   return (
     <div className="space-y-6">
       <Card className="p-6 space-y-4">{stepOneInner}</Card>
-      {stepTwoInner && <Card className="p-6 space-y-4">{stepTwoInner}</Card>}
+      {stepTwoControls && <Card className="p-6 space-y-4">{stepTwoControls}</Card>}
+      {editorBlock}
     </div>
   );
 }
