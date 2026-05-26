@@ -14,8 +14,8 @@
  */
 
 import type React from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ThumbsUp, Clock, Loader2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { ThumbsUp, Clock } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -71,29 +71,27 @@ export function ReadinessPromptCard({ data, messageId, sessionId, messageContent
 
   const queryClient = useQueryClient();
 
-  const confirmMutation = useMutation({
-    mutationFn: async () => {
-      await markAnswered(messageId, "yes");
-      const res = await fetch("/api/billing/parent-confirm-ready", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ sessionId }),
-      });
-      if (!res.ok) throw new Error("Failed to confirm");
-      return res.json();
-    },
-    onSuccess: () => {
-      setResponded(true);
-      queryClient.invalidateQueries({ queryKey: [`/api/ai-concierge/session/${sessionId}/messages`] });
-      onAnswer?.(data.buttonLabel);
-    },
-  });
-
-  const handleNotYet = async () => {
+  const handleYesReady = () => {
     setResponded(true);
-    markAnswered(messageId, "no").catch(() => {});
+    // Send AI reply immediately - don't block on billing
+    onAnswer?.(data.buttonLabel);
+    // Billing runs in background
+    markAnswered(messageId, "yes").catch(() => {});
+    fetch("/api/billing/parent-confirm-ready", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ sessionId }),
+    })
+      .then(() => queryClient.invalidateQueries({ queryKey: [`/api/ai-concierge/session/${sessionId}/messages`] }))
+      .catch(() => {});
+  };
+
+  const handleNotYet = () => {
+    setResponded(true);
+    // Send AI reply immediately - don't block on persist
     onAnswer?.("Not Yet");
+    markAnswered(messageId, "no").catch(() => {});
   };
 
   const bubbleStyle: React.CSSProperties = {
@@ -140,16 +138,11 @@ export function ReadinessPromptCard({ data, messageId, sessionId, messageContent
           <Button
             type="button"
             variant="ghost"
-            disabled={confirmMutation.isPending}
-            onClick={() => confirmMutation.mutate()}
+            onClick={handleYesReady}
             className="transition-all hover:opacity-90 font-medium"
             style={{ ...chipBase, ...(positiveChipStyle ?? { backgroundColor: brandColor ?? "#004D4D", color: "#ffffff", border: "none" }) }}
           >
-            {confirmMutation.isPending ? (
-              <Loader2 className="shrink-0 animate-spin" style={{ width: "13px", height: "13px", marginRight: "5px" }} />
-            ) : (
-              <ThumbsUp className="shrink-0" style={{ width: "13px", height: "13px", marginRight: "5px" }} />
-            )}
+            <ThumbsUp className="shrink-0" style={{ width: "13px", height: "13px", marginRight: "5px" }} />
             {data.buttonLabel}
           </Button>
           <Button
