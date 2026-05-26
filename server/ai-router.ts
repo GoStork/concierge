@@ -433,7 +433,23 @@ async function callTier2Claude(
             sse.sendToken(fallbackText);
             console.warn("[TIER2] Stream was empty - recovered text from response object");
           } else {
-            console.warn("[TIER2] Stream AND response.text() both empty - Gemini produced no content after tool call");
+            // Diagnostic dump - log everything we can about why Gemini returned nothing
+            const candidates = (finalResponse as any)?.candidates || [];
+            const cand0 = candidates[0] || {};
+            const finishReason = cand0?.finishReason || "UNKNOWN";
+            const safetyRatings = cand0?.safetyRatings || [];
+            const partsCount = cand0?.content?.parts?.length || 0;
+            const partKinds = (cand0?.content?.parts || []).map((p: any) =>
+              p.text ? `text(${p.text.length})` :
+              p.functionCall ? `fnCall(${p.functionCall.name})` :
+              p.functionResponse ? `fnResp(${p.functionResponse.name})` :
+              p.executableCode ? "execCode" :
+              p.codeExecutionResult ? "codeResult" :
+              JSON.stringify(p).slice(0, 80)
+            );
+            const promptFeedback = (finalResponse as any)?.promptFeedback;
+            const usageMetadata = (finalResponse as any)?.usageMetadata;
+            console.warn(`[TIER2] Stream AND response.text() both empty - finishReason=${finishReason} parts=${partsCount} [${partKinds.join(",")}]${promptFeedback ? ` promptFeedback=${JSON.stringify(promptFeedback)}` : ""}${safetyRatings.length ? ` safety=${JSON.stringify(safetyRatings)}` : ""}${usageMetadata ? ` tokens(in=${usageMetadata.promptTokenCount},out=${usageMetadata.candidatesTokenCount},total=${usageMetadata.totalTokenCount})` : ""}`);
           }
         } catch (fallbackErr: any) {
           console.warn(`[TIER2] response.text() fallback also threw: ${fallbackErr?.message}`);
@@ -1433,7 +1449,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       return;
     }
 
-    if (currentSession?.providerJoinedAt && currentSession.status === "PROVIDER_JOINED") {
+    if (currentSession?.providerId && (currentSession.status === "PROVIDER_JOINED" || currentSession.status === "CONSULTATION_BOOKED")) {
       let userMsgDeliveredAt: string | null = null;
       if (currentSession.providerId) {
         const providerUsers = await prisma.user.findMany({
