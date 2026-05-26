@@ -1,0 +1,287 @@
+/**
+ * W-9 routes - GoStork owns one global W-9 template; each provider signs their own copy.
+ *
+ * Endpoints:
+ *  - Admin template management   /api/admin/w9/template + /sync-template + /template-editor-session + /refresh-roles
+ *  - Admin per-provider           /api/admin/providers/:providerId/w9 + /w9/send
+ *  - Provider self-service        /api/provider/w9 + /w9/fill
+ *  - Shared                       /api/w9/:id/signing-session + /w9/:id/download
+ *
+ * Was previously living as dead Express handlers in server/routes.ts (a file that
+ * was never wired into the running NestJS app). Moved here so the routes actually
+ * exist.
+ */
+
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Param,
+  Body,
+  Req,
+  Res,
+  Inject,
+  HttpException,
+  HttpStatus,
+  Logger,
+  UseGuards,
+} from "@nestjs/common";
+import { Request, Response } from "express";
+import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
+import { NotificationService } from "../notifications/notification.service";
+import { prisma } from "../../../db";
+import {
+  syncW9TemplateToPandaDoc,
+  createW9TemplateEditingSession,
+  refreshW9TemplateRoles,
+  ensureW9Document,
+  getW9SigningSession,
+} from "../../../pandadoc-service";
+
+function isAdmin(user: any): boolean {
+  return !!user?.roles?.includes("GOSTORK_ADMIN");
+}
+
+function appBaseUrl(): string {
+  return process.env.APP_URL
+    ? process.env.APP_URL.replace(/\/+$/, "")
+    : (process.env.NODE_ENV === "development" ? `http://localhost:${process.env.PORT || 5001}` : "https://app.gostork.com");
+}
+
+async function buildW9Status(providerId: string) {
+  const [settings, w9] = await Promise.all([
+    prisma.siteSettings.findFirst({ select: { w9TemplateUrl: true, w9TemplateOriginalName: true, w9PandaDocTemplateId: true } }),
+    (prisma as any).providerW9.findUnique({ where: { providerId } }),
+  ]);
+  return {
+    templateConfigured: !!(settings?.w9TemplateUrl && settings?.w9PandaDocTemplateId),
+    templateName: settings?.w9TemplateOriginalName || null,
+    w9Id: w9?.id || null,
+    status: w9?.status || "NOT_SENT",
+    requestedAt: w9?.requestedAt || null,
+    completedAt: w9?.completedAt || null,
+  };
+}
+
+@Controller()
+export class W9Controller {
+  private readonly logger = new Logger(W9Controller.name);
+
+  constructor(
+    @Inject(NotificationService) private readonly notificationService: NotificationService,
+  ) {}
+
+  // ── Admin: global W-9 template management ──
+
+  @Get("api/admin/w9/template")
+  @UseGuards(SessionOrJwtGuard)
+  async getTemplate(@Req() req: Request) {
+    if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const settings = await prisma.siteSettings.findFirst({
+      select: { w9TemplateUrl: true, w9TemplateOriginalName: true, w9PandaDocTemplateId: true, w9PandaDocRoles: true },
+    });
+    return settings || {};
+  }
+
+  @Post("api/admin/w9/template")
+  @UseGuards(SessionOrJwtGuard)
+  async saveTemplate(@Req() req: Request, @Body() body: any) {
+    if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const { url, originalName } = body || {};
+    if (!url || typeof url !== "string") {
+      throw new HttpException("url is required", HttpStatus.BAD_REQUEST);
+    }
+    try {
+      const existing = await prisma.siteSettings.findFirst({ select: { id: true } });
+      if (!existing) throw new HttpException("Site settings not initialized", HttpStatus.BAD_REQUEST);
+      await prisma.siteSettings.update({
+        where: { id: existing.id },
+        data: { w9TemplateUrl: url, w9TemplateOriginalName: originalName || null, w9PandaDocTemplateId: null, w9PandaDocRoles: null },
+      });
+      return { success: true };
+    } catch (e: any) {
+      this.logger.error(`W-9 template save error: ${e.message}`);
+      if (e instanceof HttpException) throw e;
+      throw new HttpException(e.message, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  @Delete("api/admin/w9/template")
+  @UseGuards(SessionOrJwtGuard)
+  async deleteTemplate(@Req() req: Request) {
+    if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const existing = await prisma.siteSettings.findFirst({ select: { id: true } });
+    if (existing) {
+      await prisma.siteSettings.update({
+        where: { id: existing.id },
+        data: { w9TemplateUrl: null, w9TemplateOriginalName: null, w9PandaDocTemplateId: null, w9PandaDocRoles: null },
+      });
+    }
+    return { success: true };
+  }
+
+  @Post("api/admin/w9/sync-template")
+  @UseGuards(SessionOrJwtGuard)
+  async syncTemplate(@Req() req: Request) {
+    if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    try {
+      const templateId = await syncW9TemplateToPandaDoc();
+      return { templateId };
+    } catch (e: any) {
+      this.logger.error(`W-9 sync template error: ${e.message}`);
+      throw new HttpException(e.message, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  @Get("api/admin/w9/template-editor-session")
+  @UseGuards(SessionOrJwtGuard)
+  async editorSession(@Req() req: Request) {
+    if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    try {
+      const user = req.user as any;
+      const eToken = await createW9TemplateEditingSession(user.email);
+      return { eToken };
+    } catch (e: any) {
+      this.logger.error(`W-9 template editor session error: ${e.message}`);
+      throw new HttpException(e.message, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  @Post("api/admin/w9/refresh-roles")
+  @UseGuards(SessionOrJwtGuard)
+  async refreshRoles(@Req() req: Request) {
+    if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    try {
+      return await refreshW9TemplateRoles();
+    } catch (e: any) {
+      this.logger.error(`W-9 refresh roles error: ${e.message}`);
+      throw new HttpException(e.message, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  // ── Admin: per-provider W-9 status + send request ──
+
+  @Get("api/admin/providers/:providerId/w9")
+  @UseGuards(SessionOrJwtGuard)
+  async getProviderW9Status(@Req() req: Request, @Param("providerId") providerId: string) {
+    if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    return buildW9Status(providerId);
+  }
+
+  @Post("api/admin/providers/:providerId/w9/send")
+  @UseGuards(SessionOrJwtGuard)
+  async sendW9Request(@Req() req: Request, @Param("providerId") providerId: string) {
+    if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const user = req.user as any;
+    try {
+      const { w9, signer } = await ensureW9Document({ providerId, requestedByUserId: user.id });
+      const provider = await prisma.provider.findUnique({ where: { id: providerId }, select: { name: true } });
+
+      try {
+        await this.notificationService.sendW9RequestNotification({
+          providerId,
+          providerName: provider?.name || "Provider",
+          signingUrl: `${appBaseUrl()}/w9/${w9.id}`,
+          fallbackSigner: { userId: signer.userId, email: signer.email, name: signer.name || signer.email },
+        });
+      } catch (notifErr: any) {
+        this.logger.error(`[W-9] Request notification failed: ${notifErr?.message}`);
+      }
+
+      return { success: true, w9Id: w9.id, status: w9.status };
+    } catch (e: any) {
+      this.logger.error(`W-9 send error: ${e.message}`);
+      throw new HttpException(e.message, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  // ── Provider: own W-9 status + self-initiated fill ──
+
+  @Get("api/provider/w9")
+  @UseGuards(SessionOrJwtGuard)
+  async getOwnW9(@Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    return buildW9Status(user.providerId);
+  }
+
+  @Post("api/provider/w9/fill")
+  @UseGuards(SessionOrJwtGuard)
+  async fillW9(@Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    try {
+      const { w9 } = await ensureW9Document({ providerId: user.providerId, requestedByUserId: null });
+      return { success: true, w9Id: w9.id, status: w9.status };
+    } catch (e: any) {
+      this.logger.error(`W-9 fill error: ${e.message}`);
+      throw new HttpException(e.message, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  // ── Shared: signing session + download ──
+
+  @Get("api/w9/:id/signing-session")
+  @UseGuards(SessionOrJwtGuard)
+  async signingSession(@Req() req: Request, @Param("id") id: string) {
+    const user = req.user as any;
+    try {
+      const w9 = await (prisma as any).providerW9.findUnique({
+        where: { id },
+        select: { id: true, providerId: true, status: true },
+      });
+      if (!w9) throw new HttpException("W-9 not found", HttpStatus.NOT_FOUND);
+      if (!isAdmin(user) && user.providerId !== w9.providerId) {
+        throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+      }
+
+      if (w9.status === "COMPLETED") {
+        return { isCompletedView: true, status: w9.status, w9Id: w9.id, providerId: w9.providerId };
+      }
+      const { signingUrl, providerId } = await getW9SigningSession(w9.id, user);
+      return { isCompletedView: false, signingUrl, w9Id: w9.id, providerId };
+    } catch (e: any) {
+      if (e instanceof HttpException) throw e;
+      this.logger.error(`W-9 signing session error: ${e.message}`);
+      throw new HttpException(e.message, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  @Get("api/w9/:id/download")
+  @UseGuards(SessionOrJwtGuard)
+  async download(@Req() req: Request, @Res() res: Response, @Param("id") id: string) {
+    try {
+      const user = req.user as any;
+      const w9 = await (prisma as any).providerW9.findUnique({
+        where: { id },
+        select: { providerId: true, pandaDocDocumentId: true },
+      });
+      if (!w9) throw new HttpException("W-9 not found", HttpStatus.NOT_FOUND);
+      if (!isAdmin(user) && user.providerId !== w9.providerId) {
+        throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+      }
+      if (!w9.pandaDocDocumentId) throw new HttpException("No PandaDoc document linked", HttpStatus.BAD_REQUEST);
+
+      const apiKey = process.env.PANDADOC_API_KEY;
+      if (!apiKey) throw new HttpException("PandaDoc not configured", HttpStatus.INTERNAL_SERVER_ERROR);
+
+      const pdRes = await fetch(
+        `https://api.pandadoc.com/public/v1/documents/${w9.pandaDocDocumentId}/download`,
+        { headers: { "Authorization": `API-Key ${apiKey}` } },
+      );
+      if (!pdRes.ok) {
+        const err = await pdRes.text();
+        this.logger.error(`[W-9 download] PandaDoc error: ${err}`);
+        throw new HttpException("Failed to download from PandaDoc", HttpStatus.BAD_GATEWAY);
+      }
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename="w9-${w9.pandaDocDocumentId}.pdf"`);
+      res.send(Buffer.from(await pdRes.arrayBuffer()));
+    } catch (e: any) {
+      if (e instanceof HttpException) throw e;
+      this.logger.error(`[W-9 download] ${e.message}`);
+      throw new HttpException(e.message, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+}

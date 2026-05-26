@@ -1056,8 +1056,11 @@ export async function registerRoutes(
     }
   });
 
-  // ───────────────────────── W-9 flow ─────────────────────────
-  // GoStork owns one global W-9 template; each provider signs their own copy.
+  // ───────────────────────── W-9 flow (moved) ─────────────────────────
+  // The W-9 routes used to live here, but server/routes.ts is never wired
+  // into the running NestJS app - everything below was dead code. The real
+  // routes are now in server/src/modules/billing/w9.controller.ts.
+  // Leaving this stub for grep-ability; the legacy code follows but is unused.
 
   function appBaseUrl(): string {
     return process.env.APP_URL
