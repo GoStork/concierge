@@ -12,6 +12,7 @@ import { SpaFallbackFilter } from "./src/filters/spa-fallback.filter";
 import { PrismaService } from "./src/modules/prisma/prisma.service";
 import { startNightlySyncScheduler } from "./src/modules/providers/nightly-sync.scheduler";
 import { startCalendarHealthScheduler } from "./src/modules/calendar/calendar-health.scheduler";
+import { startCostSheetReminderScheduler } from "./src/modules/billing/cost-sheet-reminder.scheduler";
 import { NotificationService } from "./src/modules/notifications/notification.service";
 import { setNestApp } from "./nest-app-ref";
 import pgSession from "connect-pg-simple";
@@ -150,6 +151,7 @@ export function log(message: string, source = "nestjs") {
   const notificationService = nestApp.get(NotificationService);
   startNightlySyncScheduler(prismaService);
   startCalendarHealthScheduler(prismaService, notificationService);
+  startCostSheetReminderScheduler(prismaService, notificationService);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
