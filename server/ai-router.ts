@@ -3564,6 +3564,8 @@ After you send this, wait for the parent to reply. The system will then auto-sen
     // Also catch service-mention affirmatives like "Yes, I'm looking into surrogacy" which happen
     // when the frontend's expandQuickReply incorrectly expands "Yes, find my matches!".
     const userSaidReady = /^\s*ready\s*$/i.test(userMessage)
+      || /^\s*yes,?\s+i'?m\s+ready[!.]?\s*$/i.test(userMessage)
+      || /^\s*i'?m\s+ready[!.]?\s*$/i.test(userMessage)
       || /\b(yes.*find|find.*match|show.*match|let.*go|proceed|start.*search)\b/i.test(userMessage)
       || (curationAlreadySent && /^(yes|sure|ok|okay|go|let'?s|please)\b.*(?:surrogacy|surrogate|egg donor|sperm donor|clinic|ivf|looking|match)/i.test(userMessage.trim()));
     if (userSaidReady && curationAlreadySent) {

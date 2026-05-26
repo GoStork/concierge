@@ -1018,7 +1018,10 @@ const TEST_CASES: TestCase[] = [
       ...clinicIntakeCouple,
       { send: "USA, Colombia" },
       { send: "Pro-choice surrogate" },
-      { send: "Hoping for twins", assert: { hasMatchCard: true } },
+      { send: "Hoping for twins" },
+      // CURATION gate requires "ready" to trigger search - card cannot appear
+      // on the D3 answer itself per the SEARCH GATE rule in ai-prompt-defaults.
+      { send: "Yes, I'm ready!", assert: { hasMatchCard: true } },
     ),
     db: [
       { field: "spermSource", expected: "My sperm" },
