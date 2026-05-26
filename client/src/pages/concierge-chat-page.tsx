@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
 import { ChatPlusDrawer, type ChatPlusAction } from "@/components/chat/chat-plus-drawer";
+import { InvoicePaymentPanel } from "@/components/chat/invoice-payment-panel";
 import { InlineBookingNotification } from "@/components/chat/inline-booking-notification";
 import { createPortal } from "react-dom";
 import { useSearchParams, useNavigate } from "react-router-dom";
@@ -2086,7 +2087,7 @@ function ConciergeInlineVideoOverlay({ bookingId, onClose }: { bookingId: string
   );
 }
 
-function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, isAnswered, positiveChipStyle, declineChipStyle, onAnswer, onYesReady }: { msg: ChatMessage; brandColor: string; onOpenInlineVideo?: (bookingId: string) => void; sessionId?: string | null; isAnswered?: boolean; positiveChipStyle?: React.CSSProperties; declineChipStyle?: React.CSSProperties; onAnswer?: (text: string) => void; onYesReady?: (text: string) => void }) {
+function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, isAnswered, positiveChipStyle, declineChipStyle, onAnswer, onYesReady, onPayInvoiceInline }: { msg: ChatMessage; brandColor: string; onOpenInlineVideo?: (bookingId: string) => void; sessionId?: string | null; isAnswered?: boolean; positiveChipStyle?: React.CSSProperties; declineChipStyle?: React.CSSProperties; onAnswer?: (text: string) => void; onYesReady?: (text: string) => void; onPayInvoiceInline?: (paymentToken: string) => void }) {
   const data = msg.uiCardData as any;
   if (!data) return null;
 
@@ -2214,7 +2215,17 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
   }
 
   if (msg.uiCardType === "invoice") {
-    return <InvoiceCard data={data} isParent={true} />;
+    return (
+      <InvoiceCard
+        data={data}
+        isParent={true}
+        onPayInline={
+          onPayInvoiceInline && data.paymentToken
+            ? () => onPayInvoiceInline(data.paymentToken)
+            : undefined
+        }
+      />
+    );
   }
 
   if (msg.uiCardType === "cost_sheet") {
@@ -2501,6 +2512,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [parentUploading, setParentUploading] = useState(false);
   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
   const [parentPlusOpen, setParentPlusOpen] = useState(false);
+  // Embedded Stripe payment panel - opened when the parent clicks "Pay Now
+  // Securely" on an invoice card. Holds the paymentToken of the invoice
+  // being paid; null = panel closed.
+  const [inlinePaymentToken, setInlinePaymentToken] = useState<string | null>(null);
   // Ref so uploadAndSendFiles can access the current matchmaker ID without TDZ issues
   const effectiveMatchmakerIdRef = useRef<string | null>(null);
 
@@ -4668,7 +4683,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                               (m.content || "").includes("Thank you for letting us know")
                             )
                           : undefined;
-                        return <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} sessionId={sessionId} isAnswered={isAnswered} positiveChipStyle={chipPositiveStyle} declineChipStyle={chipDeclineStyle} onAnswer={handleQuickReply} onYesReady={handleReadinessYes} />;
+                        return <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} sessionId={sessionId} isAnswered={isAnswered} positiveChipStyle={chipPositiveStyle} declineChipStyle={chipDeclineStyle} onAnswer={handleQuickReply} onYesReady={handleReadinessYes} onPayInvoiceInline={setInlinePaymentToken} />;
                       })()}
                       {(cardReplacesbubble || !showBubble || isAttachmentMsg) && msg.createdAt && (
                         <span
@@ -4738,6 +4753,28 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               <div className="w-1 h-1 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "300ms" }} />
             </div>
             <span>Connection lost - waiting to reconnect</span>
+          </div>
+        )}
+        {/* Embedded Stripe payment panel - mounted between messages and the
+            composer when the parent clicks "Pay Now Securely" on an invoice
+            card. Closes itself on success and triggers a chat refetch so the
+            invoice card flips to PAID + the confirmation message appears. */}
+        {inlinePaymentToken && (
+          <div className="border-t px-3 py-3 bg-muted/30">
+            <InvoicePaymentPanel
+              paymentToken={inlinePaymentToken}
+              brandColor={brandColor}
+              onClose={() => setInlinePaymentToken(null)}
+              onSuccess={() => {
+                setInlinePaymentToken(null);
+                if (sessionId) {
+                  // Webhook updates the invoice + posts confirmation message.
+                  // Refetch a couple times in case the webhook is mid-flight.
+                  loadMessagesForSession(sessionId).catch(() => {});
+                  setTimeout(() => sessionId && loadMessagesForSession(sessionId).catch(() => {}), 1500);
+                }
+              }}
+            />
           </div>
         )}
         <div className="border-t px-3 py-2 relative" data-testid="concierge-input-area">

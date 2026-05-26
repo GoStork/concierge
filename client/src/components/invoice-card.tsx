@@ -57,9 +57,13 @@ interface InvoiceCardData {
 interface InvoiceCardProps {
   data: InvoiceCardData;
   isParent?: boolean;
+  /** When set, clicking "Pay Now Securely" calls this instead of opening
+   *  the standalone /pay/:token page in a new tab. Used by the in-chat
+   *  embedded payment panel. */
+  onPayInline?: () => void;
 }
 
-export function InvoiceCard({ data, isParent = true }: InvoiceCardProps) {
+export function InvoiceCard({ data, isParent = true, onPayInline }: InvoiceCardProps) {
   const isPaid = data.status === "PAID" || data.status === "AUTHORIZED";
 
   return (
@@ -109,32 +113,44 @@ export function InvoiceCard({ data, isParent = true }: InvoiceCardProps) {
       {/* Footer CTA */}
       {isParent && data.status === "AWAITING_PAYMENT" && (
         <div className="px-4 pb-4">
-          <Button
-            asChild
-            className="w-full"
-            style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}
-          >
-            <a
-              href={(() => {
-                // Carry the current chat URL through to the payment page so
-                // "Return to GoStork" after a successful payment lands the
-                // parent back in the exact chat they were in, not the
-                // generic /chat landing.
-                try {
-                  const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
-                  const sep = data.paymentUrl.includes("?") ? "&" : "?";
-                  return `${data.paymentUrl}${sep}returnTo=${returnTo}`;
-                } catch {
-                  return data.paymentUrl;
-                }
-              })()}
-              target="_blank"
-              rel="noopener noreferrer"
+          {onPayInline ? (
+            // Embedded mode: open the in-chat Stripe payment panel.
+            <Button
+              type="button"
+              onClick={onPayInline}
+              className="w-full"
+              style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}
+              data-testid="btn-pay-inline"
             >
-              <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+              <Shield className="w-3.5 h-3.5 mr-1.5" />
               Pay Now Securely
-            </a>
-          </Button>
+            </Button>
+          ) : (
+            // Standalone-tab fallback: used by surfaces that don't host the
+            // inline panel (email landing, my-invoices page, etc).
+            <Button
+              asChild
+              className="w-full"
+              style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}
+            >
+              <a
+                href={(() => {
+                  try {
+                    const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
+                    const sep = data.paymentUrl.includes("?") ? "&" : "?";
+                    return `${data.paymentUrl}${sep}returnTo=${returnTo}`;
+                  } catch {
+                    return data.paymentUrl;
+                  }
+                })()}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+                Pay Now Securely
+              </a>
+            </Button>
+          )}
         </div>
       )}
     </div>
