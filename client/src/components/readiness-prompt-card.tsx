@@ -42,6 +42,7 @@ interface ReadinessPromptCardProps {
   positiveChipStyle?: React.CSSProperties;
   declineChipStyle?: React.CSSProperties;
   onAnswer?: (text: string) => void;
+  onYesReady?: (text: string) => void; // bypasses LLM, streams fixed confirmation
 }
 
 const chipBase: React.CSSProperties = {
@@ -64,7 +65,7 @@ async function markAnswered(messageId: string, answer: "yes" | "no") {
   });
 }
 
-export function ReadinessPromptCard({ data, messageId, sessionId, messageContent, isParent = true, isAnswered, brandColor, positiveChipStyle, declineChipStyle, onAnswer }: ReadinessPromptCardProps) {
+export function ReadinessPromptCard({ data, messageId, sessionId, messageContent, isParent = true, isAnswered, brandColor, positiveChipStyle, declineChipStyle, onAnswer, onYesReady }: ReadinessPromptCardProps) {
   // Priority: isAnswered (history-based) > data.answered (DB flag) > local state
   const alreadyAnswered = isAnswered ?? !!data.answered;
   const [responded, setResponded] = useState(alreadyAnswered);
@@ -73,8 +74,12 @@ export function ReadinessPromptCard({ data, messageId, sessionId, messageContent
 
   const handleYesReady = () => {
     setResponded(true);
-    // Send AI reply immediately - don't block on billing
-    onAnswer?.(data.buttonLabel);
+    // onYesReady sends with a fixed server reply (bypasses LLM); fall back to onAnswer
+    if (onYesReady) {
+      onYesReady(data.buttonLabel);
+    } else {
+      onAnswer?.(data.buttonLabel);
+    }
     // Billing runs in background
     markAnswered(messageId, "yes").catch(() => {});
     fetch("/api/billing/parent-confirm-ready", {
