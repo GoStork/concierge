@@ -1637,15 +1637,48 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     if (userRecord?.parentAccountId) {
       const parentAccountId = userRecord.parentAccountId;
       const registeredServices: string[] = (profile?.interestedServices || []) as string[];
-      const genderVal = (userRecord.gender || "").toLowerCase();
+
+      // Gather Phase 1 / family signals from EVERY source so the inference fires on the
+      // FIRST request after the user picks "Solo woman" etc, not the second. The SAVE for
+      // the Phase 1 answer goes to userRecord.gender etc., but it runs AFTER the AI
+      // response is generated - the immediate inference reads userRecord synchronously
+      // at request start, before the SAVE. Without these fallbacks, solo woman's sperm
+      // source / LGBTQ saves were one turn late, letting Tier 1 ask the sperm question
+      // before intake bypass had spermSource available to drive Step 3a instead.
+      const currentMsg = (req.body?.message || "").toString().toLowerCase();
+      const historyUserMsgs = Array.isArray(chatHistory)
+        ? chatHistory.filter((m: any) => m.role === "user").map((m: any) => (m.content || "").toLowerCase()).join(" ")
+        : "";
+      const allUserMsgsLower = `${historyUserMsgs} ${currentMsg}`;
+      const familyType = profile?.familyType || "";
+      const ftGender = familyType === "solo_man" || familyType === "two_dads" ? "man"
+        : familyType === "solo_woman" || familyType === "two_moms" ? "woman" : "";
+      const ftOrientation = familyType === "two_dads" ? "gay"
+        : familyType === "two_moms" ? "lesbian" : "";
+      const ftRelationship = familyType.startsWith("solo_") ? "single"
+        : ["two_dads", "two_moms", "straight_couple"].includes(familyType) ? "couple" : "";
+      // Phase 1 chat detection - matches the actual button label even if SAVE hasn't landed
+      const chatSaysSoloMan = /\bsolo man\b/.test(allUserMsgsLower);
+      const chatSaysSoloWoman = /\bsolo woman\b/.test(allUserMsgsLower);
+      const chatSaysTwoDads = /\btwo dads\b/.test(allUserMsgsLower);
+      const chatSaysTwoMoms = /\btwo moms\b/.test(allUserMsgsLower);
+      const chatGender = chatSaysSoloMan || chatSaysTwoDads ? "man"
+        : chatSaysSoloWoman || chatSaysTwoMoms ? "woman" : "";
+      const chatOrientation = chatSaysTwoDads ? "gay"
+        : chatSaysTwoMoms ? "lesbian" : "";
+      const chatRelationship = chatSaysSoloMan || chatSaysSoloWoman ? "single"
+        : chatSaysTwoDads || chatSaysTwoMoms ? "couple" : "";
+
+      // Fall through: user table -> profile familyType -> chat phrasing.
+      const genderVal = (userRecord.gender || ftGender || chatGender || "").toLowerCase();
       // CRITICAL: must check female/woman BEFORE male/man because "female".includes("male") is true.
       // Word-boundary regex prevents false positives - "female" no longer matches "male".
       const genderIsFemale = /\b(female|woman|girl)\b/.test(genderVal);
       const genderIsMale = !genderIsFemale && /\b(male|man|boy)\b/.test(genderVal);
-      const orientationVal = (userRecord.sexualOrientation || "").toLowerCase();
+      const orientationVal = (userRecord.sexualOrientation || ftOrientation || chatOrientation || "").toLowerCase();
       const orientationIsGay = orientationVal === "gay";
       const orientationIsLesbian = orientationVal === "lesbian";
-      const relationshipVal = (userRecord.relationshipStatus || "").toLowerCase();
+      const relationshipVal = (userRecord.relationshipStatus || ftRelationship || chatRelationship || "").toLowerCase();
       const isSingle = relationshipVal === "single" || relationshipVal === "solo";
       const registeredForSurrogate = registeredServices.includes("Surrogate");
       const registeredForEggDonor = registeredServices.includes("Egg Donor");

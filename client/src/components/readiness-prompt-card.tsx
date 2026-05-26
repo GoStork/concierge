@@ -147,7 +147,12 @@ export function ReadinessPromptCard({ data, messageId, sessionId, messageContent
             )}
             {data.buttonLabel}
           </Button>
-          <Button variant="secondary" className="flex-1" onClick={handleNotYet}>
+          <Button
+            variant="ghost"
+            className="flex-1"
+            style={{ backgroundColor: "hsl(var(--secondary))", color: "hsl(var(--foreground))", border: "none" }}
+            onClick={handleNotYet}
+          >
             Not Yet
           </Button>
         </div>
