@@ -1241,14 +1241,17 @@ const TEST_CASES: TestCase[] = [
   {
     id: "TM-11", persona: "two-moms",
     name: "TM-11: Has embryos (2, tested) · Partner A eggs · Partner B carries · Has clinic",
-    desc: "Two moms with existing tested embryos, partner carries",
+    desc: "Two moms with existing tested embryos, partner carries - no services needed, Phase 2 validation only",
     interestedServices: [],
     messages: msgs(
       P0, I_TWO_MOMS, CLINIC_HAVE,
       ...EMB_YES("2", "Yes"),
       { send: "My own eggs", assert: noSpermQ },
       CARRIER_PARTNER,
-      ...spermDonorMatch,
+      // No spermDonorMatch / no match cycle: this couple has every service sorted
+      // (own eggs + own embryos + own clinic + partner carries + sperm came from
+      // the donor used to create the existing embryos). Nothing to search for -
+      // this test only validates Phase 2 past-tense questions and DB saves.
     ),
     db: [
       // hasEmbryos removed - scripted messages unreliable
@@ -1652,7 +1655,10 @@ const TEST_CASES: TestCase[] = [
 
 function getTestsToRun(): TestCase[] {
   let cases = TEST_CASES;
-  if (filterId) cases = cases.filter(t => t.id === filterId);
+  if (filterId) {
+    const ids = filterId.split(",").map(s => s.trim());
+    cases = cases.filter(t => ids.includes(t.id));
+  }
   if (filterPersona) cases = cases.filter(t => t.persona === filterPersona);
   return cases;
 }

@@ -223,23 +223,26 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
         text: "Do you already have a fertility clinic you're working with, or do you need help finding one? [[QUICK_REPLY:I need help finding a clinic|I already have a clinic]]",
       };
     }
+  }
 
-    // -----------------------------------------------------------------------
-    // STEP 0a: Clinic name (only if has clinic)
-    // -----------------------------------------------------------------------
-    const parentAlreadyHasClinic = alreadyHasClinic
-      || userSaid(allUserMessages, /i already have a clinic|already.*have.*a clinic/)
-      || profile?.needsClinic === false;
-    if (parentAlreadyHasClinic) {
-      const step0aAsked = aiAsked(chatHistory, /what'?s the name of.*ivf clinic.*currently with|name of the.*clinic/i);
-      const step0aAnswered = !!(profile?.currentClinicName)
-        || userAnsweredAfter(chatHistory, /what'?s the name of.*ivf clinic|name of the.*clinic/i, /.+/);
-      if (!step0aAsked && !step0aAnswered) {
-        return {
-          step: "step0a_clinic_name",
-          text: "What's the name of the IVF clinic you're currently with?",
-        };
-      }
+  // -----------------------------------------------------------------------
+  // STEP 0a: Clinic name (only if has clinic)
+  // Must be checked OUTSIDE the !clinicStatusKnown block - once the user
+  // answers "I already have a clinic", clinicStatusKnown becomes true and
+  // we'd otherwise skip the name follow-up entirely.
+  // -----------------------------------------------------------------------
+  const parentAlreadyHasClinic = alreadyHasClinic
+    || userSaid(allUserMessages, /i already have a clinic|already.*have.*a clinic|already have a fertility clinic/i)
+    || profile?.needsClinic === false;
+  if (parentAlreadyHasClinic) {
+    const step0aAsked = aiAsked(chatHistory, /what'?s the name of.*ivf clinic.*currently with|name of the.*clinic|name of the ivf clinic/i);
+    const step0aAnswered = !!(profile?.currentClinicName)
+      || userAnsweredAfter(chatHistory, /what'?s the name of.*ivf clinic|name of the.*clinic/i, /.+/);
+    if (!step0aAsked && !step0aAnswered) {
+      return {
+        step: "step0a_clinic_name",
+        text: "What's the name of the IVF clinic you're currently with?",
+      };
     }
   }
 
@@ -515,23 +518,30 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
           text: `And who is planning to carry the pregnancy? ${carrierQR}`,
         };
       }
+    }
+  }
 
-      // -----------------------------------------------------------------------
-      // STEP 4a: Surrogate help (only if gestational surrogate + not already confirmed)
-      // -----------------------------------------------------------------------
-      const carrierIsSurrogate = /gestational surrogate/i.test(profile?.carrier || "")
-        || userSaid(allUserMessages, /gestational surrogate/i);
-      if (carrierIsSurrogate && !alreadyHasSurrogate && profile?.needsSurrogate == null) {
-        const step4aAsked = aiAsked(chatHistory, /do you need help finding a surrogate.*already have one|need help.*surrogate/i);
-        const step4aAnswered = profile?.needsSurrogate != null
-          || userAnsweredAfter(chatHistory, /need help.*surrogate|finding a surrogate/i, /i need help|already have/i);
-        if (!step4aAsked && !step4aAnswered) {
-          return {
-            step: "step4a_surrogate_help",
-            text: "Do you need help finding a surrogate, or do you already have one? [[QUICK_REPLY:I need help finding a surrogate|I already have a surrogate]]",
-          };
-        }
-      }
+  // -----------------------------------------------------------------------
+  // STEP 4a: Surrogate help - MUST fire independently of step 4's gating.
+  // The user can imply a surrogate carrier via the chat ("a gestational
+  // surrogate will carry the pregnancy") which sets chatMentionsCarrier=true
+  // and so skips the step 4 block entirely. But step 4a (do you need help
+  // finding one?) is still pending - if we skip it the AI either asks it from
+  // Tier 1 with wrong QR options, or proceeds to D1 without the answer and
+  // the test message stream misaligns.
+  // -----------------------------------------------------------------------
+  const carrierIsSurrogateGlobal = needsSurrogate || alreadyHasSurrogate
+    || /gestational surrogate/i.test(profile?.carrier || "")
+    || userSaid(allUserMessages, /gestational surrogate/i);
+  if (carrierIsSurrogateGlobal && !alreadyHasSurrogate && profile?.needsSurrogate == null) {
+    const step4aAsked = aiAsked(chatHistory, /do you need help finding a surrogate.*already have one|need help.*surrogate/i);
+    const step4aAnswered = profile?.needsSurrogate != null
+      || userAnsweredAfter(chatHistory, /need help.*surrogate|finding a surrogate/i, /i need help|already have/i);
+    if (!step4aAsked && !step4aAnswered) {
+      return {
+        step: "step4a_surrogate_help",
+        text: "Do you need help finding a surrogate, or do you already have one? [[QUICK_REPLY:I need help finding a surrogate|I already have a surrogate]]",
+      };
     }
   }
 
@@ -634,9 +644,27 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
   // PHASE 3D: SURROGATE CYCLE (only if needsSurrogate)
   // ===========================================================================
 
-  if (needsSurrogate || registeredForSurrogate) {
+  if ((needsSurrogate || registeredForSurrogate) && !alreadyHasSurrogate) {
+    // D1: Which countries (with cost-comparison education).
+    // Must fire here in the intake state machine for parents whose flow doesn't
+    // hit the carrier-bypass or D-cycle-pre-bypass paths in ai-router.ts - e.g.
+    // a solo woman with CLINIC_HAVE + EGG_DONOR + SURR_NEED never says "sperm"
+    // explicitly (silent save) and already has a clinic, so neither bypass
+    // fires. Without this, Tier 1 Gemini takes over and asks the wrong cycle.
+    //
+    // Also gated on (needsHelpFindingClinic ? a_curation already sent : true) -
+    // if the clinic A-cycle is still in progress, let it finish first so we
+    // don't intersperse A-questions and D-questions.
+    const aCurationSent = aiAsked(chatHistory, /shall i find your perfect clinic matches|perfect clinic matches/i);
+    const clinicCycleDone = !needsHelpFindingClinic || aCurationSent;
+    const d1Asked = aiAsked(chatHistory, /which countries are you open to for your surrogacy|colombia.*mexico.*surrogate/i);
+    if (clinicCycleDone && !d1Asked) {
+      const d1Text = hasEmbryos ? D1_HAS_EMBRYOS : D1_NO_EMBRYOS;
+      return { step: "d1_countries", text: d1Text };
+    }
+
     // D2: Termination preference (skip if parent did NOT select USA in D1)
-    const d1Answered = aiAsked(chatHistory, /which countries are you open to for your surrogacy|colombia.*mexico.*surrogate/i);
+    const d1Answered = d1Asked; // alias for downstream readability
     const surrogateCountries: string = profile?.surrogateCountries || "";
     const selectedUSA = /usa|united states/i.test(surrogateCountries)
       || userSaid(allUserMessages, /\busa\b|united states/i);

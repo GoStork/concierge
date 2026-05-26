@@ -160,13 +160,23 @@ ${opts.detailRows.map(r => `<tr><td width="160" style="padding:10px 16px;color:$
   const footerHtml = opts.footer ? `<p style="color:${brand.mutedForegroundColor};font-size:12px;line-height:1.5;margin:24px 0 0;padding-top:16px;border-top:1px solid ${brand.borderColor};font-family:${brand.bodyFontStack};">${opts.footer}</p>` : "";
 
   return `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background-color:${tintHex(brand.backgroundColor, 0.03)};font-family:${brand.bodyFontStack};">
+<html lang="en" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="urn:schemas-microsoft-com:vml">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<style>
+:root { color-scheme: light; }
+body { color-scheme: light; }
+[data-ogsc] .og-dark { display: none !important; }
+</style>
+</head>
+<body style="margin:0;padding:0;background-color:${tintHex(brand.backgroundColor, 0.03)};font-family:${brand.bodyFontStack};color-scheme:light;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background-color:${tintHex(brand.backgroundColor, 0.03)};padding:40px 20px;">
 <tr><td align="center">
 <table width="600" cellpadding="0" cellspacing="0" style="background-color:${brand.cardColor};border-radius:${brand.containerRadius};overflow:hidden;">
-<tr><td style="background-color:${brand.brandColor};padding:30px;text-align:center;">
+<tr><td style="background-color:${brand.brandColor} !important;padding:30px;text-align:center;mso-padding-alt:0px;">
 ${brand.logoUrl ? `<img src="${brand.logoUrl}" alt="${esc(brand.companyName)}" style="max-height:40px;margin-bottom:8px;" />` : ""}
 <h1 style="color:${brand.primaryForegroundColor};font-family:${brand.headingFontStack};font-size:24px;margin:0;">${esc(brand.companyName)}</h1>
 </td></tr>

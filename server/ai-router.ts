@@ -2734,7 +2734,17 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
         : /\bi('?m| am) (?:a |the )?woman\b/i.test(allUserMessages) ? "woman"
         : "")
       : "";
-    const effectiveGenderLower = genderLower || genderFromChat;
+    // Fallback: derive gender from Phase 1 family-type phrasing when neither the DB nor
+    // the gender-follow-up chat detection has landed yet. "Solo woman" and "Two moms"
+    // imply female; "Solo man" and "Two dads" imply male. Mirrors the chatGender derivation
+    // in IMMEDIATE PROFILE INFERENCE so isFemaleGender / isMaleGender stay consistent even
+    // on the very first turn after the Phase 1 answer (before the DB save lands).
+    const chatGenderFallback = !genderLower && !genderFromChat
+      ? (/\bsolo woman\b|\btwo moms\b/i.test(allUserMessages) ? "woman"
+        : /\bsolo man\b|\btwo dads\b/i.test(allUserMessages) ? "man"
+        : "")
+      : "";
+    const effectiveGenderLower = genderLower || genderFromChat || chatGenderFallback;
     // Same female-first ordering as above: "female".includes("male") is true so naive substring fails.
     const isFemaleGender = /\b(female|woman|girl)\b/.test(effectiveGenderLower);
     const isMaleGender = !isFemaleGender && /\b(male|man|boy)\b/.test(effectiveGenderLower);
@@ -2818,7 +2828,22 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // Detect embryo possession from chat history as well as DB (chat answers may not be saved to DB yet)
     // Exclude negated statements like "No, I don't have frozen embryos yet" which contain
     // "have frozen embryo" as a substring but mean the opposite.
-    const chatMentionsHavingEmbryos = /(?<!don'?t\s+)(?<!no[,.]?\s+)(?:i\s+)?(?:already\s+)?(?:have|has|got)\s+(?:\d+\s+)?(?:frozen\s+)?embryo|yes[,.]?\s+(?:my\s+)?embryo|i\s+have\s+(?:\d+\s+)?embryo/i.test(allUserMessages);
+    const chatMentionsHavingEmbryosExplicit = /(?<!don'?t\s+)(?<!no[,.]?\s+)(?:i\s+)?(?:already\s+)?(?:have|has|got)\s+(?:\d+\s+)?(?:frozen\s+)?embryo|yes[,.]?\s+(?:my\s+)?embryo|i\s+have\s+(?:\d+\s+)?embryo/i.test(allUserMessages);
+    // Contextual fallback: when the AI just asked "do you already have frozen embryos?" and
+    // the user answered with a bare affirmative ("Yes, I do" - the literal QR button text),
+    // count that as confirmation. Without this, the embryo state stays unknown and downstream
+    // step 1a (count), step 1b (PGT-A), step 3b (sperm conflict) all silently skip - which
+    // shifts every subsequent intake message into the wrong slot for the rest of the conversation.
+    const chatMentionsHavingEmbryosContext = chatHistory.some((m: any, idx: number) => {
+      if (m.role !== "user") return false;
+      if (!/^(yes|yes,?\s*i do|yeah|yep|yup|i do|we do|sure|correct)\s*\.?$/i.test((m.content || "").trim())) return false;
+      const prevAi = chatHistory.slice(0, idx).reverse().find((p: any) => p.role === "assistant");
+      return !!(prevAi && /do you already have (?:any )?(?:frozen )?embryos/i.test(prevAi.content || ""));
+    }) || (
+      /^(yes|yes,?\s*i do|yeah|yep|yup|i do|we do|sure|correct)\s*\.?$/i.test(userMessage.trim())
+      && chatHistory.some((m: any) => m.role === "assistant" && /do you already have (?:any )?(?:frozen )?embryos/i.test(m.content || ""))
+    );
+    const chatMentionsHavingEmbryos = chatMentionsHavingEmbryosExplicit || chatMentionsHavingEmbryosContext;
     const chatMentionsNoEmbryos = /no.*embryo|don'?t have.*embryo|not.*embryo|working to create|haven'?t.*embryo/i.test(allUserMessages);
     const chatMentionsEggSource = /partner'?s eggs|my own eggs|donor eggs|egg donor|eggs from a donor|used.*egg/i.test(allUserMessages);
     const chatMentionsSpermSource = /my own sperm|used my own|sperm donor|donor sperm|own sperm/i.test(allUserMessages);
@@ -4449,7 +4474,12 @@ ${phase0Section}`;
     // Gemini consistently skips Step 2 (egg source) for straight/female parents with embryos,
     // jumping from Step 1b (PGT-A) directly to Step 3 (sperm). Detect this and replace.
     const spermQuestionInContent = /(?:for (?:those embryos,? )?(?:did you use|sperm)|(?:and )?for sperm[,\s]|using your own(?: sperm)? or a sperm donor)/i.test(finalContent);
+    // Include the current userMessage in the check - chatHistory.some() only sees prior
+    // turns, so if the parent JUST said "I need help finding an egg donor" this turn,
+    // the interceptor would otherwise consider egg source still unanswered and overwrite
+    // the (correct) next-step response with another egg source question, looping forever.
     const eggSourceAlreadyAnswered = !!profile?.eggSource ||
+      /partner'?s eggs|my own eggs|donor eggs|egg donor/i.test(userMessage) ||
       chatHistory.some((m: any) => m.role === "user" && /partner'?s eggs|my own eggs|donor eggs|egg donor/i.test(m.content || ""));
     const isGayOrSingleMaleForEgg = isGayMale || (isMaleGender && isSoloSkip);
     const familyTypeKnownForEgg = !!(profile?.familyType) || isMaleGender || isFemaleGender;
@@ -4813,9 +4843,9 @@ NEVER promise to search without actually calling the search tool. NEVER end with
 
         // Gender - also handles single-word quick reply responses ("A man", "A woman")
         if (!userRecord.gender) {
-          if (/\bi('m| am) (a )?wom[ae]n\b|\bi('m| am) female\b|\bas a woman\b|\bsingle (mom|mother|woman)\b|^a woman$|^woman$|^female$/i.test(msg)) {
+          if (/\bi('m| am) (a )?wom[ae]n\b|\bi('m| am) female\b|\bas a woman\b|\bsingle (mom|mother|woman)\b|^a woman$|^woman$|^female$|^solo woman$|^two moms$/i.test(msg)) {
             autoUserData.gender = "I'm a woman";
-          } else if (/\bi('m| am) (a )?m[ae]n\b|\bi('m| am) male\b|\bas a man\b|\bsingle (dad|father|man)\b|\btwo dads\b|^a man$|^man$|^male$/i.test(msg)) {
+          } else if (/\bi('m| am) (a )?m[ae]n\b|\bi('m| am) male\b|\bas a man\b|\bsingle (dad|father|man)\b|\btwo dads\b|^a man$|^man$|^male$|^solo man$/i.test(msg)) {
             autoUserData.gender = "I'm a man";
           } else if (/^non.?binary$|^i'm non.?binary$/i.test(msg)) {
             autoUserData.gender = "I'm non-binary";

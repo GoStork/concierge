@@ -374,9 +374,9 @@ export const TEST_CASES: TestCaseDef[] = [
   {
     id: "TM-11", persona: "two-moms",
     name: "TM-11: Has embryos (2, tested) - Partner A eggs - Partner B carries - Has clinic",
-    desc: "Two moms with existing tested embryos, partner carries",
+    desc: "Two moms with existing tested embryos, partner carries - Phase 2 validation only (no match cycle)",
     interestedServices: [],
-    messageCount: 15,
+    messageCount: 12,
   },
   {
     id: "TM-12", persona: "two-moms",
