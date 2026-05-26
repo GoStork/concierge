@@ -2463,6 +2463,36 @@ chatRouter.post("/api/billing/parent-confirm-ready", requireAuth, async (req, re
             console.log(`[parent-confirm-ready] Invoice ${result.invoice.id} auto-created for session ${providerSessionId}`);
           } else if (result.status === "skipped") {
             console.log(`[parent-confirm-ready] Auto-trigger skipped: ${result.reason}`);
+          } else if (result.reason === "BILLING_IDENTITY_INCOMPLETE") {
+            // Provider hasn't completed Billing Identity (Legal Name / Tax ID / W-9).
+            // Nudge the provider to complete it - a cost sheet won't unblock this.
+            console.warn(`[parent-confirm-ready] Auto-trigger blocked: ${result.reason} - ${result.message}`);
+            try {
+              const providerSession = await prisma.aiChatSession.findUnique({
+                where: { id: providerSessionId },
+                include: { provider: { include: { users: { select: { id: true } } } } },
+              });
+              await prisma.aiChatMessage.create({
+                data: {
+                  sessionId: providerSessionId,
+                  role: "assistant",
+                  content: `${parentName} just confirmed they're ready to proceed, but we can't issue their invoice yet. ${result.message}`,
+                  senderType: "system",
+                  senderName: "GoStork",
+                },
+              });
+              for (const u of providerSession?.provider?.users || []) {
+                await prisma.inAppNotification.create({
+                  data: {
+                    userId: u.id,
+                    eventType: "BILLING_IDENTITY_INCOMPLETE",
+                    payload: { providerId: providerSession?.provider?.id ?? null, message: result.message },
+                  },
+                }).catch(() => {});
+              }
+            } catch (nudgeErr: any) {
+              console.error("[parent-confirm-ready] billing-identity nudge failed:", nudgeErr.message);
+            }
           } else {
             // Blocked - record the reminder, nudge the provider via chat, email, and SMS.
             console.warn(`[parent-confirm-ready] Auto-trigger blocked: ${result.reason} - ${result.message}`);
@@ -2579,6 +2609,58 @@ chatRouter.patch("/api/billing/readiness-prompt-respond", requireAuth, async (re
   }
 });
 
+// Handle PandaDoc webhook events for provider W-9 documents.
+// Returns true if the document was a recognized W-9 (so the caller stops looking).
+async function handleW9Webhook(eventType: string, documentId: string, event: any): Promise<boolean> {
+  const w9 = await prisma.providerW9.findUnique({
+    where: { pandaDocDocumentId: documentId },
+    include: { provider: { select: { id: true, name: true } } },
+  });
+  if (!w9) return false;
+
+  const isCompleted = eventType === "document_state_changed" && event?.data?.status === "document.completed";
+  if (!isCompleted) return true; // recognized W-9 event, nothing to do for this state
+  if (w9.status === "COMPLETED") return true; // idempotent
+
+  await prisma.providerW9.update({
+    where: { id: w9.id },
+    data: { status: "COMPLETED", completedAt: new Date() },
+  });
+  console.log(`[W-9 webhook] Provider ${w9.providerId} W-9 completed`);
+
+  try {
+    const admins = await prisma.user.findMany({ where: { roles: { has: "GOSTORK_ADMIN" } }, select: { id: true, email: true, name: true } });
+    const { getNestApp } = await import("./nest-app-ref");
+    const nestApp = getNestApp();
+    if (nestApp) {
+      const { NotificationService } = await import("./src/modules/notifications/notification.service");
+      const notifService = nestApp.get(NotificationService);
+      for (const admin of admins) {
+        if (!admin.email) continue;
+        await notifService.sendW9CompletedNotification({
+          adminUserId: admin.id,
+          adminEmail: admin.email,
+          adminName: admin.name,
+          providerName: w9.provider?.name || "Provider",
+          providerId: w9.providerId,
+        });
+      }
+    }
+    for (const admin of admins) {
+      await prisma.inAppNotification.create({
+        data: {
+          userId: admin.id,
+          eventType: "W9_COMPLETED",
+          payload: { providerId: w9.providerId, message: `${w9.provider?.name || "A provider"} has completed their W-9` },
+        },
+      }).catch(() => {});
+    }
+  } catch (err: any) {
+    console.error(`[W-9 webhook] Notification failed: ${err.message}`);
+  }
+  return true;
+}
+
 chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
   // Always respond 200 first - PandaDoc disables webhooks after repeated non-200 responses
   res.json({ received: true });
@@ -2601,7 +2683,9 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
         },
       }) as any;
       if (!agreement) {
-        console.log(`[PandaDoc webhook] No agreement found for documentId: ${documentId}`);
+        // Not an agreement - it may be a provider W-9 document.
+        const handledW9 = await handleW9Webhook(eventType, documentId, event);
+        if (!handledW9) console.log(`[PandaDoc webhook] No agreement or W-9 found for documentId: ${documentId}`);
         continue;
       }
 

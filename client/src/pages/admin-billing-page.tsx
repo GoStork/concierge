@@ -22,6 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
+import { W9TemplateConfig } from "@/components/w9-template-config";
 
 function formatCents(cents: number, currency = "USD"): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
@@ -114,6 +115,9 @@ export default function AdminBillingPage() {
         <StatCard label="Provider Payouts Sent" value={formatCents(stats.totalProviderPayouts)} icon={CheckCircle2}  />
         <StatCard label="Pending"               value={formatCents(stats.pendingAmount)}        icon={Clock}         sub="Awaiting payment" />
       </div>
+
+      {/* W-9 template - global form every provider signs */}
+      <W9TemplateConfig />
 
       {/* Tabs */}
       <div className="flex gap-1 border-b">

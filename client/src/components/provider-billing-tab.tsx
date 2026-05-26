@@ -6,11 +6,21 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
-import { Loader2, Save, DollarSign, Percent } from "lucide-react";
+import { useNavigate, Link } from "react-router-dom";
+import { Loader2, Save, DollarSign, Percent, FileText, Send, Download, Check, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { InvoiceStatusBadge } from "./invoice-status-badge";
+
+interface W9Status {
+  templateConfigured: boolean;
+  templateName: string | null;
+  w9Id: string | null;
+  status: "NOT_SENT" | "SENT" | "COMPLETED" | "ERROR";
+  requestedAt: string | null;
+  completedAt: string | null;
+}
 
 function formatCents(cents: number, currency = "USD"): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
@@ -165,6 +175,41 @@ export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [feeConfigGetUrl] });
       queryClient.invalidateQueries({ queryKey: [brandGetUrl] });
+    },
+  });
+
+  // ── W-9 status + actions ──────────────────────────────────────────────────
+  const navigate = useNavigate();
+  const w9GetUrl = isProviderMode ? "/api/provider/w9" : `/api/admin/providers/${providerId}/w9`;
+  const { data: w9, isLoading: w9Loading } = useQuery<W9Status>({
+    queryKey: [w9GetUrl],
+    queryFn: async () => {
+      const res = await fetch(w9GetUrl, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load W-9 status");
+      return res.json();
+    },
+  });
+
+  // Admin sends the W-9 request to the agency.
+  const w9SendMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/admin/providers/${providerId}/w9/send`, { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Failed to send W-9 request");
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [w9GetUrl] }),
+  });
+
+  // Provider self-initiates filling the W-9, then opens the signing page.
+  const w9FillMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/provider/w9/fill`, { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Failed to open W-9");
+      return res.json();
+    },
+    onSuccess: (data: { w9Id: string }) => {
+      queryClient.invalidateQueries({ queryKey: [w9GetUrl] });
+      if (data?.w9Id) navigate(`/w9/${data.w9Id}`);
     },
   });
 
@@ -402,18 +447,18 @@ export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "
           </div>
         )}
 
-        {/* Billing identity - used in the payment-receipt PDF sent to parents
-            after they pay an invoice. Both fields are optional. */}
-        <div className="space-y-4 border-t pt-4">
+        {/* Billing Identity - Legal Name, Tax ID, and W-9. All required before
+            any invoice (manual or automatic) can be sent for this provider. */}
+        <div className="space-y-4 rounded-xl border p-5 bg-secondary/30">
           <div>
             <h4 className="text-sm font-medium">Billing Identity</h4>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Used on the receipt PDF parents download for FSA / HSA / insurance reimbursement.
+              Required before invoices can be sent. Used on the receipt PDF parents download for FSA / HSA / insurance reimbursement.
             </p>
           </div>
 
           <div className="space-y-1.5">
-            <Label>Legal Name <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Label>Legal Name <span style={{ color: "hsl(var(--brand-error))" }}>*</span></Label>
             <Input
               placeholder="e.g. Eggceptional Fertility LLC"
               value={legalName}
@@ -426,7 +471,7 @@ export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "
           </div>
 
           <div className="space-y-1.5">
-            <Label>Tax ID / EIN <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Label>Tax ID / EIN <span style={{ color: "hsl(var(--brand-error))" }}>*</span></Label>
             <Input
               placeholder="e.g. 12-3456789"
               value={taxId}
@@ -434,7 +479,92 @@ export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "
               data-testid="input-tax-id"
             />
             <p className="text-xs text-muted-foreground">
-              Shown in the receipt footer so parents can submit it for reimbursement. Leave blank to omit.
+              Shown in the receipt footer so parents can submit it for reimbursement.
+            </p>
+          </div>
+
+          {/* W-9 record */}
+          <div className="space-y-1.5">
+            <Label>W-9 <span style={{ color: "hsl(var(--brand-error))" }}>*</span></Label>
+            <div className="flex items-center gap-3 rounded-[var(--radius)] border p-3 bg-background">
+              <FileText className="w-4 h-4 text-primary shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">W-9 Form</p>
+                <p className="text-xs text-muted-foreground">
+                  {w9Loading ? "Loading..."
+                    : !w9?.templateConfigured ? (isProviderMode ? "Not available yet" : "No W-9 template configured")
+                    : w9.status === "COMPLETED" ? `Completed${w9.completedAt ? ` ${new Date(w9.completedAt).toLocaleDateString()}` : ""}`
+                    : w9.status === "SENT" ? (isProviderMode ? "Awaiting your signature" : "Sent - awaiting signature")
+                    : w9.status === "ERROR" ? "Something went wrong - try again"
+                    : (isProviderMode ? "Ready to fill out" : "Not sent yet")}
+                </p>
+              </div>
+
+              {/* Completed - both modes can view + download */}
+              {w9?.status === "COMPLETED" && w9.w9Id && (
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="flex items-center gap-1 text-xs font-medium" style={{ color: "hsl(var(--brand-success))" }}>
+                    <Check className="w-3.5 h-3.5" /> Completed
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={() => navigate(`/w9/${w9.w9Id}`)} title="View">
+                    <ExternalLink className="w-4 h-4" />
+                  </Button>
+                  <a href={`/api/w9/${w9.w9Id}/download`} target="_blank" rel="noopener noreferrer" title="Download"
+                    className="inline-flex items-center justify-center h-9 w-9 rounded-[var(--radius)] hover:bg-muted">
+                    <Download className="w-4 h-4" />
+                  </a>
+                </div>
+              )}
+
+              {/* Admin actions */}
+              {!isProviderMode && w9?.templateConfigured && w9.status !== "COMPLETED" && (
+                <div className="flex items-center gap-2 shrink-0">
+                  {w9.status === "SENT" && w9.w9Id && (
+                    <Button variant="ghost" size="sm" onClick={() => navigate(`/w9/${w9.w9Id}`)} title="View">
+                      <ExternalLink className="w-4 h-4" />
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={w9SendMutation.isPending}
+                    onClick={() => w9SendMutation.mutate()}
+                  >
+                    {w9SendMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+                    {w9.status === "SENT" ? "Resend" : "Send W-9 request"}
+                  </Button>
+                </div>
+              )}
+              {!isProviderMode && !w9?.templateConfigured && !w9Loading && (
+                <Link to="/admin/billing" className="text-sm font-medium shrink-0" style={{ color: "hsl(var(--primary))" }}>
+                  Set up template
+                </Link>
+              )}
+
+              {/* Provider actions */}
+              {isProviderMode && w9?.templateConfigured && w9.status !== "COMPLETED" && (
+                <Button
+                  size="sm"
+                  disabled={w9FillMutation.isPending}
+                  onClick={() => w9FillMutation.mutate()}
+                  style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}
+                  className="shrink-0"
+                >
+                  {w9FillMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
+                  Fill out W-9
+                </Button>
+              )}
+            </div>
+            {w9SendMutation.isError && (
+              <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{(w9SendMutation.error as Error).message}</p>
+            )}
+            {w9FillMutation.isError && (
+              <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{(w9FillMutation.error as Error).message}</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {isProviderMode
+                ? "Complete and sign your W-9 - GoStork needs it before any payouts can be processed."
+                : "Send the W-9 to the agency to fill and sign, or download it once completed."}
             </p>
           </div>
         </div>

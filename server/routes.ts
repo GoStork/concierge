@@ -7,7 +7,7 @@ import { setupAuth, requireAuth, requireRole } from "./auth";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { prisma } from "./db";
-import { generateAgreement, syncTemplateToPandaDoc, createTemplateEditingSession, generateAgreementFromTemplate, getAgreementSigningSession, refreshTemplateRoles } from "./pandadoc-service";
+import { generateAgreement, syncTemplateToPandaDoc, createTemplateEditingSession, generateAgreementFromTemplate, getAgreementSigningSession, refreshTemplateRoles, syncW9TemplateToPandaDoc, createW9TemplateEditingSession, refreshW9TemplateRoles, ensureW9Document, getW9SigningSession } from "./pandadoc-service";
 
 function escapeHtml(str: string): string {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
@@ -1052,6 +1052,223 @@ export async function registerRoutes(
       res.json({ signingUrl });
     } catch (e: any) {
       console.error("Signing session error:", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ───────────────────────── W-9 flow ─────────────────────────
+  // GoStork owns one global W-9 template; each provider signs their own copy.
+
+  function appBaseUrl(): string {
+    return process.env.APP_URL
+      ? process.env.APP_URL.replace(/\/+$/, "")
+      : (process.env.NODE_ENV === "development" ? `http://localhost:${process.env.PORT || 5001}` : "https://app.gostork.com");
+  }
+
+  async function buildW9Status(providerId: string) {
+    const [settings, w9] = await Promise.all([
+      prisma.siteSettings.findFirst({ select: { w9TemplateUrl: true, w9TemplateOriginalName: true, w9PandaDocTemplateId: true } }),
+      prisma.providerW9.findUnique({ where: { providerId } }),
+    ]);
+    return {
+      templateConfigured: !!(settings?.w9TemplateUrl && settings?.w9PandaDocTemplateId),
+      templateName: settings?.w9TemplateOriginalName || null,
+      w9Id: w9?.id || null,
+      status: w9?.status || "NOT_SENT",
+      requestedAt: w9?.requestedAt || null,
+      completedAt: w9?.completedAt || null,
+    };
+  }
+
+  // ── Admin: global W-9 template management ──
+  app.get("/api/admin/w9/template", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
+    const settings = await prisma.siteSettings.findFirst({
+      select: { w9TemplateUrl: true, w9TemplateOriginalName: true, w9PandaDocTemplateId: true, w9PandaDocRoles: true },
+    });
+    res.json(settings || {});
+  });
+
+  app.post("/api/admin/w9/template", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
+    const { url, originalName } = req.body || {};
+    if (!url || typeof url !== "string") return res.status(400).json({ message: "url is required" });
+    try {
+      const existing = await prisma.siteSettings.findFirst({ select: { id: true } });
+      if (!existing) return res.status(400).json({ message: "Site settings not initialized" });
+      // New file invalidates the previously synced PandaDoc template + roles.
+      await prisma.siteSettings.update({
+        where: { id: existing.id },
+        data: { w9TemplateUrl: url, w9TemplateOriginalName: originalName || null, w9PandaDocTemplateId: null, w9PandaDocRoles: null },
+      });
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("W-9 template save error:", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.delete("/api/admin/w9/template", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
+    const existing = await prisma.siteSettings.findFirst({ select: { id: true } });
+    if (existing) {
+      await prisma.siteSettings.update({
+        where: { id: existing.id },
+        data: { w9TemplateUrl: null, w9TemplateOriginalName: null, w9PandaDocTemplateId: null, w9PandaDocRoles: null },
+      });
+    }
+    res.json({ success: true });
+  });
+
+  app.post("/api/admin/w9/sync-template", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
+    try {
+      const templateId = await syncW9TemplateToPandaDoc();
+      res.json({ templateId });
+    } catch (e: any) {
+      console.error("W-9 sync template error:", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/admin/w9/template-editor-session", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
+    try {
+      const eToken = await createW9TemplateEditingSession(user.email);
+      res.json({ eToken });
+    } catch (e: any) {
+      console.error("W-9 template editor session error:", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/admin/w9/refresh-roles", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
+    try {
+      const result = await refreshW9TemplateRoles();
+      res.json(result);
+    } catch (e: any) {
+      console.error("W-9 refresh roles error:", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── Admin: per-provider W-9 status + send request ──
+  app.get("/api/admin/providers/:providerId/w9", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
+    res.json(await buildW9Status(req.params.providerId as string));
+  });
+
+  app.post("/api/admin/providers/:providerId/w9/send", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
+    const providerId = req.params.providerId as string;
+    try {
+      const { w9, signer } = await ensureW9Document({ providerId, requestedByUserId: user.id });
+      const provider = await prisma.provider.findUnique({ where: { id: providerId }, select: { name: true } });
+
+      try {
+        const { getNestApp } = await import("./nest-app-ref");
+        const nestApp = getNestApp();
+        if (nestApp) {
+          const { NotificationService } = await import("./src/modules/notifications/notification.service");
+          const notifService = nestApp.get(NotificationService);
+          await notifService.sendW9RequestNotification({
+            signerUserId: signer.userId,
+            signerEmail: signer.email,
+            signerName: signer.name || signer.email,
+            providerName: provider?.name || "Provider",
+            signingUrl: `${appBaseUrl()}/w9/${w9.id}`,
+          });
+        }
+      } catch (notifErr: any) {
+        console.error("[W-9] Request notification failed:", notifErr?.message);
+      }
+
+      res.json({ success: true, w9Id: w9.id, status: w9.status });
+    } catch (e: any) {
+      console.error("W-9 send error:", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── Provider: own W-9 status + self-initiated fill ──
+  app.get("/api/provider/w9", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    if (!isProviderUser(user) || !user.providerId) return res.status(403).json({ message: "Forbidden" });
+    res.json(await buildW9Status(user.providerId));
+  });
+
+  app.post("/api/provider/w9/fill", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    if (!isProviderUser(user) || !user.providerId) return res.status(403).json({ message: "Forbidden" });
+    try {
+      const { w9 } = await ensureW9Document({ providerId: user.providerId, requestedByUserId: null });
+      res.json({ success: true, w9Id: w9.id, status: w9.status });
+    } catch (e: any) {
+      console.error("W-9 fill error:", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── Shared: signing session + download ──
+  app.get("/api/w9/:id/signing-session", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    try {
+      const w9 = await prisma.providerW9.findUnique({
+        where: { id: req.params.id as string },
+        select: { id: true, providerId: true, status: true },
+      });
+      if (!w9) return res.status(404).json({ message: "W-9 not found" });
+      const isAdmin = isAdminUser(user);
+      if (!isAdmin && user.providerId !== w9.providerId) return res.status(403).json({ message: "Forbidden" });
+
+      if (w9.status === "COMPLETED") {
+        return res.json({ isCompletedView: true, status: w9.status, w9Id: w9.id, providerId: w9.providerId });
+      }
+      const { signingUrl, providerId } = await getW9SigningSession(w9.id, user);
+      res.json({ isCompletedView: false, signingUrl, w9Id: w9.id, providerId });
+    } catch (e: any) {
+      console.error("W-9 signing session error:", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/w9/:id/download", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const w9 = await prisma.providerW9.findUnique({
+        where: { id: req.params.id as string },
+        select: { providerId: true, pandaDocDocumentId: true },
+      });
+      if (!w9) return res.status(404).json({ message: "W-9 not found" });
+      if (!isAdminUser(user) && user.providerId !== w9.providerId) return res.status(403).json({ message: "Forbidden" });
+      if (!w9.pandaDocDocumentId) return res.status(400).json({ message: "No PandaDoc document linked" });
+
+      const apiKey = process.env.PANDADOC_API_KEY;
+      if (!apiKey) return res.status(500).json({ message: "PandaDoc not configured" });
+
+      const pdRes = await fetch(
+        `https://api.pandadoc.com/public/v1/documents/${w9.pandaDocDocumentId}/download`,
+        { headers: { "Authorization": `API-Key ${apiKey}` } },
+      );
+      if (!pdRes.ok) {
+        const err = await pdRes.text();
+        console.error("[W-9 download] PandaDoc error:", err);
+        return res.status(502).json({ message: "Failed to download from PandaDoc" });
+      }
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename="w9-${w9.pandaDocDocumentId}.pdf"`);
+      res.send(Buffer.from(await pdRes.arrayBuffer()));
+    } catch (e: any) {
+      console.error("[W-9 download]", e.message);
       res.status(500).json({ message: e.message });
     }
   });

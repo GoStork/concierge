@@ -26,7 +26,9 @@ export type NotificationChannel =
   | "invoice_reminder"
   | "invoice_paid_admin"
   | "consultation_ended"
-  | "billing_admin";
+  | "billing_admin"
+  | "w9_request"
+  | "w9_completed";
 
 
 const TWILIO_TEMPLATES = {
@@ -1963,6 +1965,75 @@ export class NotificationService implements OnModuleInit {
       await this.sendRawEmail(params.recipientEmail, subject, html)
         .catch(e => this.logger.error(`Failed to send untracked agreement-signed email to ${params.recipientEmail}: ${e.message}`));
     }
+  }
+
+  async sendW9RequestNotification(params: {
+    /** Provider signer userId. Null for non-GoStork signers (email still sends, no Notification row). */
+    signerUserId: string | null;
+    signerEmail: string;
+    signerName: string;
+    providerName: string;
+    /** GoStork page that loads the embedded signing session. */
+    signingUrl: string;
+  }) {
+    const brandData = await this.getBrandData();
+    const firstName = getFirstName(params.signerName) || "there";
+    const companyName = brandData.companyName;
+    const subject = `Action required: complete your W-9 for ${companyName}`;
+
+    const html = buildBrandedEmail(brandData, {
+      title: "Complete Your W-9",
+      greeting: `Hi ${firstName},`,
+      body: `${this.escapeHtml(companyName)} needs a completed W-9 form for <strong>${this.escapeHtml(params.providerName)}</strong>. Please fill out and sign the form using the button below - it only takes a minute.`,
+      alertBox: { text: "Your W-9 is required before payouts can be processed.", type: "info" },
+      buttons: [{ label: "Fill Out & Sign W-9", url: params.signingUrl }],
+      footer: "If you have any questions about this request, please reply to this email.",
+    });
+
+    if (params.signerUserId) {
+      await this.dispatchNotification({
+        userId: params.signerUserId,
+        type: "EMAIL",
+        channel: "w9_request",
+        recipient: params.signerEmail,
+        subject,
+        body: html,
+      }).catch(e => this.logger.error(`Failed to send W-9 request email to ${params.signerEmail}: ${e.message}`));
+    } else {
+      await this.sendRawEmail(params.signerEmail, subject, html)
+        .catch(e => this.logger.error(`Failed to send W-9 request email to ${params.signerEmail}: ${e.message}`));
+    }
+  }
+
+  async sendW9CompletedNotification(params: {
+    adminUserId: string;
+    adminEmail: string;
+    adminName: string | null;
+    providerName: string;
+    providerId: string;
+  }) {
+    const brandData = await this.getBrandData();
+    const firstName = params.adminName ? getFirstName(params.adminName) : "there";
+    const providerUrl = `${getBaseUrl()}/admin/providers/${params.providerId}?tab=billing`;
+    const subject = `W-9 completed - ${params.providerName}`;
+
+    const html = buildBrandedEmail(brandData, {
+      title: "W-9 Completed",
+      greeting: `Hi ${firstName},`,
+      body: `<strong>${this.escapeHtml(params.providerName)}</strong> has completed and signed their W-9 form. You can view and download it from the provider's Billing tab.`,
+      alertBox: { text: "The signed W-9 is ready to view and download.", type: "success" },
+      buttons: [{ label: "View W-9", url: providerUrl }],
+      footer: "You can download the signed W-9 from the provider's Billing tab at any time.",
+    });
+
+    await this.dispatchNotification({
+      userId: params.adminUserId,
+      type: "EMAIL",
+      channel: "w9_completed",
+      recipient: params.adminEmail,
+      subject,
+      body: html,
+    }).catch(e => this.logger.error(`Failed to send W-9 completed email to ${params.adminEmail}: ${e.message}`));
   }
 
   private async sendRawSms(to: string, body: string) {

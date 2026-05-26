@@ -142,6 +142,8 @@ export class BillingService {
       include: {
         referralFeeConfig: true,
         services: { include: { providerType: true }, take: 1 },
+        brandSettings: { select: { legalName: true, taxId: true } },
+        w9: { select: { status: true } },
       },
     });
     if (!provider) throw new NotFoundException("Provider not found");
@@ -150,6 +152,18 @@ export class BillingService {
     if (!feeConfig || !feeConfig.isActive) {
       throw new BadRequestException(
         "No active referral fee configured for this provider. GoStork admin must set up billing before an invoice can be issued.",
+      );
+    }
+
+    // Billing Identity must be complete before any invoice (manual or automatic)
+    // can be issued: Legal Name, Tax ID, and a signed W-9 are all required.
+    const missingIdentity: string[] = [];
+    if (!provider.brandSettings?.legalName?.trim()) missingIdentity.push("Legal Name");
+    if (!provider.brandSettings?.taxId?.trim()) missingIdentity.push("Tax ID");
+    if (provider.w9?.status !== "COMPLETED") missingIdentity.push("W-9");
+    if (missingIdentity.length > 0) {
+      throw new BadRequestException(
+        `Billing Identity is incomplete - please add ${missingIdentity.join(", ")} in the Billing tab before sending an invoice.`,
       );
     }
 
@@ -286,7 +300,7 @@ export class BillingService {
   async createInvoiceFromReadiness(sessionId: string): Promise<
     | { status: "created"; invoice: Awaited<ReturnType<BillingService["createInvoice"]>> }
     | { status: "skipped"; reason: "ALREADY_OPEN" | "NO_PROVIDER" }
-    | { status: "blocked"; reason: "NO_QUOTE" | "NO_CONFIG" | "NO_DEFAULT_PAYMENT"; message: string }
+    | { status: "blocked"; reason: "NO_QUOTE" | "NO_CONFIG" | "NO_DEFAULT_PAYMENT" | "BILLING_IDENTITY_INCOMPLETE"; message: string }
   > {
     const session = await this.prisma.aiChatSession.findUnique({
       where: { id: sessionId },
@@ -311,6 +325,7 @@ export class BillingService {
     } catch (err: any) {
       const message = err?.message || "Could not create invoice";
       if (/No active referral fee/.test(message)) return { status: "blocked", reason: "NO_CONFIG", message };
+      if (/Billing Identity is incomplete/.test(message)) return { status: "blocked", reason: "BILLING_IDENTITY_INCOMPLETE", message };
       if (/cost sheet/.test(message)) return { status: "blocked", reason: "NO_QUOTE", message };
       if (/Default First Payment/.test(message)) return { status: "blocked", reason: "NO_DEFAULT_PAYMENT", message };
       throw err;

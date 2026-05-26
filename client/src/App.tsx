@@ -51,6 +51,7 @@ import OnboardingAiIntroPage from "@/pages/onboarding-ai-intro-page";
 import OnboardingAiReadyPage from "@/pages/onboarding-ai-ready-page";
 import AgreementsSigningPage from "@/pages/agreements-signing-page";
 import AgreementsGuestSigningPage from "@/pages/agreements-guest-signing-page";
+import W9SigningPage from "@/pages/w9-signing-page";
 import PaymentPage from "@/pages/payment-page";
 import AdminBillingPage from "@/pages/admin-billing-page";
 import MyInvoicesPage from "@/pages/my-invoices-page";
@@ -161,6 +162,7 @@ function AppRoutes() {
         <Route path="/chat/:entityId/:subjectId" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
         <Route path="/agreements/:id" element={<ProtectedRoute><AgreementsSigningPage /></ProtectedRoute>} />
         <Route path="/agreements/guest/:token" element={<AgreementsGuestSigningPage />} />
+        <Route path="/w9/:id" element={<ProtectedRoute><W9SigningPage /></ProtectedRoute>} />
         {/* Public payment page - no auth required */}
         <Route path="/pay/:paymentToken" element={<PaymentPage />} />
         {/* Billing routes */}

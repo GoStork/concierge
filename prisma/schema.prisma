@@ -87,6 +87,7 @@ model Provider {
   invoices                              Invoice[]
   providerQuotes                        ProviderQuote[]
   bankAccount                           ProviderBankAccount?
+  w9                                    ProviderW9?
 }
 
 model ProviderType {
@@ -889,6 +890,12 @@ model SiteSettings {
   // GoStork AI Concierge Feature Flags
   enableAiConcierge    Boolean @default(false)
   parentExperienceMode String  @default("MARKETPLACE_ONLY")
+
+  // GoStork W-9 template (single global PandaDoc template that every provider signs)
+  w9TemplateUrl          String?
+  w9TemplateOriginalName String?
+  w9PandaDocTemplateId   String?
+  w9PandaDocRoles        String? // JSON array of role names in signing order
 }
 
 model Matchmaker {
@@ -1478,4 +1485,25 @@ model ProviderBankAccount {
   updatedAt             DateTime  @updatedAt
 
   provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+}
+
+// Per-provider W-9 record. Mirrors the agreement signing flow, but GoStork is the
+// sender (template owner) and the agency is the signer. One row per provider.
+model ProviderW9 {
+  id                 String    @id @default(uuid())
+  providerId         String    @unique
+  pandaDocDocumentId String?   @unique
+  pandaDocViewUrl    String?
+  status             String    @default("NOT_SENT") // NOT_SENT | SENT | COMPLETED | ERROR
+  signerEmail        String?
+  signerUserId       String?
+  requestedByUserId  String? // GoStork admin who sent the request; null if provider self-initiated
+  requestedAt        DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
 }
