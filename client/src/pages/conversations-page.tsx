@@ -2013,8 +2013,7 @@ export default function ConversationsPage() {
           ) : isConsultationBooked ? (
             <Button
               size="sm"
-              className="h-8 text-xs text-primary-foreground gap-1"
-              style={{ backgroundColor: brandColor }}
+              className="gap-1.5 text-xs"
               onClick={() => joinMutation.mutate(selectedSessionId!)}
               disabled={joinMutation.isPending}
               data-testid="btn-join-group-chat"
@@ -2089,8 +2088,7 @@ export default function ConversationsPage() {
                 <p className="text-sm text-muted-foreground mb-2">This parent has booked a consultation. Join the group chat to communicate directly.</p>
                 <Button
                   size="sm"
-                  className="text-primary-foreground gap-1"
-                  style={{ backgroundColor: brandColor }}
+                  className="gap-1.5 text-xs"
                   onClick={() => joinMutation.mutate(selectedSessionId!)}
                   disabled={joinMutation.isPending}
                   data-testid="btn-join-group-chat-bottom"
