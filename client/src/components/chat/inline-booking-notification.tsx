@@ -88,7 +88,7 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
     : [];
 
   return (
-    <div className="mx-auto max-w-[85%] my-3" data-testid={`inline-booking-card-${booking.id}`}>
+    <div className="my-3" data-testid={`inline-booking-card-${booking.id}`}>
       <div
         className="bg-card border border-border overflow-hidden"
         style={{ borderRadius: "var(--container-radius, 0.5rem)" }}
@@ -109,33 +109,110 @@ export function InlineBookingNotification({ booking, brandColor, onUpdate }: Inl
         </div>
 
         <div className="p-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider ${
-              isCancelled
-                ? "bg-destructive/10 text-destructive"
-                : isRescheduled
-                ? "bg-muted text-muted-foreground"
-                : wasCompleted
-                ? "bg-muted text-muted-foreground"
-                : (isNoShow || isParentNoShow || isProviderNoShow)
-                ? "bg-muted text-muted-foreground"
-                : isConfirmed
-                ? "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))]"
-                : isPending
-                ? "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]"
-                : "bg-muted text-foreground"
-            }`}>
-              {isRescheduled ? "Rescheduled"
-                : isParentCancelled ? "Parent Cancelled"
-                : isProviderCancelled ? "Provider Cancelled"
-                : isCancelled ? "Cancelled"
-                : wasCompleted ? "Completed"
-                : isParentNoShow ? "Parent No Show"
-                : isProviderNoShow ? "Provider No Show"
-                : isNoShow ? "No Show"
-                : isPending ? (isAdminHost ? "Awaiting Confirmation" : "Pending Approval")
-                : booking.status}
-            </span>
+          {/* Hero status display - matches parent /chat InlineBookingCalendar so all
+              three views (parent, provider, admin) show the same state visual. */}
+          <div className="text-center space-y-1 py-1">
+            {isParentCancelled ? (
+              <>
+                <div className="w-12 h-12 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
+                  <X className="w-6 h-6 text-destructive" />
+                </div>
+                <p className="font-bold text-sm">Parent Cancelled</p>
+                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">
+                  Parent Cancelled
+                </span>
+              </>
+            ) : isProviderCancelled ? (
+              <>
+                <div className="w-12 h-12 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
+                  <X className="w-6 h-6 text-destructive" />
+                </div>
+                <p className="font-bold text-sm">Provider Cancelled</p>
+                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">
+                  Provider Cancelled
+                </span>
+              </>
+            ) : isCancelled ? (
+              <>
+                <div className="w-12 h-12 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
+                  <X className="w-6 h-6 text-destructive" />
+                </div>
+                <p className="font-bold text-sm">Meeting Cancelled</p>
+                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">
+                  Cancelled
+                </span>
+              </>
+            ) : wasCompleted ? (
+              <>
+                <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
+                  <Check className="w-6 h-6 text-muted-foreground" />
+                </div>
+                <p className="font-bold text-sm">Meeting Completed</p>
+                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                  Completed
+                </span>
+              </>
+            ) : isParentNoShow ? (
+              <>
+                <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
+                  <Clock className="w-6 h-6 text-muted-foreground" />
+                </div>
+                <p className="font-bold text-sm">Parent No Show</p>
+                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                  Parent No Show
+                </span>
+              </>
+            ) : isProviderNoShow ? (
+              <>
+                <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
+                  <Clock className="w-6 h-6 text-muted-foreground" />
+                </div>
+                <p className="font-bold text-sm">Provider No Show</p>
+                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                  Provider No Show
+                </span>
+              </>
+            ) : isNoShow ? (
+              <>
+                <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
+                  <Clock className="w-6 h-6 text-muted-foreground" />
+                </div>
+                <p className="font-bold text-sm">No Show</p>
+                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                  No Show
+                </span>
+              </>
+            ) : isConfirmed ? (
+              <>
+                <div className="w-12 h-12 mx-auto rounded-full bg-[hsl(var(--brand-success)/0.12)] flex items-center justify-center">
+                  <Check className="w-6 h-6 text-[hsl(var(--brand-success))]" />
+                </div>
+                <p className="font-bold text-sm">Confirmed</p>
+                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))]">
+                  Confirmed
+                </span>
+              </>
+            ) : isRescheduled ? (
+              <>
+                <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
+                  <CalendarClock className="w-6 h-6 text-muted-foreground" />
+                </div>
+                <p className="font-bold text-sm">Rescheduled</p>
+                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                  Rescheduled
+                </span>
+              </>
+            ) : isPending ? (
+              <>
+                <div className="w-12 h-12 mx-auto rounded-full bg-[hsl(var(--brand-warning)/0.12)] flex items-center justify-center">
+                  <Clock className="w-6 h-6 text-[hsl(var(--brand-warning))]" />
+                </div>
+                <p className="font-bold text-sm">{isAdminHost ? "Awaiting Confirmation" : "Pending Approval"}</p>
+                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]">
+                  {isAdminHost ? "Awaiting Confirmation" : "Pending Approval"}
+                </span>
+              </>
+            ) : null}
           </div>
 
           <div className="bg-muted/40 rounded-[var(--radius)] p-3 space-y-2.5 border border-border">

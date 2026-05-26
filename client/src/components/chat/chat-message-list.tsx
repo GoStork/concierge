@@ -20,6 +20,11 @@ interface ChatMessageListProps {
   nameLabel: (msg: SessionMessage) => string | null;
   /** Return the avatar URL for a left-side message, or null for initials fallback */
   msgAvatarUrl?: (msg: SessionMessage) => string | null;
+  /** Avatar URL for the AI/matchmaker, shown next to booking cards so they read as
+   *  "the AI delivered this" - matches the parent /chat page layout. */
+  aiAvatarUrl?: string | null;
+  /** Display name for the AI/matchmaker - used for avatar initial fallback. */
+  aiName?: string | null;
   onOpenInlineVideo?: (bookingId: string) => void;
   onBookingUpdate?: () => void;
   /** Test-ID prefix for message bubbles (default: "provider-msg") */
@@ -60,6 +65,8 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
     isOwnMessage,
     nameLabel,
     msgAvatarUrl,
+    aiAvatarUrl,
+    aiName,
     onOpenInlineVideo,
     onBookingUpdate,
     msgTestIdPrefix = "provider-msg",
@@ -86,19 +93,39 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
     (a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime(),
   );
 
-  const resolvedRadius = borderRadius !== undefined ? `${borderRadius}rem` : "var(--radius)";
+  // Bubble shape now driven by the chat-specific CSS variable so provider/admin
+  // match the parent's /chat page exactly. The `borderRadius` prop is kept as a
+  // last-resort fallback for callers that still pass it.
+  const resolvedRadius = `var(--chat-bubble-radius, ${borderRadius !== undefined ? `${borderRadius}rem` : "20px"})`;
 
   return (
     <>
       {merged.map((item, i) => {
         if (item.type === "booking") {
+          // Match the parent /chat layout: left-anchored with the AI/matchmaker
+          // avatar so the booking card reads as "the AI delivered this".
           return (
-            <InlineBookingNotification
-              key={`booking-${item.booking.id}`}
-              booking={item.booking}
-              brandColor={brandColor}
-              onUpdate={() => onBookingUpdate?.()}
-            />
+            <div key={`booking-${item.booking.id}`} className="flex items-start gap-2 px-1 pb-2">
+              <div className="w-8 h-8 rounded-full shrink-0 overflow-hidden mt-0.5">
+                {aiAvatarUrl ? (
+                  <img src={aiAvatarUrl} alt={aiName || "AI"} className="w-full h-full object-cover" />
+                ) : (
+                  <div
+                    className="w-full h-full flex items-center justify-center text-primary-foreground text-xs font-semibold"
+                    style={{ backgroundColor: brandColor }}
+                  >
+                    {aiName?.charAt(0) || "A"}
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0" style={{ maxWidth: "min(100%, 420px)" }}>
+                <InlineBookingNotification
+                  booking={item.booking}
+                  brandColor={brandColor}
+                  onUpdate={() => onBookingUpdate?.()}
+                />
+              </div>
+            </div>
           );
         }
         const msg = item.msg;
@@ -171,7 +198,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                 {/* Message bubble + timestamp below */}
                 {showBubble && (
                   <div className={`flex w-full ${own ? "justify-end" : "justify-start"}`}>
-                    <div className={`flex flex-col max-w-[75%] ${own ? "items-end" : "items-start"}`}>
+                    <div className={`flex flex-col ${own ? "items-end" : "items-start"}`} style={{ maxWidth: "var(--chat-bubble-max-width, 85%)" }}>
                       <div
                         className={`overflow-hidden font-ui ${
                           own
@@ -184,7 +211,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                           paddingRight: "var(--chat-bubble-px, 16px)",
                           paddingTop: "var(--chat-bubble-py, 11px)",
                           paddingBottom: "var(--chat-bubble-py, 11px)",
-                          fontSize: "var(--chat-bubble-font-size, 15px)",
+                          fontSize: "var(--chat-bubble-font-size, 21px)",
                           lineHeight: "var(--chat-bubble-line-height, 1.35)",
                           ...(own
                             ? { backgroundColor: brandColor }

@@ -1955,6 +1955,14 @@ export default function ConversationsPage() {
                   if (msg.role === "user") return getPhotoSrc((detail.user as any)?.photoUrl) || null;
                   return null;
                 }}
+                aiAvatarUrl={(() => {
+                  const mm = brand?.matchmakers?.find((m: any) => m.id === detail.matchmakerId);
+                  return mm?.avatarUrl ? getPhotoSrc(mm.avatarUrl) || mm.avatarUrl : null;
+                })()}
+                aiName={(() => {
+                  const mm = brand?.matchmakers?.find((m: any) => m.id === detail.matchmakerId);
+                  return mm?.name || "AI";
+                })()}
                 onOpenInlineVideo={setInlineVideoBookingId}
                 onBookingUpdate={() => sessionBookingsQuery.refetch()}
                 msgTestIdPrefix="provider-msg"
