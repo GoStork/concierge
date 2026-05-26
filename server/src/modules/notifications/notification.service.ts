@@ -2004,6 +2004,8 @@ export class NotificationService implements OnModuleInit {
     invoiceId: string;
     sessionId: string;
     dueAt?: Date | null;
+    /** Free-text description the provider attached to the invoice. */
+    description?: string | null;
   }) {
     const brandData = await this.getBrandData();
     const firstName = getFirstName(params.parentName) || "there";
@@ -2013,16 +2015,26 @@ export class NotificationService implements OnModuleInit {
       ? `<strong>Please complete payment by ${new Date(params.dueAt).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} to secure your match.</strong>`
       : "";
 
+    const detailRows: Array<{ label: string; value: string }> = [
+      { label: "Provider",      value: params.providerName },
+      { label: "Service",       value: params.serviceType },
+    ];
+    // Slot the provider's invoice description right under Service so it
+    // matches the chat card ("Reserve surrogate towards agency fee") and the
+    // parent has the same context they saw in chat.
+    if (params.description && params.description.trim().length > 0) {
+      detailRows.push({ label: "Description", value: params.description.trim() });
+    }
+    detailRows.push(
+      { label: "Total Amount",  value: params.serviceAmountFormatted },
+      { label: "GoStork Deposit Protection", value: "Included - your funds are protected" },
+    );
+
     const html = buildBrandedEmail(brandData, {
       title: "Payment Request",
       greeting: `Hi ${esc(firstName)}, you have a payment request from <strong>${providerName}</strong> via GoStork.`,
       body: urgencyNote,
-      detailRows: [
-        { label: "Provider",      value: params.providerName },
-        { label: "Service",       value: params.serviceType },
-        { label: "Total Amount",  value: params.serviceAmountFormatted },
-        { label: "GoStork Deposit Protection", value: "Included - your funds are protected" },
-      ],
+      detailRows,
       alertBox: params.dueAt ? { text: `Time-sensitive: payment required by ${new Date(params.dueAt).toLocaleString()}`, type: "warning" as const } : undefined,
       buttons: [{ label: "Pay Now Securely", url: params.paymentUrl }],
     });

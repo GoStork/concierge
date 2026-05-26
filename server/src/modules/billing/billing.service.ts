@@ -294,6 +294,7 @@ export class BillingService {
       invoiceId: invoice.id,
       sessionId: invoice.sessionId,
       dueAt: invoice.dueAt || null,
+      description: invoice.description || null,
     });
 
     // Track that initial notification was sent
