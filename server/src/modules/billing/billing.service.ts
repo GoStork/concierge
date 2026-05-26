@@ -39,36 +39,77 @@ export class BillingService {
 
   // ─── Fee computation ────────────────────────────────────────────────────────
 
+  /**
+   * Computes the GoStork referral fee and the provider's payout for a single invoice.
+   *
+   *  - `feeBasisCents`   = the quoted total cost (what the % is taken from). Ignored for FLAT.
+   *  - `parentPaysCents` = what the parent is actually being charged on this invoice.
+   *
+   * Payout is always `parentPaysCents - referralFeeAmount`, clamped so the provider
+   * never receives a negative amount.
+   */
   computeFee(
     config: { feeType: string; flatAmount: any; percentage: any },
-    serviceAmountCents: number,
+    feeBasisCents: number,
+    parentPaysCents: number,
   ): { referralFeeAmount: number; providerPayoutAmount: number } {
     let referralFeeAmount = 0;
     if (config.feeType === "FLAT") {
       referralFeeAmount = Math.round(Number(config.flatAmount) || 0);
     } else if (config.feeType === "PERCENTAGE") {
       const pct = Number(config.percentage) || 0;
-      referralFeeAmount = Math.round((serviceAmountCents * pct) / 100);
+      referralFeeAmount = Math.round((feeBasisCents * pct) / 100);
     }
-    // Clamp so we never take more than the full service amount
-    referralFeeAmount = Math.min(referralFeeAmount, serviceAmountCents);
-    const providerPayoutAmount = serviceAmountCents - referralFeeAmount;
+    // Provider payout must not go negative if the fee somehow exceeds what the parent pays.
+    referralFeeAmount = Math.min(referralFeeAmount, parentPaysCents);
+    const providerPayoutAmount = parentPaysCents - referralFeeAmount;
     return { referralFeeAmount, providerPayoutAmount };
+  }
+
+  // ─── Quote lookup ──────────────────────────────────────────────────────────
+
+  /** Latest non-superseded ProviderQuote for a session, or null. */
+  async getLatestProviderQuote(sessionId: string) {
+    return this.prisma.providerQuote.findFirst({
+      where: { sessionId, supersededAt: null },
+      orderBy: { createdAt: "desc" },
+    });
   }
 
   // ─── Invoice creation ───────────────────────────────────────────────────────
 
+  /**
+   * Creates an Invoice. Resolves what the parent pays and what fee basis to apply
+   * from the provider's ReferralFeeConfig + the latest ProviderQuote on the session.
+   *
+   * Loud failures (no silent fallback):
+   *  - PERCENTAGE fee config but no ProviderQuote exists -> BadRequest
+   *  - parentPaysBasis = TOTAL_COST but no ProviderQuote exists -> BadRequest
+   *  - parentPaysBasis = DEFAULT_FIRST_PAYMENT but defaultServiceAmount is unset -> BadRequest
+   *
+   * Use `createInvoiceFromReadiness` for the auto-trigger path; it converts these
+   * loud failures into a structured `blocked` result so the caller can send the
+   * provider a "please send a cost sheet" reminder instead of throwing.
+   */
   async createInvoice(params: {
     sessionId: string;
     providerId: string;
     parentUserId: string;
-    serviceAmountCents: number;
+    triggerSource?: "PROVIDER_MANUAL" | "ADMIN_MANUAL" | "AUTO_READINESS";
+    parentPaysOverrideCents?: number;
     description?: string;
     dueAt?: Date;
   }) {
-    const { sessionId, providerId, parentUserId, serviceAmountCents, description, dueAt } = params;
+    const {
+      sessionId,
+      providerId,
+      parentUserId,
+      triggerSource = "PROVIDER_MANUAL",
+      parentPaysOverrideCents,
+      description,
+      dueAt,
+    } = params;
 
-    // Get provider + type info for service label
     const provider = await this.prisma.provider.findUnique({
       where: { id: providerId },
       include: {
@@ -81,11 +122,48 @@ export class BillingService {
     const feeConfig = provider.referralFeeConfig;
     if (!feeConfig || !feeConfig.isActive) {
       throw new BadRequestException(
-        "No active referral fee configured for this provider. GoStork admin must set up billing before payment can be requested.",
+        "No active referral fee configured for this provider. GoStork admin must set up billing before an invoice can be issued.",
       );
     }
 
-    const { referralFeeAmount, providerPayoutAmount } = this.computeFee(feeConfig, serviceAmountCents);
+    const latestQuote = await this.getLatestProviderQuote(sessionId);
+
+    // Resolve fee basis: PERCENTAGE configs require a quote.
+    let feeBasisCents: number;
+    if (feeConfig.feeType === "PERCENTAGE") {
+      if (!latestQuote) {
+        throw new BadRequestException(
+          "Provider must send a cost sheet before a percentage-based invoice can be issued.",
+        );
+      }
+      feeBasisCents = latestQuote.totalCostCents;
+    } else {
+      // FLAT: basis is unused by the fee math, but we still snapshot the quote if present.
+      feeBasisCents = latestQuote?.totalCostCents ?? 0;
+    }
+
+    // Resolve what the parent actually pays.
+    let parentPaysCents: number;
+    if (parentPaysOverrideCents != null) {
+      parentPaysCents = parentPaysOverrideCents;
+    } else if (feeConfig.parentPaysBasis === "TOTAL_COST") {
+      if (!latestQuote) {
+        throw new BadRequestException(
+          "Provider must send a cost sheet before this invoice can be issued (parent-pays basis is Total Cost).",
+        );
+      }
+      parentPaysCents = latestQuote.totalCostCents;
+    } else {
+      const defaultCents = feeConfig.defaultServiceAmount ? Math.round(Number(feeConfig.defaultServiceAmount)) : 0;
+      if (!defaultCents) {
+        throw new BadRequestException(
+          "Provider has no Default First Payment configured. Admin must set one before this invoice can be issued.",
+        );
+      }
+      parentPaysCents = defaultCents;
+    }
+
+    const { referralFeeAmount, providerPayoutAmount } = this.computeFee(feeConfig, feeBasisCents, parentPaysCents);
     const providerTypeName = provider.services[0]?.providerType?.name;
     const serviceType = resolveServiceType(providerTypeName);
 
@@ -95,9 +173,12 @@ export class BillingService {
         parentUserId,
         sessionId,
         referralFeeConfigId: feeConfig.id,
-        serviceAmount: serviceAmountCents,
+        serviceAmount: parentPaysCents,
         referralFeeAmount,
         providerPayoutAmount,
+        quotedTotalCostCents: latestQuote?.totalCostCents ?? null,
+        providerQuoteId: latestQuote?.id ?? null,
+        triggerSource,
         serviceType,
         providerName: provider.name,
         description: description || null,
@@ -108,10 +189,55 @@ export class BillingService {
     });
 
     this.logger.log(
-      `Invoice ${invoice.id} created: ${formatCents(serviceAmountCents)} service, ${formatCents(referralFeeAmount)} GoStork fee, ${formatCents(providerPayoutAmount)} provider payout`,
+      `Invoice ${invoice.id} created (trigger=${triggerSource}): parent pays ${formatCents(parentPaysCents)}, GoStork fee ${formatCents(referralFeeAmount)}, provider payout ${formatCents(providerPayoutAmount)}` +
+        (latestQuote ? ` (basis: quote ${latestQuote.id} = ${formatCents(latestQuote.totalCostCents)})` : ""),
     );
 
     return invoice;
+  }
+
+  /**
+   * Auto-trigger path used when the parent confirms "I'm ready" after a video call.
+   *
+   * Returns a structured result rather than throwing so the caller can write a
+   * `POST_READINESS_BLOCKED` CostSheetReminder and nudge the provider to send a
+   * cost sheet, instead of swallowing an exception.
+   *
+   * Idempotency: skips if an open invoice (AWAITING_PAYMENT or AUTHORIZED) already
+   * exists for this session.
+   */
+  async createInvoiceFromReadiness(sessionId: string): Promise<
+    | { status: "created"; invoice: Awaited<ReturnType<BillingService["createInvoice"]>> }
+    | { status: "skipped"; reason: "ALREADY_OPEN" | "NO_PROVIDER" }
+    | { status: "blocked"; reason: "NO_QUOTE" | "NO_CONFIG" | "NO_DEFAULT_PAYMENT"; message: string }
+  > {
+    const session = await this.prisma.aiChatSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, userId: true, providerId: true },
+    });
+    if (!session?.providerId) return { status: "skipped", reason: "NO_PROVIDER" };
+
+    const openInvoice = await this.prisma.invoice.findFirst({
+      where: { sessionId, status: { in: ["AWAITING_PAYMENT", "AUTHORIZED"] } },
+      select: { id: true },
+    });
+    if (openInvoice) return { status: "skipped", reason: "ALREADY_OPEN" };
+
+    try {
+      const invoice = await this.createInvoice({
+        sessionId,
+        providerId: session.providerId,
+        parentUserId: session.userId,
+        triggerSource: "AUTO_READINESS",
+      });
+      return { status: "created", invoice };
+    } catch (err: any) {
+      const message = err?.message || "Could not create invoice";
+      if (/No active referral fee/.test(message)) return { status: "blocked", reason: "NO_CONFIG", message };
+      if (/cost sheet/.test(message)) return { status: "blocked", reason: "NO_QUOTE", message };
+      if (/Default First Payment/.test(message)) return { status: "blocked", reason: "NO_DEFAULT_PAYMENT", message };
+      throw err;
+    }
   }
 
   // ─── Send payment notifications to parent ──────────────────────────────────
