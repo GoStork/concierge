@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Fragment } from "react";
+import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
 import { createPortal } from "react-dom";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -2472,6 +2473,7 @@ export function ParentChatSidePanel({
   sessionCalendarSlug,
   sessionBookings,
   brandColor,
+  sessionId,
 }: {
   subjectInfo: ConsultationCardData | null;
   subjectSections: SidebarSection[];
@@ -2480,6 +2482,7 @@ export function ParentChatSidePanel({
   sessionCalendarSlug: { slug: string | null; memberName: string | null } | null;
   sessionBookings: any[] | null;
   brandColor: string;
+  sessionId: string | null;
 }) {
   const navigate = useNavigate();
 
@@ -2606,6 +2609,16 @@ export function ParentChatSidePanel({
               } : undefined}
               autoResetOnCancel
               showCalendarOnExpiry
+            />
+          </div>
+        )}
+
+        {sessionId && (
+          <div className="border-t pt-3">
+            <CostSheetSidebarSection
+              sessionId={sessionId}
+              brandColor={brandColor}
+              readOnly={true}
             />
           </div>
         )}
@@ -5000,6 +5013,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             sessionCalendarSlug={sessionCalendarSlug ?? null}
             sessionBookings={sessionBookings ?? null}
             brandColor={brandColor}
+            sessionId={sessionId}
           />
         )}
       </div>
