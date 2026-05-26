@@ -25,6 +25,8 @@ import {
 } from "@/components/chat";
 import { useToast } from "@/hooks/use-toast";
 import { AgreementSidebarSection } from "@/components/chat/agreement-sidebar-section";
+import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
+import { InvoiceSidebarSection } from "@/components/chat/invoice-sidebar-section";
 
 interface SessionSummary {
   id: string;
@@ -571,6 +573,18 @@ export default function AdminConciergeMonitor() {
                     </div>
                   </div>
                 )}
+                <CostSheetSidebarSection
+                  key={`cs-${selectedSessionId || "none"}`}
+                  sessionId={selectedSessionId}
+                  brandColor={brandColor}
+                  sessionQueryKey="/api/admin/concierge-sessions"
+                />
+                <InvoiceSidebarSection
+                  key={`inv-${selectedSessionId || "none"}`}
+                  sessionId={selectedSessionId}
+                  brandColor={brandColor}
+                  sessionQueryKey="/api/admin/concierge-sessions"
+                />
                 <AgreementSidebarSection
                   key={selectedSessionId || "none"}
                   agreement={detail.agreements?.[0]}
