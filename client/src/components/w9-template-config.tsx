@@ -21,7 +21,12 @@ interface W9Template {
 const ALLOWED_TYPES = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
 const EDITOR_CONTAINER_ID = "pandadoc-w9-editor-container";
 
-export function W9TemplateConfig() {
+interface W9TemplateConfigProps {
+  /** Called whenever the template state changes (upload, delete, role refresh). Lets parent screens refresh dependent W-9 status queries. */
+  onChange?: () => void;
+}
+
+export function W9TemplateConfig({ onChange }: W9TemplateConfigProps = {}) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -64,6 +69,7 @@ export function W9TemplateConfig() {
       });
       if (!saveRes.ok) throw new Error("Failed to save template");
       queryClient.invalidateQueries({ queryKey: ["/api/admin/w9/template"] });
+      onChange?.();
 
       toast({ title: "W-9 template uploaded", description: "Opening field editor..." });
       await openFieldEditor();
@@ -93,6 +99,7 @@ export function W9TemplateConfig() {
     try {
       await fetch("/api/admin/w9/template", { method: "DELETE", credentials: "include" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/w9/template"] });
+      onChange?.();
       if (editorInstanceRef.current) { editorInstanceRef.current.destroy(); editorInstanceRef.current = null; }
       setEditorEToken(null);
       toast({ title: "W-9 template removed" });
@@ -257,6 +264,7 @@ export function W9TemplateConfig() {
                       console.warn("[W-9] Role refresh failed:", e);
                     }
                     queryClient.invalidateQueries({ queryKey: ["/api/admin/w9/template"] });
+                    onChange?.();
                     toast({ title: "Signature field saved", description: "Your W-9 template is ready." });
                   }}
                 >

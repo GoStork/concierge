@@ -6,12 +6,13 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import { Loader2, Save, DollarSign, Percent, FileText, Send, Download, Check, ExternalLink } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Loader2, Save, DollarSign, Percent, FileText, Send, Download, Check, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { InvoiceStatusBadge } from "./invoice-status-badge";
+import { W9TemplateConfig } from "./w9-template-config";
 
 interface W9Status {
   templateConfigured: boolean;
@@ -93,6 +94,7 @@ export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "
   const [notes, setNotes] = useState("");
   const [depositMilestone, setDepositMilestone] = useState<"AT_MATCH" | "AT_CLEARANCE">("AT_MATCH");
   const [averageClearanceDays, setAverageClearanceDays] = useState("21");
+  const [showW9Setup, setShowW9Setup] = useState(false);
   const [legalName, setLegalName] = useState("");
   const [taxId, setTaxId] = useState("");
 
@@ -536,9 +538,16 @@ export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "
                 </div>
               )}
               {!isProviderMode && !w9?.templateConfigured && !w9Loading && (
-                <Link to="/admin/billing" className="text-sm font-medium shrink-0" style={{ color: "hsl(var(--primary))" }}>
-                  Set up template
-                </Link>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowW9Setup(s => !s)}
+                  className="shrink-0"
+                >
+                  {showW9Setup ? <ChevronUp className="w-4 h-4 mr-2" /> : <ChevronDown className="w-4 h-4 mr-2" />}
+                  {showW9Setup ? "Hide template setup" : "Set up template"}
+                </Button>
               )}
 
               {/* Provider actions */}
@@ -566,6 +575,13 @@ export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "
                 ? "Complete and sign your W-9 - GoStork needs it before any payouts can be processed."
                 : "Send the W-9 to the agency to fill and sign, or download it once completed."}
             </p>
+
+            {/* Inline W-9 template setup (admin only) */}
+            {!isProviderMode && showW9Setup && (
+              <div className="pt-2">
+                <W9TemplateConfig onChange={() => queryClient.invalidateQueries({ queryKey: [w9GetUrl] })} />
+              </div>
+            )}
           </div>
         </div>
 
