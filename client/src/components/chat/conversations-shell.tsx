@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { Search, Loader2, MessageSquare } from "lucide-react";
 
@@ -18,6 +18,10 @@ interface ConversationsShellProps {
   showSidebar?: boolean;
   /** When true and hasSelection is true, show the left sidebar on ALL screen sizes (consultation mode). */
   sidebarAlwaysVisible?: boolean;
+  activeFilter: FilterTab;
+  onFilterChange: (filter: FilterTab) => void;
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
 }
 
 export function ConversationsShell({
@@ -32,9 +36,11 @@ export function ConversationsShell({
   headerAction,
   showSidebar = true,
   sidebarAlwaysVisible = false,
+  activeFilter,
+  onFilterChange,
+  searchQuery,
+  onSearchChange,
 }: ConversationsShellProps) {
-  const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
-  const [searchQuery, setSearchQuery] = useState("");
 
   // Lock body scroll on mobile so the page body doesn't compete with the inner list scroll
   useEffect(() => {
@@ -77,7 +83,7 @@ export function ConversationsShell({
                       : "bg-muted text-muted-foreground hover:bg-muted/80"
                   }`}
                   style={activeFilter === tab ? { backgroundColor: brandColor } : undefined}
-                  onClick={() => setActiveFilter(tab)}
+                  onClick={() => onFilterChange(tab)}
                   data-testid={`filter-${tab}`}
                 >
                   {tab === "all" ? "All" : tab === "unread" ? "Unread" : "Agreements"}
@@ -89,7 +95,7 @@ export function ConversationsShell({
               <Input
                 placeholder="Search..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => onSearchChange(e.target.value)}
                 className="pl-9 h-8 text-sm"
                 data-testid="input-search-conversations"
               />

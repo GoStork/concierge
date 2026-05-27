@@ -1237,14 +1237,23 @@ const sendMessageMutation = useMutation({
       .filter(s => isProviderThread(s))
       .sort((a, b) => new Date(b.lastMessageAt || b.updatedAt).getTime() - new Date(a.lastMessageAt || a.updatedAt).getTime());
 
+    const matchesTab = (s: ChatSession) => {
+      if (activeFilter === "unread") return (s.unreadCount || 0) > 0;
+      if (activeFilter === "agreements") return (s.lastMessage || "").toLowerCase().includes("agreement");
+      return true;
+    };
     const filteredEva = evaConversations.filter(s =>
-      !searchQuery || (s.matchmakerName || "Eva").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.lastMessage || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.title || "").toLowerCase().includes(searchQuery.toLowerCase())
+      matchesTab(s) && (
+        !searchQuery || (s.matchmakerName || "Eva").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (s.lastMessage || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (s.title || "").toLowerCase().includes(searchQuery.toLowerCase())
+      )
     );
     const filteredProvider = providerConversations.filter(s =>
-      !searchQuery || (s.providerName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.lastMessage || "").toLowerCase().includes(searchQuery.toLowerCase())
+      matchesTab(s) && (
+        !searchQuery || (s.providerName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (s.lastMessage || "").toLowerCase().includes(searchQuery.toLowerCase())
+      )
     );
 
     const providerGroups: Record<string, ChatSession[]> = {};
@@ -1641,6 +1650,10 @@ const sendMessageMutation = useMutation({
           brandColor={brandColor}
           showSidebar={parentShowSidebar}
           sidebarAlwaysVisible={parentShowRightPanel}
+          activeFilter={activeFilter}
+          onFilterChange={setActiveFilter}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
         />
         {inlineVideoBookingId && (
           <InlineVideoOverlay
@@ -1654,12 +1667,19 @@ const sendMessageMutation = useMutation({
 
   if (isProvider) {
     const sessions = providerSessionsQuery.data || [];
+    const matchesProviderTab = (s: ProviderSession) => {
+      if (activeFilter === "unread") return (s.unreadCount || 0) > 0;
+      if (activeFilter === "agreements") return (s.lastMessage || "").toLowerCase().includes("agreement");
+      return true;
+    };
     const filteredSessions = sessions.filter(s =>
-      !searchQuery ||
-      (s.userName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.userEmail || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.lastMessage || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.title || "").toLowerCase().includes(searchQuery.toLowerCase())
+      matchesProviderTab(s) && (
+        !searchQuery ||
+        (s.userName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (s.userEmail || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (s.lastMessage || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (s.title || "").toLowerCase().includes(searchQuery.toLowerCase())
+      )
     );
 
     // Group sessions by parent userId
@@ -1716,9 +1736,6 @@ const sendMessageMutation = useMutation({
               </div>
               {/* Donor/surrogate rows - flat, full-width chat rows */}
               {groupSessions.map(s => {
-                const sIsConnected = s.status === "PROVIDER_CONNECTED";
-                const sIsBooked = s.status === "CONSULTATION_BOOKED";
-                const hasPending = s.pendingQuestions > 0;
                 const sUnread = s.unreadCount || 0;
                 const photoSrc = getPhotoSrc(s.profilePhotoUrl);
                 return (
@@ -1750,26 +1767,6 @@ const sendMessageMutation = useMutation({
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <span className="font-medium text-sm font-ui truncate">{s.title || "Conversation"}</span>
-                          {sIsConnected ? (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[9px] font-bold uppercase flex-shrink-0">
-                              <CheckCircle2 className="w-2.5 h-2.5" />
-                              Connected
-                            </span>
-                          ) : sIsBooked ? (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase flex-shrink-0" style={{ backgroundColor: `${brandColor}15`, color: brandColor }}>
-                              <CalendarDays className="w-2.5 h-2.5" />
-                              Call Booked
-                            </span>
-                          ) : hasPending ? (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] text-[9px] font-bold uppercase flex-shrink-0">
-                              {s.pendingQuestions}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground text-[9px] font-bold uppercase flex-shrink-0">
-                              <MessageCircle className="w-2.5 h-2.5" />
-                              Q&A
-                            </span>
-                          )}
                         </div>
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                           <span className={`text-[11px] ${sUnread > 0 ? "font-semibold" : "text-muted-foreground"}`} style={sUnread > 0 ? { color: brandColor } : undefined}>{timeAgo(s.lastMessageAt)}</span>
@@ -1879,27 +1876,6 @@ const sendMessageMutation = useMutation({
             >
               <Video className="!w-5 !h-5" strokeWidth={2.25} />
             </Button>
-          {hasJoined ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium" data-testid="badge-provider-connected">
-              <CheckCircle2 className="w-3 h-3" />
-              Connected
-            </div>
-          ) : isConsultationBooked ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium" data-testid="badge-call-booked">
-              <CheckCircle2 className="w-3 h-3" />
-              Call Booked
-            </div>
-          ) : isWhisperPhase ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] text-xs font-medium" data-testid="badge-pending-questions">
-              <MessageCircle className="w-3 h-3" />
-              {selectedSession?.pendingQuestions} pending
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted text-muted-foreground text-xs font-medium" data-testid="badge-qa">
-              <MessageCircle className="w-3 h-3" />
-              Q&A
-            </div>
-          )}
           </div>
         </div>
 
@@ -2053,35 +2029,48 @@ const sendMessageMutation = useMutation({
                       </div>
                     );
                   })()}
-                  {hasJoined && (
-                    <div className="border-t pt-4 mt-4" data-testid="consultation-status-section">
-                      <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Consultation Status</h4>
-                      <div className="space-y-2">
-                        <Button
-                          size="sm"
-                          className="w-full text-primary-foreground gap-1.5 text-xs"
-                          style={{ backgroundColor: "var(--brand-success, #22c55e)" }}
-                          onClick={() => consultationStatusMutation.mutate({ sessionId: selectedSessionId!, status: "READY_FOR_MATCH" })}
-                          disabled={consultationStatusMutation.isPending}
-                          data-testid="btn-ready-for-match"
-                        >
-                          {consultationStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
-                          Completed - Ready for Match
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="w-full gap-1.5 text-xs border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                          onClick={() => consultationStatusMutation.mutate({ sessionId: selectedSessionId!, status: "NOT_A_FIT" })}
-                          disabled={consultationStatusMutation.isPending}
-                          data-testid="btn-not-a-fit"
-                        >
-                          {consultationStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsDown className="w-3 h-3" />}
-                          Completed - Not a Fit
-                        </Button>
-                      </div>
+                  <div className="border-t pt-4 mt-4" data-testid="consultation-status-section">
+                    <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Match Status</h4>
+                    <div className="space-y-2">
+                      {hasJoined ? (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium w-fit" data-testid="badge-provider-connected">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Connected
+                        </div>
+                      ) : isConsultationBooked ? (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium w-fit" data-testid="badge-call-booked">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Call Booked
+                        </div>
+                      ) : null}
+                      {hasJoined && (
+                        <>
+                          <Button
+                            size="sm"
+                            className="w-full text-primary-foreground gap-1.5 text-xs"
+                            style={{ backgroundColor: "var(--brand-success, #22c55e)" }}
+                            onClick={() => consultationStatusMutation.mutate({ sessionId: selectedSessionId!, status: "READY_FOR_MATCH" })}
+                            disabled={consultationStatusMutation.isPending}
+                            data-testid="btn-ready-for-match"
+                          >
+                            {consultationStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
+                            Completed - Ready for Match
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full gap-1.5 text-xs border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                            onClick={() => consultationStatusMutation.mutate({ sessionId: selectedSessionId!, status: "NOT_A_FIT" })}
+                            disabled={consultationStatusMutation.isPending}
+                            data-testid="btn-not-a-fit"
+                          >
+                            {consultationStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsDown className="w-3 h-3" />}
+                            Completed - Not a Fit
+                          </Button>
+                        </>
+                      )}
                     </div>
-                  )}
+                  </div>
                   {/* Cost Sheet / Invoice / Agreement sections moved into the + drawer above the composer */}
                 </>
               }
@@ -2104,6 +2093,10 @@ const sendMessageMutation = useMutation({
           ) : undefined}
           detailContent={providerDetailContent}
           brandColor={brandColor}
+          activeFilter={activeFilter}
+          onFilterChange={setActiveFilter}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
         />
         {inlineVideoBookingId && (
           <InlineVideoOverlay

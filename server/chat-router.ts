@@ -318,7 +318,10 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
   if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
   try {
     const sessions = await prisma.aiChatSession.findMany({
-      where: { status: { in: ["ACTIVE", "HUMAN_JOINED", "PROVIDER_CONNECTED"] } },
+      where: {
+        status: { in: ["ACTIVE", "HUMAN_JOINED", "CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] },
+        sessionType: { not: "PROVIDER_CONCIERGE" },
+      },
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
         provider: { select: { id: true, name: true, logoUrl: true } },
@@ -326,7 +329,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
         _count: { select: { messages: true } },
       },
       orderBy: [{ humanRequested: "desc" }, { updatedAt: "desc" }],
-      take: 50,
+      take: 200,
     });
     // Count unread messages from parents per session (senderType parent/user, readAt null)
     const sessionIds = sessions.map(s => s.id);
@@ -347,6 +350,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       userEmail: s.user.email,
       userAvatar: (s.user as any).photoUrl,
       status: s.status,
+      sessionType: (s as any).sessionType || "PARENT",
       humanRequested: s.humanRequested,
       humanJoinedAt: s.humanJoinedAt,
       humanConcludedAt: (s as any).humanConcludedAt || null,
@@ -354,12 +358,72 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       providerName: s.provider?.name || null,
       providerLogo: s.provider?.logoUrl || null,
       providerJoinedAt: s.providerJoinedAt,
+      title: cleanSessionTitle(s.title) || null,
+      profilePhotoUrl: (s as any).profilePhotoUrl || null,
+      subjectProfileId: (s as any).subjectProfileId || null,
+      subjectType: (s as any).subjectType || null,
       messageCount: s._count.messages,
       lastMessage: s.messages[0]?.content?.slice(0, 120) || null,
       lastMessageAt: s.messages[0]?.createdAt || s.updatedAt,
+      lastMessageSenderType: s.messages[0]?.senderType || null,
       unreadCount: unreadMap[s.id] || 0,
       createdAt: s.createdAt,
     }));
+
+    // Enrich profilePhotoUrl for sessions that have a subject profile but no stored photo
+    const needPhoto = result.filter(s => !s.profilePhotoUrl && s.subjectProfileId && s.subjectType);
+    if (needPhoto.length > 0) {
+      const eggIds = needPhoto.filter(s => s.subjectType!.toLowerCase().includes("egg")).map(s => s.subjectProfileId!);
+      const surrogateIds = needPhoto.filter(s => s.subjectType!.toLowerCase().includes("surrogate")).map(s => s.subjectProfileId!);
+      const spermIds = needPhoto.filter(s => s.subjectType!.toLowerCase().includes("sperm")).map(s => s.subjectProfileId!);
+      const [eggDonors, surrogates, spermDonors] = await Promise.all([
+        eggIds.length ? prisma.eggDonor.findMany({ where: { id: { in: eggIds } }, select: { id: true, photos: true, photoUrl: true } }) : [],
+        surrogateIds.length ? prisma.surrogate.findMany({ where: { id: { in: surrogateIds } }, select: { id: true, photos: true, photoUrl: true } }) : [],
+        spermIds.length ? prisma.spermDonor.findMany({ where: { id: { in: spermIds } }, select: { id: true, photos: true, photoUrl: true } }) : [],
+      ]);
+      const photoMap: Record<string, string> = {};
+      for (const p of [...eggDonors, ...surrogates, ...spermDonors]) {
+        const photo = (p.photos && p.photos.length > 0) ? p.photos[0] : p.photoUrl;
+        if (photo) photoMap[p.id] = photo;
+      }
+      for (const s of result) {
+        if (!s.profilePhotoUrl && s.subjectProfileId && photoMap[s.subjectProfileId]) {
+          s.profilePhotoUrl = photoMap[s.subjectProfileId];
+        }
+      }
+    }
+
+    // Fallback: sessions with no subjectProfileId but title like "Donor #1234" or "Surrogate #1234"
+    const titleNeedPhoto = result.filter(s => !s.profilePhotoUrl && !s.subjectProfileId);
+    if (titleNeedPhoto.length > 0) {
+      const eggTitleSessions = titleNeedPhoto.filter(s => /donor\s*#?\s*(\d+)/i.test(s.title || ""));
+      const surrogateTitleSessions = titleNeedPhoto.filter(s => /surrogate\s*#?\s*(\d+)/i.test(s.title || ""));
+      const spermTitleSessions = titleNeedPhoto.filter(s => /sperm\s*#?\s*(\d+)/i.test(s.title || ""));
+      const extractExtId = (title: string, pattern: RegExp) => (title.match(pattern) || [])[1] || null;
+      const eggExtIds = eggTitleSessions.map(s => extractExtId(s.title || "", /donor\s*#?\s*(\d+)/i)).filter(Boolean) as string[];
+      const surrogateExtIds = surrogateTitleSessions.map(s => extractExtId(s.title || "", /surrogate\s*#?\s*(\d+)/i)).filter(Boolean) as string[];
+      const spermExtIds = spermTitleSessions.map(s => extractExtId(s.title || "", /sperm\s*#?\s*(\d+)/i)).filter(Boolean) as string[];
+      const [eggByExt, surrogateByExt, spermByExt] = await Promise.all([
+        eggExtIds.length ? prisma.eggDonor.findMany({ where: { externalId: { in: eggExtIds } }, select: { id: true, externalId: true, photos: true, photoUrl: true } }) : [],
+        surrogateExtIds.length ? prisma.surrogate.findMany({ where: { externalId: { in: surrogateExtIds } }, select: { id: true, externalId: true, photos: true, photoUrl: true } }) : [],
+        spermExtIds.length ? prisma.spermDonor.findMany({ where: { externalId: { in: spermExtIds } }, select: { id: true, externalId: true, photos: true, photoUrl: true } }) : [],
+      ]);
+      const extPhotoMap: Record<string, string> = {};
+      for (const p of [...eggByExt, ...surrogateByExt, ...spermByExt]) {
+        if (!p.externalId) continue;
+        const photo = (p.photos && p.photos.length > 0) ? p.photos[0] : p.photoUrl;
+        if (photo) extPhotoMap[p.externalId] = photo;
+      }
+      for (const s of result) {
+        if (s.profilePhotoUrl || s.subjectProfileId) continue;
+        const title = s.title || "";
+        const match = title.match(/(?:donor|surrogate|sperm)\s*#?\s*(\d+)/i);
+        if (match?.[1] && extPhotoMap[match[1]]) {
+          s.profilePhotoUrl = extPhotoMap[match[1]];
+        }
+      }
+    }
+
     res.json(result);
   } catch (e: any) {
     console.error("Admin concierge sessions error:", e);

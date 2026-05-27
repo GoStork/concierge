@@ -9,11 +9,13 @@ import { getPhotoSrc } from "@/lib/profile-utils";
 import { deriveChatPalette } from "@/lib/chat-palette";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { MessageStatus } from "@/components/ui/message-status";
 import {
-  ArrowLeft, Headphones, MessageCircle, User, Clock, CheckCircle2, Loader2, UserPlus, LogOut, Trash2, Video,
+  ArrowLeft, Headphones, MessageCircle, User, Clock, CheckCircle2, Loader2, UserPlus, LogOut, Trash2, Video, Sparkles,
 } from "lucide-react";
 import {
   timeAgo,
+  truncateMessage,
   ConversationsShell,
   ChatMessageList,
   ChatInputBar,
@@ -22,6 +24,7 @@ import {
   InlineVideoOverlay,
   ChatBookingCard,
   type SessionDetail,
+  type FilterTab,
 } from "@/components/chat";
 import { useToast } from "@/hooks/use-toast";
 import { AgreementSidebarSection } from "@/components/chat/agreement-sidebar-section";
@@ -35,6 +38,7 @@ interface SessionSummary {
   userEmail: string;
   userAvatar: string | null;
   status: string;
+  sessionType: string;
   humanRequested: boolean;
   humanJoinedAt: string | null;
   humanConcludedAt: string | null;
@@ -42,9 +46,14 @@ interface SessionSummary {
   providerName: string | null;
   providerLogo: string | null;
   providerJoinedAt: string | null;
+  title: string | null;
+  profilePhotoUrl: string | null;
+  subjectProfileId: string | null;
+  subjectType: string | null;
   messageCount: number;
   lastMessage: string | null;
   lastMessageAt: string;
+  lastMessageSenderType: string | null;
   unreadCount: number;
   createdAt: string;
 }
@@ -73,6 +82,8 @@ export default function AdminConciergeMonitor() {
   };
   const [uploading, setUploading] = useState(false);
   const [inlineVideoBookingId, setInlineVideoBookingId] = useState<string | null>(null);
+  const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
+  const [searchQuery, setSearchQuery] = useState("");
   type AdminInlinePanel = null | "costSheet" | "invoice" | "agreement";
   const [adminInlinePanel, setAdminInlinePanel] = useState<AdminInlinePanel>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -241,8 +252,22 @@ export default function AdminConciergeMonitor() {
     }
   }, [lastChatKey, selectedSessionId, sessionsQuery.isLoading, sessionsQuery.data]);
 
-  const sessions = [...(sessionsQuery.data || [])].sort((a, b) =>
+  const allSessions = [...(sessionsQuery.data || [])].sort((a, b) =>
     new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
+  );
+  const matchesAdminTab = (s: SessionSummary) => {
+    if (activeFilter === "unread") return (s.unreadCount || 0) > 0;
+    if (activeFilter === "agreements") return (s.lastMessage || "").toLowerCase().includes("agreement");
+    return true;
+  };
+  const sessions = allSessions.filter(s =>
+    matchesAdminTab(s) && (
+      !searchQuery ||
+      (s.userName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.userEmail || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.lastMessage || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.providerName || "").toLowerCase().includes(searchQuery.toLowerCase())
+    )
   );
   const detail = sessionDetailQuery.data;
   const detailAiName = detail
@@ -358,80 +383,153 @@ export default function AdminConciergeMonitor() {
     }
   };
 
-  // Build sidebar items - session list
+  // Group sessions by parent userId, matching the agency provider view layout.
+  // Each parent group renders a header divider with the parent name, then each
+  // session below (AI-only or 3-way with a provider) as its own chat-row entry.
+  const parentGroups: Record<string, SessionSummary[]> = {};
+  for (const s of sessions) {
+    const key = s.userId;
+    if (!parentGroups[key]) parentGroups[key] = [];
+    parentGroups[key].push(s);
+  }
+  // Sort groups: most recent activity first
+  const sortedGroupEntries = Object.entries(parentGroups).sort((a, b) => {
+    const aLatest = Math.max(...a[1].map(s => new Date(s.lastMessageAt).getTime()));
+    const bLatest = Math.max(...b[1].map(s => new Date(s.lastMessageAt).getTime()));
+    return bLatest - aLatest;
+  });
+  // Within each group, sort sessions: most recent first
+  for (const [, groupSessions] of sortedGroupEntries) {
+    groupSessions.sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
+  }
+
   const sidebarItems = sessions.length > 0 ? (
-    <div className="divide-y divide-border/20">
-      {sessions.map((s) => (
-        <button
-          key={s.id}
-          className="w-full flex items-start gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left"
-          style={selectedSessionId === s.id ? { backgroundColor: `${brandColor}15` } : undefined}
-          onClick={() => setSelectedSessionId(s.id)}
-          data-testid={`session-card-${s.id}`}
-        >
-          {s.userAvatar ? (
-            <img src={getPhotoSrc(s.userAvatar) || undefined} alt="" className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
-          ) : (
-            <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-              <User className="w-5 h-5 text-muted-foreground" />
+    <>
+      {sortedGroupEntries.map(([parentUserId, groupSessions]) => {
+        const first = groupSessions[0];
+        return (
+          <div key={parentUserId} data-testid={`parent-group-${parentUserId}`}>
+            {/* Section header - parent name (secondary-color pill, consistent with provider view) */}
+            <div className="mx-4 mt-3 mb-2 px-3 py-1.5 rounded-[var(--radius)] flex items-center gap-2 bg-secondary/40">
+              <div className="w-4 h-4 rounded-full flex-shrink-0 overflow-hidden bg-background flex items-center justify-center">
+                {first.userAvatar ? (
+                  <img src={getPhotoSrc(first.userAvatar) || undefined} alt="" className="w-4 h-4 object-cover" />
+                ) : (
+                  <User className="w-3 h-3 text-muted-foreground" />
+                )}
+              </div>
+              <span className="text-xs font-medium truncate flex-1 text-foreground/80">
+                {first.userName || "Prospective Parent"}
+              </span>
+              <span className="text-[10px] text-muted-foreground">
+                {groupSessions.length} {groupSessions.length === 1 ? "chat" : "chats"}
+              </span>
             </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-sm truncate">{s.userName || "Unknown"}</span>
-              {s.humanRequested && (!s.humanJoinedAt || !!s.humanConcludedAt) && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase flex-shrink-0" style={{ backgroundColor: `${brandColor}15`, color: brandColor }} data-testid={`badge-escalated-${s.id}`}>
-                  <UserPlus className="w-2.5 h-2.5" />
-                  Ready to Join
-                </span>
-              )}
-              {s.humanJoinedAt && !s.humanConcludedAt && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[10px] font-bold uppercase flex-shrink-0">
-                  <CheckCircle2 className="w-2.5 h-2.5" />
-                  Active
-                </span>
-              )}
-              {s.providerJoinedAt && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[10px] font-bold uppercase flex-shrink-0" data-testid={`badge-provider-active-${s.id}`}>
-                  <CheckCircle2 className="w-2.5 h-2.5" />
-                  Provider Active
-                </span>
-              )}
-              {s.providerId && !s.providerJoinedAt && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] text-[10px] font-bold uppercase flex-shrink-0">
-                  Provider Assigned
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">{s.userEmail}</p>
-            {s.providerName && (
-              <p className="text-xs text-[hsl(var(--brand-success))] mt-0.5">Provider: {s.providerName}</p>
-            )}
-            {s.lastMessage && (
-              <p className="text-sm text-muted-foreground mt-1 truncate">{s.lastMessage}</p>
-            )}
-          </div>
-          <div className="text-right flex-shrink-0 flex flex-col items-end gap-1">
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Clock className="w-3 h-3" />
-              {timeAgo(s.lastMessageAt)}
-            </div>
-            {(() => {
+            {/* Per-session rows - one entry per conversation (AI-only or 3-way) */}
+            {groupSessions.map(s => {
+              const sUnread = s.unreadCount || 0;
               const needsJoin = s.humanRequested && (!s.humanJoinedAt || !!s.humanConcludedAt);
-              const count = needsJoin ? Math.max(1, s.unreadCount || 0) : (s.unreadCount || 0);
-              return count > 0 ? (
-                <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold px-1 text-primary-foreground" style={{ backgroundColor: 'hsl(var(--primary))' }}>
-                  {count > 99 ? "99+" : count}
-                </span>
-              ) : (
-                <div className="text-xs text-muted-foreground">{s.messageCount} msgs</div>
+              const badgeCount = needsJoin ? Math.max(1, sUnread) : sUnread;
+              const isProviderThread = !!s.providerId || !!s.providerName;
+              const photoSrc = getPhotoSrc(s.profilePhotoUrl);
+              const rowTitle = s.title
+                || (isProviderThread ? (s.providerName || "Provider chat") : "AI Concierge");
+              return (
+                <button
+                  key={s.id}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors text-left border-b border-border/10"
+                  style={selectedSessionId === s.id ? { backgroundColor: `${brandColor}15` } : undefined}
+                  onClick={() => setSelectedSessionId(s.id)}
+                  data-testid={`session-card-${s.id}`}
+                >
+                  <div className="w-12 h-12 rounded-full flex-shrink-0 relative overflow-hidden">
+                    {photoSrc ? (
+                      <img
+                        src={photoSrc}
+                        alt={rowTitle}
+                        className="w-12 h-12 rounded-full object-cover"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    ) : s.providerLogo ? (
+                      <img
+                        src={getPhotoSrc(s.providerLogo) || undefined}
+                        alt={s.providerName || ""}
+                        className="w-12 h-12 rounded-full object-cover bg-background border"
+                      />
+                    ) : isProviderThread ? (
+                      <div
+                        className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
+                        style={{ backgroundColor: brandColor }}
+                      >
+                        {(s.providerName || rowTitle).charAt(0).toUpperCase()}
+                      </div>
+                    ) : (
+                      <div className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary/60">
+                        <Sparkles className="w-5 h-5" style={{ color: brandColor }} />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-medium text-sm font-ui truncate">{rowTitle}</span>
+                        {needsJoin && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase flex-shrink-0" style={{ backgroundColor: `${brandColor}15`, color: brandColor }} data-testid={`badge-escalated-${s.id}`}>
+                            <UserPlus className="w-2.5 h-2.5" />
+                            Join
+                          </span>
+                        )}
+                        {s.humanJoinedAt && !s.humanConcludedAt && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[9px] font-bold uppercase flex-shrink-0">
+                            <CheckCircle2 className="w-2.5 h-2.5" />
+                            Live
+                          </span>
+                        )}
+                        {s.providerJoinedAt && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[9px] font-bold uppercase flex-shrink-0" data-testid={`badge-provider-active-${s.id}`}>
+                            <CheckCircle2 className="w-2.5 h-2.5" />
+                            Connected
+                          </span>
+                        )}
+                        {s.status === "CONSULTATION_BOOKED" && !s.providerJoinedAt && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] text-[9px] font-bold uppercase flex-shrink-0">
+                            Call Booked
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <span className={`text-[11px] ${sUnread > 0 ? "font-semibold" : "text-muted-foreground"}`} style={sUnread > 0 ? { color: brandColor } : undefined}>{timeAgo(s.lastMessageAt)}</span>
+                        {badgeCount > 0 && (
+                          <span className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] font-bold text-primary-foreground px-1" style={{ backgroundColor: brandColor }}>
+                            {badgeCount > 99 ? "99+" : badgeCount}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {isProviderThread && s.providerName && s.title && (
+                      <p className="text-[11px] text-muted-foreground truncate mt-0.5">via {s.providerName}</p>
+                    )}
+                    {s.lastMessage && (
+                      <p className="text-sm text-muted-foreground truncate mt-0.5 flex items-center gap-1">
+                        {s.lastMessageSenderType === "human" && (
+                          <MessageStatus deliveredAt={null} readAt={null} brandColor={brandColor} className="flex-shrink-0" />
+                        )}
+                        <span className="truncate">{truncateMessage(s.lastMessage)}</span>
+                      </p>
+                    )}
+                  </div>
+                </button>
               );
-            })()}
+            })}
           </div>
-        </button>
-      ))}
-    </div>
+        );
+      })}
+    </>
   ) : null;
+
+  // Look up the lightweight summary for the selected session so we can render
+  // the same subject thumbnail / "re: …" subtitle the provider view uses.
+  const selectedSummary = selectedSessionId ? sessions.find(s => s.id === selectedSessionId) : null;
 
   // Build detail content when a session is selected
   // Only render the full chat once BOTH session detail and bookings are ready.
@@ -449,17 +547,39 @@ export default function AdminConciergeMonitor() {
         >
           <ArrowLeft className="w-4 h-4" />
         </Button>
-        <div className="flex items-center gap-2 flex-1">
-          {detail.user.photoUrl ? (
-            <img src={getPhotoSrc(detail.user.photoUrl) || undefined} alt="" className="w-8 h-8 rounded-full object-cover" />
-          ) : (
-            <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-              <User className="w-4 h-4 text-muted-foreground" />
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-muted">
+            {detail.user.photoUrl ? (
+              <img src={getPhotoSrc(detail.user.photoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                <User className="w-5 h-5 text-muted-foreground" />
+              </div>
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="font-semibold text-sm font-ui truncate">{detail.user.name || "Prospective Parent"}</span>
             </div>
-          )}
-          <div>
-            <h3 className="font-semibold text-sm">{detail.user.name || "Unknown"}</h3>
-            <p className="text-xs text-muted-foreground">{detail.user.email}</p>
+            {(detail.title || selectedSummary?.title || selectedSummary?.providerName) ? (
+              <div className="flex items-center gap-1 mt-0.5 min-w-0">
+                <span className="text-[11px] text-muted-foreground flex-shrink-0">re:</span>
+                {selectedSummary?.profilePhotoUrl ? (
+                  <img src={getPhotoSrc(selectedSummary.profilePhotoUrl) || undefined} alt="" className="w-3.5 h-3.5 rounded-full object-cover flex-shrink-0" />
+                ) : selectedSummary?.providerLogo ? (
+                  <img src={getPhotoSrc(selectedSummary.providerLogo) || undefined} alt="" className="w-3.5 h-3.5 rounded-full object-cover flex-shrink-0 bg-background border" />
+                ) : (
+                  <div className="w-3.5 h-3.5 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                    <Sparkles className="w-2 h-2" style={{ color: brandColor }} />
+                  </div>
+                )}
+                <span className="text-[11px] text-muted-foreground truncate" data-testid="admin-subject-label">
+                  {detail.title || selectedSummary?.title || selectedSummary?.providerName || "AI Concierge"}
+                </span>
+              </div>
+            ) : (
+              <p className="text-[11px] text-muted-foreground truncate">{detail.user.email}</p>
+            )}
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -617,6 +737,21 @@ export default function AdminConciergeMonitor() {
                 (b.status === "CONFIRMED" && new Date() < new Date(new Date(b.scheduledAt).getTime() + (b.duration || 30) * 60 * 1000))
               )
             );
+            const status = detail.status;
+            const matchBadge = (() => {
+              switch (status) {
+                case "PROVIDER_CONNECTED":
+                  return { label: "Connected", className: "bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))]", icon: <CheckCircle2 className="w-3 h-3" /> };
+                case "CONSULTATION_BOOKED":
+                  return { label: "Call Booked", className: "bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))]", icon: <CheckCircle2 className="w-3 h-3" /> };
+                case "READY_FOR_MATCH":
+                  return { label: "Ready for Match", className: "bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))]", icon: <CheckCircle2 className="w-3 h-3" /> };
+                case "NOT_A_FIT":
+                  return { label: "Not a Fit", className: "bg-destructive/10 text-destructive", icon: <MessageCircle className="w-3 h-3" /> };
+                default:
+                  return { label: "Active", className: "bg-muted text-muted-foreground", icon: <MessageCircle className="w-3 h-3" /> };
+              }
+            })();
             return (
               <>
                 {activeBookings.length > 0 && (
@@ -633,6 +768,13 @@ export default function AdminConciergeMonitor() {
                     </div>
                   </div>
                 )}
+                <div className="border-t pt-4 mt-4" data-testid="match-status-section">
+                  <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Match Status</h4>
+                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium w-fit ${matchBadge.className}`} data-testid="badge-match-status">
+                    {matchBadge.icon}
+                    {matchBadge.label}
+                  </div>
+                </div>
                 {/* Cost Sheet / Invoice / Agreement sections moved into the + drawer above the composer */}
               </>
             );
@@ -655,6 +797,10 @@ export default function AdminConciergeMonitor() {
       emptyMessage="No active AI conversations right now"
       detailContent={detailContent}
       brandColor={brandColor}
+      activeFilter={activeFilter}
+      onFilterChange={setActiveFilter}
+      searchQuery={searchQuery}
+      onSearchChange={setSearchQuery}
       headerAction={
         <Button
           variant="ghost"
