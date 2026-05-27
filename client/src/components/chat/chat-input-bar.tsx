@@ -230,7 +230,10 @@ export function ChatInputBar({
       {senderLabel}
 
       {inlinePanel && (
-        <div className="mb-2 rounded-[var(--radius)] border bg-card p-3" data-testid={`${testIdPrefix}-inline-panel`}>
+        <div
+          className="mb-2 rounded-[var(--radius)] border bg-card p-3 max-h-[50vh] overflow-y-auto overscroll-contain"
+          data-testid={`${testIdPrefix}-inline-panel`}
+        >
           {inlinePanel}
         </div>
       )}
