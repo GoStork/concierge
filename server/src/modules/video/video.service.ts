@@ -192,53 +192,77 @@ export class VideoService implements OnModuleInit {
     }
     if (!signature) return false;
 
-    // Daily's webhook signature format isn't well-documented and has varied
-    // across API versions. Try every reasonable variant and accept if any
-    // matches. Once we see which one Daily is actually using in production
-    // logs, this can be collapsed back to a single check.
-    //
-    // Variants tried:
-    //   a) base64(HMAC-SHA256(secret, body))                  - "simple base64"
-    //   b) hex(HMAC-SHA256(secret, body))                     - "simple hex"
-    //   c) Stripe-style "t=<ts>,v1=<sig>" header where
-    //      sig = base64(HMAC-SHA256(secret, "<ts>." + body))
-    //   d) Same as (c) but hex digest
-    //   e) Same as (c) but secret treated as base64-encoded raw bytes
+    // Daily's signature scheme isn't well-documented. Build candidate keys
+    // (secret as-is, hex-decoded, base64-decoded) x candidate payloads
+    // (body alone, ts.body for Stripe-style headers) x encodings (base64, hex)
+    // and accept whichever matches. The diagnostic block at the end logs
+    // enough to identify the scheme if none match.
     const bodyBuf = typeof rawBody === "string" ? Buffer.from(rawBody, "utf8") : rawBody;
 
-    const tryHmac = (key: Buffer | string, payload: Buffer | string, encoding: "base64" | "hex") =>
-      createHmac("sha256", key).update(payload).digest(encoding);
+    const hexDecodedKey = (() => {
+      if (!/^[0-9a-fA-F]+$/.test(secret) || secret.length % 2 !== 0) return null;
+      try { return Buffer.from(secret, "hex"); } catch { return null; }
+    })();
+    const b64DecodedKey = (() => {
+      try {
+        const b = Buffer.from(secret, "base64");
+        // Round-trip to detect base64 strings that decoded successfully but
+        // weren't valid base64 to begin with (Node is lax).
+        return b.toString("base64").replace(/=+$/, "") === secret.replace(/=+$/, "") ? b : null;
+      } catch { return null; }
+    })();
 
-    // (a) + (b)
-    const sigBase64 = tryHmac(secret, bodyBuf, "base64");
-    const sigHex = tryHmac(secret, bodyBuf, "hex");
-    if (signature === sigBase64) { this.logger.debug("Daily signature matched scheme: simple-base64"); return true; }
-    if (signature === sigHex)    { this.logger.debug("Daily signature matched scheme: simple-hex");    return true; }
+    const candidateKeys: Array<{ key: Buffer | string; label: string }> = [
+      { key: secret, label: "secret-utf8" },
+    ];
+    if (hexDecodedKey) candidateKeys.push({ key: hexDecodedKey, label: "secret-hex-decoded" });
+    if (b64DecodedKey) candidateKeys.push({ key: b64DecodedKey, label: "secret-b64-decoded" });
 
-    // (c)+(d)+(e): Stripe-style "t=...,v1=..."
+    // Stripe-style "t=...,v1=..." parsing - if present, also try ts.body payload.
     const parts = signature.split(",").map(s => s.trim());
     const tPart = parts.find(p => p.startsWith("t="))?.slice(2);
     const vPart = parts.find(p => p.startsWith("v1="))?.slice(3) || parts.find(p => p.startsWith("v="))?.slice(2);
-    if (tPart && vPart) {
-      const signedPayload = Buffer.concat([Buffer.from(`${tPart}.`, "utf8"), bodyBuf]);
-      const ts_b64 = tryHmac(secret, signedPayload, "base64");
-      const ts_hex = tryHmac(secret, signedPayload, "hex");
-      const secretAsB64Bytes = (() => { try { return Buffer.from(secret, "base64"); } catch { return null; } })();
-      const ts_b64_b64key = secretAsB64Bytes ? tryHmac(secretAsB64Bytes, signedPayload, "base64") : null;
-      if (vPart === ts_b64)               { this.logger.debug("Daily signature matched scheme: ts.body base64"); return true; }
-      if (vPart === ts_hex)               { this.logger.debug("Daily signature matched scheme: ts.body hex");    return true; }
-      if (ts_b64_b64key && vPart === ts_b64_b64key) {
-        this.logger.debug("Daily signature matched scheme: ts.body base64 with b64-decoded secret");
-        return true;
+
+    const candidatePayloads: Array<{ buf: Buffer; label: string }> = [
+      { buf: bodyBuf, label: "body" },
+    ];
+    if (tPart) {
+      candidatePayloads.push({
+        buf: Buffer.concat([Buffer.from(`${tPart}.`, "utf8"), bodyBuf]),
+        label: "ts.body",
+      });
+    }
+
+    const targetSig = vPart || signature;
+    const triedDescriptions: string[] = [];
+    const candidateDigestPrefixes: string[] = [];
+    for (const k of candidateKeys) {
+      for (const p of candidatePayloads) {
+        for (const enc of ["base64", "hex"] as const) {
+          const digest = createHmac("sha256", k.key).update(p.buf).digest(enc);
+          const label = `${k.label}|${p.label}|${enc}`;
+          triedDescriptions.push(label);
+          if (digest === targetSig) {
+            this.logger.debug(`Daily signature matched scheme: ${label}`);
+            return true;
+          }
+          candidateDigestPrefixes.push(`${label}=${digest.slice(0, 16)}`);
+        }
       }
     }
 
-    // None matched - log enough to diagnose without leaking the secret.
+    // Nothing matched. Log enough to identify the actual scheme. Webhook
+    // handshake bodies are non-sensitive (Daily sends a tiny ping payload),
+    // so logging the small body verbatim is safe and the fastest way to
+    // verify by hand what scheme Daily is using.
+    const bodyPreview = bodyBuf.length <= 200 ? bodyBuf.toString("utf8") : `${bodyBuf.slice(0, 200).toString("utf8")}...`;
     this.logger.warn(
-      `Daily webhook signature mismatch. ` +
-      `header=${signature.slice(0, 32)}... ` +
-      `body_bytes=${bodyBuf.length} ` +
-      `tried=[simple-base64,simple-hex,ts.body-base64,ts.body-hex,ts.body-base64-b64key]`,
+      `Daily webhook signature mismatch.\n` +
+      `  header_full=${signature}\n` +
+      `  body_bytes=${bodyBuf.length}\n` +
+      `  body_preview=${bodyPreview}\n` +
+      `  candidates=${candidateDigestPrefixes.join(" | ")}\n` +
+      `  tried=${triedDescriptions.join(", ")}`,
     );
     return false;
   }
