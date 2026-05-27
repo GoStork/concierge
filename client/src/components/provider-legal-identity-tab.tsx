@@ -111,6 +111,8 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      if (!legalName.trim()) throw new Error("Legal name is required.");
+      if (!businessName.trim()) throw new Error("Legal business name is required - it's used on receipts and Stripe Connect KYC. For LLCs/Corps, this usually matches the Legal name above.");
       const res = await fetch(putUrl, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -274,12 +276,20 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
           <h3 className="font-semibold">Business identity</h3>
         </div>
 
-        <Field label="Legal business name" required hint="The name on your tax return (W-9 Line 1).">
-          <Input value={legalName} onChange={e => setLegalName(e.target.value)} placeholder="e.g. Eggceptional Fertility LLC" />
+        <Field
+          label="Legal name"
+          required
+          hint="The name on your tax return - your business's legal name if entity-based, or your personal name if you're a sole proprietor / individual (W-9 Line 1)."
+        >
+          <Input value={legalName} onChange={e => setLegalName(e.target.value)} placeholder="e.g. Eggceptional Fertility LLC or Jane Doe" />
         </Field>
 
-        <Field label="Business / DBA name (optional)" hint="If different from your legal name (W-9 Line 2).">
-          <Input value={businessName} onChange={e => setBusinessName(e.target.value)} placeholder="e.g. Eggceptional" />
+        <Field
+          label="Legal business name"
+          required
+          hint="The business name GoStork displays on receipts and uses for Stripe Connect KYC. If you're a sole proprietor, this is your business / DBA name (W-9 Line 2). For LLCs or corporations, it usually matches your Legal name above."
+        >
+          <Input value={businessName} onChange={e => setBusinessName(e.target.value)} placeholder="e.g. Eggceptional Fertility LLC" />
         </Field>
 
         <Field label="Federal tax classification" required hint="W-9 Line 3a.">

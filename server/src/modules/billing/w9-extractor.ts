@@ -157,7 +157,13 @@ export async function extractW9Fields(pandaDocDocumentId: string): Promise<Legal
   };
 
   const legalName = get("Full_Name") || null;
-  const businessName = get("Company_Name") || null;
+  // W-9 Line 2 ("Business name / disregarded entity name, if different
+  // from above") is empty when Line 1 IS the business name (typical for
+  // LLCs / corps where the entity name lives on Line 1). For our
+  // downstream uses (receipt PDFs, Stripe Connect KYC) we always want a
+  // non-null business name, so we fall back to legalName when Line 2 is
+  // blank.
+  const businessName = get("Company_Name") || legalName || null;
   const taxClassification = mapRadioToClassification(get("RadioButtons1"));
   const rawAddressLine = get("Address") || null;
   const { line1: addressLine, line2: addressLine2 } = splitAddressApt(rawAddressLine);

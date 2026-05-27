@@ -132,14 +132,23 @@ export class LegalIdentityService {
     const existing = await this.getOrCreate(providerId);
     const applied: string[] = [];
 
+    // Migration-sourced data is a best-guess port from the old
+    // ProviderBrandSettings.legalName / taxId fields - it shouldn't
+    // outrank a freshly-signed W-9. Treat those rows as if they were
+    // empty for the purposes of auto-fill: the W-9 values overwrite
+    // everything. Only true MANUAL edits (or prior W-9 auto-fills the
+    // admin then corrected) get preserved in non-force mode.
+    const migrationFallback = existing.source === "MIGRATED_FROM_BRAND_SETTINGS";
+
     const data: Record<string, any> = { lastW9SyncAt: new Date() };
     const maybeFill = (key: keyof LegalIdentityFormData, dbKey: string) => {
       const currentValue = (existing as any)[dbKey];
       const newValue = w9[key];
       if (newValue == null || newValue === "") return;
-      // Non-force mode preserves existing values; force mode overwrites
-      // unless the new value would equal what's already there.
-      if (!opts.force && currentValue != null && currentValue !== "") return;
+      // Non-force mode preserves existing values UNLESS the row was
+      // populated by the migration (treated as overwritable). Force
+      // mode always overwrites.
+      if (!opts.force && !migrationFallback && currentValue != null && currentValue !== "") return;
       if (currentValue === newValue) return;
       data[dbKey] = newValue;
       applied.push(dbKey);
@@ -248,6 +257,7 @@ export class LegalIdentityService {
     });
     const missing: string[] = [];
     if (!row?.legalName?.trim()) missing.push("Legal Name");
+    if (!row?.businessName?.trim()) missing.push("Legal Business Name");
     if (!row?.taxId?.trim()) missing.push("Tax ID");
     return { complete: missing.length === 0, missing };
   }
