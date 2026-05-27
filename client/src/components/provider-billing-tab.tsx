@@ -19,6 +19,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { formatMoneyCents } from "@/lib/format-money";
 import { InvoiceStatusBadge } from "./invoice-status-badge";
 import {
