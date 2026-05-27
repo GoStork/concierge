@@ -318,20 +318,27 @@ export function InvoiceSidebarSection({
                 {lineItems.map((li, idx) => (
                   <div
                     key={li.key}
-                    className="rounded-md border bg-background p-2 space-y-1.5"
+                    className="rounded-md border bg-background p-2"
                   >
                     <div className="flex items-center gap-1.5">
                       <select
                         value={li.serviceType}
                         onChange={e => updateLine(li.key, { serviceType: e.target.value as LineServiceType })}
-                        className="flex-1 h-8 text-xs rounded border bg-background px-2"
+                        className="h-8 text-xs rounded border bg-background px-2 w-36 shrink-0"
                         data-testid={`line-${idx}-type`}
                       >
                         {(Object.keys(LINE_TYPE_LABELS) as LineServiceType[]).map(k => (
                           <option key={k} value={k}>{LINE_TYPE_LABELS[k]}</option>
                         ))}
                       </select>
-                      <div className="relative w-28">
+                      <Input
+                        placeholder="Description (optional)"
+                        value={li.description}
+                        onChange={e => updateLine(li.key, { description: e.target.value })}
+                        className="h-8 text-xs flex-1 min-w-0"
+                        data-testid={`line-${idx}-description`}
+                      />
+                      <div className="relative w-24 shrink-0">
                         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
                         <Input
                           type="number"
@@ -351,7 +358,7 @@ export function InvoiceSidebarSection({
                           variant="ghost"
                           size="sm"
                           onClick={() => removeLine(li.key)}
-                          className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive shrink-0"
                           aria-label="Remove line"
                           data-testid={`line-${idx}-remove`}
                         >
@@ -359,13 +366,6 @@ export function InvoiceSidebarSection({
                         </Button>
                       )}
                     </div>
-                    <Input
-                      placeholder="Description (optional)"
-                      value={li.description}
-                      onChange={e => updateLine(li.key, { description: e.target.value })}
-                      className="h-8 text-xs"
-                      data-testid={`line-${idx}-description`}
-                    />
                   </div>
                 ))}
               </div>
