@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { MessageStatus } from "@/components/ui/message-status";
 import {
-  ArrowLeft, Headphones, MessageCircle, User, Clock, CheckCircle2, Loader2, UserPlus, LogOut, Trash2, Video, Sparkles,
+  ArrowLeft, ChevronDown, Headphones, MessageCircle, User, Clock, CheckCircle2, Loader2, UserPlus, LogOut, Trash2, Video, Sparkles,
 } from "lucide-react";
 import {
   timeAgo,
@@ -21,6 +21,7 @@ import {
   ChatInputBar,
   ExpertSenderLabel,
   ChatProfileSidebar,
+  ChatHeaderContextPanel,
   InlineVideoOverlay,
   ChatBookingCard,
   type SessionDetail,
@@ -87,6 +88,8 @@ export default function AdminConciergeMonitor() {
   const [searchQuery, setSearchQuery] = useState("");
   type AdminInlinePanel = null | "costSheet" | "invoice" | "agreement";
   const [adminInlinePanel, setAdminInlinePanel] = useState<AdminInlinePanel>(null);
+  const [adminHeaderPanelOpen, setAdminHeaderPanelOpen] = useState(false);
+  useEffect(() => { setAdminHeaderPanelOpen(false); }, [selectedSessionId]);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -524,7 +527,14 @@ export default function AdminConciergeMonitor() {
         >
           <ArrowLeft className="w-4 h-4" />
         </Button>
-        <div className="flex items-center gap-3 flex-1 min-w-0">
+        <button
+          type="button"
+          onClick={() => setAdminHeaderPanelOpen(o => !o)}
+          aria-expanded={adminHeaderPanelOpen}
+          aria-controls="admin-header-context-panel"
+          className="flex items-center gap-3 flex-1 min-w-0 text-left rounded-[var(--radius)] -mx-1 px-1 py-1 lg:cursor-default active:bg-muted/40 lg:active:bg-transparent"
+          data-testid="btn-admin-header-context"
+        >
           <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-muted">
             {detail.user.photoUrl ? (
               <img src={getPhotoSrc(detail.user.photoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
@@ -558,7 +568,11 @@ export default function AdminConciergeMonitor() {
               <p className="text-[11px] text-muted-foreground truncate">{detail.user.email}</p>
             )}
           </div>
-        </div>
+          <ChevronDown
+            className={`w-4 h-4 text-muted-foreground flex-shrink-0 transition-transform lg:hidden ${adminHeaderPanelOpen ? "rotate-180" : ""}`}
+            aria-hidden
+          />
+        </button>
         <div className="ml-auto flex items-center gap-2">
           <Button
             variant="ghost"
@@ -599,6 +613,32 @@ export default function AdminConciergeMonitor() {
           )}
         </div>
       </div>
+
+      <ChatHeaderContextPanel
+        open={adminHeaderPanelOpen}
+        role="admin"
+        brandColor={brandColor}
+        user={detail.user}
+        matchStatus={
+          detail.providerJoinedAt
+            ? { label: "Connected", tone: "success" }
+            : selectedSummary?.status === "CONSULTATION_BOOKED" || detail.status === "CONSULTATION_BOOKED"
+            ? { label: "Call Booked", tone: "success" }
+            : { label: "AI Concierge", tone: "neutral" }
+        }
+        subject={
+          selectedSummary?.subjectProfileId
+            ? {
+                providerId: selectedSummary.providerId ?? null,
+                subjectProfileId: selectedSummary.subjectProfileId,
+                subjectType: selectedSummary.subjectType ?? null,
+                fallbackPhotoUrl: selectedSummary.profilePhotoUrl,
+                fallbackLabel: selectedSummary.title,
+              }
+            : null
+        }
+        testId="admin-header-context-panel"
+      />
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <div className="flex-1 flex flex-col min-h-0">

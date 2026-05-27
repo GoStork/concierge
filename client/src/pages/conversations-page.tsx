@@ -11,7 +11,7 @@ import { OnlineIndicator } from "@/components/ui/online-indicator";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import {
   ArrowLeft, MessageSquare, User, Loader2, FileText, X,
-  CheckCircle2, Shield, ThumbsUp, ThumbsDown,
+  CheckCircle2, ChevronDown, Shield, ThumbsUp, ThumbsDown,
   Sparkles, Building2, MessageCircle, Heart, CornerRightDown,
   CalendarDays, Video, Trash2, Headphones,
   // Used by legacy dead code pending removal
@@ -51,6 +51,8 @@ import {
   WhisperDisclaimer,
   ChatProfileSidebar,
   ChatBookingCard,
+  ChatHeaderContextPanel,
+  type ChatHeaderMatchStatus,
   type FilterTab,
 } from "@/components/chat";
 import { SubjectProfileCard } from "@/components/profile-cards";
@@ -827,6 +829,13 @@ const sendMessageMutation = useMutation({
   const [providerUploading, setProviderUploading] = useState(false);
   type ProviderInlinePanel = null | "costSheet" | "invoice" | "agreement";
   const [providerInlinePanel, setProviderInlinePanel] = useState<ProviderInlinePanel>(null);
+  const [providerHeaderPanelOpen, setProviderHeaderPanelOpen] = useState(false);
+  const [parentHeaderPanelOpen, setParentHeaderPanelOpen] = useState(false);
+
+  useEffect(() => {
+    setProviderHeaderPanelOpen(false);
+    setParentHeaderPanelOpen(false);
+  }, [selectedSessionId]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -1470,7 +1479,14 @@ const sendMessageMutation = useMutation({
           </Button>
           {/* Provider session: stacked layout - donor (primary) + provider (subtitle) */}
           {selectedParentSession!.providerId && selectedParentSession!.title ? (
-            <div className="flex items-center gap-3 min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={() => setParentHeaderPanelOpen(o => !o)}
+              aria-expanded={parentHeaderPanelOpen}
+              aria-controls="parent-header-context-panel"
+              className="flex items-center gap-3 min-w-0 flex-1 text-left rounded-[var(--radius)] -mx-1 px-1 py-1 lg:cursor-default active:bg-muted/40 lg:active:bg-transparent"
+              data-testid="btn-parent-header-context"
+            >
               <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-muted relative">
                 {selectedParentSession!.profilePhotoUrl ? (
                   <img src={getPhotoSrc(selectedParentSession!.profilePhotoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
@@ -1495,7 +1511,11 @@ const sendMessageMutation = useMutation({
                   <span className="text-[11px] text-muted-foreground truncate">{parentHeaderName}</span>
                 </div>
               </div>
-            </div>
+              <ChevronDown
+                className={`w-4 h-4 text-muted-foreground flex-shrink-0 transition-transform lg:hidden ${parentHeaderPanelOpen ? "rotate-180" : ""}`}
+                aria-hidden
+              />
+            </button>
           ) : (
             /* Concierge or no-subject: single line */
             <>
@@ -1597,6 +1617,37 @@ const sendMessageMutation = useMutation({
           </div>
           )}
         </div>
+        {selectedParentSession!.providerId && selectedParentSession!.title && (
+          <ChatHeaderContextPanel
+            open={parentHeaderPanelOpen}
+            role="parent"
+            brandColor={brandColor}
+            matchStatus={
+              selectedParentSession!.status === "PROVIDER_CONNECTED"
+                ? { label: "Connected", tone: "success" }
+                : selectedParentSession!.status === "CONSULTATION_BOOKED"
+                ? { label: "Call Booked", tone: "success" }
+                : { label: "Q&A", tone: "neutral" }
+            }
+            subject={
+              selectedParentSession!.subjectProfileId
+                ? {
+                    providerId: selectedParentSession!.providerId,
+                    subjectProfileId: selectedParentSession!.subjectProfileId,
+                    subjectType: selectedParentSession!.subjectType,
+                    fallbackPhotoUrl: selectedParentSession!.profilePhotoUrl,
+                    fallbackLabel: selectedParentSession!.title,
+                  }
+                : null
+            }
+            provider={{
+              id: selectedParentSession!.providerId,
+              name: parentHeaderName,
+              logoUrl: selectedParentSession!.providerLogo,
+            }}
+            testId="parent-header-context-panel"
+          />
+        )}
         <div className="flex flex-1 min-h-0 overflow-hidden">
           <ConciergeChatPage
             key={selectedParentSession!.id}
@@ -1809,7 +1860,14 @@ const sendMessageMutation = useMutation({
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <div className="flex items-center gap-3 flex-1 min-w-0">
+          <button
+            type="button"
+            onClick={() => setProviderHeaderPanelOpen(o => !o)}
+            aria-expanded={providerHeaderPanelOpen}
+            aria-controls="provider-header-context-panel"
+            className="flex items-center gap-3 flex-1 min-w-0 text-left rounded-[var(--radius)] -mx-1 px-1 py-1 lg:cursor-default active:bg-muted/40 lg:active:bg-transparent"
+            data-testid="btn-provider-header-context"
+          >
             {(detail.title || selectedSession?.profilePhotoUrl) ? (
               /* Stacked: parent (primary, who you're talking with) + donor (subtitle, what about) */
               <>
@@ -1861,7 +1919,11 @@ const sendMessageMutation = useMutation({
                 </div>
               </>
             )}
-          </div>
+            <ChevronDown
+              className={`w-4 h-4 text-muted-foreground flex-shrink-0 transition-transform lg:hidden ${providerHeaderPanelOpen ? "rotate-180" : ""}`}
+              aria-hidden
+            />
+          </button>
           <div className="flex items-center gap-1 shrink-0">
             <Button
               variant="ghost"
@@ -1876,6 +1938,34 @@ const sendMessageMutation = useMutation({
             </Button>
           </div>
         </div>
+
+        <ChatHeaderContextPanel
+          open={providerHeaderPanelOpen}
+          role="provider"
+          brandColor={brandColor}
+          user={detail.user}
+          matchStatus={
+            hasJoined
+              ? { label: "Connected", tone: "success" }
+              : isConsultationBooked
+              ? { label: "Call Booked", tone: "success" }
+              : (selectedSession?.pendingQuestions || 0) > 0
+              ? { label: "Anonymous Q&A", tone: "neutral" }
+              : null
+          }
+          subject={
+            selectedSession?.subjectProfileId
+              ? {
+                  providerId: (user as any)?.providerId,
+                  subjectProfileId: selectedSession.subjectProfileId,
+                  subjectType: selectedSession.subjectType,
+                  fallbackPhotoUrl: selectedSession.profilePhotoUrl,
+                  fallbackLabel: selectedSession.title,
+                }
+              : null
+          }
+          testId="provider-header-context-panel"
+        />
 
         <div className="flex flex-1 min-h-0 overflow-hidden">
           <div className="flex-1 flex flex-col min-h-0">

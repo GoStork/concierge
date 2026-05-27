@@ -13,4 +13,6 @@ export { ChatInputBar, WhisperDisclaimer, ExpertSenderLabel } from "./chat-input
 export { ChatPlusDrawer } from "./chat-plus-drawer";
 export type { ChatPlusAction } from "./chat-plus-drawer";
 export { ChatProfileSidebar } from "./chat-profile-sidebar";
+export { ChatHeaderContextPanel } from "./chat-header-context-panel";
+export type { ChatHeaderMatchStatus } from "./chat-header-context-panel";
 export { ChatBookingCard } from "./chat-booking-card";
