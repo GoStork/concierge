@@ -1,5 +1,6 @@
 import { Injectable, Inject, Logger, NotFoundException, BadRequestException } from "@nestjs/common";
 import { NotificationService } from "../notifications/notification.service";
+import { ConnectService } from "./connect.service";
 import { prisma as prismaClient } from "../../../db";
 import { generateReceiptPdf } from "./receipt-pdf";
 import { formatMoneyCents } from "../../lib/format-money";
@@ -68,6 +69,7 @@ export class BillingService {
 
   constructor(
     @Inject(NotificationService) private readonly notificationService: NotificationService,
+    @Inject(ConnectService) private readonly connectService: ConnectService,
   ) {}
 
   // ─── Per-service fee-config listing ─────────────────────────────────────────
@@ -830,6 +832,15 @@ export class BillingService {
     });
     this.logger.log(`Invoice ${invoiceId} captured - PAID`);
     await this.notifyAdminInvoicePaid(invoiceId);
+    // AT_CLEARANCE path also auto-fires the provider transfer.
+    try {
+      const r = await this.connectService.createTransferForPaidInvoice(invoiceId);
+      if (r.status === "failed") {
+        await this.notifyAdminTransferFailed(invoiceId, r.reason).catch(() => {});
+      }
+    } catch (e: any) {
+      this.logger.warn(`Auto-transfer raised unexpectedly for ${invoiceId} (capture path): ${e?.message}`);
+    }
   }
 
   async voidAuthorization(invoiceId: string) {
@@ -978,7 +989,65 @@ export class BillingService {
     await this.emitPaymentReceipt(invoice.id).catch(e =>
       this.logger.warn(`Payment receipt emission failed for ${invoice.id}: ${e?.message}`),
     );
+    // Auto-fire the platform -> provider transfer. Best-effort; failures
+    // (provider not onboarded, KYC restricted, insufficient platform
+    // balance, etc.) leave the invoice PAID and the parent's payment
+    // intact - admin is notified via the result so they can intervene.
+    try {
+      const transferResult = await this.connectService.createTransferForPaidInvoice(invoice.id);
+      if (transferResult.status === "skipped") {
+        this.logger.log(`Transfer skipped for invoice ${invoice.id}: ${transferResult.reason} - ${transferResult.message}`);
+      } else if (transferResult.status === "failed") {
+        // Loud admin notification so ops can manually wire the payout.
+        await this.notifyAdminTransferFailed(invoice.id, transferResult.reason).catch(e =>
+          this.logger.warn(`Admin transfer-failed notification failed: ${e?.message}`),
+        );
+      }
+    } catch (e: any) {
+      this.logger.warn(`Auto-transfer raised unexpectedly for ${invoice.id}: ${e?.message}`);
+    }
     this.logger.log(`Invoice ${invoice.id} marked PAID via Stripe`);
+  }
+
+  /**
+   * In-app admin notification when a platform -> provider transfer fails.
+   * Surfaces in the admin's notification bell so they can manually wire
+   * the payout from Chase as a fallback. Kept lightweight to avoid a
+   * dedicated email template - the existing notifyAdminInvoicePaid
+   * already covers the "money arrived from parent" notification; this
+   * is the "we couldn't forward it" follow-up.
+   */
+  private async notifyAdminTransferFailed(invoiceId: string, reason: string) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: {
+        id: true,
+        providerName: true,
+        providerPayoutAmount: true,
+        currency: true,
+      },
+    });
+    if (!invoice) return;
+    const admins = await this.prisma.user.findMany({
+      where: { roles: { has: "GOSTORK_ADMIN" } },
+      select: { id: true },
+    });
+    const amount = formatCents(invoice.providerPayoutAmount, invoice.currency);
+    for (const admin of admins) {
+      await this.prisma.inAppNotification.create({
+        data: {
+          userId: admin.id,
+          eventType: "PAYOUT_TRANSFER_FAILED",
+          payload: {
+            invoiceId: invoice.id,
+            providerName: invoice.providerName,
+            amount,
+            reason,
+            message: `Payout transfer failed for ${invoice.providerName} (${amount}). Reason: ${reason}. Manually wire from Chase.`,
+          },
+        },
+      });
+    }
   }
 
   /**
@@ -1251,6 +1320,15 @@ export class BillingService {
     await this.emitPaymentReceipt(invoiceId).catch(e =>
       this.logger.warn(`Payment receipt emission failed for ${invoiceId}: ${e?.message}`),
     );
+    // Admin manual-mark-paid also triggers the auto-transfer.
+    try {
+      const r = await this.connectService.createTransferForPaidInvoice(invoiceId);
+      if (r.status === "failed") {
+        await this.notifyAdminTransferFailed(invoiceId, r.reason).catch(() => {});
+      }
+    } catch (e: any) {
+      this.logger.warn(`Auto-transfer raised unexpectedly for ${invoiceId} (admin manual path): ${e?.message}`);
+    }
     return updated;
   }
 

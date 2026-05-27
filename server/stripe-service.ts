@@ -496,3 +496,229 @@ function getBaseUrl(): string {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
   return "http://localhost:5001";
 }
+
+// ─── Stripe Connect (provider payouts) ────────────────────────────────────────
+//
+// Two flavours of connected account, both v1 accounts with the controller
+// property set:
+//
+//   EXPRESS - controller.stripe_dashboard.type = "express"
+//             controller.requirement_collection = "stripe"
+//             Provider is redirected to Stripe-hosted onboarding via
+//             accountLinks.create. Stripe collects KYC.
+//
+//   CUSTOM  - controller.stripe_dashboard.type = "none"
+//             controller.requirement_collection = "application"
+//             GoStork collects KYC fields in its own form and POSTs them
+//             via accounts.update + accounts.createPerson. Provider never
+//             sees Stripe.
+//
+// In both cases:
+//   fees.payer        = "application" -> Stripe deducts processing fees from
+//                       GoStork's platform balance (not the provider's
+//                       transfer amount).
+//   losses.payments   = "application" -> chargebacks debit GoStork's
+//                       platform balance, not the provider's.
+//   capabilities.transfers.requested = true so we can use transfers.create.
+
+export interface CreateConnectAccountParams {
+  type: "EXPRESS" | "CUSTOM";
+  email: string;
+  /** US-only at launch. Adding other countries later flips this and the bank-account currency. */
+  country?: string;
+  /** "company" for agencies / clinics; "individual" for sole-proprietor donors etc. */
+  businessType?: "company" | "individual";
+  /** Display name + URL Stripe shows on hosted Express pages and on the connected account's payout statements. */
+  businessName?: string;
+  businessUrl?: string;
+  /** Snapshot of the provider's GoStork tax ID (EIN). Pre-fills Stripe's KYC. */
+  taxId?: string;
+}
+
+export async function createConnectAccount(params: CreateConnectAccountParams): Promise<{ accountId: string }> {
+  const stripe = getStripe();
+  const dashboardType = params.type === "EXPRESS" ? "express" : "none";
+  const requirementCollection = params.type === "EXPRESS" ? "stripe" : "application";
+
+  const account = await stripe.accounts.create({
+    controller: {
+      fees: { payer: "application" },
+      losses: { payments: "application" },
+      requirement_collection: requirementCollection,
+      stripe_dashboard: { type: dashboardType },
+    },
+    country: params.country || "US",
+    email: params.email,
+    business_type: params.businessType || "company",
+    capabilities: {
+      transfers: { requested: true },
+    },
+    business_profile: {
+      ...(params.businessName ? { name: params.businessName } : {}),
+      ...(params.businessUrl ? { url: params.businessUrl } : {}),
+    },
+    ...(params.taxId && (params.businessType || "company") === "company"
+      ? { company: { tax_id: params.taxId } }
+      : {}),
+    metadata: {
+      gostorkProvider: "true",
+    },
+  });
+
+  return { accountId: account.id };
+}
+
+/**
+ * Generates a one-time onboarding link for Express accounts. The provider is
+ * redirected here, completes Stripe's hosted KYC, then sent back to returnUrl.
+ * refreshUrl is hit if the link expires before they finish.
+ */
+export async function createConnectAccountLink(params: {
+  accountId: string;
+  returnUrl: string;
+  refreshUrl: string;
+}): Promise<{ url: string }> {
+  const stripe = getStripe();
+  const link = await stripe.accountLinks.create({
+    account: params.accountId,
+    refresh_url: params.refreshUrl,
+    return_url: params.returnUrl,
+    type: "account_onboarding",
+  });
+  return { url: link.url };
+}
+
+/** Pulls the latest snapshot from Stripe so we can mirror state into ProviderBankAccount. */
+export async function retrieveConnectAccount(accountId: string): Promise<Stripe.Account> {
+  const stripe = getStripe();
+  return await stripe.accounts.retrieve(accountId);
+}
+
+/**
+ * Custom path: submit KYC fields the provider entered into a GoStork form.
+ * Stripe's KYC is incremental - you can submit what you have, then call again
+ * with whatever Stripe asks for next (surfaced via requirements.currently_due).
+ */
+export async function updateConnectAccount(
+  accountId: string,
+  updates: Stripe.AccountUpdateParams,
+): Promise<Stripe.Account> {
+  const stripe = getStripe();
+  return await stripe.accounts.update(accountId, updates);
+}
+
+/**
+ * Custom path: attach the provider's bank account so payouts can land. Uses
+ * raw routing + account numbers passed from the GoStork server (the form
+ * value is server-side, never tokenised on the client, so this code path
+ * must only run on https and the server endpoint must enforce auth).
+ */
+export async function attachConnectBankAccount(params: {
+  accountId: string;
+  routingNumber: string;
+  accountNumber: string;
+  accountHolderName: string;
+  accountHolderType: "company" | "individual";
+  country?: string;
+  currency?: string;
+}): Promise<Stripe.BankAccount> {
+  const stripe = getStripe();
+  const result = await stripe.accounts.createExternalAccount(params.accountId, {
+    external_account: {
+      object: "bank_account",
+      country: params.country || "US",
+      currency: params.currency || "usd",
+      routing_number: params.routingNumber,
+      account_number: params.accountNumber,
+      account_holder_name: params.accountHolderName,
+      account_holder_type: params.accountHolderType,
+    } as Stripe.AccountCreateExternalAccountParams["external_account"],
+  });
+  return result as Stripe.BankAccount;
+}
+
+/**
+ * Custom path: create the company representative (a "Person") for company
+ * accounts. Required for KYC of LLC / corp providers. Skip for
+ * business_type = individual - Stripe collects representative fields
+ * directly on the Account in that case.
+ */
+export async function createConnectAccountRepresentative(params: {
+  accountId: string;
+  firstName: string;
+  lastName: string;
+  email?: string;
+  phone?: string;
+  dob: { day: number; month: number; year: number };
+  ssnLast4: string;
+  address: {
+    line1: string;
+    line2?: string;
+    city: string;
+    state: string;
+    postalCode: string;
+    country?: string;
+  };
+}): Promise<Stripe.Person> {
+  const stripe = getStripe();
+  return await stripe.accounts.createPerson(params.accountId, {
+    first_name: params.firstName,
+    last_name: params.lastName,
+    ...(params.email ? { email: params.email } : {}),
+    ...(params.phone ? { phone: params.phone } : {}),
+    dob: params.dob,
+    ssn_last_4: params.ssnLast4,
+    address: {
+      line1: params.address.line1,
+      ...(params.address.line2 ? { line2: params.address.line2 } : {}),
+      city: params.address.city,
+      state: params.address.state,
+      postal_code: params.address.postalCode,
+      country: params.address.country || "US",
+    },
+    relationship: {
+      representative: true,
+      executive: true,
+      title: "Owner",
+    },
+  });
+}
+
+/**
+ * Fires the actual transfer from GoStork's platform balance to the
+ * provider's connected account. Called when an invoice flips to PAID and
+ * the provider's payoutsEnabled is true. Synchronous - if the transfer
+ * fails (insufficient platform balance, restricted destination, etc.)
+ * this throws and the caller handles it (no async transfer.failed event
+ * exists, contrary to Stripe's general async pattern).
+ */
+export async function createConnectTransfer(params: {
+  amountCents: number;
+  currency: string;
+  destinationAccountId: string;
+  /** Used for tracing in Stripe Dashboard - usually the GoStork invoice ID. */
+  transferGroup?: string;
+  description?: string;
+  metadata?: Record<string, string>;
+}): Promise<Stripe.Transfer> {
+  if (!isStripeConfigured()) {
+    throw new Error("Stripe not configured - cannot create transfer");
+  }
+  const stripe = getStripe();
+  return await stripe.transfers.create({
+    amount: params.amountCents,
+    currency: params.currency.toLowerCase(),
+    destination: params.destinationAccountId,
+    ...(params.transferGroup ? { transfer_group: params.transferGroup } : {}),
+    ...(params.description ? { description: params.description } : {}),
+    metadata: params.metadata || {},
+  });
+}
+
+/** Connect-events webhook verifier. Uses STRIPE_CONNECT_WEBHOOK_SECRET (separate from STRIPE_WEBHOOK_SECRET). */
+export function constructConnectWebhookEvent(payload: Buffer | string, signature: string): Stripe.Event {
+  const secret = process.env.STRIPE_CONNECT_WEBHOOK_SECRET;
+  if (!secret) throw new Error("STRIPE_CONNECT_WEBHOOK_SECRET is not set");
+  const stripe = getStripe();
+  return stripe.webhooks.constructEvent(payload, signature, secret);
+}

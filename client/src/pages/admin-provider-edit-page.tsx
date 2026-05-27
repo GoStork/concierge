@@ -21,6 +21,7 @@ import MembersTable from "@/components/members-table";
 import ProfileDatabasePanel from "@/components/profile-database-panel";
 import ProviderCostsTab from "@/components/provider-costs-tab";
 import { ProviderBillingTab } from "@/components/provider-billing-tab";
+import { AdminProviderPayoutsView } from "@/components/admin-provider-payouts-view";
 import { BrandSettingsForm } from "@/pages/admin-brand-settings-page";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
@@ -693,6 +694,9 @@ export default function AdminProviderEditPage() {
           </TabsTrigger>
           <TabsTrigger value="billing" className={tabTriggerClass} data-testid="tab-edit-billing">
             Billing
+          </TabsTrigger>
+          <TabsTrigger value="payouts" className={tabTriggerClass} data-testid="tab-edit-payouts">
+            Payouts
           </TabsTrigger>
           <TabsTrigger value="branding" className={tabTriggerClass} data-testid="tab-edit-branding">
             <Palette className="w-4 h-4 mr-1.5 inline" />
@@ -1451,6 +1455,10 @@ export default function AdminProviderEditPage() {
               (provider.services || [])[0]?.providerType?.name || ""
             }
           />
+        </TabsContent>
+
+        <TabsContent value="payouts">
+          <AdminProviderPayoutsView providerId={provider.id} />
         </TabsContent>
       </Tabs>
 

@@ -1401,6 +1401,15 @@ model Invoice {
   dwollaPaymentTransferUrl String?
   dwollaPayoutTransferUrl  String?
 
+  // Stripe Connect transfer: when invoice flips to PAID and the provider's
+  // ProviderBankAccount.payoutsEnabled is true, we call transfers.create to
+  // push the provider's cut from GoStork's platform balance to their
+  // connected account. The provider's Stripe Connect payout schedule then
+  // moves it to their bank.
+  stripeTransferId      String?   @unique
+  payoutFailedAt        DateTime?
+  payoutFailureReason   String?
+
   // Timestamps
   authorizedAt      DateTime?
   capturedAt        DateTime?
@@ -1501,18 +1510,64 @@ model InvoiceReminder {
   @@index([invoiceId])
 }
 
+// Provider payout setup. One row per provider. Two payout methods are
+// supported via the `payoutMethod` switch:
+//
+//   STRIPE_CONNECT_EXPRESS - provider goes through Stripe-hosted onboarding
+//     (account link redirect). They end up with a minimal Stripe Express
+//     dashboard. Best for tech-comfortable providers.
+//
+//   STRIPE_CONNECT_CUSTOM - provider fills out a GoStork form (business
+//     address + representative info + bank routing/account); GoStork creates
+//     the Connect account behind the scenes with controller.dashboard.type
+//     = "none" so the provider never sees Stripe at all. Best for
+//     conservative providers (most fertility agencies).
+//
+// In both cases the underlying money flow is identical: parent pays via
+// Stripe Checkout/Element, funds land in GoStork's Stripe balance, then
+// stripe.transfers.create pushes the provider's cut to their Connect
+// account. Stripe then auto-pays out from the Connect account to the
+// provider's bank per their payout schedule.
 model ProviderBankAccount {
-  id                    String    @id @default(uuid())
-  providerId            String    @unique
-  dwollaCustomerId      String?
-  dwollaFundingSourceId String?
-  bankName              String?
-  accountLast4          String?
-  accountType           String? // "checking" | "savings"
-  status                String    @default("PENDING") // PENDING | VERIFIED | SUSPENDED
-  verifiedAt            DateTime?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  id                          String    @id @default(uuid())
+  providerId                  String    @unique
+  // "STRIPE_CONNECT_EXPRESS" | "STRIPE_CONNECT_CUSTOM" | null (not yet picked)
+  payoutMethod                String?
+  // Stripe Connect account ID (acct_...). Same column for both Express and
+  // Custom - the Stripe account itself doesn't differ, only the controller
+  // config we passed at creation time.
+  stripeConnectAccountId      String?   @unique
+  // Mirrored from Stripe's accounts.retrieve response so the UI can render
+  // status without an extra Stripe round-trip per page load:
+  //   payoutsEnabled = capabilities.transfers.status === "active"
+  //   chargesEnabled = charges_enabled (informational only - we don't
+  //     accept charges on the connected account, but Stripe surfaces it)
+  payoutsEnabled              Boolean   @default(false)
+  chargesEnabled              Boolean   @default(false)
+  detailsSubmitted            Boolean   @default(false)
+  // requirements.currently_due[] - list of field IDs Stripe still needs from
+  // the account (e.g. "individual.dob.day", "external_account",
+  // "individual.verification.document"). For Custom path we render these
+  // as inline fields in the GoStork form; for Express we just deep-link
+  // back into Stripe-hosted onboarding.
+  requirementsCurrentlyDue    Json      @default("[]")
+  // requirements.eventually_due[] - fields not yet blocking but Stripe will
+  // ask for them before a future deadline.
+  requirementsEventuallyDue   Json      @default("[]")
+  // requirements.past_due[] - fields blocking AND past the deadline; payouts
+  // get paused until these are submitted.
+  requirementsPastDue         Json      @default("[]")
+  // requirements.disabled_reason - non-null when the account is restricted.
+  requirementsDisabledReason  String?
+  // Snapshot of the linked bank for display ("Chase **** 1234"). Pulled
+  // from external_accounts on account.updated. Never the source of truth.
+  bankName                    String?
+  accountLast4                String?
+  accountType                 String?   // "checking" | "savings"
+  onboardingStartedAt         DateTime?
+  onboardingCompletedAt       DateTime? // first time payoutsEnabled flipped to true
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
 
   provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 }

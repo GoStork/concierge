@@ -37,8 +37,10 @@
   --secondary: 160 30% 96%;
   --secondary-foreground: 183 100% 25%;
   
-  /* Accent: Energetic Coral/Blue */
-  --accent: 199 89% 48%; /* #0DA4EA - Bright Blue */
+  /* Accent: Dusty Mauve. Brand accent for alternate emphasis / non-CTA
+     surfaces (see CLAUDE.md "Use the FULL brand palette"). White text
+     hits WCAG AA contrast on the full-opacity surface. */
+  --accent: 322 18% 58%; /* #A8829A - Dusty Mauve */
   --accent-foreground: 0 0% 100%;
   
   /* Backgrounds */
