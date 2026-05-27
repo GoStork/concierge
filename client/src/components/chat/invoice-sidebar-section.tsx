@@ -21,7 +21,8 @@ function BillingLinkedMessage({ text }: { text: string }) {
           <Link
             key={i}
             to="/account/billing"
-            className="underline font-semibold hover:opacity-80"
+            className="underline underline-offset-2 font-semibold hover:opacity-80"
+            style={{ color: "hsl(var(--primary))" }}
             data-testid="link-billing-tab"
           >
             {part}
