@@ -121,6 +121,18 @@ export function ChatHeaderContextPanel({
             <div className="rounded-[var(--radius)] bg-background border p-3" data-testid="context-panel-parent-card">
               <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Parent</p>
               <ParentProfileCard user={user} testId="context-panel-parent-profile" />
+              {user.id && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/parents/${user.id}`)}
+                  className="mt-3 inline-flex items-center gap-1 text-xs"
+                  style={{ color: brandColor }}
+                  data-testid="context-panel-parent-link"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  View Full Parent Profile
+                </button>
+              )}
             </div>
           )}
 

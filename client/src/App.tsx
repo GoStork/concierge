@@ -21,6 +21,7 @@ import AdminProviderAddPage from "@/pages/admin-provider-add-page";
 import ProfileDetailPage from "@/pages/profile-detail-page";
 import ProfileEditPage from "@/pages/profile-edit-page";
 import StaffPage from "@/pages/staff-page";
+import ParentDetailPage from "@/pages/parent-detail-page";
 import AdminUserEditPage from "@/pages/admin-user-edit-page";
 import AdminUserAddPage from "@/pages/admin-user-add-page";
 import CompleteProfilePage from "@/pages/complete-profile-page";
@@ -151,6 +152,7 @@ function AppRoutes() {
         <Route path="/users/new" element={<ProtectedRoute><AdminUserAddPage /></ProtectedRoute>} />
         <Route path="/users/:id" element={<ProtectedRoute><AdminUserEditPage /></ProtectedRoute>} />
         <Route path="/users" element={<ProtectedRoute><StaffPage /></ProtectedRoute>} />
+        <Route path="/parents/:id" element={<ProtectedRoute><ParentDetailPage /></ProtectedRoute>} />
         <Route path="/provider/services" element={<Navigate to="/account/company" replace />} />
         <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
         <Route path="/calendar/new-appointment" element={<ProtectedRoute><ParentNewAppointmentPage /></ProtectedRoute>} />

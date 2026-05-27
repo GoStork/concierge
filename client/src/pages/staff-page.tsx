@@ -390,6 +390,7 @@ function GostorkAdminUsersView() {
 
 function ProviderParentContactsView({ providerId }: { providerId: string }) {
   const [searchQuery, setSearchQuery] = useState("");
+  const navigate = useNavigate();
 
   const { data: parents, isLoading } = useQuery<any[]>({
     queryKey: [`/api/providers/${providerId}/parent-contacts`],
@@ -442,7 +443,12 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
           </TableHeader>
           <TableBody>
             {filtered.length > 0 ? filtered.map((parent: any) => (
-              <TableRow key={parent.id} data-testid={`row-parent-contact-${parent.id}`}>
+              <TableRow
+                key={parent.id}
+                data-testid={`row-parent-contact-${parent.id}`}
+                className="cursor-pointer hover:bg-secondary/30"
+                onClick={() => navigate(`/parents/${parent.id}`)}
+              >
                 <TableCell className="font-ui">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-[var(--radius)] bg-primary/10 flex items-center justify-center text-primary">

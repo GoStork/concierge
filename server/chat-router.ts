@@ -1037,6 +1037,88 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
   }
 });
 
+// Provider/admin parent detail page. Tenant-gated: requesting provider must
+// share at least one PROVIDER_CONNECTED chat session or a Booking with this
+// parent. Admins bypass. Returns the same SessionUser shape the chat sidebar
+// renders so ParentProfileCard can be reused on the new /parents/:id page.
+chatRouter.get("/api/provider/parents/:id", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isProviderUser(user) && !isAdminUser(user)) {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+  try {
+    const parentId = req.params.id;
+
+    if (!isAdminUser(user)) {
+      const providerId = user.providerId;
+      if (!providerId) return res.status(403).json({ message: "Forbidden" });
+
+      const sharedSession = await prisma.aiChatSession.findFirst({
+        where: {
+          userId: parentId,
+          providerId,
+          status: { in: ["PROVIDER_CONNECTED", "CONSULTATION_BOOKED"] },
+        },
+        select: { id: true },
+      });
+
+      let hasRelationship = !!sharedSession;
+      if (!hasRelationship) {
+        const staff = await prisma.user.findMany({
+          where: { providerId },
+          select: { id: true },
+        });
+        const staffIds = staff.map(s => s.id);
+        if (staffIds.length > 0) {
+          const booking = await prisma.booking.findFirst({
+            where: {
+              parentUserId: parentId,
+              providerUserId: { in: staffIds },
+            },
+            select: { id: true },
+          });
+          hasRelationship = !!booking;
+        }
+      }
+
+      if (!hasRelationship) return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const parent = await prisma.user.findUnique({
+      where: { id: parentId },
+      select: {
+        id: true, name: true, email: true, photoUrl: true, city: true, state: true,
+        mobileNumber: true, relationshipStatus: true, partnerFirstName: true,
+        partnerAge: true, dateOfBirth: true,
+        parentAccount: {
+          select: {
+            intendedParentProfile: {
+              select: {
+                journeyStage: true, interestedServices: true, isFirstIvf: true,
+                eggSource: true, spermSource: true, carrier: true, hasEmbryos: true,
+                embryoCount: true, embryosTested: true, needsClinic: true,
+                currentClinicName: true, clinicPriority: true, needsEggDonor: true,
+                needsSurrogate: true, surrogateCountries: true, surrogateTermination: true,
+                surrogateTwins: true, surrogateAgeRange: true, surrogateBudget: true,
+                surrogateExperience: true, surrogateMedPrefs: true, donorPreferences: true,
+                donorEyeColor: true, donorHairColor: true, donorHeight: true,
+                donorEducation: true, donorEthnicity: true, spermDonorType: true,
+                currentAgencyName: true, currentAttorneyName: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!parent) return res.status(404).json({ message: "Parent not found" });
+    res.json(parent);
+  } catch (e: any) {
+    console.error("Provider parent detail error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
 chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
