@@ -22,6 +22,7 @@ import ProfileDatabasePanel from "@/components/profile-database-panel";
 import ProviderCostsTab from "@/components/provider-costs-tab";
 import { ProviderBillingTab } from "@/components/provider-billing-tab";
 import { AdminProviderPayoutsView } from "@/components/admin-provider-payouts-view";
+import { ProviderLegalIdentityTab } from "@/components/provider-legal-identity-tab";
 import { BrandSettingsForm } from "@/pages/admin-brand-settings-page";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
@@ -691,6 +692,9 @@ export default function AdminProviderEditPage() {
           <TabsTrigger value="costs" className={tabTriggerClass} data-testid="tab-edit-costs">
             <DollarSign className="w-4 h-4 mr-1.5 inline" />
             Costs
+          </TabsTrigger>
+          <TabsTrigger value="legal-identity" className={tabTriggerClass} data-testid="tab-edit-legal-identity">
+            Legal Identity
           </TabsTrigger>
           <TabsTrigger value="billing" className={tabTriggerClass} data-testid="tab-edit-billing">
             Billing
@@ -1459,6 +1463,10 @@ export default function AdminProviderEditPage() {
 
         <TabsContent value="payouts">
           <AdminProviderPayoutsView providerId={provider.id} />
+        </TabsContent>
+
+        <TabsContent value="legal-identity">
+          <ProviderLegalIdentityTab providerId={provider.id} mode="admin" />
         </TabsContent>
       </Tabs>
 

@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ProviderW9Section } from "./provider-w9-section";
+import { W9TemplateConfig } from "./w9-template-config";
 import { useAuth } from "@/hooks/use-auth";
 
 interface LegalIdentityState {
@@ -56,10 +57,18 @@ interface ProviderLegalIdentityTabProps {
 export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: ProviderLegalIdentityTabProps) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const isAdmin = mode === "admin";
+  const isAdminUser = !!(user as any)?.roles?.includes?.("GOSTORK_ADMIN");
+  const isAdmin = mode === "admin" || isAdminUser;
   const effectiveProviderId = providerId || (user as any)?.providerId;
 
-  const getUrl = isAdmin
+  // When a GoStork admin lands on /account/legal-identity with no
+  // provider impersonation context (their own user has no providerId),
+  // they're here to manage the GLOBAL W-9 PandaDoc template - the one
+  // GoStork sends out to every provider for signature. No per-provider
+  // identity form to render, just the template config.
+  const isGlobalAdminView = isAdminUser && !effectiveProviderId;
+
+  const getUrl = mode === "admin" && providerId
     ? `/api/admin/providers/${providerId}/legal-identity`
     : `/api/provider/legal-identity`;
   const putUrl = getUrl;
@@ -71,6 +80,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
       if (!res.ok) throw new Error("Failed to load legal identity");
       return res.json();
     },
+    enabled: !isGlobalAdminView,
   });
 
   // Form state - seeded from server, written back on save.
@@ -150,18 +160,51 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
 
   const isW9AutoFilled = state?.source === "W9_AUTO_FILL";
 
+  // ── Global-admin view: only the W-9 template config ─────────────────────
+  // When a GoStork admin opens /account/legal-identity (their own user
+  // page, no providerId), they're here to manage the global W-9 PandaDoc
+  // template, NOT to edit their own legal identity (admins aren't
+  // providers). Render just that.
+  if (isGlobalAdminView) {
+    return (
+      <div className="space-y-6">
+        <header>
+          <h2 className="text-2xl font-heading">Legal Identity - Admin tools</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            GoStork-wide W-9 template configuration. Per-provider Legal Identity is edited
+            on each provider's admin page (<code className="text-xs bg-muted px-1 rounded">/admin/providers/:id</code> → Legal Identity tab).
+          </p>
+        </header>
+        <section className="space-y-3 rounded-xl border bg-secondary/30 p-5">
+          <div>
+            <h3 className="font-semibold">W-9 PandaDoc template</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Upload the master W-9 template that gets sent to every provider for signature.
+              Configure the field IDs (Full_Name, Company_Name, RadioButtons1, Address,
+              City_State_zipcode, SSN, EIN) so signed W-9s auto-fill into each provider's
+              Legal Identity.
+            </p>
+          </div>
+          <W9TemplateConfig />
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <header className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-2xl font-heading">Legal Identity</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Your business's legal name, tax ID, and address. Used on payment receipts, the W-9, and Stripe Connect KYC for payouts.
+            {isAdmin
+              ? "This provider's legal name, tax ID, and address. Used on payment receipts, the W-9, and Stripe Connect KYC for payouts."
+              : "Your business's legal name, tax ID, and address. Used on payment receipts, the W-9, and Stripe Connect KYC for payouts."}
             {isW9AutoFilled && state?.lastW9SyncAt && (
               <span className="block mt-1 text-xs" style={{ color: "hsl(var(--brand-success))" }}>
                 <Sparkles className="w-3 h-3 inline mr-1" />
-                Auto-filled from your signed W-9 on {new Date(state.lastW9SyncAt).toLocaleDateString()}.
-                You can override any field below.
+                Auto-filled from {isAdmin ? "the provider's" : "your"} signed W-9 on {new Date(state.lastW9SyncAt).toLocaleDateString()}.
+                {isAdmin ? "" : " You can override any field below."}
               </span>
             )}
           </p>
@@ -171,7 +214,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
           size="sm"
           disabled={syncMutation.isPending}
           onClick={() => syncMutation.mutate()}
-          title="Re-read field values from your signed W-9 (only fills fields that are still empty)"
+          title="Re-read field values from the signed W-9 (only fills fields that are still empty)"
         >
           {syncMutation.isPending
             ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
