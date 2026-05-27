@@ -12,7 +12,7 @@ import {
   retrieveConnectAccount,
   updateConnectAccount,
   attachConnectBankAccount,
-  createConnectAccountRepresentative,
+  upsertConnectAccountRepresentative,
   createConnectTransfer,
 } from "../../../stripe-service";
 import type Stripe from "stripe";
@@ -256,34 +256,31 @@ export class ConnectService {
     }
     await updateConnectAccount(accountId, updateParams);
 
-    // 3. Create the representative (company accounts only - individual
+    // 3. Upsert the representative (company accounts only - individual
     // accounts already have the representative fields on Account.individual).
+    // The helper finds an existing representative person on the account and
+    // updates it, or creates a new one if none exists. This makes "edit
+    // and re-save" idempotent instead of Stripe rejecting with "An account
+    // can only have one representative".
     if (businessTypeForStripe === "company") {
-      try {
-        const repAddr = params.form.representative.address;
-        await createConnectAccountRepresentative({
-          accountId,
-          firstName: params.form.representative.firstName,
-          lastName: params.form.representative.lastName,
-          email: params.form.representative.email,
-          phone: params.form.representative.phone,
-          dob: params.form.representative.dob,
-          ssnLast4: params.form.representative.ssnLast4,
-          address: {
-            line1: repAddr.line1 || businessAddress.line1,
-            line2: repAddr.line2,
-            city: repAddr.city || businessAddress.city,
-            state: repAddr.state || businessAddress.state,
-            postalCode: repAddr.postalCode || businessAddress.postal_code,
-            country: repAddr.country || "US",
-          },
-        });
-      } catch (e: any) {
-        // If a person already exists (re-submit case) Stripe returns 400.
-        // Surface other errors but don't abort the whole flow on this case.
-        if (!/already exists|duplicate/i.test(e?.message || "")) throw e;
-        this.logger.warn(`Representative already exists on ${accountId}: ${e.message}`);
-      }
+      const repAddr = params.form.representative.address;
+      await upsertConnectAccountRepresentative({
+        accountId,
+        firstName: params.form.representative.firstName,
+        lastName: params.form.representative.lastName,
+        email: params.form.representative.email,
+        phone: params.form.representative.phone,
+        dob: params.form.representative.dob,
+        ssnLast4: params.form.representative.ssnLast4,
+        address: {
+          line1: repAddr.line1 || businessAddress.line1,
+          line2: repAddr.line2,
+          city: repAddr.city || businessAddress.city,
+          state: repAddr.state || businessAddress.state,
+          postalCode: repAddr.postalCode || businessAddress.postal_code,
+          country: repAddr.country || "US",
+        },
+      });
     }
 
     // 4. Attach the bank account.

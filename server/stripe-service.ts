@@ -638,12 +638,18 @@ export async function attachConnectBankAccount(params: {
 }
 
 /**
- * Custom path: create the company representative (a "Person") for company
+ * Custom path: upsert the company representative (a "Person") for company
  * accounts. Required for KYC of LLC / corp providers. Skip for
  * business_type = individual - Stripe collects representative fields
  * directly on the Account in that case.
+ *
+ * Stripe rejects createPerson with "An account can only have one
+ * representative" when one already exists, so we list existing persons,
+ * find the one flagged representative=true, and update them instead of
+ * creating a duplicate. This makes the provider's "edit and re-save"
+ * flow work as expected.
  */
-export async function createConnectAccountRepresentative(params: {
+export async function upsertConnectAccountRepresentative(params: {
   accountId: string;
   firstName: string;
   lastName: string;
@@ -661,7 +667,7 @@ export async function createConnectAccountRepresentative(params: {
   };
 }): Promise<Stripe.Person> {
   const stripe = getStripe();
-  return await stripe.accounts.createPerson(params.accountId, {
+  const body: Stripe.PersonCreateParams = {
     first_name: params.firstName,
     last_name: params.lastName,
     ...(params.email ? { email: params.email } : {}),
@@ -681,7 +687,29 @@ export async function createConnectAccountRepresentative(params: {
       executive: true,
       title: "Owner",
     },
-  });
+  };
+
+  // Find an existing representative on the account. We iterate the
+  // (usually short) persons list and pick the one with
+  // relationship.representative === true; falling back to any person if
+  // none is flagged that way (legacy data).
+  const existing = await stripe.accounts.listPersons(params.accountId, { limit: 100 });
+  const rep =
+    existing.data.find(p => p.relationship?.representative === true) ||
+    existing.data[0];
+
+  if (rep) {
+    return await stripe.accounts.updatePerson(params.accountId, rep.id, body as Stripe.PersonUpdateParams);
+  }
+  return await stripe.accounts.createPerson(params.accountId, body);
+}
+
+/**
+ * @deprecated use upsertConnectAccountRepresentative - kept as a thin
+ * compat shim so any other callers don't break mid-refactor.
+ */
+export async function createConnectAccountRepresentative(params: Parameters<typeof upsertConnectAccountRepresentative>[0]): Promise<Stripe.Person> {
+  return await upsertConnectAccountRepresentative(params);
 }
 
 /**
