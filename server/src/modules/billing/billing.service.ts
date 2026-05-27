@@ -1015,7 +1015,7 @@ export class BillingService {
     let providerEmails: string[] = [];
     if (invoice.providerId) {
       const members = await this.prisma.user.findMany({
-        where: { providerId: invoice.providerId, email: { not: null } },
+        where: { providerId: invoice.providerId, NOT: { email: null } },
         select: { email: true },
       });
       providerEmails = Array.from(

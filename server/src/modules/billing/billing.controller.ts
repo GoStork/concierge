@@ -104,6 +104,29 @@ export class BillingController {
     return { success: true };
   }
 
+  // Admin-only: re-emit the parent + provider receipt PDF emails for an
+  // already-PAID invoice. Useful when the original emission failed (the
+  // common case being the `billingRecipient` bug that silently swallowed
+  // every receipt before that field was removed).
+  @Post("api/admin/invoices/:id/resend-receipt")
+  @UseGuards(SessionOrJwtGuard)
+  async adminResendReceipt(@Req() req: Request, @Param("id") id: string) {
+    const user = req.user as any;
+    if (!user?.roles?.includes("GOSTORK_ADMIN")) {
+      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    }
+    try {
+      await this.billingService.emitPaymentReceipt(id);
+      return { success: true };
+    } catch (e: any) {
+      this.logger.error(`Resend receipt failed for invoice ${id}: ${e?.message}`, e?.stack);
+      throw new HttpException(
+        `Resend receipt failed: ${e?.message || "unknown error"}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   // ─── Parent: my invoices ─────────────────────────────────────────────────
 
   @Get("api/my/invoices")
