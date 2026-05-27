@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatMoneyDollars } from "@/lib/format-money";
-import { User, Building2, Users, Calendar, Camera, Loader2, Eye, EyeOff, Phone, Mail, Shield, CalendarPlus, AlertTriangle, Check, Pencil, Plus, Trash2, Palette, Egg, Baby, FlaskConical, DollarSign, LogOut, Sparkles, Brain, RefreshCw, FileText, Wallet } from "lucide-react";
+import { User, Building2, Users, Calendar, Camera, Loader2, Eye, EyeOff, Phone, Mail, Shield, CalendarPlus, AlertTriangle, Check, Pencil, Plus, Trash2, Palette, Egg, Baby, FlaskConical, DollarSign, LogOut, Sparkles, Brain, RefreshCw, FileText, Wallet, FileSignature } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -21,6 +21,7 @@ import ProfileDatabasePanel from "@/components/profile-database-panel";
 import ProviderCostsTab from "@/components/provider-costs-tab";
 import { ProviderBillingTab } from "@/components/provider-billing-tab";
 import { ProviderPayoutsTab } from "@/components/provider-payouts-tab";
+import { ProviderLegalIdentityTab } from "@/components/provider-legal-identity-tab";
 import { CalendarSettings as CalendarSettingsComponent } from "@/components/calendar/calendar-settings";
 import BrandSettingsTab, { BrandSettingsForm } from "@/pages/admin-brand-settings-page";
 import AdminConciergePage from "@/pages/admin-concierge-page";
@@ -41,6 +42,7 @@ const allTabs = [
   { to: '/account/team', label: 'Team', icon: Users, roles: 'provider' as const },
   { to: '/account/members', label: 'Members', icon: Users, roles: 'parent' as const },
   { to: '/account/calendar', label: 'Calendar', icon: Calendar, roles: null },
+  { to: '/account/legal-identity', label: 'Legal Identity', icon: FileSignature, roles: 'provider' as const },
   { to: '/account/billing', label: 'Billing', icon: DollarSign, roles: 'billing' as const },
   { to: '/account/payouts', label: 'Payouts', icon: Wallet, roles: 'provider' as const },
   { to: '/account/branding', label: 'Branding', icon: Palette, roles: 'branding' as const },
@@ -2102,7 +2104,7 @@ export default function AccountPage() {
     '/account', '/account/company', '/account/team', '/account/members',
     '/account/calendar', '/account/costs', '/account/documents',
     '/account/egg-donors', '/account/surrogates', '/account/sperm-donors',
-    '/account/knowledge', '/account/concierge', '/account/billing', '/account/payouts', '/account/branding', '/account/scrapers',
+    '/account/knowledge', '/account/concierge', '/account/legal-identity', '/account/billing', '/account/payouts', '/account/branding', '/account/scrapers',
   ];
 
   const tabs = [...allTabs, ...donorTabs].filter(tab => {
@@ -2208,6 +2210,9 @@ export default function AccountPage() {
         )}
         {isProvider && (
           <Route path="payouts" element={<ProviderPayoutsTab />} />
+        )}
+        {(isProvider || isAdmin) && (
+          <Route path="legal-identity" element={<ProviderLegalIdentityTab />} />
         )}
         <Route path="branding" element={
           isAdmin ? <BrandSettingsTab /> :

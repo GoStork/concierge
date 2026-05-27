@@ -223,7 +223,7 @@ export class BillingService {
       include: {
         referralFeeConfigs: true,
         services: { include: { providerType: true } },
-        brandSettings: { select: { legalName: true, taxId: true } },
+        legalIdentity: { select: { legalName: true, taxId: true } },
         w9: { select: { status: true } },
       },
     });
@@ -241,15 +241,17 @@ export class BillingService {
       );
     }
 
-    // Billing Identity must be complete before any invoice (manual or automatic)
-    // can be issued: Legal Name, Tax ID, and a signed W-9 are all required.
+    // Legal Identity must be complete before any invoice (manual or
+    // automatic) can be issued: Legal Name, Tax ID, and a signed W-9 are
+    // all required. (Legal Name + Tax ID come from ProviderLegalIdentity;
+    // W-9 status still lives on ProviderW9.)
     const missingIdentity: string[] = [];
-    if (!provider.brandSettings?.legalName?.trim()) missingIdentity.push("Legal Name");
-    if (!provider.brandSettings?.taxId?.trim()) missingIdentity.push("Tax ID");
+    if (!provider.legalIdentity?.legalName?.trim()) missingIdentity.push("Legal Name");
+    if (!provider.legalIdentity?.taxId?.trim()) missingIdentity.push("Tax ID");
     if (provider.w9?.status !== "COMPLETED") missingIdentity.push("W-9");
     if (missingIdentity.length > 0) {
       throw new BadRequestException(
-        `Billing Identity is incomplete - please add ${missingIdentity.join(", ")} in the Billing tab before sending an invoice.`,
+        `Legal Identity is incomplete - please add ${missingIdentity.join(", ")} in the Legal Identity tab before sending an invoice.`,
       );
     }
 
@@ -1103,15 +1105,23 @@ export class BillingService {
     const paidAt = invoice.paidAt || new Date();
     const receiptNumber = `GS-${paidAt.toISOString().slice(0, 10).replace(/-/g, "")}-${invoice.id.slice(0, 8).toUpperCase()}`;
 
-    // Agency brand settings drive the receipt's primary color, logo, legal
-    // name, and tax ID. Logo bytes are fetched lazily - if the URL fails we
-    // fall back to the wordmark layout.
-    const brandSettings = invoice.providerId
-      ? await this.prisma.providerBrandSettings.findUnique({
-          where: { providerId: invoice.providerId },
-          select: { primaryColor: true, logoUrl: true, legalName: true, taxId: true },
-        })
-      : null;
+    // Agency brand settings drive the receipt's primary color + logo;
+    // Legal Name + Tax ID come from ProviderLegalIdentity (separate
+    // model, single source of truth, also feeds Stripe Connect KYC).
+    // Logo bytes are fetched lazily - if the URL fails we fall back to
+    // the wordmark layout.
+    const [brandSettings, legalIdentity] = invoice.providerId
+      ? await Promise.all([
+          this.prisma.providerBrandSettings.findUnique({
+            where: { providerId: invoice.providerId },
+            select: { primaryColor: true, logoUrl: true },
+          }),
+          this.prisma.providerLegalIdentity.findUnique({
+            where: { providerId: invoice.providerId },
+            select: { legalName: true, taxId: true },
+          }),
+        ])
+      : [null, null];
 
     let logoBuffer: Buffer | null = null;
     if (brandSettings?.logoUrl) {
@@ -1162,8 +1172,8 @@ export class BillingService {
       brand: {
         primaryColor: brandSettings?.primaryColor || null,
         logoBuffer,
-        legalName: brandSettings?.legalName || invoice.providerName,
-        taxId: brandSettings?.taxId || null,
+        legalName: legalIdentity?.legalName || invoice.providerName,
+        taxId: legalIdentity?.taxId || null,
       },
     });
 

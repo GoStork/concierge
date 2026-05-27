@@ -66,6 +66,7 @@ model Provider {
   agreements                            Agreement[]
   eggDonorSyncConfig                    EggDonorSyncConfig?
   brandSettings                         ProviderBrandSettings?
+  legalIdentity                         ProviderLegalIdentity?
   costSheets                            ProviderCostSheet[]
   costPrograms                          CostProgram[]
   locations                             ProviderLocation[]
@@ -1026,13 +1027,74 @@ model ProviderBrandSettings {
   quickReplyDeclineStyle String?
   quickReplyShowBorder   Boolean?
 
-  // Billing / receipt fields. Tax ID is shown in the footer of payment
-  // receipts so parents can submit them for FSA/HSA or insurance reimbursement.
-  // legalName falls back to provider.name when null.
-  legalName String?
-  taxId     String?
-
   provider Provider @relation(fields: [providerId], references: [id])
+}
+
+// Legal identity of a provider, used everywhere downstream that needs the
+// "who is this business legally" answer: receipt PDFs (Issued By + Tax ID
+// footer), Stripe Connect KYC, the signed W-9 itself.
+//
+// One row per provider. Source of truth: when the provider's W-9 is
+// completed in PandaDoc, the document.completed webhook auto-fills these
+// fields from the W-9 form values. Admin/provider can also manually edit
+// at /account/legal-identity; manual edits win over auto-fill (auto-fill
+// is skipped for any field that's already non-null, so re-signing the W-9
+// won't clobber a correction).
+//
+// `source` tracks whether each value came from the W-9 or was manually
+// entered. UI uses this to show a "From W-9" badge next to auto-filled
+// fields.
+model ProviderLegalIdentity {
+  id         String   @id @default(uuid())
+  providerId String   @unique
+
+  // Line 1 of W-9: Name of entity / individual
+  legalName  String?
+
+  // Line 2 of W-9: Business name / disregarded entity name (DBA), if
+  // different from legalName. Optional.
+  businessName String?
+
+  // Line 3a of W-9: Federal tax classification (one of):
+  //   INDIVIDUAL_SOLE_PROPRIETOR | C_CORPORATION | S_CORPORATION
+  //   PARTNERSHIP | TRUST_ESTATE | LLC | OTHER
+  taxClassification String?
+
+  // Derived "company" | "individual" for Stripe Connect's binary
+  // business_type field. Computed from taxClassification at save time so
+  // downstream code doesn't have to map every time.
+  businessType String?
+
+  // Part I of W-9: Either SSN (for individuals/sole props) or EIN (for
+  // entities). taxIdType tells which: "ssn" | "ein".
+  taxId     String?
+  taxIdType String?
+
+  // Lines 5-6 of W-9: Business address. PandaDoc captures lines 5 and 6
+  // as single-line strings (Address and City_State_zipcode). We do a
+  // best-effort parse at extraction time but the field is editable.
+  businessAddressLine1      String?
+  businessAddressLine2      String?
+  businessAddressCity       String?
+  businessAddressState      String?
+  businessAddressPostalCode String?
+  businessAddressCountry    String? @default("US")
+
+  // "MANUAL" | "W9_AUTO_FILL" | "MIGRATED_FROM_BRAND_SETTINGS"
+  // Tracked at the row level (not per-field) since that's enough for the
+  // UI "From W-9" badge. If a single field is hand-edited we flip the
+  // whole row to MANUAL.
+  source String @default("MANUAL")
+
+  // When the W-9 was last parsed into these fields. Null until the first
+  // successful auto-fill. Used to skip re-parsing the same W-9 twice and
+  // to render "Last synced from W-9 on X" in the UI.
+  lastW9SyncAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 }
 
 // ==========================================

@@ -30,19 +30,13 @@ import type Stripe from "stripe";
 
 export type PayoutMethod = "STRIPE_CONNECT_EXPRESS" | "STRIPE_CONNECT_CUSTOM";
 
+/**
+ * Custom-payout body shape. Business identity (name, tax id, address,
+ * business type) is NOT collected here - it comes from
+ * ProviderLegalIdentity. The provider edits it on /account/legal-identity
+ * and we read it server-side at save time.
+ */
 export interface CustomPayoutFormData {
-  businessType: "company" | "individual";
-  businessName: string;
-  businessUrl?: string | null;
-  taxId?: string | null; // EIN for company, SSN for individual (rare)
-  address: {
-    line1: string;
-    line2?: string;
-    city: string;
-    state: string;
-    postalCode: string;
-    country?: string;
-  };
   representative: {
     firstName: string;
     lastName: string;
@@ -172,14 +166,38 @@ export class ConnectService {
       );
     }
 
-    // 1. Create the Connect account if not already done.
+    // Business identity / address / tax id all come from ProviderLegalIdentity,
+    // which is now the single source of truth (auto-fills from the W-9,
+    // or admin/provider edits manually). Gate the whole flow on it being
+    // complete - otherwise Stripe rejects the KYC payload anyway.
+    const legalIdentity = await this.prisma.providerLegalIdentity.findUnique({
+      where: { providerId: params.providerId },
+    });
+    const missingLegal: string[] = [];
+    if (!legalIdentity?.legalName?.trim()) missingLegal.push("legal name");
+    if (!legalIdentity?.taxId?.trim()) missingLegal.push("tax ID");
+    if (!legalIdentity?.taxClassification) missingLegal.push("tax classification");
+    if (!legalIdentity?.businessAddressLine1?.trim()) missingLegal.push("business address");
+    if (!legalIdentity?.businessAddressCity?.trim()) missingLegal.push("city");
+    if (!legalIdentity?.businessAddressState?.trim()) missingLegal.push("state");
+    if (!legalIdentity?.businessAddressPostalCode?.trim()) missingLegal.push("ZIP");
+    if (missingLegal.length > 0) {
+      throw new BadRequestException(
+        `Complete your Legal Identity tab first - missing: ${missingLegal.join(", ")}.`,
+      );
+    }
+    const businessTypeForStripe: "company" | "individual" =
+      (legalIdentity!.businessType === "individual" ? "individual" : "company");
+
+    // 1. Create the Connect account if not already done. Pulls business
+    // identity from Legal Identity, not the form body.
     if (!account.stripeConnectAccountId) {
       const { accountId } = await createConnectAccount({
         type: "CUSTOM",
         email: params.providerEmail,
-        businessName: params.form.businessName || params.providerName,
-        businessType: params.form.businessType,
-        taxId: params.form.taxId || undefined,
+        businessName: legalIdentity!.legalName || params.providerName,
+        businessType: businessTypeForStripe,
+        taxId: legalIdentity!.taxId || undefined,
       });
       account = await this.prisma.providerBankAccount.update({
         where: { providerId: params.providerId },
@@ -196,17 +214,16 @@ export class ConnectService {
 
     // 2. Submit business profile + address + tax id via accounts.update.
     const businessAddress = {
-      line1: params.form.address.line1,
-      ...(params.form.address.line2 ? { line2: params.form.address.line2 } : {}),
-      city: params.form.address.city,
-      state: params.form.address.state,
-      postal_code: params.form.address.postalCode,
-      country: params.form.address.country || "US",
+      line1: legalIdentity!.businessAddressLine1!,
+      ...(legalIdentity!.businessAddressLine2 ? { line2: legalIdentity!.businessAddressLine2 } : {}),
+      city: legalIdentity!.businessAddressCity!,
+      state: legalIdentity!.businessAddressState!,
+      postal_code: legalIdentity!.businessAddressPostalCode!,
+      country: legalIdentity!.businessAddressCountry || "US",
     };
     const updateParams: Stripe.AccountUpdateParams = {
       business_profile: {
-        name: params.form.businessName,
-        ...(params.form.businessUrl ? { url: params.form.businessUrl } : {}),
+        name: legalIdentity!.legalName!,
       },
       tos_acceptance: {
         date: Math.floor(Date.now() / 1000),
@@ -217,11 +234,11 @@ export class ConnectService {
         ip: "0.0.0.0",
       },
     };
-    if (params.form.businessType === "company") {
+    if (businessTypeForStripe === "company") {
       updateParams.company = {
         address: businessAddress,
-        ...(params.form.taxId ? { tax_id: params.form.taxId } : {}),
-        name: params.form.businessName,
+        tax_id: legalIdentity!.taxId!,
+        name: legalIdentity!.legalName!,
       };
     } else {
       updateParams.individual = {
@@ -230,15 +247,16 @@ export class ConnectService {
         address: businessAddress,
         dob: params.form.representative.dob,
         ssn_last_4: params.form.representative.ssnLast4,
-        ...(params.form.taxId ? { id_number: params.form.taxId } : {}),
+        id_number: legalIdentity!.taxId!,
       };
     }
     await updateConnectAccount(accountId, updateParams);
 
     // 3. Create the representative (company accounts only - individual
     // accounts already have the representative fields on Account.individual).
-    if (params.form.businessType === "company") {
+    if (businessTypeForStripe === "company") {
       try {
+        const repAddr = params.form.representative.address;
         await createConnectAccountRepresentative({
           accountId,
           firstName: params.form.representative.firstName,
@@ -248,12 +266,12 @@ export class ConnectService {
           dob: params.form.representative.dob,
           ssnLast4: params.form.representative.ssnLast4,
           address: {
-            line1: params.form.representative.address.line1,
-            line2: params.form.representative.address.line2,
-            city: params.form.representative.address.city,
-            state: params.form.representative.address.state,
-            postalCode: params.form.representative.address.postalCode,
-            country: params.form.representative.address.country || "US",
+            line1: repAddr.line1 || businessAddress.line1,
+            line2: repAddr.line2,
+            city: repAddr.city || businessAddress.city,
+            state: repAddr.state || businessAddress.state,
+            postalCode: repAddr.postalCode || businessAddress.postal_code,
+            country: repAddr.country || "US",
           },
         });
       } catch (e: any) {
@@ -270,7 +288,7 @@ export class ConnectService {
       routingNumber: params.form.bank.routingNumber,
       accountNumber: params.form.bank.accountNumber,
       accountHolderName: params.form.bank.accountHolderName,
-      accountHolderType: params.form.businessType,
+      accountHolderType: businessTypeForStripe,
     });
 
     // 5. Pull the latest snapshot from Stripe and mirror to the DB.

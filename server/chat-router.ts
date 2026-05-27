@@ -2737,6 +2737,27 @@ async function handleW9Webhook(eventType: string, documentId: string, event: any
   });
   console.log(`[W-9 webhook] Provider ${w9.providerId} W-9 completed`);
 
+  // Pull W-9 field values into ProviderLegalIdentity so legalName, taxId,
+  // tax classification, and business address auto-fill (only into empty
+  // fields - manual edits win). Best-effort: a failure here doesn't
+  // affect the W-9 completion itself.
+  try {
+    const { getNestApp } = await import("./nest-app-ref");
+    const nestApp = getNestApp();
+    if (nestApp) {
+      const { LegalIdentityService } = await import("./src/modules/billing/legal-identity.service");
+      const legalIdentityService = nestApp.get(LegalIdentityService);
+      const result = await legalIdentityService.syncFromW9(w9.providerId);
+      console.log(
+        `[W-9 webhook] Legal Identity sync for provider ${w9.providerId}: ${result.status}` +
+          ("appliedFields" in result ? ` (${result.appliedFields.length} fields)` : "") +
+          ("reason" in result ? ` - ${result.reason}` : ""),
+      );
+    }
+  } catch (err: any) {
+    console.error(`[W-9 webhook] Legal Identity sync failed: ${err?.message}`);
+  }
+
   try {
     const admins = await prisma.user.findMany({ where: { roles: { has: "GOSTORK_ADMIN" } }, select: { id: true, email: true, name: true } });
     const { getNestApp } = await import("./nest-app-ref");

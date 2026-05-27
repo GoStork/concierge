@@ -142,8 +142,8 @@ const ALLOWED_FIELDS = [
   "chatTimestampFontSize", "chatTimestampOpacity", "chatInputFontSize", "chatInputFontSizeDesktop", "chatInputHeight",
   "quickReplyFontSize", "quickReplyRadius", "quickReplyPaddingX", "quickReplyPaddingY",
   "quickReplyColorStyle", "quickReplyDeclineStyle", "quickReplyShowBorder",
-  // Billing identity for the payment-receipt PDF footer.
-  "legalName", "taxId",
+  // Billing identity (legalName + taxId) moved to ProviderLegalIdentity.
+  // See /api/provider/legal-identity and /api/admin/providers/:id/legal-identity.
   ...ADVANCED_COLOR_FIELDS,
 ];
 

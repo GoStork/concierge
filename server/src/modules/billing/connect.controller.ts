@@ -204,8 +204,10 @@ export class ConnectController {
     if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
 
     // Minimum validation - Stripe will reject anything malformed, but we
-    // give an earlier error if obvious fields are missing.
-    if (!body?.businessName?.trim()) throw new HttpException("businessName required", HttpStatus.BAD_REQUEST);
+    // give an earlier error if obvious fields are missing. Business
+    // identity / address fields are NOT validated here - they come from
+    // ProviderLegalIdentity, and the service throws a clear error if
+    // anything's missing there.
     if (!body?.bank?.routingNumber || !body?.bank?.accountNumber) {
       throw new HttpException("Bank routing + account numbers required", HttpStatus.BAD_REQUEST);
     }
@@ -214,9 +216,6 @@ export class ConnectController {
     }
     if (!body?.representative?.ssnLast4 || body.representative.ssnLast4.length !== 4) {
       throw new HttpException("Representative SSN last 4 must be 4 digits", HttpStatus.BAD_REQUEST);
-    }
-    if (!body?.address?.line1 || !body?.address?.city || !body?.address?.state || !body?.address?.postalCode) {
-      throw new HttpException("Full business address required", HttpStatus.BAD_REQUEST);
     }
 
     const provider = await prisma.provider.findUnique({

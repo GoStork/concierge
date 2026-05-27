@@ -354,19 +354,42 @@ function PayoutsReadyCard({ state }: { state: PayoutsState }) {
 
 // ─── Custom path form ───────────────────────────────────────────────────────
 
+interface LegalIdentitySnapshot {
+  legalName: string | null;
+  businessName: string | null;
+  taxClassification: string | null;
+  businessType: string | null;
+  taxId: string | null;
+  businessAddressLine1: string | null;
+  businessAddressLine2: string | null;
+  businessAddressCity: string | null;
+  businessAddressState: string | null;
+  businessAddressPostalCode: string | null;
+}
+
 function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
   const queryClient = useQueryClient();
-  const [businessType, setBusinessType] = useState<"company" | "individual">("company");
-  const [businessName, setBusinessName] = useState("");
-  const [taxId, setTaxId] = useState("");
-  const [businessUrl, setBusinessUrl] = useState("");
 
-  // Business address
-  const [addrLine1, setAddrLine1] = useState("");
-  const [addrLine2, setAddrLine2] = useState("");
-  const [addrCity, setAddrCity] = useState("");
-  const [addrState, setAddrState] = useState("");
-  const [addrPostal, setAddrPostal] = useState("");
+  // Pull legal identity (business name, tax id, address, business type)
+  // from the dedicated tab. Provider/admin edits happen there, not here.
+  const { data: legalIdentity, isLoading: legalLoading } = useQuery<LegalIdentitySnapshot>({
+    queryKey: ["/api/provider/legal-identity"],
+    queryFn: async () => {
+      const res = await fetch("/api/provider/legal-identity", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load legal identity");
+      return res.json();
+    },
+  });
+
+  const legalIdentityComplete = !!(
+    legalIdentity?.legalName?.trim() &&
+    legalIdentity?.taxId?.trim() &&
+    legalIdentity?.taxClassification &&
+    legalIdentity?.businessAddressLine1?.trim() &&
+    legalIdentity?.businessAddressCity?.trim() &&
+    legalIdentity?.businessAddressState?.trim() &&
+    legalIdentity?.businessAddressPostalCode?.trim()
+  );
 
   // Representative
   const [repFirst, setRepFirst] = useState("");
@@ -377,7 +400,7 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
   const [repDobDay, setRepDobDay] = useState("");
   const [repDobYear, setRepDobYear] = useState("");
   const [repSsn, setRepSsn] = useState("");
-  // Reuse business address for rep by default - common case.
+  // Reuse business address (from Legal Identity) for rep by default - common case.
   const [repAddrSameAsBusiness, setRepAddrSameAsBusiness] = useState(true);
   const [repAddrLine1, setRepAddrLine1] = useState("");
   const [repAddrCity, setRepAddrCity] = useState("");
@@ -395,24 +418,25 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      if (!legalIdentityComplete) {
+        throw new Error("Complete your Legal Identity first.");
+      }
       if (bankAccount && bankAccountConfirm && bankAccount !== bankAccountConfirm) {
         throw new Error("Bank account numbers don't match");
       }
+      // Representative address - either same as the Legal Identity
+      // business address (default) or a manually-entered one.
       const repAddr = repAddrSameAsBusiness
-        ? { line1: addrLine1, city: addrCity, state: addrState, postalCode: addrPostal }
+        ? {
+            line1: legalIdentity!.businessAddressLine1 || "",
+            city: legalIdentity!.businessAddressCity || "",
+            state: legalIdentity!.businessAddressState || "",
+            postalCode: legalIdentity!.businessAddressPostalCode || "",
+          }
         : { line1: repAddrLine1, city: repAddrCity, state: repAddrState, postalCode: repAddrPostal };
+      // Body only carries representative + bank - business identity and
+      // business address are read server-side from ProviderLegalIdentity.
       const body = {
-        businessType,
-        businessName,
-        businessUrl: businessUrl || null,
-        taxId: taxId || null,
-        address: {
-          line1: addrLine1,
-          line2: addrLine2 || undefined,
-          city: addrCity,
-          state: addrState,
-          postalCode: addrPostal,
-        },
         representative: {
           firstName: repFirst,
           lastName: repLast,
@@ -429,7 +453,7 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
         bank: {
           routingNumber: bankRouting,
           accountNumber: bankAccount,
-          accountHolderName: bankHolderName || businessName,
+          accountHolderName: bankHolderName || (legalIdentity?.legalName ?? ""),
           accountType: bankAccountType,
         },
       };
@@ -452,69 +476,60 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
     onError: (e: any) => setError(e?.message || "Save failed"),
   });
 
-  const stateLocked = !!state?.stripeConnectAccountId;
-
   return (
     <section className="space-y-6">
-      {/* Business type */}
-      <fieldset className="space-y-2">
-        <legend className="text-sm font-medium">Business type</legend>
-        <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
-          {[
-            { value: "company", label: "Company / LLC / Corporation", icon: <Building2 className="w-3.5 h-3.5" /> },
-            { value: "individual", label: "Sole proprietor / Individual", icon: <UserIcon className="w-3.5 h-3.5" /> },
-          ].map(opt => (
-            <label key={opt.value} className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="radio"
-                name="businessType"
-                value={opt.value}
-                checked={businessType === opt.value}
-                onChange={() => setBusinessType(opt.value as any)}
-                disabled={stateLocked}
-                className="accent-primary"
-              />
-              {opt.icon}
-              {opt.label}
-            </label>
-          ))}
+      {/* Business identity + address come from the Legal Identity tab.
+          Read-only here; provider edits them in one place upstream. */}
+      <div className="rounded-xl border p-4 bg-secondary/40 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="font-semibold text-sm">Business identity</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              From your Legal Identity tab. Used for Stripe Connect KYC.
+            </p>
+          </div>
+          <a
+            href="/account/legal-identity"
+            className="text-xs underline text-primary shrink-0"
+          >
+            Edit in Legal Identity
+          </a>
         </div>
-      </fieldset>
-
-      {/* Business identity */}
-      <div className="space-y-3">
-        <h3 className="font-semibold text-sm">Business identity</h3>
-        <Field label="Legal business name" required>
-          <Input value={businessName} onChange={e => setBusinessName(e.target.value)} placeholder="e.g. Eggceptional Fertility LLC" disabled={stateLocked} />
-        </Field>
-        <Field label="EIN / Tax ID" required={businessType === "company"} hint="9 digits, with or without dash">
-          <Input value={taxId} onChange={e => setTaxId(e.target.value)} placeholder="12-3456789" />
-        </Field>
-        <Field label="Website (optional)">
-          <Input value={businessUrl} onChange={e => setBusinessUrl(e.target.value)} placeholder="https://yourcompany.com" />
-        </Field>
-      </div>
-
-      {/* Business address */}
-      <div className="space-y-3">
-        <h3 className="font-semibold text-sm">Business address</h3>
-        <Field label="Street address" required>
-          <Input value={addrLine1} onChange={e => setAddrLine1(e.target.value)} />
-        </Field>
-        <Field label="Apt / suite / floor (optional)">
-          <Input value={addrLine2} onChange={e => setAddrLine2(e.target.value)} />
-        </Field>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Field label="City" required><Input value={addrCity} onChange={e => setAddrCity(e.target.value)} /></Field>
-          <Field label="State" required hint="2-letter code"><Input value={addrState} onChange={e => setAddrState(e.target.value)} maxLength={2} /></Field>
-          <Field label="ZIP" required><Input value={addrPostal} onChange={e => setAddrPostal(e.target.value)} /></Field>
-        </div>
+        {legalLoading ? (
+          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+        ) : legalIdentityComplete ? (
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+            <ReadOnly label="Legal name" value={legalIdentity?.legalName} />
+            <ReadOnly label="Tax classification" value={legalIdentity?.taxClassification?.replace(/_/g, " ").toLowerCase()} />
+            <ReadOnly label="Business type" value={legalIdentity?.businessType} />
+            <ReadOnly label="Tax ID" value={legalIdentity?.taxId} />
+            <ReadOnly
+              label="Address"
+              value={[
+                legalIdentity?.businessAddressLine1,
+                legalIdentity?.businessAddressLine2,
+                [legalIdentity?.businessAddressCity, legalIdentity?.businessAddressState, legalIdentity?.businessAddressPostalCode].filter(Boolean).join(", "),
+              ].filter(Boolean).join("\n")}
+            />
+          </dl>
+        ) : (
+          <div className="flex items-start gap-2 rounded-md border p-3 bg-background" style={{ borderColor: "hsl(var(--brand-warning) / 0.4)" }}>
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-warning))" }} />
+            <div className="text-xs">
+              <p className="font-medium">Complete your Legal Identity first</p>
+              <p className="text-muted-foreground mt-0.5">
+                Stripe needs your business name, tax ID, tax classification, and address before we can set up payouts.{" "}
+                <a href="/account/legal-identity" className="underline text-primary">Open Legal Identity</a>
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Representative */}
       <div className="space-y-3">
         <h3 className="font-semibold text-sm">
-          {businessType === "company" ? "Authorized representative (owner or officer)" : "Personal info"}
+          {legalIdentity?.businessType === "individual" ? "Personal info" : "Authorized representative (owner or officer)"}
         </h3>
         <p className="text-xs text-muted-foreground">
           Required by US banking regulations. Used for identity verification only - not displayed publicly.
@@ -582,7 +597,7 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
           <Input value={bankAccountConfirm} onChange={e => setBankAccountConfirm(e.target.value.replace(/\D/g, ""))} inputMode="numeric" />
         </Field>
         <Field label="Account holder name (optional)" hint="Leave blank to use your legal business name">
-          <Input value={bankHolderName} onChange={e => setBankHolderName(e.target.value)} placeholder={businessName} />
+          <Input value={bankHolderName} onChange={e => setBankHolderName(e.target.value)} placeholder={legalIdentity?.legalName || ""} />
         </Field>
       </div>
 
@@ -624,6 +639,15 @@ function Field({
       </Label>
       {children}
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
+
+function ReadOnly({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div>
+      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dd className="text-sm whitespace-pre-line">{value || <span className="text-muted-foreground italic">Not set</span>}</dd>
     </div>
   );
 }
