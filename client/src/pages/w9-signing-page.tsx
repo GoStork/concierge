@@ -1,7 +1,9 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Loader2, AlertCircle, Download } from "lucide-react";
+import { ArrowLeft, Loader2, AlertCircle, Download, Baby } from "lucide-react";
+import { useBrandSettings } from "@/hooks/use-brand-settings";
+import { getPhotoSrc } from "@/lib/profile-utils";
 
 type W9SigningSessionResponse =
   | { isCompletedView: true; status: string; w9Id: string; providerId: string }
@@ -10,6 +12,7 @@ type W9SigningSessionResponse =
 export default function W9SigningPage() {
   const { id: w9Id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { data: brand } = useBrandSettings();
 
   const { data, isLoading, error } = useQuery<W9SigningSessionResponse>({
     queryKey: ["/api/w9", w9Id, "signing-session"],
@@ -26,22 +29,53 @@ export default function W9SigningPage() {
   });
 
   const isCompleted = data?.isCompletedView === true;
+  const logoSrc = brand?.logoUrl ? (getPhotoSrc(brand.logoUrl) || brand.logoUrl) : null;
+  const companyName = brand?.companyName || "GoStork";
+
+  // Back action: try history first; if none (e.g. user opened the email link
+  // directly in a new tab), fall back to their billing tab.
+  function handleBack() {
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate("/account/billing");
+    }
+  }
 
   return (
     <div className="flex flex-col" style={{ height: "100dvh" }}>
-      {/* Minimal header */}
-      <div className="flex items-center gap-3 px-4 h-14 border-b bg-background shrink-0">
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="gap-1.5">
+      {/* Unified header - same for both entry points (billing tab + email link). */}
+      <div className="flex items-center gap-3 px-4 h-14 border-b bg-card shrink-0">
+        <Button variant="ghost" size="sm" onClick={handleBack} className="gap-1.5 shrink-0">
           <ArrowLeft className="w-4 h-4" />
           Back
         </Button>
-        <span className="text-sm font-medium">{isCompleted ? "W-9 Form" : "Complete W-9"}</span>
+
+        <div className="flex items-center gap-2 min-w-0">
+          {logoSrc ? (
+            <img src={logoSrc} alt="" className="w-8 h-8 rounded-[var(--radius)] object-contain shrink-0" />
+          ) : (
+            <div className="w-8 h-8 rounded-[var(--radius)] bg-primary flex items-center justify-center text-primary-foreground shrink-0">
+              <Baby className="w-4 h-4" />
+            </div>
+          )}
+          <span className="font-display font-heading text-base text-primary truncate hidden sm:inline" style={{ color: "hsl(var(--primary))" }}>
+            {companyName}
+          </span>
+        </div>
+
+        <div className="h-6 w-px bg-border mx-1 hidden sm:block" />
+
+        <span className="text-sm font-medium truncate">
+          {isCompleted ? "Signed W-9" : "Complete W-9"}
+        </span>
+
         {isCompleted && (
           <a
             href={`/api/w9/${w9Id}/download`}
             target="_blank"
             rel="noopener noreferrer"
-            className="ml-auto flex items-center gap-1.5 text-sm font-medium text-[hsl(var(--primary))] hover:underline"
+            className="ml-auto flex items-center gap-1.5 text-sm font-medium text-[hsl(var(--primary))] hover:underline shrink-0"
           >
             <Download className="w-4 h-4" />
             Download
@@ -63,7 +97,7 @@ export default function W9SigningPage() {
             <AlertCircle className="w-10 h-10 text-destructive" />
             <p className="text-sm font-medium">Could not load the W-9</p>
             <p className="text-xs text-muted-foreground max-w-sm">{(error as Error).message}</p>
-            <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
+            <Button variant="outline" size="sm" onClick={handleBack}>
               Go Back
             </Button>
           </div>

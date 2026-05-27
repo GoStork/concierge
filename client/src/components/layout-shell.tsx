@@ -680,7 +680,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
 
   const reminderPopup = <MeetingReminderPopup />;
 
-  const fullScreenRoutes = ["/onboarding", "/complete-profile", "/matchmaker-selection", "/concierge"];
+  const fullScreenRoutes = ["/onboarding", "/complete-profile", "/matchmaker-selection", "/concierge", "/w9"];
   if (fullScreenRoutes.some(r => location.pathname.startsWith(r))) return <>{reminderPopup}{children}</>;
 
   const MARKETPLACE_TABS: { id: string; label: string; mobileLabel: string; icon: any }[] = [
