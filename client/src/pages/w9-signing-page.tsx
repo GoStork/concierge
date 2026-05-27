@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Loader2, AlertCircle, Download, Baby } from "lucide-react";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
@@ -12,6 +12,7 @@ type W9SigningSessionResponse =
 export default function W9SigningPage() {
   const { id: w9Id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data: brand } = useBrandSettings();
 
   const { data, isLoading, error } = useQuery<W9SigningSessionResponse>({
@@ -35,6 +36,17 @@ export default function W9SigningPage() {
   // Back action: try history first; if none (e.g. user opened the email link
   // directly in a new tab), fall back to their billing tab.
   function handleBack() {
+    // Refresh the Billing tab's W-9 status (and any consumer that reads
+    // /w9 endpoints) so the user immediately sees "Completed" after signing
+    // instead of the cached "Awaiting your signature" state. Covers both
+    // provider mode (/api/provider/w9) and admin mode
+    // (/api/admin/providers/:id/w9) without having to know which one this
+    // session is in.
+    queryClient.invalidateQueries({
+      predicate: q =>
+        Array.isArray(q.queryKey) &&
+        q.queryKey.some(k => typeof k === "string" && k.includes("/w9")),
+    });
     if (window.history.length > 1) {
       navigate(-1);
     } else {
