@@ -357,6 +357,7 @@ function PayoutsReadyCard({ state }: { state: PayoutsState }) {
 interface LegalIdentitySnapshot {
   legalName: string | null;
   businessName: string | null;
+  businessUrl: string | null;
   taxClassification: string | null;
   businessType: string | null;
   taxId: string | null;
@@ -383,6 +384,8 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
 
   const legalIdentityComplete = !!(
     legalIdentity?.legalName?.trim() &&
+    legalIdentity?.businessName?.trim() &&
+    legalIdentity?.businessUrl?.trim() &&
     legalIdentity?.taxId?.trim() &&
     legalIdentity?.taxClassification &&
     legalIdentity?.businessAddressLine1?.trim() &&
@@ -500,9 +503,10 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
         ) : legalIdentityComplete ? (
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
             <ReadOnly label="Legal name" value={legalIdentity?.legalName} />
+            <ReadOnly label="Legal business name" value={legalIdentity?.businessName} />
             <ReadOnly label="Tax classification" value={legalIdentity?.taxClassification?.replace(/_/g, " ").toLowerCase()} />
-            <ReadOnly label="Business type" value={legalIdentity?.businessType} />
             <ReadOnly label="Tax ID" value={legalIdentity?.taxId} />
+            <ReadOnly label="Website URL" value={legalIdentity?.businessUrl} />
             <ReadOnly
               label="Address"
               value={[
@@ -518,7 +522,7 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
             <div className="text-xs">
               <p className="font-medium">Complete your Legal Identity first</p>
               <p className="text-muted-foreground mt-0.5">
-                Stripe needs your business name, tax ID, tax classification, and address before we can set up payouts.{" "}
+                Stripe needs your business name, website URL, tax ID, tax classification, and address before we can set up payouts.{" "}
                 <a href="/account/legal-identity" className="underline text-primary">Open Legal Identity</a>
               </p>
             </div>
