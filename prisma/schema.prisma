@@ -896,6 +896,10 @@ model SiteSettings {
   w9TemplateOriginalName String?
   w9PandaDocTemplateId   String?
   w9PandaDocRoles        String? // JSON array of role names in signing order
+  // Bumped whenever the W-9 template changes (file upload, field re-assignment,
+  // delete). Used to detect stale per-provider PandaDoc documents that were
+  // created from an earlier version of the template.
+  w9TemplateUpdatedAt    DateTime?
 }
 
 model Matchmaker {
@@ -1500,6 +1504,10 @@ model ProviderW9 {
   requestedByUserId  String? // GoStork admin who sent the request; null if provider self-initiated
   requestedAt        DateTime?
   completedAt        DateTime?
+  // Snapshot of SiteSettings.w9TemplateUpdatedAt at the time this PandaDoc doc
+  // was created. When the admin updates the template, ensureW9Document() sees
+  // this mismatch and regenerates the doc so providers always sign the latest.
+  templateUpdatedAt  DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

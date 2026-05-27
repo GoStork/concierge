@@ -103,7 +103,15 @@ export class W9Controller {
       if (!existing) throw new HttpException("Site settings not initialized", HttpStatus.BAD_REQUEST);
       await prisma.siteSettings.update({
         where: { id: existing.id },
-        data: { w9TemplateUrl: url, w9TemplateOriginalName: originalName || null, w9PandaDocTemplateId: null, w9PandaDocRoles: null },
+        data: {
+          w9TemplateUrl: url,
+          w9TemplateOriginalName: originalName || null,
+          w9PandaDocTemplateId: null,
+          w9PandaDocRoles: null,
+          // Mark template version: per-provider docs created from the prior
+          // template will be detected as stale and regenerated on next access.
+          w9TemplateUpdatedAt: new Date(),
+        },
       });
       return { success: true };
     } catch (e: any) {
@@ -121,7 +129,13 @@ export class W9Controller {
     if (existing) {
       await prisma.siteSettings.update({
         where: { id: existing.id },
-        data: { w9TemplateUrl: null, w9TemplateOriginalName: null, w9PandaDocTemplateId: null, w9PandaDocRoles: null },
+        data: {
+          w9TemplateUrl: null,
+          w9TemplateOriginalName: null,
+          w9PandaDocTemplateId: null,
+          w9PandaDocRoles: null,
+          w9TemplateUpdatedAt: new Date(),
+        },
       });
     }
     return { success: true };
@@ -243,6 +257,54 @@ export class W9Controller {
       return { success: true, w9Id: w9.id, status: w9.status };
     } catch (e: any) {
       this.logger.error(`W-9 fill error: ${e.message}`);
+      throw new HttpException(e.message, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Provider asks to start over on their W-9 - typically because they signed
+   * the wrong details (legal name, EIN, address) or the admin updated the
+   * template and they need to re-sign the latest version. Wipes the existing
+   * ProviderW9 row so ensureW9Document() creates a fresh PandaDoc document
+   * from the current template.
+   *
+   * The previous PandaDoc document stays in PandaDoc's archive (we don't
+   * delete it there) for audit purposes - we just stop referencing it.
+   */
+  @Post("api/provider/w9/resubmit")
+  @UseGuards(SessionOrJwtGuard)
+  async resubmitW9(@Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+
+    const settings = await prisma.siteSettings.findFirst({
+      select: { w9TemplateUrl: true, w9PandaDocTemplateId: true, w9PandaDocRoles: true },
+    });
+    if (!settings?.w9TemplateUrl || !settings?.w9PandaDocTemplateId || !settings.w9PandaDocRoles) {
+      throw new HttpException("W-9 template is not ready yet. Please contact GoStork.", HttpStatus.BAD_REQUEST);
+    }
+
+    try {
+      await (prisma as any).providerW9.deleteMany({ where: { providerId: user.providerId } });
+      const { w9 } = await ensureW9Document({ providerId: user.providerId, requestedByUserId: null });
+      return { success: true, w9Id: w9.id, status: w9.status };
+    } catch (e: any) {
+      this.logger.error(`W-9 resubmit error: ${e.message}`);
+      throw new HttpException(e.message, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /** Admin equivalent of resubmit - clears a specific provider's W-9 so a fresh
+   *  one can be generated from the current template version. */
+  @Post("api/admin/providers/:providerId/w9/reset")
+  @UseGuards(SessionOrJwtGuard)
+  async resetProviderW9(@Req() req: Request, @Param("providerId") providerId: string) {
+    if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    try {
+      await (prisma as any).providerW9.deleteMany({ where: { providerId } });
+      return { success: true };
+    } catch (e: any) {
+      this.logger.error(`W-9 reset error: ${e.message}`);
       throw new HttpException(e.message, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }

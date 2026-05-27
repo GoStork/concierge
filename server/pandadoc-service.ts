@@ -1367,7 +1367,10 @@ export async function syncW9TemplateToPandaDoc(): Promise<string> {
     }
   }
 
-  await prisma.siteSettings.update({ where: { id: settings.id }, data: { w9PandaDocTemplateId: templateId } });
+  await prisma.siteSettings.update({
+    where: { id: settings.id },
+    data: { w9PandaDocTemplateId: templateId, w9TemplateUpdatedAt: new Date() } as any,
+  });
   return templateId;
 }
 
@@ -1406,7 +1409,10 @@ export async function refreshW9TemplateRoles(): Promise<{ roles: string[] }> {
   const rolesWithFields = roles.filter(r => (fieldCountByRoleId[r.id] ?? 0) > 0);
   const w9PandaDocRoles = rolesWithFields.length > 0 ? JSON.stringify(rolesWithFields.map(r => r.name)) : null;
 
-  await prisma.siteSettings.update({ where: { id: settings.id }, data: { w9PandaDocRoles } });
+  await prisma.siteSettings.update({
+    where: { id: settings.id },
+    data: { w9PandaDocRoles, w9TemplateUpdatedAt: new Date() } as any,
+  });
   return { roles: rolesWithFields.map(r => r.name) };
 }
 
@@ -1453,10 +1459,30 @@ export async function ensureW9Document(params: { providerId: string; requestedBy
 
   const signer = await resolveW9Signer(providerId);
 
-  // Reuse an existing, still-valid document.
-  const existing = await prisma.providerW9.findUnique({ where: { providerId } });
-  if (existing && existing.pandaDocDocumentId && (existing.status === "SENT" || existing.status === "COMPLETED")) {
+  // Reuse an existing, still-valid document - BUT only if it was generated
+  // from the current template version. If the admin has uploaded a new W-9
+  // file or reassigned signature fields since this doc was created, the
+  // snapshot timestamps will differ and we regenerate. COMPLETED docs are
+  // never auto-regenerated (the signed copy stands as a record); admin or
+  // provider must explicitly resubmit to invalidate one.
+  const existing = await (prisma as any).providerW9.findUnique({ where: { providerId } });
+  const currentTemplateUpdatedAt: Date | null = (settings as any).w9TemplateUpdatedAt || null;
+  const existingTemplateUpdatedAt: Date | null = existing?.templateUpdatedAt || null;
+  const templateIsStale =
+    !!existing &&
+    !!currentTemplateUpdatedAt &&
+    (!existingTemplateUpdatedAt ||
+      new Date(currentTemplateUpdatedAt).getTime() > new Date(existingTemplateUpdatedAt).getTime());
+
+  if (existing && existing.pandaDocDocumentId && existing.status === "COMPLETED") {
+    // Signed docs are immutable records - never regenerate automatically.
     return { w9: existing, signer: { email: signer.email, userId: signer.userId, name: `${signer.firstName} ${signer.lastName}`.trim() }, created: false };
+  }
+  if (existing && existing.pandaDocDocumentId && existing.status === "SENT" && !templateIsStale) {
+    return { w9: existing, signer: { email: signer.email, userId: signer.userId, name: `${signer.firstName} ${signer.lastName}`.trim() }, created: false };
+  }
+  if (templateIsStale) {
+    console.log(`[W-9] Template is newer than provider ${providerId} doc - regenerating from current template`);
   }
 
   const { roles } = await fetchTemplateRolesAndFields(apiKey, settings.w9PandaDocTemplateId);
@@ -1511,7 +1537,7 @@ export async function ensureW9Document(params: { providerId: string; requestedBy
   await waitForDocumentStatus(apiKey, pandaDocDocumentId, "document.sent");
   const pandaDocViewUrl = await fetchDocumentViewUrl(apiKey, pandaDocDocumentId, signer.email);
 
-  const w9 = await prisma.providerW9.upsert({
+  const w9 = await (prisma as any).providerW9.upsert({
     where: { providerId },
     create: {
       providerId,
@@ -1522,6 +1548,7 @@ export async function ensureW9Document(params: { providerId: string; requestedBy
       signerUserId: signer.userId,
       requestedByUserId: requestedByUserId ?? null,
       requestedAt: new Date(),
+      templateUpdatedAt: currentTemplateUpdatedAt,
     },
     update: {
       pandaDocDocumentId,
@@ -1532,6 +1559,7 @@ export async function ensureW9Document(params: { providerId: string; requestedBy
       requestedByUserId: requestedByUserId ?? null,
       requestedAt: new Date(),
       completedAt: null,
+      templateUpdatedAt: currentTemplateUpdatedAt,
     },
   });
 

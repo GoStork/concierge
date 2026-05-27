@@ -227,6 +227,21 @@ export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "
     },
   });
 
+  // Provider asks to start over - wipes the existing PandaDoc doc and generates
+  // a fresh one from the current template. Used after a completed signing if
+  // the provider needs to fix details (legal name, EIN, address).
+  const w9ResubmitMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/provider/w9/resubmit`, { method: "POST", credentials: "include" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Failed to start a new W-9");
+      return res.json();
+    },
+    onSuccess: (data: { w9Id: string }) => {
+      queryClient.invalidateQueries({ queryKey: [w9GetUrl] });
+      if (data?.w9Id) navigate(`/w9/${data.w9Id}`);
+    },
+  });
+
   if (loadingConfig) return <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>;
 
   return (
@@ -528,6 +543,22 @@ export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "
                     className="inline-flex items-center justify-center h-9 w-9 rounded-[var(--radius)] hover:bg-muted">
                     <Download className="w-4 h-4" />
                   </a>
+                  {/* Provider can always start over - fixes typos, address changes, or
+                      re-signs after admin updated the template. */}
+                  {isProviderMode && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={w9ResubmitMutation.isPending}
+                      onClick={() => w9ResubmitMutation.mutate()}
+                      title="Submit a new W-9"
+                    >
+                      {w9ResubmitMutation.isPending
+                        ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        : <FileText className="w-4 h-4 mr-2" />}
+                      Submit new W-9
+                    </Button>
+                  )}
                 </div>
               )}
 
@@ -602,6 +633,9 @@ export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "
             )}
             {w9FillMutation.isError && (
               <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{(w9FillMutation.error as Error).message}</p>
+            )}
+            {w9ResubmitMutation.isError && (
+              <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{(w9ResubmitMutation.error as Error).message}</p>
             )}
             <p className="text-xs text-muted-foreground">
               {isProviderMode
