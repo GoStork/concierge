@@ -191,7 +191,7 @@ export class W9Controller {
 
   @Post("api/admin/providers/:providerId/w9/send")
   @UseGuards(SessionOrJwtGuard)
-  async sendW9Request(@Req() req: Request, @Param("providerId") providerId: string) {
+  async sendW9Request(@Req() req: Request, @Param("providerId") providerId: string, @Body() body: any) {
     if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     const user = req.user as any;
 
@@ -205,6 +205,15 @@ export class W9Controller {
     }
     if (!settings.w9PandaDocRoles) {
       throw new HttpException("Configure the W-9 signature field before sending.", HttpStatus.BAD_REQUEST);
+    }
+
+    // `force: true` wipes any existing ProviderW9 row first - used when admin
+    // wants to re-request a W-9 from a provider whose previous one is already
+    // COMPLETED (e.g. wrong legal name, EIN, or address was filled in). The
+    // previous PandaDoc document stays in PandaDoc's archive for audit; we
+    // just stop referencing it and start a fresh signing flow.
+    if (body?.force) {
+      await (prisma as any).providerW9.deleteMany({ where: { providerId } });
     }
 
     try {

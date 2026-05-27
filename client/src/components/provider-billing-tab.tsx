@@ -204,10 +204,17 @@ export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [w9?.templateNeedsFields, isProviderMode]);
 
-  // Admin sends the W-9 request to the agency.
+  // Admin sends the W-9 request to the agency. Pass force=true to wipe an
+  // existing (typically COMPLETED) row and issue a fresh signing request -
+  // used when something was wrong with the previously signed W-9.
   const w9SendMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(`/api/admin/providers/${providerId}/w9/send`, { method: "POST", credentials: "include" });
+    mutationFn: async (force?: boolean) => {
+      const res = await fetch(`/api/admin/providers/${providerId}/w9/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ force: !!force }),
+      });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Failed to send W-9 request");
       return res.json();
     },
@@ -557,6 +564,28 @@ export function ProviderBillingTab({ providerId, providerTypeName = "", mode = "
                         ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                         : <FileText className="w-4 h-4 mr-2" />}
                       Submit new W-9
+                    </Button>
+                  )}
+                  {/* Admin can request a new W-9 if something was wrong with the
+                      signed copy (wrong legal name, EIN, address). Wipes the
+                      completed row and re-emails the provider with a fresh
+                      signing link. */}
+                  {!isProviderMode && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={w9SendMutation.isPending}
+                      onClick={() => {
+                        if (window.confirm("Request a new W-9 from this provider? The current signed W-9 will no longer be the active version (it stays in PandaDoc's archive for record-keeping).")) {
+                          w9SendMutation.mutate(true);
+                        }
+                      }}
+                      title="Ask the provider to fill out a new W-9"
+                    >
+                      {w9SendMutation.isPending
+                        ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        : <Send className="w-4 h-4 mr-2" />}
+                      Request new W-9
                     </Button>
                   )}
                 </div>
