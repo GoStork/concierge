@@ -218,7 +218,7 @@ export function ChatInputBar({
   const hasPlus = allActions.length > 0;
 
   return (
-    <div className="border-t px-4 py-3 bg-background shrink-0 relative" data-testid={`${testIdPrefix}-reply-area`}>
+    <div className="border-t px-4 py-3 bg-background relative flex flex-col min-h-0" data-testid={`${testIdPrefix}-reply-area`}>
       {hasPlus && (
         <div className="absolute left-3 bottom-full mb-2 z-40 pointer-events-none">
           <div className={plusOpen && !inlinePanel ? "pointer-events-auto" : ""}>
@@ -231,7 +231,7 @@ export function ChatInputBar({
 
       {inlinePanel && (
         <div
-          className="mb-2 rounded-[var(--radius)] border bg-card p-3 max-h-[50vh] overflow-y-auto overscroll-contain"
+          className="mb-2 rounded-[var(--radius)] border bg-card p-3 min-h-0 overflow-y-auto overscroll-contain"
           data-testid={`${testIdPrefix}-inline-panel`}
         >
           {inlinePanel}
