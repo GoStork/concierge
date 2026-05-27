@@ -1055,6 +1055,12 @@ model ProviderLegalIdentity {
   // different from legalName. Optional.
   businessName String?
 
+  // Business website URL. Required by Stripe Connect's business_profile.url
+  // for KYC. Pre-filled from Provider.websiteUrl (Company tab) on first
+  // read so the provider doesn't have to type it twice; they can override
+  // here if the legal-entity site differs from the marketing site.
+  businessUrl String?
+
   // Line 3a of W-9: Federal tax classification (one of):
   //   INDIVIDUAL_SOLE_PROPRIETOR | C_CORPORATION | S_CORPORATION
   //   PARTNERSHIP | TRUST_ESTATE | LLC | OTHER

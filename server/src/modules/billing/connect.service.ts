@@ -166,15 +166,18 @@ export class ConnectService {
       );
     }
 
-    // Business identity / address / tax id all come from ProviderLegalIdentity,
-    // which is now the single source of truth (auto-fills from the W-9,
-    // or admin/provider edits manually). Gate the whole flow on it being
-    // complete - otherwise Stripe rejects the KYC payload anyway.
+    // Business identity / address / tax id all live on ProviderLegalIdentity
+    // (single source of truth, auto-fills from the W-9). businessUrl is
+    // pre-filled from Provider.websiteUrl by the Legal Identity service on
+    // first read, so by the time the provider hits Save it's either copied
+    // from the Company tab or explicitly set on the Legal Identity tab.
     const legalIdentity = await this.prisma.providerLegalIdentity.findUnique({
       where: { providerId: params.providerId },
     });
     const missingLegal: string[] = [];
     if (!legalIdentity?.legalName?.trim()) missingLegal.push("legal name");
+    if (!legalIdentity?.businessName?.trim()) missingLegal.push("legal business name");
+    if (!legalIdentity?.businessUrl?.trim()) missingLegal.push("business website URL");
     if (!legalIdentity?.taxId?.trim()) missingLegal.push("tax ID");
     if (!legalIdentity?.taxClassification) missingLegal.push("tax classification");
     if (!legalIdentity?.businessAddressLine1?.trim()) missingLegal.push("business address");
@@ -224,6 +227,7 @@ export class ConnectService {
     const updateParams: Stripe.AccountUpdateParams = {
       business_profile: {
         name: legalIdentity!.legalName!,
+        url: legalIdentity!.businessUrl!,
       },
       tos_acceptance: {
         date: Math.floor(Date.now() / 1000),

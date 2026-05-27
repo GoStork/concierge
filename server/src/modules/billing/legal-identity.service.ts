@@ -41,6 +41,7 @@ export function classificationToBusinessType(c: TaxClassification | string | nul
 export interface LegalIdentityFormData {
   legalName?: string | null;
   businessName?: string | null;
+  businessUrl?: string | null;
   taxClassification?: TaxClassification | string | null;
   // businessType is auto-derived from taxClassification, so the form
   // doesn't accept it directly - we recompute on every save.
@@ -62,14 +63,39 @@ export class LegalIdentityService {
   /**
    * Returns the row, creating an empty one on first read so the rest of
    * the code doesn't have to handle the "no row yet" case.
+   *
+   * Pre-fills businessUrl from Provider.websiteUrl (Company tab) whenever
+   * the legal-identity row has no value yet. Stripe Connect requires
+   * business_profile.url so we'd rather copy it once than make the
+   * provider re-type their website. Provider can still override here if
+   * the legal-entity site differs from the marketing site.
    */
   async getOrCreate(providerId: string) {
     const existing = await this.prisma.providerLegalIdentity.findUnique({
       where: { providerId },
     });
-    if (existing) return existing;
-    return await this.prisma.providerLegalIdentity.create({
-      data: { providerId },
+    if (existing && existing.businessUrl?.trim()) return existing;
+
+    // Either the row doesn't exist, or it exists but businessUrl is empty.
+    // Look up the provider's marketing website and use it as a default.
+    const provider = await this.prisma.provider.findUnique({
+      where: { id: providerId },
+      select: { websiteUrl: true },
+    });
+    const websiteUrl = provider?.websiteUrl?.trim() || null;
+
+    if (!existing) {
+      return await this.prisma.providerLegalIdentity.create({
+        data: {
+          providerId,
+          ...(websiteUrl ? { businessUrl: websiteUrl } : {}),
+        },
+      });
+    }
+    if (!websiteUrl) return existing;
+    return await this.prisma.providerLegalIdentity.update({
+      where: { providerId },
+      data: { businessUrl: websiteUrl },
     });
   }
 
@@ -97,6 +123,7 @@ export class LegalIdentityService {
       data: {
         legalName: form.legalName ?? existing.legalName,
         businessName: form.businessName ?? existing.businessName,
+        businessUrl: form.businessUrl ?? existing.businessUrl,
         taxClassification: form.taxClassification ?? existing.taxClassification,
         businessType,
         taxId: form.taxId ?? existing.taxId,

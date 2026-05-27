@@ -22,6 +22,7 @@ interface LegalIdentityState {
   providerId: string;
   legalName: string | null;
   businessName: string | null;
+  businessUrl: string | null;
   taxClassification: string | null;
   businessType: string | null;
   taxId: string | null;
@@ -86,6 +87,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
   // Form state - seeded from server, written back on save.
   const [legalName, setLegalName] = useState("");
   const [businessName, setBusinessName] = useState("");
+  const [businessUrl, setBusinessUrl] = useState("");
   const [taxClassification, setTaxClassification] = useState("");
   const [taxId, setTaxId] = useState("");
   const [taxIdType, setTaxIdType] = useState<"ssn" | "ein">("ein");
@@ -99,6 +101,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
     if (!state) return;
     setLegalName(state.legalName || "");
     setBusinessName(state.businessName || "");
+    setBusinessUrl(state.businessUrl || "");
     setTaxClassification(state.taxClassification || "");
     setTaxId(state.taxId || "");
     setTaxIdType((state.taxIdType as "ssn" | "ein") || "ein");
@@ -113,6 +116,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
     mutationFn: async () => {
       if (!legalName.trim()) throw new Error("Legal name is required.");
       if (!businessName.trim()) throw new Error("Legal business name is required - it's used on receipts and Stripe Connect KYC. For LLCs/Corps, this usually matches the Legal name above.");
+      if (!businessUrl.trim()) throw new Error("Business website URL is required - Stripe Connect won't accept payouts without it. Pre-filled from the Company tab if you've set one there.");
       const res = await fetch(putUrl, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -120,6 +124,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
         body: JSON.stringify({
           legalName: legalName.trim() || null,
           businessName: businessName.trim() || null,
+          businessUrl: businessUrl.trim() || null,
           taxClassification: taxClassification || null,
           taxId: taxId.trim() || null,
           taxIdType,
@@ -291,6 +296,20 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
         >
           <Input value={businessName} onChange={e => setBusinessName(e.target.value)} placeholder="e.g. Eggceptional Fertility LLC" />
         </Field>
+
+        <Field
+          label="Business website URL"
+          required
+          hint="Stripe Connect requires a public URL for your business. Pre-filled from the Website URL on the Company tab - override here if your legal-entity site differs from your marketing site."
+        >
+          <Input
+            type="url"
+            value={businessUrl}
+            onChange={e => setBusinessUrl(e.target.value)}
+            placeholder="https://example.com"
+          />
+        </Field>
+
 
         <Field label="Federal tax classification" required hint="W-9 Line 3a.">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

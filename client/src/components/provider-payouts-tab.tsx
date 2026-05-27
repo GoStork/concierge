@@ -591,7 +591,7 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
           </Field>
         </div>
         <Field label="Account number" required>
-          <Input type="password" value={bankAccount} onChange={e => setBankAccount(e.target.value.replace(/\D/g, ""))} inputMode="numeric" />
+          <Input value={bankAccount} onChange={e => setBankAccount(e.target.value.replace(/\D/g, ""))} inputMode="numeric" />
         </Field>
         <Field label="Confirm account number" required>
           <Input value={bankAccountConfirm} onChange={e => setBankAccountConfirm(e.target.value.replace(/\D/g, ""))} inputMode="numeric" />
