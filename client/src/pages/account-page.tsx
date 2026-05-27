@@ -44,7 +44,7 @@ const allTabs = [
   { to: '/account/calendar', label: 'Calendar', icon: Calendar, roles: null },
   { to: '/account/legal-identity', label: 'Legal Identity', icon: FileSignature, roles: 'provider' as const },
   { to: '/account/billing', label: 'Billing', icon: DollarSign, roles: 'billing' as const },
-  { to: '/account/payouts', label: 'Payouts', icon: Wallet, roles: 'provider' as const },
+  { to: '/account/payouts', label: 'Payouts', icon: Wallet, roles: 'billing' as const },
   { to: '/account/branding', label: 'Branding', icon: Palette, roles: 'branding' as const },
   { to: '/account/knowledge', label: 'Knowledge', icon: Brain, roles: 'knowledge' as const },
   { to: '/account/concierge', label: 'AI Concierge', icon: Sparkles, roles: 'concierge' as const },
@@ -2208,7 +2208,7 @@ export default function AccountPage() {
             />
           } />
         )}
-        {isProvider && (
+        {(isProvider || isAdmin) && providerId && (
           <Route path="payouts" element={<ProviderPayoutsTab />} />
         )}
         {(isProvider || isAdmin) && (
