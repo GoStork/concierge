@@ -14,4 +14,3 @@ export { ChatPlusDrawer } from "./chat-plus-drawer";
 export type { ChatPlusAction } from "./chat-plus-drawer";
 export { ChatProfileSidebar } from "./chat-profile-sidebar";
 export { ChatBookingCard } from "./chat-booking-card";
-export { SubjectProfileSection } from "./subject-profile-section";

@@ -26,6 +26,27 @@ const chatUpload = multer({
 
 const PROVIDER_ROLES = ["PROVIDER_ADMIN", "SURROGACY_COORDINATOR", "EGG_DONOR_COORDINATOR", "SPERM_DONOR_COORDINATOR", "IVF_CLINIC_COORDINATOR", "DOCTOR", "BILLING_MANAGER"];
 
+function isExpiredPresignedAwsUrl(url: string): boolean {
+  if (!/amazonaws\.com/i.test(url) || !/[?&]X-Amz-/i.test(url)) return false;
+  const dateMatch = url.match(/[?&]X-Amz-Date=(\d{8}T\d{6}Z)/i);
+  const expiresMatch = url.match(/[?&]X-Amz-Expires=(\d+)/i);
+  if (!dateMatch || !expiresMatch) return true;
+  const d = dateMatch[1];
+  const signedAt = new Date(`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}T${d.slice(9,11)}:${d.slice(11,13)}:${d.slice(13,15)}Z`);
+  const expiresAt = new Date(signedAt.getTime() + parseInt(expiresMatch[1]) * 1000);
+  return Date.now() > expiresAt.getTime();
+}
+
+function pickFirstValidPhoto(photos: string[] | null | undefined, photoUrl: string | null | undefined): string | null {
+  if (Array.isArray(photos)) {
+    for (const p of photos) {
+      if (p && !isExpiredPresignedAwsUrl(p)) return p;
+    }
+  }
+  if (photoUrl && !isExpiredPresignedAwsUrl(photoUrl)) return photoUrl;
+  return null;
+}
+
 function getUserRoles(user: any): string[] {
   return user.roles || [];
 }
@@ -183,7 +204,7 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       ]);
       const photoMap: Record<string, string> = {};
       for (const p of [...eggDonors, ...surrogates, ...spermDonors]) {
-        const photo = (p.photos && p.photos.length > 0) ? p.photos[0] : p.photoUrl;
+        const photo = pickFirstValidPhoto(p.photos, p.photoUrl);
         if (photo) photoMap[p.id] = photo;
       }
       for (const s of result) {
@@ -211,7 +232,7 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       const extPhotoMap: Record<string, { uuid: string; photo: string }> = {};
       for (const p of [...eggByExt, ...surrogateByExt, ...spermByExt]) {
         if (!p.externalId) continue;
-        const photo = (p.photos && p.photos.length > 0) ? p.photos[0] : p.photoUrl;
+        const photo = pickFirstValidPhoto(p.photos, p.photoUrl);
         if (photo) extPhotoMap[p.externalId] = { uuid: p.id, photo };
       }
       for (const s of result) {
@@ -383,7 +404,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       ]);
       const photoMap: Record<string, string> = {};
       for (const p of [...eggDonors, ...surrogates, ...spermDonors]) {
-        const photo = (p.photos && p.photos.length > 0) ? p.photos[0] : p.photoUrl;
+        const photo = pickFirstValidPhoto(p.photos, p.photoUrl);
         if (photo) photoMap[p.id] = photo;
       }
       for (const s of result) {
@@ -411,7 +432,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       const extPhotoMap: Record<string, string> = {};
       for (const p of [...eggByExt, ...surrogateByExt, ...spermByExt]) {
         if (!p.externalId) continue;
-        const photo = (p.photos && p.photos.length > 0) ? p.photos[0] : p.photoUrl;
+        const photo = pickFirstValidPhoto(p.photos, p.photoUrl);
         if (photo) extPhotoMap[p.externalId] = photo;
       }
       for (const s of result) {
@@ -883,7 +904,7 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       ]);
       const photoMap: Record<string, string> = {};
       for (const p of [...eggDonors, ...surrogates, ...spermDonors]) {
-        const photo = (p.photos && p.photos.length > 0) ? p.photos[0] : p.photoUrl;
+        const photo = pickFirstValidPhoto(p.photos, p.photoUrl);
         if (photo) photoMap[p.id] = photo;
       }
       for (const s of result) {
@@ -911,7 +932,7 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       const extPhotoMap: Record<string, string> = {};
       for (const p of [...eggByExt, ...surrogateByExt, ...spermByExt]) {
         if (!p.externalId) continue;
-        const photo = (p.photos && p.photos.length > 0) ? p.photos[0] : p.photoUrl;
+        const photo = pickFirstValidPhoto(p.photos, p.photoUrl);
         if (photo) extPhotoMap[p.externalId] = photo;
       }
       for (const s of result) {

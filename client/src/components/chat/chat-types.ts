@@ -26,6 +26,7 @@ export interface SessionUser {
   mobileNumber?: string | null;
   relationshipStatus?: string | null;
   partnerFirstName?: string | null;
+  partnerAge?: number | string | null;
   dateOfBirth?: string | null;
   parentAccount?: {
     intendedParentProfile?: {

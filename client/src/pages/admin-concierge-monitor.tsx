@@ -23,10 +23,10 @@ import {
   ChatProfileSidebar,
   InlineVideoOverlay,
   ChatBookingCard,
-  SubjectProfileSection,
   type SessionDetail,
   type FilterTab,
 } from "@/components/chat";
+import { SubjectProfileCard } from "@/components/profile-cards";
 import { useToast } from "@/hooks/use-toast";
 import { AgreementSidebarSection } from "@/components/chat/agreement-sidebar-section";
 import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
@@ -258,7 +258,6 @@ export default function AdminConciergeMonitor() {
   );
   const matchesAdminTab = (s: SessionSummary) => {
     if (activeFilter === "unread") return (s.unreadCount || 0) > 0;
-    if (activeFilter === "agreements") return (s.lastMessage || "").toLowerCase().includes("agreement");
     return true;
   };
   const sessions = allSessions.filter(s =>
@@ -756,14 +755,20 @@ export default function AdminConciergeMonitor() {
                       </div>
                     </div>
                   )}
-                  <SubjectProfileSection
+                  <SubjectProfileCard
                     providerId={selectedSummary?.providerId}
                     subjectProfileId={selectedSummary?.subjectProfileId}
                     subjectType={selectedSummary?.subjectType}
                     fallbackPhotoUrl={selectedSummary?.profilePhotoUrl}
                     fallbackLabel={selectedSummary?.title}
                     brandColor={brandColor}
-                    testId="admin-subject-profile-section"
+                    heading={
+                      (selectedSummary?.subjectType || "").toLowerCase() === "surrogate" ? "Interested Surrogate"
+                        : (selectedSummary?.subjectType || "").toLowerCase().includes("sperm") ? "Interested Sperm Donor"
+                        : "Interested Egg Donor"
+                    }
+                    withSeparator
+                    testId="admin-subject-profile-card"
                   />
                   {/* Cost Sheet / Invoice / Agreement sections moved into the + drawer above the composer */}
                 </>

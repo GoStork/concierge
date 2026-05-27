@@ -29,6 +29,7 @@ import {
   buildSidebarSections,
   type SidebarSection,
 } from "@/components/marketplace/swipe-mappers";
+import { SubjectProfileCard } from "@/components/profile-cards";
 import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2, ThumbsUp, Image as ImageIcon, Camera } from "lucide-react";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
@@ -2288,8 +2289,6 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
 
 export function ParentChatSidePanel({
   subjectInfo,
-  subjectSections,
-  subjectPhotoUrl,
   providerName,
   sessionCalendarSlug,
   sessionBookings,
@@ -2297,22 +2296,12 @@ export function ParentChatSidePanel({
   sessionId,
 }: {
   subjectInfo: ConsultationCardData | null;
-  subjectSections: SidebarSection[];
-  subjectPhotoUrl: string | null;
   providerName: string | null;
   sessionCalendarSlug: { slug: string | null; memberName: string | null } | null;
   sessionBookings: any[] | null;
   brandColor: string;
   sessionId: string | null;
 }) {
-  const navigate = useNavigate();
-
-  const profileSlug = subjectInfo ? getProfileUrlSlug(subjectInfo.subjectType || "surrogate") : null;
-  const profileUrl =
-    subjectInfo?.subjectProfileId && subjectInfo?.providerId && profileSlug
-      ? `/${profileSlug}/${subjectInfo.providerId}/${subjectInfo.subjectProfileId}`
-      : null;
-
   const existingBooking =
     sessionBookings?.find(
       (b: any) =>
@@ -2329,54 +2318,15 @@ export function ParentChatSidePanel({
       <div className="p-4 space-y-4">
         {/* Profile Section - only after a call has been scheduled */}
         {subjectInfo && existingBooking && (
-          <div>
-            {/* Profile ID row with inline photo */}
-            <div className="flex items-center gap-2.5 mb-2">
-              {subjectPhotoUrl ? (
-                <div className="w-10 h-10 rounded-full overflow-hidden bg-muted shrink-0">
-                  <img
-                    src={getPhotoSrc(subjectPhotoUrl) || undefined}
-                    alt={subjectInfo.profileLabel || "Profile"}
-                    className="w-full h-full object-cover object-top"
-                  />
-                </div>
-              ) : (
-                <div
-                  className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold shrink-0"
-                  style={{ backgroundColor: brandColor }}
-                >
-                  {(subjectInfo.profileLabel || "?").charAt(0)}
-                </div>
-              )}
-              <p className="text-sm font-semibold leading-tight">{subjectInfo.profileLabel || "-"}</p>
-            </div>
-            {profileUrl && (
-              <button
-                className="text-xs flex items-center gap-1 mb-3"
-                style={{ color: brandColor }}
-                onClick={() => navigate(profileUrl)}
-              >
-                <ExternalLink className="w-3 h-3" />
-                View Full Profile
-              </button>
-            )}
-            {subjectSections.map((section, i) => (
-              <div key={i} className={i > 0 ? "border-t pt-2 mt-2" : "mt-1"}>
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
-                  {section.title}
-                </p>
-                <div className="space-y-1">
-                  {section.rows.map((row, j) => (
-                    <div key={j} className="flex items-center gap-1.5 text-xs">
-                      {row.icon && <row.icon className="w-3 h-3 text-muted-foreground shrink-0" />}
-                      <span className="text-muted-foreground shrink-0">{row.label}:</span>
-                      <span className="text-foreground">{row.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
+          <SubjectProfileCard
+            subjectType={subjectInfo.subjectType}
+            providerId={subjectInfo.providerId}
+            subjectProfileId={subjectInfo.subjectProfileId}
+            fallbackPhotoUrl={subjectInfo.profilePhotoUrl}
+            fallbackLabel={subjectInfo.profileLabel}
+            brandColor={brandColor}
+            testId="parent-subject-profile-card"
+          />
         )}
 
         {/* Provider Section - only after a call has been scheduled */}
@@ -2451,8 +2401,6 @@ export function ParentChatSidePanel({
 export interface ParentSidePanelData {
   providerInChat: boolean;
   subjectInfo: ConsultationCardData | null;
-  subjectSections: SidebarSection[];
-  subjectPhotoUrl: string | null;
   providerName: string | null;
   sessionCalendarSlug: { slug: string | null; memberName: string | null } | null;
   sessionBookings: any[] | null;
@@ -3076,36 +3024,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     return null;
   }, [messages, sessionSubjectInfo, providerChatName, sessionTitle]);
 
-  const subjectProfileApiPath = useMemo(() => {
-    if (!subjectInfo?.subjectProfileId || !subjectInfo?.providerId || !subjectInfo?.subjectType) return null;
-    const t = subjectInfo.subjectType.toLowerCase();
-    const endpoint = t === "surrogate" ? "surrogates" : t.includes("sperm") ? "sperm-donors" : "egg-donors";
-    return `/api/providers/${subjectInfo.providerId}/${endpoint}/${subjectInfo.subjectProfileId}`;
-  }, [subjectInfo]);
-
-  const { data: subjectProfileData = null } = useQuery<any>({
-    queryKey: ["subject-profile", subjectInfo?.subjectProfileId],
-    queryFn: async () => {
-      const res = await fetch(subjectProfileApiPath!, { credentials: "include" });
-      if (!res.ok) return null;
-      return res.json();
-    },
-    enabled: !!subjectProfileApiPath && providerInChat,
-    staleTime: 300000,
-  });
-
-  const { subjectSections, subjectPhotoUrl } = useMemo((): { subjectSections: SidebarSection[]; subjectPhotoUrl: string | null } => {
-    if (!subjectProfileData || !subjectInfo?.subjectType) return { subjectSections: [], subjectPhotoUrl: subjectInfo?.profilePhotoUrl || null };
-    const t = subjectInfo.subjectType.toLowerCase();
-    const swipeProfile = t === "surrogate"
-      ? mapDatabaseSurrogateToSwipeProfile(subjectProfileData)
-      : t.includes("sperm")
-        ? mapDatabaseSpermDonorToSwipeProfile(subjectProfileData)
-        : mapDatabaseDonorToSwipeProfile(subjectProfileData);
-    const photo = swipeProfile.photos?.[0] || swipeProfile.photoUrl || subjectInfo?.profilePhotoUrl || null;
-    return { subjectSections: buildSidebarSections(swipeProfile, t.includes("sperm")), subjectPhotoUrl: photo };
-  }, [subjectProfileData, subjectInfo?.subjectType, subjectInfo?.profilePhotoUrl]);
-
   const initialScrollDone = useRef(false);
   // When true, the initial batch was a new session - scroll to top so greeting is visible first.
   const newSessionInitRef = useRef(false);
@@ -3138,13 +3056,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     onSidePanelChange({
       providerInChat,
       subjectInfo,
-      subjectSections,
-      subjectPhotoUrl,
       providerName: providerChatName,
       sessionCalendarSlug: sessionCalendarSlug ?? null,
       sessionBookings: sessionBookings ?? null,
     });
-  }, [isInline, providerInChat, subjectInfo, subjectSections, subjectPhotoUrl, providerChatName, sessionCalendarSlug, sessionBookings]);
+  }, [isInline, providerInChat, subjectInfo, providerChatName, sessionCalendarSlug, sessionBookings]);
 
   // Cleanup side panel when unmounting
   useEffect(() => {
@@ -4946,8 +4862,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         {providerInChat && !isEmbedded && !isInline && (sessionBookings?.length ?? 0) > 0 && (
           <ParentChatSidePanel
             subjectInfo={subjectInfo}
-            subjectSections={subjectSections}
-            subjectPhotoUrl={subjectPhotoUrl}
             providerName={providerChatName}
             sessionCalendarSlug={sessionCalendarSlug ?? null}
             sessionBookings={sessionBookings ?? null}

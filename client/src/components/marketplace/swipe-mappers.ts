@@ -314,7 +314,7 @@ function boolLabel(val: boolean | null | undefined): string {
   return "-";
 }
 
-function isExpiredPresignedAwsUrl(url: string): boolean {
+export function isExpiredPresignedAwsUrl(url: string): boolean {
   if (!/amazonaws\.com/i.test(url) || !/[?&]X-Amz-/i.test(url)) return false;
   const dateMatch = url.match(/[?&]X-Amz-Date=(\d{8}T\d{6}Z)/i);
   const expiresMatch = url.match(/[?&]X-Amz-Expires=(\d+)/i);
@@ -323,6 +323,16 @@ function isExpiredPresignedAwsUrl(url: string): boolean {
   const signedAt = new Date(`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}T${d.slice(9,11)}:${d.slice(11,13)}:${d.slice(13,15)}Z`);
   const expiresAt = new Date(signedAt.getTime() + parseInt(expiresMatch[1]) * 1000);
   return Date.now() > expiresAt.getTime();
+}
+
+export function pickFirstValidPhoto(photos: string[] | null | undefined, photoUrl: string | null | undefined): string | null {
+  if (Array.isArray(photos)) {
+    for (const p of photos) {
+      if (p && !isExpiredPresignedAwsUrl(p)) return p;
+    }
+  }
+  if (photoUrl && !isExpiredPresignedAwsUrl(photoUrl)) return photoUrl;
+  return null;
 }
 
 export function getPhotoList(profile: SwipeDeckProfile): string[] {

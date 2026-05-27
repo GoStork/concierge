@@ -2,7 +2,7 @@ import { useEffect, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { Search, Loader2, MessageSquare } from "lucide-react";
 
-type FilterTab = "all" | "unread" | "agreements";
+type FilterTab = "all" | "unread";
 
 interface ConversationsShellProps {
   hasSelection: boolean;
@@ -74,7 +74,7 @@ export function ConversationsShell({
           </div>
           <div className="flex items-center gap-2">
             <div className="flex gap-1.5 flex-shrink-0">
-              {(["all", "unread", "agreements"] as FilterTab[]).map(tab => (
+              {(["all", "unread"] as FilterTab[]).map(tab => (
                 <button
                   key={tab}
                   className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
@@ -86,7 +86,7 @@ export function ConversationsShell({
                   onClick={() => onFilterChange(tab)}
                   data-testid={`filter-${tab}`}
                 >
-                  {tab === "all" ? "All" : tab === "unread" ? "Unread" : "Agreements"}
+                  {tab === "all" ? "All" : "Unread"}
                 </button>
               ))}
             </div>

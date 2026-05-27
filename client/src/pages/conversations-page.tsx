@@ -51,9 +51,9 @@ import {
   WhisperDisclaimer,
   ChatProfileSidebar,
   ChatBookingCard,
-  SubjectProfileSection,
   type FilterTab,
 } from "@/components/chat";
+import { SubjectProfileCard } from "@/components/profile-cards";
 
 interface ChatSession {
   id: string;
@@ -1240,7 +1240,6 @@ const sendMessageMutation = useMutation({
 
     const matchesTab = (s: ChatSession) => {
       if (activeFilter === "unread") return (s.unreadCount || 0) > 0;
-      if (activeFilter === "agreements") return (s.lastMessage || "").toLowerCase().includes("agreement");
       return true;
     };
     const filteredEva = evaConversations.filter(s =>
@@ -1615,12 +1614,11 @@ const sendMessageMutation = useMutation({
         {parentShowRightPanel && parentSidePanelData && (
           <ParentChatSidePanel
             subjectInfo={parentSidePanelData.subjectInfo}
-            subjectSections={parentSidePanelData.subjectSections}
-            subjectPhotoUrl={parentSidePanelData.subjectPhotoUrl}
             providerName={parentSidePanelData.providerName}
             sessionCalendarSlug={parentSidePanelData.sessionCalendarSlug}
             sessionBookings={parentSidePanelData.sessionBookings}
             brandColor={brandColor}
+            sessionId={selectedParentSession?.id ?? null}
           />
         )}
       </div>
@@ -1670,7 +1668,6 @@ const sendMessageMutation = useMutation({
     const sessions = providerSessionsQuery.data || [];
     const matchesProviderTab = (s: ProviderSession) => {
       if (activeFilter === "unread") return (s.unreadCount || 0) > 0;
-      if (activeFilter === "agreements") return (s.lastMessage || "").toLowerCase().includes("agreement");
       return true;
     };
     const filteredSessions = sessions.filter(s =>
@@ -2076,14 +2073,20 @@ const sendMessageMutation = useMutation({
                       </div>
                     );
                   })()}
-                  <SubjectProfileSection
+                  <SubjectProfileCard
                     providerId={(user as any)?.providerId}
                     subjectProfileId={selectedSession?.subjectProfileId}
                     subjectType={selectedSession?.subjectType}
                     fallbackPhotoUrl={selectedSession?.profilePhotoUrl}
                     fallbackLabel={selectedSession?.title}
                     brandColor={brandColor}
-                    testId="provider-subject-profile-section"
+                    heading={
+                      (selectedSession?.subjectType || "").toLowerCase() === "surrogate" ? "Interested Surrogate"
+                        : (selectedSession?.subjectType || "").toLowerCase().includes("sperm") ? "Interested Sperm Donor"
+                        : "Interested Egg Donor"
+                    }
+                    withSeparator
+                    testId="provider-subject-profile-card"
                   />
                   {/* Cost Sheet / Invoice / Agreement sections moved into the + drawer above the composer */}
                 </>
