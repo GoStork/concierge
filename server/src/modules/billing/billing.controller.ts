@@ -21,6 +21,17 @@ import { BillingService } from "./billing.service";
 import * as stripeService from "../../../stripe-service";
 import { prisma } from "../../../db";
 
+const VALID_SERVICE_TYPES = new Set([
+  "SURROGACY", "EGG_DONATION", "SPERM_DONATION", "IVF_CLINIC", "OTHER",
+]);
+function normalizeServiceType(raw: string): string {
+  const s = (raw || "").toUpperCase();
+  if (!VALID_SERVICE_TYPES.has(s)) {
+    throw new HttpException(`Invalid serviceType: ${raw}`, HttpStatus.BAD_REQUEST);
+  }
+  return s;
+}
+
 @Controller()
 export class BillingController {
   private readonly logger = new Logger(BillingController.name);
@@ -172,31 +183,34 @@ export class BillingController {
   }
 
   // ─── Admin: provider fee config CRUD ─────────────────────────────────────
+  //
+  // A provider can have multiple ReferralFeeConfig rows - one per service
+  // they offer (SURROGACY / EGG_DONATION / SPERM_DONATION / IVF_CLINIC /
+  // OTHER) - so GoStork can negotiate different referral terms per service.
+  // The enabled-services list comes from the provider's APPROVED
+  // ProviderService rows.
 
-  @Get("api/admin/providers/:providerId/fee-config")
+  @Get("api/admin/providers/:providerId/fee-configs")
   @UseGuards(SessionOrJwtGuard)
-  async getProviderFeeConfig(@Req() req: Request, @Param("providerId") providerId: string) {
+  async listProviderFeeConfigs(@Req() req: Request, @Param("providerId") providerId: string) {
     const user = req.user as any;
     if (!user?.roles?.includes("GOSTORK_ADMIN")) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
-
-    const config = await this.db.referralFeeConfig.findUnique({
-      where: { providerId },
-    });
-    if (!config) throw new HttpException("Not found", HttpStatus.NOT_FOUND);
-    return config;
+    return this.billingService.getFeeConfigsForProvider(providerId);
   }
 
-  @Put("api/admin/providers/:providerId/fee-config")
-  @Patch("api/admin/providers/:providerId/fee-config")
+  @Put("api/admin/providers/:providerId/fee-configs/:serviceType")
+  @Patch("api/admin/providers/:providerId/fee-configs/:serviceType")
   @UseGuards(SessionOrJwtGuard)
   async upsertProviderFeeConfig(
     @Req() req: Request,
     @Param("providerId") providerId: string,
+    @Param("serviceType") serviceType: string,
     @Body() body: any,
   ) {
     const user = req.user as any;
     if (!user?.roles?.includes("GOSTORK_ADMIN")) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
 
+    const normalizedService = normalizeServiceType(serviceType);
     const { feeType, flatAmount, percentage, defaultServiceAmount, parentPaysBasis, sampleTotalCostCents, isActive, notes, depositMilestone, averageClearanceDays } = body;
     const normalizedBasis: "DEFAULT_FIRST_PAYMENT" | "TOTAL_COST" =
       parentPaysBasis === "TOTAL_COST" ? "TOTAL_COST" : "DEFAULT_FIRST_PAYMENT";
@@ -204,14 +218,14 @@ export class BillingController {
       ? Math.round(Number(sampleTotalCostCents))
       : null;
 
-    // Upsert fee config
     const config = await this.db.referralFeeConfig.upsert({
-      where: { providerId },
-      create: { providerId, feeType, flatAmount, percentage, defaultServiceAmount: defaultServiceAmount ?? null, parentPaysBasis: normalizedBasis, sampleTotalCostCents: normalizedSample, isActive: isActive ?? true, notes },
+      where: { providerId_serviceType: { providerId, serviceType: normalizedService } },
+      create: { providerId, serviceType: normalizedService, feeType, flatAmount, percentage, defaultServiceAmount: defaultServiceAmount ?? null, parentPaysBasis: normalizedBasis, sampleTotalCostCents: normalizedSample, isActive: isActive ?? true, notes },
       update: { feeType, flatAmount, percentage, defaultServiceAmount: defaultServiceAmount ?? null, parentPaysBasis: normalizedBasis, sampleTotalCostCents: normalizedSample, isActive: isActive ?? true, notes, updatedAt: new Date() },
     });
 
-    // Also update provider-level surrogacy settings if provided
+    // Provider-wide surrogacy settings (deposit milestone + clearance days)
+    // are saved on the SURROGACY tab only.
     if (depositMilestone !== undefined || averageClearanceDays !== undefined) {
       await this.db.provider.update({
         where: { id: providerId },
@@ -225,7 +239,7 @@ export class BillingController {
     return config;
   }
 
-  // ─── Provider: self-service fee config (read + edit own row) ──────────────
+  // ─── Provider: self-service fee config (read + edit own rows) ─────────────
   //
   // Mirrors the admin endpoints above but derives the providerId from the
   // logged-in user. The provider can edit everything EXCEPT the GoStork
@@ -233,31 +247,32 @@ export class BillingController {
   // negotiated with GoStork and locked from the provider side. Any attempt
   // to change them is silently dropped server-side.
 
-  @Get("api/provider/fee-config")
+  @Get("api/provider/fee-configs")
   @UseGuards(SessionOrJwtGuard)
-  async getOwnProviderFeeConfig(@Req() req: Request) {
+  async getOwnProviderFeeConfigs(@Req() req: Request) {
     const user = req.user as any;
     if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
-
-    const config = await this.db.referralFeeConfig.findUnique({
-      where: { providerId: user.providerId },
-    });
-    if (!config) throw new HttpException("Not found", HttpStatus.NOT_FOUND);
-    return config;
+    return this.billingService.getFeeConfigsForProvider(user.providerId);
   }
 
-  @Put("api/provider/fee-config")
-  @Patch("api/provider/fee-config")
+  @Put("api/provider/fee-configs/:serviceType")
+  @Patch("api/provider/fee-configs/:serviceType")
   @UseGuards(SessionOrJwtGuard)
-  async upsertOwnProviderFeeConfig(@Req() req: Request, @Body() body: any) {
+  async upsertOwnProviderFeeConfig(
+    @Req() req: Request,
+    @Param("serviceType") serviceType: string,
+    @Body() body: any,
+  ) {
     const user = req.user as any;
     if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     const providerId = user.providerId as string;
+    const normalizedService = normalizeServiceType(serviceType);
 
-    // Provider can NOT change the GoStork referral fee economics. Strip those
-    // fields and re-use the existing row's values (or sensible defaults if
-    // the row does not exist yet).
-    const existing = await this.db.referralFeeConfig.findUnique({ where: { providerId } });
+    // Provider can NOT change the GoStork referral fee economics. Pull those
+    // values from the existing row (or sensible defaults for a fresh row).
+    const existing = await this.db.referralFeeConfig.findUnique({
+      where: { providerId_serviceType: { providerId, serviceType: normalizedService } },
+    });
     const feeType = existing?.feeType ?? "PERCENTAGE";
     const flatAmount = existing?.flatAmount ?? null;
     const percentage = existing?.percentage ?? null;
@@ -270,8 +285,8 @@ export class BillingController {
       : null;
 
     const config = await this.db.referralFeeConfig.upsert({
-      where: { providerId },
-      create: { providerId, feeType, flatAmount, percentage, defaultServiceAmount: defaultServiceAmount ?? null, parentPaysBasis: normalizedBasis, sampleTotalCostCents: normalizedSample, isActive: isActive ?? true, notes },
+      where: { providerId_serviceType: { providerId, serviceType: normalizedService } },
+      create: { providerId, serviceType: normalizedService, feeType, flatAmount, percentage, defaultServiceAmount: defaultServiceAmount ?? null, parentPaysBasis: normalizedBasis, sampleTotalCostCents: normalizedSample, isActive: isActive ?? true, notes },
       update: { defaultServiceAmount: defaultServiceAmount ?? null, parentPaysBasis: normalizedBasis, sampleTotalCostCents: normalizedSample, isActive: isActive ?? true, notes, updatedAt: new Date() },
     });
 

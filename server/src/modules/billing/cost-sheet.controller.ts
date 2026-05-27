@@ -19,7 +19,7 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { Request, Response } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
-import { BillingService } from "./billing.service";
+import { BillingService, humanizeLineServiceType, providerTypeNameToServiceType } from "./billing.service";
 import { NotificationService } from "../notifications/notification.service";
 import { StorageService } from "../storage/storage.service";
 import { prisma } from "../../../db";
@@ -294,7 +294,15 @@ export class CostSheetController {
   @UseGuards(SessionOrJwtGuard)
   async invoicePreview(
     @Req() req: Request,
-    @Body() body: { sessionId: string; totalCostCents: number; parentPaysOverrideCents?: number },
+    @Body() body: {
+      sessionId: string;
+      totalCostCents: number;
+      parentPaysOverrideCents?: number;
+      // When supplied, the preview is computed per-line using each service's
+      // ReferralFeeConfig and the line-item amounts (matching the multi-service
+      // billing logic in BillingService.createInvoice).
+      lineItems?: Array<{ serviceType: string; amountCents: number }>;
+    },
   ) {
     const user = req.user as any;
     if (!body?.sessionId) throw new HttpException("sessionId required", HttpStatus.BAD_REQUEST);
@@ -305,14 +313,83 @@ export class CostSheetController {
 
     const { session } = await this.loadAuthorisedSession(body.sessionId, user);
 
-    const feeConfig = await this.db.referralFeeConfig.findUnique({
-      where: { providerId: session.providerId! },
+    const provider = await this.db.provider.findUnique({
+      where: { id: session.providerId! },
+      include: {
+        referralFeeConfigs: true,
+        services: { where: { status: "APPROVED" }, include: { providerType: { select: { name: true } } } },
+      },
     });
-    if (!feeConfig || !feeConfig.isActive) {
+    if (!provider) throw new HttpException("Provider not found", HttpStatus.NOT_FOUND);
+
+    const configByService = new Map<string, typeof provider.referralFeeConfigs[number]>();
+    for (const c of provider.referralFeeConfigs) {
+      if (c.isActive) configByService.set(c.serviceType, c);
+    }
+    if (configByService.size === 0) {
       throw new HttpException("This provider has no active billing configuration", HttpStatus.BAD_REQUEST);
     }
 
-    // Mirrors the resolution rules in BillingService.createInvoice so the preview matches reality.
+    // Multi-service path: per-line preview, summed.
+    const hasLineItems = Array.isArray(body.lineItems) && body.lineItems.length > 0;
+    if (hasLineItems) {
+      const lines: Array<{
+        serviceType: string;
+        serviceTypeLabel: string;
+        amountCents: number;
+        referralFeeAmount: number;
+        providerPayoutAmount: number;
+        feeType: string;
+        percentage: number | null;
+        flatAmount: number | null;
+      }> = [];
+      let parentPaysCents = 0;
+      let referralFeeAmount = 0;
+      for (const li of body.lineItems!) {
+        const amount = Math.round(Number(li.amountCents) || 0);
+        if (amount <= 0) continue;
+        const cfg = configByService.get(li.serviceType);
+        if (!cfg) {
+          throw new HttpException(
+            `No referral fee configured for ${humanizeLineServiceType(li.serviceType)} on this provider.`,
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+        const { referralFeeAmount: lineFee, providerPayoutAmount: linePayout } =
+          this.billing.computeFee(cfg, amount, amount);
+        parentPaysCents += amount;
+        referralFeeAmount += lineFee;
+        lines.push({
+          serviceType: li.serviceType,
+          serviceTypeLabel: humanizeLineServiceType(li.serviceType),
+          amountCents: amount,
+          referralFeeAmount: lineFee,
+          providerPayoutAmount: linePayout,
+          feeType: cfg.feeType,
+          percentage: cfg.percentage ? Number(cfg.percentage) : null,
+          flatAmount: cfg.flatAmount ? Number(cfg.flatAmount) : null,
+        });
+      }
+      referralFeeAmount = Math.min(referralFeeAmount, parentPaysCents);
+      const providerPayoutAmount = parentPaysCents - referralFeeAmount;
+      return {
+        multiService: true,
+        currency: provider.referralFeeConfigs[0]?.currency || "USD",
+        feeBasisCents: totalCostCents,
+        parentPaysCents,
+        referralFeeAmount,
+        providerPayoutAmount,
+        lines,
+      };
+    }
+
+    // Single-service fallback: use the provider's primary approved service's config.
+    const primaryServiceType = provider.services
+      .map(s => providerTypeNameToServiceType(s.providerType?.name))
+      .find(st => configByService.has(st))
+      ?? Array.from(configByService.keys())[0];
+    const feeConfig = configByService.get(primaryServiceType)!;
+
     let parentPaysCents: number;
     if (body.parentPaysOverrideCents != null) {
       parentPaysCents = Number(body.parentPaysOverrideCents);
@@ -329,12 +406,13 @@ export class CostSheetController {
     );
 
     return {
+      multiService: false,
+      serviceType: primaryServiceType,
       feeType: feeConfig.feeType,
       percentage: feeConfig.percentage ? Number(feeConfig.percentage) : null,
       flatAmount: feeConfig.flatAmount ? Number(feeConfig.flatAmount) : null,
       parentPaysBasis: feeConfig.parentPaysBasis,
       currency: feeConfig.currency,
-      // Amounts in cents
       feeBasisCents: totalCostCents,
       parentPaysCents,
       referralFeeAmount,

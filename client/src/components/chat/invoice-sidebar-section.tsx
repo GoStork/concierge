@@ -35,16 +35,30 @@ interface InvoiceSidebarSectionProps {
   onClose?: () => void;
 }
 
-interface PreviewResponse {
+interface PreviewLine {
+  serviceType: string;
+  serviceTypeLabel: string;
+  amountCents: number;
+  referralFeeAmount: number;
+  providerPayoutAmount: number;
   feeType: "FLAT" | "PERCENTAGE";
   percentage: number | null;
   flatAmount: number | null;
-  parentPaysBasis: "DEFAULT_FIRST_PAYMENT" | "TOTAL_COST";
+}
+interface PreviewResponse {
+  // Single-service legacy shape
+  multiService?: boolean;
+  feeType?: "FLAT" | "PERCENTAGE";
+  percentage?: number | null;
+  flatAmount?: number | null;
+  parentPaysBasis?: "DEFAULT_FIRST_PAYMENT" | "TOTAL_COST";
   currency: string;
   feeBasisCents: number;
   parentPaysCents: number;
   referralFeeAmount: number;
   providerPayoutAmount: number;
+  // Multi-service shape (when lineItems passed)
+  lines?: PreviewLine[];
 }
 
 interface ProviderQuoteRow {
@@ -127,6 +141,17 @@ export function InvoiceSidebarSection({
       : overrideInput
         ? Math.round(parseFloat(overrideInput) * 100)
         : undefined;
+    // When the agency has typed real line items with positive amounts, send
+    // them to the preview so each line is priced against its own service's
+    // ReferralFeeConfig (mirroring how createInvoice computes the real fee).
+    const previewLines = totalLineCents > 0
+      ? lineItems
+          .filter(li => parseFloat(li.amountInput) > 0)
+          .map(li => ({
+            serviceType: li.serviceType,
+            amountCents: Math.round(parseFloat(li.amountInput) * 100),
+          }))
+      : undefined;
     const t = setTimeout(async () => {
       try {
         const res = await fetch("/api/billing/invoice-preview", {
@@ -137,6 +162,7 @@ export function InvoiceSidebarSection({
             sessionId,
             totalCostCents: activeQuote.totalCostCents,
             parentPaysOverrideCents: overrideCents,
+            ...(previewLines ? { lineItems: previewLines } : {}),
           }),
         });
         const data = await res.json();
@@ -162,7 +188,17 @@ export function InvoiceSidebarSection({
       }
     }, 350);
     return () => clearTimeout(t);
-  }, [sessionId, activeQuote?.id, activeQuote?.totalCostCents, overrideInput, defaultPrefilled, totalLineCents]);
+  }, [
+    sessionId,
+    activeQuote?.id,
+    activeQuote?.totalCostCents,
+    overrideInput,
+    defaultPrefilled,
+    totalLineCents,
+    // Re-run when the service-type of any line changes so multi-service
+    // previews update without waiting on an amount change.
+    lineItems.map(li => `${li.serviceType}:${li.amountInput}`).join("|"),
+  ]);
 
   const sendMutation = useMutation({
     mutationFn: async () => {
@@ -371,10 +407,33 @@ export function InvoiceSidebarSection({
               </div>
               {preview && (
                 <>
-                  <div className="flex justify-between" style={{ color: "hsl(var(--brand-success))" }}>
-                    <span>GoStork keeps ({preview.feeType === "PERCENTAGE" ? `${preview.percentage}%` : "flat"})</span>
-                    <span className="font-semibold">{formatCents(preview.referralFeeAmount, preview.currency)}</span>
-                  </div>
+                  {preview.lines && preview.lines.length > 0 ? (
+                    // Multi-service preview: break out GoStork's fee per line so
+                    // the agency sees which line drove which fee.
+                    preview.lines.map((ln, idx) => (
+                      <div
+                        key={`${ln.serviceType}-${idx}`}
+                        className="flex justify-between pl-3"
+                        style={{ color: "hsl(var(--brand-success))" }}
+                      >
+                        <span>
+                          GoStork keeps - {ln.serviceTypeLabel} ({ln.feeType === "PERCENTAGE" ? `${ln.percentage}%` : "flat"})
+                        </span>
+                        <span className="font-semibold">{formatCents(ln.referralFeeAmount, preview.currency)}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="flex justify-between" style={{ color: "hsl(var(--brand-success))" }}>
+                      <span>GoStork keeps ({preview.feeType === "PERCENTAGE" ? `${preview.percentage}%` : "flat"})</span>
+                      <span className="font-semibold">{formatCents(preview.referralFeeAmount, preview.currency)}</span>
+                    </div>
+                  )}
+                  {preview.lines && preview.lines.length > 1 && (
+                    <div className="flex justify-between border-t pt-1" style={{ color: "hsl(var(--brand-success))" }}>
+                      <span>GoStork keeps (total)</span>
+                      <span className="font-semibold">{formatCents(preview.referralFeeAmount, preview.currency)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between font-semibold">
                     <span>You receive</span>
                     <span>{formatCents(preview.providerPayoutAmount, preview.currency)}</span>

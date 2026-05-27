@@ -47,6 +47,20 @@ export function humanizeLineServiceType(t: string): string {
   }
 }
 
+// Maps a ProviderType.name (e.g. "Surrogacy Agency", "Egg Donor Agency")
+// to the LineServiceType enum used everywhere downstream (InvoiceLineItem,
+// ReferralFeeConfig.serviceType). Mirrors the SQL backfill in
+// 20260527_per_service_referral_fee_config/migration.sql.
+export function providerTypeNameToServiceType(providerTypeName: string | undefined | null): string {
+  if (!providerTypeName) return "OTHER";
+  const n = providerTypeName.toLowerCase();
+  if (n.includes("surrogacy")) return "SURROGACY";
+  if (n.includes("egg donor") || n.includes("egg bank")) return "EGG_DONATION";
+  if (n.includes("sperm")) return "SPERM_DONATION";
+  if (n.includes("ivf") || n.includes("clinic")) return "IVF_CLINIC";
+  return "OTHER";
+}
+
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
@@ -56,6 +70,66 @@ export class BillingService {
   constructor(
     @Inject(NotificationService) private readonly notificationService: NotificationService,
   ) {}
+
+  // ─── Per-service fee-config listing ─────────────────────────────────────────
+
+  /**
+   * Returns every ReferralFeeConfig the provider has, plus the list of
+   * services they're enabled to offer (derived from APPROVED ProviderService
+   * rows). Used by the admin and provider billing tabs to render one config
+   * panel per service.
+   *
+   * The `services` array always contains at least one entry per APPROVED
+   * provider service. The `configs` array may be shorter (a config row is
+   * only created the first time admin saves one for that service).
+   */
+  async getFeeConfigsForProvider(providerId: string) {
+    const [configs, provider] = await Promise.all([
+      this.prisma.referralFeeConfig.findMany({
+        where: { providerId },
+        orderBy: { createdAt: "asc" },
+      }),
+      this.prisma.provider.findUnique({
+        where: { id: providerId },
+        select: {
+          depositMilestone: true,
+          averageClearanceDays: true,
+          services: {
+            where: { status: "APPROVED" },
+            include: { providerType: { select: { name: true } } },
+          },
+        },
+      }),
+    ]);
+
+    if (!provider) throw new NotFoundException("Provider not found");
+
+    // De-dupe by serviceType: two ProviderService rows with the same
+    // mapped service (e.g. "Egg Bank" + "Egg Donor Agency" both -> EGG_DONATION)
+    // collapse to a single tab in the UI.
+    const seen = new Set<string>();
+    const services: Array<{ serviceType: string; providerTypeName: string }> = [];
+    for (const ps of provider.services) {
+      const st = providerTypeNameToServiceType(ps.providerType?.name);
+      if (seen.has(st)) continue;
+      seen.add(st);
+      services.push({ serviceType: st, providerTypeName: ps.providerType?.name ?? "" });
+    }
+
+    return {
+      configs: configs.map(c => ({
+        ...c,
+        flatAmount: c.flatAmount ? Number(c.flatAmount) : null,
+        percentage: c.percentage ? Number(c.percentage) : null,
+        defaultServiceAmount: c.defaultServiceAmount ? Number(c.defaultServiceAmount) : null,
+      })),
+      services,
+      provider: {
+        depositMilestone: provider.depositMilestone,
+        averageClearanceDays: provider.averageClearanceDays,
+      },
+    };
+  }
 
   // ─── Fee computation ────────────────────────────────────────────────────────
 
@@ -146,16 +220,21 @@ export class BillingService {
     const provider = await this.prisma.provider.findUnique({
       where: { id: providerId },
       include: {
-        referralFeeConfig: true,
-        services: { include: { providerType: true }, take: 1 },
+        referralFeeConfigs: true,
+        services: { include: { providerType: true } },
         brandSettings: { select: { legalName: true, taxId: true } },
         w9: { select: { status: true } },
       },
     });
     if (!provider) throw new NotFoundException("Provider not found");
 
-    const feeConfig = provider.referralFeeConfig;
-    if (!feeConfig || !feeConfig.isActive) {
+    // Per-service fee config lookup: at least one active config must exist,
+    // and (for multi-line invoices) every line item's service must have one.
+    const configByService = new Map<string, typeof provider.referralFeeConfigs[number]>();
+    for (const c of provider.referralFeeConfigs) {
+      if (c.isActive) configByService.set(c.serviceType, c);
+    }
+    if (configByService.size === 0) {
       throw new BadRequestException(
         "No active referral fee configured for this provider. GoStork admin must set up billing before an invoice can be issued.",
       );
@@ -175,23 +254,9 @@ export class BillingService {
 
     const latestQuote = await this.getLatestProviderQuote(sessionId);
 
-    // Resolve fee basis: PERCENTAGE configs require a quote.
-    let feeBasisCents: number;
-    if (feeConfig.feeType === "PERCENTAGE") {
-      if (!latestQuote) {
-        throw new BadRequestException(
-          "Provider must send a cost sheet before a percentage-based invoice can be issued.",
-        );
-      }
-      feeBasisCents = latestQuote.totalCostCents;
-    } else {
-      // FLAT: basis is unused by the fee math, but we still snapshot the quote if present.
-      feeBasisCents = latestQuote?.totalCostCents ?? 0;
-    }
-
-    // Validate + sum line items if any were supplied. They take precedence
-    // over both the override and the basis math: an agency that itemizes is
-    // telling us exactly what the parent will pay for what.
+    // Validate line items if any were supplied. They take precedence over both
+    // the override and the basis math: an agency that itemizes is telling us
+    // exactly what the parent will pay for what.
     const hasLineItems = Array.isArray(lineItems) && lineItems.length > 0;
     const VALID_LINE_TYPES = new Set([
       "SURROGACY", "EGG_DONATION", "SPERM_DONATION", "IVF_CLINIC", "OTHER",
@@ -204,38 +269,87 @@ export class BillingService {
         if (!Number.isFinite(li.amountCents) || li.amountCents <= 0) {
           throw new BadRequestException("Line item amounts must be positive integers in cents");
         }
+        if (!configByService.has(li.serviceType)) {
+          throw new BadRequestException(
+            `No referral fee configured for ${humanizeLineServiceType(li.serviceType)} on this provider. ` +
+            `GoStork admin must add a Referral Fee Configuration for this service in the provider's Billing tab.`,
+          );
+        }
       }
     }
     const lineItemsSumCents = hasLineItems
       ? lineItems!.reduce((sum, li) => sum + Math.round(li.amountCents), 0)
       : 0;
 
-    // Resolve what the parent actually pays.
-    let parentPaysCents: number;
-    if (hasLineItems) {
-      parentPaysCents = lineItemsSumCents;
-    } else if (parentPaysOverrideCents != null) {
-      parentPaysCents = parentPaysOverrideCents;
-    } else if (feeConfig.parentPaysBasis === "TOTAL_COST") {
-      if (!latestQuote) {
-        throw new BadRequestException(
-          "Provider must send a cost sheet before this invoice can be issued (parent-pays basis is Total Cost).",
-        );
-      }
-      parentPaysCents = latestQuote.totalCostCents;
-    } else {
-      const defaultCents = feeConfig.defaultServiceAmount ? Math.round(Number(feeConfig.defaultServiceAmount)) : 0;
-      if (!defaultCents) {
-        throw new BadRequestException(
-          "Provider has no Default First Payment configured. Admin must set one before this invoice can be issued.",
-        );
-      }
-      parentPaysCents = defaultCents;
-    }
+    // Resolve the primary service config used for non-itemized invoices and
+    // for snapshotting `Invoice.referralFeeConfigId`. Picks the first
+    // APPROVED service that has an active config, falling back to any active
+    // config if no approved service is configured.
+    const primaryServiceTypeFromServices = provider.services
+      .filter(s => s.status === "APPROVED")
+      .map(s => providerTypeNameToServiceType(s.providerType?.name))
+      .find(st => configByService.has(st));
+    const primaryServiceType = primaryServiceTypeFromServices
+      ?? Array.from(configByService.keys())[0];
+    const primaryConfig = configByService.get(primaryServiceType)!;
 
-    const { referralFeeAmount, providerPayoutAmount } = this.computeFee(feeConfig, feeBasisCents, parentPaysCents);
-    const providerTypeName = provider.services[0]?.providerType?.name;
-    const serviceType = resolveServiceType(providerTypeName);
+    // Resolve what the parent actually pays + GoStork's fee.
+    let parentPaysCents: number;
+    let referralFeeAmount: number;
+    let providerPayoutAmount: number;
+
+    if (hasLineItems) {
+      // Per-line fee calculation: each line uses its own service's config.
+      // PERCENTAGE -> % of the line amount. FLAT -> the flat fee once per line.
+      parentPaysCents = lineItemsSumCents;
+      let totalFee = 0;
+      for (const li of lineItems!) {
+        const cfg = configByService.get(li.serviceType)!;
+        const { referralFeeAmount: lineFee } = this.computeFee(cfg, li.amountCents, li.amountCents);
+        totalFee += lineFee;
+      }
+      referralFeeAmount = Math.min(totalFee, parentPaysCents);
+      providerPayoutAmount = parentPaysCents - referralFeeAmount;
+    } else {
+      // Single-service legacy path: fall back to the primary service's config.
+      let feeBasisCents: number;
+      if (primaryConfig.feeType === "PERCENTAGE") {
+        if (!latestQuote) {
+          throw new BadRequestException(
+            "Provider must send a cost sheet before a percentage-based invoice can be issued.",
+          );
+        }
+        feeBasisCents = latestQuote.totalCostCents;
+      } else {
+        feeBasisCents = latestQuote?.totalCostCents ?? 0;
+      }
+
+      if (parentPaysOverrideCents != null) {
+        parentPaysCents = parentPaysOverrideCents;
+      } else if (primaryConfig.parentPaysBasis === "TOTAL_COST") {
+        if (!latestQuote) {
+          throw new BadRequestException(
+            "Provider must send a cost sheet before this invoice can be issued (parent-pays basis is Total Cost).",
+          );
+        }
+        parentPaysCents = latestQuote.totalCostCents;
+      } else {
+        const defaultCents = primaryConfig.defaultServiceAmount
+          ? Math.round(Number(primaryConfig.defaultServiceAmount))
+          : 0;
+        if (!defaultCents) {
+          throw new BadRequestException(
+            "Provider has no Default First Payment configured for the primary service. " +
+            "Admin must set one in the Billing tab before this invoice can be issued.",
+          );
+        }
+        parentPaysCents = defaultCents;
+      }
+
+      const computed = this.computeFee(primaryConfig, feeBasisCents, parentPaysCents);
+      referralFeeAmount = computed.referralFeeAmount;
+      providerPayoutAmount = computed.providerPayoutAmount;
+    }
 
     // When line items are supplied, the invoice's primary serviceType comes
     // from the FIRST line item rather than the provider's first service - so
@@ -243,14 +357,18 @@ export class BillingService {
     // headline (e.g. "Surrogacy" instead of "Egg Donation").
     const headlineServiceType = hasLineItems
       ? humanizeLineServiceType(lineItems![0].serviceType)
-      : serviceType;
+      : resolveServiceType(provider.services.find(s => s.status === "APPROVED")?.providerType?.name
+          ?? provider.services[0]?.providerType?.name);
 
     const invoice = await this.prisma.invoice.create({
       data: {
         providerId,
         parentUserId,
         sessionId,
-        referralFeeConfigId: feeConfig.id,
+        // Multi-line invoices use multiple configs - we snapshot the primary
+        // one here for legacy code paths; the per-line fee breakdown is
+        // recoverable from the line item amounts + each service's config.
+        referralFeeConfigId: primaryConfig.id,
         serviceAmount: parentPaysCents,
         referralFeeAmount,
         providerPayoutAmount,

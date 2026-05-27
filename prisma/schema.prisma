@@ -83,7 +83,7 @@ model Provider {
   chatSessions                          AiChatSession[]
   syncLogs                              SyncLog[]
   profileEmbedding                      Unsupported("vector(768)")?
-  referralFeeConfig                     ReferralFeeConfig?
+  referralFeeConfigs                    ReferralFeeConfig[]
   invoices                              Invoice[]
   providerQuotes                        ProviderQuote[]
   bankAccount                           ProviderBankAccount?
@@ -1320,7 +1320,13 @@ model Agreement {
 
 model ReferralFeeConfig {
   id                   String   @id @default(uuid())
-  providerId           String   @unique
+  providerId           String
+  // Per-service key matching InvoiceLineItem.serviceType:
+  // "SURROGACY" | "EGG_DONATION" | "SPERM_DONATION" | "IVF_CLINIC" | "OTHER"
+  // A provider has one ReferralFeeConfig row per service they offer, so
+  // GoStork can negotiate different terms per service (e.g. flat $1000 on
+  // egg donation referrals but 5% on IVF cycles).
+  serviceType          String   @default("OTHER")
   feeType              String // "FLAT" | "PERCENTAGE"
   flatAmount           Decimal? // in cents (e.g. 50000 = $500.00)
   percentage           Decimal? // e.g. 5.0 = 5%
@@ -1335,6 +1341,9 @@ model ReferralFeeConfig {
 
   provider Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
   invoices Invoice[]
+
+  @@unique([providerId, serviceType])
+  @@index([providerId])
 }
 
 model Invoice {
