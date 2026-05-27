@@ -354,6 +354,19 @@ function PayoutsReadyCard({ state }: { state: PayoutsState }) {
 
 // ─── Custom path form ───────────────────────────────────────────────────────
 
+// Mirrors TAX_CLASSIFICATIONS in provider-legal-identity-tab. Kept in sync
+// manually so the readonly readout here matches the label the provider
+// picked on the Legal Identity tab.
+const TAX_CLASSIFICATION_LABEL: Record<string, string> = {
+  INDIVIDUAL_SOLE_PROPRIETOR: "Individual / Sole proprietor",
+  C_CORPORATION: "C Corporation",
+  S_CORPORATION: "S Corporation",
+  PARTNERSHIP: "Partnership",
+  TRUST_ESTATE: "Trust / Estate",
+  LLC: "LLC",
+  OTHER: "Other",
+};
+
 interface LegalIdentitySnapshot {
   legalName: string | null;
   businessName: string | null;
@@ -504,7 +517,7 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
             <ReadOnly label="Legal name" value={legalIdentity?.legalName} />
             <ReadOnly label="Legal business name" value={legalIdentity?.businessName} />
-            <ReadOnly label="Tax classification" value={legalIdentity?.taxClassification?.replace(/_/g, " ").toLowerCase()} />
+            <ReadOnly label="Tax classification" value={legalIdentity?.taxClassification ? (TAX_CLASSIFICATION_LABEL[legalIdentity.taxClassification] || legalIdentity.taxClassification) : null} />
             <ReadOnly label="Tax ID" value={legalIdentity?.taxId} />
             <ReadOnly label="Website URL" value={legalIdentity?.businessUrl} />
             <ReadOnly
