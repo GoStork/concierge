@@ -11,7 +11,10 @@ interface LineItemDraft {
   key: string;
   serviceType: LineServiceType;
   description: string;
-  amountInput: string; // dollars as the user types, parsed on send
+  // Amount per line is derived (not user-editable) from the provider's
+  // configured Default First Payment for the chosen service. Stored here
+  // as a dollar string so the existing preview/send code keeps working.
+  amountInput: string;
 }
 const LINE_TYPE_LABELS: Record<LineServiceType, string> = {
   SURROGACY: "Surrogacy",
@@ -23,6 +26,14 @@ const LINE_TYPE_LABELS: Record<LineServiceType, string> = {
 let lineKeyCounter = 0;
 function newLine(serviceType: LineServiceType = "SURROGACY"): LineItemDraft {
   return { key: `line-${++lineKeyCounter}`, serviceType, description: "", amountInput: "" };
+}
+
+interface ProviderFeeConfig {
+  serviceType: LineServiceType;
+  defaultServiceAmount: number | null; // cents
+}
+interface ProviderFeeConfigsResponse {
+  configs: ProviderFeeConfig[];
 }
 
 interface InvoiceSidebarSectionProps {
@@ -99,14 +110,90 @@ export function InvoiceSidebarSection({
   }, 0);
   const hasUsableLines = lineItems.some(li => parseFloat(li.amountInput) > 0);
 
+  // Provider fee configs - used to auto-fill each line's Default First Payment
+  // when the agency picks a service type. The agency can still override the
+  // amount manually; once they do, switching the service type no longer
+  // overwrites their value.
+  const { data: feeConfigsData } = useQuery<ProviderFeeConfigsResponse>({
+    queryKey: ["/api/provider/fee-configs"],
+    queryFn: async () => {
+      const res = await fetch("/api/provider/fee-configs", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load provider fee configs");
+      return res.json();
+    },
+  });
+  const defaultDollarsForService = (st: LineServiceType): string => {
+    const cfg = feeConfigsData?.configs.find(c => c.serviceType === st);
+    const cents = cfg?.defaultServiceAmount ?? null;
+    if (!cents || cents <= 0) return "";
+    const dollars = cents / 100;
+    return Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
+  };
+
+  // Service types the agency is allowed to itemize. Anything outside this set
+  // is hidden from the dropdown - if the provider has no ReferralFeeConfig
+  // for a service, the preview + send-invoice calls would 400 server-side
+  // ("No referral fee configured for X on this provider"), so we filter
+  // those service types out at the UI level.
+  const allowedServiceTypes: LineServiceType[] = feeConfigsData
+    ? (feeConfigsData.configs.map(c => c.serviceType).filter(
+        (st): st is LineServiceType => st in LINE_TYPE_LABELS,
+      ))
+    : (Object.keys(LINE_TYPE_LABELS) as LineServiceType[]);
+  const allowedKey = allowedServiceTypes.join("|");
+
+  // If configs load AFTER the initial line was mounted (or admin removes a
+  // config), snap any line whose serviceType is no longer allowed onto the
+  // first allowed type so the form stays valid and the preview keeps working.
+  useEffect(() => {
+    if (!feeConfigsData || allowedServiceTypes.length === 0) return;
+    const allowedSet = new Set(allowedServiceTypes);
+    setLineItems(prev => {
+      let changed = false;
+      const next = prev.map(li => {
+        if (allowedSet.has(li.serviceType)) return li;
+        changed = true;
+        const nextType = allowedServiceTypes[0];
+        return { ...li, serviceType: nextType, amountInput: defaultDollarsForService(nextType) };
+      });
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowedKey, feeConfigsData]);
+
+  // Whenever the fee configs change, refresh every line's amount from its
+  // service's Default First Payment. The amount is not user-editable - if
+  // the agency wants a different value they have to update billing settings.
+  useEffect(() => {
+    if (!feeConfigsData) return;
+    setLineItems(prev =>
+      prev.map(li => ({ ...li, amountInput: defaultDollarsForService(li.serviceType) })),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feeConfigsData]);
+
   const updateLine = (key: string, patch: Partial<LineItemDraft>) => {
     setLineItems(prev => prev.map(li => (li.key === key ? { ...li, ...patch } : li)));
+  };
+  const onLineServiceChange = (key: string, serviceType: LineServiceType) => {
+    setLineItems(prev =>
+      prev.map(li =>
+        li.key === key
+          ? { ...li, serviceType, amountInput: defaultDollarsForService(serviceType) }
+          : li,
+      ),
+    );
   };
   const removeLine = (key: string) => {
     setLineItems(prev => (prev.length === 1 ? prev : prev.filter(li => li.key !== key)));
   };
   const addLine = () => {
-    setLineItems(prev => [...prev, newLine("SURROGACY")]);
+    setLineItems(prev => {
+      const seedType = allowedServiceTypes[0] ?? "SURROGACY";
+      const next = newLine(seedType);
+      next.amountInput = defaultDollarsForService(seedType);
+      return [...prev, next];
+    });
   };
 
   // Latest active quote (used to drive the preview).
@@ -323,11 +410,11 @@ export function InvoiceSidebarSection({
                     <div className="flex items-center gap-1.5">
                       <select
                         value={li.serviceType}
-                        onChange={e => updateLine(li.key, { serviceType: e.target.value as LineServiceType })}
+                        onChange={e => onLineServiceChange(li.key, e.target.value as LineServiceType)}
                         className="h-8 text-xs rounded border bg-background px-2 w-36 shrink-0"
                         data-testid={`line-${idx}-type`}
                       >
-                        {(Object.keys(LINE_TYPE_LABELS) as LineServiceType[]).map(k => (
+                        {allowedServiceTypes.map(k => (
                           <option key={k} value={k}>{LINE_TYPE_LABELS[k]}</option>
                         ))}
                       </select>
@@ -338,19 +425,17 @@ export function InvoiceSidebarSection({
                         className="h-8 text-xs flex-1 min-w-0"
                         data-testid={`line-${idx}-description`}
                       />
-                      <div className="relative w-24 shrink-0">
-                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="100"
-                          inputMode="decimal"
-                          placeholder="0"
-                          value={li.amountInput}
-                          onChange={e => updateLine(li.key, { amountInput: e.target.value })}
-                          className="h-8 text-xs pl-5"
-                          data-testid={`line-${idx}-amount`}
-                        />
+                      {/* Amount is read-only - sourced from the provider's
+                          Default First Payment for this service. To change,
+                          update the Billing settings for the service. */}
+                      <div
+                        className="h-8 w-28 shrink-0 flex items-center justify-end rounded border bg-muted/40 px-2 text-xs font-medium tabular-nums"
+                        title="Set by Default First Payment in Billing settings - not editable per invoice"
+                        data-testid={`line-${idx}-amount`}
+                      >
+                        {parseFloat(li.amountInput) > 0
+                          ? formatCents(Math.round(parseFloat(li.amountInput) * 100))
+                          : <span className="text-muted-foreground font-normal">No default</span>}
                       </div>
                       {lineItems.length > 1 && (
                         <Button
@@ -443,11 +528,27 @@ export function InvoiceSidebarSection({
             </div>
           )}
 
+          {/* Preview error banner - shows when the server rejects the live
+              fee preview so the agency knows WHY the breakdown disappeared
+              instead of just seeing an empty preview. Most common cause:
+              admin hasn't added a ReferralFeeConfig for one of the picked
+              services. */}
+          {activeQuote && hasUsableLines && previewError && (
+            <div
+              className="rounded-md border p-2.5 text-xs flex items-start gap-2"
+              style={{ background: "hsl(var(--background))", borderColor: "hsl(var(--brand-error) / 0.4)", color: "hsl(var(--brand-error))" }}
+              data-testid="invoice-preview-error"
+            >
+              <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <span>{previewError}</span>
+            </div>
+          )}
+
           {error && <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{error}</p>}
 
           <Button
             onClick={() => sendMutation.mutate()}
-            disabled={sendMutation.isPending || !activeQuote || !hasUsableLines}
+            disabled={sendMutation.isPending || !activeQuote || !hasUsableLines || !!previewError}
             className="w-full"
             style={{ background: brandColor, color: "white", borderRadius: "var(--radius)" }}
           >
