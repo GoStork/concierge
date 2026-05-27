@@ -166,39 +166,34 @@ export function ReferralFeeConfigSection({
         </p>
       </div>
 
-      {/* Fee type toggle */}
+      {/* Fee type radio */}
       <div className="space-y-2">
         <Label>
           GoStork Referral Fee Type
           {isProviderMode && <span className="text-xs text-muted-foreground ml-2 font-normal">(set by GoStork)</span>}
         </Label>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            disabled={isProviderMode}
-            onClick={() => !isProviderMode && setFeeType("PERCENTAGE")}
-            className="flex-1 flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-70"
-            style={{
-              background: feeType === "PERCENTAGE" ? "hsl(var(--primary))" : "transparent",
-              color: feeType === "PERCENTAGE" ? "hsl(var(--primary-foreground))" : "hsl(var(--foreground))",
-              borderColor: feeType === "PERCENTAGE" ? "hsl(var(--primary))" : "hsl(var(--border))",
-            }}
-          >
-            <Percent className="w-4 h-4" /> Percentage From Total
-          </button>
-          <button
-            type="button"
-            disabled={isProviderMode}
-            onClick={() => !isProviderMode && setFeeType("FLAT")}
-            className="flex-1 flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-70"
-            style={{
-              background: feeType === "FLAT" ? "hsl(var(--primary))" : "transparent",
-              color: feeType === "FLAT" ? "hsl(var(--primary-foreground))" : "hsl(var(--foreground))",
-              borderColor: feeType === "FLAT" ? "hsl(var(--primary))" : "hsl(var(--border))",
-            }}
-          >
-            <DollarSign className="w-4 h-4" /> Flat Amount
-          </button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
+          {[
+            { value: "PERCENTAGE", label: "Percentage From Total", icon: <Percent className="w-3.5 h-3.5" /> },
+            { value: "FLAT", label: "Flat Amount", icon: <DollarSign className="w-3.5 h-3.5" /> },
+          ].map(opt => (
+            <label
+              key={opt.value}
+              className={`flex items-center gap-2 text-sm cursor-pointer ${isProviderMode ? "cursor-not-allowed opacity-70" : ""}`}
+            >
+              <input
+                type="radio"
+                name={`feeType-${serviceType}`}
+                value={opt.value}
+                checked={feeType === opt.value}
+                disabled={isProviderMode}
+                onChange={() => !isProviderMode && setFeeType(opt.value as "FLAT" | "PERCENTAGE")}
+                className="accent-primary"
+              />
+              {opt.icon}
+              {opt.label}
+            </label>
+          ))}
         </div>
       </div>
 
@@ -244,34 +239,26 @@ export function ReferralFeeConfigSection({
         </div>
       )}
 
-      {/* Parent-pays basis toggle */}
+      {/* Parent-pays basis radio */}
       <div className="space-y-2">
         <Label>Parent Pays Basis</Label>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setParentPaysBasis("DEFAULT_FIRST_PAYMENT")}
-            className="flex-1 rounded-lg border py-2.5 text-sm font-medium transition-colors"
-            style={{
-              background: parentPaysBasis === "DEFAULT_FIRST_PAYMENT" ? "hsl(var(--primary))" : "transparent",
-              color: parentPaysBasis === "DEFAULT_FIRST_PAYMENT" ? "hsl(var(--primary-foreground))" : "hsl(var(--foreground))",
-              borderColor: parentPaysBasis === "DEFAULT_FIRST_PAYMENT" ? "hsl(var(--primary))" : "hsl(var(--border))",
-            }}
-          >
-            Default First Payment
-          </button>
-          <button
-            type="button"
-            onClick={() => setParentPaysBasis("TOTAL_COST")}
-            className="flex-1 rounded-lg border py-2.5 text-sm font-medium transition-colors"
-            style={{
-              background: parentPaysBasis === "TOTAL_COST" ? "hsl(var(--primary))" : "transparent",
-              color: parentPaysBasis === "TOTAL_COST" ? "hsl(var(--primary-foreground))" : "hsl(var(--foreground))",
-              borderColor: parentPaysBasis === "TOTAL_COST" ? "hsl(var(--primary))" : "hsl(var(--border))",
-            }}
-          >
-            Total Quoted Cost
-          </button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
+          {[
+            { value: "DEFAULT_FIRST_PAYMENT", label: "Default First Payment" },
+            { value: "TOTAL_COST", label: "Total Quoted Cost" },
+          ].map(opt => (
+            <label key={opt.value} className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="radio"
+                name={`parentPaysBasis-${serviceType}`}
+                value={opt.value}
+                checked={parentPaysBasis === opt.value}
+                onChange={() => setParentPaysBasis(opt.value as "DEFAULT_FIRST_PAYMENT" | "TOTAL_COST")}
+                className="accent-primary"
+              />
+              {opt.label}
+            </label>
+          ))}
         </div>
         <p className="text-xs text-muted-foreground">
           {parentPaysBasis === "TOTAL_COST"
