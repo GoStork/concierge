@@ -2489,6 +2489,127 @@ export class NotificationService implements OnModuleInit {
     }
   }
 
+  /**
+   * Sent to the parent when a delayed-notification payment (ACH Direct Debit)
+   * has been submitted but funds have not yet cleared. The transaction will
+   * complete in 3-5 business days; a second email goes out on payment_intent.
+   * succeeded (the existing payment-receipt flow). Without this notification
+   * the parent's only signal would be the invoice flipping from
+   * AWAITING_PAYMENT to PAID days later - they'd assume the payment failed
+   * and re-attempt, sometimes resulting in a duplicate authorization on a card.
+   */
+  async sendInvoiceProcessingNotification(params: { invoiceId: string }) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: params.invoiceId },
+      include: { parentUser: true },
+    });
+    if (!invoice || !invoice.parentUser?.email) return;
+
+    const brandData = await this.getBrandData();
+    const firstName = getFirstName(invoice.parentUser.name) || "there";
+    const providerName = this.escapeHtml(invoice.providerName);
+    const amountFormatted = `$${(invoice.serviceAmount / 100).toFixed(2)} ${invoice.currency || "USD"}`;
+    const isAch = invoice.paymentMethod === "ACH";
+    const methodLabel = isAch ? "ACH bank transfer" : "payment";
+    const subject = `Your ${methodLabel} to ${invoice.providerName} is processing`;
+
+    const html = buildBrandedEmail(brandData, {
+      title: "Payment Processing",
+      greeting: `Hi ${esc(firstName)},`,
+      body: isAch
+        ? `Your ACH bank transfer of <strong>${amountFormatted}</strong> to <strong>${providerName}</strong> has been submitted and is now processing. ACH transfers typically take <strong>3-5 business days</strong> to clear.`
+        : `Your payment of <strong>${amountFormatted}</strong> to <strong>${providerName}</strong> has been submitted and is now processing.`,
+      detailRows: [
+        { label: "Provider", value: invoice.providerName },
+        { label: "Amount",   value: amountFormatted },
+        { label: "Method",   value: isAch ? "ACH Direct Debit" : "Bank transfer" },
+        { label: "Status",   value: "Processing - awaiting clearance" },
+      ],
+      alertBox: {
+        text: isAch
+          ? "No further action is required. We'll email you a receipt as soon as the funds clear. Please do not re-submit this payment."
+          : "No further action is required. We'll email you a receipt as soon as the payment clears.",
+        type: "info",
+      },
+      footer: "Questions? Reply to this email and we'll help right away.",
+    });
+
+    await this.dispatchNotification({
+      userId: invoice.parentUserId,
+      type: "EMAIL",
+      channel: "invoice_processing",
+      recipient: invoice.parentUser.email,
+      subject,
+      body: html,
+    }).catch(e => this.logger.error(`Failed to send invoice-processing email to ${invoice.parentUser.email}: ${e.message}`));
+  }
+
+  /**
+   * Sent to the parent right after they request wire-transfer instructions,
+   * so they have a copy of the bank details + reference code to take into
+   * their bank's app. Stripe will not match the inbound wire unless the
+   * parent puts the reference code in the memo - that field is highlighted
+   * separately in the email so it's hard to miss.
+   */
+  async sendWireInstructionsNotification(params: { invoiceId: string }) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: params.invoiceId },
+      include: { parentUser: true },
+    });
+    if (!invoice || !invoice.parentUser?.email) return;
+    const wire = (invoice as any).wireInstructionsJson;
+    if (!wire || !wire.accounts || wire.accounts.length === 0) return;
+
+    const brandData = await this.getBrandData();
+    const firstName = getFirstName(invoice.parentUser.name) || "there";
+    const providerName = this.escapeHtml(invoice.providerName);
+    const amountFormatted = `$${(invoice.serviceAmount / 100).toFixed(2)} ${(invoice.currency || "USD").toUpperCase()}`;
+    const reference = this.escapeHtml(wire.reference || "");
+    const subject = `Wire transfer instructions for ${invoice.providerName}`;
+
+    // Build a detailRows list per bank account Stripe returned. Most parents
+    // will only see a single us_bank_account entry; we still iterate so EU/UK
+    // additions later just work.
+    const detailRows: Array<{ label: string; value: string }> = [
+      { label: "Amount",   value: amountFormatted },
+      { label: "Provider", value: invoice.providerName },
+    ];
+    const acct = wire.accounts[0] || {};
+    if (acct.bankName)          detailRows.push({ label: "Bank",              value: this.escapeHtml(String(acct.bankName)) });
+    if (acct.accountHolderName) detailRows.push({ label: "Beneficiary",       value: this.escapeHtml(String(acct.accountHolderName)) });
+    if (acct.routingNumber)     detailRows.push({ label: "Routing number",    value: this.escapeHtml(String(acct.routingNumber)) });
+    if (acct.accountNumber)     detailRows.push({ label: "Account number",    value: this.escapeHtml(String(acct.accountNumber)) });
+    if (acct.swiftCode)         detailRows.push({ label: "SWIFT / BIC",       value: this.escapeHtml(String(acct.swiftCode)) });
+    if (acct.iban)              detailRows.push({ label: "IBAN",              value: this.escapeHtml(String(acct.iban)) });
+    if (acct.sortCode)          detailRows.push({ label: "Sort code",         value: this.escapeHtml(String(acct.sortCode)) });
+
+    const buttons = wire.hostedInstructionsUrl
+      ? [{ label: "View Instructions Online", url: String(wire.hostedInstructionsUrl) }]
+      : [];
+
+    const html = buildBrandedEmail(brandData, {
+      title: "Your Wire Transfer Instructions",
+      greeting: `Hi ${esc(firstName)},`,
+      body: `Use the bank details below to wire <strong>${amountFormatted}</strong> to <strong>${providerName}</strong>. International wires usually arrive within 1-3 business days; your bank may charge a wire fee that is not included in the invoice total.`,
+      detailRows,
+      alertBox: {
+        text: `<strong>IMPORTANT:</strong> You must include this reference code in your wire memo, or your bank cannot match the payment: <strong style="font-family: monospace; font-size: 16px;">${reference}</strong>`,
+        type: "warning" as const,
+      },
+      buttons,
+      footer: "Questions? Reply to this email and we'll help right away.",
+    });
+
+    await this.dispatchNotification({
+      userId: invoice.parentUserId,
+      type: "EMAIL",
+      channel: "wire_instructions",
+      recipient: invoice.parentUser.email,
+      subject,
+      body: html,
+    }).catch(e => this.logger.error(`Failed to send wire-instructions email to ${invoice.parentUser.email}: ${e.message}`));
+  }
+
   // ─── Cost sheet notifications ───────────────────────────────────────────────
 
   async sendCostSheetReadyToParent(params: {

@@ -2,7 +2,13 @@ import { Injectable, Inject, Logger, NotFoundException, BadRequestException } fr
 import { NotificationService } from "../notifications/notification.service";
 import { prisma as prismaClient } from "../../../db";
 import { generateReceiptPdf } from "./receipt-pdf";
-import { getCardDetailsForPaymentIntent } from "../../../stripe-service";
+import {
+  getCardDetailsForPaymentIntent,
+  getOrCreateStripeCustomer,
+  createBankTransferPaymentIntent,
+  retrieveBankTransferInstructions,
+  type WireInstructions,
+} from "../../../stripe-service";
 
 function getBaseUrl(): string {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
@@ -764,7 +770,7 @@ export class BillingService {
 
   // ─── Stripe webhook handler ───────────────────────────────────────────────
 
-  async handleStripeWebhook(paymentIntentId: string, status: string, invoiceId?: string) {
+  async handleStripeWebhook(paymentIntentId: string, status: string, invoiceId?: string, paymentMethod?: "ACH" | "CARD" | "BANK_TRANSFER" | null) {
     // Resolve the invoice by all known links. Webhook metadata.invoiceId is
     // the most reliable lookup because the PaymentIntent ID on the invoice
     // can be overwritten if a new PaymentIntent gets created (e.g. the
@@ -802,6 +808,33 @@ export class BillingService {
       return;
     }
 
+    if (status === "processing") {
+      // Delayed-notification methods (primarily ACH Direct Debit). Funds are
+      // not yet available; the invoice sits in PAYMENT_PROCESSING until
+      // payment_intent.succeeded fires 3-5 business days later. We email the
+      // parent so they don't re-attempt payment, but do NOT emit a receipt
+      // yet - that happens on succeeded.
+      const invoice = await findInvoice();
+      if (!invoice) {
+        this.logger.warn(`No invoice found for Stripe PaymentIntent ${paymentIntentId} (invoiceId hint: ${invoiceId || "none"})`);
+        return;
+      }
+      if (invoice.status === "PAYMENT_PROCESSING" || invoice.status === "PAID") return; // idempotent
+      await this.prisma.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          status: "PAYMENT_PROCESSING",
+          paymentMethod: paymentMethod ?? "ACH",
+          stripePaymentIntentId: paymentIntentId,
+        },
+      });
+      await this.notificationService.sendInvoiceProcessingNotification({ invoiceId: invoice.id }).catch(e =>
+        this.logger.warn(`Processing notification failed for ${invoice.id}: ${e?.message}`),
+      );
+      this.logger.log(`Invoice ${invoice.id} PAYMENT_PROCESSING (method: ${paymentMethod ?? "ACH"})`);
+      return;
+    }
+
     if (!["succeeded"].includes(status)) return;
 
     const invoice = await findInvoice();
@@ -817,7 +850,7 @@ export class BillingService {
       data: {
         status: "PAID",
         paidAt: new Date(),
-        paymentMethod: "CARD",
+        paymentMethod: paymentMethod ?? invoice.paymentMethod ?? "CARD",
         stripeTransactionId: paymentIntentId,
         capturedAt: new Date(),
       },
@@ -1196,6 +1229,105 @@ export class BillingService {
         lineItems: { orderBy: { displayOrder: "asc" } },
       },
     });
+  }
+
+  /**
+   * Mints (or retrieves) wire-transfer instructions for an invoice. Used by
+   * the public payment page when the parent picks "Pay by bank wire".
+   *
+   * Idempotent: if the invoice already has cached wireInstructionsJson the
+   * cached copy is returned. If we have a wire PaymentIntent ID but the JSON
+   * was lost (e.g. partial DB write), we re-fetch from Stripe before falling
+   * back to creating a fresh intent. The freshly-minted intent + JSON are
+   * persisted and the parent receives an email copy of the instructions.
+   *
+   * Returns a structured success / error so the controller can map the right
+   * HTTP status without leaking internals.
+   */
+  async createWireTransferInstructions(
+    paymentToken: string,
+  ): Promise<{ instructions: WireInstructions } | { error: string; statusCode: number }> {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { paymentToken },
+      include: { parentUser: true },
+    });
+    if (!invoice) return { error: "Invoice not found", statusCode: 404 };
+
+    // Block any state where a wire would be wrong: already-paid, expired,
+    // cancelled, or escrow-hold flow (customer_balance cannot be manual-
+    // captured, so it can't back AT_CLEARANCE invoices). Surface the actual
+    // status so the UI can show something useful instead of a generic 400.
+    if (["PAID", "PAYMENT_PROCESSING", "EXPIRED", "CANCELLED", "REFUNDED"].includes(invoice.status)) {
+      return { error: `Invoice is ${invoice.status}; wire transfer not available`, statusCode: 400 };
+    }
+    if (invoice.medicalClearanceStatus === "PENDING") {
+      return {
+        error: "Wire transfers are not available for escrow-hold invoices. Please use a card.",
+        statusCode: 400,
+      };
+    }
+    if (!invoice.parentUser?.email) {
+      return { error: "Parent email missing on invoice", statusCode: 400 };
+    }
+
+    // Fast path: cached instructions on the invoice.
+    if (invoice.wireInstructionsJson) {
+      return { instructions: invoice.wireInstructionsJson as unknown as WireInstructions };
+    }
+
+    // Recovery path: we have a PI but no cached JSON (interrupted write).
+    if (invoice.stripeWirePaymentIntentId) {
+      const recovered = await retrieveBankTransferInstructions(
+        invoice.stripeWirePaymentIntentId,
+        invoice.serviceAmount,
+        invoice.currency || "USD",
+      );
+      if (recovered) {
+        await this.prisma.invoice.update({
+          where: { id: invoice.id },
+          data: { wireInstructionsJson: recovered as any },
+        });
+        return { instructions: recovered };
+      }
+    }
+
+    // Cold path: mint a fresh customer_balance PaymentIntent.
+    const customerId = await getOrCreateStripeCustomer({
+      userId: invoice.parentUser.id,
+      email: invoice.parentUser.email,
+      name: invoice.parentUser.name || null,
+      existingCustomerId: (invoice.parentUser as any).stripeCustomerId || null,
+    });
+    if (customerId && customerId !== (invoice.parentUser as any).stripeCustomerId) {
+      await this.prisma.user.update({
+        where: { id: invoice.parentUser.id },
+        data: { stripeCustomerId: customerId },
+      });
+    }
+
+    const instructions = await createBankTransferPaymentIntent({
+      amountCents: invoice.serviceAmount,
+      currency: invoice.currency || "USD",
+      invoiceId: invoice.id,
+      paymentToken: invoice.paymentToken,
+      customerId,
+      description: `GoStork - ${invoice.providerName} - ${invoice.serviceType}`,
+    });
+
+    await this.prisma.invoice.update({
+      where: { id: invoice.id },
+      data: {
+        stripeWirePaymentIntentId: instructions.paymentIntentId,
+        wireInstructionsJson: instructions as any,
+      },
+    });
+
+    await this.notificationService.sendWireInstructionsNotification({ invoiceId: invoice.id }).catch(e =>
+      this.logger.warn(`Wire-instructions email failed for ${invoice.id}: ${e?.message}`),
+    );
+
+    this.logger.log(`Wire instructions issued for invoice ${invoice.id} (PI ${instructions.paymentIntentId}, ref ${instructions.reference})`);
+    return { instructions };
   }
 
   async getInvoicesForParent(parentUserId: string) {

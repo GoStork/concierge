@@ -102,11 +102,20 @@ export async function createPaymentIntent(params: {
   // PDF attachment) from the webhook handler. Letting Stripe ALSO email a
   // generic receipt would just create a duplicate. Stripe Dashboard ->
   // Settings -> Customer emails -> "Successful payments" must also be off.
+  // automatic_payment_methods lets Stripe surface every method enabled in the
+  // Dashboard (card + Apple Pay + Google Pay + ACH + Link + ...) based on the
+  // buyer's device and the currency. For escrow holds (capture_method=manual)
+  // we restrict to card only, because ACH / wallets backed by ACH cannot be
+  // manual-captured - Stripe rejects the intent otherwise.
+  const isManualCapture = (params.captureMethod ?? "automatic") === "manual";
   const intent = await stripe.paymentIntents.create({
     amount: params.amountCents,
     currency: params.currency.toLowerCase(),
     capture_method: params.captureMethod ?? "automatic",
     description: params.description,
+    ...(isManualCapture
+      ? { payment_method_types: ["card"] }
+      : { automatic_payment_methods: { enabled: true } }),
     metadata: {
       invoiceId: params.invoiceId,
       paymentToken: params.paymentToken,
@@ -146,6 +155,228 @@ export async function voidPaymentIntent(paymentIntentId: string): Promise<void> 
 
   const stripe = getStripe();
   await stripe.paymentIntents.cancel(paymentIntentId);
+}
+
+// ─── Bank Transfer (customer_balance / VBAN) ─────────────────────────────────
+
+/**
+ * Wire-transfer instructions returned by Stripe after we confirm a
+ * customer_balance PaymentIntent. The `reference` field is what Stripe uses
+ * to reconcile the inbound wire to the PaymentIntent - parents MUST include
+ * it in the wire memo or the funds will not be matched.
+ */
+export interface WireInstructions {
+  paymentIntentId: string;
+  clientSecret: string | null;
+  /** Currency the parent must wire in (matches the invoice currency). */
+  currency: string;
+  amountCents: number;
+  /** The reference code parents put in the wire memo - critical for reconciliation. */
+  reference: string;
+  /** Stripe-hosted page with the same instructions, useful as a fallback URL in emails. */
+  hostedInstructionsUrl: string | null;
+  /** One or more bank accounts the parent can wire to. US transfers return
+   *  two: "aba" (domestic ACH/wire) + "swift" (international wire). */
+  accounts: Array<{
+    /** "aba" | "swift" | "iban" | "sort_code" | "zengin" | "spei" | etc. */
+    type: string;
+    /** Bank legal name. */
+    bankName?: string | null;
+    /** Beneficiary / account-holder name (Stripe Payments Inc. by default). */
+    accountHolderName?: string | null;
+    /** Flattened single-line address string. */
+    accountHolderAddress?: string | null;
+    accountNumber?: string | null;
+    routingNumber?: string | null;
+    swiftCode?: string | null;
+    iban?: string | null;
+    sortCode?: string | null;
+    /** Stripe lists which networks this entry supports (e.g. ["ach","domestic_wire_us"] or ["swift"]). */
+    supportedNetworks?: string[];
+    /** Original blob for anything we don't recognize. */
+    rawJson: unknown;
+  }>;
+}
+
+/**
+ * Idempotent helper. If `existingCustomerId` is set we trust it. Otherwise we
+ * search Stripe for an existing customer matching this email + metadata.userId
+ * (covers the case where the DB column got wiped but Stripe still has them)
+ * before falling back to creating a new one.
+ */
+export async function getOrCreateStripeCustomer(params: {
+  userId: string;
+  email: string;
+  name?: string | null;
+  existingCustomerId?: string | null;
+}): Promise<string> {
+  if (!isStripeConfigured()) {
+    return params.existingCustomerId || `mock_cus_${params.userId}`;
+  }
+
+  const stripe = getStripe();
+
+  if (params.existingCustomerId) {
+    try {
+      const c = await stripe.customers.retrieve(params.existingCustomerId);
+      if (c && !(c as any).deleted) return params.existingCustomerId;
+    } catch {
+      // fall through to recreate
+    }
+  }
+
+  // Look for an existing customer by metadata so we don't create duplicates
+  // when the DB has lost the ID but Stripe still has the record.
+  const search = await stripe.customers.search({
+    query: `metadata['gostorkUserId']:'${params.userId}'`,
+    limit: 1,
+  }).catch(() => null);
+  const existing = search?.data?.[0];
+  if (existing) return existing.id;
+
+  const created = await stripe.customers.create({
+    email: params.email,
+    name: params.name || undefined,
+    metadata: { gostorkUserId: params.userId },
+  });
+  return created.id;
+}
+
+/**
+ * Mints + server-confirms a customer_balance PaymentIntent so we can hand
+ * the parent wire instructions immediately. USD only for MVP
+ * (`us_bank_transfer`). Adding EU/UK/JP/MX requires (a) multi-currency
+ * invoicing, and (b) selecting the bank_transfer.type that matches the
+ * invoice currency: eur=>eu_bank_transfer, gbp=>gb_bank_transfer,
+ * jpy=>jp_bank_transfer, mxn=>mx_bank_transfer.
+ */
+export async function createBankTransferPaymentIntent(params: {
+  amountCents: number;
+  currency: string;
+  invoiceId: string;
+  paymentToken: string;
+  customerId: string;
+  description: string;
+}): Promise<WireInstructions> {
+  if (!isStripeConfigured()) {
+    // Mock mode for local dev without Stripe keys.
+    return {
+      paymentIntentId: `mock_wire_${Date.now()}`,
+      clientSecret: `mock_secret_${Date.now()}`,
+      currency: params.currency.toUpperCase(),
+      amountCents: params.amountCents,
+      reference: `MOCK-REF-${params.paymentToken.slice(0, 8).toUpperCase()}`,
+      hostedInstructionsUrl: null,
+      accounts: [{
+        type: "us_bank_account",
+        bankName: "Mock Bank",
+        accountHolderName: "GoStork (Mock)",
+        accountNumber: "000123456789",
+        routingNumber: "110000000",
+        swiftCode: null,
+        iban: null,
+        sortCode: null,
+        rawJson: { mock: true },
+      }],
+    };
+  }
+
+  const stripe = getStripe();
+  const currency = params.currency.toLowerCase();
+
+  // MVP: USD only. Reject other currencies loudly so future multi-currency
+  // invoices don't silently fail to render wire instructions.
+  if (currency !== "usd") {
+    throw new Error(
+      `Bank transfer not yet supported for currency ${currency.toUpperCase()}. ` +
+      `Add the matching bank_transfer.type (eu/gb/jp/mx) in stripe-service.ts.`,
+    );
+  }
+
+  const intent = await stripe.paymentIntents.create({
+    amount: params.amountCents,
+    currency,
+    customer: params.customerId,
+    description: params.description,
+    payment_method_types: ["customer_balance"],
+    payment_method_data: { type: "customer_balance" },
+    payment_method_options: {
+      customer_balance: {
+        funding_type: "bank_transfer",
+        bank_transfer: { type: "us_bank_transfer" },
+      },
+    },
+    confirm: true,
+    metadata: {
+      invoiceId: params.invoiceId,
+      paymentToken: params.paymentToken,
+      gostorkFlow: "wire_transfer",
+    },
+  });
+
+  return parseWireInstructions(intent, params.amountCents, params.currency);
+}
+
+/**
+ * Re-reads wire instructions from Stripe. Used when the parent reloads
+ * /pay/<token> after we already minted a wire PaymentIntent for this invoice.
+ * Avoids creating duplicates.
+ */
+export async function retrieveBankTransferInstructions(paymentIntentId: string, fallbackAmount: number, fallbackCurrency: string): Promise<WireInstructions | null> {
+  if (!isStripeConfigured() || paymentIntentId.startsWith("mock_")) return null;
+  try {
+    const stripe = getStripe();
+    const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    return parseWireInstructions(intent, fallbackAmount, fallbackCurrency);
+  } catch {
+    return null;
+  }
+}
+
+function flattenAddress(addr: any): string | null {
+  if (!addr) return null;
+  if (typeof addr === "string") return addr;
+  const parts = [addr.line1, addr.line2, addr.city, addr.state, addr.postal_code, addr.country]
+    .filter((p) => p && typeof p === "string");
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
+function parseWireInstructions(intent: Stripe.PaymentIntent, fallbackAmount: number, fallbackCurrency: string): WireInstructions {
+  const action: any = (intent as any).next_action?.display_bank_transfer_instructions;
+  const financialAddresses: any[] = action?.financial_addresses || [];
+  const reference: string = action?.reference || "";
+  const hostedUrl: string | null = action?.hosted_instructions_url || null;
+
+  const accounts = financialAddresses.map((addr) => {
+    // Stripe returns one of: aba, iban, sort_code, spei, zengin, swift. The
+    // shape varies per type - normalize to a flat object the UI can render
+    // directly, and keep the original blob for anything we don't recognize.
+    const type: string = addr.type;
+    const detail = addr[type] || {};
+    return {
+      type,
+      bankName: detail.bank_name || detail.bankName || null,
+      accountHolderName: detail.account_holder_name || detail.accountHolderName || null,
+      accountHolderAddress: flattenAddress(detail.account_holder_address),
+      accountNumber: detail.account_number || detail.iban || detail.clabe || null,
+      routingNumber: detail.routing_number || detail.aba_routing_number || null,
+      swiftCode: detail.swift_code || detail.bic || null,
+      iban: detail.iban || null,
+      sortCode: detail.sort_code || null,
+      supportedNetworks: addr.supported_networks || [],
+      rawJson: addr,
+    };
+  });
+
+  return {
+    paymentIntentId: intent.id,
+    clientSecret: intent.client_secret,
+    currency: (intent.currency || fallbackCurrency).toUpperCase(),
+    amountCents: intent.amount || fallbackAmount,
+    reference,
+    hostedInstructionsUrl: hostedUrl,
+    accounts,
+  };
 }
 
 // ─── Card details (for receipt PDFs) ─────────────────────────────────────────
@@ -203,14 +434,17 @@ export function constructWebhookEvent(payload: Buffer | string, signature: strin
  */
 export function parseWebhookEvent(event: Stripe.Event): {
   paymentIntentId: string;
-  status: "succeeded" | "authorized" | "canceled" | "failed";
+  status: "succeeded" | "authorized" | "processing" | "canceled" | "failed";
   amountCents: number;
   invoiceId: string;
   paymentToken: string;
+  /** Best-effort detection from the intent payload. */
+  paymentMethod: "ACH" | "CARD" | "BANK_TRANSFER" | null;
 } | null {
   const relevantEvents = [
     "payment_intent.succeeded",
     "payment_intent.amount_capturable_updated", // authorized (manual capture)
+    "payment_intent.processing",                 // delayed-notification methods (ACH submitted, awaiting clearance)
     "payment_intent.canceled",
     "payment_intent.payment_failed",
   ];
@@ -220,11 +454,27 @@ export function parseWebhookEvent(event: Stripe.Event): {
   const intent = event.data.object as Stripe.PaymentIntent;
   const meta = intent.metadata || {};
 
-  let status: "succeeded" | "authorized" | "canceled" | "failed";
+  let status: "succeeded" | "authorized" | "processing" | "canceled" | "failed";
   if (event.type === "payment_intent.succeeded") status = "succeeded";
   else if (event.type === "payment_intent.amount_capturable_updated") status = "authorized";
+  else if (event.type === "payment_intent.processing") status = "processing";
   else if (event.type === "payment_intent.canceled") status = "canceled";
   else status = "failed";
+
+  // Best-effort payment-method inference. For "processing" events Stripe
+  // populates latest_charge.payment_method_details.type once the method is
+  // attached; us_bank_account => ACH. Fall back to the intent's
+  // payment_method_types when latest_charge isn't expanded.
+  const charge = (intent as any).latest_charge;
+  const pmType: string | undefined =
+    typeof charge === "object" && charge?.payment_method_details?.type
+      ? charge.payment_method_details.type
+      : intent.payment_method_types?.[0];
+  const paymentMethod: "ACH" | "CARD" | "BANK_TRANSFER" | null =
+    pmType === "us_bank_account" ? "ACH"
+      : pmType === "card" ? "CARD"
+      : pmType === "customer_balance" ? "BANK_TRANSFER"
+      : null;
 
   return {
     paymentIntentId: intent.id,
@@ -232,6 +482,7 @@ export function parseWebhookEvent(event: Stripe.Event): {
     amountCents: intent.amount,
     invoiceId: meta.invoiceId || "",
     paymentToken: meta.paymentToken || "",
+    paymentMethod,
   };
 }
 

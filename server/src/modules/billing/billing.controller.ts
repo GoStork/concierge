@@ -138,6 +138,11 @@ export class BillingController {
       dueAt: invoice.dueAt,
       stripePaymentLinkUrl: invoice.stripePaymentLinkUrl,
       medicalClearanceStatus: invoice.medicalClearanceStatus,
+      paymentMethod: invoice.paymentMethod,
+      // wireInstructionsJson is non-secret (it's just the public wire
+      // destination for this invoice). Surfacing it on the GET lets the
+      // payment page restore the wire panel on reload without a POST.
+      wireInstructions: (invoice as any).wireInstructionsJson || null,
       // Itemized breakdown - parent payment page + embedded panel render
       // these rows in addition to (or instead of) the headline service.
       lineItems: ((invoice as any).lineItems || []).map((li: any) => ({
@@ -354,6 +359,30 @@ export class BillingController {
     }
   }
 
+  // ─── Stripe: create wire-transfer instructions (customer_balance) ────────
+  //
+  // International parents (and US parents with large invoices) often prefer
+  // bank wires over card/ACH due to per-transaction limits and FX costs.
+  // This endpoint mints a customer_balance PaymentIntent and returns the
+  // wire instructions (account/routing/reference) for the parent to wire
+  // funds from their bank. Stripe reconciles the inbound wire to the
+  // PaymentIntent via the unique reference code.
+  //
+  // Idempotent: if the invoice already has a cached wire intent + addresses,
+  // we return them as-is rather than minting a duplicate.
+
+  @Post("api/billing/create-wire-transfer")
+  async createWireTransfer(@Body() body: { paymentToken: string }, @Res() res: Response) {
+    try {
+      const result = await this.billingService.createWireTransferInstructions(body.paymentToken);
+      if ("error" in result) return res.status(result.statusCode).json({ message: result.error });
+      return res.json(result.instructions);
+    } catch (error: any) {
+      this.logger.error(`Create wire-transfer error: ${error.message}`);
+      return res.status(500).json({ message: error.message });
+    }
+  }
+
   // ─── Stripe: mock payment success (dev only, no Stripe keys) ─────────────
 
   @Post("api/billing/mock-payment-success")
@@ -385,15 +414,19 @@ export class BillingController {
       const parsed = stripeService.parseWebhookEvent(event);
 
       if (parsed) {
-        this.logger.log(`Stripe webhook: ${event.type} | invoice: ${parsed.invoiceId}`);
+        this.logger.log(`Stripe webhook: ${event.type} | invoice: ${parsed.invoiceId} | method: ${parsed.paymentMethod ?? "unknown"}`);
 
         if (parsed.status === "succeeded" && parsed.invoiceId) {
-          await this.billingService.handleStripeWebhook(parsed.paymentIntentId, "succeeded", parsed.invoiceId);
+          await this.billingService.handleStripeWebhook(parsed.paymentIntentId, "succeeded", parsed.invoiceId, parsed.paymentMethod ?? null);
         } else if (parsed.status === "authorized" && parsed.invoiceId) {
           // AT_CLEARANCE: funds held, update invoice to AUTHORIZED
-          await this.billingService.handleStripeWebhook(parsed.paymentIntentId, "authorized", parsed.invoiceId);
+          await this.billingService.handleStripeWebhook(parsed.paymentIntentId, "authorized", parsed.invoiceId, parsed.paymentMethod ?? null);
+        } else if (parsed.status === "processing" && parsed.invoiceId) {
+          // Delayed-notification methods (ACH Direct Debit, Bank Transfers) -
+          // intent accepted, funds still settling.
+          await this.billingService.handleStripeWebhook(parsed.paymentIntentId, "processing", parsed.invoiceId, parsed.paymentMethod ?? null);
         } else if (parsed.status === "canceled" && parsed.invoiceId) {
-          await this.billingService.handleStripeWebhook(parsed.paymentIntentId, "canceled", parsed.invoiceId);
+          await this.billingService.handleStripeWebhook(parsed.paymentIntentId, "canceled", parsed.invoiceId, parsed.paymentMethod ?? null);
         }
       }
 

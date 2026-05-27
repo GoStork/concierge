@@ -224,6 +224,10 @@ model User {
   passport               String?
   passportCountryOfIssue String?
   nationality            String?
+  // Stripe Customer id - lazily created the first time the parent triggers a
+  // payment method that requires it (currently: bank-transfer / customer_balance).
+  // Card payments still go through guest checkout and do not populate this.
+  stripeCustomerId       String?                @unique
   availabilityOverrides  AvailabilityOverride[]
   bookingsAsParent       Booking[]              @relation("ParentBookings")
   bookingsAsProvider     Booking[]              @relation("ProviderBookings")
@@ -1356,7 +1360,11 @@ model Invoice {
   description  String?
   dueAt        DateTime? // 24h for surrogacy AT_MATCH, null otherwise
 
-  // Status: AWAITING_PAYMENT | AUTHORIZED | PAID | CLEARANCE_FAILED | EXPIRED | CANCELLED | REFUNDED
+  // Status: AWAITING_PAYMENT | PAYMENT_PROCESSING | AUTHORIZED | PAID | CLEARANCE_FAILED | EXPIRED | CANCELLED | REFUNDED
+  // PAYMENT_PROCESSING is the in-flight state for delayed-notification methods
+  // (ACH Direct Debit). The intent is accepted but funds take 3-5 business days
+  // to clear, during which the invoice sits in PAYMENT_PROCESSING. It flips to
+  // PAID on payment_intent.succeeded, or back via payment_failed on bounce.
   status        String  @default("AWAITING_PAYMENT")
   paymentMethod String? // "CARD" | "ACH"
 
@@ -1364,6 +1372,15 @@ model Invoice {
   stripeTransactionId   String? @unique
   stripePaymentIntentId String? // AT_CLEARANCE: pre-auth PI ID before capture
   stripePaymentLinkUrl  String?
+
+  // Bank-transfer (customer_balance) path. Kept separate from the card
+  // PaymentIntent above so a parent who started a wire flow can still see
+  // their cached wire instructions on page reload, or switch back to card
+  // without us losing the wire intent. wireInstructionsJson stores the
+  // financial_addresses + reference returned by Stripe so we never need to
+  // re-confirm the intent just to redisplay the wire details.
+  stripeWirePaymentIntentId String?
+  wireInstructionsJson      Json?
 
   // GoStork Guarantee / Escrow
   isProtected                  Boolean   @default(true)

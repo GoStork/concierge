@@ -12,7 +12,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useEffect, useState, useCallback } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
-import { Loader2, AlertCircle, CheckCircle2, Shield, Clock } from "lucide-react";
+import { Loader2, AlertCircle, CheckCircle2, Shield, Clock, Landmark, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface InvoiceLineItem {
@@ -20,6 +20,27 @@ interface InvoiceLineItem {
   serviceType: string;
   description?: string | null;
   amountCents: number;
+}
+
+interface WireAccount {
+  type: string;
+  bankName?: string | null;
+  accountHolderName?: string | null;
+  accountHolderAddress?: string | null;
+  accountNumber?: string | null;
+  routingNumber?: string | null;
+  swiftCode?: string | null;
+  iban?: string | null;
+  sortCode?: string | null;
+  supportedNetworks?: string[];
+}
+interface WireInstructions {
+  paymentIntentId: string;
+  currency: string;
+  amountCents: number;
+  reference: string;
+  hostedInstructionsUrl?: string | null;
+  accounts: WireAccount[];
 }
 
 interface PublicInvoice {
@@ -35,6 +56,8 @@ interface PublicInvoice {
   isProtected: boolean;
   dueAt?: string | null;
   medicalClearanceStatus?: string | null;
+  paymentMethod?: string | null;
+  wireInstructions?: WireInstructions | null;
   lineItems?: InvoiceLineItem[];
 }
 
@@ -79,6 +102,191 @@ function CountdownTimer({ dueAt }: { dueAt: string }) {
     >
       <Clock className="w-4 h-4 shrink-0" />
       <span>Surrogate hold expires in: <strong>{remaining}</strong></span>
+    </div>
+  );
+}
+
+// ─── Wire-transfer instructions panel ───────────────────────────────────────
+//
+// International parents (and US parents paying large invoices) often prefer
+// a bank wire over card/ACH because of per-transaction limits and FX cost.
+// The wire flow is one-way: parents go to their own bank to initiate the
+// wire, using the reference code in the memo so Stripe can match the
+// inbound payment back to this invoice.
+
+function CopyableField({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard blocked; user can still select manually */ }
+  };
+  return (
+    <div className="flex items-center justify-between gap-3 py-2">
+      <div className="min-w-0 flex-1">
+        <div className="text-xs text-muted-foreground uppercase tracking-wide">{label}</div>
+        <div
+          className={`text-sm font-mono break-all ${highlight ? "font-semibold" : ""}`}
+          style={highlight ? { color: "hsl(var(--primary))" } : {}}
+        >
+          {value}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="shrink-0 inline-flex items-center gap-1 text-xs px-2 py-1 rounded border hover:bg-muted/50 transition"
+        aria-label={`Copy ${label}`}
+      >
+        {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
+function WireTransferPanel({
+  paymentToken,
+  cachedInstructions,
+  amountFormatted,
+}: {
+  paymentToken: string;
+  cachedInstructions: WireInstructions | null;
+  amountFormatted: string;
+}) {
+  const [expanded, setExpanded] = useState(!!cachedInstructions);
+  const [instructions, setInstructions] = useState<WireInstructions | null>(cachedInstructions);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const fetchInstructions = useMutation({
+    mutationFn: async () => {
+      const r = await fetch("/api/billing/create-wire-transfer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentToken }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ message: `HTTP ${r.status}` }));
+        throw new Error(err.message || `Failed (${r.status})`);
+      }
+      return (await r.json()) as WireInstructions;
+    },
+    onSuccess: (data) => {
+      setInstructions(data);
+      setExpanded(true);
+      setErrorMsg(null);
+    },
+    onError: (e: any) => setErrorMsg(e.message || "Could not generate wire instructions."),
+  });
+
+  // When the panel is opened for the first time and we don't already have
+  // cached instructions, fetch them. Done in an effect so the user only sees
+  // the loading state after they explicitly opened the section.
+  useEffect(() => {
+    if (expanded && !instructions && !fetchInstructions.isPending) {
+      fetchInstructions.mutate();
+    }
+  }, [expanded, instructions, fetchInstructions]);
+
+  // Stripe typically returns multiple destinations for a US bank transfer:
+  // an ABA entry for domestic ACH/wire and a SWIFT entry for international
+  // wires. Render each as its own card so the parent picks the one their
+  // bank supports.
+  const accounts = instructions?.accounts || [];
+  const labelForAccount = (a: WireAccount): string => {
+    const nets = a.supportedNetworks || [];
+    if (a.type === "aba" || nets.includes("ach") || nets.includes("domestic_wire_us")) return "US Domestic - ACH / Wire";
+    if (a.type === "swift" || nets.includes("swift")) return "International Wire (SWIFT)";
+    if (a.type === "iban") return "SEPA / European Wire (IBAN)";
+    if (a.type === "sort_code") return "UK Bank Transfer (Sort Code)";
+    if (a.type === "spei") return "Mexico SPEI";
+    if (a.type === "zengin") return "Japan Zengin";
+    return a.type.toUpperCase();
+  };
+
+  return (
+    <div className="rounded-xl border overflow-hidden" style={{ borderColor: "hsl(var(--primary) / 0.3)" }}>
+      <button
+        type="button"
+        onClick={() => setExpanded((x) => !x)}
+        className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-secondary/30 transition"
+        style={{ background: expanded ? "hsl(var(--secondary) / 0.4)" : undefined }}
+      >
+        <div className="flex items-center gap-3">
+          <Landmark className="w-5 h-5" style={{ color: "hsl(var(--primary))" }} />
+          <div>
+            <p className="font-medium text-sm">Pay by Bank Wire Transfer</p>
+            <p className="text-xs text-muted-foreground">For international parents or large invoices. 1-3 business days.</p>
+          </div>
+        </div>
+        <span className="text-xs font-medium" style={{ color: "hsl(var(--primary))" }}>
+          {expanded ? "Hide" : "Show"}
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="px-5 py-4 space-y-3 border-t" style={{ borderColor: "hsl(var(--primary) / 0.15)" }}>
+          {fetchInstructions.isPending && !instructions && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+              <Loader2 className="w-4 h-4 animate-spin" /> Generating your wire instructions...
+            </div>
+          )}
+
+          {errorMsg && (
+            <div className="rounded-lg px-3 py-2 text-sm" style={{ background: "hsl(var(--brand-error) / 0.1)", color: "hsl(var(--brand-error))" }}>
+              {errorMsg}
+            </div>
+          )}
+
+          {instructions && accounts.length > 0 && (
+            <>
+              <div className="rounded-lg px-3 py-3" style={{ background: "hsl(var(--brand-warning) / 0.1)", border: "1px solid hsl(var(--brand-warning) / 0.3)" }}>
+                <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "hsl(var(--brand-warning))" }}>Critical - include this reference</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Your wire will not be matched to this invoice unless you put the reference code below in the memo / reference field of your wire.
+                </p>
+              </div>
+
+              <CopyableField label="Reference (put in wire memo)" value={instructions.reference} highlight />
+              <CopyableField label="Amount" value={amountFormatted} />
+
+              {accounts.map((acct, idx) => (
+                <div key={idx} className="rounded-lg border p-3 space-y-1" style={{ borderColor: "hsl(var(--border))" }}>
+                  <p className="text-xs font-semibold uppercase tracking-wide pb-1" style={{ color: "hsl(var(--primary))" }}>
+                    {labelForAccount(acct)}
+                  </p>
+                  {acct.bankName && <CopyableField label="Bank Name" value={acct.bankName} />}
+                  {acct.accountHolderName && <CopyableField label="Beneficiary" value={acct.accountHolderName} />}
+                  {acct.accountHolderAddress && <CopyableField label="Beneficiary Address" value={acct.accountHolderAddress} />}
+                  {acct.routingNumber && <CopyableField label="Routing Number (ABA)" value={acct.routingNumber} />}
+                  {acct.accountNumber && <CopyableField label="Account Number" value={acct.accountNumber} />}
+                  {acct.swiftCode && <CopyableField label="SWIFT / BIC" value={acct.swiftCode} />}
+                  {acct.iban && <CopyableField label="IBAN" value={acct.iban} />}
+                  {acct.sortCode && <CopyableField label="Sort Code" value={acct.sortCode} />}
+                </div>
+              ))}
+
+              <div className="rounded-lg px-3 py-2 text-xs text-muted-foreground" style={{ background: "hsl(var(--secondary) / 0.4)" }}>
+                We've emailed a copy of these details to you. Wires from outside the United States may incur a fee from your bank (typically $15-$45) that is not part of the invoice total. Funds usually arrive within 1-3 business days.
+              </div>
+
+              {instructions.hostedInstructionsUrl && (
+                <a
+                  href={instructions.hostedInstructionsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block text-center text-sm underline"
+                  style={{ color: "hsl(var(--primary))" }}
+                >
+                  View Stripe-hosted version
+                </a>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -218,6 +426,9 @@ export default function PaymentPage() {
   // Create PaymentIntent once invoice is loaded
   useEffect(() => {
     if (!invoice || invoice.status !== "AWAITING_PAYMENT" || clientSecret) return;
+    // PAYMENT_PROCESSING (ACH submitted, awaiting clearance) MUST NOT mint a
+    // fresh PaymentIntent - the parent already paid; we just show the
+    // pending-state panel below.
 
     fetch("/api/billing/create-payment-intent", {
       method: "POST",
@@ -285,6 +496,26 @@ export default function PaymentPage() {
         <Button onClick={() => navigate(safeReturn)} style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}>
           Return to Chat
         </Button>
+      </div>
+    );
+  }
+
+  if (invoice.status === "PAYMENT_PROCESSING") {
+    const isAch = (invoice.paymentMethod || "").toUpperCase() === "ACH";
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-4 text-center">
+        <Clock className="w-14 h-14" style={{ color: "hsl(var(--primary))" }} />
+        <h1 className="text-xl font-heading font-semibold">Payment Processing</h1>
+        <p className="text-sm text-muted-foreground max-w-md">
+          {isAch
+            ? <>Your ACH bank transfer to <strong>{invoice.providerName}</strong> has been submitted and is clearing with your bank. Funds typically settle within <strong>3-5 business days</strong>. No further action is needed - we'll email you a receipt as soon as the payment clears.</>
+            : <>Your payment to <strong>{invoice.providerName}</strong> has been submitted and is processing. We'll email you a receipt as soon as it clears. No further action is needed.</>
+          }
+        </p>
+        <div className="rounded-lg border px-4 py-3 text-xs max-w-md" style={{ background: "hsl(var(--secondary) / 0.4)", borderColor: "hsl(var(--primary) / 0.2)" }}>
+          Please do not re-submit this payment - your funds are already on their way.
+        </div>
+        <Button variant="outline" onClick={() => navigate("/chat")}>Return to Chat</Button>
       </div>
     );
   }
@@ -401,6 +632,28 @@ export default function PaymentPage() {
           <div className="flex justify-center py-4">
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
+        )}
+
+        {/*
+          Wire transfer is offered alongside the card form for AWAITING_PAYMENT
+          invoices that are NOT escrow holds. customer_balance cannot be
+          manual-captured, so it's incompatible with the AT_CLEARANCE flow -
+          the backend will reject the request anyway, but hiding the UI is
+          cleaner.
+        */}
+        {invoice.status === "AWAITING_PAYMENT" && !isAtClearance && !isMock && (
+          <>
+            <div className="flex items-center gap-3 my-2">
+              <div className="h-px flex-1 bg-border" />
+              <span className="text-xs text-muted-foreground">or</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+            <WireTransferPanel
+              paymentToken={invoice.paymentToken}
+              cachedInstructions={invoice.wireInstructions || null}
+              amountFormatted={`${formatCents(invoice.serviceAmount, invoice.currency)} ${(invoice.currency || "USD").toUpperCase()}`}
+            />
+          </>
         )}
       </div>
     </div>
