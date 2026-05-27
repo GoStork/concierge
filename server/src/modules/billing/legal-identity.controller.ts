@@ -79,18 +79,22 @@ export class LegalIdentityController {
    */
   @Post("api/provider/legal-identity/sync-from-w9")
   @UseGuards(SessionOrJwtGuard)
-  async syncOwnFromW9(@Req() req: Request) {
+  async syncOwnFromW9(@Req() req: Request, @Body() body: { force?: boolean }) {
     const user = req.user as any;
     if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
-    return this.legalIdentityService.syncFromW9(user.providerId);
+    return this.legalIdentityService.syncFromW9(user.providerId, { force: !!body?.force });
   }
 
   @Post("api/admin/providers/:providerId/legal-identity/sync-from-w9")
   @UseGuards(SessionOrJwtGuard)
-  async syncForProvider(@Req() req: Request, @Param("providerId") providerId: string) {
+  async syncForProvider(
+    @Req() req: Request,
+    @Param("providerId") providerId: string,
+    @Body() body: { force?: boolean },
+  ) {
     const user = req.user as any;
     if (!user?.roles?.includes("GOSTORK_ADMIN")) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
-    return this.legalIdentityService.syncFromW9(providerId);
+    return this.legalIdentityService.syncFromW9(providerId, { force: !!body?.force });
   }
 
   // NOTE: the PandaDoc webhook (POST /api/webhooks/pandadoc) is already

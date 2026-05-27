@@ -113,15 +113,22 @@ export class LegalIdentityService {
   }
 
   /**
-   * Auto-fill from a parsed W-9. Only sets fields that are currently
-   * null/empty - never overwrites a manually-set value. Stamps
-   * lastW9SyncAt regardless of whether anything actually changed so the
-   * UI can show "Last synced from W-9 on X".
+   * Apply a parsed W-9 to the legal identity row.
+   *
+   * Two modes:
+   *  - `force=false` (default, used by the PandaDoc webhook auto-fill):
+   *    only sets fields that are currently null/empty. Manual edits win.
+   *  - `force=true` (used by the explicit "Sync from W-9" button click):
+   *    overwrites every field that the W-9 has a value for. User
+   *    deliberately asked for the W-9 to win.
+   *
+   * Stamps lastW9SyncAt regardless of whether anything actually changed
+   * so the UI can show "Last synced from W-9 on X".
    *
    * Returns { applied: string[] } with the list of fields that were
-   * actually filled, so the caller can log a useful audit line.
+   * actually filled or overwritten.
    */
-  async applyFromW9(providerId: string, w9: LegalIdentityFormData): Promise<{ applied: string[] }> {
+  async applyFromW9(providerId: string, w9: LegalIdentityFormData, opts: { force?: boolean } = {}): Promise<{ applied: string[] }> {
     const existing = await this.getOrCreate(providerId);
     const applied: string[] = [];
 
@@ -129,10 +136,11 @@ export class LegalIdentityService {
     const maybeFill = (key: keyof LegalIdentityFormData, dbKey: string) => {
       const currentValue = (existing as any)[dbKey];
       const newValue = w9[key];
-      // Skip if (a) we have no new value or (b) the row already has a value
-      // - manual edits win over W-9 auto-fill.
       if (newValue == null || newValue === "") return;
-      if (currentValue != null && currentValue !== "") return;
+      // Non-force mode preserves existing values; force mode overwrites
+      // unless the new value would equal what's already there.
+      if (!opts.force && currentValue != null && currentValue !== "") return;
+      if (currentValue === newValue) return;
       data[dbKey] = newValue;
       applied.push(dbKey);
     };
@@ -143,22 +151,24 @@ export class LegalIdentityService {
     maybeFill("taxId", "taxId");
     maybeFill("taxIdType", "taxIdType");
     maybeFill("businessAddressLine1", "businessAddressLine1");
+    maybeFill("businessAddressLine2", "businessAddressLine2");
     maybeFill("businessAddressCity", "businessAddressCity");
     maybeFill("businessAddressState", "businessAddressState");
     maybeFill("businessAddressPostalCode", "businessAddressPostalCode");
 
-    // Re-derive businessType only if taxClassification was just applied
-    // and businessType isn't already manually set.
-    if (applied.includes("taxClassification") && !existing.businessType) {
+    // Re-derive businessType whenever taxClassification changes. In force
+    // mode that means recomputing every time; in non-force we only do it
+    // if businessType wasn't already manually set.
+    if (applied.includes("taxClassification") && (opts.force || !existing.businessType)) {
       data.businessType = classificationToBusinessType(w9.taxClassification as TaxClassification);
-      applied.push("businessType");
+      if (!applied.includes("businessType")) applied.push("businessType");
     }
 
-    // Source: only flip to W9_AUTO_FILL if this is the first time we're
-    // populating real data. If the row is already MANUAL, leave it
-    // MANUAL even after a W-9 sync (we honored the manual values; the
-    // sync just filled in missing ones).
-    if (existing.source === "MIGRATED_FROM_BRAND_SETTINGS" || (existing.source === "MANUAL" && !existing.legalName && !existing.taxId)) {
+    // Source: explicit force-syncs are "synced from W-9 just now". Auto
+    // fills only flip to W9_AUTO_FILL the first time real data lands.
+    if (opts.force && applied.length > 0) {
+      data.source = "W9_AUTO_FILL";
+    } else if (existing.source === "MIGRATED_FROM_BRAND_SETTINGS" || (existing.source === "MANUAL" && !existing.legalName && !existing.taxId)) {
       data.source = "W9_AUTO_FILL";
     }
 
@@ -168,9 +178,9 @@ export class LegalIdentityService {
     });
 
     if (applied.length > 0) {
-      this.logger.log(`W-9 auto-fill for provider ${providerId} applied ${applied.length} fields: ${applied.join(", ")}`);
+      this.logger.log(`W-9 ${opts.force ? "force-sync" : "auto-fill"} for provider ${providerId} applied ${applied.length} fields: ${applied.join(", ")}`);
     } else {
-      this.logger.log(`W-9 auto-fill for provider ${providerId} applied 0 fields (all fields already populated)`);
+      this.logger.log(`W-9 ${opts.force ? "force-sync" : "auto-fill"} for provider ${providerId} applied 0 fields (W-9 values matched existing)`);
     }
 
     return { applied };
@@ -187,7 +197,7 @@ export class LegalIdentityService {
    *   - { status: "noop", reason }             - skipped (already synced, no W-9, etc.)
    *   - { status: "failed", reason }           - transient failure; caller can retry
    */
-  async syncFromW9(providerId: string): Promise<
+  async syncFromW9(providerId: string, opts: { force?: boolean } = {}): Promise<
     | { status: "applied"; appliedFields: string[] }
     | { status: "noop"; reason: string }
     | { status: "failed"; reason: string }
@@ -200,13 +210,16 @@ export class LegalIdentityService {
     if (w9.status !== "COMPLETED") return { status: "noop", reason: `W-9 status is ${w9.status}, not COMPLETED` };
     if (!w9.pandaDocDocumentId) return { status: "noop", reason: "W-9 has no PandaDoc document id" };
 
-    // Skip if we've already synced from this completion.
-    const existing = await this.prisma.providerLegalIdentity.findUnique({
-      where: { providerId },
-      select: { lastW9SyncAt: true },
-    });
-    if (existing?.lastW9SyncAt && w9.completedAt && existing.lastW9SyncAt >= w9.completedAt) {
-      return { status: "noop", reason: "Already synced from this W-9 completion" };
+    // Skip if we've already synced from this completion - but only in
+    // non-force mode. Force-syncs (explicit button click) always re-fetch.
+    if (!opts.force) {
+      const existing = await this.prisma.providerLegalIdentity.findUnique({
+        where: { providerId },
+        select: { lastW9SyncAt: true },
+      });
+      if (existing?.lastW9SyncAt && w9.completedAt && existing.lastW9SyncAt >= w9.completedAt) {
+        return { status: "noop", reason: "Already synced from this W-9 completion" };
+      }
     }
 
     let extracted: LegalIdentityFormData | null;
@@ -220,7 +233,7 @@ export class LegalIdentityService {
       return { status: "failed", reason: "PandaDoc transient error - retry later" };
     }
 
-    const { applied } = await this.applyFromW9(providerId, extracted);
+    const { applied } = await this.applyFromW9(providerId, extracted, { force: opts.force });
     return { status: "applied", appliedFields: applied };
   }
 

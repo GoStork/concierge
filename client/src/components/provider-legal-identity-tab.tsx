@@ -136,19 +136,36 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
     },
   });
 
-  // Manual W-9 sync trigger - used when the W-9 is signed but the
-  // PandaDoc webhook didn't fire (test mode, missed event, etc.).
+  // Manual W-9 sync trigger. Sent with force=true: the user explicitly
+  // clicked the button asking to pull values from the W-9, so this
+  // OVERWRITES any existing field values that the W-9 has data for. The
+  // automatic PandaDoc webhook path on the backend still uses force=false
+  // so an admin's manual corrections don't get clobbered when a new W-9
+  // is signed.
   const syncMutation = useMutation({
     mutationFn: async () => {
-      const url = isAdmin
+      const url = mode === "admin" && providerId
         ? `/api/admin/providers/${providerId}/legal-identity/sync-from-w9`
         : `/api/provider/legal-identity/sync-from-w9`;
-      const res = await fetch(url, { method: "POST", credentials: "include" });
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ force: true }),
+      });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Sync failed");
       return res.json();
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [getUrl] }),
   });
+
+  const onSyncClick = () => {
+    const ok = window.confirm(
+      "Overwrite Legal Identity fields with the values from your signed W-9?\n\n" +
+      "This replaces Legal Name, Business Name, Tax Classification, Tax ID, and Address with whatever's on the W-9. Manual edits will be lost."
+    );
+    if (ok) syncMutation.mutate();
+  };
 
   if (isLoading) {
     return (
@@ -213,8 +230,8 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
           variant="outline"
           size="sm"
           disabled={syncMutation.isPending}
-          onClick={() => syncMutation.mutate()}
-          title="Re-read field values from the signed W-9 (only fills fields that are still empty)"
+          onClick={onSyncClick}
+          title="Overwrite fields with the values from the signed W-9"
         >
           {syncMutation.isPending
             ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
@@ -247,7 +264,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
               the fields below auto-fill from the form.
             </p>
           </div>
-          <ProviderW9Section providerId={effectiveProviderId} mode={mode} />
+          <ProviderW9Section providerId={effectiveProviderId} mode={isAdmin ? "admin" : "provider"} />
         </section>
       )}
 

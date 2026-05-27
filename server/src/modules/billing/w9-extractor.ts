@@ -42,6 +42,27 @@ function mapRadioToClassification(raw: string | null | undefined): string | null
 }
 
 /**
+ * Splits a single-line address into street + apt/suite components.
+ * W-9 Line 5 is one free-text field ("Address (number, street, and apt.
+ * or suite no.)") so providers type "60 W 60 St Apt 31A" into a single
+ * box. We pull the trailing unit marker out so our line2 field holds it
+ * separately for Stripe Connect / display.
+ *
+ * Recognises: Apt, Apartment, Suite, Ste, Unit, #, Fl, Floor.
+ * Returns { line1, line2 } where line2 is null if no marker found.
+ */
+export function splitAddressApt(raw: string | null | undefined): { line1: string | null; line2: string | null } {
+  if (!raw) return { line1: null, line2: null };
+  const s = raw.trim();
+  // Match a trailing unit segment: <street> (Apt|Suite|...|#) <value>
+  const m = s.match(/^(.+?)[,\s]+((?:Apt(?:\.|artment)?|Suite|Ste\.?|Unit|Fl(?:\.|oor)?|#)[\s.]*\S.*)$/i);
+  if (m) {
+    return { line1: m[1].trim().replace(/[,\s]+$/, ""), line2: m[2].trim() };
+  }
+  return { line1: s, line2: null };
+}
+
+/**
  * Parses a single-line "City, ST 12345" or "City ST 12345" into parts.
  * Best-effort - returns whatever it can identify. Admins can correct in
  * the Legal Identity tab if parsing misses.
@@ -138,7 +159,8 @@ export async function extractW9Fields(pandaDocDocumentId: string): Promise<Legal
   const legalName = get("Full_Name") || null;
   const businessName = get("Company_Name") || null;
   const taxClassification = mapRadioToClassification(get("RadioButtons1"));
-  const addressLine = get("Address") || null;
+  const rawAddressLine = get("Address") || null;
+  const { line1: addressLine, line2: addressLine2 } = splitAddressApt(rawAddressLine);
   const cityStateZip = get("City_State_zipcode") || null;
   const ssn = get("SSN") || null;
   const ein = get("EIN") || null;
@@ -161,6 +183,7 @@ export async function extractW9Fields(pandaDocDocumentId: string): Promise<Legal
     taxId,
     taxIdType,
     businessAddressLine1: addressLine,
+    businessAddressLine2: addressLine2,
     businessAddressCity: parsed.city,
     businessAddressState: parsed.state,
     businessAddressPostalCode: parsed.postalCode,
