@@ -1,8 +1,38 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DollarSign, Loader2, Send, ChevronDown, ChevronUp, AlertCircle, X, Plus, Trash2 } from "lucide-react";
+
+/**
+ * Render an error string with the literal "Billing tab" replaced by a Link
+ * to the provider Billing page. Server-generated billing errors use the
+ * phrase "in the Billing tab" - turning that into a one-click jump removes
+ * a step the agency would otherwise have to do manually.
+ */
+function BillingLinkedMessage({ text }: { text: string }) {
+  if (!/Billing tab/i.test(text)) return <>{text}</>;
+  const parts = text.split(/(Billing tab)/i);
+  return (
+    <>
+      {parts.map((part, i) =>
+        /^Billing tab$/i.test(part) ? (
+          <Link
+            key={i}
+            to="/account/billing"
+            className="underline font-semibold hover:opacity-80"
+            data-testid="link-billing-tab"
+          >
+            {part}
+          </Link>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
+  );
+}
 
 // Line-item editor types - mirrors the server enum.
 type LineServiceType = "SURROGACY" | "EGG_DONATION" | "SPERM_DONATION" | "IVF_CLINIC" | "OTHER";
@@ -32,8 +62,17 @@ interface ProviderFeeConfig {
   serviceType: LineServiceType;
   defaultServiceAmount: number | null; // cents
 }
+interface ProviderEnabledService {
+  serviceType: LineServiceType;
+  providerTypeName: string;
+}
 interface ProviderFeeConfigsResponse {
   configs: ProviderFeeConfig[];
+  // Services the provider is enabled to offer (APPROVED ProviderService rows).
+  // The dropdown should show every entry here regardless of whether a
+  // ReferralFeeConfig has been set - unconfigured services surface a
+  // "contact GoStork admin" warning instead of being hidden.
+  services: ProviderEnabledService[];
 }
 
 interface InvoiceSidebarSectionProps {
@@ -109,6 +148,9 @@ export function InvoiceSidebarSection({
     return Number.isFinite(v) && v > 0 ? sum + Math.round(v * 100) : sum;
   }, 0);
   const hasUsableLines = lineItems.some(li => parseFloat(li.amountInput) > 0);
+  // Send is blocked when any line item targets a service the provider hasn't
+  // configured a ReferralFeeConfig for - the server would 400 anyway, and the
+  // agency would lose the rest of their itemization on the error round-trip.
 
   // Provider fee configs - used to auto-fill each line's Default First Payment
   // when the agency picks a service type. The agency can still override the
@@ -130,36 +172,42 @@ export function InvoiceSidebarSection({
     return Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
   };
 
-  // Service types the agency is allowed to itemize. Anything outside this set
-  // is hidden from the dropdown - if the provider has no ReferralFeeConfig
-  // for a service, the preview + send-invoice calls would 400 server-side
-  // ("No referral fee configured for X on this provider"), so we filter
-  // those service types out at the UI level.
-  const allowedServiceTypes: LineServiceType[] = feeConfigsData
-    ? (feeConfigsData.configs.map(c => c.serviceType).filter(
-        (st): st is LineServiceType => st in LINE_TYPE_LABELS,
-      ))
+  // Service types the agency is enabled to offer (APPROVED ProviderService
+  // rows). The dropdown lists exactly these - a service the provider doesn't
+  // offer is never an option. A service that's enabled but has no
+  // ReferralFeeConfig yet IS still shown, but surfaces a "contact GoStork
+  // admin" warning when picked (server would 400 on send otherwise).
+  const enabledServiceTypes: LineServiceType[] = feeConfigsData?.services
+    ? feeConfigsData.services
+        .map(s => s.serviceType)
+        .filter((st): st is LineServiceType => st in LINE_TYPE_LABELS)
     : (Object.keys(LINE_TYPE_LABELS) as LineServiceType[]);
-  const allowedKey = allowedServiceTypes.join("|");
+  const enabledKey = enabledServiceTypes.join("|");
+  const configuredServiceSet = new Set<LineServiceType>(
+    feeConfigsData?.configs.map(c => c.serviceType).filter(
+      (st): st is LineServiceType => st in LINE_TYPE_LABELS,
+    ) ?? [],
+  );
+  const isServiceConfigured = (st: LineServiceType) => configuredServiceSet.has(st);
 
   // If configs load AFTER the initial line was mounted (or admin removes a
-  // config), snap any line whose serviceType is no longer allowed onto the
-  // first allowed type so the form stays valid and the preview keeps working.
+  // service), snap any line whose serviceType is no longer enabled onto the
+  // first enabled type so the dropdown stays consistent.
   useEffect(() => {
-    if (!feeConfigsData || allowedServiceTypes.length === 0) return;
-    const allowedSet = new Set(allowedServiceTypes);
+    if (!feeConfigsData || enabledServiceTypes.length === 0) return;
+    const enabledSet = new Set(enabledServiceTypes);
     setLineItems(prev => {
       let changed = false;
       const next = prev.map(li => {
-        if (allowedSet.has(li.serviceType)) return li;
+        if (enabledSet.has(li.serviceType)) return li;
         changed = true;
-        const nextType = allowedServiceTypes[0];
+        const nextType = enabledServiceTypes[0];
         return { ...li, serviceType: nextType, amountInput: defaultDollarsForService(nextType) };
       });
       return changed ? next : prev;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allowedKey, feeConfigsData]);
+  }, [enabledKey, feeConfigsData]);
 
   // Whenever the fee configs change, refresh every line's amount from its
   // service's Default First Payment. The amount is not user-editable - if
@@ -189,7 +237,7 @@ export function InvoiceSidebarSection({
   };
   const addLine = () => {
     setLineItems(prev => {
-      const seedType = allowedServiceTypes[0] ?? "SURROGACY";
+      const seedType = enabledServiceTypes[0] ?? "SURROGACY";
       const next = newLine(seedType);
       next.amountInput = defaultDollarsForService(seedType);
       return [...prev, next];
@@ -402,7 +450,9 @@ export function InvoiceSidebarSection({
             <div className="space-y-2">
               <label className="text-xs font-medium block">Line items</label>
               <div className="space-y-2">
-                {lineItems.map((li, idx) => (
+                {lineItems.map((li, idx) => {
+                  const configured = isServiceConfigured(li.serviceType);
+                  return (
                   <div
                     key={li.key}
                     className="rounded-md border bg-background p-2"
@@ -414,7 +464,7 @@ export function InvoiceSidebarSection({
                         className="h-8 text-xs rounded border bg-background px-2 w-36 shrink-0"
                         data-testid={`line-${idx}-type`}
                       >
-                        {allowedServiceTypes.map(k => (
+                        {enabledServiceTypes.map(k => (
                           <option key={k} value={k}>{LINE_TYPE_LABELS[k]}</option>
                         ))}
                       </select>
@@ -451,8 +501,22 @@ export function InvoiceSidebarSection({
                         </Button>
                       )}
                     </div>
+                    {!configured && (
+                      <p
+                        className="text-[11px] mt-1.5 flex items-start gap-1"
+                        style={{ color: "hsl(var(--brand-warning))" }}
+                        data-testid={`line-${idx}-unconfigured-warning`}
+                      >
+                        <AlertCircle className="w-3 h-3 mt-px shrink-0" />
+                        <span>
+                          {LINE_TYPE_LABELS[li.serviceType]} has no Referral Fee Configuration yet.
+                          Contact your GoStork admin to configure it before sending this invoice.
+                        </span>
+                      </p>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
               <Button
                 type="button"
@@ -540,15 +604,25 @@ export function InvoiceSidebarSection({
               data-testid="invoice-preview-error"
             >
               <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-              <span>{previewError}</span>
+              <span><BillingLinkedMessage text={previewError} /></span>
             </div>
           )}
 
-          {error && <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{error}</p>}
+          {error && (
+            <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>
+              <BillingLinkedMessage text={error} />
+            </p>
+          )}
 
           <Button
             onClick={() => sendMutation.mutate()}
-            disabled={sendMutation.isPending || !activeQuote || !hasUsableLines || !!previewError}
+            disabled={
+              sendMutation.isPending ||
+              !activeQuote ||
+              !hasUsableLines ||
+              !!previewError ||
+              lineItems.some(li => !isServiceConfigured(li.serviceType))
+            }
             className="w-full"
             style={{ background: brandColor, color: "white", borderRadius: "var(--radius)" }}
           >
