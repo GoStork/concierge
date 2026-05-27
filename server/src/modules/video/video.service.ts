@@ -475,7 +475,12 @@ export class VideoService implements OnModuleInit {
     };
 
     if (hmacSecret) {
-      body.hmac_secret = hmacSecret;
+      // Daily.co's POST /v1/webhooks expects the field name "hmac" - not
+      // "hmac_secret". An earlier draft of this code used the wrong key and
+      // Daily rejected the request with `"hmac_secret" is not allowed`,
+      // which caused auto-registration to silently fail on every server
+      // restart and left the webhook unauthenticated.
+      body.hmac = hmacSecret;
     }
 
     const res = await fetch(`${DAILY_API_BASE}/webhooks`, {
