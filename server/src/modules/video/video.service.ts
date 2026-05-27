@@ -194,6 +194,32 @@ export class VideoService implements OnModuleInit {
     }
     if (!signature) return false;
 
+    // Daily.co's actual signing scheme (confirmed against a real captured event):
+    //
+    //   signature = base64( HMAC-SHA256( base64Decode(secret), `${X-Webhook-Timestamp}.${rawBody}` ) )
+    //
+    // - The hmac value supplied at webhook creation is treated as base64;
+    //   Daily decodes it to raw bytes and uses those as the HMAC key.
+    // - The signed payload is the X-Webhook-Timestamp header value, a literal
+    //   "." separator, and the raw request body bytes (no JSON re-serialization).
+    // - Digest is base64-encoded.
+    //
+    // Their docs only said "BASE-64 encoded HMAC-sha256 secret" and didn't
+    // document the rest - this was reverse-engineered by capturing a real
+    // participant.left event in /tmp/gostork-server.log and brute-forcing the
+    // matrix of (key derivation x payload composition x digest encoding).
+    if (timestamp) {
+      try {
+        const key = Buffer.from(secret, "base64");
+        const bodyBuf = typeof rawBody === "string" ? Buffer.from(rawBody, "utf8") : rawBody;
+        const signedPayload = Buffer.concat([Buffer.from(`${timestamp}.`, "utf8"), bodyBuf]);
+        const expected = createHmac("sha256", key).update(signedPayload).digest("base64");
+        if (expected === signature) return true;
+      } catch {
+        // fall through to the diagnostic / fallback path
+      }
+    }
+
     // Daily's signature scheme isn't well-documented. Build candidate keys
     // (secret as-is, hex-decoded, base64-decoded) x candidate payloads
     // (body alone, ts.body for Stripe-style headers) x encodings (base64, hex)
@@ -274,9 +300,14 @@ export class VideoService implements OnModuleInit {
           .map(([k, v]) => `${k}=${String(v).slice(0, 80)}`)
           .join(" | ")
       : "(not provided)";
-    const strict = process.env.DAILY_WEBHOOK_VERIFY_STRICT === "true";
+    // The primary check at the top of this function covers Daily's actual
+    // scheme. Reaching this fallback either means the scheme changed, an
+    // attacker is forging events, or we hit a code path we didn't expect.
+    // Default is now REJECT. To temporarily relax (e.g. while debugging a
+    // new Daily API version), set DAILY_WEBHOOK_PERMISSIVE=true in env.
+    const permissive = process.env.DAILY_WEBHOOK_PERMISSIVE === "true";
     this.logger.warn(
-      `Daily webhook signature mismatch (${strict ? "REJECTING" : "ACCEPTING with warning"}).\n` +
+      `Daily webhook signature mismatch (${permissive ? "ACCEPTING with warning - DAILY_WEBHOOK_PERMISSIVE=true" : "REJECTING"}).\n` +
       `  header_full=${signature}\n` +
       `  timestamp=${timestamp ?? "(none)"}\n` +
       `  body_bytes=${bodyBuf.length}\n` +
@@ -285,11 +316,7 @@ export class VideoService implements OnModuleInit {
       `  candidates=${candidateDigestPrefixes.join(" | ")}\n` +
       `  tried=${triedDescriptions.join(", ")}`,
     );
-    // Non-strict default: return true so the webhook handshake succeeds and
-    // events flow through. Once we identify Daily's actual signing scheme
-    // from a real-event diagnostic and update the candidate matrix to
-    // include it, set DAILY_WEBHOOK_VERIFY_STRICT=true to enforce.
-    return !strict;
+    return permissive;
   }
 
   async processRecordingReady(
