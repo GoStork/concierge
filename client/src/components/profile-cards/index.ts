@@ -4,6 +4,8 @@ export { SpermDonorProfileCard } from "./sperm-donor-profile-card";
 export { SurrogateProfileCard } from "./surrogate-profile-card";
 export { SubjectProfileCard } from "./subject-profile-card";
 export { SubjectProfileBody } from "./subject-profile-body";
+export { ProviderProfileCard } from "./provider-profile-card";
+export type { ProviderProfileCardProps, ProviderProfileCardCalendar } from "./provider-profile-card";
 export type { SubjectProfileCardProps } from "./subject-profile-card";
 export type { EggDonorProfileCardProps } from "./egg-donor-profile-card";
 export type { SpermDonorProfileCardProps } from "./sperm-donor-profile-card";

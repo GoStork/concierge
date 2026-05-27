@@ -29,7 +29,7 @@ import {
   buildSidebarSections,
   type SidebarSection,
 } from "@/components/marketplace/swipe-mappers";
-import { SubjectProfileCard } from "@/components/profile-cards";
+import { SubjectProfileCard, ProviderProfileCard } from "@/components/profile-cards";
 import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2, ThumbsUp, Image as ImageIcon, Camera } from "lucide-react";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
@@ -712,6 +712,7 @@ export function InlineBookingCalendar({
   autoResetOnCancel,
   showCalendarOnExpiry,
   onBookingConfirmed,
+  prefill,
 }: {
   slug: string;
   memberName: string;
@@ -721,6 +722,8 @@ export function InlineBookingCalendar({
   autoResetOnCancel?: boolean;
   showCalendarOnExpiry?: boolean;
   onBookingConfirmed?: (meta: { providerId?: string; subjectProfileId?: string | null }) => void;
+  /** When provided, the form fields are pre-populated with this contact info instead of the logged-in user's. Used by admin to book on behalf of a parent. */
+  prefill?: { name: string; email: string; phone?: string };
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -734,9 +737,9 @@ export function InlineBookingCalendar({
       ? (isCancelled ? (autoResetOnCancel ? "date" : "cancelled") : "pending")
       : "date"
   );
-  const [name, setName] = useState(user ? (user as any).name || "" : "");
-  const [email, setEmail] = useState(user ? (user as any).email || "" : "");
-  const [phone, setPhone] = useState(user ? (user as any).mobileNumber || "" : "");
+  const [name, setName] = useState(prefill?.name ?? (user ? (user as any).name || "" : ""));
+  const [email, setEmail] = useState(prefill?.email ?? (user ? (user as any).email || "" : ""));
+  const [phone, setPhone] = useState(prefill?.phone ?? (user ? (user as any).mobileNumber || "" : ""));
   const [notes, setNotes] = useState("");
   const [additionalAttendees, setAdditionalAttendees] = useState<{ email: string; name: string; phone: string }[]>([]);
   const [showAttendeeFields, setShowAttendeeFields] = useState(false);
@@ -2329,57 +2332,27 @@ export function ParentChatSidePanel({
           />
         )}
 
-        {/* Provider Section - only after a call has been scheduled */}
-        {displayProviderName && existingBooking && (
+        {/* Provider section (agency + coordinator + calendar) - only after a call has been scheduled */}
+        {(displayProviderName || sessionCalendarSlug?.slug) && (existingBooking || sessionCalendarSlug?.slug) && (
           <div className={subjectInfo && existingBooking ? "border-t pt-3" : ""}>
-            <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>
-              Agency
-            </h4>
-            <div className="flex items-center gap-2.5">
-              {subjectInfo?.providerLogo ? (
-                <img
-                  src={getPhotoSrc(subjectInfo.providerLogo) || undefined}
-                  alt={displayProviderName}
-                  className="w-9 h-9 rounded-full object-cover border"
-                />
-              ) : (
-                <div
-                  className="w-9 h-9 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold shrink-0"
-                  style={{ backgroundColor: brandColor }}
-                >
-                  {(displayProviderName || "A").charAt(0)}
-                </div>
-              )}
-              <span className="text-sm font-medium">{displayProviderName}</span>
-            </div>
-          </div>
-        )}
-
-        {/* Calendar Section */}
-        {sessionCalendarSlug?.slug && (
-          <div className={existingBooking && (displayProviderName || subjectInfo) ? "border-t pt-3" : ""}>
-            <h4 className="font-semibold text-sm mb-1" style={{ fontFamily: "var(--font-display)" }}>
-              Coordinator
-            </h4>
-            {(sessionCalendarSlug.memberName || subjectInfo?.memberName) && (
-              <p className="text-sm text-muted-foreground mb-3">
-                {sessionCalendarSlug.memberName || subjectInfo?.memberName}
-              </p>
-            )}
-            <InlineBookingCalendar
-              slug={sessionCalendarSlug.slug}
-              memberName={sessionCalendarSlug.memberName || subjectInfo?.memberName || "Coordinator"}
+            <ProviderProfileCard
+              providerId={subjectInfo?.providerId}
+              providerName={displayProviderName}
+              providerLogo={subjectInfo?.providerLogo}
               brandColor={brandColor}
-              existingBooking={existingBooking || undefined}
-              consultationMeta={subjectInfo ? {
-                providerId: subjectInfo.providerId,
-                profileLabel: subjectInfo.profileLabel,
-                profilePhotoUrl: subjectInfo.profilePhotoUrl,
-                subjectProfileId: subjectInfo.subjectProfileId,
-                subjectType: subjectInfo.subjectType,
-              } : undefined}
-              autoResetOnCancel
-              showCalendarOnExpiry
+              calendar={sessionCalendarSlug?.slug ? {
+                slug: sessionCalendarSlug.slug,
+                memberName: sessionCalendarSlug.memberName || subjectInfo?.memberName,
+                existingBooking: existingBooking || undefined,
+                consultationMeta: subjectInfo ? {
+                  providerId: subjectInfo.providerId,
+                  profileLabel: subjectInfo.profileLabel,
+                  profilePhotoUrl: subjectInfo.profilePhotoUrl,
+                  subjectProfileId: subjectInfo.subjectProfileId,
+                  subjectType: subjectInfo.subjectType,
+                } : undefined,
+              } : null}
+              testId="parent-sidebar-provider-card"
             />
           </div>
         )}

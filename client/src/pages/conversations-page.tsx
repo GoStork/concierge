@@ -1643,8 +1643,24 @@ const sendMessageMutation = useMutation({
             }
             provider={{
               id: selectedParentSession!.providerId,
-              name: parentHeaderName,
-              logoUrl: selectedParentSession!.providerLogo,
+              name: parentSidePanelData?.providerName || parentHeaderName,
+              logoUrl: parentSidePanelData?.subjectInfo?.providerLogo || selectedParentSession!.providerLogo,
+              calendar: parentSidePanelData?.sessionCalendarSlug?.slug ? {
+                slug: parentSidePanelData.sessionCalendarSlug.slug,
+                memberName: parentSidePanelData.sessionCalendarSlug.memberName || parentSidePanelData.subjectInfo?.memberName,
+                existingBooking:
+                  parentSidePanelData.sessionBookings?.find((b: any) =>
+                    b.providerUser?.provider?.id === parentSidePanelData.subjectInfo?.providerId ||
+                    b.providerId === parentSidePanelData.subjectInfo?.providerId
+                  ) ?? parentSidePanelData.sessionBookings?.[0] ?? undefined,
+                consultationMeta: parentSidePanelData.subjectInfo ? {
+                  providerId: parentSidePanelData.subjectInfo.providerId,
+                  profileLabel: parentSidePanelData.subjectInfo.profileLabel,
+                  profilePhotoUrl: parentSidePanelData.subjectInfo.profilePhotoUrl,
+                  subjectProfileId: parentSidePanelData.subjectInfo.subjectProfileId,
+                  subjectType: parentSidePanelData.subjectInfo.subjectType,
+                } : undefined,
+              } : null,
             }}
             testId="parent-header-context-panel"
           />

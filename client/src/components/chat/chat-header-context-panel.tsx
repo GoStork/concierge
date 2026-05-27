@@ -1,8 +1,7 @@
 import { useEffect, type ReactNode } from "react";
-import { CheckCircle2, ExternalLink, MessageCircle, Sparkles, X } from "lucide-react";
+import { CheckCircle2, ExternalLink, MessageCircle, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { ParentProfileCard, SubjectProfileCard } from "@/components/profile-cards";
-import { getPhotoSrc } from "@/lib/profile-utils";
+import { ParentProfileCard, SubjectProfileCard, ProviderProfileCard, type ProviderProfileCardCalendar } from "@/components/profile-cards";
 import type { SessionUser, ViewerRole } from "./chat-types";
 
 export type MatchStatusTone = "neutral" | "success" | "warning";
@@ -25,6 +24,7 @@ interface ProviderContext {
   id: string | null | undefined;
   name: string | null | undefined;
   logoUrl?: string | null;
+  calendar?: ProviderProfileCardCalendar | null;
 }
 
 interface ChatHeaderContextPanelProps {
@@ -46,7 +46,7 @@ function MatchStatusPill({ status }: { status: ChatHeaderMatchStatus }) {
       ? "bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))]"
       : status.tone === "warning"
       ? "bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))]"
-      : "bg-secondary text-foreground";
+      : "bg-background text-foreground border";
   const Icon = status.tone === "success" ? CheckCircle2 : MessageCircle;
   return (
     <div
@@ -73,7 +73,7 @@ export function ChatHeaderContextPanel({
 }: ChatHeaderContextPanelProps) {
   const navigate = useNavigate();
   const showParentCard = (role === "provider" || role === "admin") && !!user;
-  const showProviderRow = role === "parent" && !!provider?.id;
+  const showProviderCard = (role === "parent" || role === "admin") && !!provider?.id;
 
   useEffect(() => {
     if (!open) return;
@@ -118,32 +118,26 @@ export function ChatHeaderContextPanel({
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
         {(matchStatus || extraTopContent) && (
-          <div className="flex flex-wrap items-center gap-2">
-            {matchStatus && <MatchStatusPill status={matchStatus} />}
-            {extraTopContent}
+          <div className="rounded-[var(--radius)] bg-secondary/40 border p-4" data-testid="context-panel-match-status-card">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Match Status</p>
+            <div className="flex flex-wrap items-center gap-2">
+              {matchStatus && <MatchStatusPill status={matchStatus} />}
+              {extraTopContent}
+            </div>
           </div>
         )}
 
-        {showProviderRow && provider && (
-          <button
-            type="button"
-            onClick={() => provider.id && navTo(`/providers/${provider.id}`)}
-            className="w-full flex items-center gap-3 rounded-[var(--radius)] bg-secondary/40 border px-3 py-2.5 text-left active:opacity-70 transition-opacity"
-            data-testid="context-panel-provider-link"
-          >
-            <div className="w-9 h-9 rounded-full overflow-hidden bg-muted flex-shrink-0 flex items-center justify-center">
-              {provider.logoUrl ? (
-                <img src={getPhotoSrc(provider.logoUrl) || undefined} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Provider</p>
-              <p className="text-sm font-semibold truncate">{provider.name || "Provider"}</p>
-            </div>
-            <ExternalLink className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-          </button>
+        {showProviderCard && provider && (
+          <div className="rounded-[var(--radius)] bg-secondary/40 border p-4" data-testid="context-panel-provider-card">
+            <ProviderProfileCard
+              providerId={provider.id}
+              providerName={provider.name}
+              providerLogo={provider.logoUrl}
+              brandColor={brandColor}
+              calendar={provider.calendar || null}
+              testId="context-panel-provider-profile"
+            />
+          </div>
         )}
 
         {showParentCard && user && (

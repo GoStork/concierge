@@ -27,7 +27,7 @@ import {
   type SessionDetail,
   type FilterTab,
 } from "@/components/chat";
-import { SubjectProfileCard } from "@/components/profile-cards";
+import { SubjectProfileCard, ProviderProfileCard } from "@/components/profile-cards";
 import { useToast } from "@/hooks/use-toast";
 import { AgreementSidebarSection } from "@/components/chat/agreement-sidebar-section";
 import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
@@ -139,6 +139,17 @@ export default function AdminConciergeMonitor() {
     },
     enabled: !!selectedSessionId,
     refetchInterval: 15000,
+  });
+
+  const sessionCalendarSlugQuery = useQuery<{ slug: string | null; memberName: string | null }>({
+    queryKey: ["/api/chat-session", selectedSessionId, "provider-calendar-slug"],
+    queryFn: async () => {
+      const res = await fetch(`/api/chat-session/${selectedSessionId}/provider-calendar-slug`, { credentials: "include" });
+      if (!res.ok) return { slug: null, memberName: null };
+      return res.json();
+    },
+    enabled: !!selectedSessionId,
+    staleTime: 60000,
   });
 
   const joinSessionMutation = useMutation({
@@ -638,6 +649,37 @@ export default function AdminConciergeMonitor() {
               }
             : null
         }
+        provider={
+          selectedSummary?.providerId
+            ? {
+                id: selectedSummary.providerId,
+                name: selectedSummary.providerName ?? null,
+                logoUrl: selectedSummary.providerLogo,
+                calendar: sessionCalendarSlugQuery.data?.slug ? {
+                  slug: sessionCalendarSlugQuery.data.slug,
+                  memberName: sessionCalendarSlugQuery.data.memberName,
+                  existingBooking:
+                    (sessionBookingsQuery.data || []).find((b: any) =>
+                      b.providerUser?.provider?.id === selectedSummary.providerId ||
+                      b.providerId === selectedSummary.providerId
+                    ) ?? (sessionBookingsQuery.data || [])[0] ?? undefined,
+                  consultationMeta: {
+                    aiSessionId: selectedSessionId ?? undefined,
+                    providerId: selectedSummary.providerId,
+                    profileLabel: selectedSummary.title,
+                    profilePhotoUrl: selectedSummary.profilePhotoUrl,
+                    subjectProfileId: selectedSummary.subjectProfileId,
+                    subjectType: selectedSummary.subjectType,
+                  },
+                  onBehalfOf: detail.user?.email ? {
+                    name: detail.user.name || "Parent",
+                    email: detail.user.email,
+                    phone: detail.user.mobileNumber,
+                  } : null,
+                } : null,
+              }
+            : null
+        }
         testId="admin-header-context-panel"
       />
 
@@ -811,6 +853,40 @@ export default function AdminConciergeMonitor() {
                     withSeparator
                     testId="admin-subject-profile-card"
                   />
+                  {selectedSummary?.providerId && (
+                    <div className="border-t pt-4 mt-4" data-testid="admin-provider-section">
+                      <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Provider</h4>
+                      <ProviderProfileCard
+                        providerId={selectedSummary.providerId}
+                        providerName={selectedSummary.providerName ?? null}
+                        providerLogo={selectedSummary.providerLogo}
+                        brandColor={brandColor}
+                        calendar={sessionCalendarSlugQuery.data?.slug ? {
+                          slug: sessionCalendarSlugQuery.data.slug,
+                          memberName: sessionCalendarSlugQuery.data.memberName,
+                          existingBooking:
+                            (sessionBookingsQuery.data || []).find((b: any) =>
+                              b.providerUser?.provider?.id === selectedSummary.providerId ||
+                              b.providerId === selectedSummary.providerId
+                            ) ?? (sessionBookingsQuery.data || [])[0] ?? undefined,
+                          consultationMeta: {
+                            aiSessionId: selectedSessionId ?? undefined,
+                            providerId: selectedSummary.providerId,
+                            profileLabel: selectedSummary.title,
+                            profilePhotoUrl: selectedSummary.profilePhotoUrl,
+                            subjectProfileId: selectedSummary.subjectProfileId,
+                            subjectType: selectedSummary.subjectType,
+                          },
+                          onBehalfOf: detail.user?.email ? {
+                            name: detail.user.name || "Parent",
+                            email: detail.user.email,
+                            phone: detail.user.mobileNumber,
+                          } : null,
+                        } : null}
+                        testId="admin-provider-profile-card"
+                      />
+                    </div>
+                  )}
                   {/* Cost Sheet / Invoice / Agreement sections moved into the + drawer above the composer */}
                 </>
               }
