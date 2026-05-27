@@ -192,18 +192,55 @@ export class VideoService implements OnModuleInit {
     }
     if (!signature) return false;
 
-    // Daily.co sends the signature as base64(HMAC-SHA256(secret, rawBody)).
-    // The earlier draft of this code used a hex digest, which meant a real
-    // signature header never matched and the handshake POST Daily sends
-    // during webhook registration returned 403 - causing registration to
-    // fail with "non-200 status code returned from webhook endpoint, recvd
-    // undefined". Must compute over the raw request bytes (not a re-stringified
-    // version of the parsed JSON) since re-serialization changes key order /
-    // whitespace and breaks the HMAC.
-    const hmac = createHmac("sha256", secret);
-    hmac.update(rawBody);
-    const expected = hmac.digest("base64");
-    return expected === signature;
+    // Daily's webhook signature format isn't well-documented and has varied
+    // across API versions. Try every reasonable variant and accept if any
+    // matches. Once we see which one Daily is actually using in production
+    // logs, this can be collapsed back to a single check.
+    //
+    // Variants tried:
+    //   a) base64(HMAC-SHA256(secret, body))                  - "simple base64"
+    //   b) hex(HMAC-SHA256(secret, body))                     - "simple hex"
+    //   c) Stripe-style "t=<ts>,v1=<sig>" header where
+    //      sig = base64(HMAC-SHA256(secret, "<ts>." + body))
+    //   d) Same as (c) but hex digest
+    //   e) Same as (c) but secret treated as base64-encoded raw bytes
+    const bodyBuf = typeof rawBody === "string" ? Buffer.from(rawBody, "utf8") : rawBody;
+
+    const tryHmac = (key: Buffer | string, payload: Buffer | string, encoding: "base64" | "hex") =>
+      createHmac("sha256", key).update(payload).digest(encoding);
+
+    // (a) + (b)
+    const sigBase64 = tryHmac(secret, bodyBuf, "base64");
+    const sigHex = tryHmac(secret, bodyBuf, "hex");
+    if (signature === sigBase64) { this.logger.debug("Daily signature matched scheme: simple-base64"); return true; }
+    if (signature === sigHex)    { this.logger.debug("Daily signature matched scheme: simple-hex");    return true; }
+
+    // (c)+(d)+(e): Stripe-style "t=...,v1=..."
+    const parts = signature.split(",").map(s => s.trim());
+    const tPart = parts.find(p => p.startsWith("t="))?.slice(2);
+    const vPart = parts.find(p => p.startsWith("v1="))?.slice(3) || parts.find(p => p.startsWith("v="))?.slice(2);
+    if (tPart && vPart) {
+      const signedPayload = Buffer.concat([Buffer.from(`${tPart}.`, "utf8"), bodyBuf]);
+      const ts_b64 = tryHmac(secret, signedPayload, "base64");
+      const ts_hex = tryHmac(secret, signedPayload, "hex");
+      const secretAsB64Bytes = (() => { try { return Buffer.from(secret, "base64"); } catch { return null; } })();
+      const ts_b64_b64key = secretAsB64Bytes ? tryHmac(secretAsB64Bytes, signedPayload, "base64") : null;
+      if (vPart === ts_b64)               { this.logger.debug("Daily signature matched scheme: ts.body base64"); return true; }
+      if (vPart === ts_hex)               { this.logger.debug("Daily signature matched scheme: ts.body hex");    return true; }
+      if (ts_b64_b64key && vPart === ts_b64_b64key) {
+        this.logger.debug("Daily signature matched scheme: ts.body base64 with b64-decoded secret");
+        return true;
+      }
+    }
+
+    // None matched - log enough to diagnose without leaking the secret.
+    this.logger.warn(
+      `Daily webhook signature mismatch. ` +
+      `header=${signature.slice(0, 32)}... ` +
+      `body_bytes=${bodyBuf.length} ` +
+      `tried=[simple-base64,simple-hex,ts.body-base64,ts.body-hex,ts.body-base64-b64key]`,
+    );
+    return false;
   }
 
   async processRecordingReady(
