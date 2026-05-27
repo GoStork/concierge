@@ -182,7 +182,7 @@ export class VideoService implements OnModuleInit {
   }
 
   verifyWebhookSignature(
-    rawBody: string,
+    rawBody: Buffer | string,
     signature: string | undefined,
   ): boolean {
     const secret = process.env.DAILY_WEBHOOK_SECRET;
@@ -192,9 +192,17 @@ export class VideoService implements OnModuleInit {
     }
     if (!signature) return false;
 
+    // Daily.co sends the signature as base64(HMAC-SHA256(secret, rawBody)).
+    // The earlier draft of this code used a hex digest, which meant a real
+    // signature header never matched and the handshake POST Daily sends
+    // during webhook registration returned 403 - causing registration to
+    // fail with "non-200 status code returned from webhook endpoint, recvd
+    // undefined". Must compute over the raw request bytes (not a re-stringified
+    // version of the parsed JSON) since re-serialization changes key order /
+    // whitespace and breaks the HMAC.
     const hmac = createHmac("sha256", secret);
     hmac.update(rawBody);
-    const expected = hmac.digest("hex");
+    const expected = hmac.digest("base64");
     return expected === signature;
   }
 

@@ -695,8 +695,13 @@ export class VideoController {
   @Post("webhook")
   @ApiOperation({ summary: "Daily.co webhook endpoint" })
   async handleWebhook(@Req() req: RawBodyRequest<any>) {
-    const rawBody =
-      typeof req.body === "string" ? req.body : JSON.stringify(req.body);
+    // Signature verification must run against the EXACT raw bytes Daily sent.
+    // express.json() in server/index.ts stashes them at req.rawBody via its
+    // verify callback. Re-serializing the parsed JS body (the previous
+    // implementation) changes key order/whitespace and breaks the HMAC.
+    const rawBody: Buffer | string =
+      (req as any).rawBody ??
+      (typeof req.body === "string" ? req.body : JSON.stringify(req.body));
     const signature = req.headers["x-webhook-signature"] as string | undefined;
 
     if (!this.videoService.verifyWebhookSignature(rawBody, signature)) {
