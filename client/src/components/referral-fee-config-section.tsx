@@ -40,7 +40,6 @@ export interface ReferralFeeConfigPayload {
   defaultServiceAmount: number | null; // cents
   parentPaysBasis: "DEFAULT_FIRST_PAYMENT" | "TOTAL_COST";
   sampleTotalCostCents: number | null;
-  notes: string | null;
   isActive: boolean;
 }
 
@@ -97,7 +96,6 @@ export function ReferralFeeConfigSection({
   const [sampleTotalCost, setSampleTotalCost] = useState(
     initialConfig?.sampleTotalCostCents ? String(initialConfig.sampleTotalCostCents / 100) : "",
   );
-  const [notes, setNotes] = useState(initialConfig?.notes ?? "");
   const [depositMilestone, setDepositMilestone] = useState<"AT_MATCH" | "AT_CLEARANCE">(initialDepositMilestone);
   const [averageClearanceDays, setAverageClearanceDays] = useState(String(initialAverageClearanceDays ?? 21));
 
@@ -109,7 +107,6 @@ export function ReferralFeeConfigSection({
     setDefaultServiceAmount(initialConfig?.defaultServiceAmount ? String(initialConfig.defaultServiceAmount / 100) : "");
     setParentPaysBasis(initialConfig?.parentPaysBasis === "TOTAL_COST" ? "TOTAL_COST" : "DEFAULT_FIRST_PAYMENT");
     setSampleTotalCost(initialConfig?.sampleTotalCostCents ? String(initialConfig.sampleTotalCostCents / 100) : "");
-    setNotes(initialConfig?.notes ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceType, initialConfig?.id]);
 
@@ -130,7 +127,6 @@ export function ReferralFeeConfigSection({
     mutationFn: async () => {
       const body: any = {
         feeType,
-        notes,
         flatAmount: feeType === "FLAT" ? Math.round(parseFloat(flatAmount) * 100) : null,
         percentage: feeType === "PERCENTAGE" ? parseFloat(percentage) : null,
         defaultServiceAmount: defaultServiceAmount ? Math.round(parseFloat(defaultServiceAmount) * 100) : null,
@@ -383,16 +379,6 @@ export function ReferralFeeConfigSection({
           )}
         </div>
       )}
-
-      {/* Notes */}
-      <div className="space-y-1.5">
-        <Label>Internal Notes (optional)</Label>
-        <Input
-          placeholder="e.g. Custom rate agreed on 2026-05-01"
-          value={notes}
-          onChange={e => setNotes(e.target.value)}
-        />
-      </div>
 
       {saveMutation.isError && (
         <p className="text-sm" style={{ color: "hsl(var(--brand-error))" }}>
