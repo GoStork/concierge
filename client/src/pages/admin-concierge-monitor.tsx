@@ -23,6 +23,7 @@ import {
   ChatProfileSidebar,
   InlineVideoOverlay,
   ChatBookingCard,
+  SubjectProfileSection,
   type SessionDetail,
   type FilterTab,
 } from "@/components/chat";
@@ -473,29 +474,6 @@ export default function AdminConciergeMonitor() {
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span className="font-medium text-sm font-ui truncate">{rowTitle}</span>
-                        {needsJoin && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase flex-shrink-0" style={{ backgroundColor: `${brandColor}15`, color: brandColor }} data-testid={`badge-escalated-${s.id}`}>
-                            <UserPlus className="w-2.5 h-2.5" />
-                            Join
-                          </span>
-                        )}
-                        {s.humanJoinedAt && !s.humanConcludedAt && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[9px] font-bold uppercase flex-shrink-0">
-                            <CheckCircle2 className="w-2.5 h-2.5" />
-                            Live
-                          </span>
-                        )}
-                        {s.providerJoinedAt && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] text-[9px] font-bold uppercase flex-shrink-0" data-testid={`badge-provider-active-${s.id}`}>
-                            <CheckCircle2 className="w-2.5 h-2.5" />
-                            Connected
-                          </span>
-                        )}
-                        {s.status === "CONSULTATION_BOOKED" && !s.providerJoinedAt && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] text-[9px] font-bold uppercase flex-shrink-0">
-                            Call Booked
-                          </span>
-                        )}
                       </div>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         <span className={`text-[11px] ${sUnread > 0 ? "font-semibold" : "text-muted-foreground"}`} style={sUnread > 0 ? { color: brandColor } : undefined}>{timeAgo(s.lastMessageAt)}</span>
@@ -724,62 +702,75 @@ export default function AdminConciergeMonitor() {
         </div>
 
         {/* Profile sidebar - reuses shared component */}
-        <ChatProfileSidebar
-          user={detail.user}
-          brandColor={brandColor}
-          testId="concierge-monitor-profile"
-          extraSections={(() => {
-            const bookings = sessionBookingsQuery.data || [];
-            // Only show bookings where the current admin is the host - never show provider-parent meetings
-            const activeBookings = bookings.filter((b: any) =>
-              b.providerUserId === (user as any)?.id && (
-                b.status === "PENDING" ||
-                (b.status === "CONFIRMED" && new Date() < new Date(new Date(b.scheduledAt).getTime() + (b.duration || 30) * 60 * 1000))
-              )
-            );
-            const status = detail.status;
-            const matchBadge = (() => {
-              switch (status) {
-                case "PROVIDER_CONNECTED":
-                  return { label: "Connected", className: "bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))]", icon: <CheckCircle2 className="w-3 h-3" /> };
-                case "CONSULTATION_BOOKED":
-                  return { label: "Call Booked", className: "bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))]", icon: <CheckCircle2 className="w-3 h-3" /> };
-                case "READY_FOR_MATCH":
-                  return { label: "Ready for Match", className: "bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))]", icon: <CheckCircle2 className="w-3 h-3" /> };
-                case "NOT_A_FIT":
-                  return { label: "Not a Fit", className: "bg-destructive/10 text-destructive", icon: <MessageCircle className="w-3 h-3" /> };
-                default:
-                  return { label: "Active", className: "bg-muted text-muted-foreground", icon: <MessageCircle className="w-3 h-3" /> };
-              }
-            })();
-            return (
-              <>
-                {activeBookings.length > 0 && (
-                  <div className="border-t pt-4 mt-4" data-testid="panel-concierge-call-section">
-                    <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>GoStork Concierge Call</h4>
-                    <div className="space-y-2">
-                      {activeBookings.map((b: any) => (
-                        <ChatBookingCard
-                          key={b.id}
-                          booking={b}
-                          onUpdate={() => sessionBookingsQuery.refetch()}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <div className="border-t pt-4 mt-4" data-testid="match-status-section">
+        {(() => {
+          const bookings = sessionBookingsQuery.data || [];
+          // Only show bookings where the current admin is the host - never show provider-parent meetings
+          const activeBookings = bookings.filter((b: any) =>
+            b.providerUserId === (user as any)?.id && (
+              b.status === "PENDING" ||
+              (b.status === "CONFIRMED" && new Date() < new Date(new Date(b.scheduledAt).getTime() + (b.duration || 30) * 60 * 1000))
+            )
+          );
+          const status = detail.status;
+          const matchBadge = (() => {
+            switch (status) {
+              case "PROVIDER_CONNECTED":
+                return { label: "Connected", className: "bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))]", icon: <CheckCircle2 className="w-3 h-3" /> };
+              case "CONSULTATION_BOOKED":
+                return { label: "Call Booked", className: "bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))]", icon: <CheckCircle2 className="w-3 h-3" /> };
+              case "READY_FOR_MATCH":
+                return { label: "Ready for Match", className: "bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))]", icon: <CheckCircle2 className="w-3 h-3" /> };
+              case "NOT_A_FIT":
+                return { label: "Not a Fit", className: "bg-destructive/10 text-destructive", icon: <MessageCircle className="w-3 h-3" /> };
+              default:
+                return { label: "Active", className: "bg-muted text-muted-foreground", icon: <MessageCircle className="w-3 h-3" /> };
+            }
+          })();
+          return (
+            <ChatProfileSidebar
+              user={detail.user}
+              brandColor={brandColor}
+              testId="concierge-monitor-profile"
+              topSections={
+                <div className="border-b pb-4 mb-4" data-testid="match-status-section">
                   <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Match Status</h4>
                   <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium w-fit ${matchBadge.className}`} data-testid="badge-match-status">
                     {matchBadge.icon}
                     {matchBadge.label}
                   </div>
                 </div>
-                {/* Cost Sheet / Invoice / Agreement sections moved into the + drawer above the composer */}
-              </>
-            );
-          })()}
-        />
+              }
+              extraSections={
+                <>
+                  {activeBookings.length > 0 && (
+                    <div className="border-t pt-4 mt-4" data-testid="panel-concierge-call-section">
+                      <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>GoStork Concierge Call</h4>
+                      <div className="space-y-2">
+                        {activeBookings.map((b: any) => (
+                          <ChatBookingCard
+                            key={b.id}
+                            booking={b}
+                            onUpdate={() => sessionBookingsQuery.refetch()}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <SubjectProfileSection
+                    providerId={selectedSummary?.providerId}
+                    subjectProfileId={selectedSummary?.subjectProfileId}
+                    subjectType={selectedSummary?.subjectType}
+                    fallbackPhotoUrl={selectedSummary?.profilePhotoUrl}
+                    fallbackLabel={selectedSummary?.title}
+                    brandColor={brandColor}
+                    testId="admin-subject-profile-section"
+                  />
+                  {/* Cost Sheet / Invoice / Agreement sections moved into the + drawer above the composer */}
+                </>
+              }
+            />
+          );
+        })()}
       </div>
     </div>
   ) : selectedSessionId ? (

@@ -51,6 +51,7 @@ import {
   WhisperDisclaimer,
   ChatProfileSidebar,
   ChatBookingCard,
+  SubjectProfileSection,
   type FilterTab,
 } from "@/components/chat";
 
@@ -2002,34 +2003,9 @@ const sendMessageMutation = useMutation({
               user={detail.user}
               brandColor={brandColor}
               testId="provider-sidebar"
-              extraSections={
-                <>
-                  {(() => {
-                    const bookings = sessionBookingsQuery.data || [];
-                    // Only show bookings where this provider user is the host - never show admin/GoStork bookings
-                    const activeBookings = bookings.filter((b: any) =>
-                      b.providerUserId === user?.id && (
-                        b.status === "PENDING" ||
-                        (b.status === "CONFIRMED" && new Date() < new Date(new Date(b.scheduledAt).getTime() + (b.duration || 30) * 60 * 1000))
-                      )
-                    );
-                    if (activeBookings.length === 0) return null;
-                    return (
-                      <div className="border-t pt-4 mt-4" data-testid="panel-consultation-call-section">
-                        <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Consultation Call</h4>
-                        <div className="space-y-2">
-                          {activeBookings.map((b: any) => (
-                            <ChatBookingCard
-                              key={b.id}
-                              booking={b}
-                              onUpdate={() => queryClient.invalidateQueries({ queryKey: ["/api/chat-session/bookings", selectedSessionId] })}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                  <div className="border-t pt-4 mt-4" data-testid="consultation-status-section">
+              topSections={
+                (hasJoined || isConsultationBooked) ? (
+                  <div className="border-b pb-4 mb-4" data-testid="consultation-status-section">
                     <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Match Status</h4>
                     <div className="space-y-2">
                       {hasJoined ? (
@@ -2071,6 +2047,44 @@ const sendMessageMutation = useMutation({
                       )}
                     </div>
                   </div>
+                ) : null
+              }
+              extraSections={
+                <>
+                  {(() => {
+                    const bookings = sessionBookingsQuery.data || [];
+                    // Only show bookings where this provider user is the host - never show admin/GoStork bookings
+                    const activeBookings = bookings.filter((b: any) =>
+                      b.providerUserId === user?.id && (
+                        b.status === "PENDING" ||
+                        (b.status === "CONFIRMED" && new Date() < new Date(new Date(b.scheduledAt).getTime() + (b.duration || 30) * 60 * 1000))
+                      )
+                    );
+                    if (activeBookings.length === 0) return null;
+                    return (
+                      <div className="border-t pt-4 mt-4" data-testid="panel-consultation-call-section">
+                        <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Consultation Call</h4>
+                        <div className="space-y-2">
+                          {activeBookings.map((b: any) => (
+                            <ChatBookingCard
+                              key={b.id}
+                              booking={b}
+                              onUpdate={() => queryClient.invalidateQueries({ queryKey: ["/api/chat-session/bookings", selectedSessionId] })}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <SubjectProfileSection
+                    providerId={(user as any)?.providerId}
+                    subjectProfileId={selectedSession?.subjectProfileId}
+                    subjectType={selectedSession?.subjectType}
+                    fallbackPhotoUrl={selectedSession?.profilePhotoUrl}
+                    fallbackLabel={selectedSession?.title}
+                    brandColor={brandColor}
+                    testId="provider-subject-profile-section"
+                  />
                   {/* Cost Sheet / Invoice / Agreement sections moved into the + drawer above the composer */}
                 </>
               }

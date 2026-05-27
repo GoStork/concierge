@@ -4,6 +4,8 @@ import type { SessionUser } from "./chat-types";
 interface ChatProfileSidebarProps {
   user: SessionUser;
   brandColor: string;
+  /** Sections rendered above the Parent Profile heading (e.g. match status). */
+  topSections?: ReactNode;
   /** Extra sections rendered after the profile info (e.g. consultation status, agreement buttons) */
   extraSections?: ReactNode;
   testId?: string;
@@ -137,12 +139,13 @@ function buildSections(user: SessionUser): ProfileSection[] {
  * Shared right-sidebar profile panel showing parent info and journey details.
  * Used by both provider chat and admin concierge monitor.
  */
-export function ChatProfileSidebar({ user, brandColor, extraSections, testId = "chat-profile-sidebar" }: ChatProfileSidebarProps) {
+export function ChatProfileSidebar({ user, brandColor, topSections, extraSections, testId = "chat-profile-sidebar" }: ChatProfileSidebarProps) {
   const sections = buildSections(user);
   const basics = buildBasics(user);
 
   return (
     <div className="w-72 border-l overflow-y-auto p-4 bg-muted/30 hidden md:block" data-testid={testId}>
+      {topSections}
       <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Parent Profile</h4>
       <div className="space-y-1.5 mb-3">
         <div className="text-sm"><span className="text-muted-foreground">Name:</span> {user.name || "-"}</div>

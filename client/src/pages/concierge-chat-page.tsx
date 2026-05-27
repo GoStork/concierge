@@ -4150,32 +4150,30 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             <ArrowLeft className="w-4 h-4" />
           </Button>
           {providerInChat && (sessionBookings?.length ?? 0) > 0 && subjectInfo ? (
-            /* Consultation mode: show "Subject x Provider" header layout */
-            <>
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-muted">
-                  {subjectInfo.profilePhotoUrl ? (
-                    <img src={getPhotoSrc(subjectInfo.profilePhotoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                      <User className="w-4 h-4 text-muted-foreground" />
-                    </div>
-                  )}
-                </div>
-                <span className="font-semibold text-sm font-ui truncate">{subjectInfo.profileLabel || providerChatName}</span>
-              </div>
-              <span className="text-muted-foreground text-base font-medium flex-shrink-0 px-1" aria-hidden>x</span>
-              <div className="flex items-center gap-2 min-w-0">
-                {subjectInfo.providerLogo ? (
-                  <img src={getPhotoSrc(subjectInfo.providerLogo) || undefined} alt={providerChatName || ""} className="w-10 h-10 rounded-full object-contain flex-shrink-0 border border-border bg-white" />
+            /* Consultation mode: subject as primary, provider as "via" subtitle */
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-muted relative">
+                {subjectInfo.profilePhotoUrl ? (
+                  <img src={getPhotoSrc(subjectInfo.profilePhotoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
                 ) : (
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold flex-shrink-0" style={{ backgroundColor: brandColor }}>
-                    {(providerChatName || "?").charAt(0)}
+                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                    <User className="w-4 h-4 text-muted-foreground" />
                   </div>
                 )}
-                <span className="font-semibold text-sm font-ui truncate">{providerChatName}</span>
               </div>
-            </>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-sm font-ui truncate" data-testid="parent-chat-subject-label">{subjectInfo.profileLabel || providerChatName}</span>
+                </div>
+                <div className="flex items-center gap-1 mt-0.5 min-w-0">
+                  <span className="text-[11px] text-muted-foreground flex-shrink-0">via</span>
+                  {subjectInfo.providerLogo ? (
+                    <img src={getPhotoSrc(subjectInfo.providerLogo) || undefined} alt="" className="w-3.5 h-3.5 rounded-sm object-contain flex-shrink-0 bg-white border border-border/40" />
+                  ) : null}
+                  <span className="text-[11px] text-muted-foreground truncate">{providerChatName}</span>
+                </div>
+              </div>
+            </div>
           ) : (
             /* Default: matchmaker avatar + name */
             <>
