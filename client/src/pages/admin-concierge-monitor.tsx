@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { MessageStatus } from "@/components/ui/message-status";
 import {
-  ArrowLeft, ChevronDown, Headphones, MessageCircle, User, Clock, CheckCircle2, Loader2, UserPlus, LogOut, Trash2, Video, Sparkles,
+  ArrowLeft, ChevronRight, Headphones, MessageCircle, User, Clock, CheckCircle2, Loader2, UserPlus, LogOut, Trash2, Video, Sparkles,
 } from "lucide-react";
 import {
   timeAgo,
@@ -568,8 +568,8 @@ export default function AdminConciergeMonitor() {
               <p className="text-[11px] text-muted-foreground truncate">{detail.user.email}</p>
             )}
           </div>
-          <ChevronDown
-            className={`w-4 h-4 text-muted-foreground flex-shrink-0 transition-transform lg:hidden ${adminHeaderPanelOpen ? "rotate-180" : ""}`}
+          <ChevronRight
+            className="w-4 h-4 text-muted-foreground flex-shrink-0 lg:hidden"
             aria-hidden
           />
         </button>
@@ -616,6 +616,7 @@ export default function AdminConciergeMonitor() {
 
       <ChatHeaderContextPanel
         open={adminHeaderPanelOpen}
+        onClose={() => setAdminHeaderPanelOpen(false)}
         role="admin"
         brandColor={brandColor}
         user={detail.user}

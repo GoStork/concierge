@@ -1,7 +1,6 @@
-import { type ReactNode } from "react";
-import { CheckCircle2, ExternalLink, MessageCircle, Sparkles } from "lucide-react";
+import { useEffect, type ReactNode } from "react";
+import { CheckCircle2, ExternalLink, MessageCircle, Sparkles, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { ParentProfileCard, SubjectProfileCard } from "@/components/profile-cards";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import type { SessionUser, ViewerRole } from "./chat-types";
@@ -30,6 +29,7 @@ interface ProviderContext {
 
 interface ChatHeaderContextPanelProps {
   open: boolean;
+  onClose: () => void;
   role: ViewerRole;
   brandColor: string;
   matchStatus?: ChatHeaderMatchStatus | null;
@@ -61,6 +61,7 @@ function MatchStatusPill({ status }: { status: ChatHeaderMatchStatus }) {
 
 export function ChatHeaderContextPanel({
   open,
+  onClose,
   role,
   brandColor,
   matchStatus,
@@ -74,6 +75,13 @@ export function ChatHeaderContextPanel({
   const showParentCard = (role === "provider" || role === "admin") && !!user;
   const showProviderRow = role === "parent" && !!provider?.id;
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   const subjectHeading =
     subject?.heading
     ?? (subject?.subjectType?.toLowerCase() === "surrogate" ? "Interested Surrogate"
@@ -81,77 +89,97 @@ export function ChatHeaderContextPanel({
       : subject?.subjectType?.toLowerCase().includes("donor") ? "Interested Egg Donor"
       : undefined);
 
+  const navTo = (path: string) => {
+    onClose();
+    navigate(path);
+  };
+
   return (
-    <Collapsible open={open} className="lg:hidden">
-      <CollapsibleContent
-        className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up"
-        data-testid={testId}
-      >
-        <div className="border-b bg-secondary/30 px-4 py-3 space-y-3 max-h-[60vh] overflow-y-auto">
-          {(matchStatus || extraTopContent) && (
-            <div className="flex flex-wrap items-center gap-2">
-              {matchStatus && <MatchStatusPill status={matchStatus} />}
-              {extraTopContent}
-            </div>
-          )}
+    <div
+      className={`lg:hidden fixed inset-0 z-50 bg-background flex flex-col transform-gpu transition-transform duration-300 ease-out ${open ? "translate-x-0" : "translate-x-full pointer-events-none"}`}
+      style={{ visibility: open ? "visible" : "hidden" }}
+      role="dialog"
+      aria-modal="true"
+      aria-hidden={!open}
+      data-testid={testId}
+    >
+      <div className="flex items-center gap-3 px-4 h-14 border-b bg-background shrink-0">
+        <button
+          type="button"
+          onClick={onClose}
+          className="h-9 w-9 -ml-1 flex items-center justify-center rounded-full active:bg-muted/60"
+          aria-label="Close details"
+          data-testid="context-panel-close"
+        >
+          <X className="w-5 h-5" />
+        </button>
+        <span className="text-sm font-medium font-ui">Details</span>
+      </div>
 
-          {showProviderRow && provider && (
-            <button
-              type="button"
-              onClick={() => provider.id && navigate(`/providers/${provider.id}`)}
-              className="w-full flex items-center gap-3 rounded-[var(--radius)] bg-background border px-3 py-2.5 text-left active:opacity-70 transition-opacity"
-              data-testid="context-panel-provider-link"
-            >
-              <div className="w-9 h-9 rounded-full overflow-hidden bg-muted flex-shrink-0 flex items-center justify-center">
-                {provider.logoUrl ? (
-                  <img src={getPhotoSrc(provider.logoUrl) || undefined} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Provider</p>
-                <p className="text-sm font-semibold truncate">{provider.name || "Provider"}</p>
-              </div>
-              <ExternalLink className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-            </button>
-          )}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
+        {(matchStatus || extraTopContent) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {matchStatus && <MatchStatusPill status={matchStatus} />}
+            {extraTopContent}
+          </div>
+        )}
 
-          {showParentCard && user && (
-            <div className="rounded-[var(--radius)] bg-background border p-3" data-testid="context-panel-parent-card">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Parent</p>
-              <ParentProfileCard user={user} testId="context-panel-parent-profile" />
-              {user.id && (
-                <button
-                  type="button"
-                  onClick={() => navigate(`/parents/${user.id}`)}
-                  className="mt-3 inline-flex items-center gap-1 text-xs"
-                  style={{ color: brandColor }}
-                  data-testid="context-panel-parent-link"
-                >
-                  <ExternalLink className="w-3 h-3" />
-                  View Full Parent Profile
-                </button>
+        {showProviderRow && provider && (
+          <button
+            type="button"
+            onClick={() => provider.id && navTo(`/providers/${provider.id}`)}
+            className="w-full flex items-center gap-3 rounded-[var(--radius)] bg-secondary/40 border px-3 py-2.5 text-left active:opacity-70 transition-opacity"
+            data-testid="context-panel-provider-link"
+          >
+            <div className="w-9 h-9 rounded-full overflow-hidden bg-muted flex-shrink-0 flex items-center justify-center">
+              {provider.logoUrl ? (
+                <img src={getPhotoSrc(provider.logoUrl) || undefined} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
               )}
             </div>
-          )}
-
-          {subject?.subjectProfileId && subject?.providerId && subject?.subjectType && (
-            <div className="rounded-[var(--radius)] bg-background border p-3" data-testid="context-panel-subject-card">
-              <SubjectProfileCard
-                providerId={subject.providerId}
-                subjectProfileId={subject.subjectProfileId}
-                subjectType={subject.subjectType}
-                fallbackPhotoUrl={subject.fallbackPhotoUrl}
-                fallbackLabel={subject.fallbackLabel}
-                brandColor={brandColor}
-                heading={subjectHeading}
-                testId="context-panel-subject-profile"
-              />
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Provider</p>
+              <p className="text-sm font-semibold truncate">{provider.name || "Provider"}</p>
             </div>
-          )}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
+            <ExternalLink className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+          </button>
+        )}
+
+        {showParentCard && user && (
+          <div className="rounded-[var(--radius)] bg-secondary/40 border p-4" data-testid="context-panel-parent-card">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Parent</p>
+            <ParentProfileCard user={user} testId="context-panel-parent-profile" />
+            {user.id && (
+              <button
+                type="button"
+                onClick={() => navTo(`/parents/${user.id}`)}
+                className="mt-3 inline-flex items-center gap-1 text-xs"
+                style={{ color: brandColor }}
+                data-testid="context-panel-parent-link"
+              >
+                <ExternalLink className="w-3 h-3" />
+                View Full Parent Profile
+              </button>
+            )}
+          </div>
+        )}
+
+        {subject?.subjectProfileId && subject?.providerId && subject?.subjectType && (
+          <div className="rounded-[var(--radius)] bg-secondary/40 border p-4" data-testid="context-panel-subject-card">
+            <SubjectProfileCard
+              providerId={subject.providerId}
+              subjectProfileId={subject.subjectProfileId}
+              subjectType={subject.subjectType}
+              fallbackPhotoUrl={subject.fallbackPhotoUrl}
+              fallbackLabel={subject.fallbackLabel}
+              brandColor={brandColor}
+              heading={subjectHeading}
+              testId="context-panel-subject-profile"
+            />
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

@@ -11,7 +11,7 @@ import { OnlineIndicator } from "@/components/ui/online-indicator";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import {
   ArrowLeft, MessageSquare, User, Loader2, FileText, X,
-  CheckCircle2, ChevronDown, Shield, ThumbsUp, ThumbsDown,
+  CheckCircle2, ChevronRight, Shield, ThumbsUp, ThumbsDown,
   Sparkles, Building2, MessageCircle, Heart, CornerRightDown,
   CalendarDays, Video, Trash2, Headphones,
   // Used by legacy dead code pending removal
@@ -1511,8 +1511,8 @@ const sendMessageMutation = useMutation({
                   <span className="text-[11px] text-muted-foreground truncate">{parentHeaderName}</span>
                 </div>
               </div>
-              <ChevronDown
-                className={`w-4 h-4 text-muted-foreground flex-shrink-0 transition-transform lg:hidden ${parentHeaderPanelOpen ? "rotate-180" : ""}`}
+              <ChevronRight
+                className="w-4 h-4 text-muted-foreground flex-shrink-0 lg:hidden"
                 aria-hidden
               />
             </button>
@@ -1620,6 +1620,7 @@ const sendMessageMutation = useMutation({
         {selectedParentSession!.providerId && selectedParentSession!.title && (
           <ChatHeaderContextPanel
             open={parentHeaderPanelOpen}
+            onClose={() => setParentHeaderPanelOpen(false)}
             role="parent"
             brandColor={brandColor}
             matchStatus={
@@ -1919,8 +1920,8 @@ const sendMessageMutation = useMutation({
                 </div>
               </>
             )}
-            <ChevronDown
-              className={`w-4 h-4 text-muted-foreground flex-shrink-0 transition-transform lg:hidden ${providerHeaderPanelOpen ? "rotate-180" : ""}`}
+            <ChevronRight
+              className="w-4 h-4 text-muted-foreground flex-shrink-0 lg:hidden"
               aria-hidden
             />
           </button>
@@ -1941,6 +1942,7 @@ const sendMessageMutation = useMutation({
 
         <ChatHeaderContextPanel
           open={providerHeaderPanelOpen}
+          onClose={() => setProviderHeaderPanelOpen(false)}
           role="provider"
           brandColor={brandColor}
           user={detail.user}
