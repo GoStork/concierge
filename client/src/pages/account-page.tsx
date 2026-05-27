@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Link, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { formatMoneyDollars } from "@/lib/format-money";
 import { User, Building2, Users, Calendar, Camera, Loader2, Eye, EyeOff, Phone, Mail, Shield, CalendarPlus, AlertTriangle, Check, Pencil, Plus, Trash2, Palette, Egg, Baby, FlaskConical, DollarSign, LogOut, Sparkles, Brain, RefreshCw, FileText } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
@@ -1390,7 +1391,7 @@ function AccountTab() {
             // --- Preference filters (set manually) ---
             { label: "Max Cost", key: "spermDonorMaxPrice", value: editSpermDonorMaxPrice, setter: setEditSpermDonorMaxPrice, type: "singleslider",
               rangeMin: 0, rangeMax: 5000, rangeStep: 100,
-              formatValue: (v: number) => `$${v.toLocaleString()}` },
+              formatValue: (v: number) => formatMoneyDollars(v) },
             { label: "Vial Type Availability", key: "spermDonorVialType", value: editSpermDonorVialType, setter: setEditSpermDonorVialType, type: "multiselect",
               options: ["ICI", "IUI", "IVF"] },
             { label: "Additional Preferences", key: "spermDonorPreferences", value: editSpermDonorPreferences, setter: setEditSpermDonorPreferences, type: "textarea" },
@@ -1571,7 +1572,7 @@ function ProfileSection({ title, editing, data, fields, forceShow, onEdit, onSav
             const parts = effectiveValue ? effectiveValue.split(",") : [];
             const lo = parts[0] ? Number(parts[0]) : min;
             const hi = parts[1] ? Number(parts[1]) : max;
-            const fmt = f.formatValue ?? ((v: number) => f.rangeUnit === "$" ? `$${v.toLocaleString()}` : String(v));
+            const fmt = f.formatValue ?? ((v: number) => f.rangeUnit === "$" ? formatMoneyDollars(v) : String(v));
             return (
               <div key={f.key} className="space-y-3 md:col-span-2">
                 <div className="flex items-center justify-between">

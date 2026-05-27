@@ -1,5 +1,6 @@
 import { Injectable, Inject, Logger, OnModuleInit } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { formatMoneyCents } from "../../lib/format-money";
 
 export type NotificationChannel =
   | "booking_submitted"
@@ -2508,7 +2509,7 @@ export class NotificationService implements OnModuleInit {
     const brandData = await this.getBrandData();
     const firstName = getFirstName(invoice.parentUser.name) || "there";
     const providerName = this.escapeHtml(invoice.providerName);
-    const amountFormatted = `$${(invoice.serviceAmount / 100).toFixed(2)} ${invoice.currency || "USD"}`;
+    const amountFormatted = `${formatMoneyCents(invoice.serviceAmount, invoice.currency || "USD")} ${invoice.currency || "USD"}`;
     const isAch = invoice.paymentMethod === "ACH";
     const methodLabel = isAch ? "ACH bank transfer" : "payment";
     const subject = `Your ${methodLabel} to ${invoice.providerName} is processing`;
@@ -2563,7 +2564,7 @@ export class NotificationService implements OnModuleInit {
     const brandData = await this.getBrandData();
     const firstName = getFirstName(invoice.parentUser.name) || "there";
     const providerName = this.escapeHtml(invoice.providerName);
-    const amountFormatted = `$${(invoice.serviceAmount / 100).toFixed(2)} ${(invoice.currency || "USD").toUpperCase()}`;
+    const amountFormatted = `${formatMoneyCents(invoice.serviceAmount, invoice.currency || "USD")} ${(invoice.currency || "USD").toUpperCase()}`;
     const reference = this.escapeHtml(wire.reference || "");
     const subject = `Wire transfer instructions for ${invoice.providerName}`;
 

@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { X, RotateCcw } from "lucide-react";
 import { useAppSelector, useAppDispatch } from "@/store";
 import { setFilter, clearFilters } from "@/store/uiSlice";
+import { formatMoneyDollars } from "@/lib/format-money";
 
 type ProviderType = "egg-donor" | "surrogate" | "sperm-donor";
 
@@ -111,7 +112,7 @@ function RangeFilter({
   const current = activeFilters[filterKey];
   const currentMin = current?.[0] ? Number(current[0]) : min;
   const currentMax = current?.[1] ? Number(current[1]) : max;
-  const fmtVal = formatValue || ((v: number) => unit === "$" ? `$${v.toLocaleString()}` : String(v));
+  const fmtVal = formatValue || ((v: number) => unit === "$" ? formatMoneyDollars(v) : String(v));
 
   return (
     <div className="space-y-2">

@@ -13,6 +13,7 @@ import { useAppSelector, useAppDispatch } from "@/store";
 import { setMarketplaceSearchQuery, setMarketplaceSortBy, setFilter, clearFilters, setShowFavoritesOnly, setShowSkippedOnly, setShowExperiencedOnly } from "@/store/uiSlice";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { formatMoneyDollars } from "@/lib/format-money";
 
 type ProviderType = "egg-donor" | "surrogate" | "sperm-donor" | "ivf-clinic";
 
@@ -790,7 +791,7 @@ function RangePopover({ label, filterKey, min, max, step, unit, activeFilters, d
   const currentMax = hasValue ? Number(current[1]) : max;
   const isActive = hasValue && (currentMin !== min || currentMax !== max);
 
-  const formatVal = formatValue || ((v: number) => unit === "$" ? `$${v.toLocaleString()}` : String(v));
+  const formatVal = formatValue || ((v: number) => unit === "$" ? formatMoneyDollars(v) : String(v));
 
   return (
     <Popover>
@@ -933,7 +934,7 @@ function ThumbAnchoredRange({ filterKey, min, max, step, unit, currentMin, curre
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [trackWidth, setTrackWidth] = useState(0);
-  const formatVal = formatValue || ((v: number) => unit === "$" ? `$${v.toLocaleString()}` : String(v));
+  const formatVal = formatValue || ((v: number) => unit === "$" ? formatMoneyDollars(v) : String(v));
 
   const measureTrack = useCallback(() => {
     if (trackRef.current) {

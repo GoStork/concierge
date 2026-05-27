@@ -23,6 +23,7 @@ import { BillingService, humanizeLineServiceType, providerTypeNameToServiceType 
 import { NotificationService } from "../notifications/notification.service";
 import { StorageService } from "../storage/storage.service";
 import { prisma } from "../../../db";
+import { formatMoneyCents } from "../../lib/format-money";
 
 /**
  * Endpoints for the cost-sheet + invoice flow that sits between the AI chat and Stripe billing.
@@ -129,7 +130,7 @@ export class CostSheetController {
       data: {
         sessionId,
         role: "assistant",
-        content: `${session.provider?.name || "Your provider"} sent a cost sheet. Total: $${(totalCostCents / 100).toFixed(2)}`,
+        content: `${session.provider?.name || "Your provider"} sent a cost sheet. Total: ${formatMoneyCents(totalCostCents)}`,
         senderType: "system",
         senderName: session.provider?.name || "Provider",
         uiCardType: "cost_sheet",
@@ -155,13 +156,13 @@ export class CostSheetController {
         providerName: session.provider?.name || "Your provider",
         providerId: session.providerId!,
         sessionId,
-        totalCostFormatted: `$${(totalCostCents / 100).toFixed(2)}`,
+        totalCostFormatted: formatMoneyCents(totalCostCents),
         hasFile: !!costSheetFileUrl,
       }).catch(err => this.logger.error(`Cost-sheet parent notification failed: ${err.message}`));
     }
 
     this.logger.log(
-      `Cost sheet sent: session=${sessionId} quote=${quote.id} total=$${(totalCostCents / 100).toFixed(2)} source=${quote.source}`,
+      `Cost sheet sent: session=${sessionId} quote=${quote.id} total=${formatMoneyCents(totalCostCents)} source=${quote.source}`,
     );
 
     return { quote };

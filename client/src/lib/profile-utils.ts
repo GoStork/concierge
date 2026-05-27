@@ -1,4 +1,13 @@
+import { formatMoneyDollars } from "@/lib/format-money";
+
 export type ProfileType = "egg-donor" | "surrogate" | "sperm-donor";
+
+/** Local helper: format a whole-dollar profile value through the canonical
+ *  money formatter so commas + conditional decimals stay consistent with
+ *  the rest of the app. */
+function fmtDollarsLocal(v: number): string {
+  return formatMoneyDollars(v);
+}
 
 
 const TYPE_TO_SLUG: Record<string, string> = {
@@ -282,7 +291,7 @@ export function getProfileCardSummary(d: any, type: string): { label: string; va
       { label: "BMI", value: r.bmi },
       { label: "Occupation", value: r.occupation },
       { label: "Relationship", value: r.relationshipStatus },
-      { label: "Compensation", value: (r.resolvedCompensation ?? r.baseCompensation) ? `$${(r.resolvedCompensation ?? r.baseCompensation)!.toLocaleString()}` : null },
+      { label: "Compensation", value: (r.resolvedCompensation ?? r.baseCompensation) ? fmtDollarsLocal((r.resolvedCompensation ?? r.baseCompensation)!) : null },
     );
   } else {
     const r = resolveSpermDonorFields(d);
@@ -295,10 +304,10 @@ export function getProfileCardSummary(d: any, type: string): { label: string; va
     );
     if (r.vialCosts.length > 0) {
       for (const vc of r.vialCosts) {
-        items.push({ label: vc.label, value: `$${vc.cost.toLocaleString()}` });
+        items.push({ label: vc.label, value: fmtDollarsLocal(vc.cost) });
       }
     } else if (r.totalCost) {
-      items.push({ label: "Vial Cost", value: `$${r.totalCost.toLocaleString()}` });
+      items.push({ label: "Vial Cost", value: fmtDollarsLocal(r.totalCost) });
     }
   }
 
@@ -307,8 +316,8 @@ export function getProfileCardSummary(d: any, type: string): { label: string; va
 
 function fmtTotalCostRange(tc: { min: number; max: number } | null): string {
   if (!tc) return "-";
-  if (tc.min === tc.max || tc.max === 0) return `$${tc.min.toLocaleString()}`;
-  return `$${tc.min.toLocaleString()} – $${tc.max.toLocaleString()}`;
+  if (tc.min === tc.max || tc.max === 0) return fmtDollarsLocal(tc.min);
+  return `${fmtDollarsLocal(tc.min)} – ${fmtDollarsLocal(tc.max)}`;
 }
 
 export function getProfileDetails(d: any, type: ProfileType): { label: string; value: string }[] {
@@ -336,12 +345,12 @@ export function getProfileDetails(d: any, type: ProfileType): { label: string; v
     if (isFrozenOnly) {
       result.push(
         { label: "Number of Eggs", value: r.numberOfEggs ? String(r.numberOfEggs) : "-" },
-        { label: "Egg Lot Cost", value: r.eggLotCost ? `$${r.eggLotCost.toLocaleString()}` : "-" },
+        { label: "Egg Lot Cost", value: r.eggLotCost ? fmtDollarsLocal(r.eggLotCost) : "-" },
       );
     } else {
       result.push(
-        { label: "Donor Compensation", value: (r.resolvedCompensation ?? r.donorCompensation) ? `$${(r.resolvedCompensation ?? r.donorCompensation)!.toLocaleString()}` : "-" },
-        { label: "Total Cost", value: r.calculatedTotalCost ? fmtTotalCostRange(r.calculatedTotalCost) : (r.totalCost ? `$${r.totalCost.toLocaleString()}` : "-") },
+        { label: "Donor Compensation", value: (r.resolvedCompensation ?? r.donorCompensation) ? fmtDollarsLocal((r.resolvedCompensation ?? r.donorCompensation)!) : "-" },
+        { label: "Total Cost", value: r.calculatedTotalCost ? fmtTotalCostRange(r.calculatedTotalCost) : (r.totalCost ? fmtDollarsLocal(r.totalCost) : "-") },
       );
     }
   } else if (type === "surrogate") {
@@ -367,8 +376,8 @@ export function getProfileDetails(d: any, type: ProfileType): { label: string; v
       { label: "Selective Reduction", value: B(r.agreesToSelectiveReduction) },
       { label: "Same Sex Couple", value: B(r.openToSameSexCouple) },
       { label: "International Parents", value: B(r.agreesToInternationalParents) },
-      { label: "Base Compensation", value: (r.resolvedCompensation ?? r.baseCompensation) ? `$${(r.resolvedCompensation ?? r.baseCompensation)!.toLocaleString()}` : "-" },
-      { label: "Total Cost", value: r.calculatedTotalCost ? fmtTotalCostRange(r.calculatedTotalCost) : (r.totalCostMin ? `$${r.totalCostMin.toLocaleString()}${r.totalCostMax && r.totalCostMax !== r.totalCostMin ? ` – $${r.totalCostMax.toLocaleString()}` : ""}` : "-") },
+      { label: "Base Compensation", value: (r.resolvedCompensation ?? r.baseCompensation) ? fmtDollarsLocal((r.resolvedCompensation ?? r.baseCompensation)!) : "-" },
+      { label: "Total Cost", value: r.calculatedTotalCost ? fmtTotalCostRange(r.calculatedTotalCost) : (r.totalCostMin ? `${fmtDollarsLocal(r.totalCostMin)}${r.totalCostMax && r.totalCostMax !== r.totalCostMin ? ` – ${fmtDollarsLocal(r.totalCostMax)}` : ""}` : "-") },
     );
   } else {
     const r = resolveSpermDonorFields(d);
@@ -389,10 +398,10 @@ export function getProfileDetails(d: any, type: ProfileType): { label: string; v
     // Per-vial costs from cost sheet matching; fall back to totalCost if not available
     if (r.vialCosts.length > 0) {
       for (const vc of r.vialCosts) {
-        result.push({ label: vc.label, value: `$${vc.cost.toLocaleString()}` });
+        result.push({ label: vc.label, value: fmtDollarsLocal(vc.cost) });
       }
     } else if (r.totalCost) {
-      result.push({ label: "Vial Cost", value: `$${r.totalCost.toLocaleString()}` });
+      result.push({ label: "Vial Cost", value: fmtDollarsLocal(r.totalCost) });
     }
   }
 

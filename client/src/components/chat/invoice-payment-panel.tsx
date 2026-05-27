@@ -24,6 +24,7 @@ import type { Stripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { Loader2, X, CheckCircle2, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { formatMoneyCents as formatCents } from "@/lib/format-money";
 
 interface InvoicePaymentPanelProps {
   paymentToken: string;
@@ -63,10 +64,6 @@ const LINE_TYPE_LABELS: Record<string, string> = {
 };
 function lineLabel(t: string): string {
   return LINE_TYPE_LABELS[(t || "").toUpperCase()] || t || "Service";
-}
-
-function formatCents(cents: number, currency = "USD"): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
 }
 
 export function InvoicePaymentPanel({ paymentToken, brandColor, onClose, onSuccess }: InvoicePaymentPanelProps) {

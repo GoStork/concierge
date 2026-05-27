@@ -20,6 +20,7 @@ import { Loader2, Save, DollarSign, Percent } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatMoneyCents } from "@/lib/format-money";
 
 export const LINE_SERVICE_TYPES = ["SURROGACY", "EGG_DONATION", "SPERM_DONATION", "IVF_CLINIC", "OTHER"] as const;
 export type LineServiceType = typeof LINE_SERVICE_TYPES[number];
@@ -43,9 +44,7 @@ export interface ReferralFeeConfigPayload {
   isActive: boolean;
 }
 
-function formatCents(cents: number, currency = "USD"): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
-}
+const formatCents = formatMoneyCents;
 
 interface ReferralFeeConfigSectionProps {
   providerId: string;
@@ -155,13 +154,6 @@ export function ReferralFeeConfigSection({
 
   return (
     <section className="space-y-4">
-      <div>
-        <h3 className="font-semibold">Referral Fee Configuration - {LINE_SERVICE_LABELS[serviceType]}</h3>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          How GoStork's referral fee is calculated for the {LINE_SERVICE_LABELS[serviceType].toLowerCase()} service.
-        </p>
-      </div>
-
       {/* Fee type radio */}
       <div className="space-y-2">
         <Label>

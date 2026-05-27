@@ -12,10 +12,7 @@ import { useState } from "react";
 import { Shield, ExternalLink, ChevronDown, ChevronUp, Loader2, AlertCircle, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
-
-function formatCents(cents: number, currency = "USD"): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
-}
+import { formatMoneyCents as formatCents } from "@/lib/format-money";
 
 const TABS = [
   { key: "all",     label: "All Invoices"    },

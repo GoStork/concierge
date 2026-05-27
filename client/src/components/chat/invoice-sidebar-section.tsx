@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DollarSign, Loader2, Send, ChevronDown, ChevronUp, AlertCircle, X, Plus, Trash2 } from "lucide-react";
+import { formatMoneyCents as formatCents } from "@/lib/format-money";
 
 /**
  * Render an error string with the literal "Billing tab" replaced by a Link
@@ -117,10 +118,6 @@ interface ProviderQuoteRow {
   totalCostCents: number;
   supersededAt: string | null;
   createdAt: string;
-}
-
-function formatCents(cents: number, currency = "USD"): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
 }
 
 export function InvoiceSidebarSection({

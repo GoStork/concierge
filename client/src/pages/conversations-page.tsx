@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { formatMoneyCents } from "@/lib/format-money";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -523,7 +524,7 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
     const providerName: string = data.providerName || "Your provider";
     const notes: string | null = data.notes || null;
     const sentAt: string | null = data.sentAt || null;
-    const totalFormatted = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(totalCents / 100);
+    const totalFormatted = formatMoneyCents(totalCents);
     return (
       <div className="mt-1" data-testid="cost-sheet-card">
         <div

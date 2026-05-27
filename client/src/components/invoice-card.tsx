@@ -9,10 +9,7 @@ import { ExternalLink, Shield, Clock, CheckCircle2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { InvoiceStatusBadge } from "./invoice-status-badge";
-
-function formatCents(cents: number, currency = "USD"): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
-}
+import { formatMoneyCents as formatCents } from "@/lib/format-money";
 
 function CountdownTimer({ dueAt }: { dueAt: string }) {
   const [remaining, setRemaining] = useState("");

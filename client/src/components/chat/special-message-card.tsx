@@ -1,4 +1,5 @@
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { formatMoneyCents } from "@/lib/format-money";
 import { CheckCircle2, FileText, Download, Video, CalendarDays, ExternalLink, UserCheck, Receipt, Paperclip } from "lucide-react";
 import type { SessionMessage } from "./chat-types";
 
@@ -164,7 +165,7 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
     const providerName: string = data.providerName || "Your provider";
     const notes: string | null = data.notes || null;
     const sentAt: string | null = data.sentAt || null;
-    const totalFormatted = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(totalCents / 100);
+    const totalFormatted = formatMoneyCents(totalCents);
     // Route through our authenticated download endpoint which mints a fresh
     // signed URL each click. The raw GCS URL returned by uploadBufferPublic
     // 403s when the bucket has uniform bucket-level access enabled.

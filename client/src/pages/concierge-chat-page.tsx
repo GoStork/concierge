@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { deriveChatPalette } from "@/lib/chat-palette";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { formatMoneyCents } from "@/lib/format-money";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -2240,7 +2241,7 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
     const providerName: string = data.providerName || "Your provider";
     const notes: string | null = data.notes || null;
     const sentAt: string | null = data.sentAt || null;
-    const totalFormatted = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(totalCents / 100);
+    const totalFormatted = formatMoneyCents(totalCents);
     // Route through our authenticated download endpoint which mints a fresh
     // signed URL each click. The raw GCS URL returned by uploadBufferPublic
     // 403s when the bucket has uniform bucket-level access enabled.

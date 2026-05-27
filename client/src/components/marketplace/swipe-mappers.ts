@@ -6,6 +6,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { getPhotoSrc, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields } from "@/lib/profile-utils";
 import { parseHeightToInches, resolveEthnicityTerms } from "@/lib/marketplace-filters";
+import { formatMoneyDollars } from "@/lib/format-money";
 
 export type LayoutType = "matched_bubbles" | "icon_list" | "standard_bubbles";
 
@@ -305,7 +306,7 @@ function V(val: any): string | null {
 
 function formatCurrency(val: number | null): string | null {
   if (val == null) return null;
-  return `$${Number(val).toLocaleString()}`;
+  return formatMoneyDollars(Number(val));
 }
 
 function boolLabel(val: boolean | null | undefined): string {
@@ -375,7 +376,7 @@ export function getMatchedPreferences(profile: SwipeDeckProfile, prefs: UserPref
     baseCompensation: profile.baseCompensation ?? 0,
   };
 
-  const fmtCurrency = (v: number) => `$${Number(v).toLocaleString()}`;
+  const fmtCurrency = (v: number) => formatMoneyDollars(Number(v));
 
   const displayMap: Record<string, (val: any) => string> = {
     age: (v) => `Age ${v}`,
@@ -624,7 +625,7 @@ function boolStr(v: boolean | null | undefined): string {
 
 function fmtCurrency(v: number | null | undefined): string {
   if (v == null) return "-";
-  return `$${Number(v).toLocaleString()}`;
+  return formatMoneyDollars(Number(v));
 }
 
 function isNonEmptyStr(v: string | null | undefined): v is string {

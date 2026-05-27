@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { typeToUrlSlug, deriveTypeFromPath, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields, getPhotoSrc } from "@/lib/profile-utils";
+import { formatMoneyDollars } from "@/lib/format-money";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { hasProviderRole, hasAnyRole, GOSTORK_ROLES } from "@shared/roles";
@@ -320,7 +321,7 @@ function getMandatoryFields(donor: any, type: string): { label: string; value: s
   const V = (val: any) => (val != null && val !== "") ? String(val) : "-";
   const profileData = donor.profileData || {};
 
-  const fmtUSD = (val: number | null | undefined) => val != null ? `$${Number(val).toLocaleString()}` : "-";
+  const fmtUSD = (val: number | null | undefined) => val != null ? formatMoneyDollars(Number(val)) : "-";
   const fmtTotalCost = (tc: { min: number; max: number } | null | undefined) => {
     if (!tc) return "-";
     if (tc.min === tc.max || tc.max === 0) return fmtUSD(tc.min);
@@ -571,19 +572,19 @@ export default function DonorProfilePage() {
     // Show all matching vial cost programs from the cost sheet
     const vialCosts: { label: string; cost: number }[] = Array.isArray(donor.vialCosts) ? donor.vialCosts : [];
     if (vialCosts.length > 0) {
-      vialCosts.forEach(vc => headerMeta.push(`${vc.label}: $${Number(vc.cost).toLocaleString()}`));
+      vialCosts.forEach(vc => headerMeta.push(`${vc.label}: ${formatMoneyDollars(Number(vc.cost))}`));
     } else if (donor.totalCost) {
-      headerMeta.push(`Vial Cost: $${Number(donor.totalCost).toLocaleString()}`);
+      headerMeta.push(`Vial Cost: ${formatMoneyDollars(Number(donor.totalCost))}`);
     }
   } else if (donor.calculatedTotalCost) {
     const tc = donor.calculatedTotalCost;
     if (tc.min === tc.max || tc.max === 0) {
-      headerMeta.push(`Total Cost: $${Number(tc.min).toLocaleString()}`);
+      headerMeta.push(`Total Cost: ${formatMoneyDollars(Number(tc.min))}`);
     } else {
-      headerMeta.push(`Total Cost: $${Number(tc.min).toLocaleString()} – $${Number(tc.max).toLocaleString()}`);
+      headerMeta.push(`Total Cost: ${formatMoneyDollars(Number(tc.min))} – ${formatMoneyDollars(Number(tc.max))}`);
     }
   } else if (donor.totalCost) {
-    headerMeta.push(`Total Cost: $${Number(donor.totalCost).toLocaleString()}`);
+    headerMeta.push(`Total Cost: ${formatMoneyDollars(Number(donor.totalCost))}`);
   }
   if (donor.donationTypes) headerMeta.push(`Types of Donation: ${donor.donationTypes}`);
 

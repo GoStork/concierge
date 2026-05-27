@@ -23,6 +23,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatMoneyCents } from "@/lib/format-money";
 import { InvoiceStatusBadge } from "./invoice-status-badge";
 import { W9TemplateConfig } from "./w9-template-config";
 import {
@@ -52,9 +53,7 @@ interface FeeConfigsResponse {
   };
 }
 
-function formatCents(cents: number, currency = "USD"): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
-}
+const formatCents = formatMoneyCents;
 
 interface ProviderBillingTabProps {
   providerId: string;
@@ -231,6 +230,9 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
     <div className="space-y-8">
       {/* Service tabs */}
       <section className="space-y-4">
+        {/* Top-level heading - always shown, no service suffix */}
+        <h3 className="font-semibold">Referral Fee Configuration</h3>
+
         {enabledServices.length === 0 ? (
           <div className="rounded-lg border p-6 bg-secondary/40">
             <p className="text-sm font-medium">No services enabled yet</p>
@@ -276,6 +278,13 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
                 </button>
               )}
             </div>
+
+            {/* Active-tab description - sits between pills and form body */}
+            <p className="text-sm text-muted-foreground">
+              {activeTab === "COMBINED"
+                ? "What the parent's multi-line invoice will look like across every configured service. Type a sample Total Quoted Cost per service to see the breakdown."
+                : `How GoStork's referral fee is calculated for the ${LINE_SERVICE_LABELS[activeTab as LineServiceType].toLowerCase()} service.`}
+            </p>
 
             {/* Active tab body */}
             {activeTab === "COMBINED" ? (
@@ -614,14 +623,6 @@ function CombinedPreview({ services, configByService }: CombinedPreviewProps) {
 
   return (
     <section className="space-y-4">
-      <div>
-        <h3 className="font-semibold">Combined Invoice Preview</h3>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          What the parent's multi-line invoice will look like across every configured service.
-          Type a sample Total Quoted Cost per service to see the breakdown.
-        </p>
-      </div>
-
       {missingConfigs.length > 0 && (
         <div className="rounded-lg border p-3 bg-accent/20 text-sm">
           <p className="font-medium">Missing configuration</p>

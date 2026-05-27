@@ -14,6 +14,7 @@ import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { Loader2, AlertCircle, CheckCircle2, Shield, Clock, Landmark, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { formatMoneyCents as formatCents } from "@/lib/format-money";
 
 interface InvoiceLineItem {
   id?: string;
@@ -70,10 +71,6 @@ const LINE_TYPE_LABELS: Record<string, string> = {
 };
 function lineLabel(serviceType: string): string {
   return LINE_TYPE_LABELS[(serviceType || "").toUpperCase()] || serviceType || "Service";
-}
-
-function formatCents(cents: number, currency = "USD"): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
 }
 
 function CountdownTimer({ dueAt }: { dueAt: string }) {

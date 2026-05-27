@@ -2,6 +2,7 @@ import { Injectable, Inject, Logger, NotFoundException, BadRequestException } fr
 import { NotificationService } from "../notifications/notification.service";
 import { prisma as prismaClient } from "../../../db";
 import { generateReceiptPdf } from "./receipt-pdf";
+import { formatMoneyCents } from "../../lib/format-money";
 import {
   getCardDetailsForPaymentIntent,
   getOrCreateStripeCustomer,
@@ -19,9 +20,7 @@ function getBaseUrl(): string {
   return "https://app.gostork.com";
 }
 
-function formatCents(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
-}
+const formatCents = (cents: number) => formatMoneyCents(cents);
 
 // Maps provider type names to human-readable service types
 function resolveServiceType(providerTypeName: string | undefined): string {
@@ -988,7 +987,7 @@ export class BillingService {
    * roll back the PAID state. Called from every success path
    * (Stripe webhook + admin manual override).
    */
-  private async emitPaymentReceipt(invoiceId: string) {
+  async emitPaymentReceipt(invoiceId: string) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
       include: {
@@ -1005,20 +1004,23 @@ export class BillingService {
       amountFormatted: formatCents(li.amountCents, invoice.currency || "USD"),
     }));
 
-    // Look up the agency's billing-recipient emails. Falls back to all
-    // provider users associated with the providerId so the agency reliably
-    // receives the receipt even if no dedicated billing contact is set.
+    // Send the receipt to every provider user with an email. There's no
+    // `billingRecipient` flag in the schema yet - when that ships we can
+    // narrow this to designated billing contacts; for now de-duped emails
+    // across the whole provider team is the right behavior. NOTE: the old
+    // code selected `billingRecipient`, which silently threw at runtime
+    // (column doesn't exist) and caused this entire receipt emission to
+    // fail - hence the symptom of admin getting the payment-received email
+    // but parent + provider getting nothing.
     let providerEmails: string[] = [];
     if (invoice.providerId) {
       const members = await this.prisma.user.findMany({
         where: { providerId: invoice.providerId, email: { not: null } },
-        select: { email: true, billingRecipient: true },
+        select: { email: true },
       });
-      const billingRecipients = members
-        .filter((m: any) => m.billingRecipient === true && m.email)
-        .map((m: any) => m.email as string);
-      const fallback = members.filter((m: any) => m.email).map((m: any) => m.email as string);
-      providerEmails = Array.from(new Set(billingRecipients.length > 0 ? billingRecipients : fallback));
+      providerEmails = Array.from(
+        new Set(members.map((m: any) => m.email as string).filter(Boolean)),
+      );
     }
 
     // Card brand + last4 for the receipt.

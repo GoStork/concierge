@@ -18,6 +18,7 @@
  */
 
 import PDFDocument from "pdfkit";
+import { formatMoneyCents } from "../../lib/format-money";
 
 export interface ReceiptInvoice {
   id: string;
@@ -83,10 +84,7 @@ function lineLabel(li: { serviceType: string; serviceTypeLabel?: string }): stri
   return LINE_TYPE_LABELS[(li.serviceType || "").toUpperCase()] || li.serviceType || "Service";
 }
 
-function formatMoney(cents: number, currency = "USD"): string {
-  const n = (cents || 0) / 100;
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(n);
-}
+const formatMoney = formatMoneyCents;
 
 function formatDate(d: Date): string {
   return d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });

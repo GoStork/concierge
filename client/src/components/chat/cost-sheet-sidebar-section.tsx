@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Receipt, Loader2, Paperclip, Send, ChevronDown, ChevronUp, X } from "lucide-react";
+import { formatMoneyCents as formatCents } from "@/lib/format-money";
 
 interface CostSheetSidebarSectionProps {
   sessionId: string | null;
@@ -41,10 +42,6 @@ interface ProviderQuoteRow {
   source: string;
   supersededAt: string | null;
   createdAt: string;
-}
-
-function formatCents(cents: number, currency = "USD"): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
 }
 
 export function CostSheetSidebarSection({
