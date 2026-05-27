@@ -703,8 +703,9 @@ export class VideoController {
       (req as any).rawBody ??
       (typeof req.body === "string" ? req.body : JSON.stringify(req.body));
     const signature = req.headers["x-webhook-signature"] as string | undefined;
+    const timestamp = req.headers["x-webhook-timestamp"] as string | undefined;
 
-    if (!this.videoService.verifyWebhookSignature(rawBody, signature)) {
+    if (!this.videoService.verifyWebhookSignature(rawBody, signature, timestamp, req.headers)) {
       throw new ForbiddenException("Invalid webhook signature");
     }
 
