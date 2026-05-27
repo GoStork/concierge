@@ -1866,7 +1866,8 @@ const sendMessageMutation = useMutation({
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
     ) : detail ? (
-      <div className="flex flex-col flex-1 min-h-0">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div className="flex flex-col flex-1 min-h-0">
         <div className="flex items-center gap-3 px-4 py-3 border-b bg-background shrink-0">
           <Button
             variant="ghost"
@@ -1985,7 +1986,6 @@ const sendMessageMutation = useMutation({
           testId="provider-header-context-panel"
         />
 
-        <div className="flex flex-1 min-h-0 overflow-hidden">
           <div className="flex-1 flex flex-col min-h-0">
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" data-testid="provider-chat-messages">
               <ChatMessageList
@@ -2084,6 +2084,7 @@ const sendMessageMutation = useMutation({
               </div>
             )}
           </div>
+        </div>{/* end header + messages column */}
 
           {!hasJoined && !isConsultationBooked ? (
             <div className="w-72 border-l overflow-y-auto p-4 bg-muted/30 hidden lg:block" data-testid="provider-sidebar">
@@ -2201,7 +2202,6 @@ const sendMessageMutation = useMutation({
               }
             />
           )}
-        </div>
       </div>
     ) : null;
 

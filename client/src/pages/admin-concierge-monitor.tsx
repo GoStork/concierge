@@ -526,7 +526,8 @@ export default function AdminConciergeMonitor() {
   // Only render the full chat once BOTH session detail and bookings are ready.
   // This prevents the booking card from popping in after messages are already shown.
   const detailContent = (detail && !sessionBookingsQuery.isLoading) ? (
-    <div className="flex flex-col h-full" data-testid="concierge-monitor-detail">
+    <div className="flex h-full overflow-hidden" data-testid="concierge-monitor-detail">
+      <div className="flex flex-col flex-1 min-h-0">
       {/* Chat header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b bg-background shrink-0">
         <Button
@@ -683,7 +684,6 @@ export default function AdminConciergeMonitor() {
         testId="admin-header-context-panel"
       />
 
-      <div className="flex flex-1 min-h-0 overflow-hidden">
         <div className="flex-1 flex flex-col min-h-0">
           {/* Message list - reuses shared component */}
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" data-testid="admin-chat-messages">
@@ -782,6 +782,7 @@ export default function AdminConciergeMonitor() {
             testIdPrefix="expert"
           />
         </div>
+      </div>{/* end header + messages column */}
 
         {/* Profile sidebar - reuses shared component */}
         {(() => {
@@ -893,7 +894,6 @@ export default function AdminConciergeMonitor() {
             />
           );
         })()}
-      </div>
     </div>
   ) : selectedSessionId ? (
     <div className="flex-1 flex items-center justify-center">
