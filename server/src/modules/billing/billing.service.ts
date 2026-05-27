@@ -1014,8 +1014,11 @@ export class BillingService {
     // but parent + provider getting nothing.
     let providerEmails: string[] = [];
     if (invoice.providerId) {
+      // User.email is `String @unique` (not nullable), so no filter needed -
+      // every provider user has an email. Filter at the JS layer just in case
+      // the DB ever ends up with a blank string.
       const members = await this.prisma.user.findMany({
-        where: { providerId: invoice.providerId, NOT: { email: null } },
+        where: { providerId: invoice.providerId },
         select: { email: true },
       });
       providerEmails = Array.from(

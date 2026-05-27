@@ -162,16 +162,39 @@ export function generateReceiptPdf(args: {
         }
       }
 
+      // Agency name must fit on ONE line - if it wraps, the second line
+      // collides with the "Issued via GoStork" subtitle below. Shrink the
+      // font size until it fits, then fall back to truncation with ellipsis
+      // for truly absurd names.
+      const agencyMaxWidth = contentWidth - (textStartX - contentLeft) - 200;
+      const agencyMaxFontSize = 20;
+      const agencyMinFontSize = 12;
+      let agencyFontSize = agencyMaxFontSize;
+      doc.font("Helvetica-Bold");
+      while (
+        agencyFontSize > agencyMinFontSize &&
+        doc.fontSize(agencyFontSize).widthOfString(agencyDisplayName) > agencyMaxWidth
+      ) {
+        agencyFontSize -= 1;
+      }
       doc
         .fillColor("#ffffff")
         .font("Helvetica-Bold")
-        .fontSize(20)
-        .text(agencyDisplayName, textStartX, 30, { width: contentWidth - (textStartX - contentLeft) - 200 });
+        .fontSize(agencyFontSize)
+        .text(agencyDisplayName, textStartX, 30, {
+          width: agencyMaxWidth,
+          lineBreak: false,
+          ellipsis: true,
+        });
       doc
         .fontSize(9)
         .font("Helvetica")
         .fillColor("#ffffffcc")
-        .text("Issued via GoStork", textStartX, 58, { width: contentWidth - (textStartX - contentLeft) - 200 });
+        .text("Issued via GoStork", textStartX, 58, {
+          width: agencyMaxWidth,
+          lineBreak: false,
+          ellipsis: true,
+        });
 
       doc
         .fontSize(18)
