@@ -94,12 +94,23 @@ export async function createPaymentLink(params: {
  * Edit this constant (not the call site) when you want to change the
  * order or add/remove methods. The order in the array IS the tile order.
  */
+// Just Card and US bank account. Two reasons we don't include BNPL
+// (Klarna / Affirm / Cash App Pay) here:
+//   1. Stripe Payment Element reorders payment_method_types based on its
+//      own conversion-optimization heuristics regardless of the order we
+//      pass. With BNPL in the list, it would slot Affirm between Card
+//      and US bank account, which doesn't match the spec ("card then
+//      bank for USA"). Removing them removes anything that could sneak
+//      in between.
+//   2. GoStork invoices are typically $5k-$20k for fertility services.
+//      BNPL is designed for sub-$1000 retail and the providers don't
+//      generally accept it for these amounts anyway.
+// Apple Pay / Google Pay / Link still surface automatically as wallet
+// buttons inside the Card tile on supported devices - no separate
+// entries needed.
 const US_PAYMENT_METHOD_ORDER = [
   "card",            // includes Apple Pay + Google Pay + Link wallets
   "us_bank_account", // ACH
-  "cashapp",
-  "affirm",
-  "klarna",
 ] as const;
 
 export async function createPaymentIntent(params: {
