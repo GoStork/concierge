@@ -9,6 +9,8 @@ import {
   getOrCreateStripeCustomer,
   createBankTransferPaymentIntent,
   retrieveBankTransferInstructions,
+  createRefund,
+  createTransferReversal,
   type WireInstructions,
 } from "../../../stripe-service";
 
@@ -1014,6 +1016,218 @@ export class BillingService {
       this.logger.warn(`Auto-transfer raised unexpectedly for ${invoice.id}: ${e?.message}`);
     }
     this.logger.log(`Invoice ${invoice.id} marked PAID via Stripe`);
+  }
+
+  // ─── Refunds (admin-issued) ─────────────────────────────────────────────────
+
+  /**
+   * Admin path: initiate a refund via Stripe. Called from the admin
+   * endpoint after permission checks. We do NOT do the DB writes here -
+   * Stripe fires charge.refunded asynchronously and our webhook handler
+   * does the stamping + clawback. That keeps the system consistent even
+   * if a refund originates outside our UI (e.g. an admin clicks "Refund"
+   * in the Stripe Dashboard directly).
+   */
+  async adminCreateRefund(params: {
+    invoiceId: string;
+    amountCents?: number;
+    reason?: "duplicate" | "fraudulent" | "requested_by_customer" | "other";
+    notes?: string;
+    actorUserId: string;
+  }) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: params.invoiceId },
+      select: {
+        id: true,
+        status: true,
+        serviceAmount: true,
+        refundedAmount: true,
+        stripeTransactionId: true,
+      },
+    });
+    if (!invoice) throw new NotFoundException("Invoice not found");
+    if (!["PAID", "PARTIALLY_REFUNDED"].includes(invoice.status)) {
+      throw new BadRequestException(`Cannot refund invoice in status ${invoice.status}`);
+    }
+    if (!invoice.stripeTransactionId || invoice.stripeTransactionId.startsWith("mock_")) {
+      throw new BadRequestException("Invoice has no Stripe PaymentIntent on file - refund must be handled manually");
+    }
+    const alreadyRefunded = invoice.refundedAmount || 0;
+    const remaining = invoice.serviceAmount - alreadyRefunded;
+    if (remaining <= 0) {
+      throw new BadRequestException("Invoice is already fully refunded");
+    }
+    const refundAmount = params.amountCents ?? remaining;
+    if (refundAmount > remaining) {
+      throw new BadRequestException(
+        `Refund amount (${refundAmount}) exceeds remaining refundable balance (${remaining})`,
+      );
+    }
+
+    // Stash the admin's free-text notes on the invoice now (the webhook
+    // doesn't carry it) so the audit trail captures who initiated and why.
+    // refundedAmount itself is set by the webhook to stay consistent with
+    // Stripe's charge.amount_refunded, the canonical source.
+    if (params.notes || params.reason) {
+      await this.prisma.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          ...(params.notes ? { refundNotes: params.notes.slice(0, 1000) } : {}),
+          ...(params.reason ? { refundReason: params.reason } : {}),
+        },
+      });
+    }
+
+    const refund = await createRefund({
+      paymentIntentId: invoice.stripeTransactionId,
+      amountCents: refundAmount,
+      reason: params.reason,
+      metadata: {
+        invoiceId: invoice.id,
+        actorUserId: params.actorUserId,
+      },
+    });
+    this.logger.log(
+      `Admin ${params.actorUserId} refunded ${refundAmount} cents on invoice ${invoice.id} (refund=${refund.id})`,
+    );
+    return { refundId: refund.id, amountCents: refundAmount, status: refund.status };
+  }
+
+  /**
+   * Webhook path: charge.refunded fired. Stripe accumulates
+   * charge.amount_refunded as multiple refunds stack up, so we diff against
+   * what we have stored and (a) stamp the new total + latest refund id, (b)
+   * proportionally reverse the provider's transfer for the DELTA only.
+   *
+   * Idempotent: re-deliveries with the same amount_refunded value are
+   * detected and skipped (no double-reversal).
+   *
+   * Provider clawback math: the original parent payment was split between
+   * platform fee + provider payout. A refund should be split the same way,
+   * so the provider returns their share proportional to the refunded amount.
+   *
+   *   reversalDelta = providerPayoutAmount * (deltaRefunded / serviceAmount)
+   *
+   * The reversal goes against the original Transfer. Stripe handles whether
+   * the connected account still has the funds (debit Connect balance) or
+   * already swept them to bank (debit next incoming balance).
+   */
+  async handleChargeRefunded(params: {
+    paymentIntentId: string;
+    amountRefundedCents: number;
+    fullyRefunded: boolean;
+    latestRefundId: string | null;
+    latestRefundReason: string | null;
+  }): Promise<{ matched: boolean; reversalCents?: number; reversalId?: string }> {
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { stripeTransactionId: params.paymentIntentId },
+      select: {
+        id: true,
+        status: true,
+        serviceAmount: true,
+        providerPayoutAmount: true,
+        refundedAmount: true,
+        stripeTransferId: true,
+        payoutReversedAmount: true,
+        sessionId: true,
+        providerId: true,
+        parentUserId: true,
+      },
+    });
+    if (!invoice) {
+      this.logger.warn(`charge.refunded for unknown PaymentIntent ${params.paymentIntentId}`);
+      return { matched: false };
+    }
+
+    const previouslyRefunded = invoice.refundedAmount || 0;
+    if (params.amountRefundedCents <= previouslyRefunded) {
+      this.logger.log(
+        `charge.refunded for invoice ${invoice.id}: no new refund (already=${previouslyRefunded}, event=${params.amountRefundedCents}) - idempotent skip`,
+      );
+      return { matched: true };
+    }
+    const deltaRefunded = params.amountRefundedCents - previouslyRefunded;
+
+    // Reverse the provider's share proportionally for the DELTA only.
+    let reversalId: string | undefined;
+    let reversalDelta: number | undefined;
+    if (invoice.stripeTransferId && (invoice.providerPayoutAmount || 0) > 0 && invoice.serviceAmount > 0) {
+      const previouslyReversed = invoice.payoutReversedAmount || 0;
+      // round() so the proportional split lands on the nearest cent rather
+      // than truncating in the platform's favor.
+      const targetReversal = Math.round(
+        invoice.providerPayoutAmount * (params.amountRefundedCents / invoice.serviceAmount),
+      );
+      reversalDelta = Math.max(0, Math.min(invoice.providerPayoutAmount - previouslyReversed, targetReversal - previouslyReversed));
+      if (reversalDelta > 0) {
+        try {
+          const reversal = await createTransferReversal({
+            transferId: invoice.stripeTransferId,
+            amountCents: reversalDelta,
+            metadata: { invoiceId: invoice.id, refundId: params.latestRefundId || "" },
+          });
+          reversalId = reversal.id;
+          this.logger.log(
+            `Reversed ${reversalDelta} cents of transfer ${invoice.stripeTransferId} for invoice ${invoice.id} (refund delta=${deltaRefunded})`,
+          );
+        } catch (e: any) {
+          // Don't block the refund DB update on reversal failure - admin will
+          // see it in the notification bell and can claw back manually.
+          this.logger.error(
+            `Transfer reversal failed for invoice ${invoice.id}: ${e?.message}. Admin will need to claw back manually.`,
+          );
+        }
+      }
+    }
+
+    const newStatus = params.fullyRefunded
+      ? "REFUNDED"
+      : params.amountRefundedCents >= invoice.serviceAmount
+        ? "REFUNDED"
+        : "PARTIALLY_REFUNDED";
+
+    await this.prisma.invoice.update({
+      where: { id: invoice.id },
+      data: {
+        status: newStatus,
+        refundedAt: new Date(),
+        refundedAmount: params.amountRefundedCents,
+        ...(params.latestRefundId ? { stripeRefundId: params.latestRefundId } : {}),
+        ...(params.latestRefundReason ? { refundReason: params.latestRefundReason } : {}),
+        ...(reversalId
+          ? {
+              payoutReversalId: reversalId,
+              payoutReversedAt: new Date(),
+              payoutReversedAmount: (invoice.payoutReversedAmount || 0) + (reversalDelta || 0),
+            }
+          : {}),
+      },
+    });
+
+    // In-chat system message so the parent sees the refund (and provider via
+    // the shared session). Best-effort - don't block on it.
+    if (invoice.sessionId) {
+      try {
+        const moneyStr = (params.amountRefundedCents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+        await this.prisma.aiChatMessage.create({
+          data: {
+            sessionId: invoice.sessionId,
+            role: "assistant",
+            content: params.fullyRefunded
+              ? `Your payment has been fully refunded (${moneyStr}). The refund usually appears on your card statement within 5-10 business days.`
+              : `A partial refund of ${moneyStr} has been issued. It usually appears on your card statement within 5-10 business days.`,
+            senderType: "system",
+            senderName: "GoStork",
+            uiCardType: "text",
+            uiCardData: null,
+          },
+        });
+      } catch (e: any) {
+        this.logger.warn(`Failed to post refund chat message for invoice ${invoice.id}: ${e?.message}`);
+      }
+    }
+
+    return { matched: true, reversalCents: reversalDelta, reversalId };
   }
 
   /**

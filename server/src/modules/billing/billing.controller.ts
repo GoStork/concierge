@@ -167,6 +167,36 @@ export class BillingController {
     return { success: true };
   }
 
+  // Admin-only: refund a paid invoice. Full refund if amount omitted, else
+  // partial. Stripe processes the refund async and fires charge.refunded,
+  // which our webhook handler then uses to update DB + reverse provider's
+  // proportional share. So this endpoint just kicks things off.
+  @Post("api/admin/invoices/:id/refund")
+  @UseGuards(SessionOrJwtGuard)
+  async adminRefund(
+    @Req() req: Request,
+    @Param("id") id: string,
+    @Body() body: { amountCents?: number; reason?: "duplicate" | "fraudulent" | "requested_by_customer" | "other"; notes?: string },
+  ) {
+    const user = req.user as any;
+    if (!user?.roles?.includes("GOSTORK_ADMIN")) {
+      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    }
+    try {
+      const result = await this.billingService.adminCreateRefund({
+        invoiceId: id,
+        amountCents: body?.amountCents,
+        reason: body?.reason,
+        notes: body?.notes,
+        actorUserId: user.id,
+      });
+      return result;
+    } catch (e: any) {
+      this.logger.error(`Admin refund failed for invoice ${id}: ${e?.message}`, e?.stack);
+      throw new HttpException(e?.message || "Refund failed", HttpStatus.BAD_REQUEST);
+    }
+  }
+
   // Admin-only: re-emit the parent + provider receipt PDF emails for an
   // already-PAID invoice. Useful when the original emission failed (the
   // common case being the `billingRecipient` bug that silently swallowed
@@ -572,6 +602,28 @@ export class BillingController {
           await this.billingService.handleStripeWebhook(parsed.paymentIntentId, "processing", parsed.invoiceId, parsed.paymentMethod ?? null);
         } else if (parsed.status === "canceled" && parsed.invoiceId) {
           await this.billingService.handleStripeWebhook(parsed.paymentIntentId, "canceled", parsed.invoiceId, parsed.paymentMethod ?? null);
+        }
+      }
+
+      // Refunds: separate parser since refund events have different shape
+      // (no payment_intent metadata; we look up by stripeTransactionId).
+      // Handles refunds initiated through our admin endpoint AND refunds
+      // initiated directly in the Stripe Dashboard, so the DB stays consistent
+      // regardless of which surface the admin used.
+      const refund = stripeService.parseRefundEvent(event);
+      if (refund) {
+        this.logger.log(`Stripe refund webhook: pi=${refund.paymentIntentId} refunded=${refund.amountRefundedCents}/${refund.amountCents} full=${refund.fullyRefunded}`);
+        try {
+          await this.billingService.handleChargeRefunded({
+            paymentIntentId: refund.paymentIntentId,
+            amountRefundedCents: refund.amountRefundedCents,
+            fullyRefunded: refund.fullyRefunded,
+            latestRefundId: refund.latestRefundId,
+            latestRefundReason: refund.latestRefundReason,
+          });
+        } catch (e: any) {
+          this.logger.error(`Refund handler raised for pi=${refund.paymentIntentId}: ${e?.message}`);
+          // Still ack so Stripe doesn't retry forever on a logic bug.
         }
       }
 

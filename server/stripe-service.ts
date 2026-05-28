@@ -624,6 +624,95 @@ export function parseWebhookEvent(event: Stripe.Event): {
   };
 }
 
+// ─── Refunds ─────────────────────────────────────────────────────────────────
+
+/**
+ * Surfaces charge.refunded events. Stripe accumulates amount_refunded on the
+ * Charge as multiple refunds stack up, so the webhook handler only needs to
+ * diff against what we previously stored to learn the delta. The latest
+ * refund object (refunds.data[0] - Stripe lists refunds newest-first) gives
+ * us its id + reason for stamping on the invoice.
+ */
+export function parseRefundEvent(event: Stripe.Event): {
+  chargeId: string;
+  paymentIntentId: string;
+  amountCents: number;          // charge.amount (total original)
+  amountRefundedCents: number;  // charge.amount_refunded (running total)
+  fullyRefunded: boolean;
+  latestRefundId: string | null;
+  latestRefundReason: string | null;
+} | null {
+  if (event.type !== "charge.refunded") return null;
+  const charge = event.data.object as Stripe.Charge;
+  const piRaw: any = (charge as any).payment_intent;
+  const paymentIntentId = typeof piRaw === "string" ? piRaw : (piRaw?.id || "");
+  if (!paymentIntentId) return null;
+
+  // refunds.data is newest-first; the refund that triggered this event is
+  // typically the first entry. If the list isn't expanded, we fall back to
+  // null and let the service look it up.
+  const refunds = (charge as any).refunds?.data as Stripe.Refund[] | undefined;
+  const latest = refunds && refunds.length > 0 ? refunds[0] : null;
+
+  return {
+    chargeId: charge.id,
+    paymentIntentId,
+    amountCents: charge.amount,
+    amountRefundedCents: charge.amount_refunded,
+    fullyRefunded: charge.refunded === true,
+    latestRefundId: latest?.id || null,
+    latestRefundReason: latest?.reason || null,
+  };
+}
+
+/**
+ * Creates a refund on a PaymentIntent. Used by the admin Refund endpoint.
+ * Stripe fires charge.refunded asynchronously after the refund is processed;
+ * our webhook handler does the DB updates + provider clawback then.
+ *
+ * amount is in cents. Omit for a full refund.
+ * reason maps to Stripe's enum (duplicate / fraudulent / requested_by_customer).
+ * "other" is not a valid Stripe enum value - we pass undefined in that case.
+ */
+export async function createRefund(params: {
+  paymentIntentId: string;
+  amountCents?: number;
+  reason?: "duplicate" | "fraudulent" | "requested_by_customer" | "other";
+  metadata?: Record<string, string>;
+}): Promise<Stripe.Refund> {
+  const stripe = getStripe();
+  const reasonForStripe = params.reason === "other" ? undefined : params.reason;
+  return await stripe.refunds.create({
+    payment_intent: params.paymentIntentId,
+    ...(params.amountCents != null ? { amount: params.amountCents } : {}),
+    ...(reasonForStripe ? { reason: reasonForStripe } : {}),
+    ...(params.metadata ? { metadata: params.metadata } : {}),
+  });
+}
+
+/**
+ * Reverses (clawback) a Transfer that was sent to a connected account. Used
+ * after a refund so the provider's payout matches the parent's net payment.
+ *
+ * If the connected account hasn't paid out to bank yet, Stripe debits its
+ * Connect balance. If the funds already swept (Received), Stripe debits the
+ * connected account's next incoming balance (creating a negative balance
+ * that recoups from the next transfer).
+ *
+ * amount: cents to reverse. Omit for the full remaining (unreversed) amount.
+ */
+export async function createTransferReversal(params: {
+  transferId: string;
+  amountCents?: number;
+  metadata?: Record<string, string>;
+}): Promise<Stripe.TransferReversal> {
+  const stripe = getStripe();
+  return await stripe.transfers.createReversal(params.transferId, {
+    ...(params.amountCents != null ? { amount: params.amountCents } : {}),
+    ...(params.metadata ? { metadata: params.metadata } : {}),
+  });
+}
+
 // ─── Publishable key (safe to expose to frontend) ────────────────────────────
 
 export function getPublishableKey(): string {

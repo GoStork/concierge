@@ -16,7 +16,7 @@
  * "-" if the invoice isn't PAID yet (nothing to show).
  */
 
-export type PayoutStatusLabel = "Received" | "Failed at bank" | "Failed" | "Sent" | "Pending" | "-";
+export type PayoutStatusLabel = "Refunded" | "Partially refunded" | "Received" | "Failed at bank" | "Failed" | "Sent" | "Pending" | "-";
 
 export interface PayoutStatus {
   label: PayoutStatusLabel;
@@ -34,9 +34,32 @@ interface PayoutStatusInput {
   payoutFailedAt?: string | Date | null;
   bankPayoutCompletedAt?: string | Date | null;
   bankPayoutFailedAt?: string | Date | null;
+  refundedAt?: string | Date | null;
+  refundedAmount?: number | null;
+  serviceAmount?: number | null;
 }
 
 export function derivePayoutStatus(inv: PayoutStatusInput): PayoutStatus {
+  // Refunds win over everything else - once money goes back to the parent,
+  // that's the user-facing reality regardless of whether the provider's
+  // transfer fired earlier. We surface "Partially refunded" distinctly so
+  // the provider sees they've kept part of the payout.
+  if (inv.status === "REFUNDED" || (inv.refundedAt && inv.refundedAmount && inv.serviceAmount && inv.refundedAmount >= inv.serviceAmount)) {
+    return {
+      label: "Refunded",
+      color: "hsl(var(--muted-foreground))",
+      tooltip: "GoStork fully refunded the parent. Your share of the payout was reversed back to the platform proportionally.",
+      isReceived: false,
+    };
+  }
+  if (inv.status === "PARTIALLY_REFUNDED" || (inv.refundedAt && inv.refundedAmount)) {
+    return {
+      label: "Partially refunded",
+      color: "hsl(var(--muted-foreground))",
+      tooltip: "GoStork issued a partial refund to the parent. A proportional share was reversed from your payout.",
+      isReceived: false,
+    };
+  }
   if (inv.bankPayoutCompletedAt) {
     return {
       label: "Received",

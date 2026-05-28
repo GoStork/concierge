@@ -1437,7 +1437,7 @@ model Invoice {
   description  String?
   dueAt        DateTime? // 24h for surrogacy AT_MATCH, null otherwise
 
-  // Status: AWAITING_PAYMENT | PAYMENT_PROCESSING | AUTHORIZED | PAID | CLEARANCE_FAILED | EXPIRED | CANCELLED | REFUNDED
+  // Status: AWAITING_PAYMENT | PAYMENT_PROCESSING | AUTHORIZED | PAID | CLEARANCE_FAILED | EXPIRED | CANCELLED | PARTIALLY_REFUNDED | REFUNDED
   // PAYMENT_PROCESSING is the in-flight state for delayed-notification methods
   // (ACH Direct Debit). The intent is accepted but funds take 3-5 business days
   // to clear, during which the invoice sits in PAYMENT_PROCESSING. It flips to
@@ -1497,6 +1497,28 @@ model Invoice {
   bankPayoutCompletedAt   DateTime?
   bankPayoutFailedAt      DateTime?
   bankPayoutFailureReason String?
+
+  // Refunds: admin issues refund via /api/admin/invoices/:id/refund -> Stripe
+  // refunds.create -> charge.refunded webhook stamps these fields. Supports
+  // partial refunds via accumulation: refundedAmount is the running total of
+  // all refunds against this invoice's payment (matches Stripe's
+  // charge.amount_refunded), stripeRefundId is the most-recent refund.
+  //
+  // Status transitions: PAID -> PARTIALLY_REFUNDED (refundedAmount < serviceAmount)
+  // -> REFUNDED (refundedAmount === serviceAmount).
+  //
+  // When the provider's transfer already fired, we also create a
+  // proportional Transfer reversal so GoStork doesn't eat the loss. Stripe
+  // reverses from the connected account's balance, or debits it negative if
+  // the funds already swept to bank (Stripe recoups on the next payout).
+  refundedAt              DateTime?
+  refundedAmount          Int?      // cents; matches charge.amount_refunded
+  refundReason            String?   // Stripe enum: duplicate | fraudulent | requested_by_customer | other
+  refundNotes             String?   // free-text from admin, internal-only
+  stripeRefundId          String?   // re_xxx, the most recent refund
+  payoutReversalId        String?   // trr_xxx, the most recent transfer reversal
+  payoutReversedAt        DateTime?
+  payoutReversedAmount    Int?      // cents reversed back to platform; ≤ providerPayoutAmount
 
   // Timestamps
   authorizedAt      DateTime?

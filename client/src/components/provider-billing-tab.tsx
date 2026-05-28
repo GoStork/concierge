@@ -16,10 +16,17 @@
  * invoice history.
  */
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, CheckCircle2 } from "lucide-react";
+import { Loader2, CheckCircle2, Undo2, AlertCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
 import { formatMoneyCents } from "@/lib/format-money";
 import { formatDateTime } from "@/lib/format-date";
 import { derivePayoutStatus } from "@/lib/payout-status";
@@ -245,6 +252,9 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
                     <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">GoStork paid you</th>
                   )}
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Date</th>
+                  {!isProviderMode && (
+                    <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Actions</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -283,6 +293,13 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
                         </td>
                       )}
                       <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{formatDateTime(inv.paidAt || inv.createdAt)}</td>
+                      {!isProviderMode && (
+                        <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                          {(inv.status === "PAID" || inv.status === "PARTIALLY_REFUNDED") && (
+                            <RefundButton invoice={inv} onRefunded={() => queryClient.invalidateQueries({ queryKey: [invoicesUrl] })} />
+                          )}
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -305,6 +322,143 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
         </section>
       )}
     </div>
+  );
+}
+
+// ─── Admin: Refund button + confirmation dialog ────────────────────────────
+//
+// Per-row Refund control shown only in admin view. Full refund by default
+// (matches the existing "remaining refundable" amount); admin can type a
+// smaller number for a partial refund. Reason maps to Stripe's enum so the
+// refund object on Stripe carries it. AlertDialog (the one allowed dialog
+// type per CLAUDE.md, since this is destructive).
+//
+// On confirm:
+//   POST /api/admin/invoices/:id/refund -> Stripe refunds.create -> Stripe
+//   fires charge.refunded async -> our webhook handler updates DB + reverses
+//   provider's proportional share. The mutation invalidates the invoices
+//   query so the row's status badge flips to Refunded / Partially refunded
+//   on the next poll.
+function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () => void }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  // Amount + reason live in the dialog. Defaults derived from invoice when
+  // the dialog opens so the admin sees the maximum refundable amount.
+  const alreadyRefunded = invoice.refundedAmount || 0;
+  const remainingCents = (invoice.serviceAmount || 0) - alreadyRefunded;
+  const [amountDollars, setAmountDollars] = useState((remainingCents / 100).toFixed(2));
+  const [reason, setReason] = useState<"requested_by_customer" | "duplicate" | "fraudulent" | "other">("requested_by_customer");
+  const [notes, setNotes] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const dollars = parseFloat(amountDollars);
+      if (!isFinite(dollars) || dollars <= 0) throw new Error("Enter a refund amount greater than 0");
+      const amountCents = Math.round(dollars * 100);
+      if (amountCents > remainingCents) throw new Error(`Refund amount exceeds remaining refundable balance (${(remainingCents / 100).toFixed(2)})`);
+      const res = await fetch(`/api/admin/invoices/${invoice.id}/refund`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ amountCents, reason, notes: notes.trim() || undefined }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.message || "Refund failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      setError(null);
+      setOpen(false);
+      toast({
+        title: "Refund initiated",
+        description: "Stripe is processing the refund. The status will update within a few seconds.",
+      });
+      onRefunded();
+    },
+    onError: (e: any) => setError(e?.message || "Refund failed"),
+  });
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={(e) => { e.stopPropagation(); setOpen(true); setError(null); }}
+        style={{ borderColor: "hsl(var(--brand-error) / 0.5)", color: "hsl(var(--brand-error))" }}
+      >
+        <Undo2 className="w-3.5 h-3.5 mr-1.5" />
+        Refund
+      </Button>
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Refund this invoice?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The parent will be refunded via Stripe (5-10 business days back to their card). The provider's
+              share will be reversed proportionally from their payout. This cannot be undone from here -
+              additional refunds against the same invoice are allowed up to the original amount.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Refund amount (USD)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  max={(remainingCents / 100).toFixed(2)}
+                  value={amountDollars}
+                  onChange={e => setAmountDollars(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Max refundable: ${(remainingCents / 100).toFixed(2)}
+                  {alreadyRefunded > 0 && ` (${(alreadyRefunded / 100).toFixed(2)} already refunded)`}
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Reason</Label>
+                <select
+                  value={reason}
+                  onChange={e => setReason(e.target.value as any)}
+                  className="h-10 rounded-md border bg-background px-3 text-sm w-full"
+                >
+                  <option value="requested_by_customer">Requested by customer</option>
+                  <option value="duplicate">Duplicate charge</option>
+                  <option value="fraudulent">Fraudulent</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Internal notes (optional)</Label>
+              <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Why are we issuing this refund?" />
+              <p className="text-xs text-muted-foreground">Stored on the invoice for the audit trail. Not shown to the parent.</p>
+            </div>
+            {error && (
+              <div className="rounded-lg border p-3 flex items-start gap-2" style={{ borderColor: "hsl(var(--brand-error) / 0.4)", background: "hsl(var(--brand-error) / 0.05)" }}>
+                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-error))" }} />
+                <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{error}</p>
+              </div>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={mutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); mutation.mutate(); }}
+              disabled={mutation.isPending}
+              style={{ background: "hsl(var(--brand-error))", color: "white" }}
+            >
+              {mutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              Refund
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
