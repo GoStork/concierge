@@ -153,20 +153,26 @@ async function getOrCreateGoStorkPmc(): Promise<string | null> {
           link: { display_preference: { preference: "on" } },
           apple_pay: { display_preference: { preference: "on" } },
           google_pay: { display_preference: { preference: "on" } },
-          klarna: { display_preference: { preference: "on" } },
-          affirm: { display_preference: { preference: "on" } },
-          cashapp: { display_preference: { preference: "on" } },
+          klarna: { display_preference: { preference: "off" } },
+          affirm: { display_preference: { preference: "off" } },
+          cashapp: { display_preference: { preference: "off" } },
         });
         return existing.id;
       }
 
-      // First boot - create the PMC. All methods get "on" so they're
-      // available in the Element. Stripe's "More" dropdown isn't
-      // separately controllable via PMC - it's just the responsive
-      // collapse Stripe applies when there are too many tiles to fit.
-      // With Card + US bank account + Link + Apple Pay + Google Pay
-      // as the higher-conversion methods, Stripe tends to surface them
-      // as visible tiles and tuck the BNPL trio behind "More".
+      // First boot - create the PMC. Card + US bank account + wallets
+      // get "on". BNPL methods (Klarna, Affirm, Cash App Pay) get "off"
+      // so they're removed from the Element entirely.
+      //
+      // Why no BNPL: Stripe Payment Element uses ML-driven conversion
+      // heuristics to order tiles, and when BNPL is enabled it slots
+      // Affirm above US bank account regardless of payment_method_types
+      // order or PMC settings. We can't override that ordering inside
+      // the embedded Element - the only way to enforce strict order is
+      // Stripe-hosted Checkout (off-site redirect). For GoStork's price
+      // band ($5k-$20k fertility services), BNPL is the wrong product
+      // anyway (designed for sub-$1000 retail), so removing it cleans
+      // up the tile row without losing realistic conversions.
       const created = await stripe.paymentMethodConfigurations.create({
         name: PMC_NAME,
         card: { display_preference: { preference: "on" } },
@@ -174,9 +180,9 @@ async function getOrCreateGoStorkPmc(): Promise<string | null> {
         link: { display_preference: { preference: "on" } },
         apple_pay: { display_preference: { preference: "on" } },
         google_pay: { display_preference: { preference: "on" } },
-        klarna: { display_preference: { preference: "on" } },
-        affirm: { display_preference: { preference: "on" } },
-        cashapp: { display_preference: { preference: "on" } },
+        klarna: { display_preference: { preference: "off" } },
+        affirm: { display_preference: { preference: "off" } },
+        cashapp: { display_preference: { preference: "off" } },
       });
       return created.id;
     } catch (e: any) {
@@ -759,6 +765,42 @@ export async function retrieveConnectAccountBalance(accountId: string): Promise<
 export async function deleteConnectAccount(accountId: string): Promise<void> {
   const stripe = getStripe();
   await stripe.accounts.del(accountId);
+}
+
+/**
+ * Lists the balance transactions a bank-side Payout swept, scoped to the
+ * connected account that received the Payout. Used by the payout.paid /
+ * payout.failed Connect webhook to map back from the Payout to the set of
+ * platform-originated Transfers it bundled.
+ *
+ * Each BT's `source` is the Charge id on the connected account (py_xxx)
+ * created by the original platform->Connect Transfer - that's what we
+ * stamped onto Invoice.stripeConnectPaymentId at transfer time, so the
+ * match is direct.
+ *
+ * Stripe paginates at 100; we follow `has_more` so a single huge payout
+ * (many invoices in one sweep) still returns everything.
+ */
+export async function listConnectedPayoutBalanceTransactions(params: {
+  accountId: string;
+  payoutId: string;
+}): Promise<Array<{ id: string; source: string | null; type: string; amount: number; currency: string }>> {
+  const stripe = getStripe();
+  const out: Array<{ id: string; source: string | null; type: string; amount: number; currency: string }> = [];
+  let startingAfter: string | undefined = undefined;
+  for (;;) {
+    const page: any = await stripe.balanceTransactions.list(
+      { payout: params.payoutId, limit: 100, ...(startingAfter ? { starting_after: startingAfter } : {}) },
+      { stripeAccount: params.accountId },
+    );
+    for (const bt of page.data) {
+      const src = typeof bt.source === "string" ? bt.source : (bt.source as any)?.id || null;
+      out.push({ id: bt.id, source: src, type: bt.type, amount: bt.amount, currency: bt.currency });
+    }
+    if (!page.has_more || page.data.length === 0) break;
+    startingAfter = page.data[page.data.length - 1].id;
+  }
+  return out;
 }
 
 /** Pulls the latest snapshot from Stripe so we can mirror state into ProviderBankAccount. */
