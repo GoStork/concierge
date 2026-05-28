@@ -4673,7 +4673,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             />
           </div>
         )}
-        <div className="border-t px-3 py-2 relative" data-testid="concierge-input-area">
+        {/* Hide the composer while the payment panel is open. The panel
+            already has an X to close itself, and hiding the composer
+            frees ~60px of vertical space - critical for fitting the
+            expanded Link "Save my info" form on smaller screens
+            without forcing internal scroll. */}
+        <div className={`border-t px-3 py-2 relative ${inlinePaymentToken ? "hidden" : ""}`} data-testid="concierge-input-area">
           {(() => {
             const closeAfter = (fn: () => void) => () => {
               setParentPlusOpen(false);

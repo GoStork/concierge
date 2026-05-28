@@ -184,35 +184,18 @@ export function InvoicePaymentPanel({ paymentToken, brandColor, onClose, onSucce
           </div>
         )}
 
-        {/* Line-items summary so the parent confirms what they're paying for
-            before entering card details. Falls back to a single Service line
-            when no line items are present (legacy invoices). */}
+        {/* Compact single-line total. The full itemized breakdown already
+            appears above the panel in the invoice chat card, so showing
+            the same list inside the payment widget is duplication that
+            costs ~80px of precious vertical space when Stripe Elements
+            expands. One line, big number, brand color - confirms the
+            amount without the bulk. */}
         {invoice && (
-          <div className="mb-3 rounded-md border bg-muted/30 px-3 py-2 text-xs space-y-1">
-            {invoice.lineItems && invoice.lineItems.length > 0 ? (
-              <>
-                {invoice.lineItems.map((li, idx) => (
-                  <div key={li.id ?? idx} className="flex justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-medium truncate">{lineLabel(li.serviceType)}</p>
-                      {li.description && (
-                        <p className="text-[11px] text-muted-foreground truncate">{li.description}</p>
-                      )}
-                    </div>
-                    <span className="font-medium shrink-0">{formatCents(li.amountCents, invoice.currency)}</span>
-                  </div>
-                ))}
-                <div className="flex justify-between font-semibold border-t pt-1.5 mt-1">
-                  <span>Total</span>
-                  <span style={{ color: brandColor }}>{formatCents(invoice.serviceAmount, invoice.currency)}</span>
-                </div>
-              </>
-            ) : (
-              <div className="flex justify-between font-semibold">
-                <span>{invoice.serviceType}</span>
-                <span style={{ color: brandColor }}>{formatCents(invoice.serviceAmount, invoice.currency)}</span>
-              </div>
-            )}
+          <div className="mb-3 flex justify-between items-baseline border-b pb-2">
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">Total due</span>
+            <span className="text-lg font-bold" style={{ color: brandColor }}>
+              {formatCents(invoice.serviceAmount, invoice.currency)}
+            </span>
           </div>
         )}
 
