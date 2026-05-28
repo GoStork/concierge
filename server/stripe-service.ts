@@ -153,26 +153,23 @@ async function getOrCreateGoStorkPmc(): Promise<string | null> {
           link: { display_preference: { preference: "on" } },
           apple_pay: { display_preference: { preference: "on" } },
           google_pay: { display_preference: { preference: "on" } },
-          klarna: { display_preference: { preference: "off" } },
-          affirm: { display_preference: { preference: "off" } },
-          cashapp: { display_preference: { preference: "off" } },
+          klarna: { display_preference: { preference: "on" } },
+          affirm: { display_preference: { preference: "on" } },
+          cashapp: { display_preference: { preference: "on" } },
         });
         return existing.id;
       }
 
-      // First boot - create the PMC. Card + US bank account + wallets
-      // get "on". BNPL methods (Klarna, Affirm, Cash App Pay) get "off"
-      // so they're removed from the Element entirely.
-      //
-      // Why no BNPL: Stripe Payment Element uses ML-driven conversion
-      // heuristics to order tiles, and when BNPL is enabled it slots
-      // Affirm above US bank account regardless of payment_method_types
-      // order or PMC settings. We can't override that ordering inside
-      // the embedded Element - the only way to enforce strict order is
-      // Stripe-hosted Checkout (off-site redirect). For GoStork's price
-      // band ($5k-$20k fertility services), BNPL is the wrong product
-      // anyway (designed for sub-$1000 retail), so removing it cleans
-      // up the tile row without losing realistic conversions.
+      // First boot - create the PMC with every method enabled. Order
+      // of the tiles is then Stripe's choice - the embedded Payment
+      // Element runs its own ML-driven conversion heuristics and we
+      // can't override them (we tried). The trade-off: parents get
+      // every available payment option (BNPL included for the rare
+      // case it makes sense), at the cost of the tile order not being
+      // strictly Card -> Bank.
+      // If we ever need strict ordering, the path is Stripe-hosted
+      // Checkout (off-site redirect) - the embedded Element doesn't
+      // support it.
       const created = await stripe.paymentMethodConfigurations.create({
         name: PMC_NAME,
         card: { display_preference: { preference: "on" } },
