@@ -966,6 +966,11 @@ export async function registerRoutes(
         generatedByUserId: user.id,
         partnerOverride: partnerOverride ?? undefined,
         skipPartner: skipPartner === true,
+        // See chat-router.ts equivalent: captures the origin env so the
+        // PandaDoc fan-out webhook handler can pick the right URL when
+        // notifying the next signer, regardless of which server wins
+        // the race.
+        originAppUrl: getBaseUrl(),
       });
 
       await prisma.aiChatMessage.create({

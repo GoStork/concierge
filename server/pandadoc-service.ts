@@ -125,6 +125,16 @@ interface GenerateAgreementParams {
     email: string;
   };
   skipPartner?: boolean;
+  /**
+   * Base URL of the environment the agency just generated from (e.g.
+   * "https://go-stork.replit.app" or "https://polygynous-vergie-coyly.
+   * ngrok-free.dev"). Stored on the agreement so PandaDoc webhook fan-
+   * out (multiple webhook subscriptions firing on the same recipient_
+   * completed event) doesn't end up emailing the next signer a URL
+   * pointing at the wrong environment. Whichever server wins the
+   * webhook race uses this stored URL.
+   */
+  originAppUrl?: string;
 }
 
 async function waitForDocumentStatus(apiKey: string, documentId: string, targetStatus: string, maxAttempts = 15): Promise<boolean> {
@@ -684,7 +694,7 @@ async function removePlaceholderRecipients(
  * are preserved. Roles are fetched live from the template details API and recipients are
  * assigned accordingly.
  */
-export async function generateAgreementFromTemplate({ providerId, parentUserId, sessionId, generatedByUserId, partnerOverride, skipPartner }: GenerateAgreementParams) {
+export async function generateAgreementFromTemplate({ providerId, parentUserId, sessionId, generatedByUserId, partnerOverride, skipPartner, originAppUrl }: GenerateAgreementParams) {
   const [provider, parentUser, session] = await Promise.all([
     prisma.provider.findUnique({
       where: { id: providerId },
@@ -866,6 +876,7 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
       status: "DRAFT",
       documentType: "Agency Agreement",
       signerStatus: Object.keys(initialSignerStatus2).length > 0 ? initialSignerStatus2 : undefined,
+      originAppUrl: originAppUrl ?? null,
     },
   });
 

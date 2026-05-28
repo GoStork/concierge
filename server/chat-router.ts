@@ -2151,6 +2151,12 @@ chatRouter.post("/api/agreements/generate-from-template", requireAuth, async (re
       generatedByUserId: user.id,
       partnerOverride: partnerOverride ?? undefined,
       skipPartner: skipPartner === true,
+      // Capture which environment created this agreement so the
+      // PandaDoc webhook handler (which may run on a DIFFERENT
+      // environment because PandaDoc fans out events to every
+      // subscribed webhook URL) emails subsequent signers with a
+      // link to the right place.
+      originAppUrl: getAppBaseUrl(),
     });
 
     await prisma.aiChatMessage.create({
@@ -2873,7 +2879,16 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
                     select: { name: true },
                   });
                   const providerName = providerRecord?.name || "Your Agency";
-                  const appBase = getAppBaseUrl();
+                  // CRITICAL: use the agreement's stored originAppUrl, NOT
+                  // this server's getAppBaseUrl(). PandaDoc broadcasts the
+                  // recipient_completed event to every webhook subscription
+                  // (local ngrok + Replit + prod, all enabled at once), so
+                  // whichever server wins the idempotency race might not be
+                  // the one the agency generated from. The stored URL keeps
+                  // the link pointing back where the parents are signing.
+                  // Fall back to this server's base URL only for legacy
+                  // agreements created before the originAppUrl column.
+                  const appBase = (agreement as any).originAppUrl || getAppBaseUrl();
                   const goStorkSigningUrl = `${appBase}/agreements/${agreement.id}`;
                   const emailSigningUrl = nextSigner.userId
                     ? goStorkSigningUrl

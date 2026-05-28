@@ -1369,6 +1369,11 @@ model Agreement {
   invoiceId          String?   @unique // GoStork payment gate - must be PAID before agreement can be signed
   signedAt           DateTime?
   rejectedAt         DateTime?
+  // Origin app URL captured at generation time. Used by webhook handlers
+  // when notifying subsequent signers, so the URL in the email matches
+  // the environment the agency generated from - regardless of which
+  // server (local, Replit, prod) wins the PandaDoc webhook race.
+  originAppUrl       String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
