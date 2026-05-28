@@ -1,29 +1,35 @@
 # GoStork 2.0 Launch Checklist
 
-Pre-flight steps to run **before** cutting over `app.gostork.com` from
-GoStork v1 to GoStork v2. This file covers the things v2 added that v1
-doesn't have configured live (Stripe Connect, refunds, recoupment
-monitor, Connect webhooks) plus the adjacent services that need to be
-verified before real customer traffic hits.
+Pre-flight steps to run **before** pointing `app.gostork.com` at the
+v2 deployment. v2 is a greenfield codebase with no shared code, schema,
+or data with the currently-live v1 product at `app.gostork.com`; the
+cutover is a DNS / domain-mapping swap, not a code or data migration.
 
 Use as a copy-paste runbook on launch day. Tick items off as you go.
 
 ---
 
-## Phase 0 — Snapshot v1 state (do BEFORE cutover)
+## Phase 0 — Pre-cutover v2 verification
 
-So you can roll back cleanly if something goes wrong.
+Confirm v2 is healthy in a non-production environment before the
+domain swap.
 
-- [ ] Note the currently-deployed v1 commit / image / Replit revision.
-- [ ] Snapshot the production database (Supabase point-in-time recovery
-      or manual `pg_dump`). Keep for ≥ 7 days post-launch.
-- [ ] Export v1 environment variables (current production values) to a
-      secure secrets vault. Some may be reused unchanged (Twilio,
-      SendGrid, GCS); others will be swapped (Stripe live keys + new
-      webhook secrets).
-- [ ] Note v1's Stripe Dashboard live-mode webhook destinations - URL,
-      subscribed events, signing secret labels. If v1 had any webhooks,
-      decide whether to disable, repoint, or leave alongside v2's.
+- [ ] v2 is deployed to a staging URL (e.g. the Replit deployment URL
+      `go-stork.replit.app` or a separate staging host) and serving
+      traffic successfully against the v2 production database.
+- [ ] v2's last commit on `main` is the one you intend to ship. Note
+      the SHA so rollback can return to the prior v2 commit if needed.
+- [ ] Snapshot the v2 production database (Supabase point-in-time
+      recovery or manual `pg_dump`). Keep for ≥ 7 days post-launch.
+      Not strictly required since v2 starts effectively empty, but
+      cheap insurance for any pre-launch data (admin accounts,
+      provider configs, AI prompt edits) you don't want to redo.
+- [ ] Inventory v2's production environment variables in a secure
+      vault, in case the production host needs to be rebuilt.
+- [ ] v1 is a separate product on a separate stack - leave it alone.
+      The only thing v1 owns that v2 will take over is the
+      `app.gostork.com` DNS record. v1's database, secrets, and
+      Stripe account are not touched.
 
 ---
 
@@ -145,9 +151,10 @@ PANDADOC_WEBHOOK_SECRET=
 
 ## Phase 2 — Database migrations
 
-The v2 codebase added schema changes that need to run against the
-production DB before v2 boots. Each migration uses `ADD COLUMN IF NOT
-EXISTS`, so re-running is safe.
+Apply every v2 migration against the production DB before v2 boots. Each
+migration uses `ADD COLUMN IF NOT EXISTS`, so re-running is safe. v2's
+DB is independent of v1's - this is a fresh, self-contained schema, not
+a migration of v1 data.
 
 Run from the v2 codebase root on production DATABASE_URL:
 
@@ -192,22 +199,44 @@ fresh on live.
 
 ---
 
-## Phase 4 — DNS / TLS / app deploy
+## Phase 4 — DNS cutover (the actual go-live moment)
 
-- [ ] Verify `app.gostork.com` TLS certificate is current and includes
-      the apex + any www variant you advertise.
-- [ ] Deploy v2 to the production environment (Replit Deployment,
-      Reserved VM, or whatever app.gostork.com runs on).
-- [ ] Confirm production environment is reachable at
-      `https://app.gostork.com/` (returns 200) and the API surface
-      responds:
+This is the irreversible moment. Until DNS flips, all real customer
+traffic is hitting v1. After DNS flips, all real customer traffic is
+hitting v2. Stripe live webhooks pointing at `app.gostork.com/api/*`
+only start delivering successfully once the flip is done.
+
+Pre-flip checks (do BEFORE touching DNS):
+
+- [ ] v2 is up at its staging URL with live Stripe keys + live webhook
+      secrets already configured. The Stripe live webhooks are
+      already created (Phase 1) pointing at `app.gostork.com` even
+      though that domain still serves v1 - Stripe will accept the
+      configuration; the deliveries will just fail until the DNS
+      flip. That's fine - Stripe retries for 3 days.
+- [ ] Phase 5 smoke tests pass against the staging URL with live
+      keys (yes, real money on a staging URL is a real thing - do it
+      to catch live-key issues before cutover).
+
+The flip:
+
+- [ ] Update DNS / load balancer / Replit domain mapping so
+      `app.gostork.com` points at the v2 deployment instead of v1.
+- [ ] Verify TLS certificate covers `app.gostork.com` on the v2
+      stack (apex + any `www` variant you advertise).
+- [ ] Confirm v2 is reachable at the production URL:
       ```bash
+      curl https://app.gostork.com/                   # expect 200
       curl https://app.gostork.com/api/health         # or whatever your health endpoint is
       curl -X POST https://app.gostork.com/api/webhooks/stripe \
         -H "Stripe-Signature: invalid" -d '{}'
       # expect 400 "No signatures found matching the expected signature"
       # confirms the route is mounted and signature verification is on
       ```
+- [ ] In Stripe Dashboard (live mode) → Webhooks → confirm the next
+      few `payment_intent.succeeded` / `account.updated` events deliver
+      with 200 OK. If they were retrying during the v1-still-serving
+      window, Stripe will redeliver them automatically within minutes.
 
 ---
 
@@ -273,15 +302,33 @@ after to recover the funds.
 
 ## Rollback procedure (if something is on fire)
 
-1. Revert the deployment to the v1 commit / image / Replit revision
-   noted in Phase 0.
+Two flavors of rollback depending on how broken things are.
+
+**Light rollback - bad v2 commit, code-level issue:**
+
+1. `git revert <bad-commit>` on `main` (or reset to a known-good v2
+   SHA) and redeploy. v2's deployment infra still serves
+   `app.gostork.com`.
+2. If the bad commit included a DB migration, the columns are additive
+   and safe to leave in place - earlier v2 code ignores them.
+3. Triage in dev/staging.
+
+**Full rollback - DNS flip back to v1:**
+
+1. Revert the DNS / load balancer / domain mapping for
+   `app.gostork.com` to point back at the v1 stack.
 2. In Stripe Dashboard (live mode) → Webhooks → temporarily **disable**
-   the new v2 destinations. Stripe will keep retrying for 3 days, so
-   you can re-enable later without losing events that fired during
-   downtime.
-3. The DB columns added in Phase 2 are additive - v1 ignores them, so
-   no DB rollback is needed.
-4. Triage in dev/staging.
+   the v2 destinations (`app.gostork.com/api/webhooks/stripe(-connect)`).
+   Otherwise Stripe keeps delivering live customer events to v2 while
+   v1 is serving the domain - the events would either land on v2's DB
+   (creating divergent state) or fail signature validation. Stripe
+   retries for 3 days, so you can re-enable later without losing
+   events.
+3. Disable v2's Connect webhook similarly so no provider events leak
+   in during the rollback window.
+4. v2's DB sits frozen at the rollback moment. Triage in
+   dev/staging, fix forward, then re-flip DNS to v2 when ready and
+   re-enable the webhooks.
 
 ---
 
