@@ -559,12 +559,13 @@ function MatchStatusBadge({ status }: { status: string | null | undefined }) {
 
 // ─── Invoices cell ──────────────────────────────────────────────────────────
 //
-// Each invoice gets a clickable chip that opens the payment page for that
-// invoice (the same URL the parent received). Provider sees what the parent
-// saw - line items, status, amount, etc. We use the existing /pay/{token}
-// page rather than build a separate "/account/invoices/:id" view because
-// the data and layout are identical except for the action button (which
-// is hidden once status === PAID anyway).
+// Each invoice is a clickable chip that opens the provider-side invoice
+// document. The backend chooses what to serve:
+//   - PAID    -> the receipt PDF that was emailed to parent + agency
+//   - UNPAID  -> a branded HTML document styled like the payment-request
+//                email body (no payment buttons - provider is just viewing).
+// Real <a target="_blank"> so cmd-click / middle-click opens in a new tab
+// without leaving the Parents list.
 function ParentInvoicesCell({ invoices }: { invoices: any[] }) {
   if (!invoices || invoices.length === 0) {
     return <span className="text-muted-foreground text-sm">-</span>;
@@ -583,18 +584,16 @@ function ParentInvoicesCell({ invoices }: { invoices: any[] }) {
           tone === "success" ? "hsl(var(--brand-success))"
           : tone === "warning" ? "hsl(var(--brand-warning))"
           : "hsl(var(--foreground))";
-        // Use a real <a> so cmd-click / middle-click opens in a new tab
-        // (provider often wants to keep the Parents list open).
         return (
           <a
             key={inv.id}
-            href={`/pay/${inv.paymentToken}`}
+            href={`/api/provider/invoices/${inv.id}/document`}
             target="_blank"
             rel="noopener noreferrer"
             onClick={e => e.stopPropagation()}
             className="text-xs font-ui px-2 py-0.5 rounded-full hover:opacity-80 transition-opacity"
             style={{ background: bg, color: fg }}
-            title={`${inv.serviceType?.replace(/_/g, " ")} - $${(inv.serviceAmount / 100).toLocaleString()} - ${inv.status}`}
+            title={`${inv.serviceType?.replace(/_/g, " ")} - $${(inv.serviceAmount / 100).toLocaleString()} - ${inv.status}${isPaid ? " (opens receipt PDF)" : " (opens invoice document)"}`}
           >
             ${(inv.serviceAmount / 100).toLocaleString()}
           </a>

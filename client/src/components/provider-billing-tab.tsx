@@ -259,8 +259,18 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
                     transferLabel = "Pending";
                     transferColor = "hsl(var(--brand-warning))";
                   }
+                  // Provider-side rows are clickable - opens the invoice
+                  // document in a new tab (PDF receipt for paid, HTML
+                  // payment-request for everything else). Admin rows stay
+                  // non-clickable since admin has other actions on these.
+                  const rowClickable = isProviderMode;
                   return (
-                    <tr key={inv.id} className="border-b last:border-0 hover:bg-muted/10">
+                    <tr
+                      key={inv.id}
+                      className={`border-b last:border-0 hover:bg-muted/10 ${rowClickable ? "cursor-pointer" : ""}`}
+                      onClick={rowClickable ? () => window.open(`/api/provider/invoices/${inv.id}/document`, "_blank", "noopener,noreferrer") : undefined}
+                      title={rowClickable ? (inv.status === "PAID" ? "Open receipt PDF" : "Open invoice document") : undefined}
+                    >
                       <td className="px-4 py-2.5">{inv.parentUser?.name || inv.parentUser?.email || "Parent"}</td>
                       <td className="px-4 py-2.5 text-muted-foreground text-xs">{inv.serviceType?.replace(/_/g, " ").toLowerCase() || "-"}</td>
                       <td className="px-4 py-2.5 text-right font-medium">{formatCents(inv.serviceAmount, inv.currency)}</td>

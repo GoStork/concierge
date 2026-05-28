@@ -211,6 +211,48 @@ export class BillingController {
     return this.billingService.getInvoicesForProvider(user.providerId);
   }
 
+  /**
+   * Serves the "document" view of an invoice for the provider:
+   *   - PAID  -> the receipt PDF (the same one the parent + agency got
+   *              by email), regenerated on demand so any branding /
+   *              legal-identity edits flow through.
+   *   - Other -> an HTML page styled like the payment-request email so
+   *              the provider can see exactly what the parent received,
+   *              with no payment buttons (this isn't a payment widget).
+   *
+   * Scoped: the invoice must belong to the logged-in provider. Admin
+   * gets the same payload via the explicit providerId query.
+   */
+  @Get("api/provider/invoices/:invoiceId/document")
+  @UseGuards(SessionOrJwtGuard)
+  async getProviderInvoiceDocument(
+    @Param("invoiceId") invoiceId: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const user = req.user as any;
+    const isAdmin = user?.roles?.includes?.("GOSTORK_ADMIN");
+    let providerId: string | null = user?.providerId || null;
+    if (isAdmin && req.query.providerId) providerId = String(req.query.providerId);
+    if (!providerId) {
+      return res.status(HttpStatus.FORBIDDEN).json({ message: "Forbidden" });
+    }
+    try {
+      const doc = await this.billingService.getInvoiceDocumentForProvider(invoiceId, providerId);
+      if (doc.kind === "pdf") {
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `inline; filename="${doc.filename}"`);
+        return res.send(doc.pdf);
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.send(doc.html);
+    } catch (e: any) {
+      if (e instanceof HttpException) throw e;
+      this.logger.error(`Document fetch failed for invoice ${invoiceId}: ${e?.message}`);
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: e?.message || "Failed" });
+    }
+  }
+
   // ─── Public: invoice by payment token (for payment page) ─────────────────
 
   @Get("api/invoices/pay/:token")

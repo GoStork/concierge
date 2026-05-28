@@ -1563,6 +1563,227 @@ export class BillingService {
     });
   }
 
+  // ─── On-demand invoice document (provider view) ────────────────────────────
+  //
+  // Returns the same artifact the parent received:
+  //   - PAID invoices  -> the receipt PDF that was emailed (regenerated
+  //                        from current data, so any branding tweaks land).
+  //   - UNPAID         -> an HTML page styled like the payment-request
+  //                        email body, with no payment buttons (provider
+  //                        is just inspecting, not paying).
+  //
+  // We don't store the PDF; receipts are regenerated on demand. Cheap
+  // enough at our volume and lets brand/legal-identity edits flow through
+  // retroactively.
+  async getInvoiceDocumentForProvider(invoiceId: string, providerId: string): Promise<
+    | { kind: "pdf"; pdf: Buffer; filename: string }
+    | { kind: "html"; html: string; filename: string }
+  > {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: {
+        parentUser: true,
+        lineItems: { orderBy: { displayOrder: "asc" } },
+      },
+    });
+    if (!invoice) throw new NotFoundException("Invoice not found");
+    if (invoice.providerId !== providerId) {
+      throw new NotFoundException("Invoice not found");
+    }
+
+    const [brandSettings, legalIdentity] = await Promise.all([
+      this.prisma.providerBrandSettings.findUnique({
+        where: { providerId: invoice.providerId },
+        select: { primaryColor: true, logoUrl: true },
+      }),
+      this.prisma.providerLegalIdentity.findUnique({
+        where: { providerId: invoice.providerId },
+        select: { legalName: true, taxId: true },
+      }),
+    ]);
+
+    const lineItems = (invoice as any).lineItems || [];
+    const currency = invoice.currency || "USD";
+
+    // PAID -> regenerate the receipt PDF exactly like emitPaymentReceipt
+    // does, then stream it back.
+    if (invoice.status === "PAID") {
+      let logoBuffer: Buffer | null = null;
+      if (brandSettings?.logoUrl) {
+        try {
+          const res = await fetch(brandSettings.logoUrl);
+          if (res.ok) {
+            const ct = res.headers.get("content-type") || "";
+            if (/png|jpeg|jpg/i.test(ct)) {
+              const ab = await res.arrayBuffer();
+              logoBuffer = Buffer.from(ab);
+            }
+          }
+        } catch {
+          /* fall back to wordmark layout */
+        }
+      }
+      const card = invoice.stripePaymentIntentId
+        ? await getCardDetailsForPaymentIntent(invoice.stripePaymentIntentId)
+        : { brand: null, last4: null, expMonth: null, expYear: null };
+      const paidAt = invoice.paidAt || new Date();
+      const receiptNumber = `GS-${paidAt.toISOString().slice(0, 10).replace(/-/g, "")}-${invoice.id.slice(0, 8).toUpperCase()}`;
+
+      const pdf = await generateReceiptPdf({
+        invoice: {
+          id: invoice.id,
+          invoiceNumber: (invoice as any).invoiceNumber ?? null,
+          serviceAmount: invoice.serviceAmount,
+          referralFeeAmount: invoice.referralFeeAmount,
+          providerPayoutAmount: invoice.providerPayoutAmount,
+          currency,
+          serviceType: invoice.serviceType,
+          providerName: invoice.providerName,
+          description: invoice.description || null,
+          paidAt,
+          isProtected: invoice.isProtected ?? false,
+          stripeTransactionId: invoice.stripeTransactionId || null,
+          stripePaymentIntentId: invoice.stripePaymentIntentId || null,
+          lineItems: lineItems.map((li: any) => ({
+            serviceType: li.serviceType,
+            serviceTypeLabel: humanizeLineServiceType(li.serviceType),
+            description: li.description,
+            amountCents: li.amountCents,
+          })),
+        },
+        parent: {
+          name: invoice.parentUser?.name || (invoice.parentUser as any)?.firstName || "Customer",
+          email: invoice.parentUser?.email || "",
+          city: (invoice.parentUser as any)?.city || null,
+          state: (invoice.parentUser as any)?.state || null,
+        },
+        card,
+        brand: {
+          primaryColor: brandSettings?.primaryColor || null,
+          logoBuffer,
+          legalName: legalIdentity?.legalName || invoice.providerName,
+          taxId: legalIdentity?.taxId || null,
+        },
+      });
+      return {
+        kind: "pdf",
+        pdf,
+        filename: `GoStork-Receipt-${receiptNumber}.pdf`,
+      };
+    }
+
+    // UNPAID -> render a document-style HTML page showing what the
+    // parent sees in their payment-request email + on /pay/{token}.
+    // Inline styles only so the same markup looks right whether the
+    // provider opens it in the browser or prints to PDF.
+    const brandColor = brandSettings?.primaryColor || "#26584A";
+    const parentFirstName = invoice.parentUser?.name?.split(" ")[0] || (invoice.parentUser as any)?.firstName || "there";
+    const escHtml = (s: string) =>
+      String(s ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+    const lineRowsHtml = (lineItems.length > 0
+      ? lineItems
+      : [{ serviceType: invoice.serviceType, description: invoice.description, amountCents: invoice.serviceAmount }]
+    )
+      .map((li: any) => `
+        <tr>
+          <td style="text-align:left;padding:12px 8px 12px 0;border-bottom:1px solid #f3f4f6;font-size:14px;color:#1f2937;vertical-align:top">
+            <div style="font-weight:500">${escHtml(humanizeLineServiceType(li.serviceType || ""))}</div>
+            ${li.description ? `<div style="font-size:12px;color:#6b7280;margin-top:2px">${escHtml(li.description)}</div>` : ""}
+          </td>
+          <td style="text-align:right;padding:12px 0 12px 8px;border-bottom:1px solid #f3f4f6;font-size:14px;color:#1f2937;white-space:nowrap;vertical-align:top">${escHtml(formatCents(li.amountCents))}</td>
+        </tr>
+      `).join("");
+
+    const statusBadge = invoice.status === "PAYMENT_PROCESSING"
+      ? `<span style="display:inline-block;padding:4px 12px;border-radius:999px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:600">Payment processing</span>`
+      : invoice.status === "AUTHORIZED"
+        ? `<span style="display:inline-block;padding:4px 12px;border-radius:999px;background:#dbeafe;color:#1e40af;font-size:12px;font-weight:600">Authorized (held)</span>`
+        : invoice.status === "AWAITING_PAYMENT"
+          ? `<span style="display:inline-block;padding:4px 12px;border-radius:999px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:600">Awaiting payment</span>`
+          : `<span style="display:inline-block;padding:4px 12px;border-radius:999px;background:#f3f4f6;color:#374151;font-size:12px;font-weight:600">${escHtml(invoice.status)}</span>`;
+
+    const dueLine = invoice.dueAt
+      ? `<p style="margin:16px 0 0;font-size:13px;color:#92400e"><strong>Due by ${escHtml(new Date(invoice.dueAt).toLocaleString())}</strong></p>`
+      : "";
+
+    const html = `<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<title>Invoice ${escHtml(invoice.id.slice(0, 8))} - ${escHtml(invoice.providerName)}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { margin: 0; padding: 24px; background: #f9fafb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #1f2937; }
+  .doc { max-width: 720px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+  .header { background: ${escHtml(brandColor)}; color: white; padding: 48px 32px; text-align: center; }
+  .header h1 { margin: 0; font-size: 28px; letter-spacing: -0.02em; }
+  .header .logo { max-height: 56px; max-width: 220px; margin-bottom: 16px; }
+  .body { padding: 32px; }
+  .meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; gap: 12px; flex-wrap: wrap; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  .totals-row td { padding: 16px 0 4px; font-weight: 700; font-size: 16px; }
+  .total-value { color: ${escHtml(brandColor)}; font-size: 22px; }
+  .detail-grid { display: grid; grid-template-columns: 160px 1fr; gap: 12px 16px; margin-top: 24px; font-size: 14px; }
+  .detail-grid dt { color: #6b7280; }
+  .footer { padding: 24px 32px; background: #f9fafb; font-size: 12px; color: #6b7280; text-align: center; border-top: 1px solid #e5e7eb; }
+  .provider-note { padding: 16px; background: #f3f4f6; border-radius: 8px; margin-top: 24px; font-size: 13px; color: #374151; }
+</style>
+</head><body>
+<div class="doc">
+  <div class="header">
+    ${brandSettings?.logoUrl ? `<img class="logo" src="${escHtml(brandSettings.logoUrl)}" alt="${escHtml(invoice.providerName)}">` : ""}
+    <h1>${escHtml(legalIdentity?.legalName || invoice.providerName)}</h1>
+  </div>
+  <div class="body">
+    <div class="meta">
+      <div>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:#6b7280;font-weight:600">Payment Request</div>
+        <div style="font-size:13px;color:#6b7280;margin-top:4px">Invoice #${escHtml(invoice.id.slice(0, 8).toUpperCase())} • ${escHtml(new Date(invoice.createdAt).toLocaleDateString())}</div>
+      </div>
+      ${statusBadge}
+    </div>
+    <p style="margin:8px 0 4px;font-size:15px">Hi ${escHtml(parentFirstName)}, you have a payment request from <strong>${escHtml(invoice.providerName)}</strong> via GoStork.</p>
+    ${dueLine}
+    <table>
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:12px 8px 12px 0;border-bottom:1px solid #e5e7eb;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600">Service</th>
+          <th style="text-align:right;padding:12px 0 12px 8px;border-bottom:1px solid #e5e7eb;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${lineRowsHtml}
+        <tr class="totals-row">
+          <td>Total</td>
+          <td style="text-align:right" class="total-value">${escHtml(formatCents(invoice.serviceAmount))}</td>
+        </tr>
+      </tbody>
+    </table>
+    <dl class="detail-grid">
+      <dt>Provider</dt><dd>${escHtml(invoice.providerName)}</dd>
+      <dt>GoStork Deposit Protection</dt><dd>Included - your funds are protected</dd>
+      ${legalIdentity?.taxId ? `<dt>Tax ID</dt><dd>${escHtml(legalIdentity.taxId)}</dd>` : ""}
+    </dl>
+    <div class="provider-note">
+      This is the invoice document that was sent to the parent. The parent receives it via email, SMS, and inside the chat with a "Pay Now Securely" button.
+    </div>
+  </div>
+  <div class="footer">Powered by GoStork • Secure payments processed by Stripe</div>
+</div>
+</body></html>`;
+
+    return {
+      kind: "html",
+      html,
+      filename: `Invoice-${invoice.id.slice(0, 8).toUpperCase()}.html`,
+    };
+  }
+
   // ─── Stub: QuickBooks sync ───────────────────────────────────────────────────
 
   async syncToQuickBooks(invoiceId: string) {
