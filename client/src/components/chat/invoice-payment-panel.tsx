@@ -131,21 +131,47 @@ export function InvoicePaymentPanel({ paymentToken, brandColor, onClose, onSucce
     };
   }, [paymentToken]);
 
+  // When Stripe Elements expands (Link auto-fill, ACH disclosure, BNPL
+  // detail, "Save my info" sub-form, etc.) the panel grows by 100-300px.
+  // We want the panel itself to grow naturally - NOT scroll internally -
+  // so the parent sees the whole form at once. The trick is the chat
+  // container around us: as the panel grows, the chat needs to scroll
+  // UP so the new content (Pay button) stays in the viewport.
+  //
+  // ResizeObserver fires on every Stripe Elements height change. We
+  // call scrollIntoView({block: "end"}) on the panel root so the chat
+  // container scrolls just enough to keep the bottom in view. Smooth
+  // behavior so it doesn't feel jumpy.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const lastHeightRef = useRef(0);
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const h = entry.contentRect.height;
+        // Only react when the panel grew (Stripe added a section). When
+        // it shrinks we don't need to scroll - the bottom is already in
+        // view.
+        if (h > lastHeightRef.current + 20) {
+          el.scrollIntoView({ block: "end", behavior: "smooth" });
+        }
+        lastHeightRef.current = h;
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [clientSecret]);
+
   return (
-    // Constrain the embedded panel to the viewport so it can't push the
-    // Pay button below the fold when Stripe Elements expands (Link
-    // auto-fill, ACH disclosure, BNPL detail, "Save my info" sub-form,
-    // etc. each add 100-300px). flex-col + max-h-[85vh] + scrollable
-    // body keeps the header pinned at top and lets the user scroll
-    // within the panel to reach the Pay button instead of needing to
-    // zoom out or scroll the chat itself.
     <div
-      className="rounded-[var(--radius)] border-2 bg-card overflow-hidden flex flex-col max-h-[85vh]"
+      ref={panelRef}
+      className="rounded-[var(--radius)] border-2 bg-card overflow-hidden"
       style={{ borderColor: brandColor }}
       data-testid="invoice-payment-panel"
     >
       <div
-        className="flex items-center justify-between px-4 py-2.5 border-b shrink-0"
+        className="flex items-center justify-between px-4 py-2.5 border-b"
         style={{ background: `${brandColor}0F` }}
       >
         <div className="flex items-center gap-2 min-w-0">
@@ -167,7 +193,7 @@ export function InvoicePaymentPanel({ paymentToken, brandColor, onClose, onSucce
         </Button>
       </div>
 
-      <div className="p-4 overflow-y-auto flex-1 min-h-0">
+      <div className="p-4">
         {error && (
           <div
             className="rounded-md px-3 py-2 text-sm"
