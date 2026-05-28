@@ -138,23 +138,54 @@ export function InvoicePaymentPanel({ paymentToken, brandColor, onClose, onSucce
   // container around us: as the panel grows, the chat needs to scroll
   // UP so the new content (Pay button) stays in the viewport.
   //
-  // ResizeObserver fires on every Stripe Elements height change. We
-  // call scrollIntoView({block: "end"}) on the panel root so the chat
-  // container scrolls just enough to keep the bottom in view. Smooth
-  // behavior so it doesn't feel jumpy.
+  // Implementation: ResizeObserver detects every panel height change.
+  // We walk up the DOM to find the nearest scrollable ancestor (the
+  // chat message list, not the window) and pin its scrollTop to the
+  // bottom. This guarantees the panel's bottom edge - where the Pay
+  // button lives - stays in view, no matter how tall Stripe makes the
+  // form. Older chat history slides up out of view, which is fine -
+  // the parent's focus is on completing the payment.
   const panelRef = useRef<HTMLDivElement>(null);
   const lastHeightRef = useRef(0);
   useEffect(() => {
     const el = panelRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
+
+    // Walk up looking for an element whose computed overflow-y is auto
+    // or scroll AND that actually has scrollable content. Falls back
+    // to document.scrollingElement if no internal scroller exists.
+    const findScrollableAncestor = (node: HTMLElement | null): HTMLElement | null => {
+      let cur: HTMLElement | null = node?.parentElement || null;
+      while (cur) {
+        const style = window.getComputedStyle(cur);
+        const overflowY = style.overflowY;
+        if ((overflowY === "auto" || overflowY === "scroll") && cur.scrollHeight > cur.clientHeight) {
+          return cur;
+        }
+        cur = cur.parentElement;
+      }
+      return (document.scrollingElement as HTMLElement) || document.documentElement;
+    };
+
     const ro = new ResizeObserver(entries => {
       for (const entry of entries) {
         const h = entry.contentRect.height;
         // Only react when the panel grew (Stripe added a section). When
         // it shrinks we don't need to scroll - the bottom is already in
         // view.
-        if (h > lastHeightRef.current + 20) {
-          el.scrollIntoView({ block: "end", behavior: "smooth" });
+        if (h > lastHeightRef.current + 8) {
+          const scroller = findScrollableAncestor(el);
+          if (scroller) {
+            // Pin to the bottom so the panel's submit button stays in
+            // view. requestAnimationFrame so Stripe's layout pass settles
+            // before we measure scrollHeight.
+            requestAnimationFrame(() => {
+              scroller.scrollTo({
+                top: scroller.scrollHeight,
+                behavior: "smooth",
+              });
+            });
+          }
         }
         lastHeightRef.current = h;
       }
