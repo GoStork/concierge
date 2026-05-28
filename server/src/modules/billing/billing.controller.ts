@@ -16,7 +16,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { Request, Response } from "express";
-import * as geoip from "geoip-lite";
+import geoip from "geoip-lite";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { BillingService } from "./billing.service";
 import * as stripeService from "../../../stripe-service";

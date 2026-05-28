@@ -472,7 +472,10 @@ export class BillingService {
     if (!invoice) throw new NotFoundException("Invoice not found");
 
     const base = getBaseUrl();
-    const paymentUrl = `${base}/pay/${invoice.paymentToken}`;
+    // Include the chat session in returnTo so post-payment redirects the
+    // parent back to the exact conversation, not the generic /chat landing.
+    // The success page validates the returnTo is a same-origin path.
+    const paymentUrl = `${base}/pay/${invoice.paymentToken}?returnTo=${encodeURIComponent(`/chat/${invoice.sessionId}`)}`;
     const parentName = invoice.parentUser.name || invoice.parentUser.firstName || "there";
 
     // Itemized rows for both the chat card payload and the email body.
@@ -625,7 +628,9 @@ export class BillingService {
     if (!invoice || invoice.status !== "AWAITING_PAYMENT") return;
 
     const base = getBaseUrl();
-    const paymentUrl = `${base}/pay/${invoice.paymentToken}`;
+    // Include the chat session in returnTo so post-payment lands back in
+    // the right chat thread (see sendInvoiceNotifications for the same).
+    const paymentUrl = `${base}/pay/${invoice.paymentToken}?returnTo=${encodeURIComponent(`/chat/${invoice.sessionId}`)}`;
     let content = "";
 
     if (reminderType === "12h_remaining") {

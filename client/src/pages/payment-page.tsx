@@ -388,6 +388,44 @@ function StripePaymentForm({ invoice, isMock, onSuccess }: {
   );
 }
 
+// ─── Post-payment success landing ────────────────────────────────────────────
+//
+// Reads ?returnTo= (set by billing.service when it generates the pay link
+// for the chat / SMS / email), auto-redirects after 2.5s so the parent
+// briefly sees the confirmation then lands back in the right chat thread.
+// Manual button is kept as a fallback for users who navigate away from
+// the tab and come back to a stalled timer.
+function PaymentSuccessLanding({ providerName }: { providerName: string }) {
+  const navigate = useNavigate();
+  const safeReturn = (() => {
+    const returnTo = new URLSearchParams(window.location.search).get("returnTo");
+    if (!returnTo) return "/chat";
+    try {
+      const decoded = decodeURIComponent(returnTo);
+      // Only accept same-origin paths to avoid open-redirects.
+      return decoded.startsWith("/") ? decoded : "/chat";
+    } catch {
+      return "/chat";
+    }
+  })();
+  useEffect(() => {
+    const t = setTimeout(() => navigate(safeReturn), 2500);
+    return () => clearTimeout(t);
+  }, [navigate, safeReturn]);
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-4 text-center">
+      <CheckCircle2 className="w-14 h-14" style={{ color: "hsl(var(--brand-success))" }} />
+      <h1 className="text-xl font-heading font-semibold">Payment Successful!</h1>
+      <p className="text-sm text-muted-foreground max-w-sm">
+        Your payment for {providerName} has been received. You will receive a confirmation email shortly. Taking you back to your chat...
+      </p>
+      <Button onClick={() => navigate(safeReturn)} style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}>
+        Return to Chat now
+      </Button>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function PaymentPage() {
@@ -469,32 +507,7 @@ export default function PaymentPage() {
   }
 
   if (paymentSuccess || invoice.status === "PAID") {
-    // Prefer the chat URL we were redirected from (passed via ?returnTo=) so
-    // the parent lands back in the exact chat. Fall back to the generic /chat
-    // landing when no returnTo was supplied.
-    const returnTo = new URLSearchParams(window.location.search).get("returnTo");
-    const safeReturn = (() => {
-      if (!returnTo) return "/chat";
-      try {
-        const decoded = decodeURIComponent(returnTo);
-        // Only accept same-origin paths to avoid open-redirects.
-        return decoded.startsWith("/") ? decoded : "/chat";
-      } catch {
-        return "/chat";
-      }
-    })();
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-4 text-center">
-        <CheckCircle2 className="w-14 h-14" style={{ color: "hsl(var(--brand-success))" }} />
-        <h1 className="text-xl font-heading font-semibold">Payment Successful!</h1>
-        <p className="text-sm text-muted-foreground max-w-sm">
-          Your payment for {invoice.providerName} has been received. You will receive a confirmation email shortly.
-        </p>
-        <Button onClick={() => navigate(safeReturn)} style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}>
-          Return to Chat
-        </Button>
-      </div>
-    );
+    return <PaymentSuccessLanding providerName={invoice.providerName} />;
   }
 
   if (invoice.status === "PAYMENT_PROCESSING") {
