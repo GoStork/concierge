@@ -132,13 +132,20 @@ export function InvoicePaymentPanel({ paymentToken, brandColor, onClose, onSucce
   }, [paymentToken]);
 
   return (
+    // Constrain the embedded panel to the viewport so it can't push the
+    // Pay button below the fold when Stripe Elements expands (Link
+    // auto-fill, ACH disclosure, BNPL detail, "Save my info" sub-form,
+    // etc. each add 100-300px). flex-col + max-h-[85vh] + scrollable
+    // body keeps the header pinned at top and lets the user scroll
+    // within the panel to reach the Pay button instead of needing to
+    // zoom out or scroll the chat itself.
     <div
-      className="rounded-[var(--radius)] border-2 bg-card overflow-hidden"
+      className="rounded-[var(--radius)] border-2 bg-card overflow-hidden flex flex-col max-h-[85vh]"
       style={{ borderColor: brandColor }}
       data-testid="invoice-payment-panel"
     >
       <div
-        className="flex items-center justify-between px-4 py-2.5 border-b"
+        className="flex items-center justify-between px-4 py-2.5 border-b shrink-0"
         style={{ background: `${brandColor}0F` }}
       >
         <div className="flex items-center gap-2 min-w-0">
@@ -160,7 +167,7 @@ export function InvoicePaymentPanel({ paymentToken, brandColor, onClose, onSucce
         </Button>
       </div>
 
-      <div className="p-4">
+      <div className="p-4 overflow-y-auto flex-1 min-h-0">
         {error && (
           <div
             className="rounded-md px-3 py-2 text-sm"
