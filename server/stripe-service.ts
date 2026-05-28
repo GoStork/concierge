@@ -130,19 +130,27 @@ export async function createPaymentIntent(params: {
   // Three modes:
   //  - Manual capture (escrow hold): card-only. ACH / wallets backed by ACH
   //    cannot be manual-captured, Stripe rejects the intent otherwise.
-  //  - US buyer, automatic capture: explicit ordered list so Card + ACH
-  //    lead the tile row. Apple Pay / Google Pay surface automatically
-  //    inside the Card option on supported devices.
-  //  - Non-US buyer (or unknown country): automatic_payment_methods. Stripe
-  //    picks the optimal order for the buyer's country (Bancontact for BE,
-  //    iDEAL for NL, SEPA for EU, etc.). Hard-coding US tiles for, say, a
-  //    Dutch buyer would just hurt conversion.
+  //  - US buyer OR unknown country: explicit ordered list so Card + ACH
+  //    lead the tile row. Apple Pay / Google Pay / Link surface as
+  //    wallets inside the Card option on supported devices. We default
+  //    to US ordering on unknown country because GoStork's user base is
+  //    US-first, ngrok/dev IPs don't geoip-resolve cleanly, and Stripe's
+  //    "automatic" ordering tends to push BNPL / regional methods
+  //    higher than Card+ACH, which doesn't match the spec the user
+  //    wanted ("card then bank" for USA).
+  //  - Explicit non-US buyer: automatic_payment_methods. Stripe picks
+  //    the optimal order for the buyer's actual country (Bancontact
+  //    for BE, iDEAL for NL, SEPA for EU, etc.). Only kicks in when
+  //    geoip returns a non-US ISO code - so we don't hurt conversion
+  //    for the rare international parent without overriding the US
+  //    default for the majority case.
   const isManualCapture = (params.captureMethod ?? "automatic") === "manual";
-  const isUsBuyer = params.buyerCountry?.toUpperCase() === "US";
+  const explicitCountry = params.buyerCountry?.toUpperCase();
+  const useUsOrder = !explicitCountry || explicitCountry === "US";
   const paymentMethodOpts: Stripe.PaymentIntentCreateParams =
     isManualCapture
       ? { payment_method_types: ["card"] }
-      : isUsBuyer
+      : useUsOrder
         ? { payment_method_types: [...US_PAYMENT_METHOD_ORDER] }
         : { automatic_payment_methods: { enabled: true } };
 
@@ -622,6 +630,44 @@ export async function createConnectAccountLink(params: {
     type: "account_onboarding",
   });
   return { url: link.url };
+}
+
+/**
+ * Express path: short-lived URL that drops the provider straight into the
+ * Stripe Express dashboard with their account selected. Used by the
+ * "Manage on Stripe" button on the Payouts tab.
+ */
+export async function createExpressLoginLink(accountId: string): Promise<{ url: string }> {
+  const stripe = getStripe();
+  const link = await stripe.accounts.createLoginLink(accountId);
+  return { url: link.url };
+}
+
+/**
+ * Fetches Connect account balance (available + pending). Used by the
+ * disconnect-safety check - we refuse to disconnect while money is still
+ * sitting on the connected account.
+ */
+export async function retrieveConnectAccountBalance(accountId: string): Promise<{
+  available: number;
+  pending: number;
+}> {
+  const stripe = getStripe();
+  const bal = await stripe.balance.retrieve({ stripeAccount: accountId });
+  const sum = (arr: Stripe.Balance.Available[] | Stripe.Balance.Pending[] | undefined) =>
+    (arr || []).reduce((s, a) => s + a.amount, 0);
+  return { available: sum(bal.available as any), pending: sum(bal.pending as any) };
+}
+
+/**
+ * Deletes a Connect account. Only valid for Custom accounts created by the
+ * platform (which is what GoStork uses). Express accounts cannot be deleted
+ * via API - they require the provider to disconnect from the Express
+ * dashboard, which fires our account.application.deauthorized webhook.
+ */
+export async function deleteConnectAccount(accountId: string): Promise<void> {
+  const stripe = getStripe();
+  await stripe.accounts.del(accountId);
 }
 
 /** Pulls the latest snapshot from Stripe so we can mirror state into ProviderBankAccount. */
