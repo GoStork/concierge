@@ -72,10 +72,30 @@ export function InvoicePaymentPanel({ paymentToken, brandColor, onClose, onSucce
   const [isMock, setIsMock] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const stripePromise = useMemo<Promise<Stripe | null> | null>(() => {
-    const key = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-    return key ? loadStripe(key) : null;
+  // Resolve the Stripe publishable key with a fallback chain:
+  //   1. VITE_STRIPE_PUBLISHABLE_KEY baked into the Vite build (local dev,
+  //      Vercel, anything that sets VITE_ env vars at build time).
+  //   2. /api/billing/stripe-key at runtime (Replit + any host where the
+  //      VITE_ env vars are NOT injected at build time). The server reads
+  //      STRIPE_SECRET_KEY-paired publishable key from process.env and
+  //      hands it back.
+  // Without this fallback, the panel would render an empty body on Replit
+  // because stripePromise was null and the <Elements> branch silently
+  // skipped rendering.
+  const [serverKey, setServerKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY) return;
+    let cancelled = false;
+    fetch("/api/billing/stripe-key", { credentials: "include" })
+      .then(r => r.json())
+      .then(d => { if (!cancelled && d?.publishableKey) setServerKey(d.publishableKey); })
+      .catch(() => { /* silent - fallback to error UI below */ });
+    return () => { cancelled = true; };
   }, []);
+  const stripePromise = useMemo<Promise<Stripe | null> | null>(() => {
+    const key = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || serverKey;
+    return key ? loadStripe(key) : null;
+  }, [serverKey]);
 
   // Keep the latest onSuccess in a ref so we can call it from the effect
   // without re-running the effect (and minting a fresh PaymentIntent) when
@@ -215,6 +235,21 @@ export function InvoicePaymentPanel({ paymentToken, brandColor, onClose, onSucce
               onError={setError}
             />
           </Elements>
+        )}
+
+        {/* Loud failure case: clientSecret resolved but Stripe.js never
+            initialized (publishable key missing from both VITE build env
+            AND /api/billing/stripe-key). Previously this rendered an
+            empty body and parent had no idea what happened. */}
+        {invoice && clientSecret && !isMock && !stripePromise && (
+          <div
+            className="rounded-md px-3 py-2 text-sm"
+            style={{ background: "hsl(var(--brand-error) / 0.1)", color: "hsl(var(--brand-error))" }}
+          >
+            Stripe couldn't initialize. The site is missing its Stripe publishable
+            key. If you're a GoStork admin, set <code>STRIPE_PUBLISHABLE_KEY</code> in
+            the deployment environment and redeploy.
+          </div>
         )}
 
         {invoice && isMock && (
