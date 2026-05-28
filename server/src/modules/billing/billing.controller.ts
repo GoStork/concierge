@@ -23,23 +23,65 @@ import * as stripeService from "../../../stripe-service";
 import { prisma } from "../../../db";
 
 /**
- * Best-effort buyer-country lookup from the request IP. We use this to
- * decide whether to show our US-flavored payment-method tile order or
- * let Stripe optimize for the buyer's country.
+ * Best-effort buyer-country lookup. Decides whether to show our US-flavored
+ * payment-method tile order or let Stripe optimize for the buyer's country.
  *
- * Returns "US" | "GB" | ... | null. Localhost / private-range / unknown
- * IPs return null so the caller falls back to Stripe's automatic ordering.
+ * Resolution order (first hit wins):
+ *  1. `?country=XX` query param - manual override for testing. Lets you
+ *     simulate a US or non-US buyer without messing with VPNs.
+ *  2. Geoip lookup on the real client IP. We try req.ip first (set by
+ *     Express trust-proxy from x-forwarded-for), then walk x-forwarded-for
+ *     ourselves in case the proxy chain is non-standard (ngrok in dev,
+ *     CDN -> Render in prod).
+ *  3. `BILLING_DEFAULT_BUYER_COUNTRY` env var - deployment-side default
+ *     when nothing else resolves. Set to "US" in dev so local testing
+ *     always hits the US order.
+ *  4. undefined -> caller falls back to Stripe automatic ordering.
  *
- * The Express trust-proxy setting (server/index.ts:88) ensures req.ip is
- * the actual client IP, not the load balancer / ngrok address.
+ * Returns ISO-3166 alpha-2 like "US" / "GB" / "DE", or undefined.
  */
-function getBuyerCountry(req: Request): string | undefined {
-  const ip = req.ip || "";
-  if (!ip || ip === "::1" || ip.startsWith("127.") || ip.startsWith("192.168.") || ip.startsWith("10.")) {
-    return undefined;
+function getBuyerCountry(req: Request, logger: Logger): string | undefined {
+  // 1. Explicit override (testing)
+  const queryOverride = (req.query?.country as string | undefined)?.toUpperCase();
+  if (queryOverride && /^[A-Z]{2}$/.test(queryOverride)) {
+    logger.log(`getBuyerCountry: using ?country=${queryOverride} override`);
+    return queryOverride;
   }
-  const looked = geoip.lookup(ip);
-  return looked?.country || undefined;
+
+  // 2. Geoip lookup. Collect candidate IPs in order of trust.
+  const candidates: string[] = [];
+  if (req.ip) candidates.push(req.ip);
+  const xff = (req.headers["x-forwarded-for"] as string | undefined) || "";
+  for (const part of xff.split(",")) {
+    const trimmed = part.trim();
+    if (trimmed && !candidates.includes(trimmed)) candidates.push(trimmed);
+  }
+  const realIp = (req.headers["x-real-ip"] as string | undefined)?.trim();
+  if (realIp && !candidates.includes(realIp)) candidates.push(realIp);
+
+  for (const raw of candidates) {
+    // Strip IPv6-mapped IPv4 prefix (::ffff:1.2.3.4 -> 1.2.3.4)
+    const ip = raw.replace(/^::ffff:/i, "");
+    if (!ip || ip === "::1" || ip.startsWith("127.") || ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
+      continue;
+    }
+    const looked = geoip.lookup(ip);
+    if (looked?.country) {
+      logger.log(`getBuyerCountry: ip=${ip} -> ${looked.country}`);
+      return looked.country;
+    }
+    logger.log(`getBuyerCountry: ip=${ip} not found in geoip db`);
+  }
+
+  // 3. Env-var fallback - useful for dev (req.ip is always localhost)
+  const envDefault = process.env.BILLING_DEFAULT_BUYER_COUNTRY?.toUpperCase();
+  if (envDefault && /^[A-Z]{2}$/.test(envDefault)) {
+    logger.log(`getBuyerCountry: using BILLING_DEFAULT_BUYER_COUNTRY=${envDefault}`);
+    return envDefault;
+  }
+
+  logger.log(`getBuyerCountry: no country resolved (candidates=${JSON.stringify(candidates)}) - falling back to Stripe automatic`);
+  return undefined;
 }
 
 const VALID_SERVICE_TYPES = new Set([
@@ -394,7 +436,7 @@ export class BillingController {
       }
 
       const isClearanceFlow = invoice.medicalClearanceStatus === "PENDING";
-      const buyerCountry = getBuyerCountry(req);
+      const buyerCountry = getBuyerCountry(req, this.logger);
 
       const { clientSecret, paymentIntentId } = await stripeService.createPaymentIntent({
         amountCents: invoice.serviceAmount,
