@@ -1025,8 +1025,20 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       const data = m.uiCardData as any;
       if (data?.whisperQuestionId) return false;
       if (m.uiCardType === "provider_only") return false;
-      // System messages: show plain-text ones (join/escalation notices) and specific card types; hide everything else
-      const allowedSystemCardTypes = ["agreement", "readiness_prompt", "invoice", "cost_sheet"];
+      // System messages: show plain-text ones (join/escalation notices) and specific card types; hide everything else.
+      // agreement_signed (fully signed, all parties) and signer_signed (one
+      // signer just completed) are part of the agreement flow the parent
+      // is actively in, so they belong in the parent's view - leaving them
+      // out makes the chat go silent after the parent signed, even though
+      // the conversations-list preview keeps showing the latest update.
+      const allowedSystemCardTypes = [
+        "agreement",
+        "agreement_signed",
+        "signer_signed",
+        "readiness_prompt",
+        "invoice",
+        "cost_sheet",
+      ];
       if (m.senderType === "system" && !allowedSystemCardTypes.includes(m.uiCardType) && m.uiCardType != null) return false;
       // Provider assessment prompts are only shown to providers, not parents
       if (!isProvider && m.uiCardType === "provider_assessment") return false;
@@ -1110,8 +1122,20 @@ aiRouter.get("/my-session", async (req: Request, res: Response) => {
     const filteredMessages = messages.filter((m: any) => {
       const data = m.uiCardData as any;
       if (data?.whisperQuestionId) return false;
-      // System messages: show plain-text ones (join/escalation notices) and specific card types; hide everything else
-      const allowedSystemCardTypes = ["agreement", "readiness_prompt", "invoice", "cost_sheet"];
+      // System messages: show plain-text ones (join/escalation notices) and specific card types; hide everything else.
+      // agreement_signed (fully signed, all parties) and signer_signed (one
+      // signer just completed) are part of the agreement flow the parent
+      // is actively in, so they belong in the parent's view - leaving them
+      // out makes the chat go silent after the parent signed, even though
+      // the conversations-list preview keeps showing the latest update.
+      const allowedSystemCardTypes = [
+        "agreement",
+        "agreement_signed",
+        "signer_signed",
+        "readiness_prompt",
+        "invoice",
+        "cost_sheet",
+      ];
       if (m.senderType === "system" && !allowedSystemCardTypes.includes(m.uiCardType) && m.uiCardType != null) return false;
       // Provider assessment prompts are only shown to providers, not parents
       if (!isProvider && m.uiCardType === "provider_assessment") return false;
