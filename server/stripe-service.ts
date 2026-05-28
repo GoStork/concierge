@@ -800,6 +800,48 @@ export async function listConnectedPayoutBalanceTransactions(params: {
   return out;
 }
 
+/**
+ * Fallback for the `manual payout` case: Stripe refuses to filter
+ * balanceTransactions.list by a manual payout ("Balance transaction
+ * history can only be filtered on automatic transfers, not manual.").
+ * In live mode this never matters because Stripe creates payouts
+ * automatically on the schedule (those ARE filterable). In dev / test
+ * we sometimes trigger payouts manually via the API.
+ *
+ * Strategy: list `payment` type BTs on the connected account that
+ * Stripe says are part of *some* payout already (i.e. settled), bounded
+ * by a reasonable time window (last 60 days). Caller filters those
+ * against Invoice.stripeConnectPaymentId where bankPayoutCompletedAt is
+ * still null to find the just-settled set.
+ */
+export async function listConnectedAccountPaymentBalanceTransactions(params: {
+  accountId: string;
+  sinceUnix?: number;
+}): Promise<Array<{ id: string; source: string | null; type: string; amount: number; currency: string }>> {
+  const stripe = getStripe();
+  const out: Array<{ id: string; source: string | null; type: string; amount: number; currency: string }> = [];
+  const since = params.sinceUnix ?? Math.floor(Date.now() / 1000) - 60 * 24 * 60 * 60; // 60 days
+  let startingAfter: string | undefined = undefined;
+  for (;;) {
+    const page: any = await stripe.balanceTransactions.list(
+      {
+        type: "payment",
+        created: { gte: since },
+        limit: 100,
+        ...(startingAfter ? { starting_after: startingAfter } : {}),
+      },
+      { stripeAccount: params.accountId },
+    );
+    for (const bt of page.data) {
+      const src = typeof bt.source === "string" ? bt.source : (bt.source as any)?.id || null;
+      out.push({ id: bt.id, source: src, type: bt.type, amount: bt.amount, currency: bt.currency });
+    }
+    if (!page.has_more || page.data.length === 0) break;
+    startingAfter = page.data[page.data.length - 1].id;
+  }
+  return out;
+}
+
 /** Pulls the latest snapshot from Stripe so we can mirror state into ProviderBankAccount. */
 export async function retrieveConnectAccount(accountId: string): Promise<Stripe.Account> {
   const stripe = getStripe();

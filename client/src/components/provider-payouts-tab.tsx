@@ -21,10 +21,18 @@ import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Loader2, ExternalLink, CheckCircle2, AlertCircle, ArrowRight, Building2, User as UserIcon,
+  ChevronDown, ChevronUp, Unlink, History,
 } from "lucide-react";
+import { derivePayoutStatus } from "@/lib/payout-status";
+import { formatDateTime } from "@/lib/format-date";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
 
 interface PayoutsState {
   payoutMethod: "STRIPE_CONNECT_EXPRESS" | "STRIPE_CONNECT_CUSTOM" | null;
@@ -144,6 +152,7 @@ export function ProviderPayoutsTab() {
           </p>
         </header>
         <PayoutsReadyCard state={state} />
+        <PayoutHistoryTable />
       </div>
     );
   }
@@ -321,11 +330,60 @@ function StatusBanner({ state }: { state: PayoutsState }) {
 }
 
 function PayoutsReadyCard({ state }: { state: PayoutsState }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [isChangingBank, setIsChangingBank] = useState(false);
+  const [disconnectOpen, setDisconnectOpen] = useState(false);
+  const [disconnectBlockedReason, setDisconnectBlockedReason] = useState<string | null>(null);
+
+  const expressLoginMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/provider/payouts/express/login-link", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Failed to generate Stripe login link");
+      return res.json() as Promise<{ url: string }>;
+    },
+    onSuccess: (data) => {
+      window.open(data.url, "_blank", "noopener,noreferrer");
+    },
+    onError: (e: any) => toast({ title: "Could not open Stripe", description: e?.message, variant: "destructive" }),
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/provider/payouts/disconnect", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || "Failed to disconnect");
+      return res.json() as Promise<
+        | { status: "disconnected" }
+        | { status: "blocked"; reason: string }
+      >;
+    },
+    onSuccess: (data) => {
+      if (data.status === "blocked") {
+        setDisconnectBlockedReason(data.reason);
+        setDisconnectOpen(false);
+        return;
+      }
+      setDisconnectOpen(false);
+      toast({ title: "Payout account disconnected" });
+      queryClient.invalidateQueries({ queryKey: ["/api/provider/payouts"] });
+    },
+    onError: (e: any) => {
+      setDisconnectOpen(false);
+      toast({ title: "Disconnect failed", description: e?.message, variant: "destructive" });
+    },
+  });
+
   return (
     <section className="rounded-xl border p-6 bg-accent/10 space-y-4">
       <div className="flex items-start gap-3">
         <CheckCircle2 className="w-6 h-6 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-success))" }} />
-        <div>
+        <div className="flex-1">
           <h3 className="font-semibold">Payouts are enabled</h3>
           <p className="text-sm text-muted-foreground mt-1">
             GoStork sends your share to your bank automatically when parents pay invoices. Payouts usually
@@ -342,13 +400,177 @@ function PayoutsReadyCard({ state }: { state: PayoutsState }) {
           </p>
         </div>
       )}
-      <p className="text-xs text-muted-foreground">
-        Need to change your bank?{" "}
-        {state.payoutMethod === "STRIPE_CONNECT_EXPRESS"
-          ? "Log into your Stripe Express dashboard from the email Stripe sent you."
-          : "Contact GoStork support and we'll update it for you."}
-      </p>
+
+      {/* Change bank account - expandable */}
+      <div className="rounded-lg border bg-background/60">
+        <button
+          type="button"
+          onClick={() => setIsChangingBank(v => !v)}
+          className="w-full flex items-center justify-between p-3 text-left hover:bg-muted/30 transition-colors rounded-lg"
+        >
+          <span className="text-sm font-medium">Change bank account</span>
+          {isChangingBank ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </button>
+        {isChangingBank && (
+          <div className="border-t p-4">
+            {state.payoutMethod === "STRIPE_CONNECT_EXPRESS" ? (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Your account is on Stripe Express. Bank changes happen on the Stripe-hosted dashboard.
+                </p>
+                <Button
+                  onClick={() => expressLoginMutation.mutate()}
+                  disabled={expressLoginMutation.isPending}
+                  style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}
+                >
+                  {expressLoginMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <ExternalLink className="w-4 h-4 mr-2" />
+                  )}
+                  Manage on Stripe
+                </Button>
+              </div>
+            ) : (
+              <BankReplaceForm onSaved={() => setIsChangingBank(false)} />
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Disconnect */}
+      <div className="rounded-lg border bg-background/60 p-3 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium">Disconnect payout account</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Stops future payouts. Only allowed when there are no pending or failed transfers.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => { setDisconnectBlockedReason(null); setDisconnectOpen(true); }}
+          className="shrink-0"
+          style={{ borderColor: "hsl(var(--brand-error) / 0.5)", color: "hsl(var(--brand-error))" }}
+        >
+          <Unlink className="w-4 h-4 mr-2" />
+          Disconnect
+        </Button>
+      </div>
+      {disconnectBlockedReason && (
+        <div className="rounded-lg border p-3 flex items-start gap-2" style={{ borderColor: "hsl(var(--brand-warning) / 0.4)", background: "hsl(var(--brand-warning) / 0.05)" }}>
+          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-warning))" }} />
+          <p className="text-sm" style={{ color: "hsl(var(--brand-warning))" }}>{disconnectBlockedReason}</p>
+        </div>
+      )}
+
+      <AlertDialog open={disconnectOpen} onOpenChange={setDisconnectOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disconnect your payout account?</AlertDialogTitle>
+            <AlertDialogDescription>
+              GoStork will stop sending payouts to your bank. You'll need to set up payouts again to receive
+              future payments from parents. This will not affect invoices that have already been paid out.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={disconnectMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); disconnectMutation.mutate(); }}
+              disabled={disconnectMutation.isPending}
+              style={{ background: "hsl(var(--brand-error))", color: "white" }}
+            >
+              {disconnectMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              Disconnect
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
+  );
+}
+
+// ─── Bank-only replace form (Custom path) ───────────────────────────────────
+
+function BankReplaceForm({ onSaved }: { onSaved: () => void }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [routing, setRouting] = useState("");
+  const [account, setAccount] = useState("");
+  const [accountConfirm, setAccountConfirm] = useState("");
+  const [holderName, setHolderName] = useState("");
+  const [accountType, setAccountType] = useState<"checking" | "savings">("checking");
+  const [error, setError] = useState<string | null>(null);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (account !== accountConfirm) throw new Error("Account numbers don't match");
+      const res = await fetch("/api/provider/payouts/bank", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          routingNumber: routing,
+          accountNumber: account,
+          accountHolderName: holderName,
+          accountType,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.message || "Failed to update bank account");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      setError(null);
+      toast({ title: "Bank account updated", description: "Future payouts will go to the new bank." });
+      queryClient.invalidateQueries({ queryKey: ["/api/provider/payouts"] });
+      onSaved();
+    },
+    onError: (e: any) => setError(e?.message || "Save failed"),
+  });
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field label="Routing number" required hint="9 digits">
+          <Input value={routing} onChange={e => setRouting(e.target.value.replace(/\D/g, "").slice(0, 9))} maxLength={9} inputMode="numeric" />
+        </Field>
+        <Field label="Account type" required>
+          <select
+            value={accountType}
+            onChange={e => setAccountType(e.target.value as any)}
+            className="h-10 rounded-md border bg-background px-3 text-sm w-full"
+          >
+            <option value="checking">Checking</option>
+            <option value="savings">Savings</option>
+          </select>
+        </Field>
+      </div>
+      <Field label="Account number" required>
+        <Input value={account} onChange={e => setAccount(e.target.value.replace(/\D/g, ""))} inputMode="numeric" />
+      </Field>
+      <Field label="Confirm account number" required>
+        <Input value={accountConfirm} onChange={e => setAccountConfirm(e.target.value.replace(/\D/g, ""))} inputMode="numeric" />
+      </Field>
+      <Field label="Account holder name (optional)" hint="Leave blank to use your legal business name">
+        <Input value={holderName} onChange={e => setHolderName(e.target.value)} />
+      </Field>
+      {error && (
+        <div className="rounded-lg border p-3 flex items-start gap-2" style={{ borderColor: "hsl(var(--brand-error) / 0.4)", background: "hsl(var(--brand-error) / 0.05)" }}>
+          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-error))" }} />
+          <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{error}</p>
+        </div>
+      )}
+      <Button
+        onClick={() => saveMutation.mutate()}
+        disabled={saveMutation.isPending || !routing || !account || !accountConfirm}
+        style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}
+      >
+        {saveMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+        Update bank account
+      </Button>
+    </div>
   );
 }
 
@@ -666,5 +888,120 @@ function ReadOnly({ label, value }: { label: string; value?: string | null }) {
       <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
       <dd className="text-sm whitespace-pre-line">{value || <span className="text-muted-foreground italic">Not set</span>}</dd>
     </div>
+  );
+}
+
+// ─── Payout history table ───────────────────────────────────────────────────
+//
+// Lists every invoice that resulted in a platform-to-Connect transfer (or was
+// supposed to). Status is derived from the same three-way logic used in
+// provider-billing-tab.tsx:
+//   stripeTransferId set    -> Sent
+//   payoutFailedAt set      -> Failed
+//   status==PAID, no xfer   -> Pending
+// We only show rows where the parent has paid - unpaid invoices don't have a
+// payout to track yet.
+
+function formatCents(cents: number | null | undefined, currency: string = "USD"): string {
+  if (cents == null) return "-";
+  return (cents / 100).toLocaleString("en-US", { style: "currency", currency: currency.toUpperCase() });
+}
+
+function PayoutHistoryTable() {
+  const { data: invoices = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/provider/invoices"],
+    queryFn: async () => {
+      const res = await fetch("/api/provider/invoices", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load payout history");
+      const d = await res.json();
+      return Array.isArray(d) ? d : (d.invoices || []);
+    },
+    refetchOnWindowFocus: true,
+    refetchInterval: 15000,
+  });
+
+  // Only invoices the parent has actually paid - that's when a payout
+  // exists (or should). Sort newest first.
+  const payouts = invoices
+    .filter((inv: any) => inv.status === "PAID" && (inv.providerPayoutAmount || 0) > 0)
+    .sort((a: any, b: any) => {
+      const aT = new Date(a.payoutInitiatedAt || a.paidAt || a.createdAt).getTime();
+      const bT = new Date(b.payoutInitiatedAt || b.paidAt || b.createdAt).getTime();
+      return bT - aT;
+    });
+
+  if (isLoading) {
+    return (
+      <section className="space-y-3">
+        <h3 className="font-semibold flex items-center gap-2"><History className="w-4 h-4" /> Payout history</h3>
+        <div className="rounded-xl border p-6 bg-secondary/40 flex items-center justify-center">
+          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+        </div>
+      </section>
+    );
+  }
+
+  if (payouts.length === 0) {
+    return (
+      <section className="space-y-3">
+        <h3 className="font-semibold flex items-center gap-2"><History className="w-4 h-4" /> Payout history</h3>
+        <div className="rounded-xl border p-6 bg-secondary/40 text-sm text-muted-foreground">
+          No payouts yet. When a parent pays an invoice for one of your services, you'll see the payout here.
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h3 className="font-semibold flex items-center gap-2"><History className="w-4 h-4" /> Payout history</h3>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          {payouts.length} payout{payouts.length === 1 ? "" : "s"} - what GoStork has sent (or is sending) to your bank.
+        </p>
+      </div>
+      <div className="rounded-xl border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
+            <thead>
+              <tr className="border-b bg-muted/40">
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Parent</th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Service</th>
+                <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Your payout</th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">GoStork paid you</th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payouts.map((inv: any) => {
+                const status = derivePayoutStatus(inv);
+                const dateStr = formatDateTime(inv.bankPayoutCompletedAt || inv.payoutInitiatedAt || inv.paidAt || inv.createdAt);
+                const parent = inv.parentUser?.name || inv.parentUser?.email || "Parent";
+                const service = inv.serviceType?.replace(/_/g, " ").toLowerCase() || "-";
+                return (
+                  <tr
+                    key={inv.id}
+                    className="border-b last:border-0 hover:bg-muted/10 cursor-pointer"
+                    onClick={() => window.open(`/api/provider/invoices/${inv.id}/document`, "_blank", "noopener,noreferrer")}
+                    title="Open invoice document"
+                  >
+                    <td className="px-4 py-2.5 whitespace-nowrap">{parent}</td>
+                    <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{service}</td>
+                    <td className="px-4 py-2.5 text-right font-medium whitespace-nowrap">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
+                    <td className="px-4 py-2.5 text-xs font-medium whitespace-nowrap" style={{ color: status.color }}>
+                      <span title={status.tooltip} className="cursor-help underline decoration-dotted underline-offset-2 inline-flex items-center gap-1">
+                        {status.isReceived && <CheckCircle2 className="w-3.5 h-3.5" />}
+                        {status.label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{dateStr}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   );
 }

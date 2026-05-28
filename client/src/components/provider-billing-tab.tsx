@@ -18,9 +18,11 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { formatMoneyCents } from "@/lib/format-money";
+import { formatDateTime } from "@/lib/format-date";
+import { derivePayoutStatus } from "@/lib/payout-status";
 import { InvoiceStatusBadge } from "./invoice-status-badge";
 import {
   ReferralFeeConfigSection,
@@ -86,6 +88,8 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
       // returns the array directly.
       return Array.isArray(d) ? d : (d.invoices || []);
     },
+    refetchOnWindowFocus: true,
+    refetchInterval: 15000,
   });
 
   // ── Tabs ────────────────────────────────────────────────────────────────
@@ -225,40 +229,31 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
             </p>
           </div>
           <div className="rounded-xl border overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-sm">
               <thead>
                 <tr className="border-b bg-muted/40">
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs">Parent</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs">Service</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs">Amount paid</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs">GoStork fee</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Parent</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Service</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Amount paid</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">GoStork fee</th>
                   {isProviderMode && (
-                    <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs">Your payout</th>
+                    <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Your payout</th>
                   )}
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs">{isProviderMode ? "Parent paid GoStork" : "Status"}</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">{isProviderMode ? "Parent paid GoStork" : "Status"}</th>
                   {isProviderMode && (
-                    <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs">GoStork paid you</th>
+                    <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">GoStork paid you</th>
                   )}
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs">Date</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Date</th>
                 </tr>
               </thead>
               <tbody>
                 {invoices.map((inv: any) => {
-                  // Payout status: green if the Stripe transfer ID is set
-                  // (money moved), red if a failure was recorded, otherwise
-                  // "pending" for paid invoices and "-" for unpaid ones.
-                  let transferLabel = "-";
-                  let transferColor = "hsl(var(--muted-foreground))";
-                  if (inv.stripeTransferId) {
-                    transferLabel = "Sent";
-                    transferColor = "hsl(var(--brand-success))";
-                  } else if (inv.payoutFailedAt) {
-                    transferLabel = "Failed";
-                    transferColor = "hsl(var(--destructive))";
-                  } else if (inv.status === "PAID") {
-                    transferLabel = "Pending";
-                    transferColor = "hsl(var(--brand-warning))";
-                  }
+                  // Payout status: derived from a single shared helper so the
+                  // Billing tab and Payouts history table stay in lockstep.
+                  // Five terminal states (Received / Failed at bank / Failed
+                  // / Sent / Pending), color + tooltip baked in.
+                  const status = derivePayoutStatus(inv);
                   // Provider-side rows are clickable - opens the invoice
                   // document in a new tab (PDF receipt for paid, HTML
                   // payment-request for everything else). Admin rows stay
@@ -280,14 +275,20 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
                       )}
                       <td className="px-4 py-2.5"><InvoiceStatusBadge status={inv.status} /></td>
                       {isProviderMode && (
-                        <td className="px-4 py-2.5 text-xs font-medium" style={{ color: transferColor }}>{transferLabel}</td>
+                        <td className="px-4 py-2.5 text-xs font-medium whitespace-nowrap" style={{ color: status.color }}>
+                          <span title={status.tooltip} className="cursor-help underline decoration-dotted underline-offset-2 inline-flex items-center gap-1">
+                            {status.isReceived && <CheckCircle2 className="w-3.5 h-3.5" />}
+                            {status.label}
+                          </span>
+                        </td>
                       )}
-                      <td className="px-4 py-2.5 text-muted-foreground text-xs">{new Date(inv.paidAt || inv.createdAt).toLocaleDateString()}</td>
+                      <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{formatDateTime(inv.paidAt || inv.createdAt)}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         </section>
       )}

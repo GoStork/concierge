@@ -243,6 +243,78 @@ export class ConnectController {
     }
   }
 
+  // ── Provider: bank management (post-onboarding) ─────────────────────────
+
+  /**
+   * Replace the provider's external bank account. Works for both Custom
+   * (Stripe-hosted onboarding here) and Express (provider can also do
+   * this via the Stripe Express dashboard - either path is fine).
+   */
+  @Post("api/provider/payouts/bank")
+  @UseGuards(SessionOrJwtGuard)
+  async updateBank(
+    @Req() req: Request,
+    @Body() body: { routingNumber: string; accountNumber: string; accountHolderName?: string; accountType: "checking" | "savings" },
+  ) {
+    const user = req.user as any;
+    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    if (!body?.routingNumber || !body?.accountNumber) {
+      throw new HttpException("Routing + account number required", HttpStatus.BAD_REQUEST);
+    }
+    try {
+      const result = await this.connectService.updateBankAccount({
+        providerId: user.providerId,
+        bank: {
+          routingNumber: body.routingNumber,
+          accountNumber: body.accountNumber,
+          accountHolderName: body.accountHolderName || "",
+          accountType: body.accountType || "checking",
+        },
+      });
+      return result;
+    } catch (e: any) {
+      this.logger.error(`Bank update failed for ${user.providerId}: ${e?.message}`);
+      throw new HttpException(e?.message || "Failed to update bank account", HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  /**
+   * Express-only: returns a short-lived URL into the provider's Stripe
+   * Express dashboard. Client opens it in a new tab so the provider can
+   * change bank, view payouts, etc. directly on Stripe.
+   */
+  @Post("api/provider/payouts/express/login-link")
+  @UseGuards(SessionOrJwtGuard)
+  async expressLoginLink(@Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    try {
+      return await this.connectService.getExpressLoginLink(user.providerId);
+    } catch (e: any) {
+      throw new HttpException(e?.message || "Failed to generate Stripe login link", HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  /**
+   * Disconnect the provider's payout account. Refuses if any pending /
+   * failed payouts exist or the Connect balance is non-zero, returning
+   * a structured "blocked" response with a human-readable reason. On
+   * success: Stripe account is deleted (Custom) and the local row is
+   * reset to "not yet onboarded".
+   */
+  @Post("api/provider/payouts/disconnect")
+  @UseGuards(SessionOrJwtGuard)
+  async disconnect(@Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    try {
+      return await this.connectService.disconnect(user.providerId);
+    } catch (e: any) {
+      this.logger.error(`Disconnect failed for ${user.providerId}: ${e?.message}`);
+      throw new HttpException(e?.message || "Failed to disconnect", HttpStatus.BAD_REQUEST);
+    }
+  }
+
   // ── Stripe Connect webhook ───────────────────────────────────────────────
 
   /**
@@ -286,25 +358,31 @@ export class ConnectController {
           // payout.* fires on the CONNECTED ACCOUNT when Stripe sweeps its
           // balance to the provider's bank. One payout aggregates multiple
           // Transfers (the connected account's payout schedule batches them),
-          // so we can't tie a single Invoice to a single payout - we just
-          // log here so admins have a record. The Invoice.payoutCompletedAt
-          // we already stamped at transfer.create time is the right
-          // "GoStork's money reached the provider" timestamp.
+          // so we list the payout's balance transactions and stamp every
+          // invoice the payout settled with bankPayoutCompletedAt /
+          // bankPayoutFailedAt. The UI then renders "Received" or
+          // "Failed at bank" per row.
           //
-          // payout.failed is the loud signal: the provider's bank rejected
-          // the credit (closed account, wrong routing, NSF on debit). The
-          // money sits in the connected account's balance until the
-          // provider updates their bank. We notify admins in-app.
+          // payout.failed also notifies admins in-app so they can coordinate
+          // with the provider to update their bank info (Stripe auto-retries
+          // on the next payout schedule).
           const payout = event.data.object as Stripe.Payout;
           const accountId = (event as any).account as string | undefined;
           this.logger.log(
             `Connect ${event.type}: payout=${payout.id} account=${accountId} amount=${payout.amount} ${payout.currency}`,
           );
-          if (event.type === "payout.failed" && accountId) {
+          if (accountId) {
             try {
-              await this.notifyAdminPayoutFailed(accountId, payout);
+              if (event.type === "payout.paid") {
+                await this.connectService.handlePayoutSucceeded(payout, accountId);
+              } else {
+                await this.connectService.handlePayoutFailed(payout, accountId);
+                await this.notifyAdminPayoutFailed(accountId, payout).catch(e =>
+                  this.logger.warn(`Failed to notify admins of payout.failed: ${e?.message}`),
+                );
+              }
             } catch (e: any) {
-              this.logger.warn(`Failed to notify admins of payout.failed: ${e?.message}`);
+              this.logger.error(`Failed to process ${event.type} for ${accountId}: ${e?.message}`, e?.stack);
             }
           }
           break;

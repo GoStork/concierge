@@ -1478,6 +1478,26 @@ model Invoice {
   payoutFailedAt        DateTime?
   payoutFailureReason   String?
 
+  // Bank-side settlement: when Stripe sweeps the connected account's
+  // balance to the provider's bank (a Stripe Payout, distinct from the
+  // platform->Connect Transfer above), payout.paid fires on the connected
+  // account. We list the payout's balance transactions on the connected
+  // account and match each one's `source` (a py_xxx charge id) against
+  // Invoice.stripeConnectPaymentId, which we stamped at transfer time.
+  // payout.failed sets bankPayoutFailedAt + reason. Note: one bank-side
+  // Payout can cover many Transfers, so multiple invoices share the
+  // same stripeBankPayoutId.
+  //
+  // stripeConnectPaymentId = Transfer.destination_payment - the Charge id
+  // on the connected account (py_xxx) corresponding to our platform-side
+  // transfer (tr_xxx). Necessary for matching balance transactions back
+  // to invoices on the payout.paid webhook.
+  stripeConnectPaymentId  String?   @unique
+  stripeBankPayoutId      String?
+  bankPayoutCompletedAt   DateTime?
+  bankPayoutFailedAt      DateTime?
+  bankPayoutFailureReason String?
+
   // Timestamps
   authorizedAt      DateTime?
   capturedAt        DateTime?

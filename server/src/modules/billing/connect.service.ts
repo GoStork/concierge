@@ -9,11 +9,16 @@ import { prisma as prismaClient } from "../../../db";
 import {
   createConnectAccount,
   createConnectAccountLink,
+  createExpressLoginLink,
   retrieveConnectAccount,
+  retrieveConnectAccountBalance,
   updateConnectAccount,
   attachConnectBankAccount,
   upsertConnectAccountRepresentative,
   createConnectTransfer,
+  deleteConnectAccount,
+  listConnectedPayoutBalanceTransactions,
+  listConnectedAccountPaymentBalanceTransactions,
 } from "../../../stripe-service";
 import type Stripe from "stripe";
 
@@ -310,6 +315,281 @@ export class ConnectService {
     };
   }
 
+  // ── Bank management (post-onboarding) ───────────────────────────────────────
+
+  /**
+   * Replace the provider's external bank account. Attaches a new
+   * external_account to the existing Connect account with
+   * default_for_currency: true, so future payouts route to it. Stripe
+   * keeps the prior external_account on the account history but stops
+   * sending funds to it. Used by the "Change bank account" flow on the
+   * Payouts tab.
+   *
+   * Requires the Connect account to already exist. Does not touch
+   * representative / business identity - those remain unchanged.
+   */
+  async updateBankAccount(params: {
+    providerId: string;
+    bank: { routingNumber: string; accountNumber: string; accountHolderName: string; accountType: "checking" | "savings" };
+  }): Promise<{ bankName: string | null; accountLast4: string | null }> {
+    const account = await this.prisma.providerBankAccount.findUnique({
+      where: { providerId: params.providerId },
+      select: { stripeConnectAccountId: true },
+    });
+    if (!account?.stripeConnectAccountId) {
+      throw new BadRequestException("No Stripe Connect account on file. Complete payout setup first.");
+    }
+    // Reuse business_type from the existing account so account_holder_type
+    // matches what Stripe expects (company vs individual).
+    const stripeAcct = await retrieveConnectAccount(account.stripeConnectAccountId);
+    const holderType: "company" | "individual" = stripeAcct.business_type === "individual" ? "individual" : "company";
+
+    const attached = await attachConnectBankAccount({
+      accountId: account.stripeConnectAccountId,
+      routingNumber: params.bank.routingNumber,
+      accountNumber: params.bank.accountNumber,
+      accountHolderName: params.bank.accountHolderName,
+      accountHolderType: holderType,
+    });
+
+    const updated = await this.prisma.providerBankAccount.update({
+      where: { providerId: params.providerId },
+      data: {
+        bankName: (attached as any).bank_name || null,
+        accountLast4: (attached as any).last4 || null,
+        accountType: params.bank.accountType,
+      },
+      select: { bankName: true, accountLast4: true },
+    });
+    this.logger.log(`Provider ${params.providerId} replaced bank account on ${account.stripeConnectAccountId} (last4=${updated.accountLast4})`);
+    return updated;
+  }
+
+  /**
+   * Express-only: short-lived URL into the Stripe Express dashboard.
+   * Provider clicks "Manage on Stripe" and lands directly on their
+   * account - they can change bank, view payouts, update info there.
+   */
+  async getExpressLoginLink(providerId: string): Promise<{ url: string }> {
+    const account = await this.prisma.providerBankAccount.findUnique({
+      where: { providerId },
+      select: { stripeConnectAccountId: true, payoutMethod: true },
+    });
+    if (!account?.stripeConnectAccountId) {
+      throw new BadRequestException("No Stripe Connect account on file.");
+    }
+    if (account.payoutMethod !== "STRIPE_CONNECT_EXPRESS") {
+      throw new BadRequestException("This action is only available for Stripe Express onboarding.");
+    }
+    return await createExpressLoginLink(account.stripeConnectAccountId);
+  }
+
+  /**
+   * Disconnect / unlink the provider's payout account.
+   *
+   * Safety checks (refuse if any are true):
+   *   - Any PAID invoice without a stripeTransferId (transfer never fired)
+   *   - Any invoice with payoutFailedAt set (transfer attempted, errored)
+   *   - Non-zero Connect-account balance (money still parked at Stripe)
+   *
+   * If clear: Custom accounts get deleted on Stripe's side and the
+   * ProviderBankAccount row is reset. Express accounts can't be deleted
+   * via API - we null out the local fields and the provider has to also
+   * disconnect from their Stripe Express dashboard; the resulting
+   * account.application.deauthorized webhook closes the loop.
+   */
+  async disconnect(providerId: string): Promise<
+    | { status: "disconnected" }
+    | { status: "blocked"; reason: string; pendingCount?: number; failedCount?: number; balanceCents?: number }
+  > {
+    const account = await this.prisma.providerBankAccount.findUnique({
+      where: { providerId },
+      select: { stripeConnectAccountId: true, payoutMethod: true },
+    });
+    if (!account?.stripeConnectAccountId) {
+      return { status: "disconnected" };
+    }
+
+    // 1. Pending payouts (PAID, no transfer ID, no failure stamp - never fired)
+    const pendingCount = await this.prisma.invoice.count({
+      where: { providerId, status: "PAID", stripeTransferId: null, payoutFailedAt: null, providerPayoutAmount: { gt: 0 } },
+    });
+    if (pendingCount > 0) {
+      return {
+        status: "blocked",
+        reason: `You have ${pendingCount} payout${pendingCount === 1 ? "" : "s"} waiting to be sent. Wait for them to clear, or contact GoStork support, before disconnecting.`,
+        pendingCount,
+      };
+    }
+
+    // 2. Failed payouts (transfer attempted, errored, not yet retried successfully)
+    const failedCount = await this.prisma.invoice.count({
+      where: { providerId, status: "PAID", payoutFailedAt: { not: null }, stripeTransferId: null },
+    });
+    if (failedCount > 0) {
+      return {
+        status: "blocked",
+        reason: `${failedCount} payout${failedCount === 1 ? "" : "s"} failed and need to be resolved before disconnecting. Contact GoStork support.`,
+        failedCount,
+      };
+    }
+
+    // 3. Money still sitting on the Connect account (transferred but not yet
+    // paid out to the provider's bank).
+    try {
+      const bal = await retrieveConnectAccountBalance(account.stripeConnectAccountId);
+      const total = bal.available + bal.pending;
+      if (total > 0) {
+        return {
+          status: "blocked",
+          reason: `Your Stripe Connect balance is ${(total / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })}. Wait for Stripe to pay it out to your bank before disconnecting.`,
+          balanceCents: total,
+        };
+      }
+    } catch (e: any) {
+      // If we can't read the balance (permissions, network), err on the
+      // safe side and refuse - better to ask the user to retry than to
+      // strand funds on Stripe.
+      this.logger.warn(`Could not verify Connect balance for ${account.stripeConnectAccountId} before disconnect: ${e?.message}`);
+      return { status: "blocked", reason: "Could not verify your Stripe balance. Try again in a few minutes." };
+    }
+
+    // 4. Safe to disconnect. Custom: delete the account on Stripe.
+    if (account.payoutMethod === "STRIPE_CONNECT_CUSTOM") {
+      try {
+        await deleteConnectAccount(account.stripeConnectAccountId);
+      } catch (e: any) {
+        this.logger.warn(`Stripe account delete failed for ${account.stripeConnectAccountId}: ${e?.message}. Proceeding with local disconnect.`);
+      }
+    }
+    // Reset our row either way - if the provider re-onboards we'll
+    // provision a fresh account.
+    await this.prisma.providerBankAccount.update({
+      where: { providerId },
+      data: {
+        payoutMethod: null,
+        stripeConnectAccountId: null,
+        payoutsEnabled: false,
+        chargesEnabled: false,
+        detailsSubmitted: false,
+        requirementsCurrentlyDue: [],
+        requirementsEventuallyDue: [],
+        requirementsPastDue: [],
+        requirementsDisabledReason: null,
+        bankName: null,
+        accountLast4: null,
+        accountType: null,
+        onboardingStartedAt: null,
+        onboardingCompletedAt: null,
+      },
+    });
+    this.logger.log(`Provider ${providerId} disconnected payout account ${account.stripeConnectAccountId}`);
+    return { status: "disconnected" };
+  }
+
+  // ── Bank-side settlement (payout.paid / payout.failed) ──────────────────────
+
+  /**
+   * Returns the list of source ids (py_xxx Charges on the connected account)
+   * that the given Payout bundled. Tries the direct filter first (only works
+   * for automatic payouts - Stripe rejects it for manual ones with the error
+   * "Balance transaction history can only be filtered on automatic transfers,
+   * not manual"). On that specific failure, falls back to listing the
+   * connected account's recent payment BTs and letting the caller intersect
+   * those against our unsettled invoices.
+   *
+   * Production: payouts are automatic (Stripe runs the schedule) so the
+   * direct filter is the path that always runs. The fallback only fires for
+   * dev/test where we trigger payouts manually via the API.
+   */
+  private async resolvePayoutSourceIds(payout: Stripe.Payout, accountId: string): Promise<string[]> {
+    try {
+      const bts = await listConnectedPayoutBalanceTransactions({ accountId, payoutId: payout.id });
+      return bts.map(b => b.source).filter((s): s is string => !!s);
+    } catch (e: any) {
+      const msg = (e?.message || "").toLowerCase();
+      const isManualFilterError = /can only be filtered on automatic|not manual/.test(msg);
+      if (!isManualFilterError) throw e;
+      this.logger.warn(`Payout ${payout.id} is manual; falling back to listing payment BTs on ${accountId}`);
+      // Bound the window to recent activity so we don't scan years of history.
+      // Anything 60 days back covers the realistic delay between transfer
+      // creation and bank settlement; sized generously since pagination is
+      // capped at 100/page.
+      const since = Math.floor(Date.now() / 1000) - 60 * 24 * 60 * 60;
+      const bts = await listConnectedAccountPaymentBalanceTransactions({ accountId, sinceUnix: since });
+      return bts.map(b => b.source).filter((s): s is string => !!s);
+    }
+  }
+
+  /**
+   * payout.paid on a connected account = Stripe finished sweeping that
+   * account's available balance to the provider's bank. One Stripe Payout
+   * can bundle multiple platform-originated Transfers (the connected
+   * account's payout schedule batches them by date), so we list the
+   * payout's balance transactions and stamp every invoice the payout
+   * settled.
+   *
+   * Matching key: BT.source is the Charge id (py_xxx) on the connected
+   * account that the platform Transfer created. We stored that as
+   * Invoice.stripeConnectPaymentId at transfer time, so it's a direct
+   * lookup.
+   */
+  async handlePayoutSucceeded(payout: Stripe.Payout, accountId: string): Promise<{ matched: number }> {
+    const sources = await this.resolvePayoutSourceIds(payout, accountId);
+    if (sources.length === 0) {
+      this.logger.warn(`payout.paid ${payout.id} on ${accountId}: no balance transactions returned`);
+      return { matched: 0 };
+    }
+    // Idempotent: only update rows that don't already have a bank-payout
+    // stamp. Re-deliveries of the webhook (which Stripe does on retry) are
+    // safe and won't churn the timestamp.
+    const result = await this.prisma.invoice.updateMany({
+      where: {
+        stripeConnectPaymentId: { in: sources },
+        bankPayoutCompletedAt: null,
+      },
+      data: {
+        bankPayoutCompletedAt: new Date(),
+        stripeBankPayoutId: payout.id,
+        bankPayoutFailedAt: null,
+        bankPayoutFailureReason: null,
+      },
+    });
+    this.logger.log(`payout.paid ${payout.id} on ${accountId}: settled ${result.count} of ${sources.length} bundled transfer(s)`);
+    return { matched: result.count };
+  }
+
+  /**
+   * payout.failed = provider's bank rejected the credit (closed account,
+   * wrong routing, NSF). Money stays on the connected account's balance
+   * and Stripe retries on the next payout schedule. Same matching logic
+   * as success - stamp the invoices that the failed payout would have
+   * settled so the UI can show "Failed at bank" per row.
+   */
+  async handlePayoutFailed(payout: Stripe.Payout, accountId: string): Promise<{ matched: number }> {
+    const sources = await this.resolvePayoutSourceIds(payout, accountId);
+    if (sources.length === 0) {
+      this.logger.warn(`payout.failed ${payout.id} on ${accountId}: no balance transactions returned`);
+      return { matched: 0 };
+    }
+    const reason = (payout.failure_message || payout.failure_code || "Bank rejected the payout").slice(0, 500);
+    const result = await this.prisma.invoice.updateMany({
+      where: {
+        stripeConnectPaymentId: { in: sources },
+        // Don't overwrite a successful settlement if a stale payout.failed
+        // arrives out-of-order (Stripe doesn't guarantee delivery order).
+        bankPayoutCompletedAt: null,
+      },
+      data: {
+        bankPayoutFailedAt: new Date(),
+        bankPayoutFailureReason: reason,
+        stripeBankPayoutId: payout.id,
+      },
+    });
+    this.logger.warn(`payout.failed ${payout.id} on ${accountId}: ${reason} (affected ${result.count} invoice(s))`);
+    return { matched: result.count };
+  }
+
   // ── State refresh ──────────────────────────────────────────────────────────
 
   /**
@@ -489,6 +769,11 @@ export class ConnectService {
           where: { id: invoice.id },
           data: {
             stripeTransferId: transfer.id,
+            // destination_payment is the Charge id (py_xxx) created on the
+            // connected account when this Transfer landed. The bank-side
+            // payout.paid webhook references it as the BT source, so we
+            // stamp it here for the match-back lookup.
+            stripeConnectPaymentId: (transfer as any).destination_payment || null,
             payoutInitiatedAt: invoice.payoutInitiatedAt || new Date(),
             payoutCompletedAt: new Date(),
             payoutFailedAt: null,

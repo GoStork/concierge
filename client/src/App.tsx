@@ -47,6 +47,7 @@ import ResetPasswordPage from "@/pages/reset-password-page";
 import MatchmakerSelectionPage from "@/pages/matchmaker-selection-page";
 import ConciergeChatPage from "@/pages/concierge-chat-page";
 import ConversationsPage from "@/pages/conversations-page";
+import ChatSessionRedirect from "@/pages/chat-session-redirect";
 import AdminConciergeMonitor from "@/pages/admin-concierge-monitor";
 import OnboardingAiIntroPage from "@/pages/onboarding-ai-intro-page";
 import OnboardingAiReadyPage from "@/pages/onboarding-ai-ready-page";
@@ -162,6 +163,7 @@ function AppRoutes() {
         <Route path="/chat" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
         <Route path="/chat/concierge" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
         <Route path="/chat/:entityId/:subjectId" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
+        <Route path="/chat/:sessionId" element={<ProtectedRoute><ChatSessionRedirect /></ProtectedRoute>} />
         <Route path="/agreements/:id" element={<ProtectedRoute><AgreementsSigningPage /></ProtectedRoute>} />
         <Route path="/agreements/guest/:token" element={<AgreementsGuestSigningPage />} />
         <Route path="/w9/:id" element={<ProtectedRoute><W9SigningPage /></ProtectedRoute>} />
