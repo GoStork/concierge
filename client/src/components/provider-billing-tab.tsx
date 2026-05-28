@@ -228,29 +228,25 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
       {invoices.length > 0 && (
         <section className="space-y-3">
           <div>
-            <h3 className="font-semibold">{isProviderMode ? "Payments received" : "Invoice History"}</h3>
+            <h3 className="font-semibold">{isProviderMode ? "Payments received" : "Invoice history"}</h3>
             <p className="text-sm text-muted-foreground mt-0.5">
               {isProviderMode
                 ? `${invoices.length} invoice${invoices.length !== 1 ? "s" : ""} - GoStork transfers your share to your bank when the parent pays.`
-                : `${invoices.length} invoice${invoices.length !== 1 ? "s" : ""} for this provider`}
+                : `${invoices.length} invoice${invoices.length !== 1 ? "s" : ""} for this provider - full money flow from parent payment through GoStork to the provider's bank.`}
             </p>
           </div>
           <div className="rounded-xl border overflow-hidden">
             <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full min-w-[960px] text-sm">
               <thead>
                 <tr className="border-b bg-muted/40">
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Parent</th>
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Service</th>
                   <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Amount paid</th>
                   <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">GoStork fee</th>
-                  {isProviderMode && (
-                    <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Your payout</th>
-                  )}
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">{isProviderMode ? "Parent paid GoStork" : "Status"}</th>
-                  {isProviderMode && (
-                    <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">GoStork paid you</th>
-                  )}
+                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">{isProviderMode ? "Your payout" : "Provider payout"}</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Parent paid GoStork</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">{isProviderMode ? "GoStork paid you" : "GoStork paid provider"}</th>
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Date</th>
                   {!isProviderMode && (
                     <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Actions</th>
@@ -280,11 +276,15 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
                       <td className="px-4 py-2.5 text-muted-foreground text-xs">{inv.serviceType?.replace(/_/g, " ").toLowerCase() || "-"}</td>
                       <td className="px-4 py-2.5 text-right font-medium">{formatCents(inv.serviceAmount, inv.currency)}</td>
                       <td className="px-4 py-2.5 text-right" style={{ color: "hsl(var(--brand-success))" }}>{formatCents(inv.referralFeeAmount, inv.currency)}</td>
-                      {isProviderMode && (
-                        <td className="px-4 py-2.5 text-right font-medium">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
-                      )}
+                      <td className="px-4 py-2.5 text-right font-medium">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
                       <td className="px-4 py-2.5">
                         <InvoiceStatusBadge status={inv.status} />
+                      </td>
+                      <td className="px-4 py-2.5 text-xs font-medium whitespace-nowrap" style={{ color: status.color }}>
+                        <span title={status.tooltip} className="cursor-help underline decoration-dotted underline-offset-2 inline-flex items-center gap-1">
+                          {status.isReceived && <CheckCircle2 className="w-3.5 h-3.5" />}
+                          {status.label}
+                        </span>
                         {inv.payoutReversalAtRisk && !inv.payoutReversalRecoupedAt && (
                           <div
                             className="text-[10px] mt-1 inline-flex items-center gap-1"
@@ -296,14 +296,6 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
                           </div>
                         )}
                       </td>
-                      {isProviderMode && (
-                        <td className="px-4 py-2.5 text-xs font-medium whitespace-nowrap" style={{ color: status.color }}>
-                          <span title={status.tooltip} className="cursor-help underline decoration-dotted underline-offset-2 inline-flex items-center gap-1">
-                            {status.isReceived && <CheckCircle2 className="w-3.5 h-3.5" />}
-                            {status.label}
-                          </span>
-                        </td>
-                      )}
                       <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{formatDateTime(inv.paidAt || inv.createdAt)}</td>
                       {!isProviderMode && (
                         <td className="px-4 py-2.5 text-right whitespace-nowrap">
