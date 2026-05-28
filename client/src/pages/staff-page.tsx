@@ -9,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
-import { Plus, UserCircle, Trash2, Pencil, Loader2, Phone, Search, XCircle, Calendar, ChevronDown, Copy, Check } from "lucide-react";
+import { Plus, UserCircle, Trash2, Pencil, Loader2, Phone, Search, XCircle, Calendar, ChevronDown, Copy, Check, CheckCircle2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { parsePhoneNumber } from "libphonenumber-js";
@@ -430,9 +430,11 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
       </div>
 
       {/* overflow-x-auto so wide rows scroll horizontally instead of
-          wrapping a single value across two lines (phone numbers and
-          source pills used to break). whitespace-nowrap on every cell
-          enforces single-line per column. */}
+          wrapping. whitespace-nowrap on every cell enforces single-line
+          per column. Source column was removed - every parent in this
+          table got here by booking a consultation through the AI chat,
+          so "source" was always the same value and the column didn't
+          earn its width. */}
       <Card className="overflow-x-auto">
         <Table>
           <TableHeader>
@@ -440,8 +442,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
               <TableHead className="whitespace-nowrap">Name</TableHead>
               <TableHead className="hidden sm:table-cell whitespace-nowrap">Email</TableHead>
               <TableHead className="hidden md:table-cell whitespace-nowrap">Mobile</TableHead>
-              <TableHead className="hidden lg:table-cell whitespace-nowrap">Source</TableHead>
-              <TableHead className="hidden lg:table-cell whitespace-nowrap">Status</TableHead>
+              <TableHead className="hidden lg:table-cell whitespace-nowrap">Match Status</TableHead>
               <TableHead className="hidden lg:table-cell whitespace-nowrap">Last Meeting</TableHead>
               <TableHead className="hidden lg:table-cell text-right whitespace-nowrap">Meetings</TableHead>
               <TableHead className="hidden lg:table-cell whitespace-nowrap">Invoices</TableHead>
@@ -488,15 +489,6 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
                   ) : <span className="text-muted-foreground text-sm">-</span>}
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
-                  <span className={`text-xs font-ui px-2 py-0.5 rounded-full whitespace-nowrap ${
-                    row.source === "chat" ? "bg-primary/10 text-primary" :
-                    row.source === "both" ? "bg-emerald-100 text-emerald-700" :
-                    "bg-muted text-muted-foreground"
-                  }`} data-testid={`text-parent-source-${row.id}`}>
-                    {row.source === "chat" ? "Concierge" : row.source === "both" ? "Chat + Meeting" : "Meeting"}
-                  </span>
-                </TableCell>
-                <TableCell className="hidden lg:table-cell whitespace-nowrap">
                   <MatchStatusBadge status={row.matchStatus} />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
@@ -513,7 +505,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
               </TableRow>
             )) : (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                   {searchQuery ? "No parents match your search." : "No parent contacts yet. Parents will appear here when the AI concierge connects them with you."}
                 </TableCell>
               </TableRow>
@@ -527,31 +519,40 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
 
 // ─── Match status badge ─────────────────────────────────────────────────────
 //
-// Mirrors the labels used on the chat sidebar so providers see consistent
-// wording across pages. Maps the AiChatSession.status enum onto the
-// human-readable wording from CLAUDE.md's session-lifecycle spec:
-//   ACTIVE              -> "Q&A"        (anonymous whisper Q&A pre-booking)
-//   CONSULTATION_BOOKED -> "Call Booked"
-//   PROVIDER_CONNECTED  -> "Connected"  (provider has chatted directly)
-//   anything else / null -> "-"
+// Mirrors the chat right-pane "Match Status" pill exactly so providers see
+// the same label + color treatment whether they're looking at the chat or
+// the Parents table.
+//   CONSULTATION_BOOKED -> "Call Booked" (success / green)
+//   PROVIDER_CONNECTED  -> "Connected"   (success / green)
+// ACTIVE (anonymous Q&A) shouldn't reach the table - the server filters it
+// out so the agency only sees parents who've actually committed to a
+// consultation. Anything unexpected falls through to a neutral pill.
 function MatchStatusBadge({ status }: { status: string | null | undefined }) {
   if (!status) return <span className="text-muted-foreground text-sm">-</span>;
-  const map: Record<string, { label: string; tone: "muted" | "warning" | "success" }> = {
-    ACTIVE: { label: "Q&A", tone: "muted" },
-    CONSULTATION_BOOKED: { label: "Call Booked", tone: "warning" },
-    PROVIDER_CONNECTED: { label: "Connected", tone: "success" },
+  const map: Record<string, { label: string }> = {
+    CONSULTATION_BOOKED: { label: "Call Booked" },
+    PROVIDER_CONNECTED: { label: "Connected" },
   };
-  const entry = map[status] || { label: status, tone: "muted" as const };
-  const bg =
-    entry.tone === "success" ? "hsl(var(--brand-success) / 0.12)"
-    : entry.tone === "warning" ? "hsl(var(--brand-warning) / 0.15)"
-    : "hsl(var(--secondary))";
-  const fg =
-    entry.tone === "success" ? "hsl(var(--brand-success))"
-    : entry.tone === "warning" ? "hsl(var(--brand-warning))"
-    : "hsl(var(--foreground))";
+  const entry = map[status];
+  if (!entry) {
+    return (
+      <span
+        className="text-xs font-ui px-2 py-0.5 rounded-full"
+        style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}
+      >
+        {status}
+      </span>
+    );
+  }
   return (
-    <span className="text-xs font-ui px-2 py-0.5 rounded-full" style={{ background: bg, color: fg }}>
+    <span
+      className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full"
+      style={{
+        background: "hsl(var(--brand-success) / 0.12)",
+        color: "hsl(var(--brand-success))",
+      }}
+    >
+      <CheckCircle2 className="w-3 h-3" />
       {entry.label}
     </span>
   );

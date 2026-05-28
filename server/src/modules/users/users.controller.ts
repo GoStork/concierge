@@ -940,8 +940,20 @@ export class UsersController {
     // for Egg Donation Q&A) and each has its own status + invoices. So we
     // return one row per session - never collapse sessions into a single
     // parent row.
+    //
+    // IMPORTANT: only surface sessions where the parent has actually
+    // committed to a consultation. ACTIVE sessions are anonymous "whisper"
+    // Q&A - the parent is intentionally masked as "Prospective Parent"
+    // and the agency is not supposed to see any identifying info until
+    // the parent books a call. Including ACTIVE rows here would leak
+    // contacts the parent hasn't agreed to share. So we filter to
+    // CONSULTATION_BOOKED (call scheduled, identity revealed) and
+    // PROVIDER_CONNECTED (agency has chatted directly post-call).
     const chatSessions = await this.prisma.aiChatSession.findMany({
-      where: { providerId },
+      where: {
+        providerId,
+        status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] },
+      },
       select: {
         id: true,
         userId: true,
