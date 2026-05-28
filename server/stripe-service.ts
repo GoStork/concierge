@@ -113,6 +113,64 @@ const US_PAYMENT_METHOD_ORDER = [
   "us_bank_account", // ACH
 ] as const;
 
+// ─── Payment Method Configuration (PMC) cache ───────────────────────────────
+//
+// PMC is Stripe's mechanism for per-method "display preference":
+//   - "on"  -> show as a top-level tile in Payment Element
+//   - "off" -> still available, but tucked behind the "More" dropdown
+//   - "none" -> disabled entirely
+//
+// This is the only way to get Card + US bank account visible as the
+// primary tiles AND keep BNPL (Klarna / Affirm / Cash App Pay) available
+// for the parents who want them - just not promoted to the visible tile
+// row. payment_method_types alone can't do this because Stripe's
+// Payment Element reorders the array based on its own heuristics.
+//
+// We create one PMC named "GoStork checkout default" on first use and
+// cache its id in-process. On every PaymentIntent create we pass
+// payment_method_configuration: <pmcId> instead of payment_method_types.
+// Cheap (one extra API call per cold start) and fully deterministic.
+let cachedPmcIdPromise: Promise<string | null> | null = null;
+
+async function getOrCreateGoStorkPmc(): Promise<string | null> {
+  if (cachedPmcIdPromise) return cachedPmcIdPromise;
+  cachedPmcIdPromise = (async () => {
+    try {
+      const stripe = getStripe();
+      const PMC_NAME = "GoStork checkout default";
+
+      // Find an existing PMC by our well-known name so we don't create a
+      // new one on every server boot.
+      const list = await stripe.paymentMethodConfigurations.list({ limit: 100 });
+      const existing = list.data.find(p => p.name === PMC_NAME && !p.is_default);
+      if (existing) return existing.id;
+
+      // First boot - create the PMC. Card + US bank get "on" (primary
+      // tiles). BNPL gets "off" (available but tucked behind "More").
+      const created = await stripe.paymentMethodConfigurations.create({
+        name: PMC_NAME,
+        card: { display_preference: { preference: "on" } },
+        us_bank_account: { display_preference: { preference: "on" } },
+        link: { display_preference: { preference: "on" } },
+        apple_pay: { display_preference: { preference: "on" } },
+        google_pay: { display_preference: { preference: "on" } },
+        klarna: { display_preference: { preference: "off" } },
+        affirm: { display_preference: { preference: "off" } },
+        cashapp: { display_preference: { preference: "off" } },
+      });
+      return created.id;
+    } catch (e: any) {
+      // Restricted key without paymentMethodConfigurations:write, or any
+      // other transient failure. Cache the null so we don't hammer the
+      // API on every PaymentIntent - the caller will fall back to
+      // payment_method_types instead.
+      console.warn(`[stripe] PMC create/list failed, falling back to payment_method_types: ${e?.message}`);
+      return null;
+    }
+  })();
+  return cachedPmcIdPromise;
+}
+
 export async function createPaymentIntent(params: {
   amountCents: number;
   currency: string;
@@ -139,31 +197,33 @@ export async function createPaymentIntent(params: {
   // generic receipt would just create a duplicate. Stripe Dashboard ->
   // Settings -> Customer emails -> "Successful payments" must also be off.
   // Three modes:
-  //  - Manual capture (escrow hold): card-only. ACH / wallets backed by ACH
-  //    cannot be manual-captured, Stripe rejects the intent otherwise.
-  //  - US buyer OR unknown country: explicit ordered list so Card + ACH
-  //    lead the tile row. Apple Pay / Google Pay / Link surface as
-  //    wallets inside the Card option on supported devices. We default
-  //    to US ordering on unknown country because GoStork's user base is
-  //    US-first, ngrok/dev IPs don't geoip-resolve cleanly, and Stripe's
-  //    "automatic" ordering tends to push BNPL / regional methods
-  //    higher than Card+ACH, which doesn't match the spec the user
-  //    wanted ("card then bank" for USA).
+  //  - Manual capture (escrow hold): card-only via payment_method_types.
+  //    ACH / wallets backed by ACH cannot be manual-captured, Stripe
+  //    rejects the intent otherwise. We can't use PMC here because PMC
+  //    enables multiple methods and we need to restrict to card only.
+  //  - US buyer OR unknown country: use our Payment Method Configuration
+  //    (PMC). Card + US bank account get display_preference "on" so they
+  //    appear as the visible top tiles in this order; BNPL methods get
+  //    "off" so they're available but tucked behind the "More" dropdown.
+  //    Falls back to payment_method_types: [card, us_bank_account] if
+  //    PMC creation fails (e.g. restricted key without PMC write perm).
   //  - Explicit non-US buyer: automatic_payment_methods. Stripe picks
   //    the optimal order for the buyer's actual country (Bancontact
-  //    for BE, iDEAL for NL, SEPA for EU, etc.). Only kicks in when
-  //    geoip returns a non-US ISO code - so we don't hurt conversion
-  //    for the rare international parent without overriding the US
-  //    default for the majority case.
+  //    for BE, iDEAL for NL, SEPA for EU, etc.).
   const isManualCapture = (params.captureMethod ?? "automatic") === "manual";
   const explicitCountry = params.buyerCountry?.toUpperCase();
   const useUsOrder = !explicitCountry || explicitCountry === "US";
-  const paymentMethodOpts: Stripe.PaymentIntentCreateParams =
-    isManualCapture
-      ? { payment_method_types: ["card"] }
-      : useUsOrder
-        ? { payment_method_types: [...US_PAYMENT_METHOD_ORDER] }
-        : { automatic_payment_methods: { enabled: true } };
+  let paymentMethodOpts: Stripe.PaymentIntentCreateParams;
+  if (isManualCapture) {
+    paymentMethodOpts = { payment_method_types: ["card"] };
+  } else if (useUsOrder) {
+    const pmcId = await getOrCreateGoStorkPmc();
+    paymentMethodOpts = pmcId
+      ? { payment_method_configuration: pmcId }
+      : { payment_method_types: [...US_PAYMENT_METHOD_ORDER] };
+  } else {
+    paymentMethodOpts = { automatic_payment_methods: { enabled: true } };
+  }
 
   const intent = await stripe.paymentIntents.create({
     amount: params.amountCents,
