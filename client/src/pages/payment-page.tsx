@@ -390,18 +390,26 @@ function StripePaymentForm({ invoice, isMock, onSuccess }: {
 
 // ─── Post-payment success landing ────────────────────────────────────────────
 //
-// Reads ?returnTo= (set by billing.service when it generates the pay link
-// for the chat / SMS / email), auto-redirects after 2.5s so the parent
-// briefly sees the confirmation then lands back in the right chat thread.
-// Manual button is kept as a fallback for users who navigate away from
-// the tab and come back to a stalled timer.
-function PaymentSuccessLanding({ providerName }: { providerName: string }) {
+// Two ways to land here:
+//
+//   1. Parent JUST paid in this session (paymentSuccess === true after
+//      Stripe confirms). They expect to be bounced back into the chat
+//      thread they came from - that's the whole point of the returnTo.
+//
+//   2. Parent opens a previously-paid invoice's link (invoice.status
+//      === "PAID" on first load). They might be re-reading the SMS,
+//      checking the email later, or they got the receipt link. They
+//      did NOT just complete a payment in this tab. Yanking them off
+//      to /chat (which requires auth - the SMS reader isn't logged in)
+//      is exactly what produced "opens the invoice then redirects to
+//      empty page."
+//
+// The `justPaid` prop distinguishes the two cases. Auto-redirect ONLY
+// fires when justPaid is true; revisits stay on the static success
+// page with the manual "Return to Chat" button as the explicit
+// action.
+function PaymentSuccessLanding({ providerName, justPaid }: { providerName: string; justPaid: boolean }) {
   const navigate = useNavigate();
-  // Only auto-redirect when the link explicitly included ?returnTo=. The
-  // SMS / email / chat-card pay links set this and want the parent bounced
-  // back into their chat after success. Provider-side previews and direct
-  // navigation (no returnTo) stay on the static success screen so the
-  // viewer isn't yanked off the page they just opened.
   const rawReturnTo = new URLSearchParams(window.location.search).get("returnTo");
   const safeReturn = (() => {
     if (!rawReturnTo) return null;
@@ -413,21 +421,21 @@ function PaymentSuccessLanding({ providerName }: { providerName: string }) {
     }
   })();
   useEffect(() => {
-    if (!safeReturn) return;
+    if (!safeReturn || !justPaid) return;
     const t = setTimeout(() => navigate(safeReturn), 2500);
     return () => clearTimeout(t);
-  }, [navigate, safeReturn]);
+  }, [navigate, safeReturn, justPaid]);
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-4 text-center">
       <CheckCircle2 className="w-14 h-14" style={{ color: "hsl(var(--brand-success))" }} />
       <h1 className="text-xl font-heading font-semibold">Payment Successful!</h1>
       <p className="text-sm text-muted-foreground max-w-sm">
         Your payment for {providerName} has been received. You will receive a confirmation email shortly.
-        {safeReturn ? " Taking you back to your chat..." : ""}
+        {safeReturn && justPaid ? " Taking you back to your chat..." : ""}
       </p>
       {safeReturn && (
         <Button onClick={() => navigate(safeReturn)} style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}>
-          Return to Chat now
+          Return to Chat
         </Button>
       )}
     </div>
@@ -515,7 +523,11 @@ export default function PaymentPage() {
   }
 
   if (paymentSuccess || invoice.status === "PAID") {
-    return <PaymentSuccessLanding providerName={invoice.providerName} />;
+    // justPaid distinguishes "parent just confirmed payment in this tab"
+    // (auto-redirect to chat) from "parent revisited an already-paid
+    // invoice's link from email/SMS" (stay on the success page so they
+    // aren't bounced to /chat which requires auth they don't have).
+    return <PaymentSuccessLanding providerName={invoice.providerName} justPaid={paymentSuccess} />;
   }
 
   if (invoice.status === "PAYMENT_PROCESSING") {
