@@ -891,6 +891,9 @@ export class UsersController {
     });
     const staffIds = providerStaff.map(s => s.id);
 
+    // Parent-level aggregates we display on every row that belongs to that
+    // parent (meeting count + last meeting + source flavor). These are
+    // shared across all chat-session rows for the same parent.
     const bookings = await this.prisma.booking.findMany({
       where: {
         providerUserId: { in: staffIds },
@@ -908,32 +911,43 @@ export class UsersController {
       orderBy: { scheduledAt: "desc" },
     });
 
-    const parentMap = new Map<string, any>();
+    type ParentAgg = {
+      parentUser: any;
+      lastMeetingAt: Date | null;
+      meetingCount: number;
+      hasMeeting: boolean;
+    };
+    const parentAgg = new Map<string, ParentAgg>();
     for (const b of bookings) {
       if (!b.parentUserId || !b.parentUser) continue;
-      if (!parentMap.has(b.parentUserId)) {
-        parentMap.set(b.parentUserId, {
-          ...b.parentUser,
+      const existing = parentAgg.get(b.parentUserId);
+      if (!existing) {
+        parentAgg.set(b.parentUserId, {
+          parentUser: b.parentUser,
           lastMeetingAt: b.scheduledAt,
           meetingCount: 1,
-          source: "meeting",
+          hasMeeting: true,
         });
       } else {
-        parentMap.get(b.parentUserId).meetingCount += 1;
+        existing.meetingCount += 1;
+        // bookings are ordered scheduledAt desc, so the first one we saw
+        // is already the latest - no update needed.
       }
     }
 
-    // Pull ALL session statuses, not just PROVIDER_CONNECTED, so the
-    // provider sees parents in earlier match states too (ACTIVE = anonymous
-    // Q&A, CONSULTATION_BOOKED = call scheduled). orderBy updatedAt desc
-    // means the first session we see per parent is the most recent one,
-    // which is the one whose status we surface in the UI.
+    // Each chat session = one match between this parent and this provider.
+    // A parent can have multiple sessions (e.g. one for Surrogacy Q&A, one
+    // for Egg Donation Q&A) and each has its own status + invoices. So we
+    // return one row per session - never collapse sessions into a single
+    // parent row.
     const chatSessions = await this.prisma.aiChatSession.findMany({
       where: { providerId },
       select: {
+        id: true,
         userId: true,
         status: true,
         createdAt: true,
+        updatedAt: true,
         providerJoinedAt: true,
         user: {
           select: {
@@ -944,36 +958,15 @@ export class UsersController {
       orderBy: { updatedAt: "desc" },
     });
 
-    for (const cs of chatSessions) {
-      if (!cs.userId || !cs.user) continue;
-      if (!parentMap.has(cs.userId)) {
-        parentMap.set(cs.userId, {
-          ...cs.user,
-          lastMeetingAt: null,
-          meetingCount: 0,
-          source: "chat",
-          chatStartedAt: cs.providerJoinedAt || cs.createdAt,
-          matchStatus: cs.status,
-        });
-      } else {
-        const existing = parentMap.get(cs.userId);
-        if (!existing.chatStartedAt) {
-          existing.chatStartedAt = cs.providerJoinedAt || cs.createdAt;
-          existing.source = existing.source === "meeting" ? "both" : "chat";
-        }
-        // Latest session wins (orderBy updatedAt desc ensures this).
-        if (!existing.matchStatus) existing.matchStatus = cs.status;
-      }
-    }
-
-    // Attach invoices per parent. We pull them all in one query and group
-    // in-memory so we don't N+1 across the parent list.
-    const parentIds = Array.from(parentMap.keys());
-    if (parentIds.length > 0) {
+    // Invoices grouped by sessionId so each match row only shows its own
+    // invoices. Single query, in-memory grouping = no N+1.
+    const sessionIds = chatSessions.map(s => s.id);
+    const invoicesBySession = new Map<string, any[]>();
+    if (sessionIds.length > 0) {
       const invoices = await this.prisma.invoice.findMany({
         where: {
           providerId,
-          parentUserId: { in: parentIds },
+          sessionId: { in: sessionIds },
         },
         select: {
           id: true,
@@ -987,19 +980,62 @@ export class UsersController {
           payoutFailedAt: true,
           paidAt: true,
           createdAt: true,
+          sessionId: true,
           parentUserId: true,
         },
         orderBy: { createdAt: "desc" },
       });
       for (const inv of invoices) {
-        const parent = parentMap.get(inv.parentUserId);
-        if (!parent) continue;
-        if (!parent.invoices) parent.invoices = [];
-        parent.invoices.push(inv);
+        if (!inv.sessionId) continue;
+        const list = invoicesBySession.get(inv.sessionId) || [];
+        list.push(inv);
+        invoicesBySession.set(inv.sessionId, list);
       }
     }
 
-    return Array.from(parentMap.values());
+    // Build the rows: one per chat session.
+    const rows: any[] = [];
+    const parentsWithSession = new Set<string>();
+    for (const cs of chatSessions) {
+      if (!cs.userId || !cs.user) continue;
+      parentsWithSession.add(cs.userId);
+      const agg = parentAgg.get(cs.userId);
+      rows.push({
+        // Stable React key - use sessionId so multiple matches for the
+        // same parent get distinct rows.
+        rowId: cs.id,
+        sessionId: cs.id,
+        matchStatus: cs.status,
+        chatStartedAt: cs.providerJoinedAt || cs.createdAt,
+        // Parent fields are duplicated on every row that belongs to the
+        // parent. UI keeps them visible per row so each row reads
+        // standalone in the scan-down direction.
+        ...cs.user,
+        lastMeetingAt: agg?.lastMeetingAt || null,
+        meetingCount: agg?.meetingCount || 0,
+        source: agg?.hasMeeting ? "both" : "chat",
+        invoices: invoicesBySession.get(cs.id) || [],
+      });
+    }
+
+    // Meeting-only parents (had a booking with us but never opened a
+    // chat) still get one row each, with no session-level fields.
+    for (const [parentId, agg] of parentAgg) {
+      if (parentsWithSession.has(parentId)) continue;
+      rows.push({
+        rowId: `meeting-${parentId}`,
+        sessionId: null,
+        matchStatus: null,
+        chatStartedAt: null,
+        ...agg.parentUser,
+        lastMeetingAt: agg.lastMeetingAt,
+        meetingCount: agg.meetingCount,
+        source: "meeting",
+        invoices: [],
+      });
+    }
+
+    return rows;
   }
 
   @Get("providers/:providerId/users")

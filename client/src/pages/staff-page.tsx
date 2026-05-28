@@ -429,74 +429,86 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
         </div>
       </div>
 
-      <Card className="overflow-hidden">
+      {/* overflow-x-auto so wide rows scroll horizontally instead of
+          wrapping a single value across two lines (phone numbers and
+          source pills used to break). whitespace-nowrap on every cell
+          enforces single-line per column. */}
+      <Card className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead className="hidden sm:table-cell">Email</TableHead>
-              <TableHead className="hidden md:table-cell">Mobile</TableHead>
-              <TableHead className="hidden lg:table-cell">Source</TableHead>
-              <TableHead className="hidden lg:table-cell">Status</TableHead>
-              <TableHead className="hidden lg:table-cell">Last Meeting</TableHead>
-              <TableHead className="hidden lg:table-cell text-right">Meetings</TableHead>
-              <TableHead className="hidden lg:table-cell">Invoices</TableHead>
+              <TableHead className="whitespace-nowrap">Name</TableHead>
+              <TableHead className="hidden sm:table-cell whitespace-nowrap">Email</TableHead>
+              <TableHead className="hidden md:table-cell whitespace-nowrap">Mobile</TableHead>
+              <TableHead className="hidden lg:table-cell whitespace-nowrap">Source</TableHead>
+              <TableHead className="hidden lg:table-cell whitespace-nowrap">Status</TableHead>
+              <TableHead className="hidden lg:table-cell whitespace-nowrap">Last Meeting</TableHead>
+              <TableHead className="hidden lg:table-cell text-right whitespace-nowrap">Meetings</TableHead>
+              <TableHead className="hidden lg:table-cell whitespace-nowrap">Invoices</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.length > 0 ? filtered.map((parent: any) => (
+            {filtered.length > 0 ? filtered.map((row: any) => (
               <TableRow
-                key={parent.id}
-                data-testid={`row-parent-contact-${parent.id}`}
+                // Row key has to include the sessionId/rowId so a parent
+                // with multiple matches (e.g. surrogacy + egg donation
+                // sessions) renders as multiple distinct rows.
+                key={row.rowId || row.id}
+                data-testid={`row-match-${row.rowId || row.id}`}
                 className="cursor-pointer hover:bg-secondary/30"
-                onClick={() => navigate(`/parents/${parent.id}`)}
+                onClick={() => {
+                  // Click anywhere on the row navigates into the parent
+                  // detail page. The session-specific chat link is
+                  // implicit since most parents only have one session.
+                  navigate(`/parents/${row.id}`);
+                }}
               >
-                <TableCell className="font-ui">
+                <TableCell className="font-ui whitespace-nowrap">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-[var(--radius)] bg-primary/10 flex items-center justify-center text-primary">
+                    <div className="w-8 h-8 rounded-[var(--radius)] bg-primary/10 flex items-center justify-center text-primary shrink-0">
                       <UserCircle className="w-4 h-4" />
                     </div>
-                    <span data-testid={`text-parent-name-${parent.id}`}>{parent.name || "-"}</span>
-                    {parent.name && <CopyButton value={parent.name} testId={`btn-copy-name-${parent.id}`} />}
+                    <span data-testid={`text-parent-name-${row.id}`}>{row.name || "-"}</span>
+                    {row.name && <CopyButton value={row.name} testId={`btn-copy-name-${row.rowId}`} />}
                   </div>
                 </TableCell>
-                <TableCell className="hidden sm:table-cell" data-testid={`text-parent-email-${parent.id}`}>
+                <TableCell className="hidden sm:table-cell whitespace-nowrap" data-testid={`text-parent-email-${row.id}`}>
                   <div className="flex items-center gap-1.5">
-                    <span>{parent.email}</span>
-                    <CopyButton value={parent.email} testId={`btn-copy-email-${parent.id}`} />
+                    <span>{row.email}</span>
+                    <CopyButton value={row.email} testId={`btn-copy-email-${row.rowId}`} />
                   </div>
                 </TableCell>
-                <TableCell className="hidden md:table-cell" data-testid={`text-parent-mobile-${parent.id}`}>
-                  {parent.mobileNumber ? (
+                <TableCell className="hidden md:table-cell whitespace-nowrap" data-testid={`text-parent-mobile-${row.id}`}>
+                  {row.mobileNumber ? (
                     <div className="flex items-center gap-1 text-sm">
-                      <Phone className="w-3 h-3 text-muted-foreground" />
-                      <span>{formatPhone(parent.mobileNumber)}</span>
-                      <CopyButton value={parent.mobileNumber} testId={`btn-copy-mobile-${parent.id}`} />
+                      <Phone className="w-3 h-3 text-muted-foreground shrink-0" />
+                      <span className="whitespace-nowrap">{formatPhone(row.mobileNumber)}</span>
+                      <CopyButton value={row.mobileNumber} testId={`btn-copy-mobile-${row.rowId}`} />
                     </div>
                   ) : <span className="text-muted-foreground text-sm">-</span>}
                 </TableCell>
-                <TableCell className="hidden lg:table-cell">
-                  <span className={`text-xs font-ui px-2 py-0.5 rounded-full ${
-                    parent.source === "chat" ? "bg-primary/10 text-primary" :
-                    parent.source === "both" ? "bg-emerald-100 text-emerald-700" :
+                <TableCell className="hidden lg:table-cell whitespace-nowrap">
+                  <span className={`text-xs font-ui px-2 py-0.5 rounded-full whitespace-nowrap ${
+                    row.source === "chat" ? "bg-primary/10 text-primary" :
+                    row.source === "both" ? "bg-emerald-100 text-emerald-700" :
                     "bg-muted text-muted-foreground"
-                  }`} data-testid={`text-parent-source-${parent.id}`}>
-                    {parent.source === "chat" ? "Concierge" : parent.source === "both" ? "Chat + Meeting" : "Meeting"}
+                  }`} data-testid={`text-parent-source-${row.id}`}>
+                    {row.source === "chat" ? "Concierge" : row.source === "both" ? "Chat + Meeting" : "Meeting"}
                   </span>
                 </TableCell>
-                <TableCell className="hidden lg:table-cell">
-                  <MatchStatusBadge status={parent.matchStatus} />
+                <TableCell className="hidden lg:table-cell whitespace-nowrap">
+                  <MatchStatusBadge status={row.matchStatus} />
                 </TableCell>
-                <TableCell className="hidden lg:table-cell">
-                  {parent.lastMeetingAt ? (
-                    <span className="text-sm text-muted-foreground">{new Date(parent.lastMeetingAt).toLocaleDateString()}</span>
+                <TableCell className="hidden lg:table-cell whitespace-nowrap">
+                  {row.lastMeetingAt ? (
+                    <span className="text-sm text-muted-foreground">{new Date(row.lastMeetingAt).toLocaleDateString()}</span>
                   ) : <span className="text-muted-foreground text-sm">-</span>}
                 </TableCell>
-                <TableCell className="hidden lg:table-cell text-right">
-                  <span className="text-sm text-muted-foreground" data-testid={`text-meeting-count-${parent.id}`}>{parent.meetingCount}</span>
+                <TableCell className="hidden lg:table-cell text-right whitespace-nowrap">
+                  <span className="text-sm text-muted-foreground" data-testid={`text-meeting-count-${row.id}`}>{row.meetingCount}</span>
                 </TableCell>
-                <TableCell className="hidden lg:table-cell">
-                  <ParentInvoicesCell invoices={parent.invoices || []} />
+                <TableCell className="hidden lg:table-cell whitespace-nowrap">
+                  <ParentInvoicesCell invoices={row.invoices || []} />
                 </TableCell>
               </TableRow>
             )) : (
