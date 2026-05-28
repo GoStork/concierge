@@ -4135,7 +4135,16 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           </div>
         </div>}
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4" data-testid="concierge-messages">
+        {/* Hide the messages list entirely while the payment panel is
+            open. The parent doesn't need to see chat history mid-
+            payment, and reclaiming this full pane lets the panel take
+            every pixel between the chat header and the bottom of the
+            viewport - so even the fully-expanded Link form + Card form
+            + Pay button fit on screen without scroll. */}
+        <div
+          className={`flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4 ${inlinePaymentToken ? "hidden" : ""}`}
+          data-testid="concierge-messages"
+        >
           {(() => {
             const shouldInlineBooking = !externalBookingSlug && !conciergeBookingSlug && sessionBookings && sessionBookings.length > 0;
             // Skip standalone booking card if a ConsultationBookingCard already shows this booking inline
