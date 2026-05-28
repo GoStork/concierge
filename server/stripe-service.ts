@@ -754,17 +754,46 @@ export interface CreateConnectAccountParams {
   country?: string;
   /** "company" for agencies / clinics; "individual" for sole-proprietor donors etc. */
   businessType?: "company" | "individual";
-  /** Display name + URL Stripe shows on hosted Express pages and on the connected account's payout statements. */
+  /** DBA / display name Stripe shows on hosted pages + payout statements. */
   businessName?: string;
+  /** Legal entity name (W-9 line 1). For Stripe this fills company.name,
+   *  which is the registered legal business name - distinct from the DBA. */
+  legalName?: string;
   businessUrl?: string;
   /** Snapshot of the provider's GoStork tax ID (EIN). Pre-fills Stripe's KYC. */
   taxId?: string;
+  phone?: string;
+  address?: {
+    line1: string;
+    line2?: string;
+    city: string;
+    state: string;
+    postalCode: string;
+    country: string;
+  };
 }
 
 export async function createConnectAccount(params: CreateConnectAccountParams): Promise<{ accountId: string }> {
   const stripe = getStripe();
   const dashboardType = params.type === "EXPRESS" ? "express" : "none";
   const requirementCollection = params.type === "EXPRESS" ? "stripe" : "application";
+
+  const businessType = params.businessType || "company";
+  const isCompany = businessType === "company";
+
+  // Stripe address object shape. Stripe-hosted onboarding accepts these
+  // pre-fills on company.address; the form shows them already populated
+  // so the provider just confirms instead of retyping.
+  const stripeAddress = params.address
+    ? {
+        line1: params.address.line1,
+        ...(params.address.line2 ? { line2: params.address.line2 } : {}),
+        city: params.address.city,
+        state: params.address.state,
+        postal_code: params.address.postalCode,
+        country: params.address.country || "US",
+      }
+    : null;
 
   const account = await stripe.accounts.create({
     controller: {
@@ -775,17 +804,37 @@ export async function createConnectAccount(params: CreateConnectAccountParams): 
     },
     country: params.country || "US",
     email: params.email,
-    business_type: params.businessType || "company",
+    business_type: businessType,
     capabilities: {
       transfers: { requested: true },
     },
     business_profile: {
+      // name = DBA / display name shown to customers
       ...(params.businessName ? { name: params.businessName } : {}),
       ...(params.businessUrl ? { url: params.businessUrl } : {}),
+      // 8099 = Health Services - Not Elsewhere Classified, which is the
+      // standard MCC for fertility / IVF / surrogacy / donor agencies.
+      mcc: "8099",
+      ...(params.phone ? { support_phone: params.phone } : {}),
     },
-    ...(params.taxId && (params.businessType || "company") === "company"
-      ? { company: { tax_id: params.taxId } }
-      : {}),
+    ...(isCompany
+      ? {
+          company: {
+            // name = legal business name as it appears on IRS documents
+            ...(params.legalName ? { name: params.legalName } : {}),
+            ...(params.taxId ? { tax_id: params.taxId } : {}),
+            ...(params.phone ? { phone: params.phone } : {}),
+            ...(stripeAddress ? { address: stripeAddress } : {}),
+          },
+        }
+      : {
+          // Individual / sole-prop path: same address + phone go on
+          // individual instead of company.
+          individual: {
+            ...(params.phone ? { phone: params.phone } : {}),
+            ...(stripeAddress ? { address: stripeAddress } : {}),
+          },
+        }),
     metadata: {
       gostorkProvider: "true",
     },

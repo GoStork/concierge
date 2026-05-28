@@ -147,18 +147,39 @@ export class ConnectController {
     const user = req.user as any;
     if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
 
-    // Pull email + business name to pre-fill Stripe's hosted onboarding.
-    // taxId now lives on ProviderLegalIdentity (was on ProviderBrandSettings
-    // before the Legal Identity refactor) - this used to throw a Prisma
-    // unknown-field error and surface to the UI as "Internal server error".
+    // Pre-fill EVERYTHING Stripe Express asks for that we already have.
+    // The provider shouldn't have to retype data they already entered into
+    // the W-9 / Legal Identity / Company tabs. Concretely we feed Stripe:
+    //   - legal business name        Legal Identity.legalName
+    //   - DBA / display name         Provider.name
+    //   - tax ID (EIN)               Legal Identity.taxId
+    //   - business website           Legal Identity.businessUrl
+    //                                  -> Provider.websiteUrl fallback
+    //   - business address           Legal Identity.businessAddress*
+    //   - business phone             Provider.phone
+    //   - business type              Legal Identity.businessType (company
+    //                                  vs individual, derived from tax
+    //                                  classification)
     const [provider, legalIdentity] = await Promise.all([
       prisma.provider.findUnique({
         where: { id: user.providerId },
-        select: { name: true, email: true },
+        select: { name: true, email: true, phone: true, websiteUrl: true },
       }),
       prisma.providerLegalIdentity.findUnique({
         where: { providerId: user.providerId },
-        select: { taxId: true },
+        select: {
+          legalName: true,
+          businessName: true,
+          businessUrl: true,
+          taxId: true,
+          businessType: true,
+          businessAddressLine1: true,
+          businessAddressLine2: true,
+          businessAddressCity: true,
+          businessAddressState: true,
+          businessAddressPostalCode: true,
+          businessAddressCountry: true,
+        },
       }),
     ]);
     if (!provider) throw new HttpException("Provider not found", HttpStatus.NOT_FOUND);
@@ -168,12 +189,24 @@ export class ConnectController {
       providerId: user.providerId,
       providerEmail: provider.email || user.email,
       providerName: provider.name,
+      legalName: legalIdentity?.legalName || null,
+      businessUrl: legalIdentity?.businessUrl || provider.websiteUrl || null,
+      taxId: legalIdentity?.taxId || null,
+      businessType: legalIdentity?.businessType === "individual" ? "individual" : "company",
+      phone: provider.phone || null,
+      address: legalIdentity?.businessAddressLine1 ? {
+        line1: legalIdentity.businessAddressLine1,
+        line2: legalIdentity.businessAddressLine2 || undefined,
+        city: legalIdentity.businessAddressCity || "",
+        state: legalIdentity.businessAddressState || "",
+        postalCode: legalIdentity.businessAddressPostalCode || "",
+        country: legalIdentity.businessAddressCountry || "US",
+      } : null,
       // Return URL = back to the GoStork payouts page so we can show status.
       returnUrl: `${baseUrl}/account/payouts?onboarding=complete`,
       // Refresh URL = same page; the page will re-call /express/start to mint
       // a new link if the prior one expired.
       refreshUrl: `${baseUrl}/account/payouts?onboarding=refresh`,
-      taxId: legalIdentity?.taxId || null,
     });
     return { url };
   }

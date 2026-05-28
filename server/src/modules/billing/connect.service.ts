@@ -102,10 +102,27 @@ export class ConnectService {
   async startExpressOnboarding(params: {
     providerId: string;
     providerEmail: string;
+    /** DBA / display name (Provider.name). */
     providerName: string;
+    /** Legal entity name from W-9 / Legal Identity. Distinct from
+     *  providerName because LLCs / corps often DBA something different. */
+    legalName?: string | null;
+    /** Public business website (Legal Identity or Company tab). Stripe
+     *  requires this on business_profile.url for KYC. */
+    businessUrl?: string | null;
+    taxId?: string | null;
+    businessType?: "company" | "individual";
+    phone?: string | null;
+    address?: {
+      line1: string;
+      line2?: string;
+      city: string;
+      state: string;
+      postalCode: string;
+      country: string;
+    } | null;
     returnUrl: string;
     refreshUrl: string;
-    taxId?: string | null;
   }): Promise<{ url: string }> {
     let account = await this.getOrCreatePayoutAccount(params.providerId);
 
@@ -119,13 +136,19 @@ export class ConnectService {
       );
     }
 
-    // First time: create the Stripe Connect account.
+    // First time: create the Stripe Connect account, pre-filling every
+    // field we already collected so the provider doesn't have to retype.
     if (!account.stripeConnectAccountId) {
       const { accountId } = await createConnectAccount({
         type: "EXPRESS",
         email: params.providerEmail,
         businessName: params.providerName,
+        legalName: params.legalName || undefined,
+        businessUrl: params.businessUrl || undefined,
         taxId: params.taxId || undefined,
+        businessType: params.businessType,
+        phone: params.phone || undefined,
+        address: params.address || undefined,
       });
       account = await this.prisma.providerBankAccount.update({
         where: { providerId: params.providerId },
