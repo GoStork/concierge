@@ -437,8 +437,10 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
               <TableHead className="hidden sm:table-cell">Email</TableHead>
               <TableHead className="hidden md:table-cell">Mobile</TableHead>
               <TableHead className="hidden lg:table-cell">Source</TableHead>
+              <TableHead className="hidden lg:table-cell">Status</TableHead>
               <TableHead className="hidden lg:table-cell">Last Meeting</TableHead>
               <TableHead className="hidden lg:table-cell text-right">Meetings</TableHead>
+              <TableHead className="hidden lg:table-cell">Invoices</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -483,6 +485,9 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
                   </span>
                 </TableCell>
                 <TableCell className="hidden lg:table-cell">
+                  <MatchStatusBadge status={parent.matchStatus} />
+                </TableCell>
+                <TableCell className="hidden lg:table-cell">
                   {parent.lastMeetingAt ? (
                     <span className="text-sm text-muted-foreground">{new Date(parent.lastMeetingAt).toLocaleDateString()}</span>
                   ) : <span className="text-muted-foreground text-sm">-</span>}
@@ -490,10 +495,13 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
                 <TableCell className="hidden lg:table-cell text-right">
                   <span className="text-sm text-muted-foreground" data-testid={`text-meeting-count-${parent.id}`}>{parent.meetingCount}</span>
                 </TableCell>
+                <TableCell className="hidden lg:table-cell">
+                  <ParentInvoicesCell invoices={parent.invoices || []} />
+                </TableCell>
               </TableRow>
             )) : (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                   {searchQuery ? "No parents match your search." : "No parent contacts yet. Parents will appear here when the AI concierge connects them with you."}
                 </TableCell>
               </TableRow>
@@ -501,6 +509,85 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
           </TableBody>
         </Table>
       </Card>
+    </div>
+  );
+}
+
+// ─── Match status badge ─────────────────────────────────────────────────────
+//
+// Mirrors the labels used on the chat sidebar so providers see consistent
+// wording across pages. Maps the AiChatSession.status enum onto the
+// human-readable wording from CLAUDE.md's session-lifecycle spec:
+//   ACTIVE              -> "Q&A"        (anonymous whisper Q&A pre-booking)
+//   CONSULTATION_BOOKED -> "Call Booked"
+//   PROVIDER_CONNECTED  -> "Connected"  (provider has chatted directly)
+//   anything else / null -> "-"
+function MatchStatusBadge({ status }: { status: string | null | undefined }) {
+  if (!status) return <span className="text-muted-foreground text-sm">-</span>;
+  const map: Record<string, { label: string; tone: "muted" | "warning" | "success" }> = {
+    ACTIVE: { label: "Q&A", tone: "muted" },
+    CONSULTATION_BOOKED: { label: "Call Booked", tone: "warning" },
+    PROVIDER_CONNECTED: { label: "Connected", tone: "success" },
+  };
+  const entry = map[status] || { label: status, tone: "muted" as const };
+  const bg =
+    entry.tone === "success" ? "hsl(var(--brand-success) / 0.12)"
+    : entry.tone === "warning" ? "hsl(var(--brand-warning) / 0.15)"
+    : "hsl(var(--secondary))";
+  const fg =
+    entry.tone === "success" ? "hsl(var(--brand-success))"
+    : entry.tone === "warning" ? "hsl(var(--brand-warning))"
+    : "hsl(var(--foreground))";
+  return (
+    <span className="text-xs font-ui px-2 py-0.5 rounded-full" style={{ background: bg, color: fg }}>
+      {entry.label}
+    </span>
+  );
+}
+
+// ─── Invoices cell ──────────────────────────────────────────────────────────
+//
+// Each invoice gets a clickable chip that opens the payment page for that
+// invoice (the same URL the parent received). Provider sees what the parent
+// saw - line items, status, amount, etc. We use the existing /pay/{token}
+// page rather than build a separate "/account/invoices/:id" view because
+// the data and layout are identical except for the action button (which
+// is hidden once status === PAID anyway).
+function ParentInvoicesCell({ invoices }: { invoices: any[] }) {
+  if (!invoices || invoices.length === 0) {
+    return <span className="text-muted-foreground text-sm">-</span>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {invoices.map(inv => {
+        const isPaid = inv.status === "PAID";
+        const isAwaiting = inv.status === "AWAITING_PAYMENT" || inv.status === "PAYMENT_PROCESSING";
+        const tone = isPaid ? "success" : isAwaiting ? "warning" : "muted";
+        const bg =
+          tone === "success" ? "hsl(var(--brand-success) / 0.12)"
+          : tone === "warning" ? "hsl(var(--brand-warning) / 0.15)"
+          : "hsl(var(--secondary))";
+        const fg =
+          tone === "success" ? "hsl(var(--brand-success))"
+          : tone === "warning" ? "hsl(var(--brand-warning))"
+          : "hsl(var(--foreground))";
+        // Use a real <a> so cmd-click / middle-click opens in a new tab
+        // (provider often wants to keep the Parents list open).
+        return (
+          <a
+            key={inv.id}
+            href={`/pay/${inv.paymentToken}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            className="text-xs font-ui px-2 py-0.5 rounded-full hover:opacity-80 transition-opacity"
+            style={{ background: bg, color: fg }}
+            title={`${inv.serviceType?.replace(/_/g, " ")} - $${(inv.serviceAmount / 100).toLocaleString()} - ${inv.status}`}
+          >
+            ${(inv.serviceAmount / 100).toLocaleString()}
+          </a>
+        );
+      })}
     </div>
   );
 }

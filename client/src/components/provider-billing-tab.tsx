@@ -235,9 +235,9 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
                   {isProviderMode && (
                     <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs">Your payout</th>
                   )}
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs">Status</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs">{isProviderMode ? "Parent paid GoStork" : "Status"}</th>
                   {isProviderMode && (
-                    <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs">Transfer</th>
+                    <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs">GoStork paid you</th>
                   )}
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs">Date</th>
                 </tr>

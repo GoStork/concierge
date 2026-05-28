@@ -923,13 +923,16 @@ export class UsersController {
       }
     }
 
+    // Pull ALL session statuses, not just PROVIDER_CONNECTED, so the
+    // provider sees parents in earlier match states too (ACTIVE = anonymous
+    // Q&A, CONSULTATION_BOOKED = call scheduled). orderBy updatedAt desc
+    // means the first session we see per parent is the most recent one,
+    // which is the one whose status we surface in the UI.
     const chatSessions = await this.prisma.aiChatSession.findMany({
-      where: {
-        providerId,
-        status: "PROVIDER_CONNECTED",
-      },
+      where: { providerId },
       select: {
         userId: true,
+        status: true,
         createdAt: true,
         providerJoinedAt: true,
         user: {
@@ -950,6 +953,7 @@ export class UsersController {
           meetingCount: 0,
           source: "chat",
           chatStartedAt: cs.providerJoinedAt || cs.createdAt,
+          matchStatus: cs.status,
         });
       } else {
         const existing = parentMap.get(cs.userId);
@@ -957,6 +961,41 @@ export class UsersController {
           existing.chatStartedAt = cs.providerJoinedAt || cs.createdAt;
           existing.source = existing.source === "meeting" ? "both" : "chat";
         }
+        // Latest session wins (orderBy updatedAt desc ensures this).
+        if (!existing.matchStatus) existing.matchStatus = cs.status;
+      }
+    }
+
+    // Attach invoices per parent. We pull them all in one query and group
+    // in-memory so we don't N+1 across the parent list.
+    const parentIds = Array.from(parentMap.keys());
+    if (parentIds.length > 0) {
+      const invoices = await this.prisma.invoice.findMany({
+        where: {
+          providerId,
+          parentUserId: { in: parentIds },
+        },
+        select: {
+          id: true,
+          paymentToken: true,
+          serviceType: true,
+          serviceAmount: true,
+          providerPayoutAmount: true,
+          currency: true,
+          status: true,
+          stripeTransferId: true,
+          payoutFailedAt: true,
+          paidAt: true,
+          createdAt: true,
+          parentUserId: true,
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      for (const inv of invoices) {
+        const parent = parentMap.get(inv.parentUserId);
+        if (!parent) continue;
+        if (!parent.invoices) parent.invoices = [];
+        parent.invoices.push(inv);
       }
     }
 
