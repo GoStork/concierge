@@ -140,13 +140,33 @@ async function getOrCreateGoStorkPmc(): Promise<string | null> {
       const PMC_NAME = "GoStork checkout default";
 
       // Find an existing PMC by our well-known name so we don't create a
-      // new one on every server boot.
+      // new one on every server boot. If found, also UPDATE it - the
+      // display preferences we want may have changed since the last
+      // server version that ran. Update is idempotent (no diff = no
+      // change in Stripe).
       const list = await stripe.paymentMethodConfigurations.list({ limit: 100 });
       const existing = list.data.find(p => p.name === PMC_NAME && !p.is_default);
-      if (existing) return existing.id;
+      if (existing) {
+        await stripe.paymentMethodConfigurations.update(existing.id, {
+          card: { display_preference: { preference: "on" } },
+          us_bank_account: { display_preference: { preference: "on" } },
+          link: { display_preference: { preference: "on" } },
+          apple_pay: { display_preference: { preference: "on" } },
+          google_pay: { display_preference: { preference: "on" } },
+          klarna: { display_preference: { preference: "on" } },
+          affirm: { display_preference: { preference: "on" } },
+          cashapp: { display_preference: { preference: "on" } },
+        });
+        return existing.id;
+      }
 
-      // First boot - create the PMC. Card + US bank get "on" (primary
-      // tiles). BNPL gets "off" (available but tucked behind "More").
+      // First boot - create the PMC. All methods get "on" so they're
+      // available in the Element. Stripe's "More" dropdown isn't
+      // separately controllable via PMC - it's just the responsive
+      // collapse Stripe applies when there are too many tiles to fit.
+      // With Card + US bank account + Link + Apple Pay + Google Pay
+      // as the higher-conversion methods, Stripe tends to surface them
+      // as visible tiles and tuck the BNPL trio behind "More".
       const created = await stripe.paymentMethodConfigurations.create({
         name: PMC_NAME,
         card: { display_preference: { preference: "on" } },
@@ -154,9 +174,9 @@ async function getOrCreateGoStorkPmc(): Promise<string | null> {
         link: { display_preference: { preference: "on" } },
         apple_pay: { display_preference: { preference: "on" } },
         google_pay: { display_preference: { preference: "on" } },
-        klarna: { display_preference: { preference: "off" } },
-        affirm: { display_preference: { preference: "off" } },
-        cashapp: { display_preference: { preference: "off" } },
+        klarna: { display_preference: { preference: "on" } },
+        affirm: { display_preference: { preference: "on" } },
+        cashapp: { display_preference: { preference: "on" } },
       });
       return created.id;
     } catch (e: any) {
