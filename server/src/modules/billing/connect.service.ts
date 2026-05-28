@@ -443,48 +443,90 @@ export class ConnectService {
       };
     }
 
-    try {
-      const transfer = await createConnectTransfer({
-        amountCents: invoice.providerPayoutAmount,
-        currency: invoice.currency || "USD",
-        destinationAccountId: payoutAccount.stripeConnectAccountId,
-        transferGroup: invoice.id,
-        description: `GoStork payout for invoice ${invoice.id}`,
-        metadata: {
-          invoiceId: invoice.id,
-          providerId: invoice.providerId,
-        },
-      });
+    // Retry loop. The first attempt usually succeeds; the retries are
+    // there for two real-world cases that look identical to our caller:
+    //   1. Test mode: even the 4000000000000077 "instant-available" card
+    //      can lag a couple of seconds before the funds register as
+    //      available - the platform-paid webhook fires faster than the
+    //      balance ledger settles.
+    //   2. Live mode race: payment_intent.succeeded sometimes fires
+    //      microseconds before Stripe's internal ledger commits the
+    //      gross amount to available.
+    // In both cases the same error message comes back ("You have
+    // insufficient available funds in your Stripe account"). Quick
+    // backoff (3s, 8s, 20s) lets the ledger catch up without surfacing
+    // a fake failure to the provider.
+    const TRANSFER_RETRY_DELAYS_MS = [3000, 8000, 20000];
+    const isTransientFundsError = (msg: string) =>
+      /insufficient available funds|insufficient_funds|Try adding funds/i.test(msg || "");
 
-      // Transfer.create succeeded -> the money has moved from the platform
-      // balance into the connected account's balance. Stripe's own payout
-      // schedule then moves it from the connected account to the
-      // provider's bank. We stamp both initiated + completed here because
-      // platform->connect transfers are synchronous and have no separate
-      // async "transfer succeeded" signal beyond the API call returning.
-      await this.prisma.invoice.update({
-        where: { id: invoice.id },
-        data: {
-          stripeTransferId: transfer.id,
-          payoutInitiatedAt: invoice.payoutInitiatedAt || new Date(),
-          payoutCompletedAt: new Date(),
-        },
-      });
-      this.logger.log(`Transfer ${transfer.id} created for invoice ${invoice.id} -> Connect account ${payoutAccount.stripeConnectAccountId} (${invoice.providerPayoutAmount} ${invoice.currency})`);
-      return { status: "transferred", transferId: transfer.id };
-    } catch (e: any) {
-      const reason = e?.message || "Unknown Stripe transfer error";
-      await this.prisma.invoice.update({
-        where: { id: invoice.id },
-        data: {
-          payoutInitiatedAt: invoice.payoutInitiatedAt || new Date(),
-          payoutFailedAt: new Date(),
-          payoutFailureReason: reason.slice(0, 500),
-        },
-      });
-      this.logger.error(`Transfer failed for invoice ${invoice.id}: ${reason}`);
-      return { status: "failed", reason };
+    let lastError: any = null;
+    for (let attempt = 0; attempt <= TRANSFER_RETRY_DELAYS_MS.length; attempt++) {
+      try {
+        const transfer = await createConnectTransfer({
+          amountCents: invoice.providerPayoutAmount,
+          currency: invoice.currency || "USD",
+          destinationAccountId: payoutAccount.stripeConnectAccountId,
+          transferGroup: invoice.id,
+          description: `GoStork payout for invoice ${invoice.id}`,
+          metadata: {
+            invoiceId: invoice.id,
+            providerId: invoice.providerId,
+            // attempt index so we can correlate retries in Stripe Dashboard
+            attempt: String(attempt + 1),
+          },
+        });
+
+        // Transfer.create succeeded -> the money has moved from the platform
+        // balance into the connected account's balance. Stripe's own payout
+        // schedule then moves it from the connected account to the
+        // provider's bank. We stamp both initiated + completed here because
+        // platform->connect transfers are synchronous and have no separate
+        // async "transfer succeeded" signal beyond the API call returning.
+        // Also clear any prior failure stamps so retried-success rows
+        // don't keep showing "Failed" in the provider's table.
+        await this.prisma.invoice.update({
+          where: { id: invoice.id },
+          data: {
+            stripeTransferId: transfer.id,
+            payoutInitiatedAt: invoice.payoutInitiatedAt || new Date(),
+            payoutCompletedAt: new Date(),
+            payoutFailedAt: null,
+            payoutFailureReason: null,
+          },
+        });
+        if (attempt > 0) {
+          this.logger.log(`Transfer ${transfer.id} succeeded for invoice ${invoice.id} on retry #${attempt}`);
+        } else {
+          this.logger.log(`Transfer ${transfer.id} created for invoice ${invoice.id} -> Connect account ${payoutAccount.stripeConnectAccountId} (${invoice.providerPayoutAmount} ${invoice.currency})`);
+        }
+        return { status: "transferred", transferId: transfer.id };
+      } catch (e: any) {
+        lastError = e;
+        const reason = e?.message || "Unknown Stripe transfer error";
+        const transient = isTransientFundsError(reason);
+        const hasMoreRetries = attempt < TRANSFER_RETRY_DELAYS_MS.length;
+        if (transient && hasMoreRetries) {
+          const wait = TRANSFER_RETRY_DELAYS_MS[attempt];
+          this.logger.warn(`Transfer for invoice ${invoice.id} hit transient funds error on attempt ${attempt + 1}; retrying in ${wait}ms: ${reason}`);
+          await new Promise(r => setTimeout(r, wait));
+          continue;
+        }
+        // Non-transient OR retries exhausted - record failure and stop.
+        await this.prisma.invoice.update({
+          where: { id: invoice.id },
+          data: {
+            payoutInitiatedAt: invoice.payoutInitiatedAt || new Date(),
+            payoutFailedAt: new Date(),
+            payoutFailureReason: reason.slice(0, 500),
+          },
+        });
+        this.logger.error(`Transfer failed for invoice ${invoice.id} after ${attempt + 1} attempt(s): ${reason}`);
+        return { status: "failed", reason };
+      }
     }
+    // Unreachable in practice - the loop either returns or records failure.
+    return { status: "failed", reason: lastError?.message || "Exhausted retries" };
   }
 
   /** account.application.deauthorized - provider disconnected, mark as off. */
