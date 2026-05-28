@@ -227,21 +227,30 @@ export function ReferralFeeConfigSection({
         </div>
       )}
 
-      {/* Parent-pays basis radio */}
+      {/* Parent-pays basis radio. Same treatment as the other GoStork-
+          owned fields above: providers see the current value but can't
+          change it - only admin can flip the basis. */}
       <div className="space-y-2">
-        <Label>Parent Pays Basis</Label>
+        <Label>
+          Parent Pays Basis
+          {isProviderMode && <span className="text-xs text-muted-foreground ml-2 font-normal">(set by GoStork)</span>}
+        </Label>
         <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
           {[
             { value: "DEFAULT_FIRST_PAYMENT", label: "Default First Payment" },
             { value: "TOTAL_COST", label: "Total Quoted Cost" },
           ].map(opt => (
-            <label key={opt.value} className="flex items-center gap-2 text-sm cursor-pointer">
+            <label
+              key={opt.value}
+              className={`flex items-center gap-2 text-sm cursor-pointer ${isProviderMode ? "cursor-not-allowed opacity-70" : ""}`}
+            >
               <input
                 type="radio"
                 name={`parentPaysBasis-${serviceType}`}
                 value={opt.value}
                 checked={parentPaysBasis === opt.value}
-                onChange={() => setParentPaysBasis(opt.value as "DEFAULT_FIRST_PAYMENT" | "TOTAL_COST")}
+                disabled={isProviderMode}
+                onChange={() => !isProviderMode && setParentPaysBasis(opt.value as "DEFAULT_FIRST_PAYMENT" | "TOTAL_COST")}
                 className="accent-primary"
               />
               {opt.label}

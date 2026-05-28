@@ -486,26 +486,30 @@ export class BillingController {
     const providerId = user.providerId as string;
     const normalizedService = normalizeServiceType(serviceType);
 
-    // Provider can NOT change the GoStork referral fee economics. Pull those
-    // values from the existing row (or sensible defaults for a fresh row).
+    // Provider can NOT change GoStork-owned referral-fee economics:
+    // feeType, flatAmount, percentage, AND parentPaysBasis. We pull
+    // those values from the existing row (or sensible defaults for a
+    // fresh row) and ignore whatever the provider posted for them.
+    // The UI already disables these fields for providers; this server
+    // check is defense-in-depth against a forged PUT.
     const existing = await this.db.referralFeeConfig.findUnique({
       where: { providerId_serviceType: { providerId, serviceType: normalizedService } },
     });
     const feeType = existing?.feeType ?? "PERCENTAGE";
     const flatAmount = existing?.flatAmount ?? null;
     const percentage = existing?.percentage ?? null;
+    const lockedParentPaysBasis: "DEFAULT_FIRST_PAYMENT" | "TOTAL_COST" =
+      existing?.parentPaysBasis === "TOTAL_COST" ? "TOTAL_COST" : "DEFAULT_FIRST_PAYMENT";
 
-    const { defaultServiceAmount, parentPaysBasis, sampleTotalCostCents, isActive, notes, depositMilestone, averageClearanceDays } = body;
-    const normalizedBasis: "DEFAULT_FIRST_PAYMENT" | "TOTAL_COST" =
-      parentPaysBasis === "TOTAL_COST" ? "TOTAL_COST" : "DEFAULT_FIRST_PAYMENT";
+    const { defaultServiceAmount, sampleTotalCostCents, isActive, notes, depositMilestone, averageClearanceDays } = body;
     const normalizedSample = sampleTotalCostCents != null && Number.isFinite(Number(sampleTotalCostCents))
       ? Math.round(Number(sampleTotalCostCents))
       : null;
 
     const config = await this.db.referralFeeConfig.upsert({
       where: { providerId_serviceType: { providerId, serviceType: normalizedService } },
-      create: { providerId, serviceType: normalizedService, feeType, flatAmount, percentage, defaultServiceAmount: defaultServiceAmount ?? null, parentPaysBasis: normalizedBasis, sampleTotalCostCents: normalizedSample, isActive: isActive ?? true, notes },
-      update: { defaultServiceAmount: defaultServiceAmount ?? null, parentPaysBasis: normalizedBasis, sampleTotalCostCents: normalizedSample, isActive: isActive ?? true, notes, updatedAt: new Date() },
+      create: { providerId, serviceType: normalizedService, feeType, flatAmount, percentage, defaultServiceAmount: defaultServiceAmount ?? null, parentPaysBasis: lockedParentPaysBasis, sampleTotalCostCents: normalizedSample, isActive: isActive ?? true, notes },
+      update: { defaultServiceAmount: defaultServiceAmount ?? null, parentPaysBasis: lockedParentPaysBasis, sampleTotalCostCents: normalizedSample, isActive: isActive ?? true, notes, updatedAt: new Date() },
     });
 
     if (depositMilestone !== undefined || averageClearanceDays !== undefined) {
