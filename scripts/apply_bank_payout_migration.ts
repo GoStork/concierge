@@ -2,9 +2,20 @@
 // against DATABASE_URL using the existing pg pool. ADD COLUMN IF NOT EXISTS
 // makes it safe to re-run.
 import fs from "fs";
+import path from "path";
 import pg from "pg";
 
-const SQL_PATH = "/Users/eranamir/Documents/GitHub/concierge/prisma/migrations/20260527_invoice_bank_payout/migration.sql";
+// Resolve relative to the repo root so this works on any machine
+// (Mac local, Replit, CI, etc.). Script lives in <repo>/scripts/, so
+// the migration is one level up under prisma/migrations/.
+const SQL_PATH = path.join(
+  path.dirname(new URL(import.meta.url).pathname),
+  "..",
+  "prisma",
+  "migrations",
+  "20260527_invoice_bank_payout",
+  "migration.sql",
+);
 
 (async () => {
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
