@@ -283,7 +283,19 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
                       {isProviderMode && (
                         <td className="px-4 py-2.5 text-right font-medium">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
                       )}
-                      <td className="px-4 py-2.5"><InvoiceStatusBadge status={inv.status} /></td>
+                      <td className="px-4 py-2.5">
+                        <InvoiceStatusBadge status={inv.status} />
+                        {inv.payoutReversalAtRisk && !inv.payoutReversalRecoupedAt && (
+                          <div
+                            className="text-[10px] mt-1 inline-flex items-center gap-1"
+                            style={{ color: "hsl(var(--brand-warning))" }}
+                            title="The provider's bank already received this payout when admin refunded the parent. Stripe is recouping from the provider's negative Connect balance (no pull from their bank). GoStork's monitor will clear this once the Connect balance is no longer negative."
+                          >
+                            <AlertCircle className="w-3 h-3" />
+                            Recoupment pending
+                          </div>
+                        )}
+                      </td>
                       {isProviderMode && (
                         <td className="px-4 py-2.5 text-xs font-medium whitespace-nowrap" style={{ color: status.color }}>
                           <span title={status.tooltip} className="cursor-help underline decoration-dotted underline-offset-2 inline-flex items-center gap-1">
@@ -425,6 +437,25 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
               additional refunds against the same invoice are allowed up to the original amount.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {invoice.bankPayoutCompletedAt && (
+            <div className="rounded-md border p-3 flex items-start gap-2" style={{ borderColor: "hsl(var(--brand-warning) / 0.5)", background: "hsl(var(--brand-warning) / 0.08)" }}>
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-warning))" }} />
+              <div className="text-xs space-y-1">
+                <p className="font-medium" style={{ color: "hsl(var(--brand-warning))" }}>This payout already landed in the provider's bank</p>
+                <p className="text-muted-foreground">
+                  Stripe does <strong>not</strong> pull from the provider's bank account directly. The reversal creates a negative balance on their Stripe Connect account that recoups from future incoming transfers. If the provider has no upcoming volume, GoStork may need to coordinate manual repayment.
+                </p>
+                {mode === "keep_platform_fee" && (
+                  <p className="text-muted-foreground">
+                    <strong>Risk is amplified in "Keep GoStork fee" mode</strong> - the entire refund comes off the provider's share, so the negative balance to recoup will be larger.
+                  </p>
+                )}
+                <p className="text-muted-foreground">
+                  GoStork will track this and clear the flag automatically once the Connect balance is no longer negative.
+                </p>
+              </div>
+            </div>
+          )}
           <div className="space-y-3 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">

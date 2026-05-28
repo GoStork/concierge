@@ -1167,6 +1167,12 @@ export class BillingService {
         refundedAmount: true,
         stripeTransferId: true,
         payoutReversedAmount: true,
+        // bankPayoutCompletedAt tells us whether the funds had already
+        // swept to the provider's bank when we issue the reversal. If yes,
+        // Stripe creates a negative Connect balance (recouped from future
+        // transfers) instead of pulling from the bank - we stamp the
+        // at-risk flag so the monitor can track it.
+        bankPayoutCompletedAt: true,
         sessionId: true,
         providerId: true,
         parentUserId: true,
@@ -1236,6 +1242,12 @@ export class BillingService {
         ? "REFUNDED"
         : "PARTIALLY_REFUNDED";
 
+    // At-risk: reversal fired AFTER bank payout completed. Stripe creates
+    // a negative Connect balance that recoups from future transfers - until
+    // then, GoStork is extending uncollateralized credit. The monitor stamps
+    // payoutReversalRecoupedAt when the provider's Connect balance is >= 0.
+    const reversalIsAtRisk = !!reversalId && !!invoice.bankPayoutCompletedAt;
+
     await this.prisma.invoice.update({
       where: { id: invoice.id },
       data: {
@@ -1249,10 +1261,16 @@ export class BillingService {
               payoutReversalId: reversalId,
               payoutReversedAt: new Date(),
               payoutReversedAmount: (invoice.payoutReversedAmount || 0) + (reversalDelta || 0),
+              ...(reversalIsAtRisk ? { payoutReversalAtRisk: true, payoutReversalRecoupedAt: null } : {}),
             }
           : {}),
       },
     });
+    if (reversalIsAtRisk) {
+      this.logger.warn(
+        `Invoice ${invoice.id}: reversal ${reversalId} for ${reversalDelta} cents hit an already-paid-out invoice. Negative Connect balance pending recoupment.`,
+      );
+    }
 
     // In-chat system message so the parent sees the refund (and provider via
     // the shared session). Best-effort - don't block on it.

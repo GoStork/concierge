@@ -167,6 +167,60 @@ export class BillingController {
     return { success: true };
   }
 
+  // Admin-only: list invoices currently at risk of provider recoupment -
+  // i.e. a refund + transfer reversal happened AFTER the provider's bank
+  // payout landed, so Stripe is recouping from a negative Connect balance
+  // (no recoupment yet). Grouped by provider with totals so admins can see
+  // who owes how much before chasing manual repayment.
+  @Get("api/admin/billing/recoupments-pending")
+  @UseGuards(SessionOrJwtGuard)
+  async listRecoupmentsPending(@Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.roles?.includes("GOSTORK_ADMIN")) {
+      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    }
+    const invoices = await prisma.invoice.findMany({
+      where: {
+        payoutReversalAtRisk: true,
+        payoutReversalRecoupedAt: null,
+      },
+      select: {
+        id: true,
+        providerId: true,
+        providerPayoutAmount: true,
+        payoutReversedAmount: true,
+        refundedAmount: true,
+        payoutReversedAt: true,
+        currency: true,
+        provider: { select: { id: true, name: true } },
+        parentUser: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { payoutReversedAt: "desc" },
+    });
+    const byProvider = new Map<string, { providerId: string; providerName: string; invoices: any[]; totalAtRiskCents: number }>();
+    for (const inv of invoices) {
+      const key = inv.providerId;
+      const at = inv.payoutReversedAmount || 0;
+      const existing = byProvider.get(key);
+      if (existing) {
+        existing.invoices.push(inv);
+        existing.totalAtRiskCents += at;
+      } else {
+        byProvider.set(key, {
+          providerId: inv.providerId,
+          providerName: inv.provider?.name || "Unknown",
+          invoices: [inv],
+          totalAtRiskCents: at,
+        });
+      }
+    }
+    return {
+      totalInvoices: invoices.length,
+      totalAtRiskCents: invoices.reduce((s, i) => s + (i.payoutReversedAmount || 0), 0),
+      providers: Array.from(byProvider.values()),
+    };
+  }
+
   // Admin-only: refund a paid invoice. Full refund if amount omitted, else
   // partial. Stripe processes the refund async and fires charge.refunded,
   // which our webhook handler then uses to update DB + reverse provider's

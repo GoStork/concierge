@@ -1520,6 +1520,17 @@ model Invoice {
   payoutReversedAt        DateTime?
   payoutReversedAmount    Int?      // cents reversed back to platform; ≤ providerPayoutAmount
 
+  // Recoupment tracking. When a Transfer Reversal hits an invoice whose
+  // bank-side Payout has already completed (Received status), Stripe
+  // does NOT pull money out of the provider's bank - it creates a
+  // negative balance on the connected account that gets recouped from
+  // future incoming transfers. Until recouped, GoStork is essentially
+  // extending uncollateralized credit to the provider. We flag these
+  // invoices and a periodic monitor stamps recouped when the provider's
+  // Connect balance is no longer negative.
+  payoutReversalAtRisk      Boolean   @default(false)
+  payoutReversalRecoupedAt  DateTime?
+
   // Timestamps
   authorizedAt      DateTime?
   capturedAt        DateTime?
