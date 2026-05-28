@@ -69,15 +69,22 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
     },
   });
 
-  // ── Load provider invoices (admin-only) ─────────────────────────────────
+  // ── Load invoices ───────────────────────────────────────────────────────
+  // Admin hits the admin list (paginated, can see all providers). Provider
+  // hits their own scoped endpoint - server enforces the provider can only
+  // see invoices for their own providerId so no leakage possible.
+  const invoicesUrl = isProviderMode
+    ? "/api/provider/invoices"
+    : `/api/admin/invoices?providerId=${providerId}&pageSize=50`;
   const { data: invoices = [] } = useQuery<any[]>({
-    queryKey: ["/api/admin/invoices", providerId],
-    enabled: !isProviderMode,
+    queryKey: [invoicesUrl],
     queryFn: async () => {
-      const res = await fetch(`/api/admin/invoices?providerId=${providerId}&pageSize=50`, { credentials: "include" });
+      const res = await fetch(invoicesUrl, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load invoices");
       const d = await res.json();
-      return d.invoices || [];
+      // Admin endpoint wraps in { invoices: [...] }, provider endpoint
+      // returns the array directly.
+      return Array.isArray(d) ? d : (d.invoices || []);
     },
   });
 
@@ -201,36 +208,88 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
       </section>
 
 
-      {/* Invoice history */}
+      {/* Invoice history.
+          Provider view (mode=provider) is framed as "Payments received" and
+          includes a "Your payout" column + a payout-transfer status badge so
+          the agency can see exactly which paid invoices have actually moved
+          money to their connected Stripe account. Admin view keeps the
+          original framing ("Invoice History") and columns. */}
       {invoices.length > 0 && (
         <section className="space-y-3">
           <div>
-            <h3 className="font-semibold">Invoice History</h3>
-            <p className="text-sm text-muted-foreground mt-0.5">{invoices.length} invoice{invoices.length !== 1 ? "s" : ""} for this provider</p>
+            <h3 className="font-semibold">{isProviderMode ? "Payments received" : "Invoice History"}</h3>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {isProviderMode
+                ? `${invoices.length} invoice${invoices.length !== 1 ? "s" : ""} - GoStork transfers your share to your bank when the parent pays.`
+                : `${invoices.length} invoice${invoices.length !== 1 ? "s" : ""} for this provider`}
+            </p>
           </div>
           <div className="rounded-xl border overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/40">
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs">Parent</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs">Amount</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs">Fee</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs">Service</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs">Amount paid</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs">GoStork fee</th>
+                  {isProviderMode && (
+                    <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs">Your payout</th>
+                  )}
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs">Status</th>
+                  {isProviderMode && (
+                    <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs">Transfer</th>
+                  )}
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs">Date</th>
                 </tr>
               </thead>
               <tbody>
-                {invoices.map((inv: any) => (
-                  <tr key={inv.id} className="border-b last:border-0 hover:bg-muted/10">
-                    <td className="px-4 py-2.5">{inv.parentUser?.name || inv.parentUser?.email}</td>
-                    <td className="px-4 py-2.5 text-right font-medium">{formatCents(inv.serviceAmount, inv.currency)}</td>
-                    <td className="px-4 py-2.5 text-right" style={{ color: "hsl(var(--brand-success))" }}>{formatCents(inv.referralFeeAmount, inv.currency)}</td>
-                    <td className="px-4 py-2.5"><InvoiceStatusBadge status={inv.status} /></td>
-                    <td className="px-4 py-2.5 text-muted-foreground text-xs">{new Date(inv.createdAt).toLocaleDateString()}</td>
-                  </tr>
-                ))}
+                {invoices.map((inv: any) => {
+                  // Payout status: green if the Stripe transfer ID is set
+                  // (money moved), red if a failure was recorded, otherwise
+                  // "pending" for paid invoices and "-" for unpaid ones.
+                  let transferLabel = "-";
+                  let transferColor = "hsl(var(--muted-foreground))";
+                  if (inv.stripeTransferId) {
+                    transferLabel = "Sent";
+                    transferColor = "hsl(var(--brand-success))";
+                  } else if (inv.payoutFailedAt) {
+                    transferLabel = "Failed";
+                    transferColor = "hsl(var(--destructive))";
+                  } else if (inv.status === "PAID") {
+                    transferLabel = "Pending";
+                    transferColor = "hsl(var(--brand-warning))";
+                  }
+                  return (
+                    <tr key={inv.id} className="border-b last:border-0 hover:bg-muted/10">
+                      <td className="px-4 py-2.5">{inv.parentUser?.name || inv.parentUser?.email || "Parent"}</td>
+                      <td className="px-4 py-2.5 text-muted-foreground text-xs">{inv.serviceType?.replace(/_/g, " ").toLowerCase() || "-"}</td>
+                      <td className="px-4 py-2.5 text-right font-medium">{formatCents(inv.serviceAmount, inv.currency)}</td>
+                      <td className="px-4 py-2.5 text-right" style={{ color: "hsl(var(--brand-success))" }}>{formatCents(inv.referralFeeAmount, inv.currency)}</td>
+                      {isProviderMode && (
+                        <td className="px-4 py-2.5 text-right font-medium">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
+                      )}
+                      <td className="px-4 py-2.5"><InvoiceStatusBadge status={inv.status} /></td>
+                      {isProviderMode && (
+                        <td className="px-4 py-2.5 text-xs font-medium" style={{ color: transferColor }}>{transferLabel}</td>
+                      )}
+                      <td className="px-4 py-2.5 text-muted-foreground text-xs">{new Date(inv.paidAt || inv.createdAt).toLocaleDateString()}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
+          </div>
+        </section>
+      )}
+
+      {/* Empty state for providers - so they don't see a blank tab if they
+          haven't been paid yet. Admin view hides this; admins see other
+          providers' rows globally and don't need a per-empty hint. */}
+      {invoices.length === 0 && isProviderMode && (
+        <section className="space-y-3">
+          <h3 className="font-semibold">Payments received</h3>
+          <div className="rounded-xl border p-6 bg-secondary/40 text-sm text-muted-foreground">
+            No payments yet. When a parent pays an invoice for one of your services, you'll see it here along with the amount GoStork transferred to your bank.
           </div>
         </section>
       )}
