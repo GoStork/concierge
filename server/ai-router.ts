@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
+import { getBaseUrl } from "./src/lib/get-base-url";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -5500,7 +5501,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
               });
             }
 
-            const baseUrl = process.env.APP_URL?.replace(/\/+$/, "") || "https://app.gostork.com";
+            const baseUrl = getBaseUrl();
             const whisperSession = await prisma.aiChatSession.findUnique({
               where: { id: currentSessionId },
               select: { userId: true, subjectProfileId: true },

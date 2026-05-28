@@ -11,6 +11,7 @@
  */
 
 import Stripe from "stripe";
+import { getBaseUrl } from "./src/lib/get-base-url";
 
 function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -720,11 +721,6 @@ export async function createTransferReversal(params: {
 
 export function getPublishableKey(): string {
   return process.env.STRIPE_PUBLISHABLE_KEY || "";
-}
-
-function getBaseUrl(): string {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
-  return "http://localhost:5001";
 }
 
 // ─── Stripe Connect (provider payouts) ────────────────────────────────────────

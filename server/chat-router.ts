@@ -4,6 +4,7 @@ import { prisma } from "./db";
 import { generateAgreement, syncTemplateToPandaDoc, createTemplateEditingSession, generateAgreementFromTemplate, getAgreementSigningSession, refreshTemplateRoles, syncAgreementStatus } from "./pandadoc-service";
 import { StorageService } from "./src/modules/storage/storage.service";
 import { isUserOnline, getOnlineUserIds } from "./online-tracker";
+import { getBaseUrl as getAppBaseUrlShared } from "./src/lib/get-base-url";
 
 const storageService = new StorageService();
 
@@ -76,13 +77,11 @@ function requireAuth(req: Request, res: Response, next: () => void) {
   next();
 }
 
+// Thin wrapper so existing callers don't need to change. Uses the shared
+// auto-detect helper that walks Replit / Render / Vercel / Railway / Fly
+// env vars before falling back to localhost or app.gostork.com.
 function getAppBaseUrl(): string {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
-  if (process.env.NODE_ENV === "development") {
-    const port = process.env.PORT || 5001;
-    return `http://localhost:${port}`;
-  }
-  return "https://app.gostork.com";
+  return getAppBaseUrlShared();
 }
 
 export const chatRouter = Router();
@@ -2506,7 +2505,7 @@ chatRouter.post("/api/billing/parent-confirm-ready", requireAuth, async (req, re
           let notifService: any = null;
           try { notifService = nestApp.get(NotificationService); } catch {}
           if (notifService) {
-            const appBase = (process.env.APP_URL || "https://app.gostork.com").replace(/\/$/, "");
+            const appBase = getAppBaseUrl();
             for (const admin of admins) {
               if (!admin.email) continue;
               notifService.sendParentReadyAdminNotification({

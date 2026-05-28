@@ -1,6 +1,7 @@
 import { Injectable, Inject, Logger, OnModuleInit } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { formatMoneyCents } from "../../lib/format-money";
+import { getBaseUrl } from "../../lib/get-base-url";
 
 export type NotificationChannel =
   | "booking_submitted"
@@ -55,14 +56,6 @@ const TWILIO_TEMPLATES = {
   POST_CALL_FOLLOWUP_PARENT: "PLACEHOLDER", // TODO: create Twilio Content Template; falls back to sendRawSms
 };
 
-function getBaseUrl(): string {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
-  if (process.env.NODE_ENV === "development") {
-    const port = process.env.PORT || 5001;
-    return `http://localhost:${port}`;
-  }
-  return "https://app.gostork.com";
-}
 
 function formatDate(d: Date, tz?: string | null): string {
   const opts: Intl.DateTimeFormatOptions = { weekday: "long", year: "numeric", month: "long", day: "numeric" };

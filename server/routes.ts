@@ -3,6 +3,7 @@ import type { Express } from "express";
 import { type Server } from "http";
 import passport from "passport";
 import { storage } from "./storage";
+import { getBaseUrl } from "./src/lib/get-base-url";
 import { setupAuth, requireAuth, requireRole } from "./auth";
 import { api } from "@shared/routes";
 import { z } from "zod";
@@ -987,7 +988,7 @@ export async function registerRoutes(
           const providerRecord = await prisma.provider.findUnique({ where: { id: user.providerId }, select: { name: true } });
           const providerName = providerRecord?.name || "Your Agency";
           const agr2 = agreement as any;
-          const appBase2 = process.env.APP_URL ? process.env.APP_URL.replace(/\/+$/, "") : (process.env.NODE_ENV === "development" ? `http://localhost:${process.env.PORT || 5001}` : "https://app.gostork.com");
+          const appBase2 = getBaseUrl();
           const goStorkSigningUrl2 = agr2.id ? `${appBase2}/agreements/${agr2.id}` : null;
 
           type SignerEntry2 = { name: string; email: string; userId: string | null; guestToken: string | null; signingOrder: number; notified: boolean };
@@ -1063,9 +1064,7 @@ export async function registerRoutes(
   // Leaving this stub for grep-ability; the legacy code follows but is unused.
 
   function appBaseUrl(): string {
-    return process.env.APP_URL
-      ? process.env.APP_URL.replace(/\/+$/, "")
-      : (process.env.NODE_ENV === "development" ? `http://localhost:${process.env.PORT || 5001}` : "https://app.gostork.com");
+    return getBaseUrl();
   }
 
   async function buildW9Status(providerId: string) {

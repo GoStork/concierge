@@ -20,12 +20,7 @@ import { Request } from "express";
 import { AuthService } from "./auth.service";
 import { NotificationService } from "../notifications/notification.service";
 import { LoginDto, LoginResponseDto, LogoutResponseDto, ErrorResponseDto } from "../../dto/auth.dto";
-
-function getBaseUrl(): string {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
-  if (process.env.NODE_ENV === "development") return `http://localhost:${process.env.PORT || 5001}`;
-  return "https://app.gostork.com";
-}
+import { getBaseUrl } from "../../lib/get-base-url";
 
 @ApiTags("Auth")
 @Controller("api/auth")

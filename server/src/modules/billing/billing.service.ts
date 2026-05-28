@@ -4,6 +4,7 @@ import { ConnectService } from "./connect.service";
 import { prisma as prismaClient } from "../../../db";
 import { generateReceiptPdf } from "./receipt-pdf";
 import { formatMoneyCents } from "../../lib/format-money";
+import { getBaseUrl } from "../../lib/get-base-url";
 import {
   getCardDetailsForPaymentIntent,
   getOrCreateStripeCustomer,
@@ -13,15 +14,6 @@ import {
   createTransferReversal,
   type WireInstructions,
 } from "../../../stripe-service";
-
-function getBaseUrl(): string {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
-  if (process.env.NODE_ENV === "development") {
-    const port = process.env.PORT || 5001;
-    return `http://localhost:${port}`;
-  }
-  return "https://app.gostork.com";
-}
 
 const formatCents = (cents: number) => formatMoneyCents(cents);
 

@@ -29,6 +29,7 @@ import {
 } from "@nestjs/common";
 import { Request, Response } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
+import { getBaseUrl } from "../../lib/get-base-url";
 import { NotificationService } from "../notifications/notification.service";
 import { prisma } from "../../../db";
 import {
@@ -44,9 +45,7 @@ function isAdmin(user: any): boolean {
 }
 
 function appBaseUrl(): string {
-  return process.env.APP_URL
-    ? process.env.APP_URL.replace(/\/+$/, "")
-    : (process.env.NODE_ENV === "development" ? `http://localhost:${process.env.PORT || 5001}` : "https://app.gostork.com");
+  return getBaseUrl();
 }
 
 async function buildW9Status(providerId: string) {

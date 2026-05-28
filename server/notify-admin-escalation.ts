@@ -5,6 +5,7 @@
  */
 
 import { prisma } from "./db";
+import { getBaseUrl } from "./src/lib/get-base-url";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -24,12 +25,6 @@ function shadeHex(hex: string, ratio: number): string {
   const g = Math.round(parseInt(m[1].slice(2, 4), 16) * (1 - ratio));
   const b = Math.round(parseInt(m[1].slice(4, 6), 16) * (1 - ratio));
   return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
-}
-
-function getBaseUrl(): string {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
-  if (process.env.NODE_ENV === "development") return `http://localhost:${process.env.PORT || 5001}`;
-  return "https://app.gostork.com";
 }
 
 async function getBrandDefaults(): Promise<Record<string, string>> {
@@ -59,7 +54,7 @@ async function getBrandDefaults(): Promise<Record<string, string>> {
       if (s.primaryColor) defaults.brandColor = s.primaryColor;
       if (s.primaryForegroundColor) defaults.primaryForegroundColor = s.primaryForegroundColor;
       if (s.companyName) defaults.companyName = s.companyName;
-      const imageBase = process.env.APP_URL?.replace(/\/+$/, "") || getBaseUrl();
+      const imageBase = getBaseUrl();
       const rawLogo = s.logoWithNameUrl || s.logoUrl || "";
       defaults.logoUrl = rawLogo.startsWith("/") ? `${imageBase}${rawLogo}` : rawLogo;
       if (s.warningColor) defaults.warningColor = s.warningColor;

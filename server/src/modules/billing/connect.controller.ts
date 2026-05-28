@@ -14,6 +14,7 @@ import {
 } from "@nestjs/common";
 import { Request, Response } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
+import { getBaseUrl } from "../../lib/get-base-url";
 import { ConnectService, type CustomPayoutFormData } from "./connect.service";
 import { prisma } from "../../../db";
 import * as stripeService from "../../../stripe-service";
@@ -157,7 +158,7 @@ export class ConnectController {
     });
     if (!provider) throw new HttpException("Provider not found", HttpStatus.NOT_FOUND);
 
-    const baseUrl = process.env.APP_URL?.replace(/\/+$/, "") || "http://localhost:5001";
+    const baseUrl = getBaseUrl();
     const { url } = await this.connectService.startExpressOnboarding({
       providerId: user.providerId,
       providerEmail: provider.email || user.email,

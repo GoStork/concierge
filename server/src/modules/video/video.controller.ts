@@ -20,6 +20,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from "@nestjs/swagger";
 import { Response } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { PrismaService } from "../prisma/prisma.service";
+import { getBaseUrl } from "../../lib/get-base-url";
 import { VideoService } from "./video.service";
 import { NotificationService } from "../notifications/notification.service";
 import { BookingEventsService } from "../calendar/booking-events.service";
@@ -928,7 +929,7 @@ export class VideoController {
 
     // --- 4. Email + SMS to parent: same readiness prompt via out-of-app channels ---
     if (parentUser?.email) {
-      const chatUrl = `${process.env.APP_URL || "https://app.gostork.com"}/chat/concierge${parentMainSession ? `?session=${parentMainSession.id}` : ""}`;
+      const chatUrl = `${getBaseUrl()}/chat/concierge${parentMainSession ? `?session=${parentMainSession.id}` : ""}`;
       this.notificationService.sendPostCallReadinessNotification({
         parentUserId,
         parentName: parentUser.name || parentUser.firstName || "there",
