@@ -1,6 +1,6 @@
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatMoneyCents } from "@/lib/format-money";
-import { CheckCircle2, FileText, Download, Video, CalendarDays, ExternalLink, UserCheck, Receipt, Paperclip } from "lucide-react";
+import { CheckCircle2, FileText, Download, Video, CalendarDays, ExternalLink, UserCheck, Receipt, Paperclip, PenLine } from "lucide-react";
 import type { SessionMessage } from "./chat-types";
 
 interface SpecialMessageCardProps {
@@ -129,6 +129,46 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
           </div>
           <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: brandColor }} />
         </div>
+      </div>
+    );
+  }
+
+  // Sent-but-not-yet-signed agreement. Provider + admin renderer (parent
+  // gets a richer interactive variant in concierge-chat-page). Click
+  // navigates to the agreement detail page.
+  if (msg.uiCardType === "agreement") {
+    const agreementCard = data.agreementCard || data;
+    const agreementId: string | null = agreementCard.agreementId || null;
+    const status: string = agreementCard.status || "SENT";
+    const providerName: string = data.providerName || "the provider";
+    const statusLabel = status === "SIGNED" ? "Signed" : status === "VIEWED" ? "Opened" : "Sent for signature";
+    return (
+      <div className="mt-1" data-testid="agreement-card">
+        <a
+          href={agreementId ? `/agreements/${agreementId}` : "#"}
+          className="block rounded-[var(--radius)] border-2 bg-background overflow-hidden hover:bg-muted transition-colors"
+          style={{ borderColor: brandColor }}
+        >
+          <div className="p-1.5" style={{ backgroundColor: brandColor }}>
+            <div className="flex items-center gap-2 px-3 py-1.5">
+              <FileText className="w-4 h-4 text-primary-foreground" />
+              <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
+                Agreement Ready to Sign
+              </span>
+            </div>
+          </div>
+          <div className="px-4 py-3 space-y-1">
+            <p className="text-sm font-semibold">Agreement from {providerName}</p>
+            <p className="text-xs text-muted-foreground">{statusLabel}</p>
+          </div>
+          <div className="border-t px-4 py-2.5 bg-muted/30 flex items-center justify-between">
+            <span className="text-xs font-medium" style={{ color: brandColor }}>
+              <PenLine className="inline w-3.5 h-3.5 mr-1" />
+              Review & Sign
+            </span>
+            <ExternalLink className="w-4 h-4 text-muted-foreground" />
+          </div>
+        </a>
       </div>
     );
   }

@@ -16,7 +16,7 @@ import {
   Sparkles, Building2, MessageCircle, Heart, CornerRightDown,
   CalendarDays, Video, Trash2, Headphones,
   // Used by legacy dead code pending removal
-  CalendarClock, Check, Clock, Crown, Download, ExternalLink, Paperclip, Send,
+  CalendarClock, Check, Clock, Crown, Download, ExternalLink, Paperclip, PenLine, Send,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -483,6 +483,47 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
             </p>
           </div>
           <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
+        </a>
+      </div>
+    );
+  }
+
+  // Sent-but-not-yet-signed agreement (mirrors the parent's chat view).
+  // Provider sees the same card the parent sees so the agency knows
+  // exactly what the parent is looking at and at what stage. Click
+  // navigates to the agreement detail page.
+  if (msg.uiCardType === "agreement") {
+    const agreementCard = data.agreementCard || data;
+    const agreementId: string | null = agreementCard.agreementId || null;
+    const status: string = agreementCard.status || "SENT";
+    const providerName: string = data.providerName || "the provider";
+    const statusLabel = status === "SIGNED" ? "Signed" : status === "VIEWED" ? "Opened" : "Sent for signature";
+    return (
+      <div className="mt-1" data-testid="agreement-card">
+        <a
+          href={agreementId ? `/agreements/${agreementId}` : "#"}
+          className="block rounded-[var(--radius)] border-2 bg-background overflow-hidden max-w-md hover:bg-muted transition-colors"
+          style={{ borderColor: brandColor }}
+        >
+          <div className="p-1.5" style={{ backgroundColor: brandColor }}>
+            <div className="flex items-center gap-2 px-3 py-1.5">
+              <FileText className="w-4 h-4 text-primary-foreground" />
+              <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
+                Agreement Ready to Sign
+              </span>
+            </div>
+          </div>
+          <div className="px-4 py-3 space-y-1">
+            <p className="text-sm font-semibold">Agreement from {providerName}</p>
+            <p className="text-xs text-muted-foreground">{statusLabel}</p>
+          </div>
+          <div className="border-t px-4 py-2.5 bg-muted/30 flex items-center justify-between">
+            <span className="text-xs font-medium" style={{ color: brandColor }}>
+              <PenLine className="inline w-3.5 h-3.5 mr-1" />
+              Review & Sign
+            </span>
+            <ExternalLink className="w-4 h-4 text-muted-foreground" />
+          </div>
         </a>
       </div>
     );

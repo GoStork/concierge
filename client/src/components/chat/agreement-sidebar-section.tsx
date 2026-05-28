@@ -90,6 +90,11 @@ export function AgreementSidebarSection({
         setPartnerFields({ firstName: "", lastName: "", email: "" });
         setPartnerFieldError(null);
         setSkipPartner(false);
+        // In embedded (drawer-above-composer) mode the agency just wants
+        // the drawer to dismiss itself after Send succeeds - same UX as
+        // the cost-sheet drawer. The new agreement card now appears in
+        // the chat thread above, so there's nothing to do in the drawer.
+        if (embedded && onClose) onClose();
       }
     },
   });
