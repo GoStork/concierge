@@ -131,72 +131,15 @@ export function InvoicePaymentPanel({ paymentToken, brandColor, onClose, onSucce
     };
   }, [paymentToken]);
 
-  // When Stripe Elements expands (Link auto-fill, ACH disclosure, BNPL
-  // detail, "Save my info" sub-form, etc.) the panel grows by 100-300px.
-  // We want the panel itself to grow naturally - NOT scroll internally -
-  // so the parent sees the whole form at once. The trick is the chat
-  // container around us: as the panel grows, the chat needs to scroll
-  // UP so the new content (Pay button) stays in the viewport.
-  //
-  // Implementation: ResizeObserver detects every panel height change.
-  // We walk up the DOM to find the nearest scrollable ancestor (the
-  // chat message list, not the window) and pin its scrollTop to the
-  // bottom. This guarantees the panel's bottom edge - where the Pay
-  // button lives - stays in view, no matter how tall Stripe makes the
-  // form. Older chat history slides up out of view, which is fine -
-  // the parent's focus is on completing the payment.
-  const panelRef = useRef<HTMLDivElement>(null);
-  const lastHeightRef = useRef(0);
-  useEffect(() => {
-    const el = panelRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-
-    // Walk up looking for an element whose computed overflow-y is auto
-    // or scroll AND that actually has scrollable content. Falls back
-    // to document.scrollingElement if no internal scroller exists.
-    const findScrollableAncestor = (node: HTMLElement | null): HTMLElement | null => {
-      let cur: HTMLElement | null = node?.parentElement || null;
-      while (cur) {
-        const style = window.getComputedStyle(cur);
-        const overflowY = style.overflowY;
-        if ((overflowY === "auto" || overflowY === "scroll") && cur.scrollHeight > cur.clientHeight) {
-          return cur;
-        }
-        cur = cur.parentElement;
-      }
-      return (document.scrollingElement as HTMLElement) || document.documentElement;
-    };
-
-    const ro = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        const h = entry.contentRect.height;
-        // Only react when the panel grew (Stripe added a section). When
-        // it shrinks we don't need to scroll - the bottom is already in
-        // view.
-        if (h > lastHeightRef.current + 8) {
-          const scroller = findScrollableAncestor(el);
-          if (scroller) {
-            // Pin to the bottom so the panel's submit button stays in
-            // view. requestAnimationFrame so Stripe's layout pass settles
-            // before we measure scrollHeight.
-            requestAnimationFrame(() => {
-              scroller.scrollTo({
-                top: scroller.scrollHeight,
-                behavior: "smooth",
-              });
-            });
-          }
-        }
-        lastHeightRef.current = h;
-      }
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [clientSecret]);
+  // The panel grows to its natural height. The chat layout takes care
+  // of yielding space - the messages list above has flex-1 + min-h-0
+  // so it shrinks as we grow; the panel slot has shrink-0 so it claims
+  // its full height; the composer stays anchored at the bottom. No
+  // ResizeObserver / scrollIntoView dance needed - flex layout handles
+  // it natively.
 
   return (
     <div
-      ref={panelRef}
       className="rounded-[var(--radius)] border-2 bg-card overflow-hidden"
       style={{ borderColor: brandColor }}
       data-testid="invoice-payment-panel"

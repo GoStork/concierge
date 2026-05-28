@@ -4135,7 +4135,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           </div>
         </div>}
 
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" data-testid="concierge-messages">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4" data-testid="concierge-messages">
           {(() => {
             const shouldInlineBooking = !externalBookingSlug && !conciergeBookingSlug && sessionBookings && sessionBookings.length > 0;
             // Skip standalone booking card if a ConsultationBookingCard already shows this booking inline
@@ -4648,17 +4648,15 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             card. Closes itself on success and triggers a chat refetch so the
             invoice card flips to PAID + the confirmation message appears. */}
         {inlinePaymentToken && (
-          // Wrapper is a bounded scroll container. When Stripe Elements
-          // expands (Link "Save my info" + Email field + Mobile number etc.)
-          // the panel can grow taller than the viewport. Without max-h on
-          // the wrapper, the panel would push the composer below the fold.
-          // max-h:60vh + overflow-y-auto means: messages above stay visible,
-          // composer stays visible, panel scrolls internally if it grows
-          // past 60% of the viewport. The panel's own ResizeObserver
-          // (invoice-payment-panel.tsx) finds THIS wrapper as the closest
-          // scrollable ancestor and auto-scrolls to the bottom on growth,
-          // so the Pay button is always in view.
-          <div className="border-t px-3 py-3 bg-muted/30 overflow-y-auto max-h-[60vh]" data-testid="payment-panel-slot">
+          // The panel grows to its natural height, no inner scroll. The
+          // messages container above us has `flex-1 min-h-0 overflow-y-
+          // auto`, so it yields height to make room: as the panel grows,
+          // the chat history's visible window shrinks (older messages
+          // scroll off the top), but every pixel of the panel - card
+          // fields, Link form, Pay button - stays visible. The composer
+          // stays anchored at the bottom. shrink-0 on this wrapper
+          // guarantees flex won't squeeze the panel mid-form-expand.
+          <div className="border-t px-3 py-3 bg-muted/30 shrink-0" data-testid="payment-panel-slot">
             <InvoicePaymentPanel
               paymentToken={inlinePaymentToken}
               brandColor={brandColor}
