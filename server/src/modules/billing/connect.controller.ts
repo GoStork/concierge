@@ -148,14 +148,19 @@ export class ConnectController {
     if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
 
     // Pull email + business name to pre-fill Stripe's hosted onboarding.
-    const provider = await prisma.provider.findUnique({
-      where: { id: user.providerId },
-      select: {
-        name: true,
-        email: true,
-        brandSettings: { select: { taxId: true } },
-      },
-    });
+    // taxId now lives on ProviderLegalIdentity (was on ProviderBrandSettings
+    // before the Legal Identity refactor) - this used to throw a Prisma
+    // unknown-field error and surface to the UI as "Internal server error".
+    const [provider, legalIdentity] = await Promise.all([
+      prisma.provider.findUnique({
+        where: { id: user.providerId },
+        select: { name: true, email: true },
+      }),
+      prisma.providerLegalIdentity.findUnique({
+        where: { providerId: user.providerId },
+        select: { taxId: true },
+      }),
+    ]);
     if (!provider) throw new HttpException("Provider not found", HttpStatus.NOT_FOUND);
 
     const baseUrl = getBaseUrl();
@@ -168,7 +173,7 @@ export class ConnectController {
       // Refresh URL = same page; the page will re-call /express/start to mint
       // a new link if the prior one expired.
       refreshUrl: `${baseUrl}/account/payouts?onboarding=refresh`,
-      taxId: provider.brandSettings?.taxId || null,
+      taxId: legalIdentity?.taxId || null,
     });
     return { url };
   }
