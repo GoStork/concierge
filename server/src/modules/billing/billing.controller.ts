@@ -16,10 +16,31 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { Request, Response } from "express";
+import * as geoip from "geoip-lite";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { BillingService } from "./billing.service";
 import * as stripeService from "../../../stripe-service";
 import { prisma } from "../../../db";
+
+/**
+ * Best-effort buyer-country lookup from the request IP. We use this to
+ * decide whether to show our US-flavored payment-method tile order or
+ * let Stripe optimize for the buyer's country.
+ *
+ * Returns "US" | "GB" | ... | null. Localhost / private-range / unknown
+ * IPs return null so the caller falls back to Stripe's automatic ordering.
+ *
+ * The Express trust-proxy setting (server/index.ts:88) ensures req.ip is
+ * the actual client IP, not the load balancer / ngrok address.
+ */
+function getBuyerCountry(req: Request): string | undefined {
+  const ip = req.ip || "";
+  if (!ip || ip === "::1" || ip.startsWith("127.") || ip.startsWith("192.168.") || ip.startsWith("10.")) {
+    return undefined;
+  }
+  const looked = geoip.lookup(ip);
+  return looked?.country || undefined;
+}
 
 const VALID_SERVICE_TYPES = new Set([
   "SURROGACY", "EGG_DONATION", "SPERM_DONATION", "IVF_CLINIC", "OTHER",
@@ -361,7 +382,7 @@ export class BillingController {
   // ─── Stripe: create PaymentIntent (parent payment page) ──────────────────
 
   @Post("api/billing/create-payment-intent")
-  async createPaymentIntent(@Body() body: { paymentToken: string }, @Res() res: Response) {
+  async createPaymentIntent(@Body() body: { paymentToken: string }, @Req() req: Request, @Res() res: Response) {
     try {
       const invoice = await this.billingService.getInvoiceByToken(body.paymentToken);
       if (!invoice) return res.status(404).json({ message: "Invoice not found" });
@@ -373,6 +394,7 @@ export class BillingController {
       }
 
       const isClearanceFlow = invoice.medicalClearanceStatus === "PENDING";
+      const buyerCountry = getBuyerCountry(req);
 
       const { clientSecret, paymentIntentId } = await stripeService.createPaymentIntent({
         amountCents: invoice.serviceAmount,
@@ -382,6 +404,7 @@ export class BillingController {
         description: `GoStork - ${invoice.providerName} - ${invoice.serviceType}`,
         captureMethod: isClearanceFlow ? "manual" : "automatic",
         receiptEmail: (invoice as any).parentUser?.email,
+        buyerCountry,
       });
 
       // Store the PaymentIntent ID on the invoice for later capture/void

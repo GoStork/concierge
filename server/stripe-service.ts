@@ -79,6 +79,29 @@ export async function createPaymentLink(params: {
  * For AT_MATCH: capture_method = automatic (charged immediately on confirm).
  * For AT_CLEARANCE: capture_method = manual (authorized/held, captured later).
  */
+/**
+ * US-only checkout tile order. When the buyer's IP geolocates to the US we
+ * pass this explicit list so Card + ACH lead, with BNPL options tucked
+ * further down. Card automatically surfaces Apple Pay / Google Pay / Link
+ * as wallet sub-options on supported devices - they don't need separate
+ * entries here.
+ *
+ * For non-US buyers we fall back to automatic_payment_methods so Stripe
+ * picks the optimal order for the buyer's country (Bancontact for BE,
+ * iDEAL for NL, SEPA for EU, etc.) - hard-coding a US-flavored list would
+ * just hurt conversion outside the US.
+ *
+ * Edit this constant (not the call site) when you want to change the
+ * order or add/remove methods. The order in the array IS the tile order.
+ */
+const US_PAYMENT_METHOD_ORDER = [
+  "card",            // includes Apple Pay + Google Pay + Link wallets
+  "us_bank_account", // ACH
+  "cashapp",
+  "affirm",
+  "klarna",
+] as const;
+
 export async function createPaymentIntent(params: {
   amountCents: number;
   currency: string;
@@ -87,6 +110,8 @@ export async function createPaymentIntent(params: {
   description: string;
   captureMethod?: "automatic" | "manual"; // manual = escrow/hold
   receiptEmail?: string;
+  /** ISO-3166 alpha-2 country code of the buyer (from IP geolocation). */
+  buyerCountry?: string;
 }): Promise<{ clientSecret: string; paymentIntentId: string }> {
   if (!isStripeConfigured()) {
     return {
@@ -102,20 +127,31 @@ export async function createPaymentIntent(params: {
   // PDF attachment) from the webhook handler. Letting Stripe ALSO email a
   // generic receipt would just create a duplicate. Stripe Dashboard ->
   // Settings -> Customer emails -> "Successful payments" must also be off.
-  // automatic_payment_methods lets Stripe surface every method enabled in the
-  // Dashboard (card + Apple Pay + Google Pay + ACH + Link + ...) based on the
-  // buyer's device and the currency. For escrow holds (capture_method=manual)
-  // we restrict to card only, because ACH / wallets backed by ACH cannot be
-  // manual-captured - Stripe rejects the intent otherwise.
+  // Three modes:
+  //  - Manual capture (escrow hold): card-only. ACH / wallets backed by ACH
+  //    cannot be manual-captured, Stripe rejects the intent otherwise.
+  //  - US buyer, automatic capture: explicit ordered list so Card + ACH
+  //    lead the tile row. Apple Pay / Google Pay surface automatically
+  //    inside the Card option on supported devices.
+  //  - Non-US buyer (or unknown country): automatic_payment_methods. Stripe
+  //    picks the optimal order for the buyer's country (Bancontact for BE,
+  //    iDEAL for NL, SEPA for EU, etc.). Hard-coding US tiles for, say, a
+  //    Dutch buyer would just hurt conversion.
   const isManualCapture = (params.captureMethod ?? "automatic") === "manual";
+  const isUsBuyer = params.buyerCountry?.toUpperCase() === "US";
+  const paymentMethodOpts: Stripe.PaymentIntentCreateParams =
+    isManualCapture
+      ? { payment_method_types: ["card"] }
+      : isUsBuyer
+        ? { payment_method_types: [...US_PAYMENT_METHOD_ORDER] }
+        : { automatic_payment_methods: { enabled: true } };
+
   const intent = await stripe.paymentIntents.create({
     amount: params.amountCents,
     currency: params.currency.toLowerCase(),
     capture_method: params.captureMethod ?? "automatic",
     description: params.description,
-    ...(isManualCapture
-      ? { payment_method_types: ["card"] }
-      : { automatic_payment_methods: { enabled: true } }),
+    ...paymentMethodOpts,
     metadata: {
       invoiceId: params.invoiceId,
       paymentToken: params.paymentToken,
