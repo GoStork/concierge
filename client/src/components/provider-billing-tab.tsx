@@ -346,10 +346,30 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
   // the dialog opens so the admin sees the maximum refundable amount.
   const alreadyRefunded = invoice.refundedAmount || 0;
   const remainingCents = (invoice.serviceAmount || 0) - alreadyRefunded;
+  const providerPayoutCents = invoice.providerPayoutAmount || 0;
+  const referralFeeCents = invoice.referralFeeAmount || 0;
+  const providerShareRemaining = Math.max(0, providerPayoutCents - (invoice.payoutReversedAmount || 0));
   const [amountDollars, setAmountDollars] = useState((remainingCents / 100).toFixed(2));
   const [reason, setReason] = useState<"requested_by_customer" | "duplicate" | "fraudulent" | "other">("requested_by_customer");
+  const [mode, setMode] = useState<"proportional" | "keep_platform_fee">("proportional");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  // Live preview of how the entered refund splits between provider clawback
+  // and GoStork fee write-off, given the current mode.
+  const parsedDollars = parseFloat(amountDollars);
+  const amountCentsPreview = isFinite(parsedDollars) && parsedDollars > 0 ? Math.round(parsedDollars * 100) : 0;
+  let providerClawbackPreview = 0;
+  let gostorkAbsorbedPreview = 0;
+  if (amountCentsPreview > 0 && invoice.serviceAmount > 0) {
+    if (mode === "keep_platform_fee") {
+      providerClawbackPreview = Math.min(amountCentsPreview, providerPayoutCents);
+      gostorkAbsorbedPreview = 0;
+    } else {
+      providerClawbackPreview = Math.round(providerPayoutCents * (amountCentsPreview / invoice.serviceAmount));
+      gostorkAbsorbedPreview = amountCentsPreview - providerClawbackPreview;
+    }
+  }
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -357,11 +377,14 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
       if (!isFinite(dollars) || dollars <= 0) throw new Error("Enter a refund amount greater than 0");
       const amountCents = Math.round(dollars * 100);
       if (amountCents > remainingCents) throw new Error(`Refund amount exceeds remaining refundable balance (${(remainingCents / 100).toFixed(2)})`);
+      if (mode === "keep_platform_fee" && amountCents > providerShareRemaining) {
+        throw new Error(`Refund of ${(amountCents / 100).toFixed(2)} exceeds provider's remaining share (${(providerShareRemaining / 100).toFixed(2)}) under Keep GoStork fee mode.`);
+      }
       const res = await fetch(`/api/admin/invoices/${invoice.id}/refund`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ amountCents, reason, notes: notes.trim() || undefined }),
+        body: JSON.stringify({ amountCents, reason, mode, notes: notes.trim() || undefined }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -433,6 +456,50 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
                 </select>
               </div>
             </div>
+            <div className="space-y-1.5">
+              <Label>Refund mode</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMode("proportional")}
+                  className="text-left rounded-lg border p-3 transition-colors"
+                  style={{
+                    background: mode === "proportional" ? "hsl(var(--primary) / 0.05)" : "hsl(var(--card))",
+                    borderColor: mode === "proportional" ? "hsl(var(--primary))" : "hsl(var(--border))",
+                  }}
+                >
+                  <p className="text-sm font-medium">Proportional</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    GoStork fee refunded proportionally. Use for goodwill, fraud, duplicate charge.
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("keep_platform_fee")}
+                  className="text-left rounded-lg border p-3 transition-colors"
+                  style={{
+                    background: mode === "keep_platform_fee" ? "hsl(var(--primary) / 0.05)" : "hsl(var(--card))",
+                    borderColor: mode === "keep_platform_fee" ? "hsl(var(--primary))" : "hsl(var(--border))",
+                  }}
+                >
+                  <p className="text-sm font-medium">Keep GoStork fee</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Refund comes entirely from provider's share. GoStork fee preserved. Use for Guarantee scenarios.
+                  </p>
+                </button>
+              </div>
+            </div>
+            {amountCentsPreview > 0 && (
+              <div className="rounded-md border bg-secondary/40 p-3 text-xs space-y-1">
+                <p className="font-medium text-sm mb-1">Money split preview</p>
+                <div className="flex justify-between"><span className="text-muted-foreground">Refunded to parent</span><span>${(amountCentsPreview / 100).toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Reversed from provider</span><span>${(providerClawbackPreview / 100).toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">GoStork absorbed</span><span>${(gostorkAbsorbedPreview / 100).toFixed(2)}</span></div>
+                <div className="border-t pt-1 mt-1 text-muted-foreground">
+                  Original split: provider ${(providerPayoutCents / 100).toFixed(2)} + GoStork fee ${(referralFeeCents / 100).toFixed(2)} = ${(invoice.serviceAmount / 100).toFixed(2)}
+                </div>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Internal notes (optional)</Label>
               <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Why are we issuing this refund?" />

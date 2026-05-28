@@ -641,6 +641,8 @@ export function parseRefundEvent(event: Stripe.Event): {
   fullyRefunded: boolean;
   latestRefundId: string | null;
   latestRefundReason: string | null;
+  /** Refund metadata, used to read the refund mode set at create time. */
+  latestRefundMetadata: Record<string, string> | null;
 } | null {
   if (event.type !== "charge.refunded") return null;
   const charge = event.data.object as Stripe.Charge;
@@ -662,6 +664,7 @@ export function parseRefundEvent(event: Stripe.Event): {
     fullyRefunded: charge.refunded === true,
     latestRefundId: latest?.id || null,
     latestRefundReason: latest?.reason || null,
+    latestRefundMetadata: (latest?.metadata as Record<string, string> | undefined) || null,
   };
 }
 

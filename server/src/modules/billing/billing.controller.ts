@@ -176,7 +176,12 @@ export class BillingController {
   async adminRefund(
     @Req() req: Request,
     @Param("id") id: string,
-    @Body() body: { amountCents?: number; reason?: "duplicate" | "fraudulent" | "requested_by_customer" | "other"; notes?: string },
+    @Body() body: {
+      amountCents?: number;
+      reason?: "duplicate" | "fraudulent" | "requested_by_customer" | "other";
+      notes?: string;
+      mode?: "proportional" | "keep_platform_fee";
+    },
   ) {
     const user = req.user as any;
     if (!user?.roles?.includes("GOSTORK_ADMIN")) {
@@ -188,6 +193,7 @@ export class BillingController {
         amountCents: body?.amountCents,
         reason: body?.reason,
         notes: body?.notes,
+        mode: body?.mode,
         actorUserId: user.id,
       });
       return result;
@@ -612,7 +618,7 @@ export class BillingController {
       // regardless of which surface the admin used.
       const refund = stripeService.parseRefundEvent(event);
       if (refund) {
-        this.logger.log(`Stripe refund webhook: pi=${refund.paymentIntentId} refunded=${refund.amountRefundedCents}/${refund.amountCents} full=${refund.fullyRefunded}`);
+        this.logger.log(`Stripe refund webhook: pi=${refund.paymentIntentId} refunded=${refund.amountRefundedCents}/${refund.amountCents} full=${refund.fullyRefunded} mode=${refund.latestRefundMetadata?.refundMode || "proportional"}`);
         try {
           await this.billingService.handleChargeRefunded({
             paymentIntentId: refund.paymentIntentId,
@@ -620,6 +626,7 @@ export class BillingController {
             fullyRefunded: refund.fullyRefunded,
             latestRefundId: refund.latestRefundId,
             latestRefundReason: refund.latestRefundReason,
+            latestRefundMetadata: refund.latestRefundMetadata,
           });
         } catch (e: any) {
           this.logger.error(`Refund handler raised for pi=${refund.paymentIntentId}: ${e?.message}`);

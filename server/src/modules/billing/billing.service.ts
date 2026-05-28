@@ -871,7 +871,7 @@ export class BillingService {
         data: {
           sessionId: invoice.sessionId,
           role: "assistant",
-          content: `We're sorry to hear that your surrogate did not pass medical clearance. Your card hold has been fully released - no charges were made. Because you paid through GoStork, your deposit is protected by the GoStork Guarantee. You can apply your deposit to any other agency on the GoStork platform. Our team will reach out to help you with your next steps.`,
+          content: `We're sorry to hear that your surrogate did not pass medical clearance. Your card hold has been fully released - no charges were made. Because you paid through GoStork, you're protected by the GoStork Guarantee: you're free to start fresh with any other agency on our platform whenever you're ready. Our team will reach out to help you with your next steps.`,
           senderType: "system",
           senderName: "GoStork",
           uiCardType: "text",
@@ -1034,6 +1034,14 @@ export class BillingService {
     reason?: "duplicate" | "fraudulent" | "requested_by_customer" | "other";
     notes?: string;
     actorUserId: string;
+    /**
+     * proportional (default): refund splits across provider + platform fee
+     *   like the original payment did. Use for goodwill / fraud / duplicate.
+     * keep_platform_fee: refund comes entirely from provider's share, GoStork
+     *   keeps the full fee. Use for Guarantee scenarios where provider didn't
+     *   deliver but GoStork's service (vetting, matching, holding funds) was.
+     */
+    mode?: "proportional" | "keep_platform_fee";
   }) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: params.invoiceId },
@@ -1078,19 +1086,45 @@ export class BillingService {
       });
     }
 
+    // For keep_platform_fee mode, clamp the refund to the provider's share -
+    // GoStork's fee never gets refunded to the parent under this policy.
+    const mode = params.mode || "proportional";
+    let finalRefundAmount = refundAmount;
+    if (mode === "keep_platform_fee") {
+      const invoiceForCap = await this.prisma.invoice.findUnique({
+        where: { id: invoice.id },
+        select: { providerPayoutAmount: true, payoutReversedAmount: true },
+      });
+      const providerShareRemaining = Math.max(
+        0,
+        (invoiceForCap?.providerPayoutAmount || 0) - (invoiceForCap?.payoutReversedAmount || 0),
+      );
+      if (refundAmount > providerShareRemaining) {
+        throw new BadRequestException(
+          `Refund of ${refundAmount} cents exceeds the provider's remaining share (${providerShareRemaining}) under keep_platform_fee mode. Reduce the amount or switch to Proportional mode.`,
+        );
+      }
+      finalRefundAmount = refundAmount;
+    }
+
+    // Mode is tagged in Stripe refund metadata so the async charge.refunded
+    // webhook can read it and compute the correct reversal. We can't rely
+    // on the invoice column alone because stacked refunds in different
+    // modes would race.
     const refund = await createRefund({
       paymentIntentId: invoice.stripeTransactionId,
-      amountCents: refundAmount,
+      amountCents: finalRefundAmount,
       reason: params.reason,
       metadata: {
         invoiceId: invoice.id,
         actorUserId: params.actorUserId,
+        refundMode: mode,
       },
     });
     this.logger.log(
-      `Admin ${params.actorUserId} refunded ${refundAmount} cents on invoice ${invoice.id} (refund=${refund.id})`,
+      `Admin ${params.actorUserId} refunded ${finalRefundAmount} cents on invoice ${invoice.id} via ${mode} (refund=${refund.id})`,
     );
-    return { refundId: refund.id, amountCents: refundAmount, status: refund.status };
+    return { refundId: refund.id, amountCents: finalRefundAmount, mode, status: refund.status };
   }
 
   /**
@@ -1118,6 +1152,10 @@ export class BillingService {
     fullyRefunded: boolean;
     latestRefundId: string | null;
     latestRefundReason: string | null;
+    /** Refund metadata from Stripe. We read `refundMode` here to decide
+     *  proportional vs keep_platform_fee clawback. Defaults to proportional
+     *  for refunds initiated outside our admin UI (e.g. Stripe Dashboard). */
+    latestRefundMetadata?: Record<string, string> | null;
   }): Promise<{ matched: boolean; reversalCents?: number; reversalId?: string }> {
     const invoice = await this.prisma.invoice.findFirst({
       where: { stripeTransactionId: params.paymentIntentId },
@@ -1148,27 +1186,39 @@ export class BillingService {
     }
     const deltaRefunded = params.amountRefundedCents - previouslyRefunded;
 
-    // Reverse the provider's share proportionally for the DELTA only.
+    // Reverse the provider's share for the DELTA only. Two modes:
+    //   proportional (default + refunds from Stripe Dashboard): provider
+    //     returns a share proportional to the refunded amount.
+    //   keep_platform_fee: provider returns the full refunded amount (capped
+    //     at their original payout). GoStork keeps its fee untouched.
+    const mode: "proportional" | "keep_platform_fee" =
+      params.latestRefundMetadata?.refundMode === "keep_platform_fee"
+        ? "keep_platform_fee"
+        : "proportional";
     let reversalId: string | undefined;
     let reversalDelta: number | undefined;
     if (invoice.stripeTransferId && (invoice.providerPayoutAmount || 0) > 0 && invoice.serviceAmount > 0) {
       const previouslyReversed = invoice.payoutReversedAmount || 0;
-      // round() so the proportional split lands on the nearest cent rather
-      // than truncating in the platform's favor.
-      const targetReversal = Math.round(
-        invoice.providerPayoutAmount * (params.amountRefundedCents / invoice.serviceAmount),
-      );
+      // targetReversal: the total amount that *should* be reversed across
+      // all refunds against this invoice given the current mode. We
+      // subtract previouslyReversed below to get the DELTA for this event.
+      const targetReversal = mode === "keep_platform_fee"
+        // 1:1 with the parent's refund total, capped at the provider's original payout.
+        ? Math.min(invoice.providerPayoutAmount, params.amountRefundedCents)
+        // round() so the proportional split lands on the nearest cent rather
+        // than truncating in the platform's favor.
+        : Math.round(invoice.providerPayoutAmount * (params.amountRefundedCents / invoice.serviceAmount));
       reversalDelta = Math.max(0, Math.min(invoice.providerPayoutAmount - previouslyReversed, targetReversal - previouslyReversed));
       if (reversalDelta > 0) {
         try {
           const reversal = await createTransferReversal({
             transferId: invoice.stripeTransferId,
             amountCents: reversalDelta,
-            metadata: { invoiceId: invoice.id, refundId: params.latestRefundId || "" },
+            metadata: { invoiceId: invoice.id, refundId: params.latestRefundId || "", refundMode: mode },
           });
           reversalId = reversal.id;
           this.logger.log(
-            `Reversed ${reversalDelta} cents of transfer ${invoice.stripeTransferId} for invoice ${invoice.id} (refund delta=${deltaRefunded})`,
+            `Reversed ${reversalDelta} cents of transfer ${invoice.stripeTransferId} for invoice ${invoice.id} via ${mode} (refund delta=${deltaRefunded})`,
           );
         } catch (e: any) {
           // Don't block the refund DB update on reversal failure - admin will

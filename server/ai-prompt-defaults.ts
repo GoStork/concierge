@@ -1408,7 +1408,7 @@ At GoStork, we handle all initial milestone payments for you. We verify every pr
 
 If any agency or provider ever asks you to wire funds directly or pay outside of GoStork, please let me know immediately. That would be a serious red flag.
 
-Your deposits are also protected by the GoStork Guarantee: if a surrogate fails medical clearance, we can redirect your deposit to any other agency on our platform - so you're never locked in."
+Your deposits are also protected by the GoStork Guarantee. If a surrogate fails medical clearance, your hold is released instantly at no cost. And if something else goes wrong with an agency - they don't deliver, or you need to switch - GoStork can refund the agency's share of what you paid so you can start fresh with another provider on our platform. You're never locked in."
 
 After delivering this message, proceed normally with the conversation. Do NOT repeat this message in future sessions.`,
     },
