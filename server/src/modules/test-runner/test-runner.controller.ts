@@ -30,7 +30,7 @@ export class TestRunnerController {
     // Debug: always visible in logs
     console.log(`[TestRunner] assertAdmin: id=${user?.id}, roles=${JSON.stringify(user?.roles)}, role=${user?.role}, isAuth=${(req as any).isAuthenticated?.()}`);
     // Support both 'roles' array and legacy 'role' string
-    const isAdmin = user?.roles?.includes("GOSTORK_ADMIN") || user?.role === "GOSTORK_ADMIN";
+    const isAdmin = user?.roles?.includes("GOSTORK_ADMIN") || user?.role === "GOSTORK_ADMIN" || user?.roles?.includes("GOSTORK_DEVELOPER");
     if (!isAdmin) {
       throw new HttpException("Forbidden - Admin only", HttpStatus.FORBIDDEN);
     }

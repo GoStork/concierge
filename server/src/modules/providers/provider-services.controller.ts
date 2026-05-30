@@ -62,7 +62,7 @@ export class ProviderServicesController {
   ) {
     const user = req.user as any;
     const isAdmin = user.roles?.includes("GOSTORK_ADMIN");
-    const isOwnProvider = hasProviderRole(user.roles || []) && user.providerId === providerId;
+    const isOwnProvider = user.roles?.includes("PROVIDER_ADMIN") && user.providerId === providerId;
     if (!isAdmin && !isOwnProvider) {
       throw new ForbiddenException("Forbidden");
     }
@@ -96,7 +96,7 @@ export class ProviderServicesController {
   ) {
     const user = req.user as any;
     const isAdmin = user.roles?.includes("GOSTORK_ADMIN");
-    const isOwnProvider = hasProviderRole(user.roles || []) && user.providerId === providerId;
+    const isOwnProvider = user.roles?.includes("PROVIDER_ADMIN") && user.providerId === providerId;
     if (!isAdmin && !isOwnProvider) {
       throw new ForbiddenException("Forbidden");
     }
@@ -127,7 +127,7 @@ export class ProviderServicesController {
   ) {
     const user = req.user as any;
     const isAdmin = user.roles?.includes("GOSTORK_ADMIN");
-    const isOwnProvider = hasProviderRole(user.roles || []) && user.providerId === providerId;
+    const isOwnProvider = user.roles?.includes("PROVIDER_ADMIN") && user.providerId === providerId;
     if (!isAdmin && !isOwnProvider) {
       throw new ForbiddenException("Forbidden");
     }

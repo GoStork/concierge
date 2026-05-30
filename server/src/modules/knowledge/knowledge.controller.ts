@@ -40,7 +40,7 @@ export class KnowledgeController {
   ) {
     const user = req.user as any;
     const roles: string[] = user.roles || [];
-    const isAdmin = roles.includes("GOSTORK_ADMIN");
+    const isAdmin = roles.includes("GOSTORK_ADMIN") || roles.includes("GOSTORK_DEVELOPER");
     if (!user.providerId && !isAdmin) {
       throw new ForbiddenException("Only providers or admins can upload documents");
     }
@@ -81,6 +81,10 @@ export class KnowledgeController {
     if (!user.providerId) {
       throw new ForbiddenException("Only providers can sync website");
     }
+    const r: string[] = user.roles || [];
+    if (r.includes("BILLING_MANAGER") || r.includes("SCHEDULER")) {
+      throw new ForbiddenException("Your role cannot trigger website sync");
+    }
 
     const provider = await this.prisma.provider.findUnique({
       where: { id: user.providerId },
@@ -108,7 +112,7 @@ export class KnowledgeController {
   async listDocuments(@Req() req: Request) {
     const user = req.user as any;
     const roles: string[] = user.roles || [];
-    const isAdmin = roles.includes("GOSTORK_ADMIN");
+    const isAdmin = roles.includes("GOSTORK_ADMIN") || roles.includes("GOSTORK_DEVELOPER");
     if (!user.providerId && !isAdmin) {
       throw new ForbiddenException("Only providers or admins can view documents");
     }
@@ -148,7 +152,7 @@ export class KnowledgeController {
   async bulkSync(@Req() req: Request) {
     const user = req.user as any;
     const roles: string[] = user.roles || [];
-    if (!roles.includes("GOSTORK_ADMIN")) {
+    if (!roles.includes("GOSTORK_ADMIN") && !roles.includes("GOSTORK_DEVELOPER")) {
       throw new ForbiddenException("Only GoStork admins can bulk sync");
     }
     const jobId = this.knowledgeService.startBulkSyncJob();
@@ -162,7 +166,7 @@ export class KnowledgeController {
   async bulkSyncStatus(@Param("jobId") jobId: string, @Req() req: Request) {
     const user = req.user as any;
     const roles: string[] = user.roles || [];
-    if (!roles.includes("GOSTORK_ADMIN")) {
+    if (!roles.includes("GOSTORK_ADMIN") && !roles.includes("GOSTORK_DEVELOPER")) {
       throw new ForbiddenException("Only GoStork admins can view sync status");
     }
     const job = this.knowledgeService.getBulkSyncJob(jobId);
@@ -177,7 +181,7 @@ export class KnowledgeController {
   async listRules(@Req() req: Request) {
     const user = req.user as any;
     const roles: string[] = user.roles || [];
-    if (!roles.includes("GOSTORK_ADMIN")) {
+    if (!roles.includes("GOSTORK_ADMIN") && !roles.includes("GOSTORK_DEVELOPER")) {
       throw new ForbiddenException("Only GoStork admins can manage rules");
     }
 
@@ -260,7 +264,7 @@ export class KnowledgeController {
   async searchKnowledge(@Body() body: any, @Req() req: Request) {
     const user = req.user as any;
     const roles: string[] = user.roles || [];
-    if (!roles.includes("GOSTORK_ADMIN")) {
+    if (!roles.includes("GOSTORK_ADMIN") && !roles.includes("GOSTORK_DEVELOPER")) {
       throw new ForbiddenException("Only GoStork admins can search KB");
     }
 
@@ -316,6 +320,9 @@ export class KnowledgeController {
     const isAdmin = roles.includes("GOSTORK_ADMIN");
     if (!user.providerId && !isAdmin) {
       throw new ForbiddenException("Only providers or admins can answer whisper questions");
+    }
+    if (!isAdmin && (roles.includes("BILLING_MANAGER") || roles.includes("SCHEDULER"))) {
+      throw new ForbiddenException("Your role cannot answer whisper questions");
     }
 
     if (!body.answer || !body.answer.trim()) {

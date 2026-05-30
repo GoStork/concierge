@@ -128,6 +128,8 @@ export default function AdminProviderEditPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const isGostorkAdmin = user?.roles?.includes("GOSTORK_ADMIN") ?? false;
+  const isGostorkDeveloper = user?.roles?.includes("GOSTORK_DEVELOPER") ?? false;
+  const canToggleTestData = isGostorkAdmin || isGostorkDeveloper;
 
   const currentTab = VALID_TABS.includes(searchParams.get("tab") || "") ? searchParams.get("tab")! : "profile";
   const handleTabChange = (value: string) => setSearchParams({ tab: value }, { replace: true });
@@ -190,6 +192,7 @@ export default function AdminProviderEditPage() {
   const [isDirty, setIsDirty] = useState(false);
   const isInitializingRef = useRef(false);
   // IVF matching requirements
+  const [isTestData, setIsTestData] = useState(false);
   const [ivfTwinsAllowed, setIvfTwinsAllowed] = useState(false);
   const [ivfTransferFromOtherClinics, setIvfTransferFromOtherClinics] = useState(false);
   const [ivfMaxAgeIp1, setIvfMaxAgeIp1] = useState("");
@@ -242,6 +245,7 @@ export default function AdminProviderEditPage() {
         locationIds: d.locations?.map((l: any) => l.locationId) || [],
       })) || []);
       // IVF matching requirements
+      setIsTestData(provider.isTestData ?? false);
       setIvfTwinsAllowed(provider.ivfTwinsAllowed ?? false);
       setIvfTransferFromOtherClinics(provider.ivfTransferFromOtherClinics ?? false);
       setIvfMaxAgeIp1(provider.ivfMaxAgeIp1 != null ? String(provider.ivfMaxAgeIp1) : "");
@@ -356,6 +360,7 @@ export default function AdminProviderEditPage() {
       phone: editPhone || null,
       yearFounded: editYearFounded ? parseInt(editYearFounded) : null,
       logoUrl: editLogoUrl || null,
+      isTestData,
       ivfTwinsAllowed,
       ivfTransferFromOtherClinics,
       ivfMaxAgeIp1: ivfMaxAgeIp1 ? parseInt(ivfMaxAgeIp1) : null,
@@ -1396,6 +1401,18 @@ export default function AdminProviderEditPage() {
                 </SortableContext>
               </DndContext>
             </Card>
+
+            {canToggleTestData && (
+              <Card className="p-4 border-dashed border-amber-400 bg-amber-50/30">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Test Provider</p>
+                    <p className="text-xs text-muted-foreground">Marks this provider as test data. Developers can delete test providers and reset test sessions.</p>
+                  </div>
+                  <Switch checked={isTestData} onCheckedChange={setIsTestData} />
+                </div>
+              </Card>
+            )}
 
             {isDirty && (
               <div className="flex gap-2 justify-end fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t">

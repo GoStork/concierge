@@ -87,7 +87,7 @@ export class VideoController {
     });
     if (!session) throw new NotFoundException("Chat session not found");
 
-    const isProvider = hasProviderRole(user.roles || []);
+    const isProvider = hasProviderRole(user.roles || []) && !(user.roles || []).includes("BILLING_MANAGER");
     const isAdmin = hasAnyRole(user.roles || [], GOSTORK_STAFF);
 
     let callerIsSessionParent = session.userId === user.id;
@@ -224,7 +224,7 @@ export class VideoController {
   async createRoom(@Req() req: any) {
     const user = req.user;
     const isAdmin = hasAnyRole(user.roles || [], GOSTORK_STAFF);
-    const isProvider = hasProviderRole(user.roles || []);
+    const isProvider = hasProviderRole(user.roles || []) && !(user.roles || []).includes("BILLING_MANAGER");
 
     if (!user) {
       throw new ForbiddenException("Authentication required");
@@ -312,9 +312,13 @@ export class VideoController {
     }
     const isParent = await this.isParentAccountMember(user.id, booking.parentUserId);
     const isAdmin = hasAnyRole(user.roles || [], GOSTORK_STAFF);
+    const isBillingManager = (user.roles || []).includes("BILLING_MANAGER");
 
     if (!isProvider && !isParent && !isAdmin) {
       throw new ForbiddenException("You are not a participant of this booking");
+    }
+    if (isBillingManager && !isAdmin) {
+      throw new ForbiddenException("Billing managers cannot join video calls");
     }
 
     const isOwner = isProvider || isAdmin;

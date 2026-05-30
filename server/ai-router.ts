@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { getBaseUrl } from "./src/lib/get-base-url";
+import { canProviderAccessSession } from "../shared/roles";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -1008,7 +1009,8 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
     const roles: string[] = user.roles || [];
     const isAdmin = roles.includes("GOSTORK_ADMIN") || roles.includes("GOSTORK_CONCIERGE");
     const providerRoles = ["PROVIDER_ADMIN", "IP_SURROGACY_COORDINATOR", "IP_EGG_DONOR_COORDINATOR", "IP_SPERM_DONOR_COORDINATOR", "IP_IVF_COORDINATOR", "SURROGATE_COORDINATOR", "EGG_DONOR_COORDINATOR", "SPERM_DONOR_COORDINATOR", "SCHEDULER", "DOCTOR", "BILLING_MANAGER"];
-    const isProvider = roles.some((r: string) => providerRoles.includes(r)) && user.providerId && session.providerId === user.providerId;
+    const isProviderMember = roles.some((r: string) => providerRoles.includes(r)) && user.providerId && session.providerId === user.providerId;
+    const isProvider = isProviderMember && canProviderAccessSession(roles, session.subjectType || null);
     if (!isOwner && !isAccountMember && !isAdmin && !isProvider) {
       return res.status(403).json({ message: "Forbidden" });
     }

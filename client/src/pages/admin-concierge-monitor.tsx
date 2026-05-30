@@ -101,7 +101,8 @@ export default function AdminConciergeMonitor() {
 
   const roles: string[] = (user as any)?.roles || [];
   const isAdmin = roles.includes("GOSTORK_ADMIN");
-  if (!isAdmin) {
+  const canToggleTestData = isAdmin || roles.includes("GOSTORK_DEVELOPER");
+  if (!isAdmin && !roles.includes("GOSTORK_CONCIERGE")) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] text-muted-foreground" data-testid="concierge-monitor-unauthorized">
         You don't have permission to access this page.
@@ -222,6 +223,25 @@ export default function AdminConciergeMonitor() {
     onError: (err: any) => {
       toast({ title: "Reset failed", description: err.message, variant: "destructive" });
     },
+  });
+
+  const toggleTestFlagMutation = useMutation({
+    mutationFn: async ({ sessionId, isTestData }: { sessionId: string; isTestData: boolean }) => {
+      const res = await fetch(`/api/admin/chat-sessions/${sessionId}/test-flag`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ isTestData }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.message || "Failed to update test flag");
+      return body;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/concierge-sessions", selectedSessionId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/concierge-sessions"] });
+    },
+    onError: (err: any) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
   });
 
   // Auto-scroll to bottom on new messages
@@ -621,6 +641,18 @@ export default function AdminConciergeMonitor() {
             >
               {exitSessionMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <LogOut className="w-3 h-3" />}
               Exit Chat
+            </Button>
+          )}
+          {canToggleTestData && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => toggleTestFlagMutation.mutate({ sessionId: selectedSessionId!, isTestData: !(detail as any).isTestData })}
+              disabled={toggleTestFlagMutation.isPending}
+              className={`gap-1.5 text-xs ${(detail as any).isTestData ? "border-amber-400 text-amber-600" : "text-muted-foreground"}`}
+              title={(detail as any).isTestData ? "Unmark as test session" : "Mark as test session"}
+            >
+              {(detail as any).isTestData ? "Test Session" : "Mark as Test"}
             </Button>
           )}
         </div>

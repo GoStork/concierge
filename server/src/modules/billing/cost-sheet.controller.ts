@@ -65,7 +65,7 @@ export class CostSheetController {
       throw new ForbiddenException("You don't have access to this session");
     }
 
-    return { session, isAdmin, isProviderMember };
+    return { session, isAdmin, isProviderMember, roles };
   }
 
   // ─── Send a cost sheet ─────────────────────────────────────────────────────
@@ -80,7 +80,10 @@ export class CostSheetController {
     @Body() body: { totalCostCents?: string | number; notes?: string },
   ) {
     const user = req.user as any;
-    const { session, isAdmin } = await this.loadAuthorisedSession(sessionId, user);
+    const { session, isAdmin, roles: csRoles } = await this.loadAuthorisedSession(sessionId, user);
+    if (!isAdmin && (csRoles.includes("BILLING_MANAGER") || csRoles.includes("SCHEDULER"))) {
+      throw new ForbiddenException("Your role cannot send cost sheets");
+    }
 
     const totalCostCents = Number(body.totalCostCents);
     if (!Number.isFinite(totalCostCents) || totalCostCents <= 0) {

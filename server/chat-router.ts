@@ -5,6 +5,7 @@ import { generateAgreement, syncTemplateToPandaDoc, createTemplateEditingSession
 import { StorageService } from "./src/modules/storage/storage.service";
 import { isUserOnline, getOnlineUserIds } from "./online-tracker";
 import { getBaseUrl as getAppBaseUrlShared } from "./src/lib/get-base-url";
+import { canProviderAccessSession, COORDINATOR_SUBJECT_TYPES, ALL_SESSION_PROVIDER_ROLES } from "../shared/roles";
 
 const storageService = new StorageService();
 
@@ -819,11 +820,21 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
   try {
+    const roles: string[] = user.roles || [];
+    const isAllSessionRole = (ALL_SESSION_PROVIDER_ROLES as readonly string[]).some(r => roles.includes(r));
+    const coordinatorTypes = !isAllSessionRole
+      ? roles.flatMap((r: string) => COORDINATOR_SUBJECT_TYPES[r] || [])
+      : null;
+    const subjectTypeFilter = coordinatorTypes && coordinatorTypes.length > 0
+      ? { OR: [{ subjectType: null }, { subjectType: { in: coordinatorTypes } }] }
+      : {};
+
     const sessions = await prisma.aiChatSession.findMany({
       where: {
         providerId: user.providerId,
         status: { in: ["ACTIVE", "HUMAN_JOINED", "CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] },
         sessionType: { not: "PROVIDER_CONCIERGE" },
+        ...subjectTypeFilter,
       },
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
@@ -982,6 +993,7 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
     });
     if (!session) return res.status(404).json({ message: "Session not found" });
     if (session.providerId !== user.providerId) return res.status(403).json({ message: "Forbidden" });
+    if (!canProviderAccessSession(user.roles || [], (session as any).subjectType)) return res.status(403).json({ message: "Forbidden" });
 
     const isJoined = session.status === "PROVIDER_CONNECTED";
     const isConsultationBooked = session.status === "CONSULTATION_BOOKED";
@@ -1125,6 +1137,7 @@ chatRouter.get("/api/provider/parents/:id", requireAuth, async (req, res) => {
 chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  if ((user.roles || []).includes("BILLING_MANAGER")) return res.status(403).json({ message: "Billing managers cannot send messages" });
   const { content, uiCardType, uiCardData } = req.body;
   if (!content || typeof content !== "string" || !content.trim()) {
     return res.status(400).json({ message: "Content is required" });
@@ -1796,7 +1809,8 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
 // ── Concierge Prompt Sections (admin only) ──
 
 chatRouter.get("/api/admin/concierge-prompts", requireAuth, async (req, res) => {
-  if (!isAdminUser(req.user)) return res.status(403).json({ message: "Forbidden" });
+  const user = req.user as any;
+  if (!isAdminUser(user) && !getUserRoles(user).includes("GOSTORK_DEVELOPER")) return res.status(403).json({ message: "Forbidden" });
   try {
     const sections = await prisma.conciergePromptSection.findMany({ orderBy: { sortOrder: "asc" } });
     res.json(sections);
@@ -1806,7 +1820,8 @@ chatRouter.get("/api/admin/concierge-prompts", requireAuth, async (req, res) => 
 });
 
 chatRouter.post("/api/admin/concierge-prompts/seed", requireAuth, async (req, res) => {
-  if (!isAdminUser(req.user)) return res.status(403).json({ message: "Forbidden" });
+  const user = req.user as any;
+  if (!isAdminUser(user) && !getUserRoles(user).includes("GOSTORK_DEVELOPER")) return res.status(403).json({ message: "Forbidden" });
   try {
     const existing = await prisma.conciergePromptSection.count();
     if (existing > 0) return res.json({ message: "Already seeded", count: existing });
@@ -1822,13 +1837,27 @@ chatRouter.post("/api/admin/concierge-prompts/seed", requireAuth, async (req, re
   }
 });
 
-// Admin-only: Delete ALL chats, meetings, and reset parent profiles (for testing)
+// Admin: Delete ALL chats. Developer: Delete only test-flagged sessions and their related records.
 chatRouter.delete("/api/admin/reset-all-chats", requireAuth, async (req, res) => {
-  if (!isAdminUser(req.user)) return res.status(403).json({ message: "Forbidden" });
+  const caller = req.user as any;
+  const callerRoles = getUserRoles(caller);
+  const isAdmin = isAdminUser(caller);
+  const isDeveloper = callerRoles.includes("GOSTORK_DEVELOPER");
+  if (!isAdmin && !isDeveloper) return res.status(403).json({ message: "Forbidden" });
   try {
-    // Delete in dependency order.
-    // Preserve only true registration fields: interestedServices, gender, sexualOrientation,
-    // relationshipStatus, name, email, phone, location. Everything else was collected by the AI.
+    if (isDeveloper && !isAdmin) {
+      // Developer: only wipe sessions flagged as test data and their dependents
+      const testSessions = await prisma.aiChatSession.findMany({ where: { isTestData: true }, select: { id: true } });
+      const testSessionIds = testSessions.map((s: any) => s.id);
+      if (testSessionIds.length === 0) return res.json({ message: "No test sessions to reset", deleted: {} });
+      const [messages, sessions] = await prisma.$transaction([
+        prisma.aiChatMessage.deleteMany({ where: { sessionId: { in: testSessionIds } } }),
+        prisma.aiChatSession.deleteMany({ where: { id: { in: testSessionIds } } }),
+      ]);
+      return res.json({ message: "Test sessions reset", deleted: { messages: messages.count, sessions: sessions.count } });
+    }
+
+    // Admin: full reset (existing behavior)
     const [invoiceReminders, invoices, agreements, silentQueries, messages, sessions, bookings, notifications, profiles, parentUsers] = await prisma.$transaction([
       prisma.invoiceReminder.deleteMany({}),
       prisma.invoice.deleteMany({}),
@@ -1936,6 +1965,26 @@ chatRouter.delete("/api/admin/reset-all-chats", requireAuth, async (req, res) =>
     });
   } catch (e: any) {
     console.error("[ADMIN RESET] Error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+chatRouter.patch("/api/admin/chat-sessions/:id/test-flag", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  const roles = getUserRoles(user);
+  if (!roles.includes("GOSTORK_ADMIN") && !roles.includes("GOSTORK_DEVELOPER")) {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+  const { isTestData } = req.body;
+  if (typeof isTestData !== "boolean") return res.status(400).json({ message: "isTestData must be a boolean" });
+  try {
+    const session = await prisma.aiChatSession.update({
+      where: { id: req.params.id },
+      data: { isTestData },
+      select: { id: true, isTestData: true },
+    });
+    res.json(session);
+  } catch (e: any) {
     res.status(500).json({ message: e.message });
   }
 });

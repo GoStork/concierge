@@ -20,6 +20,7 @@ model Provider {
   yearFounded                           Int?
   createdAt                             DateTime                    @default(now())
   updatedAt                             DateTime                    @updatedAt
+  isTestData                            Boolean                     @default(false)
   brandingEnabled                       Boolean                     @default(false)
   consultationBookingUrl                String?
   consultationIframeEnabled             Boolean                     @default(false)
@@ -1125,6 +1126,7 @@ model AiChatSession {
   subjectType      String?
   matchmakerId     String?
   tier2Active      Boolean   @default(false)
+  isTestData       Boolean   @default(false)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 

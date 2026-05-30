@@ -150,7 +150,7 @@ export class ProfileSyncController {
     const user = req.user;
     if (!user) return res.status(403).json({ message: "Not authenticated" });
 
-    const isGostorkAdmin = user.roles?.includes("GOSTORK_ADMIN");
+    const isGostorkAdmin = user.roles?.includes("GOSTORK_ADMIN") || user.roles?.includes("GOSTORK_DEVELOPER");
     const isProviderAdmin = user.roles?.includes("PROVIDER_ADMIN");
     if (!isGostorkAdmin && !isProviderAdmin) {
       return res.status(403).json({ message: "Only admins can upload PDF profiles" });
@@ -241,7 +241,7 @@ export class ProfileSyncController {
     const user = req.user;
     if (!user) throw new ForbiddenException("Not authenticated");
 
-    const isGostorkAdmin = user.roles?.includes("GOSTORK_ADMIN");
+    const isGostorkAdmin = user.roles?.includes("GOSTORK_ADMIN") || user.roles?.includes("GOSTORK_DEVELOPER");
     const isProviderAdmin = user.roles?.includes("PROVIDER_ADMIN");
     if (!isGostorkAdmin && !isProviderAdmin) {
       throw new ForbiddenException("Only admins can stop sync jobs");
@@ -411,7 +411,7 @@ export class ProfileSyncController {
     const user = req.user;
     if (!user) throw new ForbiddenException("Not authenticated");
 
-    const isGostorkAdmin = user.roles?.includes("GOSTORK_ADMIN");
+    const isGostorkAdmin = user.roles?.includes("GOSTORK_ADMIN") || user.roles?.includes("GOSTORK_DEVELOPER");
     const isProviderAdmin = user.roles?.includes("PROVIDER_ADMIN");
     const isCoordinator = user.roles?.some((r: string) =>
       ["INTAKE_COORDINATOR", "MATCHING_COORDINATOR", "CASE_MANAGER", "PROVIDER_STAFF"].includes(r)

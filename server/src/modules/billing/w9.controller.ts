@@ -243,7 +243,8 @@ export class W9Controller {
   @UseGuards(SessionOrJwtGuard)
   async getOwnW9(@Req() req: Request) {
     const user = req.user as any;
-    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const roles = user?.roles || [];
+    if (!user?.providerId || (!roles.includes("PROVIDER_ADMIN") && !roles.includes("BILLING_MANAGER"))) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     return buildW9Status(user.providerId);
   }
 
@@ -251,7 +252,8 @@ export class W9Controller {
   @UseGuards(SessionOrJwtGuard)
   async fillW9(@Req() req: Request) {
     const user = req.user as any;
-    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const roles = user?.roles || [];
+    if (!user?.providerId || (!roles.includes("PROVIDER_ADMIN") && !roles.includes("BILLING_MANAGER"))) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
 
     const settings = await prisma.siteSettings.findFirst({
       select: { w9TemplateUrl: true, w9PandaDocTemplateId: true, w9PandaDocRoles: true },
@@ -283,7 +285,8 @@ export class W9Controller {
   @UseGuards(SessionOrJwtGuard)
   async resubmitW9(@Req() req: Request) {
     const user = req.user as any;
-    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const roles = user?.roles || [];
+    if (!user?.providerId || (!roles.includes("PROVIDER_ADMIN") && !roles.includes("BILLING_MANAGER"))) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
 
     const settings = await prisma.siteSettings.findFirst({
       select: { w9TemplateUrl: true, w9PandaDocTemplateId: true, w9PandaDocRoles: true },
@@ -329,7 +332,9 @@ export class W9Controller {
         select: { id: true, providerId: true, status: true },
       });
       if (!w9) throw new HttpException("W-9 not found", HttpStatus.NOT_FOUND);
-      if (!isAdmin(user) && user.providerId !== w9.providerId) {
+      const userRoles = user?.roles || [];
+      const hasBillingRole = userRoles.includes("PROVIDER_ADMIN") || userRoles.includes("BILLING_MANAGER");
+      if (!isAdmin(user) && (user.providerId !== w9.providerId || !hasBillingRole)) {
         throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
       }
 
@@ -355,7 +360,9 @@ export class W9Controller {
         select: { providerId: true, pandaDocDocumentId: true },
       });
       if (!w9) throw new HttpException("W-9 not found", HttpStatus.NOT_FOUND);
-      if (!isAdmin(user) && user.providerId !== w9.providerId) {
+      const dlRoles = user?.roles || [];
+      const hasBillingRoleDl = dlRoles.includes("PROVIDER_ADMIN") || dlRoles.includes("BILLING_MANAGER");
+      if (!isAdmin(user) && (user.providerId !== w9.providerId || !hasBillingRoleDl)) {
         throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
       }
       if (!w9.pandaDocDocumentId) throw new HttpException("No PandaDoc document linked", HttpStatus.BAD_REQUEST);

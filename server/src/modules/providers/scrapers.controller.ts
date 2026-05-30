@@ -38,8 +38,15 @@ import { ClinicEnrichmentService } from "./clinic-enrichment.service";
 
 function requireAdmin(req: any) {
   const user = req.user;
-  if (!user?.roles?.includes("GOSTORK_ADMIN")) {
+  if (!user?.roles?.includes("GOSTORK_ADMIN") && !user?.roles?.includes("GOSTORK_DEVELOPER")) {
     throw new ForbiddenException("Only GoStork admins can access scrapers");
+  }
+}
+
+function requireStrictAdmin(req: any) {
+  const user = req.user;
+  if (!user?.roles?.includes("GOSTORK_ADMIN")) {
+    throw new ForbiddenException("Only GOSTORK_ADMIN can perform this action");
   }
 }
 
@@ -154,7 +161,7 @@ export class ScrapersController {
   @Post("trigger-nightly")
   @ApiOperation({ summary: "Manually trigger nightly sync for all providers (admin only)" })
   async triggerNightly(@Req() req: any) {
-    requireAdmin(req);
+    requireStrictAdmin(req);
     const status = getNightlySyncStatus();
     if (status.isRunning) {
       return { message: "Nightly sync is already running", isRunning: true };
@@ -166,7 +173,7 @@ export class ScrapersController {
   @Post("trigger-type/:type")
   @ApiOperation({ summary: "Trigger sync for all providers of a given type (admin only)" })
   async triggerByType(@Req() req: any, @Param("type") type: string) {
-    requireAdmin(req);
+    requireStrictAdmin(req);
     const validTypes = ["egg-donor", "surrogate", "sperm-donor"];
     if (!validTypes.includes(type)) {
       throw new BadRequestException("Invalid sync type");
@@ -263,7 +270,7 @@ export class ScrapersController {
     @Param("providerId") providerId: string,
     @Param("type") type: string,
   ) {
-    requireAdmin(req);
+    requireStrictAdmin(req);
     const validTypes = ["egg-donor", "surrogate", "sperm-donor"];
     if (!validTypes.includes(type)) {
       throw new BadRequestException("Invalid sync type");
@@ -585,7 +592,7 @@ export class ScrapersController {
     @Param("providerId") providerId: string,
     @Body() body: { websiteUrl: string },
   ) {
-    requireAdmin(req);
+    requireStrictAdmin(req);
 
     const job = await this.prisma.cdcSyncJob.findUnique({ where: { id } });
     if (!job) {
@@ -831,7 +838,7 @@ export class ScrapersController {
   @Delete("cdc-syncs/:id")
   @ApiOperation({ summary: "Delete a failed CDC sync job (admin only)" })
   async deleteCdcSync(@Req() req: any, @Param("id") id: string) {
-    requireAdmin(req);
+    requireStrictAdmin(req);
     const job = await this.prisma.cdcSyncJob.findUnique({ where: { id } });
     if (!job) {
       throw new NotFoundException("CDC sync job not found.");

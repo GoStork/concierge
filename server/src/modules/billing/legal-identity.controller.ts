@@ -35,7 +35,8 @@ export class LegalIdentityController {
   @UseGuards(SessionOrJwtGuard)
   async getOwn(@Req() req: Request) {
     const user = req.user as any;
-    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const roles = user?.roles || [];
+    if (!user?.providerId || (!roles.includes("PROVIDER_ADMIN") && !roles.includes("BILLING_MANAGER"))) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     return this.legalIdentityService.get(user.providerId);
   }
 
@@ -43,7 +44,8 @@ export class LegalIdentityController {
   @UseGuards(SessionOrJwtGuard)
   async updateOwn(@Req() req: Request, @Body() body: LegalIdentityFormData) {
     const user = req.user as any;
-    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const roles = user?.roles || [];
+    if (!user?.providerId || (!roles.includes("PROVIDER_ADMIN") && !roles.includes("BILLING_MANAGER"))) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     return this.legalIdentityService.update(user.providerId, body);
   }
 
@@ -81,7 +83,8 @@ export class LegalIdentityController {
   @UseGuards(SessionOrJwtGuard)
   async syncOwnFromW9(@Req() req: Request, @Body() body: { force?: boolean }) {
     const user = req.user as any;
-    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const roles = user?.roles || [];
+    if (!user?.providerId || (!roles.includes("PROVIDER_ADMIN") && !roles.includes("BILLING_MANAGER"))) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     return this.legalIdentityService.syncFromW9(user.providerId, { force: !!body?.force });
   }
 

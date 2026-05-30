@@ -49,7 +49,7 @@ export class ConnectController {
   @UseGuards(SessionOrJwtGuard)
   async getOwnPayouts(@Req() req: Request) {
     const user = req.user as any;
-    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const _r = user?.roles || []; if (!user?.providerId || (!_r.includes("PROVIDER_ADMIN") && !_r.includes("BILLING_MANAGER"))) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     const row = await this.connectService.getOrCreatePayoutAccount(user.providerId);
     return this.shapeForUi(row);
   }
@@ -145,7 +145,7 @@ export class ConnectController {
   @UseGuards(SessionOrJwtGuard)
   async startExpress(@Req() req: Request) {
     const user = req.user as any;
-    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const _r = user?.roles || []; if (!user?.providerId || (!_r.includes("PROVIDER_ADMIN") && !_r.includes("BILLING_MANAGER"))) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
 
     // Pre-fill EVERYTHING Stripe Express asks for that we already have.
     // The provider shouldn't have to retype data they already entered into
@@ -220,7 +220,8 @@ export class ConnectController {
   @UseGuards(SessionOrJwtGuard)
   async expressReturn(@Req() req: Request, @Res() res: Response) {
     const user = req.user as any;
-    if (!user?.providerId) {
+    const retRoles = user?.roles || [];
+    if (!user?.providerId || (!retRoles.includes("PROVIDER_ADMIN") && !retRoles.includes("BILLING_MANAGER"))) {
       return res.redirect("/login");
     }
     const row = await this.connectService.getOrCreatePayoutAccount(user.providerId);
@@ -240,7 +241,7 @@ export class ConnectController {
   @UseGuards(SessionOrJwtGuard)
   async saveCustom(@Req() req: Request, @Body() body: CustomPayoutFormData) {
     const user = req.user as any;
-    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const _r = user?.roles || []; if (!user?.providerId || (!_r.includes("PROVIDER_ADMIN") && !_r.includes("BILLING_MANAGER"))) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
 
     // Minimum validation - Stripe will reject anything malformed, but we
     // give an earlier error if obvious fields are missing. Business
@@ -296,7 +297,7 @@ export class ConnectController {
     @Body() body: { routingNumber: string; accountNumber: string; accountHolderName?: string; accountType: "checking" | "savings" },
   ) {
     const user = req.user as any;
-    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const _r = user?.roles || []; if (!user?.providerId || (!_r.includes("PROVIDER_ADMIN") && !_r.includes("BILLING_MANAGER"))) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     if (!body?.routingNumber || !body?.accountNumber) {
       throw new HttpException("Routing + account number required", HttpStatus.BAD_REQUEST);
     }
@@ -326,7 +327,7 @@ export class ConnectController {
   @UseGuards(SessionOrJwtGuard)
   async expressLoginLink(@Req() req: Request) {
     const user = req.user as any;
-    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const _r = user?.roles || []; if (!user?.providerId || (!_r.includes("PROVIDER_ADMIN") && !_r.includes("BILLING_MANAGER"))) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     try {
       return await this.connectService.getExpressLoginLink(user.providerId);
     } catch (e: any) {
@@ -345,7 +346,7 @@ export class ConnectController {
   @UseGuards(SessionOrJwtGuard)
   async disconnect(@Req() req: Request) {
     const user = req.user as any;
-    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const _r = user?.roles || []; if (!user?.providerId || (!_r.includes("PROVIDER_ADMIN") && !_r.includes("BILLING_MANAGER"))) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     try {
       return await this.connectService.disconnect(user.providerId);
     } catch (e: any) {

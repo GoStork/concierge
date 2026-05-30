@@ -397,7 +397,7 @@ export class BrandController {
   @ApiOperation({ summary: "Get raw global brand settings without provider merge (admin only)" })
   async getGlobalSettings(@Req() req: any) {
     const roles: string[] = req.user?.roles || [];
-    if (!roles.includes("GOSTORK_ADMIN")) {
+    if (!roles.includes("GOSTORK_ADMIN") && !roles.includes("GOSTORK_DEVELOPER")) {
       throw new ForbiddenException("Admin access required");
     }
     const settings = await this.prisma.siteSettings.findFirst();
@@ -455,6 +455,10 @@ export class BrandController {
     const isAdmin = roles.includes("GOSTORK_ADMIN");
 
     if (isAdmin) return { isAdmin: true };
+
+    if (!roles.includes("PROVIDER_ADMIN")) {
+      throw new ForbiddenException("Only Provider Admins can manage brand settings");
+    }
 
     if (req.user.providerId !== providerId) {
       throw new ForbiddenException("You do not belong to this provider");
@@ -596,7 +600,7 @@ export class BrandController {
   @ApiOperation({ summary: "List all brand templates (admin only)" })
   async listTemplates(@Req() req: any) {
     const roles: string[] = req.user.roles || [];
-    if (!roles.includes("GOSTORK_ADMIN")) {
+    if (!roles.includes("GOSTORK_ADMIN") && !roles.includes("GOSTORK_DEVELOPER")) {
       throw new ForbiddenException("Admin access required");
     }
     return this.prisma.brandTemplate.findMany({ orderBy: { name: "asc" } });

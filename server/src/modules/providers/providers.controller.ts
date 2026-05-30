@@ -22,7 +22,7 @@ import { Request } from "express";
 import { PrismaService } from "../prisma/prisma.service";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { insertProviderSchema } from "@shared/schema";
-import { hasProviderRole } from "@shared/roles";
+import { hasProviderRole, isProviderWriteRestricted } from "@shared/roles";
 import { enrichDonorsWithPendingCosts, enrichDonorsAcrossProviders } from "../costs/total-cost.utils";
 import { updateProfileEmbedding } from "./profile-sync.service";
 import { z } from "zod";
@@ -474,8 +474,9 @@ export class ProvidersController {
     @Query("state") state: string,
     @Req() req: Request,
   ) {
-    if (!(req.user as any).roles?.includes("GOSTORK_ADMIN")) {
-      throw new ForbiddenException("Only GOSTORK_ADMIN can look up success rates");
+    const roles = (req.user as any).roles || [];
+    if (!roles.includes("GOSTORK_ADMIN") && !roles.includes("GOSTORK_DEVELOPER")) {
+      throw new ForbiddenException("Only GoStork team can look up success rates");
     }
     if (!name) return { found: false, rates: [] };
 
@@ -542,8 +543,9 @@ export class ProvidersController {
   @ApiResponse({ status: 400, description: "Invalid URL or scraping failed", type: ErrorResponseDto })
   @ApiResponse({ status: 403, description: "Forbidden", type: ErrorResponseDto })
   async scrape(@Body() body: { url: string }, @Req() req: Request) {
-    if (!(req.user as any).roles?.includes("GOSTORK_ADMIN")) {
-      throw new ForbiddenException("Only GOSTORK_ADMIN can scrape websites");
+    const callerRoles = (req.user as any).roles || [];
+    if (!callerRoles.includes("GOSTORK_ADMIN") && !callerRoles.includes("GOSTORK_DEVELOPER")) {
+      throw new ForbiddenException("Only GoStork team can scrape websites");
     }
     if (!body.url || typeof body.url !== "string") {
       throw new BadRequestException("URL is required");
@@ -638,12 +640,17 @@ export class ProvidersController {
   @ApiResponse({ status: 401, description: "Unauthorized", type: ErrorResponseDto })
   @ApiResponse({ status: 403, description: "Forbidden", type: ErrorResponseDto })
   async create(@Body() body: any, @Req() req: Request) {
-    if (!(req.user as any).roles?.includes("GOSTORK_ADMIN")) {
+    const callerRoles = (req.user as any).roles || [];
+    const isAdmin = callerRoles.includes("GOSTORK_ADMIN");
+    const isDeveloper = callerRoles.includes("GOSTORK_DEVELOPER");
+    if (!isAdmin && !isDeveloper) {
       throw new ForbiddenException("Forbidden");
     }
     try {
       const input = insertProviderSchema.parse(body);
-      const provider = await this.prisma.provider.create({ data: coerceJsonNullFields(input) as any });
+      const data = coerceJsonNullFields(input) as any;
+      if (isDeveloper && !isAdmin) data.isTestData = true;
+      const provider = await this.prisma.provider.create({ data });
       updateProfileEmbedding(this.prisma, "Provider", provider.id, null).catch(() => {});
       return provider;
     } catch (err) {
@@ -671,9 +678,17 @@ export class ProvidersController {
   ) {
     const user = req.user as any;
     const isAdmin = user.roles?.includes("GOSTORK_ADMIN");
+    const isDeveloper = user.roles?.includes("GOSTORK_DEVELOPER");
     const isProviderAdmin = hasProviderRole(user.roles || []) && user.providerId === id;
-    if (!isAdmin && !isProviderAdmin) {
+    if (!isAdmin && !isDeveloper && !isProviderAdmin) {
       throw new ForbiddenException("Forbidden");
+    }
+    if (isDeveloper && !isAdmin) {
+      const target = await this.prisma.provider.findUnique({ where: { id }, select: { isTestData: true } });
+      if (!target?.isTestData) throw new ForbiddenException("Developers can only update test providers");
+    }
+    if (!isAdmin && isProviderWriteRestricted(user.roles || [])) {
+      throw new ForbiddenException("Your role cannot edit the provider profile");
     }
     try {
       const input = insertProviderSchema.partial().parse(body);
@@ -703,12 +718,18 @@ export class ProvidersController {
   @ApiResponse({ status: 403, description: "Forbidden", type: ErrorResponseDto })
   @ApiResponse({ status: 404, description: "Provider not found", type: ErrorResponseDto })
   async delete(@Param("id") id: string, @Req() req: Request) {
-    if (!(req.user as any).roles?.includes("GOSTORK_ADMIN")) {
-      throw new ForbiddenException("Only GOSTORK_ADMIN can delete providers");
+    const callerRoles = (req.user as any).roles || [];
+    const isAdmin = callerRoles.includes("GOSTORK_ADMIN");
+    const isDeveloper = callerRoles.includes("GOSTORK_DEVELOPER");
+    if (!isAdmin && !isDeveloper) {
+      throw new ForbiddenException("Only GoStork team can delete providers");
     }
     const provider = await this.prisma.provider.findUnique({ where: { id } });
     if (!provider) {
       throw new NotFoundException("Provider not found");
+    }
+    if (isDeveloper && !isAdmin && !provider.isTestData) {
+      throw new ForbiddenException("Developers can only delete test providers");
     }
     await this.prisma.client.$transaction(async (tx: any) => {
       await tx.userLocation.deleteMany({ where: { user: { providerId: id } } });
