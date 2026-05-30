@@ -35,10 +35,14 @@ import { SortableTableHead, useTableSort } from "@/components/sortable-table-hea
 
 const PROVIDER_ROLES: Record<string, string> = {
   PROVIDER_ADMIN: "Provider Admin",
-  SURROGACY_COORDINATOR: "Surrogacy Coordinator",
+  IP_SURROGACY_COORDINATOR: "IP Surrogacy Coordinator",
+  IP_EGG_DONOR_COORDINATOR: "IP Egg Donor Coordinator",
+  IP_SPERM_DONOR_COORDINATOR: "IP Sperm Donor Coordinator",
+  IP_IVF_COORDINATOR: "IP IVF Coordinator",
+  SURROGATE_COORDINATOR: "Surrogate Coordinator",
   EGG_DONOR_COORDINATOR: "Egg Donor Coordinator",
   SPERM_DONOR_COORDINATOR: "Sperm Donor Coordinator",
-  IVF_CLINIC_COORDINATOR: "IVF Clinic Coordinator",
+  SCHEDULER: "Scheduler",
   DOCTOR: "Doctor",
   BILLING_MANAGER: "Billing Manager",
 };

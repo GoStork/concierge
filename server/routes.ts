@@ -15,12 +15,16 @@ function escapeHtml(str: string): string {
 }
 
 
-const PROVIDER_ROLES = ["PROVIDER_ADMIN", "SURROGACY_COORDINATOR", "EGG_DONOR_COORDINATOR", "SPERM_DONOR_COORDINATOR", "IVF_CLINIC_COORDINATOR", "DOCTOR", "BILLING_MANAGER"];
+const PROVIDER_ROLES = ["PROVIDER_ADMIN", "IP_SURROGACY_COORDINATOR", "IP_EGG_DONOR_COORDINATOR", "IP_SPERM_DONOR_COORDINATOR", "IP_IVF_COORDINATOR", "SURROGATE_COORDINATOR", "EGG_DONOR_COORDINATOR", "SPERM_DONOR_COORDINATOR", "SCHEDULER", "DOCTOR", "BILLING_MANAGER"];
 function getUserRoles(user: any): string[] {
   return user.roles || [];
 }
 function isAdminUser(user: any): boolean {
   return getUserRoles(user).includes("GOSTORK_ADMIN");
+}
+function isAdminOrConcierge(user: any): boolean {
+  const roles = getUserRoles(user);
+  return roles.includes("GOSTORK_ADMIN") || roles.includes("GOSTORK_CONCIERGE");
 }
 function isProviderUser(user: any): boolean {
   if (!user.providerId) return false;
@@ -322,7 +326,7 @@ export async function registerRoutes(
 
   app.get("/api/admin/concierge-sessions", requireAuth, async (req, res) => {
     const user = req.user as any;
-    if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
+    if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
     try {
       const sessions = await prisma.aiChatSession.findMany({
         where: { status: { in: ["ACTIVE", "HUMAN_JOINED", "PROVIDER_JOINED"] } },
@@ -363,7 +367,7 @@ export async function registerRoutes(
 
   app.get("/api/admin/concierge-sessions/:id", requireAuth, async (req, res) => {
     const user = req.user as any;
-    if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
+    if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
     try {
       const session = await prisma.aiChatSession.findUnique({
         where: { id: req.params.id },
@@ -394,7 +398,7 @@ export async function registerRoutes(
 
   app.post("/api/admin/concierge-sessions/:id/message", requireAuth, async (req, res) => {
     const user = req.user as any;
-    if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
+    if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
     const { content } = req.body;
     if (!content || typeof content !== "string" || !content.trim()) {
       return res.status(400).json({ message: "Content is required" });
@@ -767,7 +771,7 @@ export async function registerRoutes(
           },
         });
 
-        const admins = await prisma.user.findMany({ where: { roles: { has: "GOSTORK_ADMIN" } }, select: { id: true } });
+        const admins = await prisma.user.findMany({ where: { roles: { hasSome: ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE"] } }, select: { id: true } });
         for (const admin of admins) {
           await prisma.inAppNotification.create({
             data: {

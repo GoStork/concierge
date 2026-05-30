@@ -19,10 +19,14 @@ import { PhoneInput } from "@/components/ui/phone-input";
 
 const PROVIDER_ROLES = [
   { value: "PROVIDER_ADMIN", label: "Provider Admin" },
-  { value: "SURROGACY_COORDINATOR", label: "Surrogacy Coordinator" },
+  { value: "IP_SURROGACY_COORDINATOR", label: "IP Surrogacy Coordinator" },
+  { value: "IP_EGG_DONOR_COORDINATOR", label: "IP Egg Donor Coordinator" },
+  { value: "IP_SPERM_DONOR_COORDINATOR", label: "IP Sperm Donor Coordinator" },
+  { value: "IP_IVF_COORDINATOR", label: "IP IVF Coordinator" },
+  { value: "SURROGATE_COORDINATOR", label: "Surrogate Coordinator" },
   { value: "EGG_DONOR_COORDINATOR", label: "Egg Donor Coordinator" },
   { value: "SPERM_DONOR_COORDINATOR", label: "Sperm Donor Coordinator" },
-  { value: "IVF_CLINIC_COORDINATOR", label: "IVF Clinic Coordinator" },
+  { value: "SCHEDULER", label: "Scheduler" },
   { value: "DOCTOR", label: "Doctor" },
   { value: "BILLING_MANAGER", label: "Billing Manager" },
 ];

@@ -15,10 +15,14 @@ import LocationAutocomplete from "@/components/location-autocomplete";
 
 const PROVIDER_ROLES = [
   { value: "PROVIDER_ADMIN", label: "Provider Admin" },
-  { value: "SURROGACY_COORDINATOR", label: "Surrogacy Coordinator" },
+  { value: "IP_SURROGACY_COORDINATOR", label: "IP Surrogacy Coordinator" },
+  { value: "IP_EGG_DONOR_COORDINATOR", label: "IP Egg Donor Coordinator" },
+  { value: "IP_SPERM_DONOR_COORDINATOR", label: "IP Sperm Donor Coordinator" },
+  { value: "IP_IVF_COORDINATOR", label: "IP IVF Coordinator" },
+  { value: "SURROGATE_COORDINATOR", label: "Surrogate Coordinator" },
   { value: "EGG_DONOR_COORDINATOR", label: "Egg Donor Coordinator" },
   { value: "SPERM_DONOR_COORDINATOR", label: "Sperm Donor Coordinator" },
-  { value: "IVF_CLINIC_COORDINATOR", label: "IVF Clinic Coordinator" },
+  { value: "SCHEDULER", label: "Scheduler" },
   { value: "DOCTOR", label: "Doctor" },
   { value: "BILLING_MANAGER", label: "Billing Manager" },
 ];
@@ -42,10 +46,11 @@ function inferRolesFromTitle(title: string | null): string[] | null {
   if (!title) return null;
   const t = title.toLowerCase();
   const roles: string[] = [];
-  if (t.includes("surrogacy") || t.includes("surrogate")) roles.push("SURROGACY_COORDINATOR");
-  if (t.includes("egg donor") || t.includes("egg-donor") || t.includes("oocyte")) roles.push("EGG_DONOR_COORDINATOR");
-  if (t.includes("sperm donor") || t.includes("sperm-donor")) roles.push("SPERM_DONOR_COORDINATOR");
-  if (t.includes("patient") || t.includes("intake") || t.includes("ivf")) roles.push("IVF_CLINIC_COORDINATOR");
+  if (t.includes("surrogacy") || t.includes("surrogate")) roles.push("IP_SURROGACY_COORDINATOR");
+  if (t.includes("egg donor") || t.includes("egg-donor") || t.includes("oocyte")) roles.push("IP_EGG_DONOR_COORDINATOR");
+  if (t.includes("sperm donor") || t.includes("sperm-donor")) roles.push("IP_SPERM_DONOR_COORDINATOR");
+  if (t.includes("patient") || t.includes("intake") || t.includes("ivf")) roles.push("IP_IVF_COORDINATOR");
+  if (t.includes("scheduler") || t.includes("scheduling") || t.includes("match call")) roles.push("SCHEDULER");
   if (t.includes("doctor") || t.includes("physician") || t.includes("md") || t.includes("dr.")) roles.push("DOCTOR");
   if (t.includes("billing") || t.includes("finance") || t.includes("accounting")) roles.push("BILLING_MANAGER");
   if (t.includes("admin") || t.includes("director") || t.includes("founder") || t.includes("ceo") || t.includes("owner") || t.includes("managing")) roles.push("PROVIDER_ADMIN");
@@ -73,7 +78,7 @@ export default function AdminUserAddPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [mobileNumber, setMobileNumber] = useState("");
   const [parentAccountRole, setParentAccountRole] = useState("INTENDED_PARENT_2");
-  const [selectedRoles, setSelectedRoles] = useState<string[]>(isGostorkTeamMode ? ["GOSTORK_ADMIN"] : ["IVF_CLINIC_COORDINATOR"]);
+  const [selectedRoles, setSelectedRoles] = useState<string[]>(isGostorkTeamMode ? ["GOSTORK_ADMIN"] : ["IP_IVF_COORDINATOR"]);
   const [personalLocation, setPersonalLocation] = useState({ address: "", city: "", state: "", zip: "", country: "" });
   const [allLocations, setAllLocations] = useState(true);
   const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
@@ -238,7 +243,7 @@ export default function AdminUserAddPage() {
                 setSelectedMemberId(val);
                 if (val === "__new__") {
                   setName("");
-                  setSelectedRoles(["IVF_CLINIC_COORDINATOR"]);
+                  setSelectedRoles(["IP_IVF_COORDINATOR"]);
                   return;
                 }
                 const member = teamMembers.find(m => m.id === val);

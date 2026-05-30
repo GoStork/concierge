@@ -1006,8 +1006,8 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       isAccountMember = !!sessionOwner && sessionOwner.parentAccountId === user.parentAccountId;
     }
     const roles: string[] = user.roles || [];
-    const isAdmin = roles.includes("GOSTORK_ADMIN");
-    const providerRoles = ["PROVIDER_ADMIN", "SURROGACY_COORDINATOR", "EGG_DONOR_COORDINATOR", "SPERM_DONOR_COORDINATOR", "IVF_CLINIC_COORDINATOR", "DOCTOR", "BILLING_MANAGER"];
+    const isAdmin = roles.includes("GOSTORK_ADMIN") || roles.includes("GOSTORK_CONCIERGE");
+    const providerRoles = ["PROVIDER_ADMIN", "IP_SURROGACY_COORDINATOR", "IP_EGG_DONOR_COORDINATOR", "IP_SPERM_DONOR_COORDINATOR", "IP_IVF_COORDINATOR", "SURROGATE_COORDINATOR", "EGG_DONOR_COORDINATOR", "SPERM_DONOR_COORDINATOR", "SCHEDULER", "DOCTOR", "BILLING_MANAGER"];
     const isProvider = roles.some((r: string) => providerRoles.includes(r)) && user.providerId && session.providerId === user.providerId;
     if (!isOwner && !isAccountMember && !isAdmin && !isProvider) {
       return res.status(403).json({ message: "Forbidden" });
@@ -1550,7 +1550,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         try {
           await prisma.aiChatSession.update({ where: { id: currentSessionId }, data: { humanRequested: true } });
           humanEscalationTriggered = true;
-          const admins = await prisma.user.findMany({ where: { roles: { has: "GOSTORK_ADMIN" } }, select: { id: true } });
+          const admins = await prisma.user.findMany({ where: { roles: { hasSome: ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE"] } }, select: { id: true } });
           for (const admin of admins) {
             await prisma.inAppNotification.create({
               data: {
@@ -5246,7 +5246,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             where: { parentAccountId },
             data: { hotLeadProviderId: providerId, hotLeadAt: new Date() },
           });
-          const admins = await prisma.user.findMany({ where: { roles: { has: "GOSTORK_ADMIN" } }, select: { id: true } });
+          const admins = await prisma.user.findMany({ where: { roles: { hasSome: ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE"] } }, select: { id: true } });
           for (const admin of admins) {
             await prisma.inAppNotification.create({
               data: {
@@ -5291,7 +5291,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             data: { humanRequested: true },
           });
         }
-        const admins = await prisma.user.findMany({ where: { roles: { has: "GOSTORK_ADMIN" } }, select: { id: true } });
+        const admins = await prisma.user.findMany({ where: { roles: { hasSome: ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE"] } }, select: { id: true } });
         for (const admin of admins) {
           await prisma.inAppNotification.create({
             data: {

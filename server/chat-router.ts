@@ -25,7 +25,7 @@ const chatUpload = multer({
   },
 });
 
-const PROVIDER_ROLES = ["PROVIDER_ADMIN", "SURROGACY_COORDINATOR", "EGG_DONOR_COORDINATOR", "SPERM_DONOR_COORDINATOR", "IVF_CLINIC_COORDINATOR", "DOCTOR", "BILLING_MANAGER"];
+const PROVIDER_ROLES = ["PROVIDER_ADMIN", "IP_SURROGACY_COORDINATOR", "IP_EGG_DONOR_COORDINATOR", "IP_SPERM_DONOR_COORDINATOR", "IP_IVF_COORDINATOR", "SURROGATE_COORDINATOR", "EGG_DONOR_COORDINATOR", "SPERM_DONOR_COORDINATOR", "SCHEDULER", "DOCTOR", "BILLING_MANAGER"];
 
 function isExpiredPresignedAwsUrl(url: string): boolean {
   if (!/amazonaws\.com/i.test(url) || !/[?&]X-Amz-/i.test(url)) return false;
@@ -53,6 +53,10 @@ function getUserRoles(user: any): string[] {
 }
 function isAdminUser(user: any): boolean {
   return getUserRoles(user).includes("GOSTORK_ADMIN");
+}
+function isAdminOrConcierge(user: any): boolean {
+  const roles = getUserRoles(user);
+  return roles.includes("GOSTORK_ADMIN") || roles.includes("GOSTORK_CONCIERGE");
 }
 function isProviderUser(user: any): boolean {
   if (!user.providerId) return false;
@@ -273,7 +277,7 @@ chatRouter.post("/api/chat-sessions/:id/read", requireAuth, async (req, res) => 
       isAccountMember = !!owner && owner.parentAccountId === user.parentAccountId;
     }
     const isOwner = session.userId === user.id;
-    const isAdmin = (user.roles || []).includes("GOSTORK_ADMIN");
+    const isAdmin = isAdminOrConcierge(user);
     if (!isOwner && !isAccountMember && !isProvider && !isAdmin) {
       return res.status(403).json({ message: "Forbidden" });
     }
@@ -335,7 +339,7 @@ chatRouter.patch("/api/my/chat-session/matchmaker", requireAuth, async (req, res
 
 chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) => {
   const user = req.user as any;
-  if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
+  if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
   try {
     const sessions = await prisma.aiChatSession.findMany({
       where: {
@@ -453,7 +457,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
 
 chatRouter.get("/api/admin/concierge-sessions/:id", requireAuth, async (req, res) => {
   const user = req.user as any;
-  if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
+  if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
   try {
     const session = await prisma.aiChatSession.findUnique({
       where: { id: req.params.id },
@@ -486,7 +490,7 @@ chatRouter.get("/api/admin/concierge-sessions/:id", requireAuth, async (req, res
 
 chatRouter.post("/api/admin/concierge-sessions/:id/join", requireAuth, async (req, res) => {
   const user = req.user as any;
-  if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
+  if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
   try {
     const session = await prisma.aiChatSession.findUnique({ where: { id: req.params.id } });
     if (!session) return res.status(404).json({ message: "Session not found" });
@@ -540,7 +544,7 @@ chatRouter.post("/api/admin/concierge-sessions/:id/join", requireAuth, async (re
 
 chatRouter.post("/api/admin/concierge-sessions/:id/exit-human", requireAuth, async (req, res) => {
   const user = req.user as any;
-  if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
+  if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
   try {
     const session = await prisma.aiChatSession.findUnique({ where: { id: req.params.id } });
     if (!session) return res.status(404).json({ message: "Session not found" });
@@ -630,9 +634,9 @@ chatRouter.post("/api/chat-sessions/:id/request-human", requireAuth, async (req,
       },
     });
 
-    // Notify admins (in-app + email + SMS)
+    // Notify admins and concierge team (in-app + email + SMS)
     const admins = await prisma.user.findMany({
-      where: { roles: { has: "GOSTORK_ADMIN" } },
+      where: { roles: { hasSome: ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE"] } },
       select: { id: true },
     });
     for (const admin of admins) {
@@ -691,7 +695,7 @@ chatRouter.post("/api/chat-sessions/:id/request-human", requireAuth, async (req,
 
 chatRouter.post("/api/admin/concierge-sessions/:id/message", requireAuth, async (req, res) => {
   const user = req.user as any;
-  if (!isAdminUser(user)) return res.status(403).json({ message: "Forbidden" });
+  if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
   const { content, uiCardType, uiCardData } = req.body;
   if (!content || typeof content !== "string" || !content.trim()) {
     return res.status(400).json({ message: "Content is required" });
@@ -1042,13 +1046,13 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
 // renders so ParentProfileCard can be reused on the new /parents/:id page.
 chatRouter.get("/api/provider/parents/:id", requireAuth, async (req, res) => {
   const user = req.user as any;
-  if (!isProviderUser(user) && !isAdminUser(user)) {
+  if (!isProviderUser(user) && !isAdminOrConcierge(user)) {
     return res.status(403).json({ message: "Forbidden" });
   }
   try {
     const parentId = req.params.id;
 
-    if (!isAdminUser(user)) {
+    if (!isAdminOrConcierge(user)) {
       const providerId = user.providerId;
       if (!providerId) return res.status(403).json({ message: "Forbidden" });
 
@@ -1312,7 +1316,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/consultation-status", requ
         },
       });
 
-      const admins = await prisma.user.findMany({ where: { roles: { has: "GOSTORK_ADMIN" } }, select: { id: true } });
+      const admins = await prisma.user.findMany({ where: { roles: { hasSome: ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE"] } }, select: { id: true } });
       for (const admin of admins) {
         await prisma.inAppNotification.create({
           data: {
@@ -1356,7 +1360,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/consultation-status", requ
 
 chatRouter.get("/api/admin/calendar-slug", requireAuth, async (req, res) => {
   const user = req.user as any;
-  if (!user.roles?.includes("GOSTORK_ADMIN")) return res.status(403).json({ message: "Forbidden" });
+  if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
   try {
     const config = await prisma.scheduleConfig.findUnique({
       where: { userId: user.id },
@@ -1399,7 +1403,7 @@ chatRouter.get("/api/chat-session/:id/provider-calendar-slug", requireAuth, asyn
         if (sameAccount) allowed = true;
       }
       const roles = user.roles || [];
-      if (roles.includes("GOSTORK_ADMIN")) allowed = true;
+      if (isAdminOrConcierge(user)) allowed = true;
       if (roles.includes("PROVIDER_ADMIN") && session.providerId && user.providerId === session.providerId) allowed = true;
       if (!allowed) return res.status(403).json({ message: "Forbidden" });
     }
@@ -1689,7 +1693,7 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
         })).map(u => u.id)
       : [session.userId];
     const isSessionParent = parentAccountUserIds.includes(user.id);
-    if (!isSessionProvider && !isSessionParent && !isAdminUser(user)) {
+    if (!isSessionProvider && !isSessionParent && !isAdminOrConcierge(user)) {
       return res.status(403).json({ message: "Forbidden" });
     }
 
@@ -2389,7 +2393,7 @@ chatRouter.get("/api/agreements/:id/download", requireAuth, async (req, res) => 
       select: { providerId: true, parentUserId: true, pandaDocDocumentId: true, status: true },
     });
     if (!agreement) return res.status(404).json({ message: "Agreement not found" });
-    const isAdmin = isAdminUser(user);
+    const isAdmin = isAdminOrConcierge(user);
     if (!isAdmin && user.providerId !== agreement.providerId && user.id !== agreement.parentUserId) {
       return res.status(403).json({ message: "Forbidden" });
     }

@@ -36,10 +36,14 @@ const ROLES_NEEDING_VIDEO_ROOM = [
   "GOSTORK_CONCIERGE",
   "GOSTORK_DEVELOPER",
   "PROVIDER_ADMIN",
-  "SURROGACY_COORDINATOR",
+  "IP_SURROGACY_COORDINATOR",
+  "IP_EGG_DONOR_COORDINATOR",
+  "IP_SPERM_DONOR_COORDINATOR",
+  "IP_IVF_COORDINATOR",
+  "SURROGATE_COORDINATOR",
   "EGG_DONOR_COORDINATOR",
   "SPERM_DONOR_COORDINATOR",
-  "IVF_CLINIC_COORDINATOR",
+  "SCHEDULER",
   "DOCTOR",
 ];
 
@@ -1110,7 +1114,7 @@ export class UsersController {
 
     try {
       const input = insertUserSchema.parse(body);
-      const roles: string[] = Array.isArray(body.roles) ? body.roles : (input.role ? [input.role] : ["IVF_CLINIC_COORDINATOR"]);
+      const roles: string[] = Array.isArray(body.roles) ? body.roles : (input.role ? [input.role] : ["IP_IVF_COORDINATOR"]);
       const invalidRoles = roles.filter(r => !(PROVIDER_ROLES as readonly string[]).includes(r));
       if (invalidRoles.length > 0) {
         throw new BadRequestException("Invalid roles: " + invalidRoles.join(", ") + ". Must be: " + PROVIDER_ROLES.join(", "));

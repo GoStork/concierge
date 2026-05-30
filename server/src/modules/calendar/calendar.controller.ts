@@ -574,7 +574,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     @Query("providerId") providerId?: string,
   ) {
     const user = req.user as any;
-    const isAdmin = user.roles?.includes("GOSTORK_ADMIN");
+    const isAdmin = user.roles?.includes("GOSTORK_ADMIN") || user.roles?.includes("GOSTORK_CONCIERGE");
     const isParent = user.roles?.includes("PARENT");
     const parentMemberIds = isParent ? await this.getParentAccountMemberIds(user.id) : [user.id];
     const where: any = {};
@@ -673,7 +673,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     @Query("providerId") providerId?: string,
   ) {
     const user = req.user as any;
-    const isAdmin = user.roles?.includes("GOSTORK_ADMIN");
+    const isAdmin = user.roles?.includes("GOSTORK_ADMIN") || user.roles?.includes("GOSTORK_CONCIERGE");
     const isParent = user.roles?.includes("PARENT");
     const parentMemberIds = isParent ? await this.getParentAccountMemberIds(user.id) : [user.id];
     const where: any = {};
@@ -851,7 +851,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (!booking) throw new NotFoundException("Booking not found");
-    const isAdmin = user.roles?.includes("GOSTORK_ADMIN");
+    const isAdmin = user.roles?.includes("GOSTORK_ADMIN") || user.roles?.includes("GOSTORK_CONCIERGE");
     const isAccountMember = await this.isParentAccountMember(user.id, booking.parentUserId);
     if (!isAdmin && booking.providerUserId !== user.id && !isAccountMember) {
       throw new ForbiddenException("Not authorized");

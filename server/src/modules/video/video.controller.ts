@@ -26,7 +26,9 @@ import { NotificationService } from "../notifications/notification.service";
 import { BookingEventsService } from "../calendar/booking-events.service";
 import { CalendarController } from "../calendar/calendar.controller";
 import { BillingService } from "../billing/billing.service";
-import { hasProviderRole } from "../../../../shared/roles";
+import { hasProviderRole, hasAnyRole } from "../../../../shared/roles";
+
+const GOSTORK_STAFF = ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE"];
 
 @ApiTags("Video")
 @Controller("api/video")
@@ -59,7 +61,7 @@ export class VideoController {
   private async assertBookingAccess(userId: string, roles: string[], booking: any): Promise<void> {
     const isProvider = userId === booking.providerUserId;
     const isParent = await this.isParentAccountMember(userId, booking.parentUserId);
-    const isAdmin = roles?.includes("GOSTORK_ADMIN");
+    const isAdmin = hasAnyRole(roles || [], GOSTORK_STAFF);
     if (!isProvider && !isParent && !isAdmin) {
       throw new ForbiddenException("You are not a participant of this booking");
     }
@@ -86,7 +88,7 @@ export class VideoController {
     if (!session) throw new NotFoundException("Chat session not found");
 
     const isProvider = hasProviderRole(user.roles || []);
-    const isAdmin = user.roles?.includes("GOSTORK_ADMIN");
+    const isAdmin = hasAnyRole(user.roles || [], GOSTORK_STAFF);
 
     let callerIsSessionParent = session.userId === user.id;
     if (!callerIsSessionParent && user.parentAccountId) {
@@ -106,7 +108,7 @@ export class VideoController {
       }
     }
 
-    // Admin on a session with no provider acts as host directly
+    // GoStork staff on a session with no provider acts as host directly
     const adminAsHost = isAdmin && !session.providerId;
 
     if (!callerIsSessionParent && !callerIsSessionProvider && !adminAsHost) {
@@ -221,7 +223,7 @@ export class VideoController {
   @ApiOperation({ summary: "Provision a Daily.co room for the current user" })
   async createRoom(@Req() req: any) {
     const user = req.user;
-    const isAdmin = user.roles?.includes("GOSTORK_ADMIN");
+    const isAdmin = hasAnyRole(user.roles || [], GOSTORK_STAFF);
     const isProvider = hasProviderRole(user.roles || []);
 
     if (!user) {
@@ -244,7 +246,7 @@ export class VideoController {
   @ApiOperation({ summary: "Get a user's Daily.co room URL" })
   async getRoom(@Req() req: any, @Param("userId") userId: string) {
     const currentUser = req.user;
-    const isAdmin = currentUser.roles?.includes("GOSTORK_ADMIN");
+    const isAdmin = hasAnyRole(currentUser.roles || [], GOSTORK_STAFF);
     const isSelf = currentUser.id === userId;
 
     if (!isAdmin && !isSelf) {
@@ -309,7 +311,7 @@ export class VideoController {
       isProvider = !!(providerUser?.providerId && providerUser.providerId === user.providerId);
     }
     const isParent = await this.isParentAccountMember(user.id, booking.parentUserId);
-    const isAdmin = user.roles?.includes("GOSTORK_ADMIN");
+    const isAdmin = hasAnyRole(user.roles || [], GOSTORK_STAFF);
 
     if (!isProvider && !isParent && !isAdmin) {
       throw new ForbiddenException("You are not a participant of this booking");
@@ -353,7 +355,7 @@ export class VideoController {
     const isParticipant =
       user.id === booking.providerUserId ||
       isAccountMember ||
-      user.roles?.includes("GOSTORK_ADMIN");
+      hasAnyRole(user.roles || [], GOSTORK_STAFF);
 
     if (!isParticipant) {
       throw new ForbiddenException("You are not a participant of this booking");
@@ -471,7 +473,7 @@ export class VideoController {
     const isParticipant =
       user.id === booking.providerUserId ||
       (await this.isParentAccountMember(user.id, booking.parentUserId)) ||
-      user.roles?.includes("GOSTORK_ADMIN");
+      hasAnyRole(user.roles || [], GOSTORK_STAFF);
     if (!isParticipant) throw new ForbiddenException("Not a participant");
 
     // Only fire follow-up on the FIRST call-ended event (wasInProgress guard)
@@ -575,7 +577,7 @@ export class VideoController {
       where: { id: req.user.id, parentAccountId: (await this.prisma.user.findUnique({ where: { id: booking.parentUserId }, select: { parentAccountId: true } }))?.parentAccountId || undefined },
     }) : null;
 
-    if (booking.providerUserId !== req.user.id && booking.parentUserId !== req.user.id && !isAccountMember && !req.user.roles?.includes("GOSTORK_ADMIN")) {
+    if (booking.providerUserId !== req.user.id && booking.parentUserId !== req.user.id && !isAccountMember && !hasAnyRole(req.user.roles || [], GOSTORK_STAFF)) {
       throw new ForbiddenException("Not authorized");
     }
 
@@ -1094,7 +1096,7 @@ export class VideoController {
   @ApiOperation({ summary: "List all past meetings with recordings/transcripts for current user" })
   async getAllRecordings(@Req() req: any) {
     const user = req.user;
-    const isAdmin = user.roles?.includes("GOSTORK_ADMIN");
+    const isAdmin = hasAnyRole(user.roles || [], GOSTORK_STAFF);
     const isProvider = hasProviderRole(user.roles || []);
     const isParent = user.roles?.includes("PARENT");
 
