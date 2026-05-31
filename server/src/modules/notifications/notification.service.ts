@@ -2651,17 +2651,90 @@ export class NotificationService implements OnModuleInit {
     }
   }
 
+  async sendWhisperPendingReminder(params: {
+    providerUserIds: string[];
+    providerName: string;
+    parentName: string;
+    sessionId: string;
+    providerId: string;
+    // The provider conversations page resolves /chat/:entityId/:subjectId
+    // with entityId = parent userId for provider viewers. Pass the parent
+    // userId so the deep link auto-opens the conversation instead of
+    // dumping the provider on the inbox shell.
+    parentUserId: string;
+    questionPreview: string;
+    stage: "first" | "second" | "escalation";
+    ageFormatted: string;
+  }) {
+    const brandData = await this.getBrandData();
+    const chatUrl = `${getBaseUrl()}/chat/${params.parentUserId}/${params.sessionId}`;
+    const preview = params.questionPreview.length > 220
+      ? params.questionPreview.slice(0, 220) + "..."
+      : params.questionPreview;
+
+    const copy = {
+      first: {
+        title: `A prospective parent is waiting for an answer (${params.ageFormatted})`,
+        body: `A prospective parent asked a question through the GoStork AI concierge and has been waiting <strong>${esc(params.ageFormatted)}</strong> for a reply. Your answer is relayed by Eva and stays anonymous.<br/><br/><em>"${esc(preview)}"</em>`,
+        smsBody: `GoStork: a parent is waiting ${params.ageFormatted} for your reply. Question: "${preview.slice(0, 80)}..." Reply: ${chatUrl}`,
+      },
+      second: {
+        title: `Still waiting (${params.ageFormatted}) - parent may move on`,
+        body: `A prospective parent has now been waiting <strong>${esc(params.ageFormatted)}</strong> for an answer through the GoStork AI concierge. Parents who don't hear back within 24-48 hours often move on to other providers.<br/><br/><em>"${esc(preview)}"</em>`,
+        smsBody: `GoStork reminder: parent has waited ${params.ageFormatted}. They may move on if no reply. Question: "${preview.slice(0, 80)}..." ${chatUrl}`,
+      },
+      escalation: {
+        title: `Escalated: parent has waited ${params.ageFormatted} for an answer`,
+        body: `A prospective parent has waited <strong>${esc(params.ageFormatted)}</strong> without a response. GoStork has been notified and may follow up on your behalf. Please reply as soon as possible.<br/><br/><em>"${esc(preview)}"</em>`,
+        smsBody: `GoStork ESCALATED: parent waited ${params.ageFormatted}. GoStork has been notified. Reply now: ${chatUrl}`,
+      },
+    }[params.stage];
+
+    const html = buildBrandedEmail(brandData, {
+      title: copy.title,
+      greeting: `Hi ${params.providerName},`,
+      body: copy.body,
+      buttons: [{ label: "Open Chat & Reply", url: chatUrl }],
+    });
+
+    for (const userId of params.providerUserIds) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true, mobileNumber: true },
+      });
+      if (!user?.email) continue;
+
+      await this.dispatchNotification({
+        userId,
+        type: "EMAIL",
+        channel: "whisper_pending",
+        recipient: user.email,
+        subject: copy.title,
+        body: html,
+      }).catch(e => this.logger.error(`Failed to send whisper-pending email: ${e.message}`));
+
+      if (user.mobileNumber) {
+        await this.sendRawSms(user.mobileNumber, copy.smsBody).catch(e =>
+          this.logger.error(`Failed to send whisper-pending SMS: ${e.message}`),
+        );
+      }
+    }
+  }
+
   async sendCostSheetMissingToProvider(params: {
     providerUserIds: string[];
     providerName: string;
     parentName: string;
     sessionId: string;
     providerId: string;
+    // Provider chat URLs route by parent userId, not provider id. See
+    // sendWhisperPendingReminder above for the same reason.
+    parentUserId: string;
     reason: "pre_meeting_24h" | "pre_meeting_1h" | "post_readiness";
     meetingTimeFormatted?: string;
   }) {
     const brandData = await this.getBrandData();
-    const chatUrl = `${getBaseUrl()}/chat/${params.providerId}/${params.sessionId}`;
+    const chatUrl = `${getBaseUrl()}/chat/${params.parentUserId}/${params.sessionId}`;
     const reasonCopy = {
       pre_meeting_24h: {
         title: "Send a cost sheet before tomorrow's meeting",

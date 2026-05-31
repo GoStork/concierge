@@ -134,6 +134,7 @@ export async function runCostSheetReminderCheck(prisma: PrismaService, notificat
           parentName,
           sessionId: session.id,
           providerId,
+          parentUserId,
           reason: spec.reason,
           meetingTimeFormatted,
         });

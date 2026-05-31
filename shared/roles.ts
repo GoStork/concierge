@@ -128,3 +128,25 @@ export const PROVIDER_WRITE_RESTRICTED_ROLES = ["BILLING_MANAGER", "SCHEDULER"] 
 export function isProviderWriteRestricted(roles: string[]): boolean {
   return roles.some(r => (PROVIDER_WRITE_RESTRICTED_ROLES as readonly string[]).includes(r));
 }
+
+// Roles that, on their own, cannot send messages in a chat session. Used by
+// the provider-message endpoint and the whisper-SLA scheduler. Currently
+// just BILLING_MANAGER - SCHEDULER and DOCTOR are allowed to message.
+const CHAT_SEND_BLOCKED_IF_SOLE_ROLES = ["BILLING_MANAGER"] as const;
+
+// True iff the user can send messages in a provider chat session (whisper
+// answers, post-booking direct messages, attachments, etc). The rule:
+// 1. they must have access to the subjectType (canProviderAccessSession), AND
+// 2. they must have at least one provider role that isn't in the
+//    chat-send-blocked set.
+// So a user with BILLING_MANAGER alone is blocked, but a user with both
+// BILLING_MANAGER and IP_SURROGACY_COORDINATOR can send to Surrogate/
+// SurrogacyAgency sessions - the coordinator role grants the write
+// capability; BILLING_MANAGER just adds billing access on top.
+export function canSendProviderMessage(roles: string[], sessionSubjectType: string | null | undefined): boolean {
+  if (!canProviderAccessSession(roles, sessionSubjectType)) return false;
+  const hasWriteCapableRole = roles.some(r =>
+    isProviderRole(r) && !(CHAT_SEND_BLOCKED_IF_SOLE_ROLES as readonly string[]).includes(r)
+  );
+  return hasWriteCapableRole;
+}

@@ -1339,6 +1339,18 @@ model SilentQuery {
   questionText String
   answerText   String?
   status       String   @default("PENDING")
+  // Optional file the provider attached to their whisper answer. Persisted so
+  // the parent-relay message and the audit trail stay in sync.
+  attachmentUrl  String?
+  attachmentName String?
+  attachmentMime String?
+  // SLA tracking - the whisper-sla scheduler stamps these as it fires nudges
+  // at the 2h / 24h / 48h-escalation marks. reminderCount is a convenience
+  // counter so the inbox UI can show "Nudged 2x" without joining anything.
+  firstReminderAt  DateTime?
+  secondReminderAt DateTime?
+  escalatedAt      DateTime?
+  reminderCount    Int       @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -1349,6 +1361,7 @@ model SilentQuery {
   @@index([providerId, status])
   @@index([parentUserId, status])
   @@index([sessionId])
+  @@index([status, createdAt])
 }
 
 // ==========================================

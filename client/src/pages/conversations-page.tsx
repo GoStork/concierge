@@ -108,6 +108,9 @@ interface ProviderSession {
   unreadCount: number;
   createdAt: string;
   pendingQuestions: number;
+  oldestPendingAt: string | null;
+  pendingMaxAgeMinutes: number;
+  pendingNudgeCount: number;
 }
 
 import type { SessionDetail } from "@/components/chat";
@@ -1846,13 +1849,28 @@ const sendMessageMutation = useMutation({
               {groupSessions.map(s => {
                 const sUnread = s.unreadCount || 0;
                 const photoSrc = getPhotoSrc(s.profilePhotoUrl);
+                const pendingAgeMin = s.pendingQuestions > 0 ? (s.pendingMaxAgeMinutes || 0) : 0;
+                const slaTone = pendingAgeMin >= 24 * 60
+                  ? "bg-accent/20 text-accent-foreground border-accent/40"
+                  : pendingAgeMin >= 2 * 60
+                    ? "bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/30"
+                    : "bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] border-[hsl(var(--brand-success))]/30";
+                const slaLabel = pendingAgeMin === 0
+                  ? null
+                  : pendingAgeMin < 60
+                    ? `${pendingAgeMin}m`
+                    : pendingAgeMin < 24 * 60
+                      ? `${Math.floor(pendingAgeMin / 60)}h`
+                      : `${Math.floor(pendingAgeMin / 1440)}d`;
+                const isSelected = selectedSessionId === s.id;
                 return (
                   <button
                     key={s.id}
-                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors text-left border-b border-border/10"
-                    style={selectedSessionId === s.id ? { backgroundColor: `${brandColor}15` } : undefined}
+                    className={`w-full flex items-center gap-3 px-4 py-3 transition-colors text-left border-b border-border/10 relative ${isSelected ? "bg-secondary" : "hover:bg-muted/50"}`}
+                    style={isSelected ? { borderLeft: `4px solid ${brandColor}`, paddingLeft: "calc(1rem - 4px)" } : undefined}
                     onClick={() => setSelectedSessionId(s.id, s)}
                     data-testid={`provider-session-${s.id}`}
+                    aria-current={isSelected ? "page" : undefined}
                   >
                     <div className="w-12 h-12 rounded-full flex-shrink-0 relative overflow-hidden">
                       {photoSrc ? (
@@ -1875,6 +1893,15 @@ const sendMessageMutation = useMutation({
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <span className="font-medium text-sm font-ui truncate">{s.title || "Conversation"}</span>
+                          {slaLabel && (
+                            <span
+                              className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${slaTone} flex-shrink-0`}
+                              title={`Oldest pending question: ${slaLabel} ago${s.pendingNudgeCount > 0 ? ` (nudged ${s.pendingNudgeCount}x)` : ""}`}
+                              data-testid={`provider-session-sla-${s.id}`}
+                            >
+                              Q&A {slaLabel}
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                           <span className={`text-[11px] ${sUnread > 0 ? "font-semibold" : "text-muted-foreground"}`} style={sUnread > 0 ? { color: brandColor } : undefined}>{timeAgo(s.lastMessageAt)}</span>
@@ -2138,12 +2165,38 @@ const sendMessageMutation = useMutation({
                 <p className="text-sm text-muted-foreground leading-relaxed">
                   Questions from this prospective parent are forwarded here by the AI concierge. Your answers are relayed back - the parent's identity stays private until they schedule a consultation.
                 </p>
-                {selectedSession && selectedSession.pendingQuestions > 0 && (
-                  <div className="rounded-[var(--radius)] p-3 bg-[hsl(var(--brand-warning))]/10 border border-[hsl(var(--brand-warning))]/20">
-                    <p className="text-sm font-medium text-[hsl(var(--brand-warning))]">{selectedSession.pendingQuestions} question{selectedSession.pendingQuestions > 1 ? "s" : ""} pending</p>
-                    <p className="text-xs text-muted-foreground mt-1">Reply below to answer the most recent question</p>
-                  </div>
-                )}
+                {selectedSession && selectedSession.pendingQuestions > 0 && (() => {
+                  const ageMin = selectedSession.pendingMaxAgeMinutes || 0;
+                  // Color escalates with age: green <2h, warning 2-24h, accent (alert) >24h
+                  const isOverdue = ageMin >= 24 * 60;
+                  const isApproaching = !isOverdue && ageMin >= 2 * 60;
+                  const tint = isOverdue
+                    ? "bg-accent/15 border-accent/40 text-accent-foreground"
+                    : isApproaching
+                      ? "bg-[hsl(var(--brand-warning))]/10 border-[hsl(var(--brand-warning))]/20 text-[hsl(var(--brand-warning))]"
+                      : "bg-[hsl(var(--brand-success))]/10 border-[hsl(var(--brand-success))]/20 text-[hsl(var(--brand-success))]";
+                  const ageText = ageMin < 60
+                    ? `${ageMin}m`
+                    : ageMin < 24 * 60
+                      ? `${Math.floor(ageMin / 60)}h ${ageMin % 60}m`
+                      : `${Math.floor(ageMin / 1440)}d ${Math.floor((ageMin % 1440) / 60)}h`;
+                  const slaCopy = isOverdue
+                    ? "SLA breached - parent may move on. GoStork has been notified."
+                    : isApproaching
+                      ? "Reply within 24h to keep this lead warm."
+                      : "Reply quickly - parents who hear back within 2h convert at a higher rate.";
+                  return (
+                    <div className={`rounded-[var(--radius)] p-3 border ${tint}`} data-testid="whisper-sla-card">
+                      <p className="text-sm font-medium">{selectedSession.pendingQuestions} question{selectedSession.pendingQuestions > 1 ? "s" : ""} pending</p>
+                      <p className="text-xs mt-1 opacity-90">Oldest: {ageText} ago</p>
+                      {selectedSession.pendingNudgeCount > 0 && (
+                        <p className="text-xs mt-1 opacity-75">Nudged {selectedSession.pendingNudgeCount}x</p>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-2">{slaCopy}</p>
+                      <p className="text-xs text-muted-foreground mt-2">Reply below to answer - attach a file if it helps.</p>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           ) : (

@@ -5,7 +5,7 @@ import { generateAgreement, syncTemplateToPandaDoc, createTemplateEditingSession
 import { StorageService } from "./src/modules/storage/storage.service";
 import { isUserOnline, getOnlineUserIds } from "./online-tracker";
 import { getBaseUrl as getAppBaseUrlShared } from "./src/lib/get-base-url";
-import { canProviderAccessSession, COORDINATOR_SUBJECT_TYPES, ALL_SESSION_PROVIDER_ROLES } from "../shared/roles";
+import { canProviderAccessSession, canSendProviderMessage, COORDINATOR_SUBJECT_TYPES, ALL_SESSION_PROVIDER_ROLES } from "../shared/roles";
 
 const storageService = new StorageService();
 
@@ -849,10 +849,16 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       by: ["sessionId"],
       where: { providerId: user.providerId, status: "PENDING" },
       _count: true,
+      _min: { createdAt: true },
+      _max: { reminderCount: true },
     });
     const pendingBySession: Record<string, number> = {};
+    const oldestPendingBySession: Record<string, string> = {};
+    const nudgeCountBySession: Record<string, number> = {};
     for (const pc of pendingCounts) {
       pendingBySession[pc.sessionId] = pc._count;
+      if (pc._min?.createdAt) oldestPendingBySession[pc.sessionId] = pc._min.createdAt.toISOString();
+      if (typeof pc._max?.reminderCount === "number") nudgeCountBySession[pc.sessionId] = pc._max.reminderCount;
     }
 
     // Count unread messages per session (messages from non-providers that provider hasn't read)
@@ -895,6 +901,11 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
         unreadCount: unreadMap[s.id] || 0,
         createdAt: s.createdAt,
         pendingQuestions: pendingBySession[s.id] || 0,
+        oldestPendingAt: oldestPendingBySession[s.id] || null,
+        pendingMaxAgeMinutes: oldestPendingBySession[s.id]
+          ? Math.max(0, Math.floor((Date.now() - new Date(oldestPendingBySession[s.id]).getTime()) / 60000))
+          : 0,
+        pendingNudgeCount: nudgeCountBySession[s.id] || 0,
       };
     });
     result.sort((a, b) => {
@@ -902,6 +913,12 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       if (b.status === "CONSULTATION_BOOKED" && a.status !== "CONSULTATION_BOOKED") return 1;
       if (a.pendingQuestions > 0 && b.pendingQuestions === 0) return -1;
       if (b.pendingQuestions > 0 && a.pendingQuestions === 0) return 1;
+      // Both have pending whispers -> oldest first so SLA pressure surfaces
+      if (a.pendingQuestions > 0 && b.pendingQuestions > 0) {
+        if (a.pendingMaxAgeMinutes !== b.pendingMaxAgeMinutes) {
+          return b.pendingMaxAgeMinutes - a.pendingMaxAgeMinutes;
+        }
+      }
       return 0;
     });
 
@@ -1137,7 +1154,6 @@ chatRouter.get("/api/provider/parents/:id", requireAuth, async (req, res) => {
 chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
-  if ((user.roles || []).includes("BILLING_MANAGER")) return res.status(403).json({ message: "Billing managers cannot send messages" });
   const { content, uiCardType, uiCardData } = req.body;
   if (!content || typeof content !== "string" || !content.trim()) {
     return res.status(400).json({ message: "Content is required" });
@@ -1146,6 +1162,16 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
     const session = await prisma.aiChatSession.findUnique({ where: { id: req.params.id } });
     if (!session) return res.status(404).json({ message: "Session not found" });
     if (session.providerId !== user.providerId) return res.status(403).json({ message: "Forbidden" });
+
+    // canSendProviderMessage combines the subjectType access check (so an
+    // egg-donor coordinator can't post into a surrogate session) with the
+    // "BILLING_MANAGER alone is blocked, but BILLING_MANAGER + coordinator
+    // is fine" rule. Replaces the old blanket BILLING_MANAGER block which
+    // also blocked users like Julia who are both billing managers and
+    // IP_SURROGACY_COORDINATOR.
+    if (!canSendProviderMessage(user.roles || [], (session as any).subjectType)) {
+      return res.status(403).json({ message: "Your role cannot send messages in this conversation" });
+    }
 
     const isConnected = session.status === "PROVIDER_CONNECTED";
     const isConsultationBooked = session.status === "CONSULTATION_BOOKED";
@@ -1168,20 +1194,48 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
 
     if (pendingWhispers.length > 0 && session.status === "ACTIVE") {
       const whisper = pendingWhispers[0];
+
+      // Provider may attach a file with the whisper answer. The chat-upload
+      // round-trip on the client side already produced { url, originalName,
+      // mimeType, size }, which we receive as uiCardData when uiCardType is
+      // "attachment". Persist on the SilentQuery for the audit trail and
+      // forward it to the parent in the relay message.
+      const attachment = (uiCardType === "attachment" && uiCardData && typeof uiCardData === "object")
+        ? {
+            url: typeof (uiCardData as any).url === "string" ? (uiCardData as any).url : null,
+            originalName: typeof (uiCardData as any).originalName === "string" ? (uiCardData as any).originalName : null,
+            mimeType: typeof (uiCardData as any).mimeType === "string" ? (uiCardData as any).mimeType : null,
+            size: typeof (uiCardData as any).size === "number" ? (uiCardData as any).size : null,
+          }
+        : null;
+      const hasAttachment = !!(attachment && attachment.url);
+
       // Silently record the answer - do NOT create a visible provider message in the parent's chat
       await prisma.silentQuery.update({
         where: { id: whisper.id },
-        data: { status: "ANSWERED", answerText: content.trim() },
+        data: {
+          status: "ANSWERED",
+          answerText: content.trim(),
+          attachmentUrl: hasAttachment ? attachment!.url : null,
+          attachmentName: hasAttachment ? attachment!.originalName : null,
+          attachmentMime: hasAttachment ? attachment!.mimeType : null,
+        },
       });
 
-      // Show the provider their answer + a confirmation so they can see what was sent
+      // Show the provider their answer + a confirmation so they can see what
+      // was sent. If they attached a file, render it as an attachment card so
+      // they get the same visual confirmation the parent receives.
+      const providerConfirmText = hasAttachment
+        ? `You answered: "${content.trim()}"\n\nFile attached: ${attachment!.originalName || "attachment"}\n\nThis has been relayed to the parent by the AI concierge. Thank you!`
+        : `You answered: "${content.trim()}"\n\nThis has been relayed to the parent by the AI concierge. Thank you!`;
       await prisma.aiChatMessage.create({
         data: {
           sessionId: session.id,
           role: "assistant",
-          content: `You answered: "${content.trim()}"\n\nThis has been relayed to the parent by the AI concierge. Thank you!`,
+          content: providerConfirmText,
           senderType: "system",
           senderName: "System",
+          ...(hasAttachment ? { uiCardType: "attachment", uiCardData: attachment as any } : {}),
         },
       });
 
@@ -1194,7 +1248,9 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
 
       // Proactively relay the answer to the parent - inject an AI message directly so the parent
       // gets the answer immediately without needing to send another message
-      const relayContent = `I heard back from the agency! The answer to your question is: "${content.trim()}"\n\nDoes that help? Do you have any other questions, or would you like to schedule a free consultation call?`;
+      const relayContent = hasAttachment
+        ? `I heard back from the agency! They said: "${content.trim()}"\n\nThey also shared a file with you - ${attachment!.originalName || "attachment"}.\n\nDoes that help? Do you have any other questions, or would you like to schedule a free consultation call?`
+        : `I heard back from the agency! The answer to your question is: "${content.trim()}"\n\nDoes that help? Do you have any other questions, or would you like to schedule a free consultation call?`;
       await prisma.aiChatMessage.create({
         data: {
           sessionId: session.id,
@@ -1202,6 +1258,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
           content: relayContent,
           senderType: "assistant",
           senderName: matchmakerName,
+          ...(hasAttachment ? { uiCardType: "attachment", uiCardData: attachment as any } : {}),
         },
       });
 
@@ -2699,6 +2756,7 @@ chatRouter.post("/api/billing/parent-confirm-ready", requireAuth, async (req, re
                     parentName,
                     sessionId: providerSessionId,
                     providerId: providerSession.provider.id,
+                    parentUserId: providerSession.userId,
                     reason: "post_readiness",
                   });
                 }
