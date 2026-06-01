@@ -1,7 +1,71 @@
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatMoneyCents } from "@/lib/format-money";
-import { CheckCircle2, FileText, Download, Video, CalendarDays, ExternalLink, UserCheck, Receipt, Paperclip, PenLine } from "lucide-react";
+import { CheckCircle2, FileText, Download, Video, CalendarDays, ExternalLink, UserCheck, Receipt, Paperclip, PenLine, Check, MessageSquare } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { useState } from "react";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { SessionMessage } from "./chat-types";
+import { CostSheetDraftApprovalCard } from "./cost-sheet-draft-approval-card";
+
+// Phase 2: small parent-side affordance for the cost-sheet card footer.
+// Acknowledge persists ProviderQuote.parentAcknowledgedAt. "Have questions"
+// pre-populates the chat input via the onPrefillInput callback. Both are
+// soft signals - call proceeds either way.
+function CostSheetParentAck({
+  sessionId,
+  quoteId,
+  brandColor,
+  onPrefillInput,
+}: {
+  sessionId: string;
+  quoteId: string;
+  brandColor: string;
+  onPrefillInput?: (text: string) => void;
+}) {
+  const [acknowledged, setAcknowledged] = useState(false);
+  const ackMutation = useMutation({
+    mutationFn: async () =>
+      apiRequest("POST", `/api/sessions/${sessionId}/quotes/${quoteId}/acknowledge`, {}),
+    onSuccess: () => {
+      setAcknowledged(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/concierge"] });
+    },
+  });
+  if (acknowledged) {
+    return (
+      <div className="border-t px-4 py-2 bg-[hsl(var(--brand-success))]/10 flex items-center gap-2 text-xs text-[hsl(var(--brand-success))]">
+        <Check className="w-3.5 h-3.5" />
+        Thanks for confirming - we'll see you on the call.
+      </div>
+    );
+  }
+  return (
+    <div className="border-t px-4 py-2 bg-secondary/30 flex flex-wrap gap-2">
+      <button
+        type="button"
+        onClick={() => ackMutation.mutate()}
+        disabled={ackMutation.isPending}
+        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-background border hover:bg-muted/50 transition-colors disabled:opacity-50"
+        style={{ borderColor: brandColor, color: brandColor }}
+        data-testid={`cost-sheet-ack-${quoteId}`}
+      >
+        <Check className="w-3 h-3" />
+        Acknowledge
+      </button>
+      {onPrefillInput && (
+        <button
+          type="button"
+          onClick={() => onPrefillInput("I have a question about the cost sheet")}
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-background border border-border hover:bg-muted/50 transition-colors text-foreground"
+          data-testid={`cost-sheet-question-${quoteId}`}
+        >
+          <MessageSquare className="w-3 h-3" />
+          Have questions
+        </button>
+      )}
+    </div>
+  );
+}
 
 interface SpecialMessageCardProps {
   msg: SessionMessage;
@@ -10,11 +74,26 @@ interface SpecialMessageCardProps {
   onOpenInlineVideo?: (bookingId: string) => void;
   /** Chat session id - required for cost-sheet download links to mint a signed GCS URL. */
   sessionId?: string | null;
+  /** Phase 2: when provider clicks Edit on a cost-sheet draft, open the sidebar form pre-filled. */
+  onEditCostSheetDraft?: (initial: { lineItems: any[]; totalCostCents: number; notes: string | null }) => void;
+  /** Phase 2: parent ack "Have questions" pre-fills the chat input. */
+  onPrefillInput?: (text: string) => void;
 }
 
-export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo, sessionId }: SpecialMessageCardProps) {
+export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo, sessionId, onEditCostSheetDraft, onPrefillInput }: SpecialMessageCardProps) {
   const data = msg.uiCardData as any;
   if (!data) return null;
+
+  // Phase 2: provider-only auto-drafted cost sheet awaiting approval.
+  if (msg.uiCardType === "cost_sheet_draft_approval" && sessionId) {
+    return (
+      <CostSheetDraftApprovalCard
+        msg={{ id: msg.id, uiCardData: data }}
+        sessionId={sessionId}
+        onEdit={onEditCostSheetDraft}
+      />
+    );
+  }
 
   if (msg.uiCardType === "attachment") {
     const isImage = data.mimeType?.startsWith("image/");
@@ -253,6 +332,15 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
               )}
               {notes && <p className="text-xs text-muted-foreground italic">{notes}</p>}
             </div>
+          )}
+          {/* Phase 2 ack footer: parent-only, only while not yet acknowledged. */}
+          {viewerRole === "parent" && quoteId && sessionId && !data.parentAcknowledgedAt && (
+            <CostSheetParentAck
+              sessionId={sessionId}
+              quoteId={quoteId}
+              brandColor={brandColor}
+              onPrefillInput={onPrefillInput}
+            />
           )}
         </div>
       </div>

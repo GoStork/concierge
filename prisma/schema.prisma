@@ -32,6 +32,12 @@ model Provider {
   // e.g. ["CA","NY"]). Drives Stage 3a state-match check for LAWYER
   // providers and Eva's lawyer-introduction filter.
   statesLicensedIn                      String[]                    @default([])
+  // Phase 2 automation flags. JSON shape:
+  //   { autoCostSheetDraft?: boolean, autoInvoiceDraft?: boolean, autoAgreementDraft?: boolean }
+  // null = all off. Flipped by GoStork admins only via the admin
+  // provider settings page. Gate-2 on top of the global
+  // ConciergePromptSection.isActive kill switch.
+  autoFeaturesEnabled                   Json?
   // IVF Clinic matching requirements
   ivfTwinsAllowed                       Boolean                     @default(false)
   ivfTransferFromOtherClinics           Boolean                     @default(false)
@@ -1642,9 +1648,23 @@ model ProviderQuote {
   costSheetFileUrl  String?
   costSheetFileName String?
   notes             String?
-  source            String    @default("PROVIDER") // "PROVIDER" | "ADMIN_OVERRIDE"
+  source            String    @default("PROVIDER") // "PROVIDER" | "ADMIN_OVERRIDE" | "AUTO_DRAFT_APPROVED"
   createdByUserId   String?
   supersededAt      DateTime?
+  // Phase 2 auto-draft additions:
+  // - parentAcknowledgedAt: stamped when parent clicks "Acknowledge" on
+  //   the cost-sheet card (Stage 5). Soft signal only - call proceeds
+  //   either way.
+  // - lineItems: structured line items, JSON array of
+  //   { label: string, amountCents: number, editable?: boolean }
+  // - sourceCostSheetId: which ProviderCostSheet (template) this quote
+  //   was generated from. Null for legacy / fully-manual sends.
+  // - autoDraftedAt: when the AI initially drafted this quote, before
+  //   provider approval. Null if the provider sent manually.
+  parentAcknowledgedAt DateTime?
+  lineItems            Json?
+  sourceCostSheetId    String?
+  autoDraftedAt        DateTime?
   createdAt         DateTime  @default(now())
 
   session       AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
@@ -1656,6 +1676,7 @@ model ProviderQuote {
   @@index([sessionId])
   @@index([providerId])
   @@index([sessionId, createdAt])
+  @@index([sourceCostSheetId])
 }
 
 model CostSheetReminder {

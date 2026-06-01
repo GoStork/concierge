@@ -32,6 +32,7 @@ import { MicrosoftCalendarService } from "./microsoft-calendar.service";
 import { CaldavCalendarService } from "./caldav-calendar.service";
 import { encryptPassword } from "./caldav-crypto";
 import { BookingEventsService, BookingEvent } from "./booking-events.service";
+import { CostSheetAutoDraftService } from "../billing/cost-sheet-auto-draft.service";
 import { Observable } from "rxjs";
 
 function isValidTimezone(tz: string): boolean {
@@ -66,7 +67,17 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     @Inject(MicrosoftCalendarService) private readonly microsoftCalendar: MicrosoftCalendarService,
     @Inject(CaldavCalendarService) private readonly caldavCalendar: CaldavCalendarService,
     @Inject(BookingEventsService) private readonly bookingEvents: BookingEventsService,
+    @Inject(CostSheetAutoDraftService) private readonly costSheetAutoDraft: CostSheetAutoDraftService,
   ) {}
+
+  // Phase 2: fire-and-forget cost-sheet auto-draft on every booking_created
+  // event. Wrapped here so we can call it from each create site without
+  // duplicating the catch + log boilerplate.
+  private fireCostSheetAutoDraft(bookingId: string) {
+    this.costSheetAutoDraft
+      .tryAutoDraftForBooking(bookingId)
+      .catch(err => this.logger.warn(`Cost-sheet auto-draft failed for ${bookingId}: ${err.message}`));
+  }
 
   onModuleInit() {
     this.externalSyncInterval = setInterval(() => {
@@ -794,6 +805,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     this.syncBookingToOutlookCalendar(booking).catch(() => {});
     this.syncBookingToParentOutlookCalendar(booking).catch(() => {});
     this.emitBookingEvent("booking_created", booking, user.id);
+    this.fireCostSheetAutoDraft(booking.id);
     return booking;
   }
 
@@ -835,6 +847,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     this.syncBookingToOutlookCalendar(booking).catch(() => {});
     this.syncBookingToParentOutlookCalendar(booking).catch(() => {});
     this.emitBookingEvent("booking_created", booking, input.invitedByUserId);
+    this.fireCostSheetAutoDraft(booking.id);
 
     return booking;
   }
@@ -1773,6 +1786,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
 
     this.notifications.sendBookingSubmitted(booking).catch(() => {});
     this.emitBookingEvent("booking_created", booking, booking.parentUserId || undefined);
+    this.fireCostSheetAutoDraft(booking.id);
 
     let parentAccountMembers: { id: string; name: string | null; email: string }[] = [];
     if (booking.parentUser) {

@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Param,
   Body,
@@ -706,6 +707,47 @@ export class ProvidersController {
       }
       throw err;
     }
+  }
+
+  // Phase 2: GoStork-admin-only endpoint to flip per-provider automation
+  // feature flags. Parents and provider staff cannot self-enable - we want
+  // to control which providers go live with each automation incrementally.
+  @Patch(":id/auto-features")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Update a provider's automation feature flags (GOSTORK_ADMIN only)" })
+  async updateAutoFeatures(
+    @Param("id") id: string,
+    @Body() body: {
+      autoCostSheetDraft?: boolean;
+      autoInvoiceDraft?: boolean;
+      autoAgreementDraft?: boolean;
+    },
+    @Req() req: Request,
+  ) {
+    const user = req.user as any;
+    const roles: string[] = user?.roles || [];
+    if (!roles.includes("GOSTORK_ADMIN") && !roles.includes("GOSTORK_CONCIERGE")) {
+      throw new ForbiddenException("Only GoStork admins can flip provider automation flags");
+    }
+    const existing = await this.prisma.provider.findUnique({
+      where: { id },
+      select: { autoFeaturesEnabled: true },
+    });
+    if (!existing) throw new ForbiddenException("Provider not found");
+    const current = (existing.autoFeaturesEnabled as any) || {};
+    const next = {
+      ...current,
+      ...(typeof body.autoCostSheetDraft === "boolean" ? { autoCostSheetDraft: body.autoCostSheetDraft } : {}),
+      ...(typeof body.autoInvoiceDraft === "boolean" ? { autoInvoiceDraft: body.autoInvoiceDraft } : {}),
+      ...(typeof body.autoAgreementDraft === "boolean" ? { autoAgreementDraft: body.autoAgreementDraft } : {}),
+    };
+    const updated = await this.prisma.provider.update({
+      where: { id },
+      data: { autoFeaturesEnabled: next },
+      select: { id: true, autoFeaturesEnabled: true },
+    });
+    return updated;
   }
 
   @Delete(":id")

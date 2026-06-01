@@ -7,18 +7,21 @@ import { ConnectService } from "./connect.service";
 import { ConnectController } from "./connect.controller";
 import { LegalIdentityService } from "./legal-identity.service";
 import { LegalIdentityController } from "./legal-identity.controller";
+import { CostSheetAutoDraftService } from "./cost-sheet-auto-draft.service";
+import { CostSheetAutoDraftController } from "./cost-sheet-auto-draft.controller";
 import { NotificationModule } from "../notifications/notification.module";
 
 @Module({
   imports: [NotificationModule],
-  providers: [BillingService, ConnectService, LegalIdentityService],
+  providers: [BillingService, ConnectService, LegalIdentityService, CostSheetAutoDraftService],
   controllers: [
     BillingController,
     CostSheetController,
     W9Controller,
     ConnectController,
     LegalIdentityController,
+    CostSheetAutoDraftController,
   ],
-  exports: [BillingService, ConnectService, LegalIdentityService],
+  exports: [BillingService, ConnectService, LegalIdentityService, CostSheetAutoDraftService],
 })
 export class BillingModule {}

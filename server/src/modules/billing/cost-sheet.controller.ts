@@ -144,6 +144,7 @@ export class CostSheetController {
           costSheetFileUrl,
           costSheetFileName,
           notes: quote.notes,
+          parentAcknowledgedAt: null,
           sentAt: quote.createdAt.toISOString(),
         },
       },
