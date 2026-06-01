@@ -175,6 +175,23 @@ export function log(message: string, source = "nestjs") {
     await setupVite(httpServer, app);
   }
 
+  // Auto-seed ProviderType rows that the platform depends on. Idempotent -
+  // only inserts a row if its name isn't already present. Mirrors the
+  // never-overwrite pattern used for prompt sections below.
+  try {
+    const db = prismaService.client;
+    const requiredProviderTypes = ["Legal Services"];
+    for (const name of requiredProviderTypes) {
+      const existing = await db.providerType.findUnique({ where: { name } });
+      if (!existing) {
+        await db.providerType.create({ data: { name } });
+        log(`Seeded ProviderType: ${name}`);
+      }
+    }
+  } catch (e: any) {
+    log(`Failed to seed provider types: ${e.message}`);
+  }
+
   // Auto-seed concierge prompt sections on first run, and add any new sections added in code.
   // Existing DB sections are NEVER overwritten - admin edits in the UI are preserved across restarts.
   try {

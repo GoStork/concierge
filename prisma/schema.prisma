@@ -28,6 +28,10 @@ model Provider {
   agreementTemplateOriginalName         String?
   pandaDocTemplateId                    String?
   pandaDocRoles                         String? // JSON array of role names in signing order, e.g. ["Client","Client2","Agency"]
+  // Legal Services Phase 1: states the firm is licensed in (USPS codes,
+  // e.g. ["CA","NY"]). Drives Stage 3a state-match check for LAWYER
+  // providers and Eva's lawyer-introduction filter.
+  statesLicensedIn                      String[]                    @default([])
   // IVF Clinic matching requirements
   ivfTwinsAllowed                       Boolean                     @default(false)
   ivfTransferFromOtherClinics           Boolean                     @default(false)
@@ -251,6 +255,7 @@ model User {
   invoices               Invoice[]
   providerQuotes         ProviderQuote[]        @relation("ProviderQuoteParent")
   createdProviderQuotes  ProviderQuote[]        @relation("ProviderQuoteCreatedBy")
+  reservedSurrogates     Surrogate[]            @relation("SurrogateReservations")
 }
 
 model UserDonorPreference {
@@ -371,6 +376,16 @@ model ProviderCostSheet {
   status           String        @default("PENDING")
   adminFeedback    String?
   version          Int           @default(1)
+  // Phase 1 auto-selection metadata. AI uses matchingRules (an array of
+  // {field, operator, value} entries, AND-combined) to pick the right
+  // cost sheet for a given IntendedParentProfile + chat context. The
+  // lineItemTemplate is a JSON blob used by the Phase 3 auto-invoice
+  // draft to pre-fill line items. Both nullable so existing sheets
+  // continue to work unchanged.
+  category         String?
+  description      String?
+  matchingRules    Json?
+  lineItemTemplate Json?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
   items            CostItem[]
@@ -635,10 +650,19 @@ model Surrogate {
   isPremium                    Boolean                     @default(false)
   isExperienced                Boolean                     @default(false)
   lastFullSyncAt               DateTime?
+  // Phase 1 reservation: after a Match Call, the parent has a 24h window
+  // to pay the invoice and reserve this surrogate. While reserved, the
+  // profile stays visible in the marketplace but renders with an
+  // "On Hold for 24 Hours" badge, and the AI Concierge must not
+  // suggest her to other parents.
+  reservedByParentId           String?
+  reservationExpiresAt         DateTime?
   profileEmbedding             Unsupported("vector(768)")?
   provider                     Provider                    @relation(fields: [providerId], references: [id])
+  reservedByParent             User?                       @relation("SurrogateReservations", fields: [reservedByParentId], references: [id], onDelete: SetNull)
 
   @@unique([providerId, externalId])
+  @@index([reservedByParentId])
 }
 
 model SurrogateSyncConfig {
@@ -1127,6 +1151,10 @@ model AiChatSession {
   matchmakerId     String?
   tier2Active      Boolean   @default(false)
   isTestData       Boolean   @default(false)
+  // Phase 1 Stage 13: stamped when the parent has paid the deposit AND
+  // the agreement is fully signed, signalling GoStork's portion of the
+  // workflow is complete and the provider has taken over.
+  handoffCompletedAt DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -1174,6 +1202,11 @@ model IntendedParentProfile {
 
   interestedServices String[] @default([])
   journeyStage       String?
+  // Phase 1 Legal Services: AI populates this from chat context to drive
+  // the lawyer cost-sheet matching rules. Values come from a controlled
+  // taxonomy (parentage_order, surrogacy_contract, donor_contract_drafting,
+  // donor_contract_review, embryo_disposition, adoption, other).
+  detectedLegalNeeds String[] @default([])
 
   // Biological Matrix - nullable so null means "not yet asked" vs false/0 meaning "answered: no"
   hasEmbryos    Boolean?

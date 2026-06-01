@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { CostSheetMatchingRules } from "@/components/cost-sheet-matching-rules";
 import { cn } from "@/lib/utils";
 import { formatMoneyDollars } from "@/lib/format-money";
 import { useToast } from "@/hooks/use-toast";
@@ -1850,6 +1851,29 @@ function SingleCostsTab({
             Submit for Approval
           </Button>
         </div>
+      )}
+
+      {/* Phase 1: AI cost-sheet auto-selection editor. Collapsed by default
+          so it doesn't clutter the existing UI. Wired but inert until Phase 2
+          turns on the auto-draft. */}
+      {displaySheet && !parentId && (
+        <Accordion type="single" collapsible className="mt-4">
+          <AccordionItem value="auto-matching" className="border border-border rounded-[var(--radius)] bg-secondary/30">
+            <AccordionTrigger className="px-4 py-2 text-sm font-medium hover:no-underline" data-testid="trigger-auto-matching-rules">
+              Auto matching rules (preview)
+            </AccordionTrigger>
+            <AccordionContent className="px-4 pb-4">
+              <CostSheetMatchingRules
+                sheetId={displaySheet.id}
+                initial={{
+                  category: (displaySheet as any).category ?? null,
+                  description: (displaySheet as any).description ?? null,
+                  matchingRules: (displaySheet as any).matchingRules ?? null,
+                }}
+              />
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
       )}
 
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>

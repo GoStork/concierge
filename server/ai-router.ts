@@ -1008,7 +1008,7 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
     }
     const roles: string[] = user.roles || [];
     const isAdmin = roles.includes("GOSTORK_ADMIN") || roles.includes("GOSTORK_CONCIERGE");
-    const providerRoles = ["PROVIDER_ADMIN", "IP_SURROGACY_COORDINATOR", "IP_EGG_DONOR_COORDINATOR", "IP_SPERM_DONOR_COORDINATOR", "IP_IVF_COORDINATOR", "SURROGATE_COORDINATOR", "EGG_DONOR_COORDINATOR", "SPERM_DONOR_COORDINATOR", "SCHEDULER", "DOCTOR", "BILLING_MANAGER"];
+    const providerRoles = ["PROVIDER_ADMIN", "IP_SURROGACY_COORDINATOR", "IP_EGG_DONOR_COORDINATOR", "IP_SPERM_DONOR_COORDINATOR", "IP_IVF_COORDINATOR", "IP_LEGAL_COORDINATOR", "SURROGATE_COORDINATOR", "EGG_DONOR_COORDINATOR", "SPERM_DONOR_COORDINATOR", "SCHEDULER", "DOCTOR", "LAWYER", "BILLING_MANAGER"];
     const isProviderMember = roles.some((r: string) => providerRoles.includes(r)) && user.providerId && session.providerId === user.providerId;
     const isProvider = isProviderMember && canProviderAccessSession(roles, session.subjectType || null);
     if (!isOwner && !isAccountMember && !isAdmin && !isProvider) {

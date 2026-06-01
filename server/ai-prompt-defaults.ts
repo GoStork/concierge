@@ -1412,5 +1412,106 @@ Your deposits are also protected by the GoStork Guarantee. If a surrogate fails 
 
 After delivering this message, proceed normally with the conversation. Do NOT repeat this message in future sessions.`,
     },
+    // ----------------------------------------------------------------------
+    // Phase 1 foundation stubs. All five sections ship with isActive=false so
+    // they're SEEDED but NOT yet read by the AI router. Phase 2-6 will flip
+    // them on (and tune the copy) as each automation lands.
+    // ----------------------------------------------------------------------
+    {
+      key: "auto_cost_sheet_on_booking",
+      label: "[Phase 1] Auto cost sheet on booking",
+      description: "AI drafts a cost sheet right after a consultation is booked, picks via matching rules, asks the provider to approve before sending to the parent. Disabled by default.",
+      sortOrder: 90,
+      isActive: false,
+      content: `AUTO COST SHEET ON BOOKING (Phase 2 trigger - currently inactive):
+
+When an intended parent books a consultation with a provider:
+1. Read every ProviderCostSheet on that provider whose status is APPROVED.
+2. For each sheet, evaluate its matchingRules (an array of {field, operator, value} entries, AND-combined) against the parent's IntendedParentProfile and recent chat context.
+3. Pick the highest-specificity sheet that fully matches (more matched rules wins ties; ties broken by most recently updated). If none match, do not auto-attach.
+4. Pre-fill an invoice line-item draft from the sheet's lineItemTemplate plus any donor or surrogate compensation in chat context.
+5. Drop an inline chat card in the PROVIDER's session: "I drafted a cost sheet for [parent]. Send it before the call?" with Approve & Send / Edit / Reject buttons.
+6. On Approve: send the cost sheet to the parent immediately and post the standard "Cost sheet ready" card in the parent's chat.
+
+Never send a cost sheet to the parent without the provider's approval. Never auto-fire if no sheet matches or no sheet has been approved by GoStork.`,
+    },
+    {
+      key: "auto_invoice_on_ready",
+      label: "[Phase 1] Auto-draft invoice when parent confirms ready",
+      description: "AI drafts an invoice the moment the parent clicks 'Yes ready' on the readiness card, then asks the provider to approve. Disabled by default.",
+      sortOrder: 91,
+      isActive: false,
+      content: `AUTO-DRAFT INVOICE WHEN PARENT CONFIRMS READY (Phase 3 trigger - currently inactive):
+
+When a parent clicks "Yes, I'm ready" on a readiness card AND the provider has previously sent an approved cost sheet:
+1. Generate an invoice from the active cost sheet (most recent ProviderQuote on the session) + the provider's ReferralFeeConfig.
+2. Pre-fill the line items (multi-line supported, e.g. SURROGACY + EGG_DONATION on a single invoice).
+3. Drop an inline chat card in the PROVIDER's session: "Parent confirmed ready. I drafted their invoice." with Approve & Send / Edit / Reject buttons. Provider can add or remove line items and add a free-text comment but cannot change derived amounts.
+4. On Approve: send the invoice to the parent via the standard payment notification flow.
+
+Surrogacy AT_CLEARANCE: do NOT auto-fire on parent-ready. Wait for the coordinator to click "Mark surrogate cleared" first, then run this exact flow.`,
+    },
+    {
+      key: "auto_agreement_on_paid",
+      label: "[Phase 1] Auto-draft agreement when invoice is paid",
+      description: "AI drafts the agency agreement via PandaDoc as soon as the deposit invoice flips to PAID. Disabled by default.",
+      sortOrder: 92,
+      isActive: false,
+      content: `AUTO-DRAFT AGREEMENT WHEN INVOICE IS PAID (Phase 4 trigger - currently inactive):
+
+When an Invoice on a session transitions to PAID AND the provider has an agreement template configured (pandaDocTemplateId set):
+1. Generate the PandaDoc agreement using the existing generateAgreementFromTemplate flow with the parent + partner data already on file.
+2. Drop an inline chat card in the PROVIDER's session: "Invoice paid. I drafted the engagement letter / agreement." with Approve & Send / Edit / Reject buttons.
+3. On Approve: trigger the standard sequential signing flow (parent first, then partner, then provider).
+
+ALSO auto-fire (without waiting for paid invoice) if:
+- The parent explicitly asks to "see the contract first" / "preview the agreement", AND
+- The provider has a pandaDocTemplateId configured.
+In that case, generate the PandaDoc doc via the standard flow (which does NOT advance state machine). Provider still gets the approval card before parent receives.
+
+Manual "Generate Agreement" button remains available at all times.`,
+    },
+    {
+      key: "lawyer_intro_prompt",
+      label: "[Phase 1] Fertility lawyer introduction",
+      description: "Eva asks once if the parent wants to be connected to a GoStork-vetted fertility attorney. Triggered by legal-adjacent keywords OR path-commitment to surrogacy/donor, whichever first. Disabled by default.",
+      sortOrder: 93,
+      isActive: false,
+      content: `FERTILITY LAWYER INTRODUCTION (Phase 6 trigger - currently inactive):
+
+Trigger this prompt ONCE per parent account when EITHER:
+- The parent uses a legal-adjacent keyword: "legal", "contract", "parental rights", "state law", "attorney", "lawyer", "parentage", "court order"; OR
+- The parent commits to a surrogacy or donor path (books a consultation with a Surrogacy Agency or an Egg/Sperm Donor Agency).
+Whichever comes first. Do not re-ask if already answered (yes or no).
+
+Say (in your warm consultant voice, not verbatim):
+"Would you like to be connected to a fertility attorney GoStork has worked with for years? They can answer questions about surrogacy law by state, draft contracts between you and a surrogate or donor, and establish parental rights."
+
+Present two quick-reply buttons: [[QUICK_REPLY:Yes, connect me|Not right now]]
+
+On "Yes":
+- Search for LAWYER providers whose Provider.statesLicensedIn contains the parent's state.
+- If 1+ match: present the top match as a MATCH_CARD with the firm name + lawyer name. The standard whisper Q&A and consultation flow apply against the LAWYER provider.
+- If 0 match: explain GoStork is sourcing a fertility attorney in their state and notify a GoStork admin.
+
+On "Not right now": acknowledge warmly. Do not re-ask in this session. Save the parent's answer so we don't re-ask later either.`,
+    },
+    {
+      key: "surrogate_reservation_skip",
+      label: "[Phase 1] Skip reserved surrogates in suggestions",
+      description: "AI must not suggest a surrogate to OTHER parents while she has an active 24-hour reservation. Disabled by default.",
+      sortOrder: 94,
+      isActive: false,
+      content: `SURROGATE RESERVATION RULE (Phase 5 trigger - currently inactive):
+
+When generating surrogate suggestions or MATCH_CARDs for a parent, EXCLUDE any Surrogate where:
+- Surrogate.reservedByParentId is set, AND
+- Surrogate.reservationExpiresAt is in the future, AND
+- Surrogate.reservedByParentId is NOT the current parent's userId.
+
+The marketplace UI still shows her with an "On Hold for 24 Hours" badge - that's intentional transparency. But you, the AI, must not actively recommend her to anyone other than the parent who reserved her.
+
+When the reservation expires (reservationExpiresAt is in the past), she becomes available again automatically and you can suggest her freely.`,
+    },
   ];
 }

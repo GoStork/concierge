@@ -290,6 +290,45 @@ export class CostsService {
     });
   }
 
+  // Phase 1 foundation: patch the AI cost-sheet matching metadata. Each
+  // field is independently optional. Runtime-validates the matchingRules
+  // shape so junk JSON can't get persisted into the JSONB column.
+  // Allowed operators are pinned here (mirror the admin-UI dropdown).
+  async updateSheetMatching(
+    sheetId: string,
+    patch: {
+      category?: string | null;
+      description?: string | null;
+      matchingRules?: Array<{ field: string; operator: string; value: unknown }> | null;
+      lineItemTemplate?: unknown;
+    },
+  ) {
+    const ALLOWED_OPERATORS = ["=", "contains", "in"] as const;
+    if (Array.isArray(patch.matchingRules)) {
+      for (const rule of patch.matchingRules) {
+        if (!rule || typeof rule !== "object") {
+          throw new Error("Invalid matching rule: must be an object");
+        }
+        if (!rule.field || typeof rule.field !== "string") {
+          throw new Error("Invalid matching rule: 'field' must be a non-empty string");
+        }
+        if (!ALLOWED_OPERATORS.includes(rule.operator as any)) {
+          throw new Error(`Invalid matching rule operator: ${rule.operator}. Allowed: ${ALLOWED_OPERATORS.join(", ")}`);
+        }
+      }
+    }
+    const data: any = {};
+    if (patch.category !== undefined) data.category = patch.category;
+    if (patch.description !== undefined) data.description = patch.description;
+    if (patch.matchingRules !== undefined) data.matchingRules = patch.matchingRules as any;
+    if (patch.lineItemTemplate !== undefined) data.lineItemTemplate = patch.lineItemTemplate as any;
+    return this.prisma.providerCostSheet.update({
+      where: { id: sheetId },
+      data,
+      include: { items: { orderBy: [{ category: "asc" }, { sortOrder: "asc" }] } },
+    });
+  }
+
   async submitCostSheet(
     providerId: string,
     items: Array<{

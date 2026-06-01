@@ -466,6 +466,27 @@ export class CostsController {
     return this.costsService.updateSheetItems(sheetId, body.items || []);
   }
 
+  // Phase 1 foundation: edit the AI cost-sheet auto-selection metadata
+  // (category, free-text description, matching rules, line-item template).
+  // Read by the Phase 2 auto-draft. Not consumed by anything live yet.
+  @Patch("sheet/:sheetId/matching")
+  @UseGuards(SessionOrJwtGuard)
+  async updateSheetMatching(
+    @Param("sheetId") sheetId: string,
+    @Body() body: {
+      category?: string | null;
+      description?: string | null;
+      matchingRules?: Array<{ field: string; operator: string; value: unknown }> | null;
+      lineItemTemplate?: unknown;
+    },
+    @Req() req: Request,
+  ) {
+    const sheet = await this.costsService.getSheet(sheetId);
+    if (!sheet) throw new HttpException("Sheet not found", HttpStatus.NOT_FOUND);
+    this.assertProviderOrAdmin(req, sheet.providerId);
+    return this.costsService.updateSheetMatching(sheetId, body);
+  }
+
   @Post("save-draft")
   @UseGuards(SessionOrJwtGuard)
   async saveDraft(
