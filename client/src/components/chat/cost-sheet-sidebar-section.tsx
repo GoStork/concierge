@@ -172,11 +172,14 @@ export function CostSheetSidebarSection({
       setPreviewLoading(true);
       setPreviewError(null);
       try {
+        // Picker-driven totals carry their unit count; manually-typed totals
+        // are flat fees of quantity 1 regardless of any prior picker state.
+        const effectiveQty = !manuallyEdited && hasPrefill ? Math.max(1, quantity) : 1;
         const res = await fetch("/api/billing/invoice-preview", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ sessionId, totalCostCents: cents }),
+          body: JSON.stringify({ sessionId, totalCostCents: cents, quantity: effectiveQty }),
         });
         const data = await res.json();
         if (!res.ok) {
@@ -192,7 +195,7 @@ export function CostSheetSidebarSection({
       }
     }, 350);
     return () => clearTimeout(t);
-  }, [totalCostInput, sessionId]);
+  }, [totalCostInput, sessionId, quantity, manuallyEdited, hasPrefill]);
 
   const sendMutation = useMutation({
     mutationFn: async () => {
@@ -202,6 +205,8 @@ export function CostSheetSidebarSection({
 
       const form = new FormData();
       form.append("totalCostCents", String(cents));
+      const effectiveQty = !manuallyEdited && hasPrefill ? Math.max(1, quantity) : 1;
+      form.append("quantity", String(effectiveQty));
       if (notes.trim()) form.append("notes", notes.trim());
       if (file) form.append("file", file);
 

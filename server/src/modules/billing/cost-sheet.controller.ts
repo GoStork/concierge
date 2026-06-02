@@ -77,7 +77,7 @@ export class CostSheetController {
     @Req() req: Request,
     @Param("sessionId") sessionId: string,
     @UploadedFile() file: any,
-    @Body() body: { totalCostCents?: string | number; notes?: string },
+    @Body() body: { totalCostCents?: string | number; notes?: string; quantity?: string | number },
   ) {
     const user = req.user as any;
     const { session, isAdmin, roles: csRoles } = await this.loadAuthorisedSession(sessionId, user);
@@ -89,6 +89,12 @@ export class CostSheetController {
     if (!Number.isFinite(totalCostCents) || totalCostCents <= 0) {
       throw new HttpException("totalCostCents must be a positive number", HttpStatus.BAD_REQUEST);
     }
+
+    // Quantity = number of priced units the total represents (e.g. 2 vials).
+    // Stored on the quote so FLAT referral fees scale correctly when the
+    // invoice is later created. Defaults to 1.
+    const rawQty = Number(body.quantity);
+    const quantity = Number.isFinite(rawQty) && rawQty >= 1 ? Math.round(rawQty) : 1;
 
     // Upload file to GCS if provided. Public URL so parent + provider + admin can all open it.
     let costSheetFileUrl: string | null = null;
@@ -119,6 +125,7 @@ export class CostSheetController {
           providerId: session.providerId!,
           parentUserId: session.userId,
           totalCostCents,
+          quantity,
           costSheetFileUrl,
           costSheetFileName,
           notes: body.notes?.trim() || null,
@@ -307,6 +314,10 @@ export class CostSheetController {
       // ReferralFeeConfig and the line-item amounts (matching the multi-service
       // billing logic in BillingService.createInvoice).
       lineItems?: Array<{ serviceType: string; amountCents: number }>;
+      // Number of priced units the total represents (vials, egg lots).
+      // FLAT referral fees scale by this multiplier so a 2-vial preview also
+      // doubles GoStork's flat fee. Ignored for PERCENTAGE.
+      quantity?: number;
     },
   ) {
     const user = req.user as any;
@@ -315,6 +326,8 @@ export class CostSheetController {
     if (!Number.isFinite(totalCostCents) || totalCostCents < 0) {
       throw new HttpException("totalCostCents must be a non-negative number", HttpStatus.BAD_REQUEST);
     }
+    const rawQty = Number(body.quantity);
+    const previewQuantity = Number.isFinite(rawQty) && rawQty >= 1 ? Math.round(rawQty) : 1;
 
     const { session } = await this.loadAuthorisedSession(body.sessionId, user);
 
@@ -408,6 +421,7 @@ export class CostSheetController {
       { feeType: feeConfig.feeType, flatAmount: feeConfig.flatAmount, percentage: feeConfig.percentage },
       totalCostCents,
       parentPaysCents,
+      previewQuantity,
     );
 
     return {

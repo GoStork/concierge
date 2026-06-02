@@ -1688,6 +1688,11 @@ model ProviderQuote {
   lineItems            Json?
   sourceCostSheetId    String?
   autoDraftedAt        DateTime?
+  // Number of priced units the total represents (e.g. 2 sperm vials, 3 egg
+  // lots). Defaults to 1 for legacy / manually-entered totals. FLAT referral
+  // fees scale by this multiplier so a 2-vial quote also doubles GoStork's
+  // flat fee. PERCENTAGE fees ignore it - they already scale with the total.
+  quantity             Int       @default(1)
   createdAt         DateTime  @default(now())
 
   session       AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)

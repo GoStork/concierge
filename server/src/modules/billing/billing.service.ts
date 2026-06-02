@@ -141,10 +141,12 @@ export class BillingService {
     config: { feeType: string; flatAmount: any; percentage: any },
     feeBasisCents: number,
     parentPaysCents: number,
+    flatMultiplier: number = 1,
   ): { referralFeeAmount: number; providerPayoutAmount: number } {
     let referralFeeAmount = 0;
     if (config.feeType === "FLAT") {
-      referralFeeAmount = Math.round(Number(config.flatAmount) || 0);
+      const units = Math.max(1, Math.round(flatMultiplier) || 1);
+      referralFeeAmount = Math.round((Number(config.flatAmount) || 0) * units);
     } else if (config.feeType === "PERCENTAGE") {
       const pct = Number(config.percentage) || 0;
       referralFeeAmount = Math.round((feeBasisCents * pct) / 100);
@@ -343,7 +345,8 @@ export class BillingService {
         parentPaysCents = defaultCents;
       }
 
-      const computed = this.computeFee(primaryConfig, feeBasisCents, parentPaysCents);
+      const flatMultiplier = latestQuote?.quantity ?? 1;
+      const computed = this.computeFee(primaryConfig, feeBasisCents, parentPaysCents, flatMultiplier);
       referralFeeAmount = computed.referralFeeAmount;
       providerPayoutAmount = computed.providerPayoutAmount;
     }
