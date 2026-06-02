@@ -262,6 +262,8 @@ const HIDDEN_PROFILE_KEYS = new Set([
   "_sections", "_tables", "profileData", "Letter to Intended Parents", "Letter Title",
   "Original PDF", "Source", "Source File", "Agency ID", "Agency I D", "Surrogate ID",
   "Surrogate I D", "Donor ID", "Donor I D",
+  // Photo/video metadata - should render as gallery, not as text fields
+  "photoCount", "photo count", "hasVideo", "has video", "additionalPhotos",
 ]);
 
 const AGENCY_COMMENT_PATTERN = /^(agency\s*(comment|recommendation|note)s?|recommendation\s*points?|additional\s*information)$/i;
@@ -447,13 +449,18 @@ export default function DonorProfilePage() {
   const allPhotos = useMemo(() => {
     if (!donor) return [];
     const urls: string[] = [];
+    const DYNAMIC_PHOTO_PATHS = /DonorPhoto|donorphoto|Photo\/Get|photo\/get|PhotoHandler|photohandler|DonorImage|donorimage|\/Photo\?|\/Image\?/i;
     const isValidPhoto = (url: string) => {
+      if (!url || typeof url !== "string") return false;
       if (/\.(jpg|jpeg|png|gif|webp|heic|svg|bmp|tiff?|avif)/i.test(url)) return true;
       try {
         const parsed = new URL(url);
         if (parsed.pathname.endsWith(".blob") && /s3[.\-].*amazonaws\.com/i.test(parsed.hostname)) return true;
         if (/storage\.googleapis\.com/i.test(parsed.hostname)) return true;
-      } catch {}
+        if (DYNAMIC_PHOTO_PATHS.test(parsed.pathname + parsed.search)) return true;
+      } catch {
+        if (DYNAMIC_PHOTO_PATHS.test(url)) return true;
+      }
       return false;
     };
     const addPhoto = (url: string) => {
@@ -697,7 +704,7 @@ export default function DonorProfilePage() {
         const merged = new Map<string, { fields: [string, any][]; tables: [string, any[]][] }>();
         const consumed = new Set<string>();
 
-        const rawSectionNames = Object.keys(pd).filter((n) => n !== "Photos");
+        const rawSectionNames = Object.keys(pd).filter((n) => n !== "Photos" && n !== "All Photos");
         const prioritySections = ["Pregnancy History", "Support System", "Donation History"];
         const filteredNames = rawSectionNames.filter((n) => {
           if (n.endsWith(":")) {
