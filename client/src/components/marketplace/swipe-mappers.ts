@@ -381,7 +381,7 @@ export function getMatchedPreferences(profile: SwipeDeckProfile, prefs: UserPref
 
   const displayMap: Record<string, (val: any) => string> = {
     age: (v) => `Age ${v}`,
-    location: (v) => String(v),
+    location: (v) => formatLocationDisplay(String(v)) || String(v),
     ethnicity: (v) => String(v),
     race: (v) => String(v),
     religion: (v) => String(v),

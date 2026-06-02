@@ -14,6 +14,7 @@ import { setMarketplaceSearchQuery, setMarketplaceSortBy, setFilter, clearFilter
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { formatMoneyDollars } from "@/lib/format-money";
+import { formatLocationDisplay } from "@/lib/format-location";
 
 type ProviderType = "egg-donor" | "surrogate" | "sperm-donor" | "ivf-clinic";
 
@@ -163,7 +164,10 @@ function formatFilterPills(filters: Record<string, string[]>): { key: string; la
     } else if (vals.length === 1 && vals[0] === "true") {
       pills.push({ key, label: displayName });
     } else {
-      vals.filter(Boolean).forEach((v) => pills.push({ key, label: `${displayName}: ${v}` }));
+      vals.filter(Boolean).forEach((v) => {
+        const displayVal = key === "location" ? (formatLocationDisplay(v) || v) : v;
+        pills.push({ key, label: `${displayName}: ${displayVal}` });
+      });
     }
   }
   return pills;
@@ -455,10 +459,11 @@ function LocationDrawerInput({
           const city = a.city || a.town || a.village || a.hamlet || a.county || "";
           const state = a.state || a.region || "";
           const country = a.country || "";
-          const label = [city, state, country].filter(Boolean).join(", ");
+          const rawLabel = [city, state, country].filter(Boolean).join(", ");
+          const label = formatLocationDisplay(rawLabel) || rawLabel;
           // Marketplace filter takes a single string; commit the most-specific non-empty match.
           // Prefer city, fall back to state, fall back to country.
-          const commit = city || state || country || label;
+          const commit = city || state || country || rawLabel;
           return { label, commit };
         })
         .filter((s: { label: string }) => s.label);
