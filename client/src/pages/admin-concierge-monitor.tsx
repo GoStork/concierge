@@ -264,13 +264,19 @@ export default function AdminConciergeMonitor() {
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); };
   }, [sessionDetailQuery.data?.messages?.length, selectedSessionId]);
 
-  // Mark parent messages as read when admin opens a session
+  // Mark parent messages as read when admin opens a session.
+  // Optimistically clear the session's unreadCount so the top-nav Concierge badge
+  // and the sidebar row badge update instantly, instead of waiting for the server
+  // roundtrip + the next refetch cycle.
   useEffect(() => {
     if (!selectedSessionId) return;
+    queryClient.setQueryData<any[]>(["/api/admin/concierge-sessions"], (old) =>
+      old?.map(s => s.id === selectedSessionId ? { ...s, unreadCount: 0 } : s)
+    );
     fetch(`/api/chat-sessions/${selectedSessionId}/read`, { method: "POST", credentials: "include" })
       .then(() => queryClient.invalidateQueries({ queryKey: ["/api/admin/concierge-sessions"] }))
       .catch(() => {});
-  }, [selectedSessionId]);
+  }, [selectedSessionId, queryClient]);
 
   // Auto-restore last viewed session on initial page load only.
   // The ref prevents the restore from re-firing when the browser back button returns to this page.

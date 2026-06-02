@@ -2907,8 +2907,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         lastPollTimeRef.current = msgs[msgs.length - 1].createdAt;
         msgs.forEach((m: any) => { if (m.id) knownMessageIds.current.add(m.id); });
         if (msgs.some((m: any) => m.senderType === "provider")) setProviderInChat(true);
-        // Send read receipt
-        fetch(`/api/chat-sessions/${existingSessionId}/read`, { method: "POST", credentials: "include" }).catch(() => {});
+        // Send read receipt + optimistically clear this session's unreadCount so the
+        // top-nav Chats badge updates instantly instead of waiting for the next poll.
+        queryClient.setQueryData<any[]>(["/api/my/chat-sessions"], (old) =>
+          old?.map(s => s.id === existingSessionId ? { ...s, unreadCount: 0 } : s)
+        );
+        fetch(`/api/chat-sessions/${existingSessionId}/read`, { method: "POST", credentials: "include" })
+          .then(() => queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] }))
+          .catch(() => {});
       }
     } catch { return false; }
     return true;
@@ -3243,8 +3249,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           if (unseenMsgs.some((m: any) => m.senderType === "provider")) {
             setProviderInChat(true);
           }
-          // Mark newly polled messages as read since user is actively viewing this chat
-          fetch(`/api/chat-sessions/${sessionId}/read`, { method: "POST", credentials: "include" }).catch(() => {});
+          // Mark newly polled messages as read since user is actively viewing this chat.
+          // Optimistically clear unreadCount so the top-nav Chats badge updates instantly.
+          queryClient.setQueryData<any[]>(["/api/my/chat-sessions"], (old) =>
+            old?.map(s => s.id === sessionId ? { ...s, unreadCount: 0 } : s)
+          );
+          fetch(`/api/chat-sessions/${sessionId}/read`, { method: "POST", credentials: "include" })
+            .then(() => queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] }))
+            .catch(() => {});
         }
 
         // Periodically refresh delivery status on existing messages (every 3rd poll)
@@ -4154,10 +4166,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 </div>
               ) : (
                 <Button
-                  variant="outline"
                   size="sm"
                   className="text-xs gap-1.5 h-8"
-                  style={{ borderColor: `${brandColor}30`, color: brandColor, borderRadius: "999px" }}
+                  style={{ ...chipDeclineStyle, borderRadius: "999px" }}
                   onClick={handleTalkToTeam}
                   disabled={sending || humanEscalated}
                   data-testid="btn-talk-to-team"
