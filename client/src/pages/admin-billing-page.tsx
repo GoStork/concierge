@@ -197,12 +197,12 @@ export default function AdminBillingPage() {
         </div>
 
         <div className="min-w-[150px]">
-          <label className="text-xs text-muted-foreground mb-1 block">Paid From</label>
+          <label className="text-xs text-muted-foreground mb-1 block">Date From</label>
           <Input type="date" value={paidFrom} onChange={e => setPaidFrom(e.target.value)} data-testid="billing-paid-from" />
         </div>
 
         <div className="min-w-[150px]">
-          <label className="text-xs text-muted-foreground mb-1 block">Paid To</label>
+          <label className="text-xs text-muted-foreground mb-1 block">Date To</label>
           <Input type="date" value={paidTo} onChange={e => setPaidTo(e.target.value)} data-testid="billing-paid-to" />
         </div>
 
@@ -254,7 +254,7 @@ export default function AdminBillingPage() {
                     <td className="px-4 py-3 text-right" style={{ color: "hsl(var(--brand-success))" }}>{formatCents(inv.referralFeeAmount, inv.currency)}</td>
                     <td className="px-4 py-3 text-right text-muted-foreground">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
                     <td className="px-4 py-3"><InvoiceStatusBadge status={inv.status} /></td>
-                    <td className="px-4 py-3 text-muted-foreground text-xs">{new Date(inv.createdAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs">{new Date(inv.paidAt || inv.createdAt).toLocaleDateString()}</td>
                     <td className="px-4 py-3">
                       {expandedId === inv.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </td>

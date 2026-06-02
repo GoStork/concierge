@@ -1671,6 +1671,7 @@ export class BillingService {
   }) {
     const { status, providerId, serviceType, search, dateFrom, dateTo, paidFrom, paidTo, page = 1, pageSize = 25 } = filters;
     const where: any = {};
+    const andConditions: any[] = [];
     if (status && status !== "all") where.status = status;
     if (providerId) where.providerId = providerId;
     if (serviceType && serviceType !== "all") where.serviceType = serviceType;
@@ -1679,23 +1680,35 @@ export class BillingService {
       if (dateFrom) where.createdAt.gte = dateFrom;
       if (dateTo) where.createdAt.lte = dateTo;
     }
-    // Paid-date range filters on paidAt (the date money was actually collected).
+    // Date range filters on the same date shown in the UI's "Date" column:
+    // the paid date when the invoice has been paid, otherwise the created date.
+    // (Filtering paidAt alone would return nothing for AWAITING_PAYMENT invoices,
+    // which have a null paidAt - that was the original bug.)
     if (paidFrom || paidTo) {
-      where.paidAt = {};
-      if (paidFrom) where.paidAt.gte = paidFrom;
-      if (paidTo) where.paidAt.lte = paidTo;
+      const range: any = {};
+      if (paidFrom) range.gte = paidFrom;
+      if (paidTo) range.lte = paidTo;
+      andConditions.push({
+        OR: [
+          { paidAt: { not: null, ...range } },
+          { paidAt: null, createdAt: range },
+        ],
+      });
     }
     // Free-text search across parent name/email, provider name, invoice id, session id.
     const term = search?.trim();
     if (term) {
-      where.OR = [
-        { id: { contains: term, mode: "insensitive" } },
-        { sessionId: { contains: term, mode: "insensitive" } },
-        { providerName: { contains: term, mode: "insensitive" } },
-        { parentUser: { is: { name: { contains: term, mode: "insensitive" } } } },
-        { parentUser: { is: { email: { contains: term, mode: "insensitive" } } } },
-      ];
+      andConditions.push({
+        OR: [
+          { id: { contains: term, mode: "insensitive" } },
+          { sessionId: { contains: term, mode: "insensitive" } },
+          { providerName: { contains: term, mode: "insensitive" } },
+          { parentUser: { is: { name: { contains: term, mode: "insensitive" } } } },
+          { parentUser: { is: { email: { contains: term, mode: "insensitive" } } } },
+        ],
+      });
     }
+    if (andConditions.length > 0) where.AND = andConditions;
 
     const [invoices, total, distinctServiceTypes] = await Promise.all([
       this.prisma.invoice.findMany({
