@@ -1,7 +1,11 @@
+import { User } from "lucide-react";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import type { SessionUser } from "@/components/chat/chat-types";
 
 interface ParentProfileCardProps {
   user: SessionUser;
+  /** When true, renders an "Online" pill + green dot on the avatar. */
+  isOnline?: boolean;
   testId?: string;
 }
 
@@ -123,15 +127,46 @@ function buildSections(user: SessionUser): ProfileSection[] {
  * Single source of truth - any new parent profile field should be added here
  * (and to the SessionUser type / API payload).
  */
-export function ParentProfileCard({ user, testId = "parent-profile-card" }: ParentProfileCardProps) {
+export function ParentProfileCard({ user, isOnline, testId = "parent-profile-card" }: ParentProfileCardProps) {
   const sections = buildSections(user);
   const basics = buildBasics(user);
+  const photoSrc = user.photoUrl ? getPhotoSrc(user.photoUrl) : null;
 
   return (
     <div data-testid={testId}>
       <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Parent Profile</h4>
+      {/* Identity row - mirrors the "Interested Egg Donor" card style:
+          avatar (with online dot) + name + online label. */}
+      <div className="flex items-center gap-2.5 mb-3">
+        <div className="relative w-10 h-10 shrink-0">
+          {photoSrc ? (
+            <div className="w-10 h-10 rounded-full overflow-hidden bg-muted">
+              <img
+                src={photoSrc}
+                alt={user.name || "Parent"}
+                className="w-full h-full object-cover object-top"
+              />
+            </div>
+          ) : (
+            <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+              <User className="w-5 h-5 text-muted-foreground" />
+            </div>
+          )}
+          {isOnline && (
+            <span
+              className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background bg-[hsl(var(--brand-success))]"
+              title="Online"
+            />
+          )}
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold leading-tight truncate">{user.name || "-"}</p>
+          {isOnline && (
+            <p className="text-[10px] text-[hsl(var(--brand-success))] font-medium">Online</p>
+          )}
+        </div>
+      </div>
       <div className="space-y-1.5 mb-3">
-        <div className="text-sm"><span className="text-muted-foreground">Name:</span> {user.name || "-"}</div>
         <div className="text-sm truncate"><span className="text-muted-foreground">Email:</span> {user.email}</div>
         {(user.city || user.state) && (
           <div className="text-sm"><span className="text-muted-foreground">Location:</span> {[user.city, user.state].filter(Boolean).join(", ")}</div>

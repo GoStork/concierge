@@ -878,6 +878,7 @@ export default function AdminConciergeMonitor() {
             <ChatProfileSidebar
               user={detail.user}
               brandColor={brandColor}
+              isOnline={!!onlineStatuses[detail.user.id]}
               testId="concierge-monitor-profile"
               topSections={
                 <div className="border-b pb-4 mb-4" data-testid="match-status-section">
