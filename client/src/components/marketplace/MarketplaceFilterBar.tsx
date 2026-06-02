@@ -1419,6 +1419,11 @@ export function MarketplaceFilterBar({
   const activeCount = pills.length;
 
   const removePill = (key: string, label: string) => {
+    if (key === "location") {
+      onLocationChange?.("");
+      dispatch(setFilter({ key: "location", values: [] }));
+      return;
+    }
     if (RANGE_FILTER_KEYS.has(key)) {
       dispatch(setFilter({ key, values: [] }));
     } else {
