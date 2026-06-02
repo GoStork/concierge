@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowLeft, Building2, Loader2, Pencil, Globe, Phone, Calendar, Sparkles, MapPin, Check, X, Upload, User, Plus, GripVertical, Eye, Palette, DollarSign } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import LocationAutocomplete from "@/components/location-autocomplete";
+import { ProviderAutoFeaturesCard } from "@/components/provider-auto-features-card";
 import { CountryAutocompleteInput } from "@/components/ui/country-autocomplete-input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import MembersTable from "@/components/members-table";
@@ -1416,7 +1417,7 @@ export default function AdminProviderEditPage() {
 
             {/* Phase 2: GoStork-admin-only automation feature flags. */}
             {isGostorkAdmin && (
-              <AutoFeaturesCard providerId={provider.id} initial={provider.autoFeaturesEnabled} />
+              <ProviderAutoFeaturesCard providerId={provider.id} initial={provider.autoFeaturesEnabled} />
             )}
 
             {isDirty && (
@@ -1586,61 +1587,3 @@ function ProviderBrandingTab({ providerId, brandingEnabled: initialEnabled, prov
   );
 }
 
-// Phase 2: per-provider automation feature flags. GoStork-admin only.
-// Toggles fire PATCH /api/providers/:id/auto-features. Phase 3 + 4 flags
-// are rendered as disabled placeholders so admins can see what's coming.
-function AutoFeaturesCard({ providerId, initial }: { providerId: string; initial: any }) {
-  const flags = (initial as { autoCostSheetDraft?: boolean; autoInvoiceDraft?: boolean; autoAgreementDraft?: boolean }) || {};
-  const [autoCostSheetDraft, setAutoCostSheetDraft] = useState<boolean>(flags?.autoCostSheetDraft === true);
-  const { toast } = useToast();
-  const mutation = useMutation({
-    mutationFn: async (next: boolean) =>
-      apiRequest("PATCH", `/api/providers/${providerId}/auto-features`, { autoCostSheetDraft: next }),
-    onSuccess: () => {
-      toast({ title: "Automation flags saved" });
-    },
-    onError: (err: any) => {
-      // Revert local state on failure
-      setAutoCostSheetDraft(prev => !prev);
-      toast({ title: "Failed to save", description: err?.message || "Try again.", variant: "destructive" });
-    },
-  });
-  return (
-    <Card className="p-4 bg-secondary/30 border-border">
-      <div className="space-y-3">
-        <div>
-          <p className="text-sm font-medium" style={{ fontFamily: "var(--font-display)" }}>Automation</p>
-          <p className="text-xs text-muted-foreground">GoStork-only controls. Flip per provider to roll out automations safely.</p>
-        </div>
-        <div className="flex items-center justify-between border-t border-border pt-3">
-          <div>
-            <p className="text-sm">Auto cost-sheet draft on booking</p>
-            <p className="text-xs text-muted-foreground">Eva drafts a cost sheet when a parent books a consult. Provider approves before send.</p>
-          </div>
-          <Switch
-            checked={autoCostSheetDraft}
-            onCheckedChange={(v) => {
-              setAutoCostSheetDraft(v);
-              mutation.mutate(v);
-            }}
-            data-testid="switch-auto-cost-sheet-draft"
-          />
-        </div>
-        <div className="flex items-center justify-between border-t border-border pt-3 opacity-50">
-          <div>
-            <p className="text-sm">Auto invoice draft on parent-ready</p>
-            <p className="text-xs text-muted-foreground">Phase 3 - coming soon.</p>
-          </div>
-          <Switch checked={false} disabled />
-        </div>
-        <div className="flex items-center justify-between border-t border-border pt-3 opacity-50">
-          <div>
-            <p className="text-sm">Auto agreement draft on invoice-paid</p>
-            <p className="text-xs text-muted-foreground">Phase 4 - coming soon.</p>
-          </div>
-          <Switch checked={false} disabled />
-        </div>
-      </div>
-    </Card>
-  );
-}

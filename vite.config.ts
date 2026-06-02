@@ -9,10 +9,15 @@ dotenvConfig();
 export default defineConfig({
   plugins: [
     react(),
-    runtimeErrorOverlay(),
+    // Replit-specific dev plugins. Only load when actually running on
+    // Replit. Outside Replit, runtimeErrorOverlay turns every benign
+    // window.error event (including CORS-veiled iOS Chrome errors with
+    // no details) into a screen-blocking "(unknown runtime error)"
+    // modal, which is what was breaking ngrok-served dev for mobile.
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [
+          runtimeErrorOverlay(),
           await import("@replit/vite-plugin-cartographer").then((m) =>
             m.cartographer(),
           ),

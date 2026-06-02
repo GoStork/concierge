@@ -212,6 +212,7 @@ model User {
   mobileNumberDisplay    String?
   dateOfBirth            DateTime?
   gender                 String?
+  partnerGender          String?
   sexualOrientation      String?
   relationshipStatus     String?
   partnerFirstName       String?
@@ -361,7 +362,15 @@ model CostProgram {
   id             String              @id @default(uuid())
   providerId     String
   providerTypeId String?
+  // tab: "ivf_cycle" | "shipping_embryos" | "shipping_eggs_sperm" | "egg_freezing"
+  tab            String?
+  // subType: one of the 10 enum ids defined in cost-templates-config.ts
   subType        String?
+  // serviceTypes: array of "surrogacy" | "egg_donor" | "sperm_donor" |
+  // "ivf_clinic". A combined-package cost sheet (e.g. egg donor + surrogate
+  // bundle) gets multiple tags; the parent matcher unions the tags against
+  // the parent's needs. AI proposes; provider can override.
+  serviceTypes   String[]            @default([])
   name           String
   country        String
   createdAt      DateTime            @default(now())
@@ -370,35 +379,40 @@ model CostProgram {
 }
 
 model ProviderCostSheet {
-  id               String        @id @default(uuid())
-  providerId       String
-  providerTypeId   String?
-  parentClientId   String?
-  subType          String?
-  programId        String?
-  fileUrl          String?
-  filePath         String?
-  originalFileName String?
-  status           String        @default("PENDING")
-  adminFeedback    String?
-  version          Int           @default(1)
-  // Phase 1 auto-selection metadata. AI uses matchingRules (an array of
-  // {field, operator, value} entries, AND-combined) to pick the right
-  // cost sheet for a given IntendedParentProfile + chat context. The
-  // lineItemTemplate is a JSON blob used by the Phase 3 auto-invoice
-  // draft to pre-fill line items. Both nullable so existing sheets
-  // continue to work unchanged.
-  category         String?
-  description      String?
-  matchingRules    Json?
-  lineItemTemplate Json?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-  items            CostItem[]
-  provider         Provider      @relation(fields: [providerId], references: [id])
-  providerType     ProviderType? @relation(fields: [providerTypeId], references: [id])
-  parentClient     User?         @relation("CostSheetQuotes", fields: [parentClientId], references: [id])
-  program          CostProgram?  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  id                String        @id @default(uuid())
+  providerId        String
+  providerTypeId    String?
+  parentClientId    String?
+  // tab: "ivf_cycle" | "shipping_embryos" | "shipping_eggs_sperm" | "egg_freezing"
+  tab               String?
+  // subType: one of the 10 enum ids defined in cost-templates-config.ts
+  subType           String?
+  programId         String?
+  fileUrl           String?
+  filePath          String?
+  originalFileName  String?
+  status            String        @default("PENDING")
+  adminFeedback     String?
+  version           Int           @default(1)
+  // Phase 3 auto-invoice draft pre-fill template
+  category          String?
+  description       String?
+  lineItemTemplate  Json?
+  // Fixed-vs-not-fixed: AI proposes (heuristic) on parse, clinic confirms.
+  // null = AI has not run yet. When true, the overlay's mandatoryFixed[]
+  // fields become required on submit. Source records who set the value.
+  isFixedCost       Boolean?
+  isFixedCostSource String?
+  // True for rows migrated from the legacy 2-subtype world. Clinic must
+  // confirm the auto-defaulted subtype before the flag clears.
+  legacyNeedsReview Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  items             CostItem[]
+  provider          Provider      @relation(fields: [providerId], references: [id])
+  providerType      ProviderType? @relation(fields: [providerTypeId], references: [id])
+  parentClient      User?         @relation("CostSheetQuotes", fields: [parentClientId], references: [id])
+  program           CostProgram?  @relation(fields: [programId], references: [id], onDelete: Cascade)
 }
 
 model CostItem {
@@ -413,6 +427,12 @@ model CostItem {
   comment             String?
   isIncluded          Boolean           @default(true)
   sortOrder           Int               @default(0)
+  // True for items that represent alternative pricing tiers (e.g. "Single
+  // Cycle / Two Cycles / Three Cycles / Unlimited Transfers"). They are
+  // mutually-exclusive choices, not additive line items - the parent picks
+  // one. Provider editor groups them in a dedicated Pricing Tiers section;
+  // parent grid emits one card per tier.
+  isTier              Boolean           @default(false)
   providerCostSheet   ProviderCostSheet @relation(fields: [providerCostSheetId], references: [id], onDelete: Cascade)
   templateField       CostTemplate?     @relation(fields: [templateFieldId], references: [id], onDelete: SetNull)
 }

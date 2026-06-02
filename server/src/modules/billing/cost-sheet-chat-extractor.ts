@@ -12,7 +12,15 @@
 //      surrogate/donor profile is in context.
 //   3. Dollar-amount regex - fallback when SAVE blobs are missing.
 
-import type { ChatExtractions } from "./cost-sheet-matcher";
+// Inlined here since the legacy matcher was removed; the auto-draft and
+// chat extractor are the only remaining consumers.
+export interface ChatExtractions {
+  surrogateCompCents: number | null;
+  donorCompCents: number | null;
+  mentionedSurrogateId: string | null;
+  mentionedEggDonorId: string | null;
+  mentionedSpermDonorId: string | null;
+}
 
 const SAVE_RE = /\[\[SAVE:(\{[\s\S]*?\})\]\]/g;
 const MATCH_CARD_RE = /\[\[MATCH_CARD:(\{[\s\S]*?\})\]\]/g;

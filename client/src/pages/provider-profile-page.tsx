@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { IvfSuccessRatesSection } from "@/components/ivf-success-rates-section";
+import { ClinicCostProgramsSection } from "@/components/clinic-cost-programs-section";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { getCountryFlag } from "@/lib/country-flag";
 
@@ -162,6 +163,29 @@ export default function ProviderProfilePage() {
       {provider.ivfSuccessRates && provider.ivfSuccessRates.length > 0 && (
         <IvfSuccessRatesSection rates={provider.ivfSuccessRates} filterContext={filterContext} />
       )}
+
+      {(() => {
+        // The cost-programs section now serves every fertility-tier provider
+        // (IVF, Surrogacy, Egg Donor, Sperm Bank). Server-side matching
+        // filters to whatever applies to this parent's journey state.
+        const svcNames = (provider.services || []).map((s: any) => s.providerType?.name?.toLowerCase() || "");
+        const hasFertilityTierService = svcNames.some((n: string) =>
+          n.includes("ivf") ||
+          n.includes("clinic") ||
+          n.includes("surrogacy") ||
+          n.includes("egg donor") ||
+          n.includes("egg bank") ||
+          n.includes("sperm bank") ||
+          n.includes("sperm donor")
+        );
+        return (
+          <ClinicCostProgramsSection
+            providerId={provider.id}
+            parentAccountId={(user as any)?.parentAccountId ?? null}
+            hasIvfClinicService={hasFertilityTierService}
+          />
+        );
+      })()}
 
       {(() => {
         const svcNames = (provider.services || []).map((s: any) => s.providerType?.name?.toLowerCase() || "");

@@ -339,6 +339,52 @@ export class UsersController {
     if (body.relationshipStatus) updateData.relationshipStatus = body.relationshipStatus;
     if (body.partnerFirstName !== undefined) updateData.partnerFirstName = body.partnerFirstName || null;
     if (body.partnerAge !== undefined) updateData.partnerAge = typeof body.partnerAge === "number" ? body.partnerAge : null;
+
+    // Composite family-type capture: when the onboarding flow asks
+    // "Solo Man / Solo Woman / 2 dads / 2 moms / straight couple", the
+    // client posts a single familyType token and we derive the two
+    // gender fields the cost-sheet matcher reads. Optional - existing
+    // gender + relationshipStatus answers still work.
+    // gender writes use the legacy "I'm a man" / "I'm a woman" labels so they
+    // match the existing onboarding form. partnerGender is the short "man" /
+    // "woman" form to mirror how Eva's [[SAVE:familyType]] block persists it.
+    // The cost-sheet matcher accepts both formats.
+    if (typeof body.familyType === "string") {
+      const ft = body.familyType;
+      const primary = body.primaryGenderForStraight === "male" ? "man" : "woman";
+      switch (ft) {
+        case "solo_man":
+          updateData.gender = "I'm a man";
+          updateData.partnerGender = null;
+          break;
+        case "solo_woman":
+          updateData.gender = "I'm a woman";
+          updateData.partnerGender = null;
+          break;
+        case "two_dads":
+          updateData.gender = "I'm a man";
+          updateData.partnerGender = "man";
+          break;
+        case "two_moms":
+          updateData.gender = "I'm a woman";
+          updateData.partnerGender = "woman";
+          break;
+        case "straight_couple":
+          updateData.gender = primary === "man" ? "I'm a man" : "I'm a woman";
+          updateData.partnerGender = primary === "woman" ? "man" : "woman";
+          break;
+        default:
+          throw new BadRequestException(`Invalid familyType: ${ft}`);
+      }
+    }
+
+    // Direct partnerGender setter (for flows that already know it).
+    if (body.partnerGender !== undefined) {
+      if (body.partnerGender !== null && body.partnerGender !== "man" && body.partnerGender !== "woman") {
+        throw new BadRequestException("partnerGender must be 'man', 'woman', or null");
+      }
+      updateData.partnerGender = body.partnerGender;
+    }
     if (body.city) updateData.city = body.city;
     if (body.state) updateData.state = body.state;
     if (body.country !== undefined) updateData.country = body.country || null;

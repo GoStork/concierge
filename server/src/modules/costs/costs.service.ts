@@ -3,6 +3,21 @@ import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import * as crypto from "crypto";
 import { recalcAndPersistTotalCostsForProvider } from "./total-cost.utils";
+import {
+  ALL_SUBTYPES,
+  isValidSubType,
+  isValidTab,
+  resolveTemplate,
+  SubType,
+  SUBTYPE_LABEL,
+  Tab,
+  TAB_LABEL,
+  TAB_OF,
+} from "./cost-templates-config";
+import {
+  matchSubtypes,
+  MatcherInput,
+} from "./cost-sheet-subtype-matcher";
 
 @Injectable()
 export class CostsService {
@@ -82,19 +97,39 @@ export class CostsService {
 
     await this.storage.uploadBuffer(buffer, gcsPath, contentType);
 
+    // Upload-first flow: when no programId is provided, auto-create a
+    // placeholder program with default name + country. The AI classifier
+    // fills these in once it runs (see saveAiClassification). This keeps
+    // the UX a single "drop a file" action - no separate "create program
+    // with name + country" step beforehand.
+    let resolvedProgramId = programId || null;
+    if (!resolvedProgramId) {
+      const newProgram = await this.prisma.costProgram.create({
+        data: {
+          providerId,
+          providerTypeId: providerTypeId || null,
+          name: "Untitled",
+          country: "United States",
+          subType: null,
+          tab: null,
+        },
+      });
+      resolvedProgramId = newProgram.id;
+    }
+
     const sheet = await this.prisma.providerCostSheet.create({
       data: {
         providerId,
         providerTypeId: providerTypeId || null,
         subType: subType || null,
-        programId: programId || null,
+        programId: resolvedProgramId,
         filePath: gcsPath,
         originalFileName: filename,
         status: "PARSING",
       },
     });
 
-    return { sheet, buffer, contentType: contentType };
+    return { sheet, buffer, contentType: contentType, programId: resolvedProgramId };
   }
 
   async saveParseResults(
@@ -106,6 +141,7 @@ export class CostsService {
       maxValue: number | null;
       isCustom: boolean;
       isIncluded: boolean;
+      isTier?: boolean;
       comment: string | null;
     }>,
   ) {
@@ -140,12 +176,12 @@ export class CostsService {
         (p) => p.category === tpl.category && p.key === tpl.key,
       );
       return match
-        ? { ...tpl, minValue: match.minValue, maxValue: match.maxValue, comment: match.comment, isIncluded: match.isIncluded }
-        : { ...tpl };
+        ? { ...tpl, minValue: match.minValue, maxValue: match.maxValue, comment: match.comment, isIncluded: match.isIncluded, isTier: match.isTier === true }
+        : { ...tpl, isTier: false };
     });
     const customItems = parsedItems.filter(
       (p) => p.isCustom || !templateItems.some((t) => t.category === p.category && t.key === p.key),
-    );
+    ).map((p) => ({ ...p, isTier: p.isTier === true }));
     const finalItems = [...merged, ...customItems].map((item, i) => ({ ...item, sortOrder: i }));
 
     await this.updateSheetItems(sheetId, finalItems);
@@ -163,6 +199,356 @@ export class CostsService {
       where: { id: sheetId },
       data: { status: "DRAFT" },
     });
+  }
+
+  /**
+   * Persist the AI's proposed classification on a freshly-parsed sheet. We
+   * do NOT overwrite values the clinic has already confirmed - this only
+   * sets the proposal when the source is null or still 'ai_proposed'.
+   */
+  async saveAiClassification(
+    sheetId: string,
+    proposal: { tab: Tab; subType: SubType; isFixedCost: boolean; confidence: number; reasoning: string; programName?: string; country?: string; serviceTypes?: string[] },
+  ) {
+    const sheet = await this.prisma.providerCostSheet.findUnique({ where: { id: sheetId } });
+    if (!sheet) return;
+    if (sheet.isFixedCostSource === "clinic_confirmed") {
+      this.logger.log(`Skipping AI classification for sheet ${sheetId} - clinic already confirmed`);
+      return;
+    }
+    // Empty tab/subType mean the provider type doesn't use the IVF
+    // taxonomy (surrogacy / sperm bank). Persist as null in those cases.
+    const persistedTab = proposal.tab && (proposal.tab as string).length > 0 ? proposal.tab : null;
+    const persistedSubType = proposal.subType && (proposal.subType as string).length > 0 ? proposal.subType : null;
+    await this.prisma.providerCostSheet.update({
+      where: { id: sheetId },
+      data: {
+        tab: persistedTab,
+        subType: persistedSubType,
+        isFixedCost: proposal.isFixedCost,
+        isFixedCostSource: "ai_proposed",
+      },
+    });
+    // Mirror onto the parent program so the tab/subtype hierarchy stays
+    // consistent in the provider editor list view. Also fill in name and
+    // country when they're still placeholders ("Untitled" / "United States"
+    // default) so the clinic doesn't have to type them.
+    if (sheet.programId) {
+      const program = await this.prisma.costProgram.findUnique({
+        where: { id: sheet.programId },
+        select: { name: true, country: true, serviceTypes: true },
+      });
+      const data: any = { tab: persistedTab, subType: persistedSubType };
+      const isPlaceholderName = !program?.name || program.name === "Untitled" || program.name === "Untitled Program" || /^untitled/i.test(program.name);
+      if (proposal.programName && isPlaceholderName) {
+        data.name = proposal.programName;
+      }
+      // Only override country when the program is still on the default "United States"
+      // AND the AI confidently picked something else. This avoids stomping a clinic's
+      // explicit pick with an AI guess.
+      const isDefaultCountry = !program?.country || program.country === "United States";
+      if (proposal.country && isDefaultCountry && proposal.country !== "United States") {
+        data.country = proposal.country;
+      }
+      // Only seed serviceTypes when the program doesn't yet have any tags
+      // (fresh upload-first creation). Don't stomp an existing array - the
+      // provider may have edited tags by hand.
+      if (proposal.serviceTypes && proposal.serviceTypes.length > 0 && (!program?.serviceTypes || program.serviceTypes.length === 0)) {
+        data.serviceTypes = proposal.serviceTypes;
+      }
+      await this.prisma.costProgram.update({
+        where: { id: sheet.programId },
+        data,
+      });
+    }
+  }
+
+  /**
+   * Clinic confirms or overrides the classification. Source flips to
+   * 'clinic_confirmed' so future AI parses on the same sheet leave it alone.
+   * Also clears legacyNeedsReview because the clinic has now actively chosen.
+   */
+  async saveClinicClassification(
+    sheetId: string,
+    payload: { tab?: Tab; subType?: SubType; isFixedCost?: boolean; confirm?: boolean },
+  ) {
+    const sheet = await this.prisma.providerCostSheet.findUnique({ where: { id: sheetId } });
+    if (!sheet) throw new Error("Sheet not found");
+
+    if (payload.tab !== undefined && !isValidTab(payload.tab)) {
+      throw new Error(`Invalid tab: ${payload.tab}`);
+    }
+    if (payload.subType !== undefined && !isValidSubType(payload.subType)) {
+      throw new Error(`Invalid subType: ${payload.subType}`);
+    }
+    if (payload.tab && payload.subType && TAB_OF[payload.subType] !== payload.tab) {
+      throw new Error(`Subtype ${payload.subType} does not belong to tab ${payload.tab}`);
+    }
+    // If only one is provided, derive the other.
+    const subType = payload.subType ?? (sheet.subType as SubType | null);
+    const tab = payload.tab ?? (subType ? TAB_OF[subType as SubType] : (sheet.tab as Tab | null));
+
+    const data: any = { tab, subType };
+    if (payload.isFixedCost !== undefined) {
+      data.isFixedCost = payload.isFixedCost;
+    }
+    // Only flip source to clinic_confirmed (and clear legacyNeedsReview)
+    // when the clinic explicitly confirmed. Toggling the Fixed pill alone
+    // updates the value but keeps the AI-proposed status so Submit stays
+    // blocked until the clinic clicks the prominent Confirm button.
+    if (payload.confirm === true) {
+      data.isFixedCostSource = "clinic_confirmed";
+      data.legacyNeedsReview = false;
+    }
+    const updated = await this.prisma.providerCostSheet.update({
+      where: { id: sheetId },
+      data,
+    });
+    if (sheet.programId && tab && subType) {
+      await this.prisma.costProgram.update({
+        where: { id: sheet.programId },
+        data: { tab, subType },
+      });
+    }
+    return updated;
+  }
+
+  /**
+   * Return the resolved field list for a given (tab, subType), with
+   * mandatory flags already collapsed against the current isFixedCost.
+   */
+  async getResolvedTemplate(tab: string, subType: string, isFixedCost: boolean) {
+    if (!isValidTab(tab)) throw new Error(`Invalid tab: ${tab}`);
+    if (!isValidSubType(subType)) throw new Error(`Invalid subType: ${subType}`);
+    if (TAB_OF[subType] !== tab) throw new Error(`Subtype ${subType} does not belong to tab ${tab}`);
+    return resolveTemplate(subType, isFixedCost);
+  }
+
+  /**
+   * Look up the eligible subtypes for a parent. Reads gender from the
+   * primary User (the account's first member by createdAt) and journey
+   * flags from IntendedParentProfile.
+   */
+  async getMatchingSubtypesForParent(parentAccountId: string) {
+    const account = await this.prisma.parentAccount.findUnique({
+      where: { id: parentAccountId },
+      include: {
+        intendedParentProfile: true,
+        members: { orderBy: { createdAt: "asc" } },
+      },
+    });
+    if (!account) return { subtypes: [], isPartialProfile: true };
+
+    const primaryUser = account.members[0];
+    const ip = account.intendedParentProfile;
+
+    const input: MatcherInput = {
+      userGender: primaryUser?.gender ?? null,
+      partnerGender: primaryUser?.partnerGender ?? null,
+      hasEmbryos: ip?.hasEmbryos ?? null,
+      eggSource: ip?.eggSource ?? null,
+      spermSource: ip?.spermSource ?? null,
+      carrier: ip?.carrier ?? null,
+      interestedServices: ip?.interestedServices ?? null,
+    };
+    return matchSubtypes(input);
+  }
+
+  /**
+   * Parent-facing program list for a clinic. Returns one row per APPROVED
+   * program that matches the parent's eligible subtypes. Items are flattened
+   * into a lineItems array suitable for the card view.
+   */
+  async getProviderParentPrograms(providerId: string, parentAccountId: string) {
+    const { subtypes, isPartialProfile } =
+      await this.getMatchingSubtypesForParent(parentAccountId);
+
+    // Detect provider type so non-IVF agencies use simple eligibility
+    // checks instead of the 14-subtype taxonomy.
+    const provider = await this.prisma.provider.findUnique({
+      where: { id: providerId },
+      include: {
+        services: { include: { providerType: true } },
+      },
+    });
+    // Only APPROVED services count - parents shouldn't see programs for a
+    // service the provider no longer offers (or never had approved). Without
+    // this filter, orphan cost programs from a service that was later removed
+    // continue to render on the parent page indefinitely.
+    const activeServices = (provider?.services ?? []).filter((s: any) => s.status === "APPROVED");
+    const activeProviderTypeIds = new Set(activeServices.map((s: any) => s.providerTypeId));
+    const providerTypeNames = activeServices
+      .map((s: any) => s.providerType?.name?.toLowerCase() ?? "")
+      .filter(Boolean);
+    const isIvfProvider = providerTypeNames.some((n: string) => n.includes("ivf") || n.includes("clinic"));
+    const isSurrogacyProvider = providerTypeNames.some((n: string) => n.includes("surrogacy"));
+    const isEggProvider = providerTypeNames.some((n: string) => n.includes("egg donor") || n.includes("egg bank"));
+    const isSpermProvider = providerTypeNames.some((n: string) => n.includes("sperm bank") || n.includes("sperm donor"));
+
+    // Pull the parent's IP profile + primary user to derive simple
+    // eligibility for non-IVF agencies.
+    const account = parentAccountId
+      ? await this.prisma.parentAccount.findUnique({
+          where: { id: parentAccountId },
+          include: {
+            intendedParentProfile: true,
+            members: { orderBy: { createdAt: "asc" } },
+          },
+        })
+      : null;
+    const ip = account?.intendedParentProfile;
+    const primary = account?.members?.[0];
+
+    // Build the parent's needs set as an array of serviceType tags. Eva
+    // stores values like "Egg donor" / "Sperm donor" / "Gestational surrogate"
+    // / "Self" - normalize before comparing.
+    const eggLower = (ip?.eggSource ?? "").toLowerCase();
+    const spermLower = (ip?.spermSource ?? "").toLowerCase();
+    const carrierLower = (ip?.carrier ?? "").toLowerCase();
+    const eggIsDonor = eggLower.includes("donor");
+    const spermIsDonor = spermLower.includes("donor");
+    const carrierIsSurrogate = carrierLower.includes("surrogate") || carrierLower.includes("gestational");
+    const lacksSperm = primary?.gender === "I'm a woman"
+      && (primary?.partnerGender == null || primary?.partnerGender === "woman");
+
+    const parentNeeds = new Set<string>();
+    // IVF: every parent who needs to create / transfer embryos at a clinic.
+    // Conservative: surface IVF programs whenever the IP profile shows ANY
+    // clinic-side activity (embryos, eggSource, carrier all imply IVF).
+    if (subtypes.length > 0) parentNeeds.add("ivf_clinic");
+    if (ip?.needsSurrogate === true || carrierIsSurrogate) parentNeeds.add("surrogacy");
+    if (ip?.needsEggDonor === true || eggIsDonor) parentNeeds.add("egg_donor");
+    if (spermIsDonor || lacksSperm) parentNeeds.add("sperm_donor");
+
+    // Profile is "partial" when we don't know ANY of the relevant tags.
+    // The client gates the grid behind "Complete your profile" CTA.
+    const knowsSurrogacy = ip?.needsSurrogate != null || ip?.carrier != null;
+    const knowsEggDonor = ip?.needsEggDonor != null || ip?.eggSource != null;
+    const knowsSpermDonor = ip?.spermSource != null || primary?.gender != null;
+    const resolvedIsPartialProfile = isPartialProfile ||
+      (!knowsSurrogacy && !knowsEggDonor && !knowsSpermDonor && subtypes.length === 0);
+
+    if (resolvedIsPartialProfile) {
+      return { programs: [], matchingSubtypes: subtypes, isPartialProfile: true };
+    }
+
+    if (parentNeeds.size === 0) {
+      return { programs: [], matchingSubtypes: subtypes, isPartialProfile: false };
+    }
+
+    const parentNeedsArr = Array.from(parentNeeds);
+
+    // Match programs by serviceTypes intersection with parent needs. Each
+    // program holds 1+ tags (e.g. ["surrogacy"] or ["surrogacy", "egg_donor"]
+    // for a combined package). Postgres `hasSome` returns true when ANY tag
+    // overlaps. IVF-tagged programs additionally filter by the biology-driven
+    // subtype list so we don't show "own eggs" programs to donor-eggs parents.
+    const programs = await this.prisma.costProgram.findMany({
+      where: {
+        providerId,
+        providerTypeId: { in: Array.from(activeProviderTypeIds) as string[] },
+        serviceTypes: { hasSome: parentNeedsArr },
+        costSheets: { some: { status: "APPROVED" } },
+        // Non-IVF programs (no subType) always pass. IVF programs only pass
+        // when their subType is in the parent's matching subtype list.
+        OR: [
+          { subType: null },
+          ...(subtypes.length > 0 ? [{ subType: { in: subtypes } }] : []),
+        ],
+      },
+      include: {
+        costSheets: {
+          where: { status: "APPROVED", parentClientId: null },
+          orderBy: { updatedAt: "desc" },
+          take: 1,
+          include: {
+            items: { orderBy: [{ category: "asc" }, { sortOrder: "asc" }] },
+          },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    const COUNTED_ONLY_KEYS = new Set([
+      "Number of Egg Retrievals Included",
+      "Number of Sperm Collections Included",
+      "Number of Transfers Included",
+    ]);
+
+    // For each matching program, emit one card per pricing tier when tiers
+    // exist (so 1 cycle / 2 cycles / 3 cycles / unlimited become 4 separate
+    // parent-facing cards under the same program). When no tiers exist,
+    // emit a single card as before.
+    const result = programs
+      .filter((p) => p.costSheets.length > 0)
+      .flatMap((p) => {
+        const sheet = p.costSheets[0];
+        const tierItems = sheet.items.filter((i: any) => i.isTier === true);
+        const baselineItems = sheet.items.filter((i: any) => i.isTier !== true);
+
+        // Sum the non-tier (baseline) items - common to every tier card.
+        let baseMin = 0;
+        let baseMax = 0;
+        for (const item of baselineItems) {
+          if (!item.isIncluded) continue;
+          const baseKey = item.key.replace(/\s*\((?:Standard|Variant \d+)\)$/, "");
+          if (COUNTED_ONLY_KEYS.has(baseKey)) continue;
+          const min = item.minValue ?? 0;
+          const max = item.maxValue ?? min;
+          baseMin += min;
+          baseMax += max === 0 && min > 0 ? min : max;
+        }
+
+        const programMeta = {
+          programId: p.id,
+          country: p.country,
+          tab: p.tab,
+          subType: p.subType,
+          subTypeLabel: p.subType && isValidSubType(p.subType) ? SUBTYPE_LABEL[p.subType as SubType] : null,
+          tabLabel: p.tab && isValidTab(p.tab) ? TAB_LABEL[p.tab as Tab] : null,
+          isFixedCost: sheet.isFixedCost,
+          updatedAt: sheet.updatedAt,
+        };
+
+        const mapLineItem = (i: any) => ({
+          category: i.category,
+          key: i.key,
+          minValue: i.minValue,
+          maxValue: i.maxValue,
+          isIncluded: i.isIncluded,
+          comment: i.comment,
+        });
+
+        if (tierItems.length === 0) {
+          return [{
+            ...programMeta,
+            programName: p.name,
+            tierLabel: null as string | null,
+            minTotal: baseMin,
+            maxTotal: baseMax,
+            lineItems: sheet.items.map(mapLineItem),
+          }];
+        }
+
+        return tierItems.map((tier: any) => {
+          const tierMin = tier.minValue ?? 0;
+          const tierMax = tier.maxValue ?? tierMin;
+          // The card's line item list shows the chosen tier as a row plus
+          // every non-tier item. Other tiers are not included on this card -
+          // they're rendered as their own card.
+          const cardLineItems = [mapLineItem(tier), ...baselineItems.map(mapLineItem)];
+          return {
+            ...programMeta,
+            programName: `${p.name} · ${tier.key}`,
+            tierLabel: tier.key,
+            minTotal: baseMin + tierMin,
+            maxTotal: baseMax + (tierMax === 0 && tierMin > 0 ? tierMin : tierMax),
+            lineItems: cardLineItems,
+          };
+        });
+      });
+
+    return { programs: result, matchingSubtypes: subtypes, isPartialProfile: resolvedIsPartialProfile };
   }
 
   async resetOrphanedParsingSheets() {
@@ -217,10 +603,19 @@ export class CostsService {
     }
   }
 
-  async resetProviderCosts(providerId: string, providerTypeId?: string, subType?: string) {
+  async resetProviderCosts(providerId: string, providerTypeId?: string, subType?: string, programId?: string) {
     const where: any = { providerId, parentClientId: null };
-    if (providerTypeId) where.providerTypeId = providerTypeId;
-    this.applySubTypeFilter(where, subType);
+    // Scope the reset to a single program when programId is provided. This
+    // is the upload-first flow's "trash this program's sheet" path - it
+    // bypasses providerTypeId/subType filtering which would otherwise miss
+    // every row (every sheet has a subType after migration; legacy filter
+    // forced subType=null and matched nothing).
+    if (programId) {
+      where.programId = programId;
+    } else {
+      if (providerTypeId) where.providerTypeId = providerTypeId;
+      this.applySubTypeFilter(where, subType);
+    }
 
     const sheets = await this.prisma.providerCostSheet.findMany({ where });
 
@@ -233,7 +628,23 @@ export class CostsService {
 
     await this.prisma.providerCostSheet.deleteMany({ where });
 
-    return { reset: true };
+    // When scoped to a single program, also reset the program row back to
+    // its placeholder state - name + country + tab + subType. Without this,
+    // the program keeps the AI-classified label from the deleted upload and
+    // the next upload looks confused (old name on a freshly-parsed sheet).
+    if (programId) {
+      await this.prisma.costProgram.update({
+        where: { id: programId },
+        data: {
+          name: "Untitled",
+          country: "United States",
+          tab: null,
+          subType: null,
+        },
+      });
+    }
+
+    return { reset: true, sheetsDeleted: sheets.length };
   }
 
   async getDownloadUrl(sheetId: string) {
@@ -290,37 +701,20 @@ export class CostsService {
     });
   }
 
-  // Phase 1 foundation: patch the AI cost-sheet matching metadata. Each
-  // field is independently optional. Runtime-validates the matchingRules
-  // shape so junk JSON can't get persisted into the JSONB column.
-  // Allowed operators are pinned here (mirror the admin-UI dropdown).
-  async updateSheetMatching(
+  // Patch the optional category / description / lineItemTemplate on a
+  // sheet. matchingRules is gone - classification is now derived from
+  // subType + parent profile state via the subtype matcher.
+  async updateSheetMetadata(
     sheetId: string,
     patch: {
       category?: string | null;
       description?: string | null;
-      matchingRules?: Array<{ field: string; operator: string; value: unknown }> | null;
       lineItemTemplate?: unknown;
     },
   ) {
-    const ALLOWED_OPERATORS = ["=", "contains", "in"] as const;
-    if (Array.isArray(patch.matchingRules)) {
-      for (const rule of patch.matchingRules) {
-        if (!rule || typeof rule !== "object") {
-          throw new Error("Invalid matching rule: must be an object");
-        }
-        if (!rule.field || typeof rule.field !== "string") {
-          throw new Error("Invalid matching rule: 'field' must be a non-empty string");
-        }
-        if (!ALLOWED_OPERATORS.includes(rule.operator as any)) {
-          throw new Error(`Invalid matching rule operator: ${rule.operator}. Allowed: ${ALLOWED_OPERATORS.join(", ")}`);
-        }
-      }
-    }
     const data: any = {};
     if (patch.category !== undefined) data.category = patch.category;
     if (patch.description !== undefined) data.description = patch.description;
-    if (patch.matchingRules !== undefined) data.matchingRules = patch.matchingRules as any;
     if (patch.lineItemTemplate !== undefined) data.lineItemTemplate = patch.lineItemTemplate as any;
     return this.prisma.providerCostSheet.update({
       where: { id: sheetId },
@@ -400,7 +794,7 @@ export class CostsService {
     if (items.length > 0) {
       const resolved = await this.resolveTemplateFieldIds(providerTypeId, subType, items);
       await this.prisma.costItem.createMany({
-        data: resolved.map((item, idx) => ({
+        data: resolved.map((item: any, idx) => ({
           providerCostSheetId: sheet.id,
           templateFieldId: item.templateFieldId ?? null,
           category: item.category,
@@ -410,6 +804,7 @@ export class CostsService {
           isCustom: item.isCustom ?? false,
           comment: item.comment ?? null,
           isIncluded: item.isIncluded !== undefined ? item.isIncluded : true,
+          isTier: item.isTier === true,
           sortOrder: item.sortOrder ?? idx,
         })),
       });
@@ -559,7 +954,7 @@ export class CostsService {
     if (items.length > 0) {
       const resolved = await this.resolveTemplateFieldIds(sheet?.providerTypeId, sheet?.subType, items);
       await this.prisma.costItem.createMany({
-        data: resolved.map((item, idx) => ({
+        data: resolved.map((item: any, idx) => ({
           providerCostSheetId: sheetId,
           templateFieldId: item.templateFieldId ?? null,
           category: item.category,
@@ -569,6 +964,7 @@ export class CostsService {
           isCustom: item.isCustom ?? false,
           comment: item.comment ?? null,
           isIncluded: item.isIncluded !== undefined ? item.isIncluded : true,
+          isTier: item.isTier === true,
           sortOrder: item.sortOrder ?? idx,
         })),
       });
@@ -602,6 +998,7 @@ export class CostsService {
           isCustom: item.isCustom,
           comment: item.comment,
           isIncluded: item.isIncluded,
+          isTier: item.isTier === true,
           sortOrder: item.sortOrder,
         })),
       });
@@ -642,23 +1039,53 @@ export class CostsService {
     return programs.map((p) => ({ ...p, latestSheetStatus: statusByProgram.get(p.id) ?? null }));
   }
 
-  async createProgram(providerId: string, providerTypeId: string | null, subType: string | null, name: string, country: string) {
+  async createProgram(providerId: string, providerTypeId: string | null, subType: string | null, name: string, country: string, tab?: string | null) {
     return this.prisma.costProgram.create({
       data: {
         providerId,
         providerTypeId: providerTypeId || null,
         subType: subType || null,
+        tab: tab || null,
         name,
         country,
       },
     });
   }
 
-  async updateProgram(programId: string, name: string, country: string, subType?: string) {
-    return this.prisma.costProgram.update({
+  // Mirror subType/tab to the program's latest non-parent sheet so the
+  // editor's classification card stays consistent with the program-level value.
+  async updateProgram(programId: string, name: string, country: string, subType?: string, tab?: string, serviceTypes?: string[]) {
+    const data: any = { name, country };
+    if (subType !== undefined) data.subType = subType;
+    if (tab !== undefined) data.tab = tab;
+    if (serviceTypes !== undefined) {
+      const ALLOWED = new Set(["ivf_clinic", "surrogacy", "egg_donor", "sperm_donor"]);
+      const cleaned = Array.from(new Set(
+        (Array.isArray(serviceTypes) ? serviceTypes : [])
+          .map((t: any) => String(t).toLowerCase().trim())
+          .filter((t: string) => ALLOWED.has(t)),
+      ));
+      data.serviceTypes = cleaned;
+    }
+    const updated = await this.prisma.costProgram.update({
       where: { id: programId },
-      data: { name, country, ...(subType !== undefined ? { subType } : {}) },
+      data,
     });
+    if (subType !== undefined || tab !== undefined) {
+      const latest = await this.prisma.providerCostSheet.findFirst({
+        where: { programId, parentClientId: null },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      });
+      if (latest) {
+        const sheetData: any = {};
+        if (subType !== undefined) sheetData.subType = subType;
+        if (tab !== undefined) sheetData.tab = tab;
+        sheetData.legacyNeedsReview = false;
+        await this.prisma.providerCostSheet.update({ where: { id: latest.id }, data: sheetData });
+      }
+    }
+    return updated;
   }
 
   async deleteProgram(programId: string) {

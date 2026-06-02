@@ -1,21 +1,31 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { pickCostSheet, type ProviderCostSheetLite, type MatchContext } from "./cost-sheet-matcher";
 import { extractFromChatMessages } from "./cost-sheet-chat-extractor";
+import {
+  matchSubtypes,
+  MatcherInput,
+} from "../costs/cost-sheet-subtype-matcher";
+import {
+  SUBTYPE_LABEL,
+  SubType,
+  isValidSubType,
+} from "../costs/cost-templates-config";
 
 // Phase 2 cost-sheet auto-draft. Fires synchronously-fire-and-forget on
 // Booking creation. Drops an inline approval card (uiCardType =
 // "cost_sheet_draft_approval") in the PROVIDER's session chat. The card
 // is invisible to the parent via chat-router.ts's existing
-// uiCardType notIn filter (extended in Phase 2 step 10).
+// uiCardType notIn filter.
+//
+// Selection is now driven by the subtype matcher: derive the parent's
+// eligible subtypes from their User + IntendedParentProfile, intersect
+// with the provider's APPROVED programs, pick the most recently updated.
+// No more matching-rules JSON, no more rule-count tiebreak.
 //
 // Two-gate feature flag:
 //   Gate 1 (global):  ConciergePromptSection.isActive=true for key
 //                     "auto_cost_sheet_on_booking"
 //   Gate 2 (per-provider): Provider.autoFeaturesEnabled.autoCostSheetDraft === true
-//
-// Both must be true. If either is false, the auto-draft silently skips
-// and existing manual flow is unchanged.
 
 interface AutoDraftResult {
   status: "drafted" | "skipped";
@@ -27,7 +37,7 @@ interface LineItemDraft {
   label: string;
   amountCents: number;
   editable?: boolean;
-  source?: string; // "template" | "chat.surrogateCompCents" | "chat.donorCompCents"
+  source?: string;
 }
 
 @Injectable()
@@ -38,7 +48,6 @@ export class CostSheetAutoDraftService {
 
   async tryAutoDraftForBooking(bookingId: string): Promise<AutoDraftResult> {
     try {
-      // 1. Load booking + provider + parent
       const booking = await this.prisma.booking.findUnique({
         where: { id: bookingId },
         include: {
@@ -58,20 +67,17 @@ export class CostSheetAutoDraftService {
       const providerId = booking.providerUser?.providerId;
       if (!providerId) return this.skip("no_provider");
 
-      // 2. Gate 2 (per-provider)
       const autoFeatures = (booking.providerUser?.provider as any)?.autoFeaturesEnabled || {};
       if (autoFeatures?.autoCostSheetDraft !== true) {
         return this.skip("provider_opted_out");
       }
 
-      // 3. Gate 1 (global)
       const gate1 = await this.prisma.conciergePromptSection.findUnique({
         where: { key: "auto_cost_sheet_on_booking" },
         select: { isActive: true },
       });
       if (!gate1?.isActive) return this.skip("prompt_section_inactive");
 
-      // 4. Find the (parent, provider) AiChatSession - we drop the card there.
       const session = await this.prisma.aiChatSession.findFirst({
         where: {
           userId: booking.parentUserId,
@@ -83,8 +89,6 @@ export class CostSheetAutoDraftService {
       });
       if (!session) return this.skip("no_chat_session");
 
-      // 5. Idempotency: don't re-draft if we already have an unresolved card
-      // or a real ProviderQuote on this session.
       const existingQuote = await this.prisma.providerQuote.findFirst({
         where: { sessionId: session.id, supersededAt: null },
         select: { id: true },
@@ -106,22 +110,50 @@ export class CostSheetAutoDraftService {
         }
       }
 
-      // 6. Load IntendedParentProfile (the matcher needs it).
-      const profile = booking.parentUser.parentAccountId
-        ? await this.prisma.intendedParentProfile.findUnique({
-            where: { parentAccountId: booking.parentUser.parentAccountId },
-          })
-        : null;
-      if (!profile) return this.skip("no_intended_parent_profile");
-
-      // 7. Load approved cost sheets for this provider.
-      const sheets = await this.prisma.providerCostSheet.findMany({
-        where: { providerId, status: "APPROVED" },
-        include: { items: true },
+      // Build matcher input from the parent's User + IntendedParentProfile.
+      if (!booking.parentUser.parentAccountId) {
+        return this.skip("no_parent_account");
+      }
+      const account = await this.prisma.parentAccount.findUnique({
+        where: { id: booking.parentUser.parentAccountId },
+        include: {
+          intendedParentProfile: true,
+          members: { orderBy: { createdAt: "asc" } },
+        },
       });
-      if (sheets.length === 0) return this.skip("no_approved_cost_sheets");
+      if (!account?.intendedParentProfile) return this.skip("no_intended_parent_profile");
 
-      // 8. Extract chat context (last 50 messages).
+      const primary = account.members[0];
+      const matcherInput: MatcherInput = {
+        userGender: primary?.gender ?? null,
+        partnerGender: primary?.partnerGender ?? null,
+        hasEmbryos: account.intendedParentProfile.hasEmbryos ?? null,
+        eggSource: account.intendedParentProfile.eggSource ?? null,
+        spermSource: account.intendedParentProfile.spermSource ?? null,
+        carrier: account.intendedParentProfile.carrier ?? null,
+        interestedServices: account.intendedParentProfile.interestedServices ?? null,
+      };
+      const { subtypes } = matchSubtypes(matcherInput);
+      if (subtypes.length === 0) return this.skip("no_matching_subtypes");
+
+      // Provider's APPROVED programs that match one of the parent's subtypes.
+      // Tiebreak: most recently updated sheet wins.
+      const sheets = await this.prisma.providerCostSheet.findMany({
+        where: {
+          providerId,
+          status: "APPROVED",
+          parentClientId: null,
+          subType: { in: subtypes },
+        },
+        include: { items: true },
+        orderBy: { updatedAt: "desc" },
+      });
+      if (sheets.length === 0) return this.skip("no_matching_approved_sheets");
+
+      const picked = sheets[0];
+      const pickedSubType = isValidSubType(picked.subType) ? (picked.subType as SubType) : null;
+
+      // Chat context for dynamic amounts (surrogate comp, donor comp).
       const recentMsgs = await this.prisma.aiChatMessage.findMany({
         where: { sessionId: session.id },
         orderBy: { createdAt: "desc" },
@@ -130,26 +162,10 @@ export class CostSheetAutoDraftService {
       });
       const chat = extractFromChatMessages(recentMsgs.reverse());
 
-      // 9. Pick the right cost sheet.
-      const matcherCtx: MatchContext = { profile: profile as any, chat };
-      const matcherSheets: ProviderCostSheetLite[] = sheets.map(s => ({
-        id: s.id,
-        status: s.status,
-        matchingRules: (s.matchingRules as any) || null,
-        updatedAt: s.updatedAt,
-        category: s.category,
-        description: s.description,
-        lineItemTemplate: s.lineItemTemplate,
-      }));
-      const { picked, ranked } = pickCostSheet(matcherSheets, matcherCtx);
-      if (!picked) return this.skip("no_matching_sheet");
-
-      // 10. Build line items from template + chat extractions.
       const lineItems = this.buildLineItems(picked, chat);
       const totalCostCents = lineItems.reduce((sum, li) => sum + (li.amountCents || 0), 0);
       if (totalCostCents <= 0) return this.skip("zero_total_cost");
 
-      // 11. Insert the approval card.
       const card = await this.prisma.aiChatMessage.create({
         data: {
           sessionId: session.id,
@@ -160,15 +176,17 @@ export class CostSheetAutoDraftService {
           uiCardType: "cost_sheet_draft_approval",
           uiCardData: {
             sourceCostSheetId: picked.id,
-            sourceCostSheetCategory: (picked as any).category || null,
+            sourceCostSheetCategory: picked.category || null,
+            sourceCostSheetSubType: pickedSubType,
+            sourceCostSheetSubTypeLabel: pickedSubType ? SUBTYPE_LABEL[pickedSubType] : null,
             lineItems,
             totalCostCents,
             notes: null,
-            matchedRuleCount: ranked[0]?.matchedRuleCount ?? 0,
-            candidates: ranked.slice(0, 3).map(c => ({
-              costSheetId: c.costSheet.id,
-              category: (c.costSheet as any).category || null,
-              matchedRuleCount: c.matchedRuleCount,
+            matchedSubtypes: subtypes,
+            candidates: sheets.slice(0, 3).map((s) => ({
+              costSheetId: s.id,
+              subType: s.subType,
+              category: s.category || null,
             })),
             chatExtractions: chat,
             autoDraftedAt: new Date().toISOString(),
@@ -179,7 +197,7 @@ export class CostSheetAutoDraftService {
       });
 
       this.logger.log(
-        `Auto-draft drafted: booking=${bookingId} session=${session.id} sheet=${picked.id} total=$${(totalCostCents / 100).toFixed(2)}`,
+        `Auto-draft drafted: booking=${bookingId} session=${session.id} sheet=${picked.id} subType=${pickedSubType} total=$${(totalCostCents / 100).toFixed(2)}`,
       );
       return { status: "drafted", messageId: card.id };
     } catch (err: any) {
@@ -193,17 +211,16 @@ export class CostSheetAutoDraftService {
     return { status: "skipped", reason };
   }
 
-  // Build line items from the picked cost sheet's lineItemTemplate, then
-  // substitute dynamic values from chat extractions. Template shape:
-  //   [{ label: string, amountCents?: number, dynamicSource?: string, editable?: boolean }]
-  // If no template, fall back to the sheet's CostItem rows (existing model).
+  // Build line items from the picked sheet's lineItemTemplate, then
+  // substitute dynamic values from chat extractions. If no template,
+  // fall back to the sheet's CostItem rows.
   private buildLineItems(
-    sheet: ProviderCostSheetLite & { lineItemTemplate?: unknown; items?: any[] },
+    sheet: { lineItemTemplate: unknown; items: any[] },
     chat: ReturnType<typeof extractFromChatMessages>,
   ): LineItemDraft[] {
     const template = Array.isArray(sheet.lineItemTemplate) ? (sheet.lineItemTemplate as any[]) : null;
     if (template && template.length > 0) {
-      return template.map(li => {
+      return template.map((li) => {
         const label = String(li?.label || "Line item");
         let amountCents = Number(li?.amountCents) || 0;
         let source: string | undefined = "template";
@@ -218,16 +235,15 @@ export class CostSheetAutoDraftService {
         return { label, amountCents, editable: li?.editable !== false, source };
       });
     }
-    // Fallback: synthesize line items from the existing CostItem rows.
     const items = Array.isArray(sheet.items) ? sheet.items : [];
     return items
-      .filter(it => it.isIncluded !== false)
-      .map(it => ({
+      .filter((it) => it.isIncluded !== false)
+      .map((it) => ({
         label: `${it.category}: ${it.key}`,
         amountCents: Math.round(((it.minValue || it.maxValue || 0) as number) * 100),
         editable: true,
         source: "cost_item",
       }))
-      .filter(li => li.amountCents > 0);
+      .filter((li) => li.amountCents > 0);
   }
 }

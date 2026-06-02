@@ -120,8 +120,18 @@ export class CostsController {
   ) {
     (async () => {
       try {
-        this.logger.log(`Background AI parse started for sheet ${sheetId}`);
-        const items = await this.costsAiService.parseFile(buffer, contentType, providerType, filename, subType);
+        this.logger.log(`Background AI parse+classify started for sheet ${sheetId}`);
+        // Single Gemini call returns both items AND classification - saves
+        // the second round-trip vs the old parseFile + classifyDocument
+        // pair. Status stays PARSING until everything is persisted, so
+        // the client's poll only sees DRAFT once name/country/subtype/
+        // Fixed-cost are all on the row.
+        const { items, classification } = await this.costsAiService.parseAndClassifyDocument(
+          buffer, contentType, providerType, filename, subType,
+        );
+        if (classification) {
+          await this.costsService.saveAiClassification(sheetId, classification);
+        }
         await this.costsService.saveParseResults(sheetId, items);
       } catch (err: any) {
         this.logger.error(`Background AI parse failed for sheet ${sheetId}: ${err.message}`);
@@ -204,7 +214,7 @@ export class CostsController {
       const subType = parsed.fields.subType;
       const providerType = parsed.fields.providerType;
       const programId = parsed.fields.programId;
-      const { sheet, buffer, contentType } = await this.costsService.uploadFile(
+      const { sheet, buffer, contentType, programId: resolvedProgramId } = await this.costsService.uploadFile(
         providerId,
         parsed.data,
         parsed.filename,
@@ -218,7 +228,10 @@ export class CostsController {
         this.backgroundParseAndSave(sheet.id, buffer, contentType, providerType, parsed.filename, subType);
       }
 
-      return res.status(201).json(sheet);
+      // Return the programId (whether pre-existing or auto-created in the
+      // upload-first flow) so the client can refresh the program list and
+      // expand the new row.
+      return res.status(201).json({ ...sheet, programId: resolvedProgramId });
     } catch (err: any) {
       this.logger.error(`Upload failed: ${err.message}`);
       if (err.message === "File too large") {
@@ -253,10 +266,11 @@ export class CostsController {
     @Param("providerId") providerId: string,
     @Query("providerTypeId") providerTypeId: string,
     @Query("subType") subType: string,
+    @Query("programId") programId: string,
     @Req() req: Request,
   ) {
     this.assertProviderOrAdmin(req, providerId);
-    const result = await this.costsService.resetProviderCosts(providerId, providerTypeId || undefined, subType || undefined);
+    const result = await this.costsService.resetProviderCosts(providerId, providerTypeId || undefined, subType || undefined, programId || undefined);
 
     const user = this.getUserFromRequest(req);
     const provider = await this.prisma.provider.findUnique({ where: { id: providerId } });
@@ -466,25 +480,71 @@ export class CostsController {
     return this.costsService.updateSheetItems(sheetId, body.items || []);
   }
 
-  // Phase 1 foundation: edit the AI cost-sheet auto-selection metadata
-  // (category, free-text description, matching rules, line-item template).
-  // Read by the Phase 2 auto-draft. Not consumed by anything live yet.
-  @Patch("sheet/:sheetId/matching")
+  /**
+   * Clinic confirms or overrides the AI's proposed classification on a
+   * freshly-parsed (or legacy-migrated) sheet. Setting any of tab/subType/
+   * isFixedCost flips the source to 'clinic_confirmed' and clears
+   * legacyNeedsReview.
+   */
+  @Patch("sheet/:sheetId/classification")
   @UseGuards(SessionOrJwtGuard)
-  async updateSheetMatching(
+  async updateSheetClassification(
     @Param("sheetId") sheetId: string,
-    @Body() body: {
-      category?: string | null;
-      description?: string | null;
-      matchingRules?: Array<{ field: string; operator: string; value: unknown }> | null;
-      lineItemTemplate?: unknown;
-    },
+    @Body() body: { tab?: string; subType?: string; isFixedCost?: boolean; confirm?: boolean },
     @Req() req: Request,
   ) {
     const sheet = await this.costsService.getSheet(sheetId);
     if (!sheet) throw new HttpException("Sheet not found", HttpStatus.NOT_FOUND);
     this.assertProviderOrAdmin(req, sheet.providerId);
-    return this.costsService.updateSheetMatching(sheetId, body);
+    return this.costsService.saveClinicClassification(sheetId, body as any);
+  }
+
+  /**
+   * Resolved template for a (tab, subType) pair. Mandatory flags are
+   * collapsed against the caller-provided isFixedCost so the UI gets a
+   * straight list to render.
+   */
+  @Get("templates/v2/:tab/:subType")
+  @UseGuards(SessionOrJwtGuard)
+  async getResolvedTemplate(
+    @Param("tab") tab: string,
+    @Param("subType") subType: string,
+    @Query("isFixedCost") isFixedCost: string,
+  ) {
+    const fixed = isFixedCost === "true";
+    return this.costsService.getResolvedTemplate(tab, subType, fixed);
+  }
+
+  /**
+   * Parent-facing: which cost-sheet subtypes does this parent qualify for?
+   * Drives the filter on the clinic profile cost grid.
+   */
+  @Get("parent/:parentAccountId/matching-subtypes")
+  @UseGuards(SessionOrJwtGuard)
+  async getMatchingSubtypesForParent(
+    @Param("parentAccountId") parentAccountId: string,
+    @Req() req: Request,
+  ) {
+    this.assertAuthenticated(req);
+    return this.costsService.getMatchingSubtypesForParent(parentAccountId);
+  }
+
+  /**
+   * Parent-facing: which of this clinic's approved programs apply to the
+   * given parent. Returns one card payload per program.
+   */
+  @Get("provider/:providerId/parent-programs")
+  @UseGuards(SessionOrJwtGuard)
+  async getProviderParentPrograms(
+    @Param("providerId") providerId: string,
+    @Query("parentAccountId") parentAccountId: string,
+    @Req() req: Request,
+  ) {
+    this.assertAuthenticated(req);
+    if (!parentAccountId) {
+      throw new HttpException("parentAccountId required", HttpStatus.BAD_REQUEST);
+    }
+    return this.costsService.getProviderParentPrograms(providerId, parentAccountId);
   }
 
   @Post("save-draft")
@@ -524,21 +584,21 @@ export class CostsController {
   @Post("programs")
   @UseGuards(SessionOrJwtGuard)
   async createProgram(
-    @Body() body: { providerId: string; providerTypeId?: string; subType?: string; name: string; country: string },
+    @Body() body: { providerId: string; providerTypeId?: string; subType?: string; tab?: string; name: string; country: string },
     @Req() req: Request,
   ) {
     if (!body.providerId || !body.name || !body.country) {
       throw new HttpException("providerId, name, and country are required", HttpStatus.BAD_REQUEST);
     }
     this.assertProviderOrAdmin(req, body.providerId);
-    return this.costsService.createProgram(body.providerId, body.providerTypeId || null, body.subType || null, body.name, body.country);
+    return this.costsService.createProgram(body.providerId, body.providerTypeId || null, body.subType || null, body.name, body.country, body.tab || null);
   }
 
   @Patch("programs/:programId")
   @UseGuards(SessionOrJwtGuard)
   async updateProgram(
     @Param("programId") programId: string,
-    @Body() body: { name?: string; country?: string; subType?: string },
+    @Body() body: { name?: string; country?: string; subType?: string; tab?: string; serviceTypes?: string[] },
     @Req() req: Request,
   ) {
     const existing = await this.prisma.costProgram.findUnique({ where: { id: programId } });
@@ -549,6 +609,8 @@ export class CostsController {
       body.name ?? existing.name,
       body.country ?? existing.country,
       body.subType,
+      body.tab,
+      body.serviceTypes,
     );
   }
 

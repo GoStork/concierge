@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { CostSheetMatchingRules } from "@/components/cost-sheet-matching-rules";
 import { cn } from "@/lib/utils";
 import { formatMoneyDollars } from "@/lib/format-money";
 import { useToast } from "@/hooks/use-toast";
@@ -62,6 +61,121 @@ import { Label } from "@/components/ui/label";
 import { SingleCountryAutocompleteInput } from "@/components/ui/country-autocomplete-input";
 import { getCountryFlag } from "@/lib/country-flag";
 
+// Mirror of server/src/modules/costs/cost-templates-config.ts. Keep these
+// in sync. We don't import from server/ to avoid bundling server code.
+type IvfTab =
+  | "ivf_cycle"
+  | "embryo_creation_only"
+  | "fet"
+  | "shipping_embryos"
+  | "shipping_eggs_sperm"
+  | "egg_freezing";
+
+type IvfSubType =
+  | "ivf_cycle_own_eggs_own_carry"
+  | "ivf_cycle_own_eggs_surrogate_carry"
+  | "ivf_cycle_donor_eggs_own_carry"
+  | "ivf_cycle_donor_eggs_surrogate_carry"
+  | "ivf_cycle_reciprocal"
+  | "embryo_creation_only_own_eggs"
+  | "embryo_creation_only_donor_eggs"
+  | "fet_to_self"
+  | "fet_to_surrogate"
+  | "shipping_embryos_to_self"
+  | "shipping_embryos_to_surrogate"
+  | "shipping_eggs_sperm_to_self"
+  | "shipping_eggs_sperm_to_surrogate"
+  | "egg_freezing_retrieval_storage";
+
+const IVF_TABS: { id: IvfTab; label: string }[] = [
+  { id: "ivf_cycle", label: "IVF Cycle" },
+  { id: "embryo_creation_only", label: "Embryo Creation Only" },
+  { id: "fet", label: "Frozen Embryo Transfer (FET)" },
+  { id: "shipping_embryos", label: "Shipping Embryos" },
+  { id: "shipping_eggs_sperm", label: "Shipping Eggs + Sperm" },
+  { id: "egg_freezing", label: "Egg Freezing" },
+];
+
+const SUBTYPES_BY_TAB: Record<IvfTab, { id: IvfSubType; label: string }[]> = {
+  ivf_cycle: [
+    { id: "ivf_cycle_own_eggs_own_carry", label: "Own eggs, own/self carry" },
+    { id: "ivf_cycle_own_eggs_surrogate_carry", label: "Own eggs, surrogate carries" },
+    { id: "ivf_cycle_donor_eggs_own_carry", label: "Donor eggs, own/self carry" },
+    { id: "ivf_cycle_donor_eggs_surrogate_carry", label: "Donor eggs, surrogate carries" },
+    { id: "ivf_cycle_reciprocal", label: "Reciprocal (own eggs, partner carries)" },
+  ],
+  embryo_creation_only: [
+    { id: "embryo_creation_only_own_eggs", label: "Own eggs (create + freeze, no transfer)" },
+    { id: "embryo_creation_only_donor_eggs", label: "Donor eggs (create + freeze, no transfer)" },
+  ],
+  fet: [
+    { id: "fet_to_self", label: "Transfer to own/self (in-house embryos)" },
+    { id: "fet_to_surrogate", label: "Transfer to surrogate (in-house embryos)" },
+  ],
+  shipping_embryos: [
+    { id: "shipping_embryos_to_self", label: "Transfer shipped-in embryos to own/self" },
+    { id: "shipping_embryos_to_surrogate", label: "Transfer shipped-in embryos to surrogate" },
+  ],
+  shipping_eggs_sperm: [
+    { id: "shipping_eggs_sperm_to_self", label: "Create embryos + transfer to own/self" },
+    { id: "shipping_eggs_sperm_to_surrogate", label: "Create embryos + transfer to surrogate" },
+  ],
+  egg_freezing: [
+    { id: "egg_freezing_retrieval_storage", label: "Egg retrieval + storage" },
+  ],
+};
+
+function tabOfSubtype(subType: string | null | undefined): IvfTab | null {
+  if (!subType) return null;
+  for (const tab of IVF_TABS) {
+    if (SUBTYPES_BY_TAB[tab.id].some((s) => s.id === subType)) return tab.id;
+  }
+  return null;
+}
+
+function labelOfSubtype(subType: string | null | undefined): string | null {
+  if (!subType) return null;
+  for (const tab of IVF_TABS) {
+    const found = SUBTYPES_BY_TAB[tab.id].find((s) => s.id === subType);
+    if (found) return found.label;
+  }
+  return null;
+}
+
+function isIvfClinicType(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower.includes("ivf") || lower.includes("clinic");
+}
+
+// All upload-first providers (IVF + Surrogacy + Egg Donor + Sperm Bank +
+// Egg Bank). All get the AI dropzone + classification card + tier section,
+// but only IVF surfaces the 14-subtype dropdown.
+function supportsUploadFirst(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower.includes("ivf")
+    || lower.includes("clinic")
+    || lower.includes("surrogacy")
+    || lower.includes("egg donor")
+    || lower.includes("egg bank")
+    || lower.includes("sperm bank")
+    || lower.includes("sperm donor");
+}
+
+// Subtype-having providers. IVF has the 14-subtype taxonomy. Egg donor has
+// the simpler "fresh"/"frozen" pair. Surrogacy / sperm bank have no subtype.
+function hasIvfSubtypes(name: string): boolean {
+  return isIvfClinicType(name);
+}
+function hasFreshFrozenSubtypes(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower.includes("egg donor") || lower.includes("egg bank");
+}
+
+const FRESH_FROZEN_SUBTYPES: { id: string; label: string }[] = [
+  { id: "fresh", label: "Fresh donor cycle" },
+  { id: "frozen", label: "Frozen egg lot" },
+];
+
 interface CostItemData {
   id?: string;
   templateFieldId?: string | null;
@@ -72,6 +186,7 @@ interface CostItemData {
   isCustom: boolean;
   comment: string | null;
   isIncluded: boolean;
+  isTier?: boolean;
   sortOrder: number;
   _isVariant?: boolean;
 }
@@ -113,18 +228,33 @@ interface CostSheet {
   createdAt: string;
   updatedAt: string;
   items: CostItemData[];
+  tab: string | null;
+  subType: string | null;
+  isFixedCost: boolean | null;
+  isFixedCostSource: string | null;
+  legacyNeedsReview: boolean;
 }
 
 interface CostProgram {
   id: string;
   providerId: string;
   providerTypeId: string | null;
+  tab: string | null;
   subType: string | null;
+  serviceTypes: string[];
   name: string;
   country: string;
   createdAt: string;
   latestSheetStatus: string | null;
 }
+
+const SERVICE_TYPE_LABELS: Record<string, string> = {
+  ivf_clinic: "IVF",
+  surrogacy: "Surrogacy",
+  egg_donor: "Egg Donor",
+  sperm_donor: "Sperm Donor",
+};
+const ALL_SERVICE_TYPES = ["surrogacy", "egg_donor", "sperm_donor", "ivf_clinic"] as const;
 
 interface ServiceInfo {
   providerTypeId: string;
@@ -140,6 +270,7 @@ interface SingleCostsTabProps {
   subType?: string;
   programId?: string;
   programSubType?: string | null;
+  programTab?: string | null;
 }
 
 interface ProviderCostsTabProps {
@@ -158,8 +289,17 @@ function calculateTotalCost(
   let minTotal = 0;
   let maxTotal = 0;
 
+  // Tier items are alternatives (parent picks one), not additive. Sum
+  // only the non-tier items into the baseline, then add the CHEAPEST
+  // tier on top so the provider sees one representative total.
+  const tierItems: CostItemData[] = [];
+
   for (const item of costItems) {
     if (!item.isIncluded) continue;
+    if (item.isTier) {
+      tierItems.push(item);
+      continue;
+    }
 
     const baseKey = item.key.replace(/\s*\((?:Standard|Variant \d+)\)$/, "");
     if (isNumericOnlyField(baseKey)) continue;
@@ -180,6 +320,20 @@ function calculateTotalCost(
     } else {
       minTotal += effectiveMin;
       maxTotal += effectiveMax;
+    }
+  }
+
+  if (tierItems.length > 0) {
+    const tierPrices = tierItems
+      .map((t) => t.minValue ?? t.maxValue ?? 0)
+      .filter((v) => v > 0);
+    if (tierPrices.length > 0) {
+      // Spread the tier prices across the range: cheapest tier goes into
+      // the minTotal (parent's entry-point cost), most-expensive into the
+      // maxTotal (top of the range). The program badge then displays
+      // "$X - $Y" automatically via its existing min/max range formatter.
+      minTotal += Math.min(...tierPrices);
+      maxTotal += Math.max(...tierPrices);
     }
   }
 
@@ -290,6 +444,7 @@ function SingleCostsTab({
   subType,
   programId,
   programSubType,
+  programTab,
 }: SingleCostsTabProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -306,6 +461,12 @@ function SingleCostsTab({
   const parseTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [accordionValue, setAccordionValue] = useState<string[]>([]);
+  // Track whether the user has actively clicked one of the Fixed-Cost /
+  // Not Fixed Costs toggles since landing on this sheet. The AI's proposed
+  // value alone doesn't count - the clinic has to interact with the toggle
+  // so we know they actually saw and considered it before clicking Confirm.
+  // Resets when the displayed sheet changes (different program expanded).
+  const [hasInteractedWithFixedToggle, setHasInteractedWithFixedToggle] = useState(false);
 
   // When inside an IVF program, use programSubType (ivf_cycle / shipping_embryos) for the template query.
   // For egg donation programs the existing subType prop (fresh/frozen) is used as-is.
@@ -338,8 +499,16 @@ function SingleCostsTab({
   });
 
   const invalidateAll = () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "sheets", providerTypeId || "all", subType || "default", programId || "none"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "approved", providerTypeId || "all", subType || "default", programId || "none"] });
+    // Use prefix matches so we hit every sheets/approved variant for this
+    // provider regardless of how the query key includes providerTypeId /
+    // subType / programId. Without the prefix the ProgramTotalBadge (which
+    // builds its query key with hardcoded "none" placeholders for those
+    // params) stayed stale after a fresh upload until manual refresh.
+    queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId], exact: false });
+    // Programs query carries name + country + subType + tab which the AI
+    // updates after upload-first parse. Refresh it too so the program row
+    // reflects the new values without a manual reload.
+    queryClient.invalidateQueries({ queryKey: ["/api/costs/programs"] });
   };
 
   const startParseProgress = useCallback(() => {
@@ -550,8 +719,15 @@ function SingleCostsTab({
   const deleteMutation = useMutation({
     mutationFn: async (_sheetId: string) => {
       const resetParams = new URLSearchParams();
-      if (providerTypeId) resetParams.set("providerTypeId", providerTypeId);
-      if (subType) resetParams.set("subType", subType);
+      // Scope the reset to this specific program when we have one. Without
+      // it the server falls back to providerTypeId+subType which doesn't
+      // match anything post-migration (every sheet has a non-null subType).
+      if (programId) {
+        resetParams.set("programId", programId);
+      } else {
+        if (providerTypeId) resetParams.set("providerTypeId", providerTypeId);
+        if (subType) resetParams.set("subType", subType);
+      }
       const resetQs = resetParams.toString() ? `?${resetParams.toString()}` : "";
       await apiRequest("DELETE", `/api/costs/reset/${providerId}${resetQs}`);
     },
@@ -696,6 +872,29 @@ function SingleCostsTab({
     onSuccess: () => {
       invalidateAll();
       toast({ title: "Quote sent to parent", variant: "success" });
+    },
+  });
+
+  // Update the AI-proposed classification (tab + subType + isFixedCost).
+  // The server only flips source -> clinic_confirmed when payload.confirm
+  // === true (sent by the explicit Confirm button). Toggling the Fixed pill
+  // alone just updates the value but keeps the AI-proposed status so the
+  // clinic still has to explicitly Confirm before Submit unblocks.
+  const classificationMutation = useMutation({
+    mutationFn: async (payload: { sheetId: string; tab?: string; subType?: string; isFixedCost?: boolean; confirm?: boolean }) => {
+      return apiRequest("PATCH", `/api/costs/sheet/${payload.sheetId}/classification`, {
+        tab: payload.tab,
+        subType: payload.subType,
+        isFixedCost: payload.isFixedCost,
+        confirm: payload.confirm,
+      });
+    },
+    onSuccess: () => {
+      invalidateAll();
+      queryClient.invalidateQueries({ queryKey: ["/api/costs/programs"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to save classification", description: err.message, variant: "destructive" });
     },
   });
 
@@ -897,6 +1096,13 @@ function SingleCostsTab({
 
   const displaySheet = parentId ? activeCustomSheet : latestMaster;
 
+  // Reset the "user actively touched the Fixed-cost toggle" gate whenever
+  // we land on a new sheet. Already-confirmed sheets implicitly count as
+  // touched so the gate doesn't re-block them.
+  useEffect(() => {
+    setHasInteractedWithFixedToggle(displaySheet?.isFixedCostSource === "clinic_confirmed");
+  }, [displaySheet?.id, displaySheet?.isFixedCostSource]);
+
   useEffect(() => {
     if (parsingSheet && !isParsing) {
       if (pollRef.current) clearInterval(pollRef.current);
@@ -918,12 +1124,20 @@ function SingleCostsTab({
       isCustom: item.isCustom,
       comment: item.comment,
       isIncluded: item.isIncluded,
+      isTier: item.isTier === true,
       sortOrder: item.sortOrder,
       _isVariant: isVariant(item.key),
     });
 
     const filterBySubType = (items: CostItemData[]): CostItemData[] => {
-      if (!effectiveSubType) return items;
+      // Legacy category-filter only kicks in for the original egg-donation
+      // fresh/frozen distinction. For IVF clinic subtypes (new 14-subtype
+      // taxonomy), keep every item the AI extracted - filtering them by the
+      // OLD seeded-IVF template categories drops the AI's headline / new
+      // category items and produces a wrong Estimated Total vs the badge.
+      if (effectiveSubType !== "fresh" && effectiveSubType !== "frozen") {
+        return items;
+      }
       const templateCategories = new Set(templateItems.map((t) => t.category));
       return items.filter((item) => templateCategories.has(item.category) || item.isCustom || item._isVariant);
     };
@@ -958,18 +1172,26 @@ function SingleCostsTab({
         isCustom: item.isCustom,
         comment: item.comment,
         isIncluded: item.isIncluded,
+        isTier: item.isTier === true,
         sortOrder: item.sortOrder,
         _isVariant: isVariant(item.key),
       }));
+      // Legacy category-filter is only correct for the egg-donation
+      // fresh/frozen distinction. For IVF subtypes the AI emits items in
+      // categories not in the seeded IVF template (e.g. the headline
+      // package line) - filtering by template categories would drop them
+      // from the form and the Estimated Total would silently disagree
+      // with the program badge.
+      const isLegacyEggDonationSubType = effectiveSubType === "fresh" || effectiveSubType === "frozen";
       if (templateItems.length > 0) {
         const merged = mergeSheetWithTemplate(mapped, templateItems);
-        if (effectiveSubType) {
+        if (isLegacyEggDonationSubType) {
           const templateCategories = new Set(templateItems.map((t) => t.category));
           return merged.filter((item) => templateCategories.has(item.category) || item.isCustom || item._isVariant);
         }
         return merged;
       }
-      if (effectiveSubType) {
+      if (isLegacyEggDonationSubType) {
         const templateCategories = new Set(templateItems.map((t) => t.category));
         return mapped.filter((item: CostItemData) => templateCategories.has(item.category) || item.isCustom || item._isVariant);
       }
@@ -1000,8 +1222,16 @@ function SingleCostsTab({
     return order;
   }, [templateItems]);
 
+  // Pricing tier items render in a dedicated card above the accordion.
+  // We keep their _editIdx so the same input handlers (updateEditItem,
+  // removeItem) work without special-casing.
+  const tierItems: (CostItemData & { _editIdx: number })[] = [];
   const groupedItems: Record<string, (CostItemData & { _editIdx: number })[]> = {};
   displayItems.forEach((item, idx) => {
+    if (item.isTier) {
+      tierItems.push({ ...item, _editIdx: idx });
+      return;
+    }
     const cat = item.category || "Other";
     if (!groupedItems[cat]) groupedItems[cat] = [];
     groupedItems[cat].push({ ...item, _editIdx: idx });
@@ -1049,6 +1279,23 @@ function SingleCostsTab({
       )
     : [];
 
+  // Block Submit until the clinic confirms the AI classification. Triggers
+  // when the sheet is AI-proposed and not yet confirmed, OR when the sheet
+  // is a legacy-migrated row that the clinic hasn't reviewed, OR when the
+  // sheet has no subtype yet (Awaiting classification state). The warning
+  // banner above the form spells out what's blocking.
+  // Subtype is only a confirmation requirement for provider types that
+  // HAVE subtypes (IVF + egg donor). Surrogacy + sperm bank just need the
+  // Fixed/Not-Fixed acknowledgement.
+  const requiresSubtype = hasIvfSubtypes(providerType) || hasFreshFrozenSubtypes(providerType);
+  const needsClassificationConfirmation = !!displaySheet && !parentId && displaySheet.status !== "PARSING" && (
+    (requiresSubtype && !displaySheet.subType) ||
+    displaySheet.legacyNeedsReview === true ||
+    displaySheet.isFixedCostSource === "ai_proposed" ||
+    displaySheet.isFixedCostSource == null ||
+    displaySheet.isFixedCost == null
+  );
+
   const diffStats = useMemo(() => {
     if (!showDiffView || !pendingSheet) return null;
     let changed = 0;
@@ -1083,7 +1330,7 @@ function SingleCostsTab({
   }
 
   return (
-    <div className="space-y-6" data-testid="provider-costs-tab">
+    <div className="space-y-6 pb-28" data-testid="provider-costs-tab">
       {displaySheet?.status === "REJECTED" && displaySheet.adminFeedback && (
         <Alert variant="destructive" data-testid="alert-rejection-feedback">
           <AlertTriangle className="h-4 w-4" />
@@ -1091,6 +1338,158 @@ function SingleCostsTab({
             <strong>Rejection feedback:</strong> {displaySheet.adminFeedback}
           </AlertDescription>
         </Alert>
+      )}
+
+      {/* Legacy-review banner: shown for sheets auto-migrated from the
+          2-subtype world. Clinic must confirm tab + subtype + Fixed-cost
+          before the banner clears. */}
+      {displaySheet?.legacyNeedsReview && displaySheet.status !== "PARSING" && (
+        <Alert className="border-[hsl(var(--brand-warning))]/40 bg-[hsl(var(--brand-warning))]/10" data-testid="alert-legacy-review">
+          <AlertTriangle className="h-4 w-4 text-[hsl(var(--brand-warning))]" />
+          <AlertDescription className="text-sm">
+            <strong>Confirm this program's classification.</strong> We reorganized cost sheets into 4 tabs with subtypes. We auto-defaulted this sheet to{" "}
+            <span className="font-semibold">{labelOfSubtype(displaySheet.subType) ?? "Own eggs, own/self carry"}</span> -
+            please confirm or change it below.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* AI classification + Fixed/Not-Fixed confirmation card. The clinic
+          MUST confirm before they can submit for approval - until they do,
+          the card has an amber warning style and Submit is blocked.
+          Shown for every provider type now (surrogacy / sperm bank only see
+          the Fixed/Not-Fixed pair; egg donor sees fresh/frozen label;
+          IVF sees the full subtype label). Suppressed only when no sheet. */}
+      {displaySheet && !parentId && displaySheet.status !== "PARSING" && (displaySheet.subType || !hasIvfSubtypes(providerType)) && (
+        <Card className={cn(
+          "border-2",
+          needsClassificationConfirmation
+            ? "border-[hsl(var(--brand-warning))] bg-[hsl(var(--brand-warning))]/10"
+            : "border-[hsl(var(--brand-success))]/40 bg-[hsl(var(--brand-success))]/5"
+        )} data-testid="card-classification">
+          <CardContent className="py-4 space-y-3">
+            {needsClassificationConfirmation && (
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-5 h-5 text-[hsl(var(--brand-warning))] shrink-0 mt-0.5" />
+                <div>
+                  {/* Heading: readable foreground color. The amber accent
+                      lives on the card border + icon, not on the text - keeps
+                      contrast high against the amber-tinted card surface. */}
+                  <p className="text-sm font-semibold text-foreground">
+                    Confirm the AI classification before submitting
+                  </p>
+                  <p className="text-xs text-foreground/80 mt-0.5">
+                    Review the program type below. Click <strong>Fixed-Cost</strong> or <strong>Not Fixed Costs</strong> to acknowledge the AI's choice (or change it), then click <strong>Confirm Classification</strong>. You can't submit for approval until this is confirmed.
+                  </p>
+                </div>
+              </div>
+            )}
+            <div className="flex items-start gap-3 flex-wrap">
+              <div className="flex-1 min-w-[200px] space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Only show "Cost sheet type" row when the provider type
+                      actually has a subtype distinction (IVF or egg donor).
+                      Surrogacy + sperm bank just need the Fixed/Not-Fixed
+                      acknowledgement. */}
+                  {hasIvfSubtypes(providerType) && displaySheet.subType && (
+                    <>
+                      <span className="text-xs text-muted-foreground">Cost sheet type:</span>
+                      <span className="text-sm font-medium">{labelOfSubtype(displaySheet.subType)}</span>
+                    </>
+                  )}
+                  {hasFreshFrozenSubtypes(providerType) && displaySheet.subType && (
+                    <>
+                      <span className="text-xs text-muted-foreground">Cost sheet type:</span>
+                      <span className="text-sm font-medium">{FRESH_FROZEN_SUBTYPES.find((s) => s.id === displaySheet.subType)?.label ?? displaySheet.subType}</span>
+                    </>
+                  )}
+                  {!hasIvfSubtypes(providerType) && !hasFreshFrozenSubtypes(providerType) && (
+                    <span className="text-xs text-muted-foreground">Cost-sheet classification:</span>
+                  )}
+                  {displaySheet.isFixedCostSource === "ai_proposed" && (
+                    <Badge className="bg-background text-[hsl(var(--brand-warning))] border border-[hsl(var(--brand-warning))]/50 text-xs font-medium">AI proposed</Badge>
+                  )}
+                  {displaySheet.isFixedCostSource === "clinic_confirmed" && (
+                    <Badge className="bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] border-[hsl(var(--brand-success))]/30 text-xs">
+                      <Check className="w-3 h-3 mr-1" />Confirmed
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {displaySheet.isFixedCost === true
+                    ? "Fixed-cost program - bundle price covers stated quantities (e.g. 3 retrievals, unlimited transfers)."
+                    : displaySheet.isFixedCost === false
+                    ? "Not a fixed-cost program - costs are itemized per service."
+                    : "Tell us whether this program is a bundled package or itemized pricing."}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Segmented toggle: white interior so the unselected label
+                    sits on a clean surface (was blending into the cream-on-
+                    amber card behind it). Border tinted with --accent to
+                    cohere with the mauve selected pill. */}
+                <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm">
+                  <button
+                    type="button"
+                    className={cn(
+                      "px-3 py-1.5 text-xs rounded-[var(--radius)] transition-all font-medium",
+                      displaySheet.isFixedCost === true
+                        ? "bg-accent text-accent-foreground shadow-sm"
+                        : "text-foreground hover:bg-accent/10"
+                    )}
+                    onClick={() => {
+                      setHasInteractedWithFixedToggle(true);
+                      classificationMutation.mutate({ sheetId: displaySheet.id, isFixedCost: true });
+                    }}
+                    disabled={classificationMutation.isPending}
+                    data-testid="btn-mark-fixed"
+                  >
+                    Fixed-Cost
+                  </button>
+                  <button
+                    type="button"
+                    className={cn(
+                      "px-3 py-1.5 text-xs rounded-[var(--radius)] transition-all font-medium",
+                      displaySheet.isFixedCost === false
+                        ? "bg-accent text-accent-foreground shadow-sm"
+                        : "text-foreground hover:bg-accent/10"
+                    )}
+                    onClick={() => {
+                      setHasInteractedWithFixedToggle(true);
+                      classificationMutation.mutate({ sheetId: displaySheet.id, isFixedCost: false });
+                    }}
+                    disabled={classificationMutation.isPending}
+                    data-testid="btn-mark-not-fixed"
+                  >
+                    Not Fixed Costs
+                  </button>
+                </div>
+                {needsClassificationConfirmation && displaySheet.isFixedCost !== null && (
+                  <Button
+                    size="sm"
+                    className="h-9 font-semibold shadow-md"
+                    disabled={classificationMutation.isPending || !hasInteractedWithFixedToggle}
+                    title={!hasInteractedWithFixedToggle ? "Click Fixed-Cost or Not Fixed Costs first to acknowledge the AI's choice" : undefined}
+                    onClick={() =>
+                      classificationMutation.mutate({
+                        sheetId: displaySheet.id,
+                        isFixedCost: displaySheet.isFixedCost ?? false,
+                        confirm: true,
+                      })
+                    }
+                    data-testid="btn-confirm-classification"
+                  >
+                    {classificationMutation.isPending
+                      ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                      : <Check className="w-3.5 h-3.5 mr-1.5" />
+                    }
+                    Confirm Classification
+                  </Button>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {!parentId && (
@@ -1392,6 +1791,94 @@ function SingleCostsTab({
               <p className="text-xs text-muted-foreground mt-2">
                 An approved master cost sheet is required first.
               </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {tierItems.length > 0 && (
+        <Card className="border-2 border-accent/40 bg-accent/5" data-testid="card-pricing-tiers">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-accent" />
+              Pricing Tiers
+              <Badge variant="outline" className="text-xs bg-background border-accent/40 text-accent">
+                {tierItems.length} option{tierItems.length === 1 ? "" : "s"}
+              </Badge>
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              The parent picks one tier. Each tier renders as its own card on the parent profile, with the same Included items repeated under each.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {tierItems.map((tier) => (
+              <div
+                key={`tier-${tier._editIdx}`}
+                className="flex items-center gap-3 p-3 rounded-[var(--radius)] bg-background border border-border"
+                data-testid={`tier-row-${tier._editIdx}`}
+              >
+                <div className="flex-1">
+                  <Input
+                    value={tier.key}
+                    onChange={(e) => updateEditItem(tier._editIdx, "key", e.target.value)}
+                    placeholder="Tier name (e.g. Single Cycle, Two Cycles, Unlimited)"
+                    className="h-8 text-sm font-medium border-0 px-1 focus-visible:ring-1"
+                    disabled={!effectiveEditing}
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">$</span>
+                  <Input
+                    type="number"
+                    value={tier.minValue ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value === "" ? null : Number(e.target.value);
+                      updateEditItem(tier._editIdx, "minValue", v);
+                      updateEditItem(tier._editIdx, "maxValue", v);
+                    }}
+                    placeholder="Price"
+                    className="h-8 text-sm w-32 tabular-nums"
+                    disabled={!effectiveEditing}
+                  />
+                </div>
+                {effectiveEditing && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0 text-destructive"
+                    onClick={() => removeItem(tier._editIdx)}
+                    data-testid={`tier-delete-${tier._editIdx}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                )}
+              </div>
+            ))}
+            {effectiveEditing && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full border-dashed"
+                onClick={() => {
+                  setEditItems((prev) => [
+                    ...prev,
+                    {
+                      category: "Pricing Tiers",
+                      key: "",
+                      minValue: null,
+                      maxValue: null,
+                      isCustom: true,
+                      comment: null,
+                      isIncluded: true,
+                      isTier: true,
+                      sortOrder: prev.length,
+                    },
+                  ]);
+                }}
+                data-testid="btn-add-tier"
+              >
+                <Plus className="w-3.5 h-3.5 mr-1" /> Add Pricing Tier
+              </Button>
             )}
           </CardContent>
         </Card>
@@ -1834,6 +2321,12 @@ function SingleCostsTab({
               Missing: {missingMandatory.join(", ")}
             </p>
           )}
+          {needsClassificationConfirmation && missingMandatory.length === 0 && (
+            <p className="text-xs text-[hsl(var(--brand-warning))] font-medium self-center mr-2 flex items-center gap-1" data-testid="text-needs-classification-confirm">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              Confirm the AI classification first
+            </p>
+          )}
           <Button
             onClick={() => {
               if (autoSavePendingTimerRef.current) { clearTimeout(autoSavePendingTimerRef.current); autoSavePendingTimerRef.current = null; }
@@ -1842,7 +2335,7 @@ function SingleCostsTab({
                 sheetId: displaySheet?.status === "APPROVED" ? undefined : displaySheet?.id,
               });
             }}
-            disabled={submitMutation.isPending || missingMandatory.length > 0 || isParsing}
+            disabled={submitMutation.isPending || missingMandatory.length > 0 || isParsing || needsClassificationConfirmation}
             data-testid="btn-submit-for-approval"
           >
             {submitMutation.isPending ? (
@@ -1851,29 +2344,6 @@ function SingleCostsTab({
             Submit for Approval
           </Button>
         </div>
-      )}
-
-      {/* Phase 1: AI cost-sheet auto-selection editor. Collapsed by default
-          so it doesn't clutter the existing UI. Wired but inert until Phase 2
-          turns on the auto-draft. */}
-      {displaySheet && !parentId && (
-        <Accordion type="single" collapsible className="mt-4">
-          <AccordionItem value="auto-matching" className="border border-border rounded-[var(--radius)] bg-secondary/30">
-            <AccordionTrigger className="px-4 py-2 text-sm font-medium hover:no-underline" data-testid="trigger-auto-matching-rules">
-              Auto matching rules (preview)
-            </AccordionTrigger>
-            <AccordionContent className="px-4 pb-4">
-              <CostSheetMatchingRules
-                sheetId={displaySheet.id}
-                initial={{
-                  category: (displaySheet as any).category ?? null,
-                  description: (displaySheet as any).description ?? null,
-                  matchingRules: (displaySheet as any).matchingRules ?? null,
-                }}
-              />
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
       )}
 
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
@@ -1933,18 +2403,24 @@ function ProgramTotalBadge({ providerId, programId, isAdminView }: { providerId:
       fetch(`/api/costs/provider/${providerId}/approved?programId=${programId}`).then((r) => r.json()),
   });
 
+  // Always load the full sheet list so the badge can fall back to a DRAFT
+  // or PENDING sheet when there's no APPROVED one yet. Previously this only
+  // ran for admins, which hid the badge on freshly-uploaded provider sheets.
   const allSheetsQuery = useQuery<CostSheet[]>({
     queryKey: ["/api/costs/provider", providerId, "sheets", "none", "default", programId],
     queryFn: () =>
       fetch(`/api/costs/provider/${providerId}?programId=${programId}`).then((r) => r.json()),
-    enabled: !!isAdminView,
   });
 
   let sheet: CostSheet | null | undefined = approvedQuery.data;
-  if (isAdminView && !sheet?.items?.length) {
+  let isDraft = false;
+  if (!sheet?.items?.length) {
     const sheets = allSheetsQuery.data;
     if (sheets?.length) {
-      sheet = sheets[sheets.length - 1];
+      // Latest non-parent-client sheet (most recent draft / pending / etc.)
+      const masterSheets = sheets.filter((s) => !s.parentClientId);
+      sheet = masterSheets[0] ?? sheets[0];
+      isDraft = sheet?.status !== "APPROVED";
     }
   }
 
@@ -1958,7 +2434,12 @@ function ProgramTotalBadge({ providerId, programId, isAdminView }: { providerId:
       ? `${formatCurrency(totals.minTotal)} - ${formatCurrency(totals.maxTotal)}`
       : formatCurrency(totals.maxTotal || totals.minTotal);
 
-  return <span className="text-sm font-semibold tabular-nums">{display}</span>;
+  return (
+    <span className="text-sm font-semibold tabular-nums text-primary" data-testid="program-total-badge">
+      {display}
+      {isDraft && <span className="ml-1 text-xs font-normal text-muted-foreground">(draft)</span>}
+    </span>
+  );
 }
 
 function ProgramsView({
@@ -1969,6 +2450,7 @@ function ProgramsView({
   canManagePrograms,
   parentId,
   subType,
+  tabFilter,
 }: {
   providerType: string;
   providerTypeId?: string;
@@ -1977,6 +2459,7 @@ function ProgramsView({
   canManagePrograms?: boolean;
   parentId?: string;
   subType?: string;
+  tabFilter?: IvfTab;
 }) {
   const { toast } = useToast();
   const [expandedProgramId, setExpandedProgramId] = useState<string | null>(null);
@@ -1998,7 +2481,13 @@ function ProgramsView({
     enabled: !!providerId,
   });
 
-  const programs = Array.isArray(programsQuery.data) ? programsQuery.data : [];
+  const allPrograms = Array.isArray(programsQuery.data) ? programsQuery.data : [];
+  // When `tabFilter` is provided (IVF clinic 4-tab wrapper), only show
+  // programs whose tab matches. Programs with no tab yet (newly created or
+  // pre-classification) appear in EVERY tab so the clinic can claim them.
+  const programs = tabFilter
+    ? allPrograms.filter((p) => !p.tab || p.tab === tabFilter)
+    : allPrograms;
 
   // Auto-expand the first program with a pending review when admin lands on this tab.
   // Uses a ref so collapsing manually never re-triggers the auto-expand.
@@ -2014,7 +2503,11 @@ function ProgramsView({
 
   const createMutation = useMutation({
     mutationFn: async (data: { name: string; country: string }) => {
-      const res = await apiRequest("POST", "/api/costs/programs", { providerId, providerTypeId, subType, ...data });
+      const payload: any = { providerId, providerTypeId, subType, ...data };
+      // Default the new program into the tab the clinic is currently viewing.
+      // Subtype stays null until upload + AI classifies (or the clinic picks).
+      if (tabFilter) payload.tab = tabFilter;
+      const res = await apiRequest("POST", "/api/costs/programs", payload);
       return res.json() as Promise<CostProgram>;
     },
     onSuccess: (newProgram: CostProgram) => {
@@ -2054,16 +2547,66 @@ function ProgramsView({
     },
   });
 
+  // Update the program-level subType (also writes back to the program's
+  // latest sheet via the controller).
   const updateSubTypeMutation = useMutation({
-    mutationFn: ({ id, subType }: { id: string; subType: string }) =>
-      apiRequest("PATCH", `/api/costs/programs/${id}`, { subType }),
+    mutationFn: ({ id, subType, tab }: { id: string; subType: string; tab?: string }) =>
+      apiRequest("PATCH", `/api/costs/programs/${id}`, { subType, ...(tab ? { tab } : {}) }),
     onSuccess: () => invalidatePrograms(),
     onError: (err: any) => {
       toast({ title: "Failed to update program type", description: err.message, variant: "destructive" });
     },
   });
 
-  const isIvfType = providerType.toLowerCase().includes("ivf");
+  // Update the program's serviceTypes tag array. Lets the provider override
+  // an AI-misclassified tag set (or add a tag when a sheet bundles multiple
+  // services). Server validates against the allowed enum.
+  const updateServiceTypesMutation = useMutation({
+    mutationFn: ({ id, serviceTypes }: { id: string; serviceTypes: string[] }) =>
+      apiRequest("PATCH", `/api/costs/programs/${id}`, { serviceTypes }),
+    onSuccess: () => invalidatePrograms(),
+    onError: (err: any) => {
+      toast({ title: "Failed to update service tags", description: err.message, variant: "destructive" });
+    },
+  });
+
+  // Upload-first flow (IVF clinics): drop a file with no programId. Server
+  // auto-creates a placeholder program; AI fills in name + country + subtype
+  // + Fixed/Not-Fixed once parsing finishes. The returned programId tells us
+  // which row to expand.
+  const uploadFirstMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("providerId", providerId);
+      formData.append("providerType", providerType);
+      if (providerTypeId) formData.append("providerTypeId", providerTypeId);
+      const res = await fetch("/api/costs/upload", { method: "POST", body: formData, credentials: "include" });
+      if (!res.ok) throw new Error((await res.json()).message || "Upload failed");
+      return res.json() as Promise<{ id: string; programId: string }>;
+    },
+    onSuccess: (result) => {
+      invalidatePrograms();
+      setExpandedProgramId(result.programId);
+      toast({ title: "Uploaded - AI is classifying your cost sheet...", variant: "success" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const [isUploadDragging, setIsUploadDragging] = useState(false);
+  const uploadFileInputRef = useRef<HTMLInputElement>(null);
+
+  const isIvfType = isIvfClinicType(providerType);
+  // Every upload-first provider (IVF + surrogacy + egg donor + sperm bank)
+  // gets the dropzone and the classification card. Only the subtype layer
+  // differs - IVF uses the 14-subtype taxonomy, egg donor uses fresh/frozen,
+  // surrogacy/sperm-bank get nothing.
+  const uploadFirstType = supportsUploadFirst(providerType);
+  const showFreshFrozenSubtype = hasFreshFrozenSubtypes(providerType);
+  const showIvfSubtypeDropdown = hasIvfSubtypes(providerType);
+  const showAnySubtypeDropdown = showIvfSubtypeDropdown || showFreshFrozenSubtype;
 
   function startEdit(program: CostProgram) {
     setEditingProgramId(program.id);
@@ -2084,13 +2627,18 @@ function ProgramsView({
     setEditingProgramId(null);
   }
 
+  const canManage = isAdminView || canManagePrograms;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           {programs.length === 0 ? "No programs yet" : `${programs.length} program${programs.length !== 1 ? "s" : ""}`}
         </p>
-        {(isAdminView || canManagePrograms) && !isAddingProgram && (
+        {/* Legacy add-program button only for providers that don't support
+            upload-first (e.g. legal services). All fertility-tier providers
+            use the dropzone instead. */}
+        {canManage && !uploadFirstType && !isAddingProgram && (
           <Button size="sm" variant="outline" onClick={startAdd}>
             <Plus className="w-4 h-4 mr-1" />
             Add Program
@@ -2098,7 +2646,69 @@ function ProgramsView({
         )}
       </div>
 
-      {isAddingProgram && (
+      {/* Upload-first dropzone. Available to IVF + Surrogacy + Egg Donor +
+          Sperm Bank. The server auto-creates a placeholder program; AI fills
+          in name, country, Fixed/Not-Fixed, and (for IVF / Egg Donor) the
+          subtype once parsing finishes. */}
+      {canManage && uploadFirstType && (
+        <div
+          className={cn(
+            "border-2 border-dashed rounded-[var(--container-radius)] p-6 text-center transition-colors cursor-pointer",
+            isUploadDragging
+              ? "border-primary bg-primary/5"
+              : uploadFirstMutation.isPending
+              ? "border-primary/40 bg-primary/5 cursor-wait"
+              : "border-border hover:border-primary/50"
+          )}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!uploadFirstMutation.isPending) setIsUploadDragging(true);
+          }}
+          onDragLeave={() => setIsUploadDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsUploadDragging(false);
+            const file = e.dataTransfer.files[0];
+            if (file && !uploadFirstMutation.isPending) uploadFirstMutation.mutate(file);
+          }}
+          onClick={() => {
+            if (!uploadFirstMutation.isPending) uploadFileInputRef.current?.click();
+          }}
+          data-testid="dropzone-upload-first"
+        >
+          <input
+            ref={uploadFileInputRef}
+            type="file"
+            className="hidden"
+            accept=".pdf,.xlsx,.xls"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) uploadFirstMutation.mutate(file);
+            }}
+          />
+          {uploadFirstMutation.isPending ? (
+            <>
+              <Loader2 className="w-8 h-8 mx-auto mb-2 text-primary animate-spin" />
+              <p className="text-sm font-medium text-foreground">Uploading...</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                AI will set up the program for you in a moment.
+              </p>
+            </>
+          ) : (
+            <>
+              <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+              <p className="text-sm font-medium text-foreground">
+                Drop a cost sheet here to create a new program
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                PDF, XLS, XLSX (max 20MB) - AI auto-detects program name, country, type, and Fixed/Not-Fixed.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
+      {isAddingProgram && !uploadFirstType && (
         <div className="border rounded-[var(--container-radius)] p-4 space-y-3 bg-muted/20">
           <p className="text-sm font-medium">New Program</p>
           <div className="grid grid-cols-2 gap-3">
@@ -2147,7 +2757,21 @@ function ProgramsView({
 
         return (
           <div key={program.id} className="border rounded-[var(--container-radius)] overflow-hidden">
-            <div className="flex items-center gap-3 px-4 py-3 bg-muted/20">
+            <div
+              className={cn(
+                "flex items-center gap-3 px-4 py-3 bg-muted/20 transition-colors",
+                !isEditing && "cursor-pointer hover:bg-muted/40"
+              )}
+              onClick={isEditing ? undefined : () => setExpandedProgramId(isExpanded ? null : program.id)}
+              role={isEditing ? undefined : "button"}
+              tabIndex={isEditing ? undefined : 0}
+              onKeyDown={isEditing ? undefined : (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setExpandedProgramId(isExpanded ? null : program.id);
+                }
+              }}
+            >
               {isEditing ? (
                 <>
                   <div className="flex-1 grid grid-cols-2 gap-3">
@@ -2184,6 +2808,35 @@ function ProgramsView({
                         : <Globe className="w-3 h-3" />}
                       {program.country}
                     </Badge>
+                    {/* Service-type tags - 1+ per program (e.g. surrogacy +
+                        egg_donor for a combined package). Always visible. */}
+                    {(program.serviceTypes ?? []).map((tag) => (
+                      <Badge
+                        key={`svc-${program.id}-${tag}`}
+                        variant="outline"
+                        className="text-xs bg-accent/15 text-accent border-accent/40"
+                        data-testid={`program-service-tag-${tag}`}
+                      >
+                        {SERVICE_TYPE_LABELS[tag] ?? tag}
+                      </Badge>
+                    ))}
+                    {(program.serviceTypes ?? []).length === 0 && (
+                      <Badge variant="outline" className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/30">
+                        Awaiting service tag
+                      </Badge>
+                    )}
+                    {showAnySubtypeDropdown && program.subType && (
+                      <Badge variant="outline" className="text-xs bg-secondary/40 border-secondary text-foreground/80">
+                        {showIvfSubtypeDropdown
+                          ? labelOfSubtype(program.subType)
+                          : (FRESH_FROZEN_SUBTYPES.find((s) => s.id === program.subType)?.label ?? program.subType)}
+                      </Badge>
+                    )}
+                    {showAnySubtypeDropdown && !program.subType && (program.serviceTypes ?? []).length > 0 && (
+                      <Badge variant="outline" className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/30">
+                        Awaiting classification
+                      </Badge>
+                    )}
                     <ProgramTotalBadge providerId={providerId} programId={program.id} isAdminView={isAdminView} />
                     {isAdminView && program.latestSheetStatus === "PENDING" && (
                       <Badge className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/40 border">
@@ -2197,12 +2850,15 @@ function ProgramsView({
                         size="sm"
                         variant="ghost"
                         className="h-7 w-7 p-0"
-                        onClick={() => startEdit(program)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startEdit(program);
+                        }}
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </Button>
                       <AlertDialog>
-                        <AlertDialogTrigger asChild>
+                        <AlertDialogTrigger asChild onClick={(e) => e.stopPropagation()}>
                           <Button size="sm" variant="ghost" className="h-7 w-7 p-0">
                             <Trash2 className="w-3.5 h-3.5 text-destructive" />
                           </Button>
@@ -2230,43 +2886,94 @@ function ProgramsView({
                       </AlertDialog>
                     </>
                   )}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 w-7 p-0"
-                    onClick={() => setExpandedProgramId(isExpanded ? null : program.id)}
-                  >
+                  {/* Chevron is purely visual now - the whole row toggles. */}
+                  <div className="h-7 w-7 flex items-center justify-center text-muted-foreground" aria-hidden>
                     {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                  </Button>
+                  </div>
                 </>
               )}
             </div>
 
             {isExpanded && (
               <div className="border-t">
-                {isIvfType && (
-                  <div className="px-4 pt-3 pb-1">
-                    <div className="inline-flex gap-0.5 p-1 bg-muted rounded-[var(--radius)]">
-                      {([{ value: "ivf_cycle", label: "IVF Cycle" }, { value: "shipping_embryos", label: "Shipping Embryos" }] as const).map((opt) => {
-                        const active = (program.subType ?? "ivf_cycle") === opt.value;
-                        return (
-                          <button
-                            key={opt.value}
-                            type="button"
-                            className={cn(
-                              "px-3 py-1 text-sm rounded-[var(--radius)] transition-colors",
-                              active
-                                ? "bg-background text-foreground shadow-sm font-medium"
-                                : "text-muted-foreground hover:text-foreground"
-                            )}
-                            onClick={() => {
-                              if (!active) updateSubTypeMutation.mutate({ id: program.id, subType: opt.value });
-                            }}
-                          >
-                            {opt.label}
-                          </button>
-                        );
-                      })}
+                {/* Service-type tags - multi-select. Provider can add/remove
+                    tags to fix AI's classification. At least one tag should
+                    be set so parent matching works. */}
+                <div className="px-4 pt-3 pb-1 space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Label className="text-xs text-muted-foreground">Services covered:</Label>
+                    {ALL_SERVICE_TYPES.map((tag) => {
+                      const selected = (program.serviceTypes ?? []).includes(tag);
+                      return (
+                        <button
+                          key={`tag-toggle-${program.id}-${tag}`}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const current = program.serviceTypes ?? [];
+                            const next = selected
+                              ? current.filter((t) => t !== tag)
+                              : [...current, tag];
+                            updateServiceTypesMutation.mutate({ id: program.id, serviceTypes: next });
+                          }}
+                          disabled={updateServiceTypesMutation.isPending}
+                          className={cn(
+                            "px-3 py-1 text-xs rounded-full border transition-colors font-medium",
+                            selected
+                              ? "bg-accent text-accent-foreground border-accent"
+                              : "bg-background text-foreground/70 border-border hover:bg-accent/10"
+                          )}
+                          data-testid={`btn-toggle-tag-${tag}`}
+                        >
+                          {SERVICE_TYPE_LABELS[tag]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {showAnySubtypeDropdown && (
+                  <div className="px-4 pt-3 pb-1 space-y-2">
+                    {/* Subtype picker. IVF shows the 14-subtype taxonomy
+                        (grouped by tab). Egg donor shows the simpler 2-
+                        option fresh/frozen pair. AI populates this on
+                        upload; provider can override anytime. */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Label className="text-xs text-muted-foreground">Program type:</Label>
+                      <select
+                        className="h-8 text-sm rounded-[var(--radius)] border border-border bg-background px-2"
+                        value={program.subType ?? ""}
+                        onChange={(e) => {
+                          const newSub = e.target.value;
+                          if (!newSub) return;
+                          const newTab = showIvfSubtypeDropdown ? tabOfSubtype(newSub) : undefined;
+                          updateSubTypeMutation.mutate({
+                            id: program.id,
+                            subType: newSub,
+                            tab: newTab ?? undefined,
+                          });
+                        }}
+                      >
+                        <option value="">Select program type...</option>
+                        {showIvfSubtypeDropdown
+                          ? (tabFilter
+                              ? SUBTYPES_BY_TAB[tabFilter]
+                              : IVF_TABS.flatMap((t) =>
+                                  SUBTYPES_BY_TAB[t.id].map((s) => ({ ...s, _tabLabel: t.label }))
+                                )
+                            ).map((s: any) => (
+                              <option key={s.id} value={s.id}>
+                                {s._tabLabel ? `${s._tabLabel} - ${s.label}` : s.label}
+                              </option>
+                            ))
+                          : FRESH_FROZEN_SUBTYPES.map((s) => (
+                              <option key={s.id} value={s.id}>{s.label}</option>
+                            ))}
+                      </select>
+                      {!program.subType && (
+                        <span className="text-xs text-[hsl(var(--brand-warning))]">
+                          Pick a program type or upload a file - we will auto-detect.
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}
@@ -2279,7 +2986,8 @@ function ProgramsView({
                     parentId={parentId}
                     subType={subType}
                     programId={program.id}
-                    programSubType={isIvfType ? (program.subType ?? "ivf_cycle") : undefined}
+                    programSubType={isIvfType ? (program.subType ?? null) : undefined}
+                    programTab={isIvfType ? (program.tab ?? tabFilter ?? null) : undefined}
                   />
                 </div>
               </div>
@@ -2288,7 +2996,7 @@ function ProgramsView({
         );
       })}
 
-      {programs.length === 0 && !programsQuery.isLoading && !isAddingProgram && (
+      {programs.length === 0 && !programsQuery.isLoading && !isAddingProgram && !uploadFirstType && (
         <div className="text-center py-8 border rounded-[var(--container-radius)] text-muted-foreground">
           <Globe className="w-8 h-8 mx-auto mb-2 opacity-40" />
           <p className="text-sm">No programs created yet.</p>
@@ -2301,79 +3009,8 @@ function ProgramsView({
   );
 }
 
-function isEggDonationType(name: string): boolean {
-  const lower = name.toLowerCase();
-  return lower.includes("egg donor") || lower === "egg donation";
-}
-
-function EggDonationSubTabs({
-  providerType,
-  providerTypeId,
-  providerId,
-  isAdminView,
-  canManagePrograms,
-  parentId,
-}: {
-  providerType: string;
-  providerTypeId?: string;
-  providerId: string;
-  isAdminView: boolean;
-  canManagePrograms?: boolean;
-  parentId?: string;
-}) {
-  const [activeSubTab, setActiveSubTab] = useState("fresh");
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-4" data-testid="egg-donation-sub-tabs">
-        <label className="flex items-center gap-2 cursor-pointer text-sm" data-testid="sub-tab-fresh">
-          <input
-            type="radio"
-            name="egg-donation-sub"
-            value="fresh"
-            checked={activeSubTab === "fresh"}
-            onChange={() => setActiveSubTab("fresh")}
-            className="accent-primary w-4 h-4"
-          />
-          Fresh Donor Costs
-        </label>
-        <label className="flex items-center gap-2 cursor-pointer text-sm" data-testid="sub-tab-frozen">
-          <input
-            type="radio"
-            name="egg-donation-sub"
-            value="frozen"
-            checked={activeSubTab === "frozen"}
-            onChange={() => setActiveSubTab("frozen")}
-            className="accent-primary w-4 h-4"
-          />
-          Frozen Eggs Costs
-        </label>
-      </div>
-      {activeSubTab === "fresh" && (
-        <ProgramsView
-          providerType={providerType}
-          providerTypeId={providerTypeId}
-          providerId={providerId}
-          isAdminView={isAdminView}
-          canManagePrograms={canManagePrograms}
-          parentId={parentId}
-          subType="fresh"
-        />
-      )}
-      {activeSubTab === "frozen" && (
-        <ProgramsView
-          providerType={providerType}
-          providerTypeId={providerTypeId}
-          providerId={providerId}
-          isAdminView={isAdminView}
-          canManagePrograms={canManagePrograms}
-          parentId={parentId}
-          subType="frozen"
-        />
-      )}
-    </div>
-  );
-}
+// (Removed isEggDonationType + EggDonationSubTabs - Fresh/Frozen is now a
+// per-program AI-detected subtype shown in the program row badge + dropdown.)
 
 export default function ProviderCostsTab({
   providerType,
@@ -2396,19 +3033,10 @@ export default function ProviderCostsTab({
     const svcName = services?.[0]?.providerTypeName || providerType;
     const svcTypeId = services?.[0]?.providerTypeId;
 
-    if (isEggDonationType(svcName)) {
-      return (
-        <EggDonationSubTabs
-          providerType={svcName}
-          providerTypeId={svcTypeId}
-          providerId={providerId}
-          isAdminView={isAdminView}
-          canManagePrograms={canManagePrograms}
-          parentId={parentId}
-        />
-      );
-    }
-
+    // Egg-donation Fresh/Frozen used to live in outer radio buttons. Now
+    // the AI classifies each program automatically and each program shows
+    // its fresh/frozen via the in-row badge + dropdown - so we drop the
+    // EggDonationSubTabs wrapper and render programs straight.
     return (
       <ProgramsView
         providerType={svcName}
@@ -2421,45 +3049,21 @@ export default function ProviderCostsTab({
     );
   }
 
+  // Multi-service provider (e.g. Family Creations - Surrogacy + Egg Donor):
+  // we used to render outer tabs to switch between services. With the
+  // serviceTypes tagging system, every cost sheet carries its own
+  // service-type tag(s) and we show one flat list across services. The AI
+  // tags each program on upload; provider can override the tags on the
+  // row. No providerTypeId filter so all programs show.
+  const primarySvc = services[0];
   return (
-    <div className="space-y-4">
-      <ServiceTabs value={selectedTypeId} onValueChange={setSelectedTypeId}>
-        <ServiceTabsList data-testid="costs-service-tabs">
-          {services.map((svc) => (
-            <ServiceTabsTrigger
-              key={svc.providerTypeId}
-              value={svc.providerTypeId}
-              data-testid={`costs-tab-${svc.providerTypeId}`}
-            >
-              <DollarSign className="w-4 h-4 mr-1" />
-              {getServiceLabel(svc.providerTypeName)}
-            </ServiceTabsTrigger>
-          ))}
-        </ServiceTabsList>
-        {services.map((svc) => (
-          <ServiceTabsContent key={svc.providerTypeId} value={svc.providerTypeId}>
-            {isEggDonationType(svc.providerTypeName) ? (
-              <EggDonationSubTabs
-                providerType={svc.providerTypeName}
-                providerTypeId={svc.providerTypeId}
-                providerId={providerId}
-                isAdminView={isAdminView}
-                canManagePrograms={canManagePrograms}
-                parentId={parentId}
-              />
-            ) : (
-              <ProgramsView
-                providerType={svc.providerTypeName}
-                providerTypeId={svc.providerTypeId}
-                providerId={providerId}
-                isAdminView={isAdminView}
-                canManagePrograms={canManagePrograms}
-                parentId={parentId}
-              />
-            )}
-          </ServiceTabsContent>
-        ))}
-      </ServiceTabs>
-    </div>
+    <ProgramsView
+      providerType={primarySvc.providerTypeName}
+      providerTypeId={undefined}
+      providerId={providerId}
+      isAdminView={isAdminView}
+      canManagePrograms={canManagePrograms}
+      parentId={parentId}
+    />
   );
 }

@@ -5152,7 +5152,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       ];
 
       // Fields saved to User model
-      const allowedUserFields = ["gender", "sexualOrientation", "relationshipStatus", "partnerFirstName"];
+      const allowedUserFields = ["gender", "sexualOrientation", "relationshipStatus", "partnerFirstName", "partnerGender"];
 
       const profileData: any = {};
       const userData: any = {};
@@ -5209,6 +5209,44 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           if (!isNaN(year) && year > 1900 && year <= new Date().getFullYear()) {
             userData.partnerAge = new Date().getFullYear() - year;
           }
+        }
+      }
+
+      // Derive partnerGender from familyType so the cost-sheet subtype
+      // matcher can distinguish 2-mom couples from a Solo Woman, etc.
+      // Eva's prompt emits familyType alongside gender/orientation/relationship
+      // but the column didn't exist before; we translate the token here.
+      // Runs AFTER the main loop so userData.gender is already populated
+      // (relevant for straight_couple, where the partner gender is the
+      // opposite of the speaker's gender).
+      const ftRaw = (fieldsToSave as any)?.familyType;
+      if (typeof ftRaw === "string") {
+        const effectiveGender = userData.gender ?? userRecord?.gender ?? null;
+        switch (ftRaw) {
+          case "solo_man":
+            if (!userData.gender) userData.gender = "I'm a man";
+            userData.partnerGender = null;
+            break;
+          case "solo_woman":
+            if (!userData.gender) userData.gender = "I'm a woman";
+            userData.partnerGender = null;
+            break;
+          case "two_dads":
+            if (!userData.gender) userData.gender = "I'm a man";
+            userData.partnerGender = "man";
+            break;
+          case "two_moms":
+            if (!userData.gender) userData.gender = "I'm a woman";
+            userData.partnerGender = "woman";
+            break;
+          case "straight_couple":
+            if (effectiveGender === "I'm a man") userData.partnerGender = "woman";
+            else if (effectiveGender === "I'm a woman") userData.partnerGender = "man";
+            // If gender is still unknown, Eva's next turn will set it and
+            // a subsequent SAVE block with familyType=straight_couple will
+            // finalize partnerGender. The matcher tolerates the null in the
+            // interim.
+            break;
         }
       }
 

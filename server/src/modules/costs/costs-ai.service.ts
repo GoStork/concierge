@@ -1,5 +1,34 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import {
+  ALL_SUBTYPES,
+  RETRIEVALS_INCLUDED,
+  SPERM_COLLECTIONS_INCLUDED,
+  SubType,
+  SUBTYPE_LABEL,
+  Tab,
+  TAB_LABEL,
+  TAB_OF,
+  TRANSFERS_INCLUDED,
+} from "./cost-templates-config";
+
+export interface ClassificationResult {
+  tab: Tab;
+  subType: SubType;
+  isFixedCost: boolean;
+  confidence: number; // 0-1
+  reasoning: string;
+  // Program-level proposals that the classifier extracts from the document
+  // so the clinic doesn't have to type them by hand. Always populated -
+  // country defaults to "United States" when nothing in the doc indicates
+  // otherwise, and programName falls back to a sensible label.
+  programName: string;
+  country: string;
+  // 1+ service-type tags ("ivf_clinic", "surrogacy", "egg_donor",
+  // "sperm_donor"). A bundled cost sheet (e.g. egg-donor + surrogate
+  // package) gets multiple tags; parent matcher unions them.
+  serviceTypes: string[];
+}
 
 @Injectable()
 export class CostsAiService {
@@ -21,6 +50,7 @@ export class CostsAiService {
       maxValue: number | null;
       isCustom: boolean;
       isIncluded: boolean;
+      isTier: boolean;
       comment: string | null;
     }>
   > {
@@ -131,8 +161,8 @@ Return ONLY a valid JSON array with objects having these exact fields:
       textContent = csvParts.join("\n\n");
 
       const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
-        generationConfig: { temperature: 0 } as any,
+        model: "gemini-3.5-flash",
+        generationConfig: { temperature: 0, maxOutputTokens: 8192 } as any,
       });
 
       const timeoutMs = 120000;
@@ -149,8 +179,8 @@ Return ONLY a valid JSON array with objects having these exact fields:
       const base64Data = fileBuffer.toString("base64");
 
       const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
-        generationConfig: { temperature: 0 } as any,
+        model: "gemini-3.5-flash",
+        generationConfig: { temperature: 0, maxOutputTokens: 8192 } as any,
       });
 
       const timeoutMs = 120000;
@@ -169,6 +199,476 @@ Return ONLY a valid JSON array with objects having these exact fields:
     }
   }
 
+  /**
+   * One-shot: parse line items AND classify the program (tab, subType,
+   * isFixedCost, name, country) in a single Gemini call. Saves a full
+   * round-trip vs running parseFile + classifyDocument sequentially.
+   *
+   * Returns { items, classification }. Classification can be null if the
+   * model omitted or malformed it - the caller should still use items in
+   * that case (graceful degradation matches the old two-call behavior).
+   */
+  async parseAndClassifyDocument(
+    fileBuffer: Buffer,
+    contentType: string,
+    providerTypeName: string,
+    originalFileName: string,
+    subType?: string,
+  ): Promise<{
+    items: Array<{
+      category: string;
+      key: string;
+      minValue: number | null;
+      maxValue: number | null;
+      isCustom: boolean;
+      isIncluded: boolean;
+      isTier: boolean;
+      comment: string | null;
+    }>;
+    classification: ClassificationResult | null;
+  }> {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
+
+    const { GoogleGenerativeAI } = await import("@google/generative-ai");
+    const genAI = new GoogleGenerativeAI(apiKey);
+
+    const providerType = await this.prisma.providerType.findFirst({
+      where: { name: { contains: providerTypeName, mode: "insensitive" } },
+    });
+    const templateWhere: any = providerType ? { providerTypeId: providerType.id } : null;
+    if (templateWhere && subType) {
+      templateWhere.OR = [{ subType: null }, { subType }];
+    }
+    const templates = templateWhere
+      ? await this.prisma.costTemplate.findMany({
+          where: templateWhere,
+          orderBy: [{ category: "asc" }, { sortOrder: "asc" }],
+        })
+      : [];
+
+    const templateContext =
+      templates.length > 0
+        ? `Known cost categories and fields for this provider type:\n${templates
+            .map(
+              (t) =>
+                `- Category: "${t.category}", Field: "${t.fieldName}" (mandatory: ${t.isMandatory})`,
+            )
+            .join("\n")}`
+        : "No predefined templates available. Categorize based on common fertility industry categories.";
+
+    const subtypeMenu = ALL_SUBTYPES.map(
+      (s) => `  - "${s}" (${TAB_LABEL[TAB_OF[s]]} > ${SUBTYPE_LABEL[s]})`,
+    ).join("\n");
+
+    // Detect provider type. The 14-subtype taxonomy is IVF-specific. Egg
+    // donor agencies/banks get a simpler fresh/frozen pick. Surrogacy and
+    // sperm banks don't need any subtype - the classifier just emits
+    // programName + country + isFixedCost + tiers.
+    const lowerType = providerTypeName.toLowerCase();
+    const isIvfProvider = lowerType.includes("ivf") || lowerType.includes("clinic");
+    const isEggProvider = lowerType.includes("egg");
+    // No-subtype providers: surrogacy + sperm bank + anything else.
+    const noSubtypeProvider = !isIvfProvider && !isEggProvider;
+
+    const classificationSection = isIvfProvider ? `== PART B: CLASSIFICATION ==
+
+Pick exactly one subtype from this list:
+${subtypeMenu}
+
+Subtype heuristics - PICK CAREFULLY, several look similar:
+
+A. PROGRAM HAS BOTH CREATION AND TRANSFER:
+- "ivf_cycle_donor_eggs_*": explicit donor egg usage ("donor eggs", "egg donor compensation", "donor egg lot") AND there's an embryo transfer step.
+- "ivf_cycle_*_surrogate_carry": surrogacy/GC/gestational carrier IS part of the program.
+- "ivf_cycle_reciprocal": explicitly reciprocal IVF / shared-motherhood / partner-IVF.
+- "ivf_cycle_own_eggs_own_carry": basic full cycle without donor/surrogate language. Default for unmarked IVF.
+
+B. PROGRAM HAS CREATION BUT NO TRANSFER (parent freezes embryos):
+- "embryo_creation_only_*": doc mentions egg retrieval + embryo creation + cryopreservation / freezing / storage but does NOT mention embryo transfer, FET, or carrier. Look for phrases like "create + freeze", "no transfer included", "stop after freezing", "embryo banking". If donor eggs -> "embryo_creation_only_donor_eggs". Otherwise own.
+
+C. PROGRAM HAS TRANSFER BUT NO CREATION OR SHIPPING (in-house FET):
+- "fet_to_*": embryos are already at THIS clinic (not shipped in, not created in this cycle). Look for: "FET", "Frozen Embryo Transfer", "transfer of stored embryos", absence of "shipping", "receiving fee", "embryo retrieval", "stimulation". Often a much cheaper sheet than IVF Cycle. If transfer is to a surrogate -> "fet_to_surrogate". Otherwise own/self.
+
+D. PROGRAM SHIPS EMBRYOS IN FROM ANOTHER CLINIC:
+- "shipping_embryos_*": doc explicitly mentions receiving/shipping embryos from another clinic ("embryo receiving fee", "shipping embryos", "incoming embryo transfer", FedEx/courier language).
+
+E. PROGRAM SHIPS GAMETES IN AND CREATES EMBRYOS:
+- "shipping_eggs_sperm_*": clinic receives raw gametes (donor egg lot from external bank, sperm from external bank) AND creates embryos here.
+
+F. PROGRAM IS PURE EGG FREEZING:
+- "egg_freezing_*": retrieval + storage only, no embryo creation, no transfer.
+
+CRITICAL TIE-BREAKERS:
+- If the document mentions "Frozen Embryo Transfer" or "FET" WITHOUT any shipping/receiving language, prefer "fet_to_*" over "shipping_embryos_*".
+- If the document is ONLY about creating + freezing embryos with NO transfer line items at all, prefer "embryo_creation_only_*" over "ivf_cycle_*".
+- If the document only has retrieval and storage (no fertilization, no transfer), prefer "egg_freezing_*".` : isEggProvider ? `== PART B: CLASSIFICATION ==
+
+This is an Egg Donor Agency / Egg Bank cost sheet. Pick exactly one of these two subtypes:
+  - "fresh" - Fresh donor cycle (synchronized donor + recipient, fresh retrieval -> immediate fertilization). Look for: "fresh donor", "synchronized cycle", "fresh egg retrieval", donor + recipient coordination, single donor matched to single recipient.
+  - "frozen" - Frozen egg lot purchase from an egg bank (donor eggs already retrieved and vitrified). Look for: "frozen eggs", "egg lot", "X eggs in lot", "egg bank", "vitrified eggs", "thaw guarantee", per-lot pricing.
+
+When uncertain, prefer "fresh" (the more common product).` : `== PART B: CLASSIFICATION ==
+
+This is a ${providerTypeName} cost sheet. There is NO subtype distinction for this provider type - just extract the program label, country, and Fixed/Not-Fixed flag below.`;
+
+    const subtypeOutputSchema = isIvfProvider
+      ? `    "tab": "<tab-id>",
+    "subType": "<subtype-id>",`
+      : isEggProvider
+      ? `    "subType": "<fresh | frozen>",`
+      : ``;
+
+    const subtypeTrailingNote = isIvfProvider
+      ? `\n"tab" must be the parent of "subType". Confidence: 0.9+ on explicit keyword matches; 0.6-0.8 inferred; <0.5 guessing.`
+      : `\nConfidence: 0.9+ on explicit keyword matches; 0.6-0.8 inferred; <0.5 guessing.`;
+
+    const systemPrompt = `You are a fertility-industry cost-sheet parser. You will (A) extract EVERY line item visible in the document and (B) classify the program. Return BOTH in a single JSON object.
+
+== PART A: LINE ITEMS ==
+
+${templateContext}
+
+CRITICAL: Extract EVERY visible line item. A typical complete cost sheet has 10-30 line items. If you emit fewer than 5, you are missing items - re-scan the document.
+
+Cost sheets are usually organized into 2+ sections:
+  1. "Included Services" / "Includes" / "Package Includes" - items bundled in the headline price. THESE ARE THE BULK OF THE ITEMS. Extract EACH ONE with isIncluded=true. If they have no individual price ($ symbol absent), set minValue=0 and maxValue=0 - they are included in the package.
+  2. "Additional Services" / "Other Services" / "Not Included" / "Optional" / "Contingency Fees" - items only charged in certain circumstances. Extract each with isIncluded=false and their actual price.
+You MUST extract items from BOTH sections - never stop at the section boundary.
+
+Rules:
+1. Map recognized items to the known categories/fields when possible. Use the EXACT category and key names from the template.
+2. Items NOT matching a template field MUST still be extracted with isCustom=true. Never drop an item just because it doesn't match a template.
+3. Range "$5,000 - $10,000" -> minValue=5000, maxValue=10000. Single "$5,000" -> both = 5000.
+4. Items in an "Includes" / "Included Services" section without an individual price: isIncluded=true, minValue=0, maxValue=0. Their cost is folded into the headline package price - emit them anyway so the parent sees what's covered.
+5. Items in an "Additional Services" / "Optional" / "Contingency" section: isIncluded=false, set their stated price (or null if none).
+6. Notes/conditions (e.g. "if using frozen sperm", "up to 15 embryos") -> comment field.
+7. CONSOLIDATE multiple lines that map to the same template field (sum values; list breakdown in comment). Never emit two items with the same key. This applies WITHIN a section; do not consolidate an Included line with an Additional line.
+
+CRITICAL - what counts as "included" vs "excluded":
+- Required medical services with stated prices (e.g. "Medication $1,000-$1,800", "Surrogate Screening $2,300", "Coordination Fee", "Anesthesia $X") that are NOT under an explicit Optional/Contingency header are STANDARD REQUIRED COSTS -> isIncluded=true with their stated price. The fact that they have a per-line price does NOT make them optional.
+- "Excluded" is ONLY for: items under a section explicitly titled "Additional Services" / "Other Services" / "Optional Services" / "Not Included" / "Contingency" / "If Needed" / "May Apply", OR items with explicit "optional" language ("if requested", "if applicable", "only if X").
+
+PAYMENT INSTALLMENTS - SKIP ENTIRELY:
+- A "payment schedule" / "installment plan" describes HOW the parent pays the program fee, NOT additional line items. Common patterns: "1st Installment $X", "2nd Installment $Y", "3rd Installment $Z", "Due at Signing $X", "Due at Match $Y", "Due at Embryo Transfer $Z".
+- These installments collectively ADD UP to a single program fee (the headline tier price). If you extract them as line items they will DOUBLE-COUNT the program cost and the parent will see a wildly inflated total.
+- DO NOT extract installments. Skip the entire payment-schedule section. The program fee is already captured by the tier/headline price.
+- ONLY extract items that are TRULY separate fees beyond the program price - e.g. "International Parents Fees", "Travel Expenses", contingency add-ons. If you cannot find such an item, that section just has nothing extractable.
+- Smell test: if Installment 1 + Installment 2 + Installment 3 ~= the tier/headline price, they're a payment schedule. Skip them.
+
+TIERED PACKAGE PRICING (critical for FET / Surrogacy / Egg Donation sheets):
+- When the document offers multiple package tiers for the same service (e.g. "Single Cycle $6,500" / "Two Cycles $10,500" / "Three Cycles $13,500" / "Unlimited Package $20,000"), these are ALTERNATIVES the parent picks ONE of. Emit EACH tier as its own item with:
+  * isTier=true (this marks them as alternatives, not additive line items)
+  * isIncluded=true (they are real prices, not optional services)
+  * Distinct key (e.g. "Embryo Transfer (Single Cycle)", "Embryo Transfer (Two Cycles)") so they sort and display correctly.
+- The system groups all isTier items into a dedicated "Pricing Tiers" section in the provider editor and renders one parent-facing card per tier.
+- This rule applies to: cycle bundles, retrieval bundles, unlimited packages, multi-month storage discounts, group deals - anywhere the parent chooses one option among similar-but-different-priced alternatives for the same underlying service.
+- DO NOT mark tiers as isCustom or excluded. They are the program's primary pricing.
+- For regular (non-tier) items that have prices and aren't under an Optional section: isIncluded=true, isTier=false (the default).
+
+${classificationSection}
+
+isFixedCost:
+- TRUE: bundled package with included quantities ("3 retrievals included", "unlimited transfers", "package price covers N cycles").
+- FALSE: itemized per-service / a-la-carte pricing.
+
+programName: the document's branded program name (e.g. "Unlimited IVF Until Live Birth", "Donor Egg + IVF + GC"). If none, derive a concise label like "Single IVF Cycle". Title Case, under 50 chars, no quotes.
+
+country: the clinic's country of delivery. Use the full English name ("United States", "Mexico", "Colombia"). Default to "United States" when nothing in the document indicates otherwise.
+
+serviceTypes: an ARRAY of service-type tags from: "ivf_clinic", "surrogacy", "egg_donor", "sperm_donor". A single cost sheet can be tagged with MULTIPLE if the program bundles services (e.g. an Egg Donor agency that includes the surrogacy match -> ["egg_donor", "surrogacy"]). Detection rules:
+- "ivf_clinic" - any IVF cycle / FET / embryo creation / shipping embryos line items, OR the provider type itself is an IVF clinic.
+- "surrogacy" - presence of "Surrogate Compensation", "Surrogacy", "Gestational Carrier" / "GC fee", "Surrogate Insurance", "Surrogate Screening", "Lloyds of London", "Newborn Insurance".
+- "egg_donor" - presence of "Egg Donor Compensation", "Egg Donor Agency Fees", "Donor screening", "Donor IVF cycle", "Fresh Donor Cycle", "Frozen Egg Lot".
+- "sperm_donor" - presence of "Sperm Donor", "Sperm Bank", "Vial of sperm", per-vial pricing.
+Always emit at least one tag. If multiple service categories are clearly represented, emit them all.
+
+== OUTPUT ==
+
+Output STRICT JSON only, no commentary, no markdown fence. Lead with the items array - it's the primary payload:
+{
+  "items": [
+    { "category": string, "key": string, "minValue": number|null, "maxValue": number|null, "isCustom": boolean, "isIncluded": boolean, "isTier": boolean, "comment": string|null },
+    ... (typically 10-30 items - extract them all)
+  ],
+  "classification": {
+${subtypeOutputSchema}
+    "isFixedCost": <true|false>,
+    "confidence": <0..1>,
+    "reasoning": "<one sentence>",
+    "programName": "<label>",
+    "country": "<country>",
+    "serviceTypes": [<one or more of: "ivf_clinic", "surrogacy", "egg_donor", "sperm_donor">]
+  }
+}
+${subtypeTrailingNote}`;
+
+    let textContent: string | null = null;
+
+    if (
+      contentType.includes("spreadsheet") ||
+      contentType.includes("excel") ||
+      originalFileName.match(/\.xlsx?$/i)
+    ) {
+      const ExcelJS = await import("exceljs");
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(fileBuffer);
+      const csvParts: string[] = [];
+      workbook.eachSheet((worksheet) => {
+        const rows: string[] = [];
+        worksheet.eachRow({ includeEmpty: false }, (row) => {
+          const values = (row.values as (string | number | null | undefined)[]).slice(1);
+          const csvRow = values
+            .map((v) => {
+              const s = v != null ? String(v) : "";
+              return s.includes(",") || s.includes('"') || s.includes("\n")
+                ? `"${s.replace(/"/g, '""')}"`
+                : s;
+            })
+            .join(",");
+          rows.push(csvRow);
+        });
+        csvParts.push(`--- Sheet: ${worksheet.name} ---\n${rows.join("\n")}`);
+      });
+      textContent = csvParts.join("\n\n");
+    }
+
+    const model = genAI.getGenerativeModel({
+      model: "gemini-3.5-flash",
+      generationConfig: { temperature: 0, maxOutputTokens: 8192 } as any,
+    });
+
+    const timeoutMs = 180000;
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("AI parse+classify timed out after 3 minutes")), timeoutMs),
+    );
+    const generate = textContent != null
+      ? model.generateContent(`${systemPrompt}\n\nFilename: ${originalFileName}\n\nDocument content (CSV):\n${textContent}`)
+      : model.generateContent([
+          { inlineData: { mimeType: contentType, data: fileBuffer.toString("base64") } },
+          { text: `${systemPrompt}\n\nFilename: ${originalFileName}\n\nParse and classify the cost sheet from this document.` },
+        ]);
+    const result = await Promise.race([generate, timeoutPromise]);
+    const responseText = result.response.text();
+
+    // Extract the outer JSON object. Forgiving against ```json fences.
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      this.logger.error(`parseAndClassify: no JSON in response: ${responseText.slice(0, 400)}`);
+      throw new Error("AI did not return valid JSON");
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      this.logger.error(`parseAndClassify: JSON parse failed: ${e}`);
+      throw new Error("Failed to parse AI response as JSON");
+    }
+
+    // Items branch - normalize to the same shape as parseFile returns.
+    const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
+    const items = rawItems.map((item: any) => ({
+      category: String(item.category || "Other"),
+      key: String(item.key || "Unknown"),
+      minValue: item.minValue != null ? Number(item.minValue) : null,
+      maxValue: item.maxValue != null ? Number(item.maxValue) : null,
+      isCustom: Boolean(item.isCustom),
+      isIncluded: item.isIncluded !== false,
+      isTier: item.isTier === true,
+      comment: item.comment ? String(item.comment) : null,
+    }));
+
+    // Classification branch. Three paths depending on provider type:
+    //   - IVF: tab + subType are required from the 14-subtype taxonomy.
+    //   - Egg donor: subType is "fresh" or "frozen" (legacy DB values).
+    //   - Other (surrogacy / sperm): no subType - just name/country/fixed.
+    // For non-IVF providers we still emit a ClassificationResult, but tab
+    // is "" and subType is "" (or "fresh"/"frozen" for egg donor). The
+    // service-level persist code handles those as nullable in the DB.
+    let classification: ClassificationResult | null = null;
+    const cls = parsed.classification;
+    if (cls && typeof cls === "object") {
+      const confidence = typeof cls.confidence === "number" ? Math.max(0, Math.min(1, cls.confidence)) : 0.5;
+      const isFixedCost = cls.isFixedCost === true;
+      const reasoning = typeof cls.reasoning === "string" ? cls.reasoning.slice(0, 280) : "";
+      const rawName = typeof cls.programName === "string" ? cls.programName.trim().replace(/^["'`]|["'`]$/g, "") : "";
+      const programName = rawName.length > 0 && rawName.length <= 80
+        ? rawName
+        : (originalFileName.replace(/\.(pdf|xlsx?|csv)$/i, "").replace(/[_-]+/g, " ").trim() || "Untitled Program");
+      const rawCountry = typeof cls.country === "string" ? cls.country.trim() : "";
+      const country = rawCountry.length > 0 && rawCountry.length <= 60 ? rawCountry : "United States";
+
+      // serviceTypes - validate the AI's array against the allowed tokens.
+      // Fall back to a single default tag derived from the provider type
+      // so a malformed/missing field still gives the program a sensible tag.
+      const ALLOWED_TAGS = new Set(["ivf_clinic", "surrogacy", "egg_donor", "sperm_donor"]);
+      const rawTags = Array.isArray(cls.serviceTypes) ? cls.serviceTypes : [];
+      let serviceTypes = rawTags
+        .map((t: any) => String(t).toLowerCase().trim())
+        .filter((t: string) => ALLOWED_TAGS.has(t));
+      serviceTypes = Array.from(new Set(serviceTypes));
+      if (serviceTypes.length === 0) {
+        const defaultTag = isIvfProvider ? "ivf_clinic"
+          : isEggProvider ? "egg_donor"
+          : providerTypeName.toLowerCase().includes("surrogacy") ? "surrogacy"
+          : providerTypeName.toLowerCase().includes("sperm") ? "sperm_donor"
+          : null;
+        if (defaultTag) serviceTypes = [defaultTag];
+      }
+
+      if (isIvfProvider) {
+        const subTypeId = String(cls.subType ?? "") as SubType;
+        if ((ALL_SUBTYPES as string[]).includes(subTypeId)) {
+          const tab = TAB_OF[subTypeId];
+          classification = { tab, subType: subTypeId, isFixedCost, confidence, reasoning, programName, country, serviceTypes };
+          this.logger.log(`parseAndClassify [IVF]: ${items.length} items, ${subTypeId} (fixed=${isFixedCost}, conf=${confidence.toFixed(2)}, name="${programName}", country="${country}", tags=${JSON.stringify(serviceTypes)})`);
+        } else {
+          this.logger.warn(`parseAndClassify [IVF]: invalid subType "${cls.subType}", returning items without classification`);
+        }
+      } else if (isEggProvider) {
+        const rawSub = String(cls.subType ?? "").toLowerCase().trim();
+        const subType = (rawSub === "frozen" ? "frozen" : "fresh") as any;
+        classification = { tab: "" as any, subType, isFixedCost, confidence, reasoning, programName, country, serviceTypes };
+        this.logger.log(`parseAndClassify [Egg]: ${items.length} items, ${subType} (fixed=${isFixedCost}, name="${programName}", country="${country}", tags=${JSON.stringify(serviceTypes)})`);
+      } else {
+        // No-subtype provider (surrogacy / sperm bank / etc.)
+        classification = { tab: "" as any, subType: "" as any, isFixedCost, confidence, reasoning, programName, country, serviceTypes };
+        this.logger.log(`parseAndClassify [${providerTypeName}]: ${items.length} items (fixed=${isFixedCost}, name="${programName}", country="${country}", tags=${JSON.stringify(serviceTypes)})`);
+      }
+    } else {
+      this.logger.warn(`parseAndClassify: missing classification block, returning items only`);
+    }
+
+    return { items, classification };
+  }
+
+  /**
+   * Second AI pass: given parsed line items + raw document text, classify
+   * into {tab, subType, isFixedCost}. Runs after parseFile so the prompt
+   * can lean on extracted item names rather than re-OCRing the document.
+   *
+   * Confidence scoring is advisory only - the clinic must confirm every
+   * classification regardless of how confident the AI is.
+   */
+  async classifyDocument(
+    parsedItems: Array<{ category: string; key: string; minValue: number | null; maxValue: number | null; comment: string | null }>,
+    originalFileName: string,
+    rawTextSnippet?: string,
+  ): Promise<ClassificationResult | null> {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      this.logger.warn("GEMINI_API_KEY not configured, skipping classification");
+      return null;
+    }
+
+    const { GoogleGenerativeAI } = await import("@google/generative-ai");
+    const genAI = new GoogleGenerativeAI(apiKey);
+
+    const subtypeMenu = ALL_SUBTYPES.map(
+      (s) => `  - "${s}" (${TAB_LABEL[TAB_OF[s]]} > ${SUBTYPE_LABEL[s]})`,
+    ).join("\n");
+
+    const itemsSummary = parsedItems
+      .slice(0, 60)
+      .map((i) => {
+        const range = i.minValue != null || i.maxValue != null ? ` [$${i.minValue ?? "?"}-$${i.maxValue ?? "?"}]` : "";
+        const note = i.comment ? ` (${i.comment.slice(0, 80)})` : "";
+        return `  - ${i.category} / ${i.key}${range}${note}`;
+      })
+      .join("\n");
+
+    const systemPrompt = `You are classifying an IVF clinic cost sheet into one of 10 subtypes across 4 tabs, AND extracting a program label + country.
+
+Tabs and subtypes:
+${subtypeMenu}
+
+Rules for picking the SUBTYPE:
+- "shipping_embryos_*" only when the document indicates the parent ships frozen embryos to the clinic for transfer (look for: "shipping embryos", "shipped embryos", "frozen embryo transfer from outside", "embryo receiving fee", "embryo thawing").
+- "shipping_eggs_sperm_*" when the document indicates the clinic receives raw gametes (eggs and/or sperm) and creates embryos in-house (look for: "shipping eggs", "shipping sperm", "donor egg lot", "gamete receiving fee" combined with embryo creation).
+- "ivf_cycle_donor_eggs_*" when explicit donor egg sourcing is mentioned (look for: "donor eggs", "egg donor compensation", "donor egg lot fee").
+- "ivf_cycle_*_surrogate_carry" when surrogacy is part of the program (look for: "surrogacy", "GC fee", "gestational carrier", "surrogate compensation", "surrogate's insurance").
+- "ivf_cycle_reciprocal" only when explicitly described as reciprocal IVF / partner-IVF / shared-motherhood. Otherwise prefer own/own.
+- "egg_freezing_*" when the program is purely retrieval + storage with no transfer step (look for: "egg freezing", "egg banking", "fertility preservation", explicit absence of transfer fees).
+- Default for an unmarked basic IVF document: "ivf_cycle_own_eggs_own_carry".
+
+Rules for isFixedCost:
+- TRUE when the program advertises a bundled package with included quantities (e.g. "3 retrievals included", "unlimited transfers", "package price covers up to N cycles"). Look for the presence of explicit counts for any of: "${RETRIEVALS_INCLUDED}", "${SPERM_COLLECTIONS_INCLUDED}", "${TRANSFERS_INCLUDED}".
+- FALSE when costs are itemized per service with no bundled count (a la-carte pricing).
+
+Rules for PROGRAM NAME:
+- Use the program's branded name when the document states one (e.g. "Unlimited IVF Until Live Birth", "Single Cycle with Unlimited Transfers", "Donor Egg + IVF + GC", "Premium Surrogacy Package").
+- If the document only describes a generic cycle, derive a concise label like "Single IVF Cycle" / "3 Egg Retrievals Package" / "Shipping Embryos + FET".
+- Keep it under 50 characters. Title Case. No quotes.
+- Fall back to a short label derived from the filename if the document has no clear program name.
+
+Rules for COUNTRY:
+- Use the country where the clinic delivers the program (clinic address, "Mexico City", "Colombia", "Spain", etc.).
+- If the document explicitly mentions a country, use that.
+- Default to "United States" when nothing in the document indicates otherwise.
+- Use the full English country name (e.g. "United States", "Mexico", "Colombia"), not codes.
+
+Output STRICT JSON only, no commentary:
+{ "tab": "<tab-id>", "subType": "<subtype-id>", "isFixedCost": <true|false>, "confidence": <0..1>, "reasoning": "<one sentence>", "programName": "<label>", "country": "<country>" }
+
+The "tab" must match the parent of "subType". Confidence: 0.9+ when explicit keywords match; 0.6-0.8 when inferred; <0.5 when guessing.`;
+
+    const userPrompt = `Filename: ${originalFileName}
+
+Parsed line items (${parsedItems.length} total):
+${itemsSummary}
+${rawTextSnippet ? `\nDocument excerpt (first 1500 chars):\n${rawTextSnippet.slice(0, 1500)}` : ""}`;
+
+    try {
+      const model = genAI.getGenerativeModel({
+        model: "gemini-3.5-flash",
+        generationConfig: { temperature: 0, maxOutputTokens: 8192 } as any,
+      });
+      const timeoutMs = 45000;
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Classification timed out")), timeoutMs),
+      );
+      const result = await Promise.race([
+        model.generateContent(`${systemPrompt}\n\n${userPrompt}`),
+        timeoutPromise,
+      ]);
+      const text = result.response.text();
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        this.logger.warn(`Classification: no JSON in response: ${text.slice(0, 300)}`);
+        return null;
+      }
+      const parsed = JSON.parse(jsonMatch[0]);
+
+      // Validate the proposed subtype + tab pair against our enum.
+      const subType = String(parsed.subType ?? "") as SubType;
+      if (!(ALL_SUBTYPES as string[]).includes(subType)) {
+        this.logger.warn(`Classification returned unknown subType: ${parsed.subType}`);
+        return null;
+      }
+      const tab = TAB_OF[subType];
+      const confidence = typeof parsed.confidence === "number"
+        ? Math.max(0, Math.min(1, parsed.confidence))
+        : 0.5;
+      const isFixedCost = parsed.isFixedCost === true;
+      const reasoning = typeof parsed.reasoning === "string" ? parsed.reasoning.slice(0, 280) : "";
+
+      const rawName = typeof parsed.programName === "string" ? parsed.programName.trim().replace(/^["'`]|["'`]$/g, "") : "";
+      const programName = rawName.length > 0 && rawName.length <= 80
+        ? rawName
+        : (originalFileName.replace(/\.(pdf|xlsx?|csv)$/i, "").replace(/[_-]+/g, " ").trim() || "Untitled Program");
+
+      const rawCountry = typeof parsed.country === "string" ? parsed.country.trim() : "";
+      const country = rawCountry.length > 0 && rawCountry.length <= 60 ? rawCountry : "United States";
+
+      this.logger.log(`Classified document as ${subType} (fixed=${isFixedCost}, conf=${confidence.toFixed(2)}, name="${programName}", country="${country}"): ${reasoning}`);
+      return { tab, subType, isFixedCost, confidence, reasoning, programName, country, serviceTypes: ["ivf_clinic"] };
+    } catch (err: any) {
+      this.logger.warn(`Classification failed: ${err.message}`);
+      return null;
+    }
+  }
+
   private parseJsonResponse(text: string): Array<{
     category: string;
     key: string;
@@ -176,6 +676,7 @@ Return ONLY a valid JSON array with objects having these exact fields:
     maxValue: number | null;
     isCustom: boolean;
     isIncluded: boolean;
+    isTier: boolean;
     comment: string | null;
   }> {
     const jsonMatch = text.match(/\[[\s\S]*\]/);
@@ -195,6 +696,7 @@ Return ONLY a valid JSON array with objects having these exact fields:
         maxValue: item.maxValue != null ? Number(item.maxValue) : null,
         isCustom: Boolean(item.isCustom),
         isIncluded: item.isIncluded !== false,
+        isTier: item.isTier === true,
         comment: item.comment ? String(item.comment) : null,
       }));
     } catch (e) {
