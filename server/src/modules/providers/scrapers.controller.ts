@@ -67,8 +67,35 @@ export class ScrapersController {
   }
 
   private async resumeInterruptedProcesses() {
+    await this.closeOrphanedSyncLogs();
     await this.resumeInterruptedEnrichments();
     await this.resumeInterruptedDonorSyncs();
+  }
+
+  /**
+   * A freshly-started server process has zero in-memory sync jobs, so ANY
+   * SyncLog still marked "running" is orphaned - its process died (deploy,
+   * crash, manual restart). Close them all immediately so (1) the UI stops
+   * showing a phantom "Running" row, and (2) the startSync dedup guard doesn't
+   * block the next manual/nightly/auto-resume run. Must run BEFORE
+   * resumeInterruptedDonorSyncs so auto-resume isn't blocked by the stale log.
+   */
+  private async closeOrphanedSyncLogs() {
+    try {
+      const res = await this.prisma.syncLog.updateMany({
+        where: { status: "running" },
+        data: {
+          status: "failed",
+          completedAt: new Date(),
+          errors: ["Interrupted - server restarted while sync was running"],
+        },
+      });
+      if (res.count > 0) {
+        console.log(`[Donor Sync] Closed ${res.count} orphaned "running" SyncLog entr${res.count === 1 ? "y" : "ies"} on startup`);
+      }
+    } catch {
+      /* SyncLog table may not exist yet on first migration */
+    }
   }
 
   private async resumeInterruptedEnrichments() {
@@ -235,32 +262,31 @@ export class ScrapersController {
       throw new BadRequestException("Invalid sync type");
     }
     const cancelled = cancelSync(providerId, type as DonorType);
-    if (!cancelled) {
-      // No in-memory job - check if DB shows a stuck/orphaned running sync and close it
-      const tableMap: Record<string, string> = {
-        "egg-donor": "eggDonorSyncConfig",
-        surrogate: "surrogateSyncConfig",
-        "sperm-donor": "spermDonorSyncConfig",
-      };
-      const tableName = tableMap[type];
-      const config = tableName ? await (this.prisma[tableName as keyof typeof this.prisma] as any).findUnique({
-        where: { providerId },
-        select: { lastSyncStartedAt: true, lastSyncEndedAt: true },
-      }) : null;
-      if (config?.lastSyncStartedAt && !config?.lastSyncEndedAt) {
-        await (this.prisma[tableName as keyof typeof this.prisma] as any).update({
-          where: { providerId },
-          data: { lastSyncEndedAt: new Date() },
-        });
-        await this.prisma.syncLog.updateMany({
-          where: { providerId, type, status: "running" },
-          data: { status: "cancelled", completedAt: new Date(), errors: ["Manually stopped by admin"] },
-        });
-        return { message: "Sync marked as stopped (no active job found - cleared orphaned state)" };
-      }
-      throw new BadRequestException("No running sync found for this provider");
+
+    // Always clear any DB state regardless of whether an in-memory job existed.
+    // After a server restart the in-memory job is gone but the SyncLog can still
+    // be "running" (orphaned) - STOP must be able to force-close it. This is
+    // idempotent and safe to run even when cancelSync already handled an active job.
+    const tableMap: Record<string, string> = {
+      "egg-donor": "eggDonorSyncConfig",
+      surrogate: "surrogateSyncConfig",
+      "sperm-donor": "spermDonorSyncConfig",
+    };
+    const tableName = tableMap[type];
+    if (tableName) {
+      await (this.prisma[tableName as keyof typeof this.prisma] as any).updateMany({
+        where: { providerId, lastSyncEndedAt: null },
+        data: { lastSyncEndedAt: new Date() },
+      }).catch(() => {});
     }
-    return { message: "Sync stopped" };
+    const closed = await this.prisma.syncLog.updateMany({
+      where: { providerId, type, status: "running" },
+      data: { status: "cancelled", completedAt: new Date(), errors: ["Manually stopped by admin"] },
+    }).catch(() => ({ count: 0 }));
+
+    if (cancelled) return { message: "Sync stopped" };
+    if (closed.count > 0) return { message: "Cleared orphaned sync state (no active job was running)" };
+    throw new BadRequestException("No running sync found for this provider");
   }
 
   @Delete("donors/:providerId/:type")
