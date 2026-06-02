@@ -7,6 +7,7 @@ export interface SpermDonorProfileCardProps {
   subjectProfileId: string | null | undefined;
   fallbackPhotoUrl?: string | null;
   fallbackLabel?: string | null;
+  profileAvailable?: boolean | null;
   brandColor: string;
   testId?: string;
 }
@@ -21,6 +22,7 @@ export function SpermDonorProfileCard({
   subjectProfileId,
   fallbackPhotoUrl,
   fallbackLabel,
+  profileAvailable,
   brandColor,
   testId = "sperm-donor-profile-card",
 }: SpermDonorProfileCardProps) {
@@ -50,6 +52,7 @@ export function SpermDonorProfileCard({
       isLoading={isLoading}
       fallbackPhotoUrl={fallbackPhotoUrl}
       fallbackLabel={fallbackLabel}
+      profileAvailable={profileAvailable}
       brandColor={brandColor}
       testId={testId}
     />

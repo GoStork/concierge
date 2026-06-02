@@ -17,6 +17,7 @@ interface SubjectContext {
   subjectType: string | null | undefined;
   fallbackPhotoUrl?: string | null;
   fallbackLabel?: string | null;
+  profileAvailable?: boolean | null;
   heading?: string;
 }
 
@@ -167,6 +168,7 @@ export function ChatHeaderContextPanel({
               subjectType={subject.subjectType}
               fallbackPhotoUrl={subject.fallbackPhotoUrl}
               fallbackLabel={subject.fallbackLabel}
+              profileAvailable={subject.profileAvailable}
               brandColor={brandColor}
               heading={subjectHeading}
               testId="context-panel-subject-profile"

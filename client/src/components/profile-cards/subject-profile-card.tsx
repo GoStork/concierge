@@ -9,6 +9,7 @@ export interface SubjectProfileCardProps {
   subjectProfileId: string | null | undefined;
   fallbackPhotoUrl?: string | null;
   fallbackLabel?: string | null;
+  profileAvailable?: boolean | null;
   brandColor: string;
   /** Optional sidebar heading rendered above the card (e.g. "Interested Egg Donor"). */
   heading?: string;
@@ -30,6 +31,7 @@ export function SubjectProfileCard({
   subjectProfileId,
   fallbackPhotoUrl,
   fallbackLabel,
+  profileAvailable,
   brandColor,
   heading,
   withSeparator,
@@ -44,6 +46,7 @@ export function SubjectProfileCard({
       subjectProfileId={subjectProfileId}
       fallbackPhotoUrl={fallbackPhotoUrl}
       fallbackLabel={fallbackLabel}
+      profileAvailable={profileAvailable}
       brandColor={brandColor}
       testId={testId}
     />
@@ -53,6 +56,7 @@ export function SubjectProfileCard({
       subjectProfileId={subjectProfileId}
       fallbackPhotoUrl={fallbackPhotoUrl}
       fallbackLabel={fallbackLabel}
+      profileAvailable={profileAvailable}
       brandColor={brandColor}
       testId={testId}
     />
@@ -62,6 +66,7 @@ export function SubjectProfileCard({
       subjectProfileId={subjectProfileId}
       fallbackPhotoUrl={fallbackPhotoUrl}
       fallbackLabel={fallbackLabel}
+      profileAvailable={profileAvailable}
       brandColor={brandColor}
       testId={testId}
     />

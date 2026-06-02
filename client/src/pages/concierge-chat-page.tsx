@@ -2322,8 +2322,9 @@ export function ParentChatSidePanel({
   return (
     <div className="w-72 border-l overflow-y-auto bg-muted/30 hidden md:flex md:flex-col shrink-0">
       <div className="p-4 space-y-4">
-        {/* Profile photo + availability status - shown whenever there's a subject profile */}
-        {subjectInfo && (
+        {/* Compact photo + availability status - only when the full card below
+            is NOT shown (no booking yet), so the name isn't duplicated. */}
+        {subjectInfo && !existingBooking && (
           <div className="flex items-center gap-3">
             <div className="relative w-12 h-12 shrink-0">
               <div className="w-12 h-12 rounded-full overflow-hidden bg-muted">
@@ -2351,7 +2352,8 @@ export function ParentChatSidePanel({
           </div>
         )}
 
-        {/* Full profile card - only after a call has been scheduled */}
+        {/* Full profile card - only after a call has been scheduled. Status dot
+            + label live inside the card header (SubjectProfileBody). */}
         {subjectInfo && existingBooking && (
           <SubjectProfileCard
             subjectType={subjectInfo.subjectType}
@@ -2359,6 +2361,7 @@ export function ParentChatSidePanel({
             subjectProfileId={subjectInfo.subjectProfileId}
             fallbackPhotoUrl={subjectInfo.profilePhotoUrl}
             fallbackLabel={subjectInfo.profileLabel}
+            profileAvailable={profileAvailable}
             brandColor={brandColor}
             testId="parent-subject-profile-card"
           />

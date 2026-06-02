@@ -1699,6 +1699,7 @@ const sendMessageMutation = useMutation({
                     subjectType: selectedParentSession!.subjectType,
                     fallbackPhotoUrl: selectedParentSession!.profilePhotoUrl,
                     fallbackLabel: selectedParentSession!.title,
+                    profileAvailable: selectedParentSession!.profileAvailable,
                   }
                 : null
             }

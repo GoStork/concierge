@@ -25,6 +25,8 @@ export interface SubjectProfileBodyProps {
   fallbackPhotoUrl?: string | null;
   /** Label to show before the swipeProfile arrives (e.g. session title). */
   fallbackLabel?: string | null;
+  /** Availability status: true = available (green dot), false = no longer available (gray dot), null/undefined = no indicator. */
+  profileAvailable?: boolean | null;
   brandColor: string;
   testId?: string;
 }
@@ -48,6 +50,7 @@ export function SubjectProfileBody({
   isLoading,
   fallbackPhotoUrl,
   fallbackLabel,
+  profileAvailable,
   brandColor,
   testId,
 }: SubjectProfileBodyProps) {
@@ -67,23 +70,40 @@ export function SubjectProfileBody({
   return (
     <div data-testid={testId}>
       <div className="flex items-center gap-2.5 mb-2">
-        {photo ? (
-          <div className="w-10 h-10 rounded-full overflow-hidden bg-muted shrink-0">
-            <img
-              src={getPhotoSrc(photo) || undefined}
-              alt={label || "Profile"}
-              className="w-full h-full object-cover object-top"
+        <div className="relative w-10 h-10 shrink-0">
+          {photo ? (
+            <div className="w-10 h-10 rounded-full overflow-hidden bg-muted">
+              <img
+                src={getPhotoSrc(photo) || undefined}
+                alt={label || "Profile"}
+                className="w-full h-full object-cover object-top"
+              />
+            </div>
+          ) : (
+            <div
+              className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold"
+              style={{ backgroundColor: brandColor }}
+            >
+              {(label || "?").charAt(0)}
+            </div>
+          )}
+          {profileAvailable != null && (
+            <span
+              className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background ${profileAvailable === false ? "bg-muted-foreground/50" : "bg-[hsl(var(--brand-success))]"}`}
+              title={profileAvailable === false ? "No longer available" : "Available"}
             />
-          </div>
-        ) : (
-          <div
-            className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold shrink-0"
-            style={{ backgroundColor: brandColor }}
-          >
-            {(label || "?").charAt(0)}
-          </div>
-        )}
-        <p className="text-sm font-semibold leading-tight">{label || "-"}</p>
+          )}
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold leading-tight">{label || "-"}</p>
+          {profileAvailable != null && (
+            profileAvailable === false ? (
+              <p className="text-[10px] text-muted-foreground">No longer available</p>
+            ) : (
+              <p className="text-[10px] text-[hsl(var(--brand-success))] font-medium">Available</p>
+            )
+          )}
+        </div>
       </div>
       <button
         type="button"
