@@ -3819,16 +3819,55 @@ RULES: One question per message. Copy question text and [[QUICK_REPLY:]] tags EX
 
 === PHASE 0: GOSTORK INTRODUCTION ===
 After parent confirms services ("Yes, that's right"):
-1. Acknowledge briefly (1 sentence). Deliver Part 1:
+
+1. Acknowledge briefly (1 sentence). Then deliver Part 1 using the EXACT TEMPLATE below. NEVER output curly braces, brackets, or placeholders - always substitute the literal phrase before sending. The "We have ..." numbers sentence is MANDATORY - never omit it.
+
+PART 1 TEMPLATE:
 "Before we dive in, let me give you a quick picture of how GoStork works.
 
-GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of [researching dozens of agencies / searching across dozens of agency websites / researching IVF clinics] on your own, we've brought everything together in one place with full transparent pricing and no surprises. [Adapt: 60+ surrogacy agencies / 30 egg donor agencies with 10,000+ donors / 30+ IVF clinics]. And it's completely free for intended parents - providers pay us a referral fee and are not allowed to pass that cost on to you."
+GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of {RESEARCH} on your own, we've brought everything together in one place with full transparent pricing and no surprises. We have {NUMBERS}. And it's completely free for intended parents - providers pay us a referral fee and are not allowed to pass that cost on to you."
 End with: "Does that make sense so far?" [[QUICK_REPLY:Yes, makes sense!|I have a question]]
 
-2. When parent affirms (any yes/sure/got it/ok), deliver Part 2 in same response:
-"One thing that sets GoStork apart: every provider has been personally vetted by Eran Amir, our founder, who went through surrogacy himself. He personally interviews each agency's leadership, reviews their operations, and makes sure they have the right team in place. [For surrogacy: And there are no waiting lists - every surrogate you'll see is available right now.]
+{RESEARCH} - pick the one matching the parent's services:
+- Sperm donation only -> "searching across dozens of sperm bank websites"
+- Egg donation only -> "researching dozens of egg donor agencies"
+- Surrogacy only -> "researching dozens of surrogacy agencies"
+- IVF clinic only -> "researching IVF clinics"
+- Egg + Sperm -> "researching across dozens of egg donor agency and sperm bank websites"
+- Egg + Surrogacy -> "researching across dozens of egg donor and surrogacy agency websites"
+- Egg + IVF -> "researching across dozens of egg donor agency websites and IVF clinics"
+- Sperm + Surrogacy -> "researching across dozens of surrogacy agency and sperm bank websites"
+- Sperm + IVF -> "researching across dozens of sperm bank websites and IVF clinics"
+- Surrogacy + IVF -> "researching across dozens of surrogacy agency websites and IVF clinics"
+- 3+ services -> name every relevant surface, joined with commas + "and" (e.g. "researching across dozens of egg donor agency, surrogacy agency, and sperm bank websites and IVF clinics")
+
+{NUMBERS} - pick or combine by parent's services (2 services use "and"; 3+ use commas + final "and"):
+- Sperm donation -> "10+ sperm banks with 1,500+ donors"
+- Egg donation -> "30 egg donor agencies with 10,000+ donors"
+- Surrogacy -> "60+ surrogacy agencies"
+- IVF clinic -> "30+ IVF clinics"
+
+EXAMPLES (every selected service appears in BOTH {RESEARCH} and {NUMBERS}):
+- Sperm only: "...Instead of searching across dozens of sperm bank websites on your own... We have 10+ sperm banks with 1,500+ donors. And it's completely free..."
+- Egg + Sperm: "...Instead of researching across dozens of egg donor agency and sperm bank websites on your own... We have 30 egg donor agencies with 10,000+ donors and 10+ sperm banks with 1,500+ donors. And it's completely free..."
+- All four: "...We have 60+ surrogacy agencies, 30 egg donor agencies with 10,000+ donors, 10+ sperm banks with 1,500+ donors, and 30+ IVF clinics. And it's completely free..."
+
+HARD RULES:
+- ALWAYS include the "We have {NUMBERS}." sentence - it is MANDATORY.
+- MULTI-SERVICE: if parent selected N services (N>=2), BOTH {RESEARCH} and {NUMBERS} MUST name all N services. Never drop a service.
+- ONLY include numbers for services the parent actually selected. NEVER quote egg donor numbers to a sperm-only parent, etc.
+- NEVER leave curly braces, brackets, slashes, or the literal text "RESEARCH" / "NUMBERS" in the output.
+
+2. When parent affirms (any yes/sure/got it/ok), deliver Part 2 in same response. Same placeholder discipline - never output curly braces.
+
+PART 2 TEMPLATE:
+"One thing that sets GoStork apart: every provider has been personally vetted by Eran Amir, our founder, who went through {JOURNEY} himself. He personally interviews each {PROVIDER}'s leadership, reviews their operations, and makes sure they have the right team in place.{WAITLIST}
 
 Do you have any questions about GoStork and how we can help you?" [[QUICK_REPLY:I understand, let's get started|I have a few questions]]
+
+{JOURNEY} - "surrogacy" if parent is looking for surrogacy; otherwise "the fertility journey".
+{PROVIDER} - "agency" for egg donation or surrogacy, "sperm bank" for sperm donation, "clinic" for IVF clinic, "provider" if the parent selected multiple service types.
+{WAITLIST} - if parent is looking for surrogacy, append " And there are no waiting lists - every surrogate you'll see is available right now." Otherwise leave it out entirely (no extra space, no extra punctuation).
 
 3. If "Not exactly": ask [[MULTI_SELECT:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]] then deliver education.
 4. PHASE 1 (Identity) AND PHASE 2 (Biological baseline) ARE MANDATORY for ALL parents. NEVER skip them, even for donor-only parents. Donor matching (B1/C1) cannot run until Phase 1 + Phase 2 are complete - we need to know family type, gender, embryo status, and biology context to match donors properly. The ONLY thing that varies by services is which Phase 3 cycles run AFTER Phase 1+2 finish.
@@ -3994,7 +4033,20 @@ ${phase0Section}`;
         // Serve Part 2 + Phase 1 in ONE response to avoid the typing-animation merge bug.
         // When Part 2 and Phase 1 arrive in rapid succession as separate responses, the frontend
         // animation queue merges them into the same bubble. Combining prevents this entirely.
-        const part2Body = `One thing that sets GoStork apart: every provider has been personally vetted by Eran Amir, our founder, who went through surrogacy himself. He personally interviews each agency's leadership, reviews their operations, and makes sure they have the right team in place.${needsSurrogate ? " And there are no waiting lists - every surrogate you'll see is available right now." : ""}`;
+        // Per-service render: founder journey + provider type + waitlist must adapt
+        // to the actual services the parent selected. Defaults to "the fertility
+        // journey" / "provider" when surrogacy isn't selected so sperm-only or
+        // egg-only parents don't see surrogacy-specific copy.
+        const _selectedCount = [needsSurrogate, needsClinic, needsEggDonor, needsSpermDonor].filter(Boolean).length;
+        const _journey = needsSurrogate ? "surrogacy" : "the fertility journey";
+        let _providerType = "provider";
+        if (_selectedCount === 1) {
+          if (needsSpermDonor) _providerType = "sperm bank";
+          else if (needsClinic) _providerType = "clinic";
+          else _providerType = "agency"; // egg donor or surrogacy
+        }
+        const _waitlist = needsSurrogate ? " And there are no waiting lists - every surrogate you'll see is available right now." : "";
+        const part2Body = `One thing that sets GoStork apart: every provider has been personally vetted by Eran Amir, our founder, who went through ${_journey} himself. He personally interviews each ${_providerType}'s leadership, reviews their operations, and makes sure they have the right team in place.${_waitlist}`;
         // Inline all variables needed here - they are declared further down in the Tier 1 block
         // and would cause ReferenceError (TDZ) if referenced before their declarations.
         const _parentNeedsPhase1 = services.some((s: string) => /surrog|clinic|ivf/i.test(s))
@@ -4120,8 +4172,20 @@ ${phase0Section}`;
         const part2Delivered = chatHistory.some((m: any) =>
           m.role === "assistant" && /eran amir|personally vetted|no waiting lists/i.test(m.content || "")
         );
+        // Per-service render - same logic as the Part 2 bypass above. Founder
+        // journey, provider type, and waitlist must adapt to the actual services
+        // the parent selected.
+        const _p1_selectedCount = [needsSurrogate, needsClinic, needsEggDonor, needsSpermDonor].filter(Boolean).length;
+        const _p1_journey = needsSurrogate ? "surrogacy" : "the fertility journey";
+        let _p1_providerType = "provider";
+        if (_p1_selectedCount === 1) {
+          if (needsSpermDonor) _p1_providerType = "sperm bank";
+          else if (needsClinic) _p1_providerType = "clinic";
+          else _p1_providerType = "agency";
+        }
+        const _p1_waitlist = needsSurrogate ? " And there are no waiting lists - every surrogate you'll see is available right now." : "";
         const part2Text = part2Delivered ? "" :
-          `One thing that sets GoStork apart: every provider has been personally vetted by Eran Amir, our founder, who went through surrogacy himself. He personally interviews each agency's leadership, reviews their operations, and makes sure they have the right team in place.${needsSurrogate ? " And there are no waiting lists - every surrogate you'll see is available right now." : ""}\n\n`;
+          `One thing that sets GoStork apart: every provider has been personally vetted by Eran Amir, our founder, who went through ${_p1_journey} himself. He personally interviews each ${_p1_providerType}'s leadership, reviews their operations, and makes sure they have the right team in place.${_p1_waitlist}\n\n`;
         finalContent = `${part2Text}To help me tailor everything to your situation -\n\nWhich best describes you? [[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]`;
         sse.sendToken(finalContent);
         serverBypassServed = true;
