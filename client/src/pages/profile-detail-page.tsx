@@ -264,6 +264,8 @@ const HIDDEN_PROFILE_KEYS = new Set([
   "Surrogate I D", "Donor ID", "Donor I D",
   // Photo/video metadata - should render as gallery, not as text fields
   "photoCount", "photo count", "hasVideo", "has video", "additionalPhotos",
+  // lowercase "photos" key stored by some scrapers - same data as the DB photos[] column
+  "photos",
 ]);
 
 const AGENCY_COMMENT_PATTERN = /^(agency\s*(comment|recommendation|note)s?|recommendation\s*points?|additional\s*information)$/i;

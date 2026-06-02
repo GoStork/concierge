@@ -2322,15 +2322,36 @@ export function ParentChatSidePanel({
   return (
     <div className="w-72 border-l overflow-y-auto bg-muted/30 hidden md:flex md:flex-col shrink-0">
       <div className="p-4 space-y-4">
-        {/* Unavailable profile banner */}
-        {subjectInfo && profileAvailable === false && (
-          <div className="rounded-[var(--radius)] bg-muted border border-border/60 px-3 py-2.5 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-muted-foreground/50 flex-shrink-0" />
-            <p className="text-xs text-muted-foreground leading-snug">This {(subjectInfo.subjectType || "profile").toLowerCase()} is no longer available on GoStork.</p>
+        {/* Profile photo + availability status - shown whenever there's a subject profile */}
+        {subjectInfo && (
+          <div className="flex items-center gap-3">
+            <div className="relative w-12 h-12 shrink-0">
+              <div className="w-12 h-12 rounded-full overflow-hidden bg-muted">
+                {subjectInfo.profilePhotoUrl ? (
+                  <img src={getPhotoSrc(subjectInfo.profilePhotoUrl) || undefined} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-primary-foreground text-sm font-bold" style={{ backgroundColor: brandColor }}>
+                    {(subjectInfo.profileLabel || subjectInfo.subjectType || "D").charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </div>
+              <span
+                className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background ${profileAvailable === false ? "bg-muted-foreground/50" : "bg-[hsl(var(--brand-success))]"}`}
+                title={profileAvailable === false ? "No longer available" : "Available"}
+              />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium font-ui truncate">{subjectInfo.profileLabel || subjectInfo.subjectType}</p>
+              {profileAvailable === false ? (
+                <p className="text-[10px] text-muted-foreground">No longer available</p>
+              ) : (
+                <p className="text-[10px] text-[hsl(var(--brand-success))] font-medium">Available</p>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Profile Section - only after a call has been scheduled */}
+        {/* Full profile card - only after a call has been scheduled */}
         {subjectInfo && existingBooking && (
           <SubjectProfileCard
             subjectType={subjectInfo.subjectType}
