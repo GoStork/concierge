@@ -1078,6 +1078,30 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       const agent = await prisma.user.findUnique({ where: { id: (session as any).humanAgentId }, select: { photoUrl: true } });
       humanAgentPhotoUrl = agent?.photoUrl || null;
     }
+
+    // Enrich the subject photo from the donor/surrogate row when the session has
+    // no stored profilePhotoUrl (mirrors /api/my/chat-sessions). Lookup is by id
+    // WITHOUT the hiddenFromSearch filter so the right-panel/header still shows
+    // the photo of a profile that was pulled from the marketplace but is still
+    // the subject of this chat.
+    let enrichedPhotoUrl: string | null = session.profilePhotoUrl || null;
+    if (!enrichedPhotoUrl && session.subjectProfileId && session.subjectType) {
+      const st = session.subjectType.toLowerCase();
+      try {
+        const donor = st.includes("egg")
+          ? await prisma.eggDonor.findUnique({ where: { id: session.subjectProfileId }, select: { photos: true, photoUrl: true } })
+          : st.includes("sperm")
+          ? await prisma.spermDonor.findUnique({ where: { id: session.subjectProfileId }, select: { photos: true, photoUrl: true } })
+          : st.includes("surrogate")
+          ? await prisma.surrogate.findUnique({ where: { id: session.subjectProfileId }, select: { photos: true, photoUrl: true } })
+          : null;
+        if (donor) {
+          const photos = (donor.photos as string[]) || [];
+          enrichedPhotoUrl = photos.find((p) => !!p) || donor.photoUrl || null;
+        }
+      } catch { /* best-effort photo enrichment */ }
+    }
+
     res.json({
       messages: filteredMessages,
       sessionTitle: cleanTitle(session.title) || null,
@@ -1089,7 +1113,7 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       humanConcludedAt: (session as any).humanConcludedAt || null,
       subjectProfileId: session.subjectProfileId || null,
       subjectType: session.subjectType || null,
-      profilePhotoUrl: session.profilePhotoUrl || null,
+      profilePhotoUrl: enrichedPhotoUrl,
       sessionProviderId: session.providerId || null,
       matchmakerId: session.matchmakerId || null,
       matchmakerName,
