@@ -7,6 +7,7 @@ import type { LucideIcon } from "lucide-react";
 import { getPhotoSrc, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields } from "@/lib/profile-utils";
 import { parseHeightToInches, resolveEthnicityTerms } from "@/lib/marketplace-filters";
 import { formatMoneyDollars } from "@/lib/format-money";
+import { formatLocationDisplay } from "@/lib/format-location";
 
 export type LayoutType = "matched_bubbles" | "icon_list" | "standard_bubbles";
 
@@ -481,7 +482,7 @@ export function getDonorTabs(profile: SwipeDeckProfile, matchedPrefs: MatchedPre
 
   const overviewItems: TabItem[] = [];
   if (!matchedKeys.has("age") && isNonEmpty(profile.age)) overviewItems.push({ label: `Age ${profile.age}`, value: "" });
-  if (!matchedKeys.has("location") && isNonEmpty(profile.location)) overviewItems.push({ label: profile.location!, value: "" });
+  if (!matchedKeys.has("location") && isNonEmpty(profile.location)) overviewItems.push({ label: formatLocationDisplay(profile.location)!, value: "" });
   if (isNonEmpty(profile.eggType)) overviewItems.push({ label: profile.eggType!, value: "" });
   if (overviewItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Overview", items: overviewItems });
 
@@ -556,7 +557,7 @@ export function getSurrogateTabs(profile: SwipeDeckProfile, matchedPrefs: Matche
   } else {
     const overviewItems: TabItem[] = [];
     if (isNonEmpty(profile.age)) overviewItems.push({ label: `Age ${profile.age}`, value: "" });
-    if (isNonEmpty(profile.location)) overviewItems.push({ label: profile.location!, value: "" });
+    if (isNonEmpty(profile.location)) overviewItems.push({ label: formatLocationDisplay(profile.location)!, value: "" });
     if (profile.bmi) overviewItems.push({ label: `BMI ${Math.round(Number(profile.bmi))}`, value: "", lineBreakBefore: true });
     if (isNonEmpty(profile.relationshipStatus)) overviewItems.push({ label: profile.relationshipStatus!, value: "" });
     if (isNonEmpty(profile.occupation)) overviewItems.push({ label: profile.occupation!, value: "" });
@@ -639,7 +640,7 @@ export function buildSidebarSections(profile: SwipeDeckProfile, isSpermDonor = f
   // Overview
   const overview: SidebarRow[] = [];
   if (profile.age != null) overview.push({ label: "Age", value: String(profile.age) });
-  if (isNonEmptyStr(profile.location)) overview.push({ label: "Location", value: profile.location });
+  if (isNonEmptyStr(profile.location)) overview.push({ label: "Location", value: formatLocationDisplay(profile.location)! });
   if (!isSurrogate && isNonEmptyStr(profile.eggType)) overview.push({ label: "Egg Type", value: profile.eggType });
   if (isSurrogate && profile.bmi != null) overview.push({ label: "BMI", value: String(Math.round(Number(profile.bmi))) });
   if (isSurrogate && isNonEmptyStr(profile.relationshipStatus)) overview.push({ label: "Relationship Status", value: profile.relationshipStatus });

@@ -11,6 +11,7 @@ import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { deriveChatPalette } from "@/lib/chat-palette";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatMoneyCents } from "@/lib/format-money";
+import { formatLocationDisplay } from "@/lib/format-location";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -2014,13 +2015,13 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
             {(card.name || "").charAt(0)}
           </div>
           <h3 className="font-heading text-xl text-center leading-tight">{card.name}</h3>
-          {card.location && <p className="text-muted-foreground text-sm mt-1">{card.location}</p>}
+          {card.location && <p className="text-muted-foreground text-sm mt-1">{formatLocationDisplay(card.location)}</p>}
         </div>
       )}
       {card.photo && (
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-24 pb-6 px-4">
           <h3 className="text-white font-heading text-xl leading-tight">{card.name}</h3>
-          {card.location && <p className="text-white/70 text-sm mt-1">{card.location}</p>}
+          {card.location && <p className="text-white/70 text-sm mt-1">{formatLocationDisplay(card.location)}</p>}
         </div>
       )}
     </div>

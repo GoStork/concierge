@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { typeToUrlSlug, deriveTypeFromPath, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields, getPhotoSrc } from "@/lib/profile-utils";
 import { formatMoneyDollars } from "@/lib/format-money";
+import { formatLocationDisplay } from "@/lib/format-location";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { hasProviderRole, hasAnyRole, GOSTORK_ROLES } from "@shared/roles";
@@ -576,7 +577,7 @@ export default function DonorProfilePage() {
 
   const headerMeta: string[] = [];
   if (donor.status) headerMeta.push(donor.status);
-  if (donor.location) headerMeta.push(donor.location);
+  if (donor.location) headerMeta.push(formatLocationDisplay(donor.location)!);
   if (type === "sperm-donor") {
     // Show all matching vial cost programs from the cost sheet
     const vialCosts: { label: string; cost: number }[] = Array.isArray(donor.vialCosts) ? donor.vialCosts : [];

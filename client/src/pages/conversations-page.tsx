@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatMoneyCents } from "@/lib/format-money";
+import { formatLocationDisplay } from "@/lib/format-location";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -384,7 +385,7 @@ function WhisperProfileCard({ card, brandColor }: { card: any; brandColor: strin
         <img src={getPhotoSrc(card.photo) || undefined} alt={card.name} className="w-full h-full object-cover" />
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-24 pb-6 px-4">
           <h3 className="text-white font-heading text-xl leading-tight">{card.name}</h3>
-          {card.location && <p className="text-white/70 text-sm mt-1">{card.location}</p>}
+          {card.location && <p className="text-white/70 text-sm mt-1">{formatLocationDisplay(card.location)}</p>}
         </div>
       </div>
     );
@@ -2237,6 +2238,7 @@ const sendMessageMutation = useMutation({
             <ChatProfileSidebar
               user={detail.user}
               brandColor={brandColor}
+              isOnline={!!onlineStatuses[detail.user.id]}
               testId="provider-sidebar"
               topSections={
                 (hasJoined || isConsultationBooked) ? (

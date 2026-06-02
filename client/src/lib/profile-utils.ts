@@ -1,4 +1,5 @@
 import { formatMoneyDollars } from "@/lib/format-money";
+import { formatLocationDisplay } from "@/lib/format-location";
 
 export type ProfileType = "egg-donor" | "surrogate" | "sperm-donor";
 
@@ -281,13 +282,13 @@ export function getProfileCardSummary(d: any, type: string): { label: string; va
       { label: "Hair / Eyes", value: [r.hairColor, r.eyeColor].filter(Boolean).join(" / ") || null },
       { label: "Height", value: r.height },
       { label: "Education", value: r.education },
-      { label: "Location", value: r.location },
+      { label: "Location", value: formatLocationDisplay(r.location) },
     );
   } else if (type === "surrogate") {
     const r = resolveSurrogateFields(d);
     items.push(
       { label: "Age", value: r.age },
-      { label: "Location", value: r.location },
+      { label: "Location", value: formatLocationDisplay(r.location) },
       { label: "BMI", value: r.bmi },
       { label: "Occupation", value: r.occupation },
       { label: "Relationship", value: r.relationshipStatus },
@@ -300,7 +301,7 @@ export function getProfileCardSummary(d: any, type: string): { label: string; va
       { label: "Ethnicity", value: r.ethnicity },
       { label: "Height", value: r.height },
       { label: "Education", value: r.education },
-      { label: "Location", value: r.location },
+      { label: "Location", value: formatLocationDisplay(r.location) },
     );
     if (r.vialCosts.length > 0) {
       for (const vc of r.vialCosts) {
@@ -337,7 +338,7 @@ export function getProfileDetails(d: any, type: ProfileType): { label: string; v
       { label: "Height", value: V(r.height) },
       { label: "Weight", value: V(r.weight) },
       { label: "Education", value: V(r.education) },
-      { label: "Location", value: V(r.location) },
+      { label: "Location", value: V(formatLocationDisplay(r.location)) },
       { label: "Egg Type", value: V(r.donorType) },
       { label: "Type of Donation", value: V(r.donationTypes) },
     );
@@ -357,7 +358,7 @@ export function getProfileDetails(d: any, type: ProfileType): { label: string; v
     const r = resolveSurrogateFields(d);
     result.push(
       { label: "Age", value: V(r.age) },
-      { label: "Location", value: V(r.location) },
+      { label: "Location", value: V(formatLocationDisplay(r.location)) },
       { label: "BMI", value: V(r.bmi) },
       { label: "Race", value: V(r.race) },
       { label: "Ethnicity", value: V(r.ethnicity) },
@@ -385,7 +386,7 @@ export function getProfileDetails(d: any, type: ProfileType): { label: string; v
       { label: "Age", value: V(r.age) },
       { label: "Type", value: V(r.donorType) },
       { label: "Available for", value: r.vialTypes.length > 0 ? r.vialTypes.join(", ") : "-" },
-      { label: "Location", value: V(r.location) },
+      { label: "Location", value: V(formatLocationDisplay(r.location)) },
       { label: "Ethnicity", value: V(r.ethnicity) },
       { label: "Race", value: V(r.race) },
       { label: "Height", value: V(r.height) },
