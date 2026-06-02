@@ -417,10 +417,15 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
   // Skip for: solo woman + two moms (always sperm donor - save silently)
   // Also skip when 3b was answered with "Use my existing embryos" - the sperm
   // source is already baked into the existing embryos, no question needed.
+  // Also skip when the parent already registered for / explicitly asked for
+  // sperm donation AND has no existing embryos: the answer is obviously
+  // "Donor sperm" and re-asking is annoying. (When they DO have embryos, the
+  // 3b conflict question handles disambiguation.)
   // -----------------------------------------------------------------------
   const chose3bExisting = hasEmbryos && (registeredForSpermDonor || needsSpermDonor) &&
     userSaid(allUserMessages, /use my existing embryos/i);
-  const skipSpermQuestion = isSoloWoman || isTwoMoms || chose3bExisting;
+  const spermDonorAlreadyConfirmed = (registeredForSpermDonor || needsSpermDonor) && !hasEmbryos;
+  const skipSpermQuestion = isSoloWoman || isTwoMoms || chose3bExisting || spermDonorAlreadyConfirmed;
   const spermSourceKnown = chatMentionsSpermSource; // intentionally NOT || profile?.spermSource (stale)
 
   if (!skipSpermQuestion && !spermSourceKnown) {

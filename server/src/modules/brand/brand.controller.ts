@@ -109,6 +109,7 @@ const DEFAULTS = {
   quickReplyPaddingY: 6,
   quickReplyColorStyle: "primary",
   quickReplyDeclineStyle: "secondary",
+  quickReplyMultiStyle: "outline",
   quickReplyShowBorder: true,
 };
 
@@ -141,7 +142,7 @@ const ALLOWED_FIELDS = [
   "chatBubblePaddingX", "chatBubblePaddingY", "chatBubbleMaxWidth", "chatBubbleRadius",
   "chatTimestampFontSize", "chatTimestampOpacity", "chatInputFontSize", "chatInputFontSizeDesktop", "chatInputHeight",
   "quickReplyFontSize", "quickReplyRadius", "quickReplyPaddingX", "quickReplyPaddingY",
-  "quickReplyColorStyle", "quickReplyDeclineStyle", "quickReplyShowBorder",
+  "quickReplyColorStyle", "quickReplyDeclineStyle", "quickReplyMultiStyle", "quickReplyShowBorder",
   // Billing identity (legalName + taxId) moved to ProviderLegalIdentity.
   // See /api/provider/legal-identity and /api/admin/providers/:id/legal-identity.
   ...ADVANCED_COLOR_FIELDS,
@@ -310,6 +311,12 @@ function validateBrandBody(body: any) {
   if (body.quickReplyDeclineStyle !== undefined && body.quickReplyDeclineStyle !== null) {
     if (!["primary", "accent", "secondary", "outline"].includes(body.quickReplyDeclineStyle)) {
       body.quickReplyDeclineStyle = "secondary";
+    }
+  }
+
+  if (body.quickReplyMultiStyle !== undefined && body.quickReplyMultiStyle !== null) {
+    if (!["primary", "accent", "secondary", "outline"].includes(body.quickReplyMultiStyle)) {
+      body.quickReplyMultiStyle = "outline";
     }
   }
 

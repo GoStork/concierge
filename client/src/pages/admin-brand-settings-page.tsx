@@ -1329,6 +1329,14 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
     : (form.primaryColor ?? "#004D4D");
   const decIsOutline = decStyle === "outline";
   const decIsSecondary = decStyle === "secondary";
+
+  const multiStyle = form.quickReplyMultiStyle ?? "outline";
+  const multiColor = multiStyle === "accent" ? (form.accentColor ?? "#0DA4EA")
+    : multiStyle === "secondary" ? (form.secondaryColor ?? "#F0FAF5")
+    : (form.primaryColor ?? "#004D4D");
+  const multiIsOutline = multiStyle === "outline";
+  const multiIsSecondary = multiStyle === "secondary";
+
   const showBorder = form.quickReplyShowBorder ?? true;
 
   const bubbleBase: CSSProperties = {
@@ -1365,7 +1373,11 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
     : decIsSecondary
     ? { ...chipBase, backgroundColor: decColor, color: "hsl(var(--foreground))", border: showBorder ? `1px solid ${primary}50` : "none" }
     : { ...chipBase, backgroundColor: decColor, color: "#ffffff", border: "none" };
-  const chipUniform: CSSProperties = { ...chipBase, backgroundColor: "transparent", color: qrColor, border: `1px solid ${qrColor}` };
+  const chipUniform: CSSProperties = multiIsOutline
+    ? { ...chipBase, backgroundColor: "transparent", color: multiColor, border: `1px solid ${multiColor}` }
+    : multiIsSecondary
+    ? { ...chipBase, backgroundColor: multiColor, color: "hsl(var(--foreground))", border: showBorder ? `1px solid ${primary}50` : "none" }
+    : { ...chipBase, backgroundColor: multiColor, color: "#ffffff", border: "none" };
 
   const messages: { text: string; own: boolean; time: string; chips?: "binary" | "multi" }[] = [
     { text: "Does that make sense so far?", own: false, time: "1:38 PM", chips: "binary" },
@@ -2421,6 +2433,48 @@ export function BrandSettingsForm({
                         type="button"
                         disabled={formDisabled}
                         onClick={() => updateField("quickReplyDeclineStyle", key)}
+                        className={`flex flex-col items-center gap-2 p-3 rounded-[var(--radius)] border-2 transition-all ${selected ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/40"}`}
+                      >
+                        <span
+                          style={{
+                            backgroundColor: bg,
+                            color: text,
+                            border: `1px solid ${border}`,
+                            borderRadius: `${form.quickReplyRadius ?? 999}px`,
+                            padding: "3px 10px",
+                            fontSize: "11px",
+                            fontWeight: 500,
+                            display: "inline-block",
+                          }}
+                        >
+                          Chip
+                        </span>
+                        <span className={`text-xs font-medium ${selected ? "text-primary" : "text-muted-foreground"}`}>{label}</span>
+                        {selected && <Check className="w-3 h-3 text-primary" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Multi-Choice Unselected Style picker */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Multi-Choice Button Style</Label>
+                <p className="text-xs text-muted-foreground">Style of unselected options when the user can pick multiple choices (e.g. donor preferences).</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-1">
+                  {([
+                    { key: "primary", label: "Primary", bg: form.primaryColor ?? "#004D4D", text: "#ffffff", border: form.primaryColor ?? "#004D4D" },
+                    { key: "accent", label: "Accent", bg: form.accentColor ?? "#0DA4EA", text: "#ffffff", border: form.accentColor ?? "#0DA4EA" },
+                    { key: "secondary", label: "Secondary", bg: form.secondaryColor ?? "#F0FAF5", text: "hsl(var(--foreground))", border: "hsl(var(--border))" },
+                    { key: "outline", label: "Outline", bg: "transparent", text: form.primaryColor ?? "#004D4D", border: form.primaryColor ?? "#004D4D" },
+                  ] as const).map(({ key, label, bg, text, border }) => {
+                    const selected = (form.quickReplyMultiStyle ?? "outline") === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        disabled={formDisabled}
+                        onClick={() => updateField("quickReplyMultiStyle", key)}
                         className={`flex flex-col items-center gap-2 p-3 rounded-[var(--radius)] border-2 transition-all ${selected ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/40"}`}
                       >
                         <span

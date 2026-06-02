@@ -2840,6 +2840,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     : brandColor;
   const decIsOutline = decStyle === "outline";
   const decIsSecondary = decStyle === "secondary";
+
+  const multiStyle = brand?.quickReplyMultiStyle ?? "outline";
+  const multiColor = multiStyle === "accent" ? (brand?.accentColor ?? "#0DA4EA")
+    : multiStyle === "secondary" ? (brand?.secondaryColor ?? "#F0FAF5")
+    : brandColor;
+  const multiIsOutline = multiStyle === "outline";
+  const multiIsSecondary = multiStyle === "secondary";
+
   const qrShowBorder = brand?.quickReplyShowBorder ?? true;
 
   // Chip styles computed at component level - reused by quick reply chips AND ReadinessPromptCard
@@ -4436,17 +4444,23 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                           <div className="flex flex-wrap gap-2 mt-3" data-testid="quick-replies">
                             {msg.quickReplies.map((qr, qi) => {
                               const isSelected = isMulti && multiSelectChoices.has(qr);
+                              const multiUnselectedStyle: React.CSSProperties = multiIsOutline
+                                ? { backgroundColor: "transparent", color: multiColor, border: `1px solid ${multiColor}` }
+                                : multiIsSecondary
+                                ? { backgroundColor: multiColor, color: "hsl(var(--foreground))", border: qrShowBorder ? `1px solid ${brandColor}50` : "none" }
+                                : { backgroundColor: multiColor, color: "#ffffff", border: "none" };
+                              const multiSelectedStyle: React.CSSProperties = {
+                                backgroundColor: qrColor,
+                                color: qrIsSecondary ? "hsl(var(--foreground))" : "#ffffff",
+                                border: "none",
+                              };
                               const chipStyle = isBinary
                                 ? qi === 0
                                   ? chipPositiveStyle
                                   : chipDeclineStyle
-                                : qrIsOutline
-                                ? { backgroundColor: "transparent", color: qrColor, border: `1px solid ${qrColor}` }
-                                : {
-                                    backgroundColor: isSelected ? qrColor : "transparent",
-                                    color: isSelected ? (qrIsSecondary ? "hsl(var(--foreground))" : "#ffffff") : qrColor,
-                                    border: isSelected ? "none" : `1px solid ${qrColor}`,
-                                  };
+                                : isSelected
+                                ? multiSelectedStyle
+                                : multiUnselectedStyle;
                               return (
                                 <Button
                                   key={qi}
