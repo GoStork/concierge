@@ -52,6 +52,49 @@ function pickFirstValidPhoto(photos: string[] | null | undefined, photoUrl: stri
 function getUserRoles(user: any): string[] {
   return user.roles || [];
 }
+
+/**
+ * Computes marketplace-availability for a set of chat-session subject profiles,
+ * across ALL types (egg donor, surrogate, sperm donor, IVF clinic, surrogacy
+ * agency). A donor/surrogate is available only if it still exists, has status
+ * AVAILABLE, and is NOT hiddenFromSearch (i.e. it would show in the marketplace).
+ * Providers (clinic/agency) have no per-profile status, so existence is enough.
+ *
+ * Returns a Map<subjectProfileId, boolean>. Profiles with no subjectProfileId/
+ * subjectType are simply absent from the map (caller leaves profileAvailable null).
+ * Shared by the parent, provider, and admin session endpoints.
+ */
+async function computeProfileAvailability(
+  items: { subjectProfileId?: string | null; subjectType?: string | null }[],
+): Promise<Map<string, boolean>> {
+  const result = new Map<string, boolean>();
+  const sessions = items.filter(s => s.subjectProfileId && s.subjectType);
+  if (sessions.length === 0) return result;
+  const t = (s: { subjectType?: string | null }) => (s.subjectType || "").toLowerCase();
+  const eggIds = [...new Set(sessions.filter(s => t(s).includes("egg")).map(s => s.subjectProfileId!))];
+  const surrIds = [...new Set(sessions.filter(s => t(s).includes("surrogate")).map(s => s.subjectProfileId!))];
+  const spermIds = [...new Set(sessions.filter(s => t(s).includes("sperm")).map(s => s.subjectProfileId!))];
+  const clinicIds = [...new Set(sessions.filter(s => t(s).includes("clinic") || t(s).includes("agency")).map(s => s.subjectProfileId!))];
+  const [existEgg, existSurr, existSperm, existClinic] = await Promise.all([
+    eggIds.length   ? prisma.eggDonor.findMany({ where: { id: { in: eggIds } },   select: { id: true, status: true, hiddenFromSearch: true } }) : [],
+    surrIds.length  ? prisma.surrogate.findMany({ where: { id: { in: surrIds } },  select: { id: true, status: true, hiddenFromSearch: true } }) : [],
+    spermIds.length ? prisma.spermDonor.findMany({ where: { id: { in: spermIds } },select: { id: true, status: true, hiddenFromSearch: true } }) : [],
+    clinicIds.length? prisma.provider.findMany({ where: { id: { in: clinicIds } }, select: { id: true } }) : [],
+  ]);
+  const isAvail = (e: { status: string | null; hiddenFromSearch: boolean }) => (e.status || "AVAILABLE") === "AVAILABLE" && !e.hiddenFromSearch;
+  const availableDonorIds = new Set([
+    ...existEgg.filter(isAvail).map(e => e.id),
+    ...existSurr.filter(isAvail).map(e => e.id),
+    ...existSperm.filter(isAvail).map(e => e.id),
+  ]);
+  const existingProviderIds = new Set(existClinic.map(e => e.id));
+  for (const s of sessions) {
+    const id = s.subjectProfileId!;
+    const isProviderSubject = t(s).includes("clinic") || t(s).includes("agency");
+    result.set(id, isProviderSubject ? existingProviderIds.has(id) : availableDonorIds.has(id));
+  }
+  return result;
+}
 function isAdminUser(user: any): boolean {
   return getUserRoles(user).includes("GOSTORK_ADMIN");
 }
@@ -254,42 +297,12 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       }
     }
 
-    // Determine availability for every session subject profile, across ALL types
-    // (egg donor, surrogate, sperm donor, IVF clinic, surrogacy agency).
-    // A donor/surrogate profile is "available" only if it (1) still exists in the
-    // DB, (2) has status AVAILABLE, and (3) is NOT hiddenFromSearch. A profile
-    // that was deleted, flipped to MATCHED/SOLD_OUT/INACTIVE/UNAVAILABLE/ON_HOLD,
-    // or hidden from the marketplace (e.g. stale-detection on the last sync) shows
-    // as no-longer-available. Providers (clinic/agency) have no per-profile
-    // status, so existence alone determines availability.
-    const profileSessions = result.filter(s => s.subjectProfileId && s.subjectType);
-    if (profileSessions.length > 0) {
-      const t = (s: typeof result[0]) => (s.subjectType || "").toLowerCase();
-      const eggAvailIds  = [...new Set(profileSessions.filter(s => t(s).includes("egg")).map(s => s.subjectProfileId!))];
-      const surrAvailIds = [...new Set(profileSessions.filter(s => t(s).includes("surrogate")).map(s => s.subjectProfileId!))];
-      const spermAvailIds = [...new Set(profileSessions.filter(s => t(s).includes("sperm")).map(s => s.subjectProfileId!))];
-      const clinicAvailIds = [...new Set(profileSessions.filter(s => t(s).includes("clinic") || t(s).includes("agency")).map(s => s.subjectProfileId!))];
-      const [existEgg, existSurr, existSperm, existClinic] = await Promise.all([
-        eggAvailIds.length   ? prisma.eggDonor.findMany({ where: { id: { in: eggAvailIds } },   select: { id: true, status: true, hiddenFromSearch: true } }) : [],
-        surrAvailIds.length  ? prisma.surrogate.findMany({ where: { id: { in: surrAvailIds } },  select: { id: true, status: true, hiddenFromSearch: true } }) : [],
-        spermAvailIds.length ? prisma.spermDonor.findMany({ where: { id: { in: spermAvailIds } },select: { id: true, status: true, hiddenFromSearch: true } }) : [],
-        clinicAvailIds.length? prisma.provider.findMany({ where: { id: { in: clinicAvailIds } }, select: { id: true } }) : [],
-      ]);
-      // donor/surrogate: available only when status === "AVAILABLE" AND not hidden from the marketplace
-      const isAvail = (e: { status: string | null; hiddenFromSearch: boolean }) => (e.status || "AVAILABLE") === "AVAILABLE" && !e.hiddenFromSearch;
-      const availableDonorIds = new Set([
-        ...existEgg.filter(isAvail).map(e => e.id),
-        ...existSurr.filter(isAvail).map(e => e.id),
-        ...existSperm.filter(isAvail).map(e => e.id),
-      ]);
-      // clinic/agency: existence is enough
-      const existingProviderIds = new Set(existClinic.map(e => e.id));
-      for (const s of result) {
-        if (!s.subjectProfileId) continue;
-        const isProviderSubject = t(s).includes("clinic") || t(s).includes("agency");
-        s.profileAvailable = isProviderSubject
-          ? existingProviderIds.has(s.subjectProfileId)
-          : availableDonorIds.has(s.subjectProfileId);
+    // Mark each session's subject profile as available / no-longer-available
+    // based on current marketplace visibility (see computeProfileAvailability).
+    const availMap = await computeProfileAvailability(result);
+    for (const s of result) {
+      if (s.subjectProfileId && availMap.has(s.subjectProfileId)) {
+        s.profileAvailable = availMap.get(s.subjectProfileId)!;
       }
     }
 
@@ -433,6 +446,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       lastMessageSenderType: s.messages[0]?.senderType || null,
       unreadCount: unreadMap[s.id] || 0,
       createdAt: s.createdAt,
+      profileAvailable: null as boolean | null,
     }));
 
     // Enrich profilePhotoUrl for sessions that have a subject profile but no stored photo
@@ -489,6 +503,14 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       }
     }
 
+    // Mark marketplace availability of each subject profile.
+    const adminAvailMap = await computeProfileAvailability(result);
+    for (const s of result) {
+      if (s.subjectProfileId && adminAvailMap.has(s.subjectProfileId)) {
+        s.profileAvailable = adminAvailMap.get(s.subjectProfileId)!;
+      }
+    }
+
     res.json(result);
   } catch (e: any) {
     console.error("Admin concierge sessions error:", e);
@@ -522,7 +544,8 @@ chatRouter.get("/api/admin/concierge-sessions/:id", requireAuth, async (req, res
       },
     });
     if (!session) return res.status(404).json({ message: "Session not found" });
-    res.json(session);
+    const adminDetailAvail = await computeProfileAvailability([session as any]);
+    res.json({ ...session, profileAvailable: (session as any).subjectProfileId ? (adminDetailAvail.get((session as any).subjectProfileId) ?? null) : null });
   } catch (e: any) {
     console.error("Admin concierge session detail error:", e);
     res.status(500).json({ message: e.message });
@@ -946,6 +969,7 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
           ? Math.max(0, Math.floor((Date.now() - new Date(oldestPendingBySession[s.id]).getTime()) / 60000))
           : 0,
         pendingNudgeCount: nudgeCountBySession[s.id] || 0,
+        profileAvailable: null as boolean | null,
       };
     });
     result.sort((a, b) => {
@@ -1013,6 +1037,14 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
         if (match?.[1] && extPhotoMap[match[1]]) {
           s.profilePhotoUrl = extPhotoMap[match[1]];
         }
+      }
+    }
+
+    // Mark marketplace availability of each subject profile.
+    const provAvailMap = await computeProfileAvailability(result);
+    for (const s of result) {
+      if (s.subjectProfileId && provAvailMap.has(s.subjectProfileId)) {
+        s.profileAvailable = provAvailMap.get(s.subjectProfileId)!;
       }
     }
 
@@ -1101,6 +1133,11 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
       where: { sessionId: session.id, senderType: { not: "provider" }, deliveredAt: null },
       data: { deliveredAt: new Date() },
     }).catch(() => {});
+
+    const provDetailAvail = await computeProfileAvailability([session as any]);
+    (responseSession as any).profileAvailable = (session as any).subjectProfileId
+      ? (provDetailAvail.get((session as any).subjectProfileId) ?? null)
+      : null;
 
     res.json(responseSession);
   } catch (e: any) {

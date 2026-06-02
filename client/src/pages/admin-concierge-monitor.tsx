@@ -29,6 +29,7 @@ import {
 } from "@/components/chat";
 import { SubjectProfileCard, ProviderProfileCard } from "@/components/profile-cards";
 import { useToast } from "@/hooks/use-toast";
+import { useOnlineStatus } from "@/hooks/use-online-status";
 import { AgreementSidebarSection } from "@/components/chat/agreement-sidebar-section";
 import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
 import { InvoiceSidebarSection } from "@/components/chat/invoice-sidebar-section";
@@ -58,6 +59,7 @@ interface SessionSummary {
   lastMessageSenderType: string | null;
   unreadCount: number;
   createdAt: string;
+  profileAvailable: boolean | null;
 }
 
 export default function AdminConciergeMonitor() {
@@ -290,6 +292,17 @@ export default function AdminConciergeMonitor() {
   const allSessions = [...(sessionsQuery.data || [])].sort((a, b) =>
     new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
   );
+
+  // Online presence for every parent visible in the sidebar. Polls
+  // /api/online-status every 10s the same way agencies see Online on
+  // their parent rows. The endpoint is auth-only (no role check) so
+  // admins get the same data.
+  const onlineParentUserIds = useMemo(
+    () => [...new Set(allSessions.map(s => s.userId).filter(Boolean))],
+    [allSessions],
+  );
+  const { statuses: onlineStatuses } = useOnlineStatus(onlineParentUserIds, []);
+
   const matchesAdminTab = (s: SessionSummary) => {
     if (activeFilter === "unread") return (s.unreadCount || 0) > 0;
     return true;
@@ -455,6 +468,9 @@ export default function AdminConciergeMonitor() {
               <span className="text-xs font-medium truncate flex-1 text-foreground/80">
                 {first.userName || "Prospective Parent"}
               </span>
+              {onlineStatuses[first.userId] && (
+                <span className="text-[10px] font-medium text-[hsl(var(--brand-success))]">Online</span>
+              )}
               <span className="text-[10px] text-muted-foreground">
                 {groupSessions.length} {groupSessions.length === 1 ? "chat" : "chats"}
               </span>
@@ -476,37 +492,48 @@ export default function AdminConciergeMonitor() {
                   onClick={() => setSelectedSessionId(s.id)}
                   data-testid={`session-card-${s.id}`}
                 >
-                  <div className="w-12 h-12 rounded-full flex-shrink-0 relative overflow-hidden">
-                    {photoSrc ? (
-                      <img
-                        src={photoSrc}
-                        alt={rowTitle}
-                        className="w-12 h-12 rounded-full object-cover"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
+                    <div className="w-full h-full rounded-full overflow-hidden">
+                      {photoSrc ? (
+                        <img
+                          src={photoSrc}
+                          alt={rowTitle}
+                          className="w-12 h-12 rounded-full object-cover"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      ) : s.providerLogo ? (
+                        <img
+                          src={getPhotoSrc(s.providerLogo) || undefined}
+                          alt={s.providerName || ""}
+                          className="w-12 h-12 rounded-full object-cover bg-background border"
+                        />
+                      ) : isProviderThread ? (
+                        <div
+                          className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
+                          style={{ backgroundColor: brandColor }}
+                        >
+                          {(s.providerName || rowTitle).charAt(0).toUpperCase()}
+                        </div>
+                      ) : (
+                        <div className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary/60">
+                          <Sparkles className="w-5 h-5" style={{ color: brandColor }} />
+                        </div>
+                      )}
+                    </div>
+                    {s.subjectProfileId && (
+                      <span
+                        className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background ${s.profileAvailable === false ? "bg-muted-foreground/50" : "bg-[hsl(var(--brand-success))]"}`}
+                        title={s.profileAvailable === false ? "No longer available in marketplace" : "Available in marketplace"}
                       />
-                    ) : s.providerLogo ? (
-                      <img
-                        src={getPhotoSrc(s.providerLogo) || undefined}
-                        alt={s.providerName || ""}
-                        className="w-12 h-12 rounded-full object-cover bg-background border"
-                      />
-                    ) : isProviderThread ? (
-                      <div
-                        className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
-                        style={{ backgroundColor: brandColor }}
-                      >
-                        {(s.providerName || rowTitle).charAt(0).toUpperCase()}
-                      </div>
-                    ) : (
-                      <div className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary/60">
-                        <Sparkles className="w-5 h-5" style={{ color: brandColor }} />
-                      </div>
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span className="font-medium text-sm font-ui truncate">{rowTitle}</span>
+                        {s.subjectProfileId && s.profileAvailable === false && (
+                          <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full flex-shrink-0">Unavailable</span>
+                        )}
                       </div>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         <span className={`text-[11px] ${sUnread > 0 ? "font-semibold" : "text-muted-foreground"}`} style={sUnread > 0 ? { color: brandColor } : undefined}>{timeAgo(s.lastMessageAt)}</span>
@@ -579,6 +606,9 @@ export default function AdminConciergeMonitor() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
               <span className="font-semibold text-sm font-ui truncate">{detail.user.name || "Prospective Parent"}</span>
+              {onlineStatuses[detail.user.id] && (
+                <span className="w-2 h-2 rounded-full bg-[hsl(var(--brand-success))] flex-shrink-0" aria-label="Parent online" />
+              )}
             </div>
             {(detail.title || selectedSummary?.title || selectedSummary?.providerName) ? (
               <div className="flex items-center gap-1 mt-0.5 min-w-0">
@@ -595,6 +625,9 @@ export default function AdminConciergeMonitor() {
                 <span className="text-[11px] text-muted-foreground truncate" data-testid="admin-subject-label">
                   {detail.title || selectedSummary?.title || selectedSummary?.providerName || "AI Concierge"}
                 </span>
+                {selectedSummary?.subjectProfileId && selectedSummary.profileAvailable === false && (
+                  <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap">No longer available</span>
+                )}
               </div>
             ) : (
               <p className="text-[11px] text-muted-foreground truncate">{detail.user.email}</p>
@@ -877,6 +910,7 @@ export default function AdminConciergeMonitor() {
                     subjectType={selectedSummary?.subjectType}
                     fallbackPhotoUrl={selectedSummary?.profilePhotoUrl}
                     fallbackLabel={selectedSummary?.title}
+                    profileAvailable={selectedSummary?.profileAvailable}
                     brandColor={brandColor}
                     heading={
                       (selectedSummary?.subjectType || "").toLowerCase() === "surrogate" ? "Interested Surrogate"

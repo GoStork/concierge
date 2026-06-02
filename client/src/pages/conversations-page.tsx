@@ -112,6 +112,7 @@ interface ProviderSession {
   oldestPendingAt: string | null;
   pendingMaxAgeMinutes: number;
   pendingNudgeCount: number;
+  profileAvailable: boolean | null;
 }
 
 import type { SessionDetail } from "@/components/chat";
@@ -1890,27 +1891,38 @@ const sendMessageMutation = useMutation({
                     data-testid={`provider-session-${s.id}`}
                     aria-current={isSelected ? "page" : undefined}
                   >
-                    <div className="w-12 h-12 rounded-full flex-shrink-0 relative overflow-hidden">
-                      {photoSrc ? (
-                        <img
-                          src={photoSrc}
-                          alt={s.title || ""}
-                          className="w-12 h-12 rounded-full object-cover"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
+                      <div className="w-full h-full rounded-full overflow-hidden">
+                        {photoSrc ? (
+                          <img
+                            src={photoSrc}
+                            alt={s.title || ""}
+                            className="w-12 h-12 rounded-full object-cover"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          />
+                        ) : (
+                          <div
+                            className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
+                            style={{ backgroundColor: brandColor }}
+                          >
+                            {(s.title || "C").charAt(0)}
+                          </div>
+                        )}
+                      </div>
+                      {s.subjectProfileId && (
+                        <span
+                          className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background ${s.profileAvailable === false ? "bg-muted-foreground/50" : "bg-[hsl(var(--brand-success))]"}`}
+                          title={s.profileAvailable === false ? "No longer available in marketplace" : "Available in marketplace"}
                         />
-                      ) : (
-                        <div
-                          className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
-                          style={{ backgroundColor: brandColor }}
-                        >
-                          {(s.title || "C").charAt(0)}
-                        </div>
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <span className="font-medium text-sm font-ui truncate">{s.title || "Conversation"}</span>
+                          {s.subjectProfileId && s.profileAvailable === false && (
+                            <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full flex-shrink-0">Unavailable</span>
+                          )}
                           {slaLabel && (
                             <span
                               className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${slaTone} flex-shrink-0`}
@@ -2002,6 +2014,9 @@ const sendMessageMutation = useMutation({
                       </div>
                     )}
                     <span className="text-[11px] text-muted-foreground truncate" data-testid="provider-subject-label">{detail.title || "Conversation"}</span>
+                    {selectedSession?.subjectProfileId && selectedSession.profileAvailable === false && (
+                      <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap">No longer available</span>
+                    )}
                   </div>
                 </div>
               </>
@@ -2067,6 +2082,7 @@ const sendMessageMutation = useMutation({
                   subjectType: selectedSession.subjectType,
                   fallbackPhotoUrl: selectedSession.profilePhotoUrl,
                   fallbackLabel: selectedSession.title,
+                  profileAvailable: selectedSession.profileAvailable,
                 }
               : null
           }
@@ -2301,6 +2317,7 @@ const sendMessageMutation = useMutation({
                     subjectType={selectedSession?.subjectType}
                     fallbackPhotoUrl={selectedSession?.profilePhotoUrl}
                     fallbackLabel={selectedSession?.title}
+                    profileAvailable={selectedSession?.profileAvailable}
                     brandColor={brandColor}
                     heading={
                       (selectedSession?.subjectType || "").toLowerCase() === "surrogate" ? "Interested Surrogate"
