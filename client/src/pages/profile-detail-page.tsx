@@ -6,6 +6,7 @@ import { formatLocationDisplay } from "@/lib/format-location";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { hasProviderRole, hasAnyRole, GOSTORK_ROLES } from "@shared/roles";
+import { ClinicCostProgramsSection } from "@/components/clinic-cost-programs-section";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -701,6 +702,23 @@ export default function DonorProfilePage() {
           </div>
         </div>
       </Card>
+
+      {/* Parent-facing cost programs for this profile's parent agency / bank.
+          Reuses the same component used on the provider profile page so the
+          card layout, matching logic, and "Finish your profile" / "Request a
+          custom quote" fallbacks behave identically across IVF clinics,
+          surrogacy agencies, egg donor agencies / banks, and sperm banks. The
+          providerId here is the agency / bank that owns the donor or surrogate.
+          hasIvfClinicService is the "enable" flag - we pass true because we
+          only land on this page through a fertility provider in the first
+          place; the server's matcher decides which (if any) programs apply. */}
+      {providerId && (user as any)?.parentAccountId && (
+        <ClinicCostProgramsSection
+          providerId={providerId}
+          parentAccountId={(user as any)?.parentAccountId ?? null}
+          hasIvfClinicService={true}
+        />
+      )}
 
       {profileDetails && Object.keys(profileDetails).length > 0 && (() => {
         const pd = profileDetails as Record<string, any>;
