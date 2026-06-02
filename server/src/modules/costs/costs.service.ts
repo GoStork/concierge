@@ -359,7 +359,42 @@ export class CostsService {
    * program that matches the parent's eligible subtypes. Items are flattened
    * into a lineItems array suitable for the card view.
    */
-  async getProviderParentPrograms(providerId: string, parentAccountId: string) {
+  async getProviderParentPrograms(
+    providerId: string,
+    parentAccountId: string,
+    specificDonorId?: string,
+    specificDonorType?: string,
+  ) {
+    // When the parent is viewing a specific surrogate or fresh egg donor
+    // profile, swap the program's generic compensation range with that
+    // person's actual comp so the total reflects what THIS donor / surrogate
+    // would cost. Falls back to the program's range when no specific profile
+    // is in scope (e.g. the provider profile cards still show the range).
+    let specificComp: number | null = null;
+    if (specificDonorId && specificDonorType) {
+      const t = specificDonorType.toLowerCase();
+      if (t === "surrogate" || t === "surrogates") {
+        const s = await this.prisma.surrogate.findUnique({
+          where: { id: specificDonorId },
+          select: { baseCompensation: true },
+        });
+        if (s?.baseCompensation != null) specificComp = Number(s.baseCompensation);
+      } else if (t === "egg-donor" || t === "eggdonor" || t === "egg-donors" || t === "eggdonors") {
+        const d = await this.prisma.eggDonor.findUnique({
+          where: { id: specificDonorId },
+          select: { donorCompensation: true },
+        });
+        if (d?.donorCompensation != null) specificComp = Number(d.donorCompensation);
+      }
+    }
+    return this._getProviderParentPrograms(providerId, parentAccountId, specificComp);
+  }
+
+  private async _getProviderParentPrograms(
+    providerId: string,
+    parentAccountId: string,
+    specificCompensation: number | null,
+  ) {
     const { subtypes, isPartialProfile } =
       await this.getMatchingSubtypesForParent(parentAccountId);
 
@@ -479,6 +514,17 @@ export class CostsService {
     // exist (so 1 cycle / 2 cycles / 3 cycles / unlimited become 4 separate
     // parent-facing cards under the same program). When no tiers exist,
     // emit a single card as before.
+    // True when an item is the donor's / surrogate's compensation line that
+    // we want to override with the specific person's actual comp. Match on
+    // category=Compensation OR a key containing "compensation" - covers
+    // "Surrogate Compensation", "Donor Compensation", "Egg Donor Compensation",
+    // etc., without false-positiving on lines like "Health Insurance".
+    const isCompensationKey = (item: { category: string; key: string }) => {
+      const cat = (item.category || "").toLowerCase();
+      const key = (item.key || "").toLowerCase();
+      return cat === "compensation" || key.includes("compensation");
+    };
+
     const result = programs
       .filter((p) => p.costSheets.length > 0)
       .flatMap((p) => {
@@ -487,12 +533,21 @@ export class CostsService {
         const baselineItems = sheet.items.filter((i: any) => i.isTier !== true);
 
         // Sum the non-tier (baseline) items - common to every tier card.
+        // When a specific donor / surrogate is in scope and the line is the
+        // compensation row, swap in that person's actual comp so the total
+        // narrows to "what THIS person would actually cost the parent",
+        // instead of the program's published range.
         let baseMin = 0;
         let baseMax = 0;
         for (const item of baselineItems) {
           if (!item.isIncluded) continue;
           const baseKey = item.key.replace(/\s*\((?:Standard|Variant \d+)\)$/, "");
           if (COUNTED_ONLY_KEYS.has(baseKey)) continue;
+          if (specificCompensation != null && isCompensationKey(item)) {
+            baseMin += specificCompensation;
+            baseMax += specificCompensation;
+            continue;
+          }
           const min = item.minValue ?? 0;
           const max = item.maxValue ?? min;
           baseMin += min;
@@ -510,14 +565,30 @@ export class CostsService {
           updatedAt: sheet.updatedAt,
         };
 
-        const mapLineItem = (i: any) => ({
-          category: i.category,
-          key: i.key,
-          minValue: i.minValue,
-          maxValue: i.maxValue,
-          isIncluded: i.isIncluded,
-          comment: i.comment,
-        });
+        // Render the compensation row at the donor's / surrogate's actual
+        // comp on cards displayed inside that person's profile. The original
+        // min/max are preserved everywhere else (provider profile, no
+        // specificDonorId).
+        const mapLineItem = (i: any) => {
+          if (specificCompensation != null && isCompensationKey(i)) {
+            return {
+              category: i.category,
+              key: i.key,
+              minValue: specificCompensation,
+              maxValue: specificCompensation,
+              isIncluded: i.isIncluded,
+              comment: i.comment,
+            };
+          }
+          return {
+            category: i.category,
+            key: i.key,
+            minValue: i.minValue,
+            maxValue: i.maxValue,
+            isIncluded: i.isIncluded,
+            comment: i.comment,
+          };
+        };
 
         if (tierItems.length === 0) {
           return [{

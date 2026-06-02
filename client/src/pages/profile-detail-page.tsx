@@ -712,13 +712,27 @@ export default function DonorProfilePage() {
           hasIvfClinicService is the "enable" flag - we pass true because we
           only land on this page through a fertility provider in the first
           place; the server's matcher decides which (if any) programs apply. */}
-      {providerId && (user as any)?.parentAccountId && (
-        <ClinicCostProgramsSection
-          providerId={providerId}
-          parentAccountId={(user as any)?.parentAccountId ?? null}
-          hasIvfClinicService={true}
-        />
-      )}
+      {providerId && (user as any)?.parentAccountId && (() => {
+        // Surrogates and FRESH egg donors have per-person compensation - pass
+        // the donor / surrogate id through so the server swaps the program's
+        // generic comp range with this person's actual comp before totaling.
+        // Frozen egg donors / sperm donors don't have a per-person comp model
+        // (egg lots / vials are sold as a flat product), so we leave the
+        // program's range intact.
+        const donorTypeLower = (donor?.donorType ?? "").toLowerCase();
+        const isFreshEggDonor = type === "egg-donor" && donorTypeLower.includes("fresh");
+        const isSurrogate = type === "surrogate";
+        const enableComp = isSurrogate || isFreshEggDonor;
+        return (
+          <ClinicCostProgramsSection
+            providerId={providerId}
+            parentAccountId={(user as any)?.parentAccountId ?? null}
+            hasIvfClinicService={true}
+            specificDonorId={enableComp ? donorId : undefined}
+            specificDonorType={enableComp ? type : undefined}
+          />
+        );
+      })()}
 
       {profileDetails && Object.keys(profileDetails).length > 0 && (() => {
         const pd = profileDetails as Record<string, any>;

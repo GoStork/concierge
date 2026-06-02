@@ -18,10 +18,18 @@ export function ClinicCostProgramsSection({
   providerId,
   parentAccountId,
   hasIvfClinicService,
+  specificDonorId,
+  specificDonorType,
 }: {
   providerId: string;
   parentAccountId: string | null | undefined;
   hasIvfClinicService: boolean;
+  // When set, the server overrides the program's generic compensation
+  // range with this donor / surrogate's actual comp before totaling so
+  // the card shows what THIS person would specifically cost the parent.
+  // Used on individual surrogate / fresh egg donor profile pages.
+  specificDonorId?: string;
+  specificDonorType?: string;
 }) {
   const navigate = useNavigate();
   const enabled = hasIvfClinicService && !!providerId && !!parentAccountId;
@@ -31,10 +39,20 @@ export function ClinicCostProgramsSection({
     matchingSubtypes: string[];
     isPartialProfile: boolean;
   }>({
-    queryKey: ["/api/costs/provider", providerId, "parent-programs", parentAccountId],
+    queryKey: [
+      "/api/costs/provider",
+      providerId,
+      "parent-programs",
+      parentAccountId,
+      specificDonorId ?? "none",
+      specificDonorType ?? "none",
+    ],
     queryFn: async () => {
+      const params = new URLSearchParams({ parentAccountId: parentAccountId as string });
+      if (specificDonorId) params.set("specificDonorId", specificDonorId);
+      if (specificDonorType) params.set("specificDonorType", specificDonorType);
       const res = await fetch(
-        `/api/costs/provider/${providerId}/parent-programs?parentAccountId=${parentAccountId}`,
+        `/api/costs/provider/${providerId}/parent-programs?${params.toString()}`,
         { credentials: "include" },
       );
       if (!res.ok) throw new Error("Failed to load cost programs");

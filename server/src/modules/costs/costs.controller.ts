@@ -538,13 +538,20 @@ export class CostsController {
   async getProviderParentPrograms(
     @Param("providerId") providerId: string,
     @Query("parentAccountId") parentAccountId: string,
+    @Query("specificDonorId") specificDonorId: string,
+    @Query("specificDonorType") specificDonorType: string,
     @Req() req: Request,
   ) {
     this.assertAuthenticated(req);
     if (!parentAccountId) {
       throw new HttpException("parentAccountId required", HttpStatus.BAD_REQUEST);
     }
-    return this.costsService.getProviderParentPrograms(providerId, parentAccountId);
+    return this.costsService.getProviderParentPrograms(
+      providerId,
+      parentAccountId,
+      specificDonorId || undefined,
+      specificDonorType || undefined,
+    );
   }
 
   @Post("save-draft")
