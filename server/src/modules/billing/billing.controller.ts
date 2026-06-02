@@ -117,8 +117,13 @@ export class BillingController {
     const result = await this.billingService.getInvoicesForAdmin({
       status: query.status,
       providerId: query.providerId,
+      serviceType: query.serviceType,
+      search: query.search,
       dateFrom: query.dateFrom ? new Date(query.dateFrom) : undefined,
       dateTo: query.dateTo ? new Date(query.dateTo) : undefined,
+      paidFrom: query.paidFrom ? new Date(query.paidFrom) : undefined,
+      // paidTo: include the whole day by pushing to end-of-day when only a date is given
+      paidTo: query.paidTo ? new Date(new Date(query.paidTo).setHours(23, 59, 59, 999)) : undefined,
       page: query.page ? parseInt(query.page, 10) : 1,
       pageSize: query.pageSize ? parseInt(query.pageSize, 10) : 25,
     });

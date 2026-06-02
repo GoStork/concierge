@@ -6,7 +6,7 @@
  * and manual payout/mark-paid controls.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -18,6 +18,8 @@ import {
   ChevronUp,
   Loader2,
   AlertCircle,
+  Search,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,16 +56,40 @@ export default function AdminBillingPage() {
   const [adminNotes, setAdminNotes] = useState<Record<string, string>>({});
   const [page, setPage] = useState(1);
 
+  // Filters
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [serviceType, setServiceType] = useState("all");
+  const [paidFrom, setPaidFrom] = useState("");
+  const [paidTo, setPaidTo] = useState("");
+
+  // Debounce the search box so we don't refetch on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(searchInput.trim()); setPage(1); }, 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // Reset to page 1 whenever a filter changes.
+  useEffect(() => { setPage(1); }, [serviceType, paidFrom, paidTo]);
+
   const { data, isLoading } = useQuery<any>({
-    queryKey: ["/api/admin/invoices", tab, page],
+    queryKey: ["/api/admin/invoices", tab, page, search, serviceType, paidFrom, paidTo],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(page), pageSize: "25" });
       if (tab !== "all") params.set("status", tab);
+      if (search) params.set("search", search);
+      if (serviceType !== "all") params.set("serviceType", serviceType);
+      if (paidFrom) params.set("paidFrom", paidFrom);
+      if (paidTo) params.set("paidTo", paidTo);
       const res = await fetch(`/api/admin/invoices?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load invoices");
       return res.json();
     },
   });
+
+  const serviceTypeOptions: string[] = data?.serviceTypes || [];
+  const hasActiveFilters = !!search || serviceType !== "all" || !!paidFrom || !!paidTo;
+  const clearFilters = () => { setSearchInput(""); setSearch(""); setServiceType("all"); setPaidFrom(""); setPaidTo(""); };
 
   const markPaidMutation = useMutation({
     mutationFn: async ({ id, notes }: { id: string; notes: string }) => {
@@ -127,6 +153,64 @@ export default function AdminBillingPage() {
             {t.label}
           </button>
         ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+        <div className="flex-1 min-w-[220px]">
+          <label className="text-xs text-muted-foreground mb-1 block">Search</label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
+              placeholder="Parent, provider, invoice ID, or session ID"
+              className="pl-9 pr-9"
+              data-testid="billing-search"
+            />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => setSearchInput("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="min-w-[160px]">
+          <label className="text-xs text-muted-foreground mb-1 block">Service Type</label>
+          <select
+            value={serviceType}
+            onChange={e => setServiceType(e.target.value)}
+            className="w-full h-10 rounded-[var(--radius)] border border-input bg-background px-3 text-sm"
+            data-testid="billing-service-type"
+          >
+            <option value="all">All services</option>
+            {serviceTypeOptions.map(st => (
+              <option key={st} value={st}>{st}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="min-w-[150px]">
+          <label className="text-xs text-muted-foreground mb-1 block">Paid From</label>
+          <Input type="date" value={paidFrom} onChange={e => setPaidFrom(e.target.value)} data-testid="billing-paid-from" />
+        </div>
+
+        <div className="min-w-[150px]">
+          <label className="text-xs text-muted-foreground mb-1 block">Paid To</label>
+          <Input type="date" value={paidTo} onChange={e => setPaidTo(e.target.value)} data-testid="billing-paid-to" />
+        </div>
+
+        {hasActiveFilters && (
+          <Button variant="outline" size="sm" onClick={clearFilters} className="gap-1.5" data-testid="billing-clear-filters">
+            <X className="w-3.5 h-3.5" /> Clear
+          </Button>
+        )}
       </div>
 
       {/* Invoice table */}

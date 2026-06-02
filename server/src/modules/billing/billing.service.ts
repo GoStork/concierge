@@ -1660,22 +1660,44 @@ export class BillingService {
   async getInvoicesForAdmin(filters: {
     status?: string;
     providerId?: string;
+    serviceType?: string;
+    search?: string;
     dateFrom?: Date;
     dateTo?: Date;
+    paidFrom?: Date;
+    paidTo?: Date;
     page?: number;
     pageSize?: number;
   }) {
-    const { status, providerId, dateFrom, dateTo, page = 1, pageSize = 25 } = filters;
+    const { status, providerId, serviceType, search, dateFrom, dateTo, paidFrom, paidTo, page = 1, pageSize = 25 } = filters;
     const where: any = {};
     if (status && status !== "all") where.status = status;
     if (providerId) where.providerId = providerId;
+    if (serviceType && serviceType !== "all") where.serviceType = serviceType;
     if (dateFrom || dateTo) {
       where.createdAt = {};
       if (dateFrom) where.createdAt.gte = dateFrom;
       if (dateTo) where.createdAt.lte = dateTo;
     }
+    // Paid-date range filters on paidAt (the date money was actually collected).
+    if (paidFrom || paidTo) {
+      where.paidAt = {};
+      if (paidFrom) where.paidAt.gte = paidFrom;
+      if (paidTo) where.paidAt.lte = paidTo;
+    }
+    // Free-text search across parent name/email, provider name, invoice id, session id.
+    const term = search?.trim();
+    if (term) {
+      where.OR = [
+        { id: { contains: term, mode: "insensitive" } },
+        { sessionId: { contains: term, mode: "insensitive" } },
+        { providerName: { contains: term, mode: "insensitive" } },
+        { parentUser: { is: { name: { contains: term, mode: "insensitive" } } } },
+        { parentUser: { is: { email: { contains: term, mode: "insensitive" } } } },
+      ];
+    }
 
-    const [invoices, total] = await Promise.all([
+    const [invoices, total, distinctServiceTypes] = await Promise.all([
       this.prisma.invoice.findMany({
         where,
         include: {
@@ -1686,6 +1708,7 @@ export class BillingService {
         take: pageSize,
       }),
       this.prisma.invoice.count({ where }),
+      this.prisma.invoice.findMany({ distinct: ["serviceType"], select: { serviceType: true }, orderBy: { serviceType: "asc" } }),
     ]);
 
     // Aggregate stats
@@ -1704,6 +1727,7 @@ export class BillingService {
       total,
       page,
       pageSize,
+      serviceTypes: distinctServiceTypes.map((s) => s.serviceType).filter(Boolean),
       totalRevenue: stats._sum.serviceAmount || 0,
       totalGoStorkFees: stats._sum.referralFeeAmount || 0,
       totalProviderPayouts: stats._sum.providerPayoutAmount || 0,
