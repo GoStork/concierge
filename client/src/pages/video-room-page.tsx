@@ -216,23 +216,38 @@ export default function VideoRoomPage() {
         }
       });
 
-      callFrame.on("left-meeting", () => {
+      callFrame.on("left-meeting", async () => {
         try { callFrame.stopRecording().catch(() => {}); } catch {}
         callFrame.destroy();
         callFrameRef.current = null;
         joiningRef.current = false;
+
+        // Hit /call-ended and capture the response so we know where to redirect.
+        // For a parent, the server returns their private concierge session id so
+        // we can drop them on the chat where the AI's "How did your consultation
+        // go?" follow-up message lands - instead of the meetings page.
+        let parentSessionId: string | null = null;
         if (!isGuest) {
-          apiRequest("PATCH", "/api/video/call-ended", { bookingId }).catch(() => {});
+          try {
+            const res = await apiRequest("PATCH", "/api/video/call-ended", { bookingId });
+            const data = await res.json().catch(() => null);
+            parentSessionId = data?.parentSessionId ?? null;
+          } catch { /* non-blocking */ }
         }
+
         const isInIframe = window.self !== window.top;
         if (isInIframe) {
-          try { window.parent.postMessage({ type: "video-call-ended", bookingId }, "*"); } catch {}
+          try { window.parent.postMessage({ type: "video-call-ended", bookingId, parentSessionId }, "*"); } catch {}
           setCallState("idle");
           setConsentStep("dismissed");
           return;
         }
         if (user) {
-          navigate("/calendar?tab=meetings", { replace: true });
+          if (!isProviderOrAdmin && parentSessionId) {
+            navigate(`/chat/concierge?session=${parentSessionId}`, { replace: true });
+          } else {
+            navigate("/calendar?tab=meetings", { replace: true });
+          }
         } else {
           setCallState("idle");
           setConsentStep("dismissed");

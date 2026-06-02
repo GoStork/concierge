@@ -230,25 +230,19 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`[CONSULTATION] Created session ${targetSessionId} for provider ${consultProviderId}`);
     }
 
-    // System message for provider (provider-only card)
+    // Announce the consultation in the provider's chat. Backdated 1s before the
+    // booking's createdAt so the AI message renders ABOVE the inline booking
+    // widget (chat-message-list merges messages + bookings by createdAt) - the
+    // provider gets context first, then sees the widget to confirm/decline.
+    const announcementCreatedAt = new Date(booking.createdAt.getTime() - 1000);
     await this.prisma.aiChatMessage.create({
       data: {
         sessionId: targetSessionId,
         role: "assistant",
         content: `Great news! ${parentName} has scheduled a consultation. You can chat with them directly here.`,
         senderType: "system",
-        uiCardType: "provider_only",
-      },
-    });
-
-    // Visible system message in main chat pane
-    await this.prisma.aiChatMessage.create({
-      data: {
-        sessionId: targetSessionId,
-        role: "assistant",
-        content: `${parentName} scheduled a consultation - you can now chat with them directly.`,
-        senderType: "system",
         senderName: "GoStork",
+        createdAt: announcementCreatedAt,
       },
     });
 

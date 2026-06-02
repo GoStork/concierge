@@ -496,7 +496,26 @@ export class VideoController {
       );
     }
 
-    return { success: true };
+    // When the leaver is the parent (not provider/admin), return their private
+    // concierge session id so the client can redirect them straight to the chat
+    // where the post-call "How did your consultation go?" readiness prompt lands -
+    // instead of dropping them on the meetings page.
+    let parentSessionId: string | null = null;
+    const isParent =
+      booking.parentUserId &&
+      (await this.isParentAccountMember(user.id, booking.parentUserId)) &&
+      user.id !== booking.providerUserId &&
+      !hasAnyRole(user.roles || [], GOSTORK_STAFF);
+    if (isParent) {
+      const parentMainSession = await this.prisma.aiChatSession.findFirst({
+        where: { userId: booking.parentUserId!, status: "ACTIVE", sessionType: "PARENT" },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true },
+      });
+      parentSessionId = parentMainSession?.id ?? null;
+    }
+
+    return { success: true, parentSessionId };
   }
 
   @Post("retry-recording/:bookingId")
