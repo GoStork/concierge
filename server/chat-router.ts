@@ -254,8 +254,13 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       }
     }
 
-    // Check whether each subject profile still exists in the database.
-    // Sessions whose profile was deleted get profileAvailable = false.
+    // Determine availability for every session subject profile, across ALL types
+    // (egg donor, surrogate, sperm donor, IVF clinic, surrogacy agency).
+    // A profile is "available" only if it (1) still exists in the DB AND
+    // (2) for donor/surrogate types, has status AVAILABLE. Deleted profiles or
+    // ones flipped to MATCHED/SOLD_OUT/INACTIVE/UNAVAILABLE/ON_HOLD show as
+    // unavailable. Providers (clinic/agency) have no per-profile status, so
+    // existence alone determines availability.
     const profileSessions = result.filter(s => s.subjectProfileId && s.subjectType);
     if (profileSessions.length > 0) {
       const t = (s: typeof result[0]) => (s.subjectType || "").toLowerCase();
@@ -264,19 +269,25 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       const spermAvailIds = [...new Set(profileSessions.filter(s => t(s).includes("sperm")).map(s => s.subjectProfileId!))];
       const clinicAvailIds = [...new Set(profileSessions.filter(s => t(s).includes("clinic") || t(s).includes("agency")).map(s => s.subjectProfileId!))];
       const [existEgg, existSurr, existSperm, existClinic] = await Promise.all([
-        eggAvailIds.length   ? prisma.eggDonor.findMany({ where: { id: { in: eggAvailIds } },   select: { id: true } }) : [],
-        surrAvailIds.length  ? prisma.surrogate.findMany({ where: { id: { in: surrAvailIds } },  select: { id: true } }) : [],
-        spermAvailIds.length ? prisma.spermDonor.findMany({ where: { id: { in: spermAvailIds } },select: { id: true } }) : [],
+        eggAvailIds.length   ? prisma.eggDonor.findMany({ where: { id: { in: eggAvailIds } },   select: { id: true, status: true } }) : [],
+        surrAvailIds.length  ? prisma.surrogate.findMany({ where: { id: { in: surrAvailIds } },  select: { id: true, status: true } }) : [],
+        spermAvailIds.length ? prisma.spermDonor.findMany({ where: { id: { in: spermAvailIds } },select: { id: true, status: true } }) : [],
         clinicAvailIds.length? prisma.provider.findMany({ where: { id: { in: clinicAvailIds } }, select: { id: true } }) : [],
       ]);
-      const existingIds = new Set([
-        ...existEgg.map(e => e.id),
-        ...existSurr.map(e => e.id),
-        ...existSperm.map(e => e.id),
-        ...existClinic.map(e => e.id),
+      // donor/surrogate: available only when status === "AVAILABLE"
+      const availableDonorIds = new Set([
+        ...existEgg.filter(e => (e.status || "AVAILABLE") === "AVAILABLE").map(e => e.id),
+        ...existSurr.filter(e => (e.status || "AVAILABLE") === "AVAILABLE").map(e => e.id),
+        ...existSperm.filter(e => (e.status || "AVAILABLE") === "AVAILABLE").map(e => e.id),
       ]);
+      // clinic/agency: existence is enough
+      const existingProviderIds = new Set(existClinic.map(e => e.id));
       for (const s of result) {
-        if (s.subjectProfileId) s.profileAvailable = existingIds.has(s.subjectProfileId);
+        if (!s.subjectProfileId) continue;
+        const isProviderSubject = t(s).includes("clinic") || t(s).includes("agency");
+        s.profileAvailable = isProviderSubject
+          ? existingProviderIds.has(s.subjectProfileId)
+          : availableDonorIds.has(s.subjectProfileId);
       }
     }
 
