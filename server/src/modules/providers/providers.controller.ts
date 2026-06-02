@@ -311,7 +311,7 @@ export class ProvidersController {
     const isProviderUser = hasProviderRole(roles);
     if (isProviderUser && user?.providerId) {
       const donors = await this.prisma.spermDonor.findMany({
-        where: { providerId: user.providerId, status: { not: "INACTIVE" } },
+        where: { providerId: user.providerId, status: { not: "INACTIVE" }, hiddenFromSearch: false },
         include: { provider: { select: { id: true, name: true, logoUrl: true } } },
         orderBy: { createdAt: "desc" },
       });
