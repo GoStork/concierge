@@ -193,6 +193,7 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       unreadCount: unreadMap[s.id] || 0,
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
+      profileAvailable: null as boolean | null,
     }));
 
     // Enrich profilePhotoUrl for sessions that have a subject profile but no stored photo
@@ -250,6 +251,32 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
           s.profilePhotoUrl = extPhotoMap[extId].photo;
           s.subjectProfileId = extPhotoMap[extId].uuid;
         }
+      }
+    }
+
+    // Check whether each subject profile still exists in the database.
+    // Sessions whose profile was deleted get profileAvailable = false.
+    const profileSessions = result.filter(s => s.subjectProfileId && s.subjectType);
+    if (profileSessions.length > 0) {
+      const t = (s: typeof result[0]) => (s.subjectType || "").toLowerCase();
+      const eggAvailIds  = [...new Set(profileSessions.filter(s => t(s).includes("egg")).map(s => s.subjectProfileId!))];
+      const surrAvailIds = [...new Set(profileSessions.filter(s => t(s).includes("surrogate")).map(s => s.subjectProfileId!))];
+      const spermAvailIds = [...new Set(profileSessions.filter(s => t(s).includes("sperm")).map(s => s.subjectProfileId!))];
+      const clinicAvailIds = [...new Set(profileSessions.filter(s => t(s).includes("clinic") || t(s).includes("agency")).map(s => s.subjectProfileId!))];
+      const [existEgg, existSurr, existSperm, existClinic] = await Promise.all([
+        eggAvailIds.length   ? prisma.eggDonor.findMany({ where: { id: { in: eggAvailIds } },   select: { id: true } }) : [],
+        surrAvailIds.length  ? prisma.surrogate.findMany({ where: { id: { in: surrAvailIds } },  select: { id: true } }) : [],
+        spermAvailIds.length ? prisma.spermDonor.findMany({ where: { id: { in: spermAvailIds } },select: { id: true } }) : [],
+        clinicAvailIds.length? prisma.provider.findMany({ where: { id: { in: clinicAvailIds } }, select: { id: true } }) : [],
+      ]);
+      const existingIds = new Set([
+        ...existEgg.map(e => e.id),
+        ...existSurr.map(e => e.id),
+        ...existSperm.map(e => e.id),
+        ...existClinic.map(e => e.id),
+      ]);
+      for (const s of result) {
+        if (s.subjectProfileId) s.profileAvailable = existingIds.has(s.subjectProfileId);
       }
     }
 

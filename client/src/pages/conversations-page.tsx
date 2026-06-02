@@ -85,6 +85,7 @@ interface ChatSession {
   unreadCount: number;
   createdAt: string;
   updatedAt: string;
+  profileAvailable: boolean | null;
 }
 
 interface ProviderSession {
@@ -1450,26 +1451,37 @@ const sendMessageMutation = useMutation({
                         onClick={() => handleParentSessionClick(session)}
                         data-testid={`chat-session-provider-${session.id}`}
                       >
-                        <div className="w-12 h-12 rounded-full flex-shrink-0 relative overflow-hidden">
-                          {photoSrc ? (
-                            <img
-                              src={photoSrc}
-                              alt={session.title || ""}
-                              className="w-12 h-12 rounded-full object-cover"
-                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling && ((e.target as HTMLImageElement).nextElementSibling as HTMLElement)?.style && ((e.target as HTMLImageElement).nextElementSibling as HTMLElement).style.setProperty('display', 'flex'); }}
+                        <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
+                          <div className="w-full h-full rounded-full overflow-hidden">
+                            {photoSrc ? (
+                              <img
+                                src={photoSrc}
+                                alt={session.title || ""}
+                                className="w-12 h-12 rounded-full object-cover"
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling && ((e.target as HTMLImageElement).nextElementSibling as HTMLElement)?.style && ((e.target as HTMLImageElement).nextElementSibling as HTMLElement).style.setProperty('display', 'flex'); }}
+                              />
+                            ) : (
+                              <div
+                                className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
+                                style={{ backgroundColor: brandColor }}
+                              >
+                                {(session.title || "C").charAt(0)}
+                              </div>
+                            )}
+                          </div>
+                          {session.subjectProfileId && (
+                            <span
+                              className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background ${session.profileAvailable === false ? "bg-muted-foreground/50" : "bg-[hsl(var(--brand-success))]"}`}
+                              title={session.profileAvailable === false ? "Profile no longer available" : "Profile available"}
                             />
-                          ) : (
-                            <div
-                              className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
-                              style={{ backgroundColor: brandColor }}
-                            >
-                              {(session.title || "C").charAt(0)}
-                            </div>
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-medium text-sm font-ui truncate">{session.title || session.matchmakerName || "Conversation"}</span>
+                            {session.profileAvailable === false && (
+                              <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full flex-shrink-0">Unavailable</span>
+                            )}
                             <div className="flex items-center gap-1.5 flex-shrink-0">
                               <span className={`text-[11px] ${session.unreadCount > 0 ? "font-semibold" : "text-muted-foreground"}`} style={session.unreadCount > 0 ? { color: brandColor } : undefined}>{timeAgo(session.lastMessageAt)}</span>
                               {session.unreadCount > 0 && (
@@ -1544,9 +1556,13 @@ const sendMessageMutation = useMutation({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="font-semibold text-sm font-ui truncate" data-testid="parent-chat-subject-label">{selectedParentSession!.title}</span>
-                  {selectedParentSession!.providerId && onlineStatuses[selectedParentSession!.providerId] && (
+                  {selectedParentSession!.subjectProfileId && selectedParentSession!.profileAvailable === false ? (
+                    <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap">No longer available</span>
+                  ) : selectedParentSession!.subjectProfileId && selectedParentSession!.profileAvailable === true ? (
+                    <span className="w-2 h-2 rounded-full bg-[hsl(var(--brand-success))] flex-shrink-0" aria-label="Profile available" />
+                  ) : selectedParentSession!.providerId && onlineStatuses[selectedParentSession!.providerId] ? (
                     <span className="w-2 h-2 rounded-full bg-[hsl(var(--brand-success))] flex-shrink-0" aria-label="Provider online" />
-                  )}
+                  ) : null}
                 </div>
                 <div className="flex items-center gap-1 mt-0.5 min-w-0">
                   <span className="text-[11px] text-muted-foreground flex-shrink-0">via</span>
@@ -1732,6 +1748,7 @@ const sendMessageMutation = useMutation({
             sessionBookings={parentSidePanelData.sessionBookings}
             brandColor={brandColor}
             sessionId={selectedParentSession?.id ?? null}
+            profileAvailable={selectedParentSession?.profileAvailable ?? null}
           />
         )}
       </div>

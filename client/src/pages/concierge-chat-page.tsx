@@ -2298,6 +2298,7 @@ export function ParentChatSidePanel({
   sessionBookings,
   brandColor,
   sessionId,
+  profileAvailable,
 }: {
   subjectInfo: ConsultationCardData | null;
   providerName: string | null;
@@ -2305,6 +2306,7 @@ export function ParentChatSidePanel({
   sessionBookings: any[] | null;
   brandColor: string;
   sessionId: string | null;
+  profileAvailable?: boolean | null;
 }) {
   const existingBooking =
     sessionBookings?.find(
@@ -2320,6 +2322,14 @@ export function ParentChatSidePanel({
   return (
     <div className="w-72 border-l overflow-y-auto bg-muted/30 hidden md:flex md:flex-col shrink-0">
       <div className="p-4 space-y-4">
+        {/* Unavailable profile banner */}
+        {subjectInfo && profileAvailable === false && (
+          <div className="rounded-[var(--radius)] bg-muted border border-border/60 px-3 py-2.5 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-muted-foreground/50 flex-shrink-0" />
+            <p className="text-xs text-muted-foreground leading-snug">This {(subjectInfo.subjectType || "profile").toLowerCase()} is no longer available on GoStork.</p>
+          </div>
+        )}
+
         {/* Profile Section - only after a call has been scheduled */}
         {subjectInfo && existingBooking && (
           <SubjectProfileCard
