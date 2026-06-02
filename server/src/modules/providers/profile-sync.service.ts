@@ -832,6 +832,49 @@ IMPORTANT RULES:
 - If a section has sub-headings with tables, include them as nested objects
 - Return ONLY the JSON object, no markdown formatting or explanation`;
 
+// Bounded concurrency for Gemini section-extraction calls. The nightly sync
+// processes donors in batches of 10 in parallel; firing 10 simultaneous calls
+// to gemini-2.5-flash routinely 429s, which used to silently drop ~40% of
+// SBoC sperm donors to "no _sections" shape. Cap at 3 in-flight to stay
+// under the per-minute quota while keeping throughput reasonable.
+const GEMINI_EXTRACT_CONCURRENCY = 3;
+let geminiExtractInFlight = 0;
+const geminiExtractQueue: Array<() => void> = [];
+
+async function withGeminiExtractSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (geminiExtractInFlight >= GEMINI_EXTRACT_CONCURRENCY) {
+    await new Promise<void>((resolve) => geminiExtractQueue.push(resolve));
+  }
+  geminiExtractInFlight++;
+  try {
+    return await fn();
+  } finally {
+    geminiExtractInFlight--;
+    const next = geminiExtractQueue.shift();
+    if (next) next();
+  }
+}
+
+function isTransientGeminiError(err: any): boolean {
+  const msg = String(err?.message || err || "").toLowerCase();
+  return (
+    msg.includes("429") ||
+    msg.includes("rate limit") ||
+    msg.includes("resource has been exhausted") ||
+    msg.includes("quota") ||
+    msg.includes("503") ||
+    msg.includes("502") ||
+    msg.includes("504") ||
+    msg.includes("unavailable") ||
+    msg.includes("deadline") ||
+    msg.includes("timed out") ||
+    msg.includes("timeout") ||
+    msg.includes("econnreset") ||
+    msg.includes("etimedout") ||
+    msg.includes("network")
+  );
+}
+
 async function extractProfileDetailSections(
   html: string,
   pageUrl: string,
@@ -854,28 +897,81 @@ ${cleanedText.slice(0, 80000)}
 IMAGE TAGS FOUND ON PAGE:
 ${imgTags.slice(0, 5000)}`;
 
-  try {
-    const result = await Promise.race([
-      model.generateContent(prompt),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Gemini profile detail extraction timed out after 120s")), 120000)),
-    ]);
-    const text = result.response.text().trim();
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (parsed._sections && typeof parsed._sections === "object" && Object.keys(parsed._sections).length > 0) {
-        return parsed;
+  const maxAttempts = 4;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const result = await withGeminiExtractSlot(() =>
+        Promise.race([
+          model.generateContent(prompt),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("Gemini profile detail extraction timed out after 120s")), 120000),
+          ),
+        ]),
+      );
+      const text = (result as any).response.text().trim();
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed._sections && typeof parsed._sections === "object" && Object.keys(parsed._sections).length > 0) {
+          return parsed;
+        }
+        console.warn(`[donor-sync] Gemini returned JSON without usable _sections for ${pageUrl} (htmlLen=${html.length}, cleanedLen=${cleanedText.length})`);
+      } else {
+        console.warn(`[donor-sync] Gemini returned non-JSON response for ${pageUrl} (length=${text.length})`);
       }
+      // Non-transient empty result: don't retry, just fail this donor.
+      return null;
+    } catch (err: any) {
+      if (attempt < maxAttempts && isTransientGeminiError(err)) {
+        const backoffMs = 1500 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 500);
+        console.warn(`[donor-sync] Gemini transient error (attempt ${attempt}/${maxAttempts}) for ${pageUrl}: ${err.message} - retrying in ${backoffMs}ms`);
+        await new Promise((r) => setTimeout(r, backoffMs));
+        continue;
+      }
+      console.error(`[donor-sync] Gemini profile detail extraction error for ${pageUrl} (attempt ${attempt}/${maxAttempts}): ${err.message}`);
+      return null;
     }
-    return null;
-  } catch (err: any) {
-    console.error(`[donor-sync] Gemini profile detail extraction error:`, err.message);
-    return null;
   }
+  return null;
 }
 
 function skipIfManual(field: string, value: any, manualFields: string[]): any {
   return manualFields.includes(field) ? undefined : value;
+}
+
+// Decide what to write to the photoUrl column when a fresh migration may have
+// failed. Returns:
+//   - the new GCS URL when migration succeeded
+//   - null when migration failed AND the existing DB value is a non-GCS URL
+//     (e.g. an expired S3 pre-signed URL we must clear so the browser stops
+//     trying to load a dead link)
+//   - undefined when migration failed AND the existing DB value is already a
+//     GCS URL we want to preserve, or both are empty
+function resolvePersistedPhotoUrl(
+  fresh: string | null | undefined,
+  fallback: string | null | undefined,
+  existingDbUrl: string | null | undefined,
+): string | null | undefined {
+  const candidate = (fresh && typeof fresh === "string" && isAlreadyPersisted(fresh))
+    ? fresh
+    : (fallback && typeof fallback === "string" && isAlreadyPersisted(fallback) ? fallback : null);
+  if (candidate) return candidate;
+  if (existingDbUrl && !isAlreadyPersisted(existingDbUrl)) return null;
+  return undefined;
+}
+
+// Same idea for the photos[] column. When the fresh migrated list is empty
+// but the existing list has non-GCS entries, return [] to clear them rather
+// than leaving expired URLs in place.
+function resolvePersistedPhotos(
+  fresh: string[],
+  existingPhotos: string[] | null | undefined,
+): string[] | undefined {
+  if (fresh.length > 0) return fresh;
+  if (existingPhotos && existingPhotos.some((p) => typeof p === "string" && !isAlreadyPersisted(p))) {
+    return [];
+  }
+  return undefined;
 }
 
 const VALID_IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|heic|svg|bmp|tiff?|avif)/i;
@@ -948,13 +1044,40 @@ function guessExtension(contentType: string): string {
 
 const UPLOADS_DIR = path.resolve(process.cwd(), "public/uploads");
 
+// Bounded concurrency for outbound photo fetches. JMS sites use pre-signed S3
+// URLs (24h expiry); if many concurrent fetches hit S3 from one IP they get
+// throttled (503 SlowDown), so we keep the in-flight count modest.
+const PHOTO_FETCH_CONCURRENCY = 5;
+let photoFetchInFlight = 0;
+const photoFetchQueue: Array<() => void> = [];
+
+async function withPhotoFetchSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (photoFetchInFlight >= PHOTO_FETCH_CONCURRENCY) {
+    await new Promise<void>((resolve) => photoFetchQueue.push(resolve));
+  }
+  photoFetchInFlight++;
+  try {
+    return await fn();
+  } finally {
+    photoFetchInFlight--;
+    const next = photoFetchQueue.shift();
+    if (next) next();
+  }
+}
+
+// Returns the persisted (GCS or /uploads/) URL on success, the input URL when
+// it is already a persisted destination, or null when migration failed. The
+// null return is load-bearing: callers MUST treat it as "do not store this
+// URL," because the alternative would be writing a transient S3 pre-signed URL
+// into the DB where it expires in 24h and breaks the photo silently.
 async function persistSinglePhoto(
   url: string,
   providerId: string,
   storageService: StorageService | null,
   cookies?: string,
-): Promise<string> {
-  if (!url || isAlreadyPersisted(url)) return url;
+): Promise<string | null> {
+  if (!url) return null;
+  if (isAlreadyPersisted(url)) return url;
 
   // Migrate local /uploads/ paths to GCS when storage is configured
   if (url.startsWith("/uploads/") && storageService?.isConfigured()) {
@@ -975,45 +1098,78 @@ async function persistSinglePhoto(
     return url;
   }
 
+  // Don't send the source-site session cookie to an unrelated photo host
+  // (e.g. tfc-jms.s3.amazonaws.com). S3 ignores it; other CDNs occasionally
+  // misbehave on unexpected cookies. Only attach cookies when the host
+  // overlap suggests they're needed (e.g. EDC/JMS DonorPhoto endpoints on
+  // the same origin as the page).
+  let sendCookies = cookies;
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-    const fetchHeaders: Record<string, string> = { ...DEFAULT_HEADERS, Accept: "image/*" };
-    if (cookies) fetchHeaders["Cookie"] = cookies;
-    const resp = await fetch(url, {
-      headers: fetchHeaders,
-      signal: controller.signal,
-      redirect: "follow",
-    });
-    clearTimeout(timeout);
-    if (!resp.ok) {
-      console.warn(`[photo-persist] HTTP ${resp.status} fetching photo: ${url.slice(0, 120)}`);
-      return url;
+    const u = new URL(url);
+    if (/amazonaws\.com$/i.test(u.hostname) || /\.s3[.-]/i.test(u.hostname) || /cloudfront\.net$/i.test(u.hostname)) {
+      sendCookies = undefined;
     }
-    const buffer = Buffer.from(await resp.arrayBuffer());
-    if (buffer.length < 500 || buffer.length > 20 * 1024 * 1024) return url;
-    const ct = guessContentType(buffer);
-    const ext = guessExtension(ct);
-    const hash = createHash("md5").update(buffer).digest("hex");
-    const filename = `${hash}${ext}`;
+  } catch {}
 
-    if (storageService?.isConfigured()) {
-      const gcsPath = `profile-photos/${filename}`;
-      return await storageService.uploadBufferPublic(buffer, gcsPath, ct);
-    }
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const result = await withPhotoFetchSlot(async () => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 20000);
+        const fetchHeaders: Record<string, string> = { ...DEFAULT_HEADERS, Accept: "image/*" };
+        if (sendCookies) fetchHeaders["Cookie"] = sendCookies;
+        try {
+          const resp = await fetch(url, {
+            headers: fetchHeaders,
+            signal: controller.signal,
+            redirect: "follow",
+          });
+          if (resp.status === 429 || resp.status === 503 || (resp.status >= 500 && resp.status < 600)) {
+            throw new Error(`transient HTTP ${resp.status}`);
+          }
+          if (!resp.ok) {
+            console.warn(`[photo-persist] HTTP ${resp.status} fetching photo: ${url.slice(0, 120)}`);
+            return null;
+          }
+          const buffer = Buffer.from(await resp.arrayBuffer());
+          if (buffer.length < 500 || buffer.length > 20 * 1024 * 1024) {
+            console.warn(`[photo-persist] Rejected photo (size=${buffer.length}): ${url.slice(0, 120)}`);
+            return null;
+          }
+          const ct = guessContentType(buffer);
+          const ext = guessExtension(ct);
+          const hash = createHash("md5").update(buffer).digest("hex");
+          const filename = `${hash}${ext}`;
 
-    const filePath = path.join(UPLOADS_DIR, filename);
-    if (!fs.existsSync(UPLOADS_DIR)) {
-      fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+          if (storageService?.isConfigured()) {
+            const gcsPath = `profile-photos/${filename}`;
+            return await storageService.uploadBufferPublic(buffer, gcsPath, ct);
+          }
+
+          const filePath = path.join(UPLOADS_DIR, filename);
+          if (!fs.existsSync(UPLOADS_DIR)) {
+            fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+          }
+          if (!fs.existsSync(filePath)) {
+            fs.writeFileSync(filePath, buffer);
+          }
+          return `/uploads/${filename}`;
+        } finally {
+          clearTimeout(timeout);
+        }
+      });
+      return result;
+    } catch (err: any) {
+      if (attempt === maxAttempts) {
+        console.warn(`[photo-persist] Failed after ${maxAttempts} attempts: ${err.message} for ${url.slice(0, 120)}`);
+        return null;
+      }
+      const backoffMs = 500 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 250);
+      await new Promise((r) => setTimeout(r, backoffMs));
     }
-    if (!fs.existsSync(filePath)) {
-      fs.writeFileSync(filePath, buffer);
-    }
-    return `/uploads/${filename}`;
-  } catch (err: any) {
-    console.warn(`[photo-persist] Failed to persist photo: ${err.message}`);
-    return url;
   }
+  return null;
 }
 
 async function persistPhotoUrls(
@@ -1023,32 +1179,41 @@ async function persistPhotoUrls(
   cookies?: string,
 ): Promise<void> {
   if (!storageService?.isConfigured()) return;
-  if (entity.photoUrl && !isAlreadyPersisted(entity.photoUrl)) {
-    entity.photoUrl = await persistSinglePhoto(entity.photoUrl, providerId, storageService, cookies);
+
+  // photoUrl: drop on migration failure so we never write a transient S3
+  // signed URL to the DB. The upsert callers compensate by clearing existing
+  // non-GCS photoUrls when the fresh migration returns null.
+  if (entity.photoUrl) {
+    if (!isAlreadyPersisted(entity.photoUrl)) {
+      entity.photoUrl = await persistSinglePhoto(entity.photoUrl, providerId, storageService, cookies);
+    }
   }
+
+  const migrateArray = async (arr: any[]): Promise<string[]> => {
+    const out: string[] = [];
+    for (const item of arr) {
+      if (typeof item !== "string" || !item) continue;
+      if (isAlreadyPersisted(item)) {
+        out.push(item);
+        continue;
+      }
+      const migrated = await persistSinglePhoto(item, providerId, storageService, cookies);
+      if (migrated) out.push(migrated);
+    }
+    return out;
+  };
+
   if (Array.isArray(entity.photos)) {
-    for (let i = 0; i < entity.photos.length; i++) {
-      if (!isAlreadyPersisted(entity.photos[i])) {
-        entity.photos[i] = await persistSinglePhoto(entity.photos[i], providerId, storageService, cookies);
-      }
-    }
+    entity.photos = await migrateArray(entity.photos);
   }
-  if (entity.additionalPhotos && Array.isArray(entity.additionalPhotos)) {
-    for (let i = 0; i < entity.additionalPhotos.length; i++) {
-      if (!isAlreadyPersisted(entity.additionalPhotos[i])) {
-        entity.additionalPhotos[i] = await persistSinglePhoto(entity.additionalPhotos[i], providerId, storageService, cookies);
-      }
-    }
+  if (Array.isArray(entity.additionalPhotos)) {
+    entity.additionalPhotos = await migrateArray(entity.additionalPhotos);
   }
   const pd = entity.profileData;
   if (pd) {
     for (const key of ["All Photos", "Photos"]) {
       if (Array.isArray(pd[key])) {
-        for (let i = 0; i < pd[key].length; i++) {
-          if (typeof pd[key][i] === "string" && !isAlreadyPersisted(pd[key][i])) {
-            pd[key][i] = await persistSinglePhoto(pd[key][i], providerId, storageService, cookies);
-          }
-        }
+        pd[key] = await migrateArray(pd[key]);
       }
     }
   }
@@ -1068,12 +1233,13 @@ async function migrateLocalPhotosToGcs(
   const updates: Record<string, any> = {};
   if (record.photoUrl?.startsWith("/uploads/")) {
     const migrated = await persistSinglePhoto(record.photoUrl, providerId, storageService);
-    if (migrated !== record.photoUrl) updates.photoUrl = migrated;
+    if (migrated && migrated !== record.photoUrl) updates.photoUrl = migrated;
   }
   const photos = record.photos as string[] | undefined;
   if (photos?.some((p: string) => p.startsWith("/uploads/"))) {
     const migrated = await Promise.all(photos.map((p: string) => p.startsWith("/uploads/") ? persistSinglePhoto(p, providerId, storageService) : Promise.resolve(p)));
-    if (migrated.some((m, i) => m !== photos[i])) updates.photos = migrated;
+    const cleaned = migrated.filter((m): m is string => typeof m === "string" && m.length > 0);
+    if (cleaned.length !== photos.length || cleaned.some((m, i) => m !== photos[i])) updates.photos = cleaned;
   }
   if (Object.keys(updates).length > 0) {
     await (prisma[model] as any).update({ where: { id: record.id }, data: updates });
@@ -1201,8 +1367,8 @@ async function upsertEggDonor(
       donorCompensation: skipIfManual("donorCompensation", donor.donorCompensation ? parseFloat(String(donor.donorCompensation)) : null, mf),
       eggLotCost: skipIfManual("eggLotCost", donor.eggLotCost ? parseFloat(String(donor.eggLotCost)) : null, mf),
       totalCost: skipIfManual("totalCost", donor.totalCost ? parseFloat(String(donor.totalCost)) : null, mf),
-      photoUrl: skipIfManual("photoUrl", donor.photoUrl || extractPhotosArray(donor)[0] || null, mf),
-      photos: skipIfManual("photos", extractPhotosArray(donor), mf),
+      photoUrl: skipIfManual("photoUrl", resolvePersistedPhotoUrl(donor.photoUrl, extractPhotosArray(donor)[0], existing?.photoUrl), mf),
+      photos: skipIfManual("photos", resolvePersistedPhotos(extractPhotosArray(donor), existing?.photos as string[] | null | undefined), mf),
       photoCount: skipIfManual("photoCount", donor.photoCount || null, mf),
       hasVideo: skipIfManual("hasVideo", donor.hasVideo || false, mf),
       videoUrl: skipIfManual("videoUrl", donor.videoUrl || (donor.profileData?.["Video URL"] as string) || null, mf),
@@ -1381,8 +1547,8 @@ async function upsertSurrogate(
       lastDeliveryYear: skipIfManual("lastDeliveryYear", resolvedLastDeliveryYear ?? undefined, mf),
       agreesToSelectiveReduction: skipIfManual("agreesToSelectiveReduction", surrogate.agreesToSelectiveReduction ?? undefined, mf),
       agreesToInternationalParents: skipIfManual("agreesToInternationalParents", surrogate.agreesToInternationalParents ?? undefined, mf),
-      photoUrl: skipIfManual("photoUrl", surrogate.photoUrl || extractPhotosArray(surrogate)[0] || undefined, mf),
-      photos: skipIfManual("photos", extractPhotosArray(surrogate), mf),
+      photoUrl: skipIfManual("photoUrl", resolvePersistedPhotoUrl(surrogate.photoUrl, extractPhotosArray(surrogate)[0], existing?.photoUrl), mf),
+      photos: skipIfManual("photos", resolvePersistedPhotos(extractPhotosArray(surrogate), existing?.photos as string[] | null | undefined), mf),
       videoUrl: skipIfManual("videoUrl", surrogate.videoUrl || (surrogate.profileData?.["Video URL"] as string) || undefined, mf),
       profileUrl: surrogate.profileUrl || undefined,
       status: skipIfManual("status", existing?.status === "INACTIVE" && (!surrogate.status || surrogate.status === "AVAILABLE") ? "INACTIVE" : (surrogate.status || "AVAILABLE"), mf),
@@ -1535,8 +1701,8 @@ async function upsertSpermDonor(
       relationshipStatus: skipIfManual("relationshipStatus", normalizeRelationshipStatus(donor.relationshipStatus) || undefined, mf),
       occupation: skipIfManual("occupation", sdOccupation || undefined, mf),
       compensation: skipIfManual("compensation", donor.compensation ? parseFloat(String(donor.compensation)) : undefined, mf),
-      photoUrl: skipIfManual("photoUrl", donor.photoUrl || extractPhotosArray(donor)[0] || undefined, mf),
-      photos: skipIfManual("photos", extractPhotosArray(donor), mf),
+      photoUrl: skipIfManual("photoUrl", resolvePersistedPhotoUrl(donor.photoUrl, extractPhotosArray(donor)[0], existing?.photoUrl), mf),
+      photos: skipIfManual("photos", resolvePersistedPhotos(extractPhotosArray(donor), existing?.photos as string[] | null | undefined), mf),
       videoUrl: skipIfManual("videoUrl", donor.videoUrl || (donor.profileData?.["Video URL"] as string) || undefined, mf),
       profileUrl: donor.profileUrl || undefined,
       status: skipIfManual("status", existing?.status === "INACTIVE" && (!donor.status || donor.status === "AVAILABLE") ? "INACTIVE" : (donor.status || "AVAILABLE"), mf),
