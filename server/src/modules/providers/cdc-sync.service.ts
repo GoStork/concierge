@@ -14,25 +14,31 @@ export class CdcSyncService {
     try {
       const staleJobs = await this.prisma.cdcSyncJob.findMany({
         where: { status: { in: ["PROCESSING", "PENDING"] } },
-        select: { id: true, year: true, recordsProcessed: true, errorMessage: true },
+        select: { id: true, year: true, recordsProcessed: true, errorMessage: true, resumeAttempts: true },
       });
 
       if (staleJobs.length === 0) return;
 
+      // Keep resuming an interrupted CDC sync on every restart (checkpoint resume
+      // from recordsProcessed offset) until it completes. A bounded attempt cap
+      // prevents an infinite crash-loop if one page reliably takes the server down.
+      const MAX_RESUME_ATTEMPTS = 10;
+
       for (const job of staleJobs) {
-        if (job.errorMessage === "Server restarted during sync") {
-          console.log(`[CDC Sync] Skipping auto-resume for job ${job.id} (year ${job.year}) - already failed on previous restart`);
+        if ((job.resumeAttempts || 0) >= MAX_RESUME_ATTEMPTS) {
+          console.log(`[CDC Sync] Giving up on job ${job.id} (year ${job.year}) - reached ${MAX_RESUME_ATTEMPTS} resume attempts without completing`);
           await this.prisma.cdcSyncJob.update({
             where: { id: job.id },
-            data: { status: "FAILED", completedAt: new Date() },
+            data: { status: "FAILED", errorMessage: `Failed after ${MAX_RESUME_ATTEMPTS} resume attempts`, completedAt: new Date() },
           });
           continue;
         }
 
-        console.log(`[CDC Sync] Auto-resuming sync for job ${job.id} (year ${job.year}) from offset ${job.recordsProcessed}...`);
+        const attempt = (job.resumeAttempts || 0) + 1;
+        console.log(`[CDC Sync] Auto-resuming sync for job ${job.id} (year ${job.year}) from offset ${job.recordsProcessed} (resume attempt ${attempt}/${MAX_RESUME_ATTEMPTS})...`);
         await this.prisma.cdcSyncJob.update({
           where: { id: job.id },
-          data: { errorMessage: "Server restarted during sync" },
+          data: { errorMessage: "Server restarted during sync", resumeAttempts: attempt },
         });
 
         const datasetId = await this.getDatasetIdForYear(job.year).catch((err) => {

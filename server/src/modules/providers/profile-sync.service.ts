@@ -1642,6 +1642,28 @@ export function getSyncJob(jobId: string): SyncJob | undefined {
   return syncJobs.get(jobId);
 }
 
+/**
+ * Persist mid-run progress to the SyncLog so the checkpoint is durable and the
+ * UI reflects live progress (including across a resume). Fire-and-forget; a
+ * failed progress write must never interrupt the sync itself. Called from each
+ * scraper branch's per-batch progress checkpoint.
+ */
+function persistJobProgress(prisma: PrismaService, job: SyncJob): void {
+  if (!job.syncLogId) return;
+  const skippedCount = Math.max(0, job.total - job.succeeded - job.failed);
+  prisma.syncLog.update({
+    where: { id: job.syncLogId },
+    data: {
+      total: job.total,
+      processed: job.processed,
+      succeeded: job.succeeded,
+      failed: job.failed,
+      skipped: skippedCount,
+      newProfiles: job.newProfiles,
+    },
+  }).catch(() => { /* progress write is best-effort */ });
+}
+
 export function getActiveSyncJob(providerId: string, type: DonorType): SyncJob | undefined {
   for (const job of syncJobs.values()) {
     if (job.providerId === providerId && job.type === type && job.status === "running" && !job.isPdfUpload) {
@@ -4190,6 +4212,7 @@ async function runSyncJob(
           }
           job.processed++;
         }));
+        persistJobProgress(prisma, job);
         if ((i + BATCH_SIZE) % 30 === 0 || i + BATCH_SIZE >= uniqueItems.length) {
           console.log(`[donor-sync] Progress: ${Math.min(i + BATCH_SIZE, uniqueItems.length)}/${uniqueItems.length} (succeeded: ${job.succeeded}, failed: ${job.failed}, skipped: ${skippedUnchanged})`);
         }
@@ -4388,6 +4411,7 @@ async function runSyncJob(
           await new Promise((r) => setTimeout(r, 200));
         }
 
+        persistJobProgress(prisma, job);
         if ((i + BATCH_SIZE) % 50 === 0 || i + BATCH_SIZE >= uniqueItems.length) {
           console.log(`[donor-sync] Progress: ${Math.min(i + BATCH_SIZE, uniqueItems.length)}/${uniqueItems.length} profiles fetched`);
         }
@@ -4787,6 +4811,7 @@ async function runSyncJob(
         job.processed++;
       }
 
+      persistJobProgress(prisma, job);
       if (i + BATCH_SIZE < uniqueItems.length) {
         await new Promise((r) => setTimeout(r, 500));
       }

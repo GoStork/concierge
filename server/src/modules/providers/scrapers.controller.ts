@@ -122,13 +122,14 @@ export class ScrapersController {
         { table: "spermDonorSyncConfig", type: "sperm-donor" },
       ];
 
-      // Auto-resume only syncs that started within the last 30 minutes - these are genuine
-      // crash-restarts where we want to pick back up. Syncs started hours ago (e.g., a 2am
-      // nightly that got interrupted) should NOT be auto-resumed - they'll run again at the
-      // next nightly. Restarting them from scratch every server restart prevents them from
-      // ever completing.
-      const resumeWindow = new Date(Date.now() - 30 * 60 * 1000);
-      // Still mark anything older than 24h as ended so the DB stays clean
+      // Checkpoint resume: auto-resume EVERY interrupted sync, no matter how long
+      // ago it started, as long as it's within the 24h safety bound. Resuming is
+      // cheap and idempotent because the per-profile content checkpoint (each
+      // donor's cardHash + lastFullSyncAt + section completeness, persisted on the
+      // donor record) makes startSync SKIP every profile already fully synced and
+      // only re-fetch the ones that were never reached or written incompletely.
+      // So a sync interrupted at profile 51/90 picks up at 51 and finishes - it
+      // does NOT start over. Each restart converges toward completion.
       const staleThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
       for (const { table, type } of syncTypes) {
@@ -142,35 +143,30 @@ export class ScrapersController {
 
         for (const config of interrupted) {
           const ageMin = Math.round((Date.now() - config.lastSyncStartedAt.getTime()) / 60000);
-
-          // If started more than 30 minutes ago - it was a long-running nightly sync or manual run
-          // that got interrupted. Mark it as ended and let the next nightly re-run it cleanly.
-          if (config.lastSyncStartedAt <= resumeWindow) {
-            console.log(`[Donor Sync] Not auto-resuming "${config.provider?.name || config.providerId}" (${type}) - started ${ageMin}min ago, too old for auto-resume. Marking ended, next nightly will re-run.`);
-            await (this.prisma[table] as any).update({
-              where: { providerId: config.providerId },
-              data: { lastSyncEndedAt: new Date() },
-            });
-            // Also mark any stuck SyncLog "running" entries as failed so the dedup
-            // guard in startSync doesn't block the next nightly from starting
-            try {
-              await this.prisma.syncLog.updateMany({
-                where: { providerId: config.providerId, type, status: "running" },
-                data: {
-                  status: "failed",
-                  completedAt: new Date(),
-                  errors: ["Interrupted - server restarted while sync was running"],
-                },
-              });
-            } catch { /* SyncLog may not exist yet */ }
-            continue;
-          }
-
-          // Started within the last 30 minutes - this is a genuine crash restart, resume it
-          console.log(`[Donor Sync] Auto-resuming ${type} sync for "${config.provider?.name || config.providerId}" (started ${ageMin}min ago)`);
+          console.log(`[Donor Sync] Checkpoint-resuming ${type} sync for "${config.provider?.name || config.providerId}" (interrupted ${ageMin}min ago) - already-synced profiles will be skipped`);
           startSync(this.prisma, config.providerId, type, undefined, this.storageService, "auto-resume").catch((err: any) => {
             console.error(`[Donor Sync] Failed to auto-resume ${type} sync for ${config.providerId}:`, err.message);
           });
+        }
+      }
+
+      // Mark anything older than the 24h bound as ended so the DB stays clean and
+      // the next nightly starts fresh (a >24h-old interrupted sync is stale; the
+      // catalog may have changed enough that a clean nightly run is preferable).
+      for (const { table, type } of syncTypes) {
+        const stale = await (this.prisma[table] as any).findMany({
+          where: { lastSyncStartedAt: { lte: staleThreshold }, lastSyncEndedAt: null },
+          select: { providerId: true },
+        });
+        for (const config of stale) {
+          await (this.prisma[table] as any).update({
+            where: { providerId: config.providerId },
+            data: { lastSyncEndedAt: new Date() },
+          }).catch(() => {});
+          await this.prisma.syncLog.updateMany({
+            where: { providerId: config.providerId, type, status: "running" },
+            data: { status: "failed", completedAt: new Date(), errors: ["Interrupted >24h ago - closed; next nightly will re-run"] },
+          }).catch(() => {});
         }
       }
     } catch (err) {

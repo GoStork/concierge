@@ -178,6 +178,7 @@ model CdcSyncJob {
   enrichmentErrors       Int       @default(0)
   enrichmentSkipped      Int       @default(0)
   enrichmentErrorMessage String?
+  resumeAttempts         Int       @default(0)
 }
 
 model RawCdcData {
