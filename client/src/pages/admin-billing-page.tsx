@@ -145,7 +145,7 @@ export default function AdminBillingPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end border-t pt-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
         <div className="flex-1 min-w-[220px]">
           <label className="text-xs text-muted-foreground mb-1 block">Search</label>
           <div className="relative">
