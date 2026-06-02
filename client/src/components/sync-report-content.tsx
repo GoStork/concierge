@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, XCircle, AlertTriangle, Loader2, Clock, History, ChevronDown, ChevronUp } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -67,6 +67,7 @@ const SOURCE_LABEL: Record<string, string> = {
 
 function SyncLogHistory({ providerId, type }: { providerId: string; type: string }) {
   const [expanded, setExpanded] = useState(false);
+  const [expandedErrors, setExpandedErrors] = useState<Record<string, boolean>>({});
   const { data: logs, isLoading } = useQuery<SyncLogEntry[]>({
     queryKey: ["/api/scrapers/sync-logs", providerId, type],
     queryFn: async () => {
@@ -116,69 +117,77 @@ function SyncLogHistory({ providerId, type }: { providerId: string; type: string
               const isRunning = !log.completedAt;
               const hasFailed = log.failed > 0 || log.status === "failed";
               const errors = log.errors || [];
+              const isErrorOpen = !!expandedErrors[log.id];
               return (
-                <tr key={log.id} className="hover:bg-muted/30">
-                  <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
-                    {formatDateTimeShort(log.startedAt)}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-foreground/70">
-                    {SOURCE_LABEL[log.source] || log.source}
-                  </td>
-                  <td className="px-3 py-2">
-                    {isRunning ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-primary">
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        Running
-                      </span>
-                    ) : log.status === "completed" && !hasFailed ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-[hsl(var(--brand-success))]">
-                        <CheckCircle2 className="w-3 h-3" />
-                        Completed
-                      </span>
-                    ) : log.status === "completed" && hasFailed ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-[hsl(var(--brand-warning))]">
-                        <AlertTriangle className="w-3 h-3" />
-                        Partial
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-xs text-destructive">
-                        <XCircle className="w-3 h-3" />
-                        Failed
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-right font-heading">{log.succeeded || "-"}</td>
-                  <td className="px-3 py-2 text-xs text-right text-muted-foreground">{log.skipped || "-"}</td>
-                  <td className="px-3 py-2 text-xs text-right text-[hsl(var(--brand-success))]">{log.newProfiles > 0 ? `+${log.newProfiles}` : "-"}</td>
-                  <td className="px-3 py-2 text-xs text-right text-muted-foreground">{log.staleMarked > 0 ? log.staleMarked : "-"}</td>
-                  <td className="px-3 py-2 text-xs text-right">
-                    {errors.length > 0 ? (
-                      <span className="text-destructive font-heading" title={errors.join("\n")}>{errors.length}</span>
-                    ) : "-"}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-right text-muted-foreground whitespace-nowrap">
-                    {formatDuration(log.startedAt, log.completedAt)}
-                  </td>
-                </tr>
+                <Fragment key={log.id}>
+                  <tr className="hover:bg-muted/30">
+                    <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                      {formatDateTimeShort(log.startedAt)}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-foreground/70">
+                      {SOURCE_LABEL[log.source] || log.source}
+                    </td>
+                    <td className="px-3 py-2">
+                      {isRunning ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-primary">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Running
+                        </span>
+                      ) : log.status === "completed" && !hasFailed ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-[hsl(var(--brand-success))]">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Completed
+                        </span>
+                      ) : log.status === "completed" && hasFailed ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-[hsl(var(--brand-warning))]">
+                          <AlertTriangle className="w-3 h-3" />
+                          Partial
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs text-destructive">
+                          <XCircle className="w-3 h-3" />
+                          Failed
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-right font-heading">{log.succeeded || "-"}</td>
+                    <td className="px-3 py-2 text-xs text-right text-muted-foreground">{log.skipped || "-"}</td>
+                    <td className="px-3 py-2 text-xs text-right text-[hsl(var(--brand-success))]">{log.newProfiles > 0 ? `+${log.newProfiles}` : "-"}</td>
+                    <td className="px-3 py-2 text-xs text-right text-muted-foreground">{log.staleMarked > 0 ? log.staleMarked : "-"}</td>
+                    <td className="px-3 py-2 text-xs text-right">
+                      {errors.length > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedErrors((prev) => ({ ...prev, [log.id]: !prev[log.id] }))}
+                          className="inline-flex items-center gap-0.5 text-destructive font-heading hover:underline"
+                          title={isErrorOpen ? "Hide error details" : "Show error details"}
+                        >
+                          {errors.length}
+                          {isErrorOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        </button>
+                      ) : "-"}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-right text-muted-foreground whitespace-nowrap">
+                      {formatDuration(log.startedAt, log.completedAt)}
+                    </td>
+                  </tr>
+                  {isErrorOpen && errors.length > 0 && (
+                    <tr className="bg-destructive/5">
+                      <td colSpan={9} className="px-3 py-2">
+                        <div className="space-y-0.5">
+                          {errors.map((err, i) => (
+                            <div key={i} className="text-xs text-destructive/80">{err}</div>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
           </tbody>
         </table>
       </div>
-
-      {/* Error details for failed runs */}
-      {visibleLogs.some((l) => l.errors && l.errors.length > 0) && (
-        <div className="space-y-1.5">
-          {visibleLogs.filter((l) => l.errors && l.errors.length > 0).slice(0, 2).map((log) => (
-            <div key={log.id} className="bg-destructive/5 border border-destructive/20 rounded-[var(--radius)] px-3 py-2">
-              <div className="text-xs font-ui text-destructive mb-1">{formatDateTimeShort(log.startedAt)} - {SOURCE_LABEL[log.source] || log.source} errors:</div>
-              {(log.errors || []).map((err, i) => (
-                <div key={i} className="text-xs text-destructive/80">{err}</div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
 
       {logs.length > 3 && (
         <button
