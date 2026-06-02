@@ -1650,12 +1650,13 @@ export function getSyncJob(jobId: string): SyncJob | undefined {
  */
 function persistJobProgress(prisma: PrismaService, job: SyncJob): void {
   if (!job.syncLogId) return;
+  const processed = job.total > 0 ? Math.min(job.processed, job.total) : job.processed;
   const skippedCount = Math.max(0, job.total - job.succeeded - job.failed);
   prisma.syncLog.update({
     where: { id: job.syncLogId },
     data: {
       total: job.total,
-      processed: job.processed,
+      processed,
       succeeded: job.succeeded,
       failed: job.failed,
       skipped: skippedCount,
@@ -4517,7 +4518,11 @@ async function runSyncJob(
     }
 
     if (paginationLinks.length > 0) {
-      const maxPages = Math.min(paginationLinks.length, 10);
+      // Discover ALL listing pages (cap high only as a runaway guard). Checkpoint
+      // resume makes long discovery safe - an interrupted sync continues where it
+      // stopped instead of restarting. Previously capped at 10 pages, which
+      // silently truncated larger catalogs (only the first ~90 donors synced).
+      const maxPages = Math.min(paginationLinks.length, 100);
       for (let i = 0; i < maxPages; i++) {
         try {
           const pageHtml = await fetchHtml(paginationLinks[i], sessionCookies);
@@ -4530,7 +4535,7 @@ async function runSyncJob(
             allItems.push(...pageItems);
 
             if (pageData.profileLinks?.length > 0) {
-              const maxNewProfiles = Math.min(pageData.profileLinks.length, 30);
+              const maxNewProfiles = Math.min(pageData.profileLinks.length, 100);
               for (let j = 0; j < maxNewProfiles; j++) {
                 try {
                   const profHtml = await fetchHtml(pageData.profileLinks[j], sessionCookies);
@@ -4903,13 +4908,14 @@ async function runSyncJob(
     // Persist final sync result to SyncLog for durable history
     if (job.syncLogId) {
       const skippedCount = (job.total - job.succeeded - job.failed) || 0;
+      const finalProcessed = job.total > 0 ? Math.min(job.processed, job.total) : job.processed;
       prisma.syncLog.update({
         where: { id: job.syncLogId },
         data: {
           status: job.status === "running" ? "failed" : job.status,
           completedAt: job.completedAt || new Date(),
           total: job.total,
-          processed: job.processed,
+          processed: finalProcessed,
           succeeded: job.succeeded,
           failed: job.failed,
           skipped: skippedCount > 0 ? skippedCount : 0,
@@ -5154,9 +5160,13 @@ export async function getScrapersSummary(prisma: PrismaService) {
 
     const activeJob = getActiveSyncJob(summary.providerId, summary.type);
     if (activeJob) {
+      // Clamp processed to total so the UI can never show >100%. total is the
+      // authoritative count of unique profiles the enrich loop will process.
+      const total = activeJob.total;
+      const processed = total > 0 ? Math.min(activeJob.processed, total) : activeJob.processed;
       summary.syncProgress = {
-        total: activeJob.total,
-        processed: activeJob.processed,
+        total,
+        processed,
         succeeded: activeJob.succeeded,
         failed: activeJob.failed,
         currentStep: activeJob.currentStep,

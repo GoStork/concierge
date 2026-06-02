@@ -44,8 +44,11 @@ interface SummaryResponse {
 }
 
 function SyncProgressBar({ progress }: { progress: SyncProgress }) {
+  // Clamp so the bar/counter can never exceed 100% even if processed momentarily
+  // outpaces total (discovery/enrich timing).
+  const shownProcessed = progress.total > 0 ? Math.min(progress.processed, progress.total) : progress.processed;
   const percentage = progress.total > 0
-    ? Math.round((progress.processed / progress.total) * 100)
+    ? Math.min(100, Math.round((shownProcessed / progress.total) * 100))
     : 0;
 
   return (
@@ -64,7 +67,7 @@ function SyncProgressBar({ progress }: { progress: SyncProgress }) {
         />
       </div>
       <div className="text-xs text-muted-foreground mt-1">
-        {progress.processed} / {progress.total} profiles
+        {shownProcessed} / {progress.total} profiles
         {progress.failed > 0 && ` · ${progress.failed} failed`}
       </div>
     </div>

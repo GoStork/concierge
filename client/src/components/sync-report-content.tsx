@@ -217,10 +217,11 @@ export function SyncReportContent({
   // Build a human-readable status banner for the last completed run
   const buildStatusMessage = () => {
     if (isCurrentlyRunning && liveProgress) {
-      const pct = liveProgress.total > 0 ? Math.round((liveProgress.processed / liveProgress.total) * 100) : 0;
+      const shownProcessed = liveProgress.total > 0 ? Math.min(liveProgress.processed, liveProgress.total) : liveProgress.processed;
+      const pct = liveProgress.total > 0 ? Math.min(100, Math.round((shownProcessed / liveProgress.total) * 100)) : 0;
       return {
         type: "running" as const,
-        text: `Sync in progress - ${pct}% complete (${liveProgress.processed} / ${liveProgress.total} profiles)`,
+        text: `Sync in progress - ${pct}% complete (${shownProcessed} / ${liveProgress.total} profiles)`,
       };
     }
     if (isCurrentlyRunning) {
