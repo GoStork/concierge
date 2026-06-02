@@ -246,6 +246,11 @@ interface CostProgram {
   country: string;
   createdAt: string;
   latestSheetStatus: string | null;
+  // Items from the latest master (parentClientId=null) sheet for this
+  // program - the ProgramTotalBadge reads these directly so it can derive
+  // the total without firing its own queries that were susceptible to
+  // stale-cache after a fresh upload+parse cycle.
+  latestSheetItems?: CostItemData[];
 }
 
 const SERVICE_TYPE_LABELS: Record<string, string> = {
@@ -2396,39 +2401,22 @@ function getServiceLabel(name: string): string {
   return SERVICE_LABELS[name] || name;
 }
 
-function ProgramTotalBadge({ providerId, programId, isAdminView }: { providerId: string; programId: string; isAdminView?: boolean }) {
-  const approvedQuery = useQuery<CostSheet | null>({
-    queryKey: ["/api/costs/provider", providerId, "approved", "none", "none", programId],
-    queryFn: () =>
-      fetch(`/api/costs/provider/${providerId}/approved?programId=${programId}`).then((r) => r.json()),
-  });
+function ProgramTotalBadge({ program }: { program: CostProgram }) {
+  // Derive the total straight from the items the server included on the
+  // program. No standalone fetch here - the previous version fired two
+  // useQuery calls keyed by programId, but their cache stayed stale after
+  // a fresh upload+parse (the post-parse invalidateAll() didn't always
+  // win the race vs the queries' initial empty fetch). Now the totals
+  // ride along with programsQuery, which IS invalidated by every cost
+  // mutation, so the badge always reflects the same DB state the editor
+  // below renders.
+  const items = program.latestSheetItems;
+  if (!items?.length) return null;
 
-  // Always load the full sheet list so the badge can fall back to a DRAFT
-  // or PENDING sheet when there's no APPROVED one yet. Previously this only
-  // ran for admins, which hid the badge on freshly-uploaded provider sheets.
-  const allSheetsQuery = useQuery<CostSheet[]>({
-    queryKey: ["/api/costs/provider", providerId, "sheets", "none", "default", programId],
-    queryFn: () =>
-      fetch(`/api/costs/provider/${providerId}?programId=${programId}`).then((r) => r.json()),
-  });
-
-  let sheet: CostSheet | null | undefined = approvedQuery.data;
-  let isDraft = false;
-  if (!sheet?.items?.length) {
-    const sheets = allSheetsQuery.data;
-    if (sheets?.length) {
-      // Latest non-parent-client sheet (most recent draft / pending / etc.)
-      const masterSheets = sheets.filter((s) => !s.parentClientId);
-      sheet = masterSheets[0] ?? sheets[0];
-      isDraft = sheet?.status !== "APPROVED";
-    }
-  }
-
-  if (!sheet?.items?.length) return null;
-
-  const totals = calculateTotalCost(sheet.items);
+  const totals = calculateTotalCost(items);
   if (!totals.maxTotal && !totals.minTotal) return null;
 
+  const isDraft = program.latestSheetStatus !== "APPROVED";
   const display =
     totals.minTotal > 0 && totals.minTotal !== totals.maxTotal
       ? `${formatCurrency(totals.minTotal)} - ${formatCurrency(totals.maxTotal)}`
@@ -2837,7 +2825,7 @@ function ProgramsView({
                         Awaiting classification
                       </Badge>
                     )}
-                    <ProgramTotalBadge providerId={providerId} programId={program.id} isAdminView={isAdminView} />
+                    <ProgramTotalBadge program={program} />
                     {isAdminView && program.latestSheetStatus === "PENDING" && (
                       <Badge className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/40 border">
                         Pending Review

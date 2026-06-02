@@ -1023,20 +1023,34 @@ export class CostsService {
       where,
       orderBy: { createdAt: "asc" },
     });
-    if (programs.length === 0) return programs.map((p: any) => ({ ...p, latestSheetStatus: null }));
+    if (programs.length === 0) {
+      return programs.map((p: any) => ({ ...p, latestSheetStatus: null, latestSheetItems: [] }));
+    }
     const programIds = programs.map((p) => p.id);
+    // Pull every master sheet (parentClientId=null) for these programs, plus
+    // their items. We pick the latest per program below. Items shipped down
+    // here so the ProgramTotalBadge can derive totals without firing its own
+    // queries (which caused stale-cache and race-condition bugs after a
+    // fresh upload+parse - the badge stayed empty while the editor below
+    // showed the correct Estimated Total).
     const latestSheets = await this.prisma.providerCostSheet.findMany({
       where: { programId: { in: programIds }, parentClientId: null },
       orderBy: { createdAt: "desc" },
-      select: { programId: true, status: true },
+      include: { items: { orderBy: [{ category: "asc" }, { sortOrder: "asc" }] } },
     });
     const statusByProgram = new Map<string, string>();
+    const itemsByProgram = new Map<string, any[]>();
     for (const s of latestSheets) {
       if (s.programId && !statusByProgram.has(s.programId)) {
         statusByProgram.set(s.programId, s.status);
+        itemsByProgram.set(s.programId, s.items);
       }
     }
-    return programs.map((p) => ({ ...p, latestSheetStatus: statusByProgram.get(p.id) ?? null }));
+    return programs.map((p) => ({
+      ...p,
+      latestSheetStatus: statusByProgram.get(p.id) ?? null,
+      latestSheetItems: itemsByProgram.get(p.id) ?? [],
+    }));
   }
 
   async createProgram(providerId: string, providerTypeId: string | null, subType: string | null, name: string, country: string, tab?: string | null) {
