@@ -19,7 +19,22 @@ interface CostSheetSidebarSectionProps {
    */
   embedded?: boolean;
   onClose?: () => void;
+  /**
+   * Session subject info, used to auto-prefill Total Cost from the linked
+   * donor's per-vial price (sperm donor) or per-egg-lot price (egg bank).
+   * Only applies in embedded mode.
+   */
+  subjectType?: string | null;
+  subjectProfileId?: string | null;
+  providerId?: string | null;
 }
+
+type VialType = "ICI" | "IUI" | "IVF";
+const VIAL_LABEL: Record<VialType, string> = {
+  ICI: "ICI",
+  IUI: "IUI",
+  IVF: "IVF",
+};
 
 interface PreviewResponse {
   feeType: "FLAT" | "PERCENTAGE";
@@ -51,6 +66,9 @@ export function CostSheetSidebarSection({
   sessionQueryKey,
   embedded = false,
   onClose,
+  subjectType,
+  subjectProfileId,
+  providerId,
 }: CostSheetSidebarSectionProps) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(embedded);
@@ -61,6 +79,72 @@ export function CostSheetSidebarSection({
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+
+  // Prefill controls (sperm = vial type + qty; egg = qty of lots).
+  const [selectedVial, setSelectedVial] = useState<VialType | null>(null);
+  const [quantity, setQuantity] = useState<number>(1);
+  // Once the provider types in Total Cost directly, the picker stops driving it.
+  const [manuallyEdited, setManuallyEdited] = useState(false);
+  const [prefillInitialized, setPrefillInitialized] = useState(false);
+
+  const subjectTypeLower = (subjectType || "").toLowerCase();
+  const isSpermDonor = embedded && subjectTypeLower.includes("sperm") && !!providerId && !!subjectProfileId;
+  const isEggDonor = embedded && !isSpermDonor && subjectTypeLower.includes("donor") && !!providerId && !!subjectProfileId;
+
+  const { data: donorData } = useQuery<any>({
+    queryKey: [
+      "cost-sheet-prefill",
+      isSpermDonor ? "sperm-donor" : isEggDonor ? "egg-donor" : "none",
+      providerId,
+      subjectProfileId,
+    ],
+    queryFn: async () => {
+      if (!providerId || !subjectProfileId) return null;
+      const path = isSpermDonor
+        ? `/api/providers/${providerId}/sperm-donors/${subjectProfileId}`
+        : `/api/providers/${providerId}/egg-donors/${subjectProfileId}`;
+      const res = await fetch(path, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: isSpermDonor || isEggDonor,
+    staleTime: 300_000,
+  });
+
+  // Available unit prices keyed off the donor type.
+  const spermPrices: Partial<Record<VialType, number>> = {};
+  if (isSpermDonor && donorData) {
+    if (typeof donorData.iciCost === "number" && donorData.iciCost > 0) spermPrices.ICI = donorData.iciCost;
+    if (typeof donorData.iuiCost === "number" && donorData.iuiCost > 0) spermPrices.IUI = donorData.iuiCost;
+    if (typeof donorData.ivfCost === "number" && donorData.ivfCost > 0) spermPrices.IVF = donorData.ivfCost;
+  }
+  const availableVials = Object.keys(spermPrices) as VialType[];
+  const eggLotCost: number | null = isEggDonor && typeof donorData?.eggLotCost === "number" && donorData.eggLotCost > 0
+    ? donorData.eggLotCost
+    : null;
+
+  const unitPrice: number | null = isSpermDonor
+    ? (selectedVial && spermPrices[selectedVial] != null ? spermPrices[selectedVial]! : null)
+    : eggLotCost;
+  const hasPrefill = unitPrice != null;
+
+  // Default selected vial = cheapest available; runs once when data arrives.
+  useEffect(() => {
+    if (!isSpermDonor || selectedVial || availableVials.length === 0) return;
+    const cheapest = availableVials.reduce((best, v) =>
+      spermPrices[v]! < spermPrices[best]! ? v : best,
+    availableVials[0]);
+    setSelectedVial(cheapest);
+  }, [isSpermDonor, availableVials.join(","), selectedVial]);
+
+  // Prefill Total Cost once on form open when data is ready.
+  useEffect(() => {
+    if (!embedded || prefillInitialized || manuallyEdited) return;
+    if (unitPrice == null) return;
+    const total = unitPrice * Math.max(1, quantity);
+    setTotalCostInput(String(total));
+    setPrefillInitialized(true);
+  }, [embedded, unitPrice, quantity, prefillInitialized, manuallyEdited]);
 
   // Load history of past quotes for this session.
   const { data: quotesData } = useQuery<{ quotes: ProviderQuoteRow[] }>({
@@ -136,6 +220,9 @@ export function CostSheetSidebarSection({
       setFile(null);
       setError(null);
       setExpanded(false);
+      setManuallyEdited(false);
+      setPrefillInitialized(false);
+      setQuantity(1);
       queryClient.invalidateQueries({ queryKey: ["/api/sessions/cost-sheets", sessionId] });
       if (sessionQueryKey && sessionId) {
         queryClient.invalidateQueries({ queryKey: [sessionQueryKey, sessionId] });
@@ -146,6 +233,22 @@ export function CostSheetSidebarSection({
   });
 
   const disabled = readOnly || !sessionId;
+
+  // Picker-driven update: explicit user clicks on chips / qty stepper
+  // overwrite Total Cost (even if the field was prefilled). A subsequent
+  // manual edit of the Total Cost input flips manuallyEdited and pauses
+  // picker-driven updates until the next explicit chip / qty interaction.
+  const applyPickerTotal = (vial: VialType | null, qty: number) => {
+    const price = isSpermDonor
+      ? (vial && spermPrices[vial] != null ? spermPrices[vial]! : null)
+      : eggLotCost;
+    if (price == null) return;
+    setTotalCostInput(String(price * Math.max(1, qty)));
+    setManuallyEdited(false);
+  };
+
+  const unitLabel = isSpermDonor ? "vial" : "egg lot";
+  const unitLabelPlural = isSpermDonor ? "vials" : "egg lots";
 
   return (
     <div className="space-y-3">
@@ -192,6 +295,81 @@ export function CostSheetSidebarSection({
           className="rounded-lg border p-3 space-y-3"
           style={{ background: "hsl(var(--muted) / 0.4)" }}
         >
+          {hasPrefill && (
+            <div
+              className="rounded-md border p-2.5 space-y-2"
+              style={{ background: "hsl(var(--secondary) / 0.5)" }}
+            >
+              <p className="font-medium text-muted-foreground uppercase tracking-wide text-[10px]">
+                {isSpermDonor ? "Vial pricing on file" : "Egg lot pricing on file"}
+              </p>
+              {isSpermDonor && availableVials.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {availableVials.map(v => {
+                    const active = selectedVial === v;
+                    return (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => { setSelectedVial(v); applyPickerTotal(v, quantity); }}
+                        className="text-xs px-2.5 py-1 rounded-full border transition-colors"
+                        style={active
+                          ? { background: brandColor, color: "white", borderColor: brandColor }
+                          : { background: "hsl(var(--background))", borderColor: "hsl(var(--border))" }}
+                        data-testid={`btn-vial-type-${v.toLowerCase()}`}
+                      >
+                        {VIAL_LABEL[v]} - ${spermPrices[v]!.toLocaleString()}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-medium">
+                  Number of {unitLabelPlural}
+                </label>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    onClick={() => {
+                      const next = Math.max(1, quantity - 1);
+                      setQuantity(next);
+                      applyPickerTotal(selectedVial, next);
+                    }}
+                    aria-label={`Decrease ${unitLabel} count`}
+                    data-testid="btn-prefill-qty-minus"
+                  >
+                    -
+                  </Button>
+                  <span className="text-sm font-semibold w-6 text-center" data-testid="text-prefill-qty">{quantity}</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    onClick={() => {
+                      const next = quantity + 1;
+                      setQuantity(next);
+                      applyPickerTotal(selectedVial, next);
+                    }}
+                    aria-label={`Increase ${unitLabel} count`}
+                    data-testid="btn-prefill-qty-plus"
+                  >
+                    +
+                  </Button>
+                </div>
+              </div>
+              {unitPrice != null && (
+                <p className="text-[11px] text-muted-foreground">
+                  {quantity} × ${unitPrice.toLocaleString()} = ${(unitPrice * Math.max(1, quantity)).toLocaleString()}
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <label className="text-xs font-medium">Total Cost ($)</label>
             <Input
@@ -200,7 +378,7 @@ export function CostSheetSidebarSection({
               step="50"
               placeholder="e.g. 25000"
               value={totalCostInput}
-              onChange={e => setTotalCostInput(e.target.value)}
+              onChange={e => { setTotalCostInput(e.target.value); setManuallyEdited(true); }}
             />
           </div>
 

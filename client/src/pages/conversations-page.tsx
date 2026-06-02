@@ -2158,6 +2158,9 @@ const sendMessageMutation = useMutation({
                       sessionQueryKey="/api/provider/concierge-sessions"
                       embedded
                       onClose={() => setProviderInlinePanel(null)}
+                      subjectType={selectedSession?.subjectType ?? null}
+                      subjectProfileId={selectedSession?.subjectProfileId ?? null}
+                      providerId={(user as any)?.providerId ?? null}
                     />
                   ) : providerInlinePanel === "invoice" ? (
                     <InvoiceSidebarSection

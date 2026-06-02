@@ -838,6 +838,9 @@ export default function AdminConciergeMonitor() {
                   sessionQueryKey="/api/admin/concierge-sessions"
                   embedded
                   onClose={() => setAdminInlinePanel(null)}
+                  subjectType={selectedSummary?.subjectType ?? null}
+                  subjectProfileId={selectedSummary?.subjectProfileId ?? null}
+                  providerId={selectedSummary?.providerId ?? null}
                 />
               ) : adminInlinePanel === "invoice" ? (
                 <InvoiceSidebarSection
