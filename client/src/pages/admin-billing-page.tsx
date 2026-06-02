@@ -39,8 +39,8 @@ function StatCard({ label, value, icon: Icon, sub }: { label: string; value: str
   );
 }
 
-const TABS = [
-  { key: "all",             label: "All"           },
+const STATUS_OPTIONS = [
+  { key: "all",             label: "All statuses"  },
   { key: "AWAITING_PAYMENT",label: "Awaiting Payment" },
   { key: "AUTHORIZED",      label: "Authorized"    },
   { key: "PAID",            label: "Paid"          },
@@ -50,7 +50,13 @@ const TABS = [
 
 export default function AdminBillingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  // Status filter lives in the URL (?tab=) so the browser back button restores it.
   const tab = searchParams.get("tab") || "all";
+  const setStatus = (value: string) => {
+    if (value === "all") setSearchParams({}, { replace: true });
+    else setSearchParams({ tab: value }, { replace: true });
+    setPage(1);
+  };
   const queryClient = useQueryClient();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [adminNotes, setAdminNotes] = useState<Record<string, string>>({});
@@ -88,8 +94,8 @@ export default function AdminBillingPage() {
   });
 
   const serviceTypeOptions: string[] = data?.serviceTypes || [];
-  const hasActiveFilters = !!search || serviceType !== "all" || !!paidFrom || !!paidTo;
-  const clearFilters = () => { setSearchInput(""); setSearch(""); setServiceType("all"); setPaidFrom(""); setPaidTo(""); };
+  const hasActiveFilters = !!search || serviceType !== "all" || !!paidFrom || !!paidTo || tab !== "all";
+  const clearFilters = () => { setSearchInput(""); setSearch(""); setServiceType("all"); setPaidFrom(""); setPaidTo(""); setStatus("all"); };
 
   const markPaidMutation = useMutation({
     mutationFn: async ({ id, notes }: { id: string; notes: string }) => {
@@ -138,25 +144,8 @@ export default function AdminBillingPage() {
         <StatCard label="Pending"               value={formatCents(stats.pendingAmount)}        icon={Clock}         sub="Awaiting payment" />
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b">
-        {TABS.map(t => (
-          <button
-            key={t.key}
-            onClick={() => { setSearchParams({ tab: t.key }, { replace: true }); setPage(1); }}
-            className="px-4 py-2 text-sm font-medium border-b-2 transition-colors"
-            style={{
-              borderBottomColor: tab === t.key ? "hsl(var(--primary))" : "transparent",
-              color: tab === t.key ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
       {/* Filters */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end border-t pt-6">
         <div className="flex-1 min-w-[220px]">
           <label className="text-xs text-muted-foreground mb-1 block">Search</label>
           <div className="relative">
@@ -179,6 +168,20 @@ export default function AdminBillingPage() {
               </button>
             )}
           </div>
+        </div>
+
+        <div className="min-w-[160px]">
+          <label className="text-xs text-muted-foreground mb-1 block">Status</label>
+          <select
+            value={tab}
+            onChange={e => setStatus(e.target.value)}
+            className="w-full h-10 rounded-[var(--radius)] border border-input bg-background px-3 text-sm"
+            data-testid="billing-status"
+          >
+            {STATUS_OPTIONS.map(o => (
+              <option key={o.key} value={o.key}>{o.label}</option>
+            ))}
+          </select>
         </div>
 
         <div className="min-w-[160px]">
