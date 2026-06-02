@@ -879,9 +879,20 @@ async function extractProfileDetailSections(
   html: string,
   pageUrl: string,
 ): Promise<{ _sections: Record<string, Record<string, any>>; photoUrl?: string; externalId?: string } | null> {
+  // Lower the safety thresholds so benign donor-profile pages (which discuss
+  // physical features, family origin, religion, etc.) don't get false-positive
+  // blocked. We saw one SBoC donor's response come back PROHIBITED_CONTENT on
+  // default settings even though the source page is plain biographical data.
+  const safetySettings = [
+    { category: "HARM_CATEGORY_HARASSMENT" as any, threshold: "BLOCK_ONLY_HIGH" as any },
+    { category: "HARM_CATEGORY_HATE_SPEECH" as any, threshold: "BLOCK_ONLY_HIGH" as any },
+    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT" as any, threshold: "BLOCK_ONLY_HIGH" as any },
+    { category: "HARM_CATEGORY_DANGEROUS_CONTENT" as any, threshold: "BLOCK_ONLY_HIGH" as any },
+  ];
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
     generationConfig: { temperature: 0 } as any,
+    safetySettings,
   });
 
   const cleanedText = cleanHtml(html);
@@ -972,6 +983,27 @@ function resolvePersistedPhotos(
     return [];
   }
   return undefined;
+}
+
+// Preserve rich `_sections` data from existing.profileData when the new scrape
+// lacks them. Without this guard, every nightly run that hash-skips a donor
+// (cardHash matched + pricing not stale + already has sections) still re-runs
+// the upsert with listing-page-only profileData, silently overwriting the
+// previous full-profile section data. Same applies when Gemini extraction
+// fails this run but succeeded on a prior run.
+function preserveExistingSections(newProfile: any, existingProfile: any): any {
+  if (!existingProfile || typeof existingProfile !== "object") return newProfile;
+  const existingSections = existingProfile._sections;
+  if (!existingSections || typeof existingSections !== "object" || Object.keys(existingSections).length === 0) {
+    return newProfile;
+  }
+  const newSections = newProfile?._sections;
+  const newHasSections = newSections && typeof newSections === "object" && Object.keys(newSections).length > 0;
+  if (newHasSections) return newProfile;
+  // Mutate-in-place is fine: newProfile is freshly built per upsert call.
+  if (!newProfile || typeof newProfile !== "object") return { _sections: existingSections };
+  newProfile._sections = existingSections;
+  return newProfile;
 }
 
 const VALID_IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|heic|svg|bmp|tiff?|avif)/i;
@@ -1339,7 +1371,10 @@ async function upsertEggDonor(
   await persistPhotoUrls(donor, providerId, storageService || null, cookies);
   const isNew = !existing;
   const mf = existing?.manuallyEditedFields || [];
-  const normalizedProfile = await normalizeProfileFields(donor.profileData || donor);
+  const normalizedProfile = preserveExistingSections(
+    await normalizeProfileFields(donor.profileData || donor),
+    existing?.profileData,
+  );
   const mergedProfile = mf.includes("profileData")
     ? { ...(normalizedProfile as any), ...(existing?.profileData as any || {}) }
     : normalizedProfile;
@@ -1509,7 +1544,10 @@ async function upsertSurrogate(
 
   const isNew = !existing;
   const mf = existing?.manuallyEditedFields || [];
-  const normalizedProfile = await normalizeProfileFields(surrogate.profileData || surrogate);
+  const normalizedProfile = preserveExistingSections(
+    await normalizeProfileFields(surrogate.profileData || surrogate),
+    existing?.profileData,
+  );
   const mergedProfile = mf.includes("profileData")
     ? { ...(normalizedProfile as any), ...(existing?.profileData as any || {}) }
     : normalizedProfile;
@@ -1628,7 +1666,10 @@ async function upsertSpermDonor(
 
   const isNew = !existing;
   const mf = existing?.manuallyEditedFields || [];
-  const normalizedProfile = await normalizeProfileFields(donor.profileData || donor);
+  const normalizedProfile = preserveExistingSections(
+    await normalizeProfileFields(donor.profileData || donor),
+    existing?.profileData,
+  );
   const mergedProfile = mf.includes("profileData")
     ? { ...(normalizedProfile as any), ...(existing?.profileData as any || {}) }
     : normalizedProfile;
