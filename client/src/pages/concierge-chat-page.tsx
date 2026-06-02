@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
+import { CostSheetParentAck } from "@/components/chat/special-message-card";
 import { ChatPlusDrawer, type ChatPlusAction } from "@/components/chat/chat-plus-drawer";
 import { InvoicePaymentPanel } from "@/components/chat/invoice-payment-panel";
 import { InlineBookingNotification } from "@/components/chat/inline-booking-notification";
@@ -2093,7 +2094,7 @@ function ConciergeInlineVideoOverlay({ bookingId, onClose }: { bookingId: string
   );
 }
 
-function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, isAnswered, positiveChipStyle, declineChipStyle, onAnswer, onYesReady, onPayInvoiceInline }: { msg: ChatMessage; brandColor: string; onOpenInlineVideo?: (bookingId: string) => void; sessionId?: string | null; isAnswered?: boolean; positiveChipStyle?: React.CSSProperties; declineChipStyle?: React.CSSProperties; onAnswer?: (text: string) => void; onYesReady?: (text: string) => void; onPayInvoiceInline?: (paymentToken: string) => void }) {
+function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, isAnswered, positiveChipStyle, declineChipStyle, onAnswer, onYesReady, onPayInvoiceInline, onPrefillCostSheetQuestion }: { msg: ChatMessage; brandColor: string; onOpenInlineVideo?: (bookingId: string) => void; sessionId?: string | null; isAnswered?: boolean; positiveChipStyle?: React.CSSProperties; declineChipStyle?: React.CSSProperties; onAnswer?: (text: string) => void; onYesReady?: (text: string) => void; onPayInvoiceInline?: (paymentToken: string) => void; onPrefillCostSheetQuestion?: (text: string) => void }) {
   const data = msg.uiCardData as any;
   if (!data) return null;
 
@@ -2284,6 +2285,16 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
             )}
             {notes && <p className="text-xs text-muted-foreground italic">{notes}</p>}
           </div>
+        )}
+        {/* Parent-only ack footer. Shows Acknowledge + Have questions buttons
+            so the cost sheet is interactive even when no PDF was attached. */}
+        {quoteId && sessionId && !data.parentAcknowledgedAt && (
+          <CostSheetParentAck
+            sessionId={sessionId}
+            quoteId={quoteId}
+            brandColor={brandColor}
+            onPrefillInput={onPrefillCostSheetQuestion}
+          />
         )}
       </div>
     );

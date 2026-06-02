@@ -162,9 +162,35 @@ export function InvoiceSidebarSection({
       return res.json();
     },
   });
-  const defaultDollarsForService = (st: LineServiceType): string => {
+
+  // Latest active quote - fetched early so it can seed line-item amounts when
+  // the provider has no Default First Payment configured for the chosen
+  // service. Without this fallback, sperm/egg-bank flows hit a dead end: the
+  // amount input is read-only and shows "No default", blocking Send Invoice.
+  const { data: quotesData } = useQuery<{ quotes: ProviderQuoteRow[] }>({
+    queryKey: ["/api/sessions/cost-sheets", sessionId],
+    queryFn: async () => {
+      if (!sessionId) return { quotes: [] };
+      const res = await fetch(`/api/sessions/${sessionId}/cost-sheets`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load");
+      return res.json();
+    },
+    enabled: !!sessionId,
+  });
+  const activeQuote = quotesData?.quotes?.find(q => !q.supersededAt) || null;
+  const activeQuoteTotalCents = activeQuote?.totalCostCents ?? null;
+  // The line-item amount auto-fills from the provider's Default First Payment
+  // for the chosen service. When no default is configured, we fall back to the
+  // active quote's total cost - this matches the per-vial / per-egg-lot
+  // sperm/egg bank flow where the cost sheet already states the full price.
+  // fallbackCents is the active-quote total resolved by the caller (declared
+  // later in the component, so we accept it as an argument here).
+  const defaultDollarsForService = (st: LineServiceType, fallbackCents?: number | null): string => {
     const cfg = feeConfigsData?.configs.find(c => c.serviceType === st);
-    const cents = cfg?.defaultServiceAmount ?? null;
+    let cents = cfg?.defaultServiceAmount ?? null;
+    if (!cents || cents <= 0) {
+      cents = fallbackCents && fallbackCents > 0 ? fallbackCents : null;
+    }
     if (!cents || cents <= 0) return "";
     const dollars = cents / 100;
     return Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
@@ -200,23 +226,24 @@ export function InvoiceSidebarSection({
         if (enabledSet.has(li.serviceType)) return li;
         changed = true;
         const nextType = enabledServiceTypes[0];
-        return { ...li, serviceType: nextType, amountInput: defaultDollarsForService(nextType) };
+        return { ...li, serviceType: nextType, amountInput: defaultDollarsForService(nextType, activeQuoteTotalCents) };
       });
       return changed ? next : prev;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabledKey, feeConfigsData]);
+  }, [enabledKey, feeConfigsData, activeQuoteTotalCents]);
 
-  // Whenever the fee configs change, refresh every line's amount from its
-  // service's Default First Payment. The amount is not user-editable - if
-  // the agency wants a different value they have to update billing settings.
+  // Whenever the fee configs (or the active-quote fallback) change, refresh
+  // every line's amount. The amount is not user-editable per row - if the
+  // agency wants a different value they update Billing settings (or rely on
+  // the active-quote fallback for unconfigured services).
   useEffect(() => {
     if (!feeConfigsData) return;
     setLineItems(prev =>
-      prev.map(li => ({ ...li, amountInput: defaultDollarsForService(li.serviceType) })),
+      prev.map(li => ({ ...li, amountInput: defaultDollarsForService(li.serviceType, activeQuoteTotalCents) })),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feeConfigsData]);
+  }, [feeConfigsData, activeQuoteTotalCents]);
 
   const updateLine = (key: string, patch: Partial<LineItemDraft>) => {
     setLineItems(prev => prev.map(li => (li.key === key ? { ...li, ...patch } : li)));
@@ -225,7 +252,7 @@ export function InvoiceSidebarSection({
     setLineItems(prev =>
       prev.map(li =>
         li.key === key
-          ? { ...li, serviceType, amountInput: defaultDollarsForService(serviceType) }
+          ? { ...li, serviceType, amountInput: defaultDollarsForService(serviceType, activeQuoteTotalCents) }
           : li,
       ),
     );
@@ -237,23 +264,12 @@ export function InvoiceSidebarSection({
     setLineItems(prev => {
       const seedType = enabledServiceTypes[0] ?? "SURROGACY";
       const next = newLine(seedType);
-      next.amountInput = defaultDollarsForService(seedType);
+      next.amountInput = defaultDollarsForService(seedType, activeQuoteTotalCents);
       return [...prev, next];
     });
   };
 
-  // Latest active quote (used to drive the preview).
-  const { data: quotesData } = useQuery<{ quotes: ProviderQuoteRow[] }>({
-    queryKey: ["/api/sessions/cost-sheets", sessionId],
-    queryFn: async () => {
-      if (!sessionId) return { quotes: [] };
-      const res = await fetch(`/api/sessions/${sessionId}/cost-sheets`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load");
-      return res.json();
-    },
-    enabled: !!sessionId,
-  });
-  const activeQuote = quotesData?.quotes?.find(q => !q.supersededAt) || null;
+  // activeQuote / activeQuoteTotalCents declared higher up.
 
   // Preview based on either the active quote's total or the manual override.
   const [preview, setPreview] = useState<PreviewResponse | null>(null);

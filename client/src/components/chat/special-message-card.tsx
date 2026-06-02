@@ -11,7 +11,7 @@ import { CostSheetDraftApprovalCard } from "./cost-sheet-draft-approval-card";
 // Acknowledge persists ProviderQuote.parentAcknowledgedAt. "Have questions"
 // pre-populates the chat input via the onPrefillInput callback. Both are
 // soft signals - call proceeds either way.
-function CostSheetParentAck({
+export function CostSheetParentAck({
   sessionId,
   quoteId,
   brandColor,
