@@ -417,7 +417,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
       if (showFavoritesOnly && !favoritedIds.includes(d.id)) return false;
       if (showSkippedOnly && !passedIds.includes(d.id)) return false;
       if (!showSkippedOnly && passedIds.includes(d.id)) return false;
-      if (showExperiencedOnly && !(d as any).isExperienced) return false;
+      if (showExperiencedOnly && !((d as any).isExperienced || (d as any).isPremium)) return false;
       if (!omniSearch(d, searchQuery)) return false;
       if (type === "surrogate") {
         if (!matchesInternationalRequirement(d, userCountry)) return false;

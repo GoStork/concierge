@@ -20,6 +20,7 @@ import { ApiTags, ApiOperation } from "@nestjs/swagger";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
+import { invalidateMarketplaceCache } from "./providers.controller";
 import {
   getSyncConfig,
   saveSyncConfig,
@@ -506,6 +507,11 @@ export class ProfileSyncController {
       } else if (validType === "sperm-donor") {
         updated = await this.prisma.spermDonor.findUnique({ where: { id: donorId } });
       }
+    }
+
+    if (changedFields.includes("hiddenFromSearch") || changedFields.includes("isPremium") || changedFields.includes("isExperienced") || changedFields.includes("status")) {
+      const cachePrefix = validType === "surrogate" ? "marketplace:surrogates:" : `marketplace:${validType}s:`;
+      invalidateMarketplaceCache(cachePrefix);
     }
 
     return updated;

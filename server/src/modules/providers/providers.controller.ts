@@ -41,6 +41,16 @@ function getCached(key: string): any | null {
 function setCache(key: string, data: any): void {
   marketplaceCache.set(key, { data, expiry: Date.now() + CACHE_TTL_MS });
 }
+
+export function invalidateMarketplaceCache(prefix?: string): void {
+  if (!prefix) {
+    marketplaceCache.clear();
+    return;
+  }
+  for (const key of Array.from(marketplaceCache.keys())) {
+    if (key.startsWith(prefix)) marketplaceCache.delete(key);
+  }
+}
 import {
   CreateProviderDto,
   UpdateProviderDto,
