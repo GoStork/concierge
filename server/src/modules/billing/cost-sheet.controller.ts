@@ -331,6 +331,14 @@ export class CostSheetController {
 
     const { session } = await this.loadAuthorisedSession(body.sessionId, user);
 
+    // Latest quote drives the FLAT multiplier for the invoice-sidebar preview
+    // path (no `quantity` in body since the quote already exists). For the
+    // cost-sheet form path, `body.quantity` is sent live and takes precedence.
+    const latestQuote = await this.billing.getLatestProviderQuote(body.sessionId);
+    const effectiveQuantity = body.quantity != null
+      ? previewQuantity
+      : (latestQuote?.quantity ?? 1);
+
     const provider = await this.db.provider.findUnique({
       where: { id: session.providerId! },
       include: {
@@ -374,7 +382,7 @@ export class CostSheetController {
           );
         }
         const { referralFeeAmount: lineFee, providerPayoutAmount: linePayout } =
-          this.billing.computeFee(cfg, amount, amount);
+          this.billing.computeFee(cfg, amount, amount, effectiveQuantity);
         parentPaysCents += amount;
         referralFeeAmount += lineFee;
         lines.push({
@@ -421,7 +429,7 @@ export class CostSheetController {
       { feeType: feeConfig.feeType, flatAmount: feeConfig.flatAmount, percentage: feeConfig.percentage },
       totalCostCents,
       parentPaysCents,
-      previewQuantity,
+      effectiveQuantity,
     );
 
     return {

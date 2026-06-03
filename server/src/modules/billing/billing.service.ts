@@ -299,12 +299,16 @@ export class BillingService {
 
     if (hasLineItems) {
       // Per-line fee calculation: each line uses its own service's config.
-      // PERCENTAGE -> % of the line amount. FLAT -> the flat fee once per line.
+      // PERCENTAGE -> % of the line amount. FLAT -> the flat fee once per line,
+      // scaled by the quote's quantity (e.g. 3 vials -> 3x the flat fee). For
+      // multi-line surrogacy quotes the quantity is 1 (manually entered) so
+      // this is a no-op there; it only fires in the per-unit picker flow.
       parentPaysCents = lineItemsSumCents;
+      const flatMultiplier = latestQuote?.quantity ?? 1;
       let totalFee = 0;
       for (const li of lineItems!) {
         const cfg = configByService.get(li.serviceType)!;
-        const { referralFeeAmount: lineFee } = this.computeFee(cfg, li.amountCents, li.amountCents);
+        const { referralFeeAmount: lineFee } = this.computeFee(cfg, li.amountCents, li.amountCents, flatMultiplier);
         totalFee += lineFee;
       }
       referralFeeAmount = Math.min(totalFee, parentPaysCents);
