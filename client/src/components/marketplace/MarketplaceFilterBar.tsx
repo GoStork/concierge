@@ -181,11 +181,13 @@ function formatFilterPills(filters: Record<string, string[]>): { key: string; la
   return pills;
 }
 
-function MultiSelectBubbles({ options, selected, onToggle, testIdPrefix }: {
+function MultiSelectBubbles({ options, selected, onToggle, testIdPrefix, optionLabels }: {
   options: string[];
   selected: string[];
   onToggle: (val: string) => void;
   testIdPrefix: string;
+  /** Optional map from option value -> human-friendly display label. Defaults to the option value itself. */
+  optionLabels?: Record<string, string>;
 }) {
   return (
     <div className="flex flex-wrap gap-2.5">
@@ -198,7 +200,7 @@ function MultiSelectBubbles({ options, selected, onToggle, testIdPrefix }: {
           onClick={() => onToggle(opt)}
           data-testid={`${testIdPrefix}-${opt.toLowerCase().replace(/\s+/g, "-")}`}
         >
-          {opt}
+          {optionLabels?.[opt] || opt}
         </Badge>
       ))}
     </div>
@@ -1143,7 +1145,7 @@ function MobileRangeDrawer({ label, filterKey, min, max, step, unit, activeFilte
   );
 }
 
-function MobileMultiSelectDrawer({ label, filterKey, options, activeFilters, dispatch, testIdPrefix, btnStyle, dark }: {
+function MobileMultiSelectDrawer({ label, filterKey, options, activeFilters, dispatch, testIdPrefix, btnStyle, dark, optionLabels }: {
   label: string;
   filterKey: string;
   options: string[];
@@ -1152,6 +1154,8 @@ function MobileMultiSelectDrawer({ label, filterKey, options, activeFilters, dis
   testIdPrefix: string;
   btnStyle?: React.CSSProperties;
   dark?: boolean;
+  /** Optional map from option value -> human-friendly display label. */
+  optionLabels?: Record<string, string>;
 }) {
   const [open, setOpen] = useState(false);
   const selected = activeFilters[filterKey] || [];
@@ -1197,6 +1201,7 @@ function MobileMultiSelectDrawer({ label, filterKey, options, activeFilters, dis
             selected={selected}
             onToggle={toggleFilter}
             testIdPrefix={testIdPrefix}
+            optionLabels={optionLabels}
           />
         </div>
       </DrawerContent>
@@ -1635,6 +1640,20 @@ export function MarketplaceFilterBar({
 
       {!isIvf && (
         <MobileRangeDrawer label="Age" filterKey="age" min={18} max={45} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} />
+      )}
+
+      {!isIvf && (
+        <MobileMultiSelectDrawer
+          label="Status"
+          filterKey="status"
+          options={["AVAILABLE", "PENDING", "MATCHED"]}
+          activeFilters={activeFilters}
+          dispatch={dispatch}
+          testIdPrefix="filter-status"
+          btnStyle={obs}
+          dark={darkLabels}
+          optionLabels={{ AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched" }}
+        />
       )}
 
       {(isDonor || isSperm) && (
