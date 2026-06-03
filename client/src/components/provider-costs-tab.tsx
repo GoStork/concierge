@@ -283,6 +283,14 @@ interface SingleCostsTabProps {
   programId?: string;
   programSubType?: string | null;
   programTab?: string | null;
+  // Program-type picker config - lifted into the classification card so
+  // both the AI-confirmation toggle and the subtype picker live in the
+  // same green/amber surface.
+  programShowsAnySubtype?: boolean;
+  programShowsIvfSubtype?: boolean; // true => IVF taxonomy dropdown; false => fresh/frozen toggle
+  programCurrentSubType?: string | null;
+  programTabFilter?: IvfTab;
+  onSubTypeChange?: (subType: string, tab?: string) => void;
 }
 
 interface ProviderCostsTabProps {
@@ -457,6 +465,11 @@ function SingleCostsTab({
   programId,
   programSubType,
   programTab,
+  programShowsAnySubtype,
+  programShowsIvfSubtype: programShowsIvfSubtypeProp,
+  programCurrentSubType,
+  programTabFilter,
+  onSubTypeChange,
 }: SingleCostsTabProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1397,25 +1410,69 @@ function SingleCostsTab({
               </div>
             )}
             <div className="flex items-start gap-3 flex-wrap">
-              <div className="flex-1 min-w-[200px] space-y-1">
+              <div className="flex-1 min-w-[200px] space-y-2">
+                {/* Program-type picker (moved into the card so both AI
+                    classifications - subtype + Fixed/Not-Fixed - live on
+                    the same green/amber surface). Renders as a segmented
+                    toggle for the 2-option fresh/frozen egg-donor case;
+                    falls back to a compact dropdown for IVF's 14-option
+                    taxonomy where a toggle would be unusable. */}
+                {programShowsAnySubtype && !programShowsIvfSubtypeProp && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs text-muted-foreground">Program type:</span>
+                    <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm">
+                      {FRESH_FROZEN_SUBTYPES.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          className={cn(
+                            "px-3 py-1.5 text-xs rounded-[var(--radius)] transition-all font-medium",
+                            programCurrentSubType === s.id
+                              ? "bg-accent text-accent-foreground shadow-sm"
+                              : "text-foreground hover:bg-accent/10",
+                          )}
+                          onClick={() => onSubTypeChange?.(s.id)}
+                          data-testid={`btn-subtype-${s.id}`}
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {programShowsAnySubtype && programShowsIvfSubtypeProp && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs text-muted-foreground">Program type:</span>
+                    <select
+                      className="h-8 text-sm rounded-[var(--radius)] border border-border bg-background px-2"
+                      value={programCurrentSubType ?? ""}
+                      onChange={(e) => {
+                        const newSub = e.target.value;
+                        if (!newSub) return;
+                        onSubTypeChange?.(newSub, tabOfSubtype(newSub) ?? undefined);
+                      }}
+                      data-testid="select-subtype"
+                    >
+                      <option value="">Select program type...</option>
+                      {(programTabFilter
+                        ? SUBTYPES_BY_TAB[programTabFilter]
+                        : IVF_TABS.flatMap((t) =>
+                            SUBTYPES_BY_TAB[t.id].map((s) => ({ ...s, _tabLabel: t.label })),
+                          )
+                      ).map((s: any) => (
+                        <option key={s.id} value={s.id}>
+                          {s._tabLabel ? `${s._tabLabel} - ${s.label}` : s.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-2 flex-wrap">
-                  {/* Only show "Cost sheet type" row when the provider type
-                      actually has a subtype distinction (IVF or egg donor).
-                      Surrogacy + sperm bank just need the Fixed/Not-Fixed
-                      acknowledgement. */}
-                  {hasIvfSubtypes(providerType) && displaySheet.subType && (
-                    <>
-                      <span className="text-xs text-muted-foreground">Cost sheet type:</span>
-                      <span className="text-sm font-medium">{labelOfSubtype(displaySheet.subType)}</span>
-                    </>
-                  )}
-                  {hasFreshFrozenSubtypes(providerType) && displaySheet.subType && (
-                    <>
-                      <span className="text-xs text-muted-foreground">Cost sheet type:</span>
-                      <span className="text-sm font-medium">{FRESH_FROZEN_SUBTYPES.find((s) => s.id === displaySheet.subType)?.label ?? displaySheet.subType}</span>
-                    </>
-                  )}
-                  {!hasIvfSubtypes(providerType) && !hasFreshFrozenSubtypes(providerType) && (
+                  {/* Classification label - reused for surrogacy / sperm
+                      bank where there's no subtype picker, just the
+                      Fixed/Not-Fixed acknowledgement. */}
+                  {!programShowsAnySubtype && (
                     <span className="text-xs text-muted-foreground">Cost-sheet classification:</span>
                   )}
                   {displaySheet.isFixedCostSource === "ai_proposed" && (
@@ -2942,52 +2999,11 @@ function ProgramsView({
                     })}
                   </div>
                 </div>
-                {programShowsAnySubtype(program) && (
-                  <div className="px-4 pt-3 pb-1 space-y-2">
-                    {/* Subtype picker. IVF shows the 14-subtype taxonomy
-                        (grouped by tab). Egg donor shows the simpler 2-
-                        option fresh/frozen pair. AI populates this on
-                        upload; provider can override anytime. */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Label className="text-xs text-muted-foreground">Program type:</Label>
-                      <select
-                        className="h-8 text-sm rounded-[var(--radius)] border border-border bg-background px-2"
-                        value={program.subType ?? ""}
-                        onChange={(e) => {
-                          const newSub = e.target.value;
-                          if (!newSub) return;
-                          const newTab = programShowsIvfSubtype(program) ? tabOfSubtype(newSub) : undefined;
-                          updateSubTypeMutation.mutate({
-                            id: program.id,
-                            subType: newSub,
-                            tab: newTab ?? undefined,
-                          });
-                        }}
-                      >
-                        <option value="">Select program type...</option>
-                        {programShowsIvfSubtype(program)
-                          ? (tabFilter
-                              ? SUBTYPES_BY_TAB[tabFilter]
-                              : IVF_TABS.flatMap((t) =>
-                                  SUBTYPES_BY_TAB[t.id].map((s) => ({ ...s, _tabLabel: t.label }))
-                                )
-                            ).map((s: any) => (
-                              <option key={s.id} value={s.id}>
-                                {s._tabLabel ? `${s._tabLabel} - ${s.label}` : s.label}
-                              </option>
-                            ))
-                          : FRESH_FROZEN_SUBTYPES.map((s) => (
-                              <option key={s.id} value={s.id}>{s.label}</option>
-                            ))}
-                      </select>
-                      {!program.subType && (
-                        <span className="text-xs text-[hsl(var(--brand-warning))]">
-                          Pick a program type or upload a file - we will auto-detect.
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
+                {/* Program-type picker used to live here as a standalone
+                    row above the cost-sheet body. It now lives inside the
+                    classification card (rendered by SingleCostsTab below)
+                    so both AI-classifications - program type + Fixed/Not-
+                    Fixed - sit in the same green/amber surface. */}
                 <div className="p-4">
                   <SingleCostsTab
                     providerType={providerType}
@@ -2999,6 +3015,13 @@ function ProgramsView({
                     programId={program.id}
                     programSubType={programShowsIvfSubtype(program) ? (program.subType ?? null) : undefined}
                     programTab={programShowsIvfSubtype(program) ? (program.tab ?? tabFilter ?? null) : undefined}
+                    programShowsAnySubtype={programShowsAnySubtype(program)}
+                    programShowsIvfSubtype={programShowsIvfSubtype(program)}
+                    programCurrentSubType={program.subType ?? null}
+                    programTabFilter={tabFilter}
+                    onSubTypeChange={(newSub, newTab) =>
+                      updateSubTypeMutation.mutate({ id: program.id, subType: newSub, tab: newTab })
+                    }
                   />
                 </div>
               </div>
