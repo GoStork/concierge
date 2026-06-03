@@ -8,6 +8,7 @@ export interface EggDonorProfileCardProps {
   fallbackPhotoUrl?: string | null;
   fallbackLabel?: string | null;
   profileAvailable?: boolean | null;
+  profileStatus?: string | null;
   brandColor: string;
   testId?: string;
 }
@@ -23,6 +24,7 @@ export function EggDonorProfileCard({
   fallbackPhotoUrl,
   fallbackLabel,
   profileAvailable,
+  profileStatus,
   brandColor,
   testId = "egg-donor-profile-card",
 }: EggDonorProfileCardProps) {
@@ -53,6 +55,7 @@ export function EggDonorProfileCard({
       fallbackPhotoUrl={fallbackPhotoUrl}
       fallbackLabel={fallbackLabel}
       profileAvailable={profileAvailable}
+      profileStatus={profileStatus}
       brandColor={brandColor}
       testId={testId}
     />

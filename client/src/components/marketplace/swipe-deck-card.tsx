@@ -7,6 +7,7 @@ import {
   Check, Flower2, Crown, Award,
 } from "lucide-react";
 import type { TabSection } from "./swipe-mappers";
+import { getDonorStatusStyle } from "@/lib/donor-status";
 
 export type { TabSection } from "./swipe-mappers";
 
@@ -15,6 +16,10 @@ interface SwipeDeckCardProps {
   photos: string[];
   title: string;
   statusLabel?: string | null;
+  // Canonical DB status (AVAILABLE | PENDING | MATCHED). Drives the colored
+  // status pill so parents instantly see whether the donor is bookable.
+  // AVAILABLE renders nothing; PENDING/MATCHED render a distinct badge.
+  donorStatus?: "AVAILABLE" | "PENDING" | "MATCHED" | null;
   isExperienced?: boolean;
   isPremium?: boolean;
   tabs: TabSection[];
@@ -40,6 +45,7 @@ export function SwipeDeckCard({
   photos,
   title,
   statusLabel,
+  donorStatus,
   isExperienced = false,
   isPremium = false,
   tabs,
@@ -213,6 +219,19 @@ export function SwipeDeckCard({
                   {statusLabel}
                 </Badge>
               )}
+              {donorStatus && donorStatus !== "AVAILABLE" && (() => {
+                const ds = getDonorStatusStyle(donorStatus)!;
+                return (
+                  <Badge
+                    className={`font-ui px-2.5 py-1 ${donorStatus === "PENDING" ? "bg-[hsl(var(--brand-warning))]/90 text-white" : "bg-muted-foreground/80 text-background"}`}
+                    style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+                    data-testid={`badge-donor-status-${id}`}
+                    title={ds.description}
+                  >
+                    {ds.label}
+                  </Badge>
+                );
+              })()}
               {isExperienced && (
                 <Badge
                   className="bg-[hsl(var(--brand-warning))]/90 text-white font-ui px-2.5 py-1 gap-1"

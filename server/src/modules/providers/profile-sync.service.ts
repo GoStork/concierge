@@ -8,6 +8,39 @@ import type { StorageService } from "../storage/storage.service";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
+/**
+ * Single source of truth for translating an upstream agency's raw availability
+ * label (scraped <b class="donorStatus">, JSON field, etc.) to our canonical
+ * donor/surrogate status set: AVAILABLE | MATCHED | PENDING | INACTIVE.
+ *
+ *   AVAILABLE - bookable right now (parent can pursue)
+ *   PENDING   - not yet approved/available (e.g. EDC's "Pending Availability"
+ *               or OJMS's "Pending"); AI concierge MAY still recommend her
+ *               because she's coming back imminently
+ *   MATCHED   - committed to another parent / reserved / cycling; AI concierge
+ *               MUST NOT recommend her (the parent can't move forward)
+ *   INACTIVE  - soft-deleted; never shown anywhere (stale-detection or
+ *               agency-marked as removed)
+ *
+ * Use this from every scraper so we never end up with three different regex
+ * blocks drifting apart (which is how "Pending Availability" was being mis-
+ * classified as MATCHED across the EggDonor table). When `isInactiveCardClass`
+ * is true (e.g. the EDC card had the `inactiveDonor` class), INACTIVE wins
+ * regardless of the text.
+ */
+export function normalizeDonorStatus(
+  rawText: string | null | undefined,
+  isInactiveCardClass: boolean = false,
+): "AVAILABLE" | "MATCHED" | "PENDING" | "INACTIVE" {
+  if (isInactiveCardClass) return "INACTIVE";
+  const t = (rawText || "").toLowerCase();
+  if (!t) return "AVAILABLE";
+  if (/\b(inactive|unavail|retired|removed|deleted)\b/.test(t)) return "INACTIVE";
+  if (/\b(pending)\b/.test(t)) return "PENDING";
+  if (/\b(reserved|cycling|matched|committed|in\s*cycle)\b/.test(t)) return "MATCHED";
+  return "AVAILABLE";
+}
+
 export function profileDataToText(profileData: any): string {
   if (!profileData) return "";
   const skipKeys = new Set(["Photos", "_sections", "photos", "All Photos"]);
@@ -433,7 +466,7 @@ Extract ALL donor profiles visible on this page. For each donor, extract the fol
 - donorCompensation: For Fresh Donors - the egg donor compensation amount as a number (no $ sign). This is a fee paid to the donor and is part of the total cost. NULL for frozen egg donors.
 - eggLotCost: For Frozen Egg Donors - the egg lot cost/price as a number (no $ sign). This is the price for the frozen egg lot. NULL for fresh donors.
 - totalCost: Total cost/compensation as a number (no $ sign). For fresh donors this includes donor compensation + agency fees. For frozen donors this equals the egg lot cost.
-- status: "AVAILABLE", "MATCHED", "ON_HOLD", or "INACTIVE"
+- status: "AVAILABLE" (bookable now), "PENDING" (not yet approved, coming back soon), "MATCHED" (committed to another parent), or "INACTIVE" (removed)
 - photoUrl: URL to the donor's photo if visible
 
 Return a JSON object with this exact structure:
@@ -496,7 +529,7 @@ Extract ALL surrogate profiles visible on this page. For each surrogate, extract
 - lastDeliveryYear: Year of last delivery (integer, e.g. 2024)
 - agreesToSelectiveReduction: true/false/null - whether they agree to selective reduction
 - agreesToInternationalParents: true/false/null - whether they are open to international parents
-- status: "AVAILABLE", "MATCHED", "ON_HOLD", or "INACTIVE"
+- status: "AVAILABLE" (bookable now), "PENDING" (not yet approved, coming back soon), "MATCHED" (committed to another parent), or "INACTIVE" (removed)
 - photoUrl: URL to the surrogate's photo if visible
 
 Return a JSON object with this exact structure:
@@ -2214,8 +2247,7 @@ function parseEdcDonorCards(html: string, origin: string): any[] {
       else if (statusLower.includes("fresh")) donorType = "Fresh Donor";
       else donorType = "Fresh Donor";
 
-      const donorStatus = isInactive ? "INACTIVE" :
-        (statusLower.includes("reserved") || statusLower.includes("cycling") || statusLower.includes("pending")) ? "MATCHED" : "AVAILABLE";
+      const donorStatus = normalizeDonorStatus(status, isInactive);
 
       const clean = (s: string) => s.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&#39;/g, "'").replace(/&amp;/g, "&").trim();
 
@@ -2443,9 +2475,7 @@ function parseOrchidJmsCards(html: string, origin: string): any[] {
 
       const statusBadgeMatch = card.match(/donor-status-badge[^>]*>[\s\S]*?<span[^>]*>(.*?)<\/span>/);
       const statusText = statusBadgeMatch ? statusBadgeMatch[1].replace(/<[^>]*>/g, "").trim() : "";
-      const statusLower = statusText.toLowerCase();
-      const donorStatus = (statusLower.includes("reserved") || statusLower.includes("cycling") || statusLower.includes("pending") || statusLower.includes("matched"))
-        ? "MATCHED" : (statusLower.includes("unavail") || statusLower.includes("inactive") ? "INACTIVE" : "AVAILABLE");
+      const donorStatus = normalizeDonorStatus(statusText);
 
       const fields: Record<string, string> = {};
       const fieldRegex = /<div class="key">(.*?)<\/div>\s*<div class="value">\s*([\s\S]*?)\s*<\/div>/g;
@@ -4396,10 +4426,9 @@ async function runSyncJob(
                   item.additionalPhotos = validPhotos.slice(1);
                 }
               }
-              if (fullProfile["Availability"] || fullProfile["Current Cycle Availability"] || pi["Current Cycle Availability"]) {
-                const avail = (fullProfile["Availability"] || fullProfile["Current Cycle Availability"] || pi["Current Cycle Availability"]).toLowerCase();
-                if (avail.includes("unavail") || avail.includes("inactive")) item.status = "INACTIVE";
-                else if (avail.includes("reserved") || avail.includes("matched") || avail.includes("cycling")) item.status = "MATCHED";
+              const availRaw = fullProfile["Availability"] || fullProfile["Current Cycle Availability"] || pi["Current Cycle Availability"];
+              if (availRaw) {
+                item.status = normalizeDonorStatus(availRaw);
               }
               if (fullProfile["Previous Egg Donor"]) {
                 item.profileData["Previous Egg Donor"] = fullProfile["Previous Egg Donor"];

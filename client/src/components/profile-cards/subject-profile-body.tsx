@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { ExternalLink, Loader2 } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { getDonorStatusStyle } from "@/lib/donor-status";
 import { getProfileUrlSlug } from "@/components/chat/chat-utils";
 import {
   buildSidebarSections,
@@ -27,6 +28,8 @@ export interface SubjectProfileBodyProps {
   fallbackLabel?: string | null;
   /** Availability status: true = available (green dot), false = no longer available (gray dot), null/undefined = no indicator. */
   profileAvailable?: boolean | null;
+  /** Canonical donor status (AVAILABLE | PENDING | MATCHED). Drives the dot color and the inline status label below the name. */
+  profileStatus?: string | null;
   brandColor: string;
   testId?: string;
 }
@@ -51,9 +54,11 @@ export function SubjectProfileBody({
   fallbackPhotoUrl,
   fallbackLabel,
   profileAvailable,
+  profileStatus,
   brandColor,
   testId,
 }: SubjectProfileBodyProps) {
+  const statusStyle = getDonorStatusStyle(profileStatus);
   const navigate = useNavigate();
 
   if (!providerId || !subjectProfileId) return null;
@@ -87,16 +92,24 @@ export function SubjectProfileBody({
               {(label || "?").charAt(0)}
             </div>
           )}
-          {profileAvailable != null && (
+          {(statusStyle || profileAvailable != null) && (
             <span
-              className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background ${profileAvailable === false ? "bg-muted-foreground/50" : "bg-[hsl(var(--brand-success))]"}`}
-              title={profileAvailable === false ? "No longer available" : "Available"}
+              className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background ${
+                statusStyle
+                  ? statusStyle.dotClassName
+                  : profileAvailable === false ? "bg-muted-foreground/50" : "bg-[hsl(var(--brand-success))]"
+              }`}
+              title={statusStyle?.description || (profileAvailable === false ? "No longer available" : "Available")}
             />
           )}
         </div>
         <div className="min-w-0">
           <p className="text-sm font-semibold leading-tight">{label || "-"}</p>
-          {profileAvailable != null && (
+          {statusStyle ? (
+            <p className={`text-[10px] font-medium ${profileStatus === "AVAILABLE" ? "text-[hsl(var(--brand-success))]" : profileStatus === "PENDING" ? "text-[hsl(var(--brand-warning))]" : "text-muted-foreground"}`}>
+              {statusStyle.label}
+            </p>
+          ) : profileAvailable != null && (
             profileAvailable === false ? (
               <p className="text-[10px] text-muted-foreground">No longer available</p>
             ) : (

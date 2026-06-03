@@ -1000,7 +1000,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       // Base WHERE: medical/legal hard limits only (age, BMI, c-sections, miscarriages, max compensation).
       // Preferences that can be relaxed for "close match" presentation are added as softFilters below.
-      const baseWhere: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
+      // AI concierge ONLY recommends bookable inventory: AVAILABLE (ready now)
+      // or PENDING (not yet approved but coming back). MATCHED is committed to
+      // another parent so we never surface it; INACTIVE is soft-deleted.
+      const baseWhere: any = { hiddenFromSearch: { not: true }, status: { in: ["AVAILABLE", "PENDING"] } };
       if (excludeSet.size > 0) baseWhere.id = { notIn: Array.from(excludeSet) };
       if (openToSameSexCouple !== undefined) baseWhere.openToSameSexCouple = openToSameSexCouple;
       if (openToInternationalParents === true) {
@@ -1341,7 +1344,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       // Base WHERE: absolute requirements that are NEVER relaxed.
       // age and height are medical/physical absolutes; isExperienced and donationType are functional.
-      const baseWhere: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
+      // AI concierge ONLY recommends bookable inventory: AVAILABLE (ready now)
+      // or PENDING (not yet approved but coming back). MATCHED is committed to
+      // another parent so we never surface it; INACTIVE is soft-deleted.
+      const baseWhere: any = { hiddenFromSearch: { not: true }, status: { in: ["AVAILABLE", "PENDING"] } };
       if (excludeSet.size > 0) baseWhere.id = { notIn: Array.from(excludeSet) };
       if (maxAge) baseWhere.age = { lte: maxAge };
       if (isExperienced) baseWhere.isExperienced = true;
@@ -1429,7 +1435,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const spermDonorSelectCols = `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, compensation, "iciCost", "iuiCost", "ivfCost", "totalCost", "isExperienced", "photoUrl"`;
 
       // Base WHERE: absolute requirements never relaxed
-      const baseWhere: any = { hiddenFromSearch: { not: true }, status: { not: "INACTIVE" } };
+      // AI concierge ONLY recommends bookable inventory: AVAILABLE (ready now)
+      // or PENDING (not yet approved but coming back). MATCHED is committed to
+      // another parent so we never surface it; INACTIVE is soft-deleted.
+      const baseWhere: any = { hiddenFromSearch: { not: true }, status: { in: ["AVAILABLE", "PENDING"] } };
       if (excludeSet.size > 0) baseWhere.id = { notIn: Array.from(excludeSet) };
       if (maxAge) baseWhere.age = { lte: maxAge };
       if (height) baseWhere.height = { contains: height, mode: "insensitive" };

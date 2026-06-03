@@ -30,6 +30,7 @@ import { hasProviderRole } from "@shared/roles";
 import { useAppDispatch } from "@/store";
 import { setHideBottomNav } from "@/store/uiSlice";
 import { deriveChatPalette } from "@/lib/chat-palette";
+import { DonorStatusPill, getDonorStatusStyle } from "@/lib/donor-status";
 import { format } from "date-fns";
 import ConciergeChatPage, { ParentChatSidePanel, type ParentSidePanelData } from "@/pages/concierge-chat-page";
 import { AgreementSidebarSection } from "@/components/chat/agreement-sidebar-section";
@@ -92,6 +93,7 @@ interface ChatSession {
   createdAt: string;
   updatedAt: string;
   profileAvailable: boolean | null;
+  profileStatus: string | null;
 }
 
 interface ProviderSession {
@@ -119,6 +121,7 @@ interface ProviderSession {
   pendingMaxAgeMinutes: number;
   pendingNudgeCount: number;
   profileAvailable: boolean | null;
+  profileStatus: string | null;
 }
 
 import type { SessionDetail } from "@/components/chat";
@@ -359,6 +362,7 @@ function WhisperProfileCard({ card, brandColor }: { card: any; brandColor: strin
           photos={photos}
           title={title}
           statusLabel={statusLabel}
+          donorStatus={swipeProfile.donorStatus}
           isExperienced={swipeProfile.isExperienced}
           isPremium={swipeProfile.isPremium}
           tabs={tabs}
@@ -1671,19 +1675,20 @@ const sendMessageMutation = useMutation({
                               </div>
                             )}
                           </div>
-                          {session.subjectProfileId && (
-                            <span
-                              className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background ${session.profileAvailable === false ? "bg-muted-foreground/50" : "bg-[hsl(var(--brand-success))]"}`}
-                              title={session.profileAvailable === false ? "Profile no longer available" : "Profile available"}
-                            />
-                          )}
+                          {session.subjectProfileId && (() => {
+                            const dotStyle = getDonorStatusStyle(session.profileStatus);
+                            return (
+                              <span
+                                className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background ${dotStyle?.dotClassName || "bg-muted-foreground/50"}`}
+                                title={dotStyle?.description || "Profile no longer in marketplace"}
+                              />
+                            );
+                          })()}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-medium text-sm font-ui truncate">{session.title || session.matchmakerName || "Conversation"}</span>
-                            {session.profileAvailable === false && (
-                              <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full flex-shrink-0">Unavailable</span>
-                            )}
+                            {session.subjectProfileId && <DonorStatusPill status={session.profileStatus} />}
                             <div className="flex items-center gap-1.5 flex-shrink-0">
                               <span className={`text-[11px] ${session.unreadCount > 0 ? "font-semibold" : "text-muted-foreground"}`} style={session.unreadCount > 0 ? { color: brandColor } : undefined}>{timeAgo(session.lastMessageAt)}</span>
                               {session.unreadCount > 0 && (
@@ -1779,13 +1784,11 @@ const sendMessageMutation = useMutation({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="font-semibold text-sm font-ui truncate" data-testid="parent-chat-subject-label">{selectedParentSession!.title}</span>
-                  {selectedParentSession!.subjectProfileId && selectedParentSession!.profileAvailable === false ? (
-                    <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap">No longer available</span>
-                  ) : selectedParentSession!.subjectProfileId && selectedParentSession!.profileAvailable === true ? (
-                    <span className="w-2 h-2 rounded-full bg-[hsl(var(--brand-success))] flex-shrink-0" aria-label="Profile available" />
-                  ) : selectedParentSession!.providerId && onlineStatuses[selectedParentSession!.providerId] ? (
-                    <span className="w-2 h-2 rounded-full bg-[hsl(var(--brand-success))] flex-shrink-0" aria-label="Provider online" />
-                  ) : null}
+                  {selectedParentSession!.subjectProfileId && selectedParentSession!.profileStatus
+                    ? <DonorStatusPill status={selectedParentSession!.profileStatus} />
+                    : selectedParentSession!.providerId && onlineStatuses[selectedParentSession!.providerId] ? (
+                      <span className="w-2 h-2 rounded-full bg-[hsl(var(--brand-success))] flex-shrink-0" aria-label="Provider online" />
+                    ) : null}
                 </div>
                 <div className="flex items-center gap-1 mt-0.5 min-w-0">
                   <span className="text-[11px] text-muted-foreground flex-shrink-0">via</span>
@@ -1923,6 +1926,7 @@ const sendMessageMutation = useMutation({
                     fallbackPhotoUrl: selectedParentSession!.profilePhotoUrl,
                     fallbackLabel: selectedParentSession!.title,
                     profileAvailable: selectedParentSession!.profileAvailable,
+                    profileStatus: selectedParentSession!.profileStatus,
                   }
                 : null
             }
@@ -1973,6 +1977,7 @@ const sendMessageMutation = useMutation({
             brandColor={brandColor}
             sessionId={selectedParentSession?.id ?? null}
             profileAvailable={selectedParentSession?.profileAvailable ?? null}
+            profileStatus={selectedParentSession?.profileStatus ?? null}
           />
         )}
       </div>
@@ -2131,20 +2136,21 @@ const sendMessageMutation = useMutation({
                           </div>
                         )}
                       </div>
-                      {s.subjectProfileId && (
-                        <span
-                          className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background ${s.profileAvailable === false ? "bg-muted-foreground/50" : "bg-[hsl(var(--brand-success))]"}`}
-                          title={s.profileAvailable === false ? "No longer available in marketplace" : "Available in marketplace"}
-                        />
-                      )}
+                      {s.subjectProfileId && (() => {
+                        const dotStyle = getDonorStatusStyle(s.profileStatus);
+                        return (
+                          <span
+                            className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background ${dotStyle?.dotClassName || "bg-muted-foreground/50"}`}
+                            title={dotStyle?.description || "Profile no longer in marketplace"}
+                          />
+                        );
+                      })()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <span className="font-medium text-sm font-ui truncate">{s.title || "Conversation"}</span>
-                          {s.subjectProfileId && s.profileAvailable === false && (
-                            <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full flex-shrink-0">Unavailable</span>
-                          )}
+                          {s.subjectProfileId && <DonorStatusPill status={s.profileStatus} />}
                           {slaLabel && (
                             <span
                               className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${slaTone} flex-shrink-0`}
@@ -2236,9 +2242,7 @@ const sendMessageMutation = useMutation({
                       </div>
                     )}
                     <span className="text-[11px] text-muted-foreground truncate" data-testid="provider-subject-label">{detail.title || "Conversation"}</span>
-                    {selectedSession?.subjectProfileId && selectedSession.profileAvailable === false && (
-                      <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap">No longer available</span>
-                    )}
+                    {selectedSession?.subjectProfileId && <DonorStatusPill status={selectedSession.profileStatus} />}
                   </div>
                 </div>
               </>
@@ -2305,6 +2309,7 @@ const sendMessageMutation = useMutation({
                   fallbackPhotoUrl: selectedSession.profilePhotoUrl,
                   fallbackLabel: selectedSession.title,
                   profileAvailable: selectedSession.profileAvailable,
+                  profileStatus: selectedSession.profileStatus,
                 }
               : null
           }
@@ -2653,6 +2658,7 @@ const sendMessageMutation = useMutation({
                     fallbackPhotoUrl={selectedSession?.profilePhotoUrl}
                     fallbackLabel={selectedSession?.title}
                     profileAvailable={selectedSession?.profileAvailable}
+                    profileStatus={selectedSession?.profileStatus}
                     brandColor={brandColor}
                     heading={
                       (selectedSession?.subjectType || "").toLowerCase() === "surrogate" ? "Interested Surrogate"

@@ -8,6 +8,7 @@ export interface SurrogateProfileCardProps {
   fallbackPhotoUrl?: string | null;
   fallbackLabel?: string | null;
   profileAvailable?: boolean | null;
+  profileStatus?: string | null;
   brandColor: string;
   testId?: string;
 }
@@ -23,6 +24,7 @@ export function SurrogateProfileCard({
   fallbackPhotoUrl,
   fallbackLabel,
   profileAvailable,
+  profileStatus,
   brandColor,
   testId = "surrogate-profile-card",
 }: SurrogateProfileCardProps) {
@@ -53,6 +55,7 @@ export function SurrogateProfileCard({
       fallbackPhotoUrl={fallbackPhotoUrl}
       fallbackLabel={fallbackLabel}
       profileAvailable={profileAvailable}
+      profileStatus={profileStatus}
       brandColor={brandColor}
       testId={testId}
     />

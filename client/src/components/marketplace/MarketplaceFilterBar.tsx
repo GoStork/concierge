@@ -139,6 +139,11 @@ const FILTER_DISPLAY_NAMES: Record<string, string> = {
   lastDeliveryYear: "Last Delivery",
   eggType: "Egg Type",
   location: "Location",
+  status: "Status",
+};
+
+const FILTER_VALUE_DISPLAY_NAMES: Record<string, Record<string, string>> = {
+  status: { AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched" },
 };
 
 function formatFilterPills(filters: Record<string, string[]>): { key: string; label: string }[] {
@@ -165,7 +170,10 @@ function formatFilterPills(filters: Record<string, string[]>): { key: string; la
       pills.push({ key, label: displayName });
     } else {
       vals.filter(Boolean).forEach((v) => {
-        const displayVal = key === "location" ? (formatLocationDisplay(v) || v) : v;
+        const valueMap = FILTER_VALUE_DISPLAY_NAMES[key];
+        const displayVal = key === "location"
+          ? (formatLocationDisplay(v) || v)
+          : (valueMap && valueMap[v]) || v;
         pills.push({ key, label: `${displayName}: ${displayVal}` });
       });
     }
@@ -846,13 +854,15 @@ function RangePopover({ label, filterKey, min, max, step, unit, activeFilters, d
   );
 }
 
-function MultiSelectPopover({ label, filterKey, options, activeFilters, dispatch, testIdPrefix }: {
+function MultiSelectPopover({ label, filterKey, options, activeFilters, dispatch, testIdPrefix, optionLabels }: {
   label: string;
   filterKey: string;
   options: string[];
   activeFilters: Record<string, string[]>;
   dispatch: any;
   testIdPrefix: string;
+  /** Optional mapping from raw option value -> human-friendly display label. */
+  optionLabels?: Record<string, string>;
 }) {
   const selected = activeFilters[filterKey] || [];
   const isActive = selected.length > 0;
@@ -893,12 +903,20 @@ function MultiSelectPopover({ label, filterKey, options, activeFilters, dispatch
               </Button>
             )}
           </div>
-          <MultiSelectBubbles
-            options={options}
-            selected={selected}
-            onToggle={toggleFilter}
-            testIdPrefix={testIdPrefix}
-          />
+          <div className="flex flex-wrap gap-2.5">
+            {options.map((opt) => (
+              <Badge
+                key={opt}
+                variant={selected.includes(opt) ? "default" : "outline"}
+                className="cursor-pointer font-ui px-4 py-2 rounded-full"
+                style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+                onClick={() => toggleFilter(opt)}
+                data-testid={`${testIdPrefix}-${opt.toLowerCase().replace(/\s+/g, "-")}`}
+              >
+                {optionLabels?.[opt] || opt}
+              </Badge>
+            ))}
+          </div>
         </div>
       </PopoverContent>
     </Popover>
@@ -1843,6 +1861,10 @@ export function MarketplaceFilterBar({
 
       {!isIvf && (
         <RangePopover label="Age" filterKey="age" min={18} max={45} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} />
+      )}
+
+      {!isIvf && (
+        <MultiSelectPopover label="Status" filterKey="status" options={["AVAILABLE", "PENDING", "MATCHED"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-status" optionLabels={{ AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched" }} />
       )}
 
       {(isDonor || isSperm) && (

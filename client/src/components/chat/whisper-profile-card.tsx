@@ -67,6 +67,7 @@ export function WhisperProfileCard({ card, brandColor }: WhisperProfileCardProps
           photos={photos}
           title={title}
           statusLabel={statusLabel}
+          donorStatus={swipeProfile.donorStatus}
           isExperienced={swipeProfile.isExperienced}
           isPremium={swipeProfile.isPremium}
           tabs={tabs}

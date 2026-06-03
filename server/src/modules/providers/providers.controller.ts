@@ -116,6 +116,26 @@ function buildLocationFilter(input: string): any[] {
   return conditions;
 }
 
+// Canonical donor/surrogate statuses surfaced to the marketplace UI.
+// INACTIVE is intentionally excluded - it's a soft-delete that must never
+// be shown anywhere (chat, marketplace, AI search, provider's own list).
+const SELECTABLE_DONOR_STATUSES = ["AVAILABLE", "PENDING", "MATCHED"] as const;
+
+// Parse the optional ?status= query param (comma-separated subset of the
+// canonical set) into a Prisma `where.status` clause. Empty / missing /
+// invalid values fall back to "show everything except INACTIVE", which is
+// the marketplace default - the user wants all three states visible with
+// status badges by default and the filter chip narrows the set.
+function buildDonorStatusFilter(raw?: string | null): { in: string[] } | { not: string } {
+  if (!raw) return { not: "INACTIVE" };
+  const requested = raw
+    .split(",")
+    .map((s) => s.trim().toUpperCase())
+    .filter((s) => (SELECTABLE_DONOR_STATUSES as readonly string[]).includes(s));
+  if (requested.length === 0) return { not: "INACTIVE" };
+  return { in: requested };
+}
+
 @ApiTags("Providers")
 @Controller("api/providers")
 export class ProvidersController {
@@ -124,14 +144,15 @@ export class ProvidersController {
   @Get("marketplace/egg-donors")
   @ApiOperation({ summary: "List egg donors (paginated, 100 per page)" })
   @Header("Cache-Control", "public, max-age=30")
-  async marketplaceEggDonors(@Req() req: Request, @Query("page") page = "0") {
+  async marketplaceEggDonors(@Req() req: Request, @Query("page") page = "0", @Query("status") status?: string) {
     const PAGE_SIZE = 100;
+    const statusFilter = buildDonorStatusFilter(status);
     const user = req.user as any;
     const roles: string[] = user?.roles || [];
     const isProviderUser = hasProviderRole(roles);
     if (isProviderUser && user?.providerId) {
       const donors = await this.prisma.eggDonor.findMany({
-        where: { providerId: user.providerId, status: { not: "INACTIVE" } },
+        where: { providerId: user.providerId, status: statusFilter },
         include: { provider: { select: { id: true, name: true, logoUrl: true } } },
         orderBy: { createdAt: "desc" },
       });
@@ -139,7 +160,7 @@ export class ProvidersController {
       return { data, hasMore: false, nextPage: null };
     }
     const pageNum = Math.max(0, parseInt(page) || 0);
-    const cacheKey = `marketplace:egg-donors:p${pageNum}`;
+    const cacheKey = `marketplace:egg-donors:p${pageNum}:s${status || "all"}`;
     const cached = getCached(cacheKey);
     if (cached) return cached;
     const rows = await this.prisma.eggDonor.findMany({
@@ -147,7 +168,7 @@ export class ProvidersController {
       skip: pageNum * PAGE_SIZE,
       where: {
         hiddenFromSearch: false,
-        status: { not: "INACTIVE" },
+        status: statusFilter,
         provider: {
           services: {
             some: {
@@ -171,14 +192,15 @@ export class ProvidersController {
   @Get("marketplace/surrogates")
   @ApiOperation({ summary: "List surrogates (paginated, 100 per page)" })
   @Header("Cache-Control", "public, max-age=30")
-  async marketplaceSurrogates(@Req() req: Request, @Query("page") page = "0") {
+  async marketplaceSurrogates(@Req() req: Request, @Query("page") page = "0", @Query("status") status?: string) {
     const PAGE_SIZE = 100;
+    const statusFilter = buildDonorStatusFilter(status);
     const user = req.user as any;
     const roles: string[] = user?.roles || [];
     const isProviderUser = hasProviderRole(roles);
     if (isProviderUser && user?.providerId) {
       const donors = await this.prisma.surrogate.findMany({
-        where: { providerId: user.providerId, status: { not: "INACTIVE" } },
+        where: { providerId: user.providerId, status: statusFilter },
         include: { provider: { select: { id: true, name: true, logoUrl: true } } },
         orderBy: { createdAt: "desc" },
       });
@@ -186,7 +208,7 @@ export class ProvidersController {
       return { data, hasMore: false, nextPage: null };
     }
     const pageNum = Math.max(0, parseInt(page) || 0);
-    const cacheKey = `marketplace:surrogates:p${pageNum}`;
+    const cacheKey = `marketplace:surrogates:p${pageNum}:s${status || "all"}`;
     const cached = getCached(cacheKey);
     if (cached) return cached;
     const rows = await this.prisma.surrogate.findMany({
@@ -194,7 +216,7 @@ export class ProvidersController {
       skip: pageNum * PAGE_SIZE,
       where: {
         hiddenFromSearch: false,
-        status: { not: "INACTIVE" },
+        status: statusFilter,
         provider: {
           services: {
             some: {
@@ -314,14 +336,15 @@ export class ProvidersController {
   @Get("marketplace/sperm-donors")
   @ApiOperation({ summary: "List sperm donors (paginated, 100 per page)" })
   @Header("Cache-Control", "public, max-age=30")
-  async marketplaceSpermDonors(@Req() req: Request, @Query("page") page = "0") {
+  async marketplaceSpermDonors(@Req() req: Request, @Query("page") page = "0", @Query("status") status?: string) {
     const PAGE_SIZE = 100;
+    const statusFilter = buildDonorStatusFilter(status);
     const user = req.user as any;
     const roles: string[] = user?.roles || [];
     const isProviderUser = hasProviderRole(roles);
     if (isProviderUser && user?.providerId) {
       const donors = await this.prisma.spermDonor.findMany({
-        where: { providerId: user.providerId, status: { not: "INACTIVE" }, hiddenFromSearch: false },
+        where: { providerId: user.providerId, status: statusFilter, hiddenFromSearch: false },
         include: { provider: { select: { id: true, name: true, logoUrl: true } } },
         orderBy: { createdAt: "desc" },
       });
@@ -329,7 +352,7 @@ export class ProvidersController {
       return { data, hasMore: false, nextPage: null };
     }
     const pageNum = Math.max(0, parseInt(page) || 0);
-    const cacheKey = `marketplace:sperm-donors:p${pageNum}`;
+    const cacheKey = `marketplace:sperm-donors:p${pageNum}:s${status || "all"}`;
     const cached = getCached(cacheKey);
     if (cached) return cached;
     const rows = await this.prisma.spermDonor.findMany({
@@ -337,7 +360,7 @@ export class ProvidersController {
       skip: pageNum * PAGE_SIZE,
       where: {
         hiddenFromSearch: false,
-        status: { not: "INACTIVE" },
+        status: statusFilter,
         provider: {
           services: {
             some: {

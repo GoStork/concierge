@@ -11,6 +11,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { deriveChatPalette } from "@/lib/chat-palette";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { DonorStatusPill, getDonorStatusStyle } from "@/lib/donor-status";
 import { formatMoneyCents } from "@/lib/format-money";
 import { formatLocationDisplay } from "@/lib/format-location";
 import { Button } from "@/components/ui/button";
@@ -1989,6 +1990,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
           photos={photos}
           title={title}
           statusLabel={statusLabel}
+          donorStatus={swipeProfile.donorStatus}
           isExperienced={swipeProfile.isExperienced}
           isPremium={swipeProfile.isPremium}
           tabs={tabs}
@@ -2328,6 +2330,7 @@ export function ParentChatSidePanel({
   brandColor,
   sessionId,
   profileAvailable,
+  profileStatus,
 }: {
   subjectInfo: ConsultationCardData | null;
   providerName: string | null;
@@ -2336,7 +2339,9 @@ export function ParentChatSidePanel({
   brandColor: string;
   sessionId: string | null;
   profileAvailable?: boolean | null;
+  profileStatus?: string | null;
 }) {
+  const statusStyle = getDonorStatusStyle(profileStatus);
   const existingBooking =
     sessionBookings?.find(
       (b: any) =>
@@ -2366,13 +2371,21 @@ export function ParentChatSidePanel({
                 )}
               </div>
               <span
-                className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background ${profileAvailable === false ? "bg-muted-foreground/50" : "bg-[hsl(var(--brand-success))]"}`}
-                title={profileAvailable === false ? "No longer available" : "Available"}
+                className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background ${
+                  statusStyle
+                    ? statusStyle.dotClassName
+                    : profileAvailable === false ? "bg-muted-foreground/50" : "bg-[hsl(var(--brand-success))]"
+                }`}
+                title={statusStyle?.description || (profileAvailable === false ? "No longer available" : "Available")}
               />
             </div>
             <div className="min-w-0">
               <p className="text-sm font-medium font-ui truncate">{subjectInfo.profileLabel || subjectInfo.subjectType}</p>
-              {profileAvailable === false ? (
+              {statusStyle ? (
+                <p className={`text-[10px] font-medium ${profileStatus === "AVAILABLE" ? "text-[hsl(var(--brand-success))]" : profileStatus === "PENDING" ? "text-[hsl(var(--brand-warning))]" : "text-muted-foreground"}`}>
+                  {statusStyle.label}
+                </p>
+              ) : profileAvailable === false ? (
                 <p className="text-[10px] text-muted-foreground">No longer available</p>
               ) : (
                 <p className="text-[10px] text-[hsl(var(--brand-success))] font-medium">Available</p>
@@ -2391,6 +2404,7 @@ export function ParentChatSidePanel({
             fallbackPhotoUrl={subjectInfo.profilePhotoUrl}
             fallbackLabel={subjectInfo.profileLabel}
             profileAvailable={profileAvailable}
+            profileStatus={profileStatus}
             brandColor={brandColor}
             testId="parent-subject-profile-card"
           />

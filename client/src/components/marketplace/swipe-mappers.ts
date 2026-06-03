@@ -24,10 +24,26 @@ export interface TabSection {
   items: TabItem[];
 }
 
+// Coerce a raw DB status string to the canonical UI set. Anything outside
+// AVAILABLE/PENDING/MATCHED (e.g. an unexpected upstream label that escaped
+// normalization, or a null) collapses to AVAILABLE so the card still
+// renders cleanly - INACTIVE rows are excluded at the API layer and never
+// reach the mapper.
+function normalizeProfileStatus(raw: string | null | undefined): "AVAILABLE" | "PENDING" | "MATCHED" {
+  if (raw === "PENDING" || raw === "MATCHED") return raw;
+  return "AVAILABLE";
+}
+
 export interface SwipeDeckProfile {
   id: string;
   providerType: "donor" | "surrogate";
   statusBadge: "New" | "Experienced" | null;
+  // Canonical donor/surrogate status from the DB (AVAILABLE | PENDING | MATCHED).
+  // Drives the colored status pill on the card. AVAILABLE renders nothing
+  // (presence on the marketplace is the signal); PENDING and MATCHED render
+  // an explicit badge so parents see at a glance that the donor can't be
+  // booked right now (or is not yet approved).
+  donorStatus: "AVAILABLE" | "PENDING" | "MATCHED" | null;
   isExperienced: boolean;
   firstName: string | null;
   externalId: string | null;
@@ -110,6 +126,7 @@ export function mapDatabaseDonorToSwipeProfile(dbDonor: any): SwipeDeckProfile {
     id: dbDonor.id,
     providerType: "donor",
     statusBadge: dbDonor.status === "AVAILABLE" ? "New" : null,
+    donorStatus: normalizeProfileStatus(dbDonor.status),
     isExperienced: !!(dbDonor as any).isExperienced,
     firstName: dbDonor.firstName ?? null,
     externalId: dbDonor.externalId ?? null,
@@ -178,6 +195,7 @@ export function mapDatabaseSurrogateToSwipeProfile(dbSurrogate: any): SwipeDeckP
     id: dbSurrogate.id,
     providerType: "surrogate",
     statusBadge: dbSurrogate.status === "AVAILABLE" ? "New" : null,
+    donorStatus: normalizeProfileStatus(dbSurrogate.status),
     isExperienced: !!(dbSurrogate as any).isExperienced,
     firstName: dbSurrogate.firstName ?? null,
     externalId: dbSurrogate.externalId ?? null,
@@ -246,6 +264,7 @@ export function mapDatabaseSpermDonorToSwipeProfile(dbSperm: any): SwipeDeckProf
     id: dbSperm.id,
     providerType: "donor",
     statusBadge: dbSperm.status === "AVAILABLE" ? "New" : null,
+    donorStatus: normalizeProfileStatus(dbSperm.status),
     isExperienced: !!(dbSperm as any).isExperienced,
     firstName: dbSperm.firstName ?? null,
     externalId: dbSperm.externalId ?? null,

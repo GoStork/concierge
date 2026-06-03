@@ -293,8 +293,8 @@ function isImageArray(key: string, value: any): boolean {
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     AVAILABLE: "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))] border-[hsl(var(--brand-success)/0.3)]",
+    PENDING: "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning)/0.3)]",
     MATCHED: "bg-accent/15 text-accent-foreground border-accent/30",
-    ON_HOLD: "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning)/0.3)]",
     UNAVAILABLE: "bg-destructive/15 text-destructive border-destructive/30",
     SOLD_OUT: "bg-destructive/15 text-destructive border-destructive/30",
     INACTIVE: "bg-muted text-foreground border-border",

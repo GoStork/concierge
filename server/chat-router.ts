@@ -54,22 +54,27 @@ function getUserRoles(user: any): string[] {
 }
 
 /**
- * Computes marketplace-availability for a set of chat-session subject profiles,
+ * Computes per-profile status for a set of chat-session subject profiles,
  * across ALL types (egg donor, surrogate, sperm donor, IVF clinic, surrogacy
- * agency). A donor/surrogate is "available" iff it would currently appear in
- * the marketplace listing - matching the marketplace filter exactly: it still
- * exists, is NOT hiddenFromSearch, and has any status other than INACTIVE
- * (so AVAILABLE, MATCHED, and ON_HOLD all count). Providers (clinic/agency)
- * have no per-profile status, so existence is enough.
+ * agency).
  *
- * Returns a Map<subjectProfileId, boolean>. Profiles with no subjectProfileId/
- * subjectType are simply absent from the map (caller leaves profileAvailable null).
+ * For donors/surrogates the result carries the canonical status string
+ * (AVAILABLE | PENDING | MATCHED | INACTIVE) plus a boolean `available`
+ * meaning "bookable right now" - true only when status === AVAILABLE and
+ * !hiddenFromSearch. Pending donors render with a "Pending" badge in chat;
+ * matched donors render with a "Matched" badge; soft-deleted profiles that
+ * have disappeared from the DB get null status and `available=false`.
+ *
+ * Providers (clinic/agency) have no per-profile status, so existence drives
+ * the boolean and status is left null.
+ *
  * Shared by the parent, provider, and admin session endpoints.
  */
+type ProfileStatusEntry = { available: boolean; status: string | null };
 async function computeProfileAvailability(
   items: { subjectProfileId?: string | null; subjectType?: string | null }[],
-): Promise<Map<string, boolean>> {
-  const result = new Map<string, boolean>();
+): Promise<Map<string, ProfileStatusEntry>> {
+  const result = new Map<string, ProfileStatusEntry>();
   const sessions = items.filter(s => s.subjectProfileId && s.subjectType);
   if (sessions.length === 0) return result;
   const t = (s: { subjectType?: string | null }) => (s.subjectType || "").toLowerCase();
@@ -83,17 +88,27 @@ async function computeProfileAvailability(
     spermIds.length ? prisma.spermDonor.findMany({ where: { id: { in: spermIds } },select: { id: true, status: true, hiddenFromSearch: true } }) : [],
     clinicIds.length? prisma.provider.findMany({ where: { id: { in: clinicIds } }, select: { id: true } }) : [],
   ]);
-  const isAvail = (e: { status: string | null; hiddenFromSearch: boolean }) => (e.status || "AVAILABLE") !== "INACTIVE" && !e.hiddenFromSearch;
-  const availableDonorIds = new Set([
-    ...existEgg.filter(isAvail).map(e => e.id),
-    ...existSurr.filter(isAvail).map(e => e.id),
-    ...existSperm.filter(isAvail).map(e => e.id),
-  ]);
+  const donorMap = new Map<string, { status: string | null; hiddenFromSearch: boolean }>();
+  for (const e of [...existEgg, ...existSurr, ...existSperm]) {
+    donorMap.set(e.id, { status: e.status, hiddenFromSearch: e.hiddenFromSearch });
+  }
   const existingProviderIds = new Set(existClinic.map(e => e.id));
   for (const s of sessions) {
     const id = s.subjectProfileId!;
     const isProviderSubject = t(s).includes("clinic") || t(s).includes("agency");
-    result.set(id, isProviderSubject ? existingProviderIds.has(id) : availableDonorIds.has(id));
+    if (isProviderSubject) {
+      result.set(id, { available: existingProviderIds.has(id), status: null });
+      continue;
+    }
+    const donor = donorMap.get(id);
+    if (!donor) {
+      // Donor row disappeared entirely from DB
+      result.set(id, { available: false, status: null });
+      continue;
+    }
+    const status = donor.status || "AVAILABLE";
+    const available = status === "AVAILABLE" && !donor.hiddenFromSearch;
+    result.set(id, { available, status });
   }
   return result;
 }
@@ -239,6 +254,7 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
       profileAvailable: null as boolean | null,
+      profileStatus: null as string | null,
     }));
 
     // Enrich profilePhotoUrl for sessions that have a subject profile but no stored photo
@@ -299,12 +315,14 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       }
     }
 
-    // Mark each session's subject profile as available / no-longer-available
-    // based on current marketplace visibility (see computeProfileAvailability).
+    // Mark each session's subject profile with its canonical status and a
+    // boolean for "bookable right now" (see computeProfileAvailability).
     const availMap = await computeProfileAvailability(result);
     for (const s of result) {
       if (s.subjectProfileId && availMap.has(s.subjectProfileId)) {
-        s.profileAvailable = availMap.get(s.subjectProfileId)!;
+        const entry = availMap.get(s.subjectProfileId)!;
+        s.profileAvailable = entry.available;
+        s.profileStatus = entry.status;
       }
     }
 
@@ -449,6 +467,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       unreadCount: unreadMap[s.id] || 0,
       createdAt: s.createdAt,
       profileAvailable: null as boolean | null,
+      profileStatus: null as string | null,
     }));
 
     // Enrich profilePhotoUrl for sessions that have a subject profile but no stored photo
@@ -505,11 +524,14 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       }
     }
 
-    // Mark marketplace availability of each subject profile.
+    // Mark each session's subject profile with its canonical status and a
+    // boolean for "bookable right now" (see computeProfileAvailability).
     const adminAvailMap = await computeProfileAvailability(result);
     for (const s of result) {
       if (s.subjectProfileId && adminAvailMap.has(s.subjectProfileId)) {
-        s.profileAvailable = adminAvailMap.get(s.subjectProfileId)!;
+        const entry = adminAvailMap.get(s.subjectProfileId)!;
+        s.profileAvailable = entry.available;
+        s.profileStatus = entry.status;
       }
     }
 
@@ -547,7 +569,12 @@ chatRouter.get("/api/admin/concierge-sessions/:id", requireAuth, async (req, res
     });
     if (!session) return res.status(404).json({ message: "Session not found" });
     const adminDetailAvail = await computeProfileAvailability([session as any]);
-    res.json({ ...session, profileAvailable: (session as any).subjectProfileId ? (adminDetailAvail.get((session as any).subjectProfileId) ?? null) : null });
+    const adminDetailEntry = (session as any).subjectProfileId ? adminDetailAvail.get((session as any).subjectProfileId) : null;
+    res.json({
+      ...session,
+      profileAvailable: adminDetailEntry ? adminDetailEntry.available : null,
+      profileStatus: adminDetailEntry ? adminDetailEntry.status : null,
+    });
   } catch (e: any) {
     console.error("Admin concierge session detail error:", e);
     res.status(500).json({ message: e.message });
@@ -972,6 +999,7 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
           : 0,
         pendingNudgeCount: nudgeCountBySession[s.id] || 0,
         profileAvailable: null as boolean | null,
+        profileStatus: null as string | null,
       };
     });
     result.sort((a, b) => {
@@ -1042,11 +1070,14 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       }
     }
 
-    // Mark marketplace availability of each subject profile.
+    // Mark each session's subject profile with its canonical status and a
+    // boolean for "bookable right now" (see computeProfileAvailability).
     const provAvailMap = await computeProfileAvailability(result);
     for (const s of result) {
       if (s.subjectProfileId && provAvailMap.has(s.subjectProfileId)) {
-        s.profileAvailable = provAvailMap.get(s.subjectProfileId)!;
+        const entry = provAvailMap.get(s.subjectProfileId)!;
+        s.profileAvailable = entry.available;
+        s.profileStatus = entry.status;
       }
     }
 
@@ -1137,9 +1168,9 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
     }).catch(() => {});
 
     const provDetailAvail = await computeProfileAvailability([session as any]);
-    (responseSession as any).profileAvailable = (session as any).subjectProfileId
-      ? (provDetailAvail.get((session as any).subjectProfileId) ?? null)
-      : null;
+    const provDetailEntry = (session as any).subjectProfileId ? provDetailAvail.get((session as any).subjectProfileId) : null;
+    (responseSession as any).profileAvailable = provDetailEntry ? provDetailEntry.available : null;
+    (responseSession as any).profileStatus = provDetailEntry ? provDetailEntry.status : null;
 
     res.json(responseSession);
   } catch (e: any) {

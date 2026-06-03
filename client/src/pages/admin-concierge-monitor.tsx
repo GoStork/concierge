@@ -7,6 +7,7 @@ import { useAppDispatch } from "@/store";
 import { setHideBottomNav } from "@/store/uiSlice";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { deriveChatPalette } from "@/lib/chat-palette";
+import { DonorStatusPill, getDonorStatusStyle } from "@/lib/donor-status";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { MessageStatus } from "@/components/ui/message-status";
@@ -60,6 +61,7 @@ interface SessionSummary {
   unreadCount: number;
   createdAt: string;
   profileAvailable: boolean | null;
+  profileStatus: string | null;
 }
 
 export default function AdminConciergeMonitor() {
@@ -526,20 +528,21 @@ export default function AdminConciergeMonitor() {
                         </div>
                       )}
                     </div>
-                    {s.subjectProfileId && (
-                      <span
-                        className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background ${s.profileAvailable === false ? "bg-muted-foreground/50" : "bg-[hsl(var(--brand-success))]"}`}
-                        title={s.profileAvailable === false ? "No longer available in marketplace" : "Available in marketplace"}
-                      />
-                    )}
+                    {s.subjectProfileId && (() => {
+                      const dotStyle = getDonorStatusStyle(s.profileStatus);
+                      return (
+                        <span
+                          className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background ${dotStyle?.dotClassName || "bg-muted-foreground/50"}`}
+                          title={dotStyle?.description || "Profile no longer in marketplace"}
+                        />
+                      );
+                    })()}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span className="font-medium text-sm font-ui truncate">{rowTitle}</span>
-                        {s.subjectProfileId && s.profileAvailable === false && (
-                          <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full flex-shrink-0">Unavailable</span>
-                        )}
+                        {s.subjectProfileId && <DonorStatusPill status={s.profileStatus} />}
                       </div>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         <span className={`text-[11px] ${sUnread > 0 ? "font-semibold" : "text-muted-foreground"}`} style={sUnread > 0 ? { color: brandColor } : undefined}>{timeAgo(s.lastMessageAt)}</span>
@@ -631,9 +634,7 @@ export default function AdminConciergeMonitor() {
                 <span className="text-[11px] text-muted-foreground truncate" data-testid="admin-subject-label">
                   {detail.title || selectedSummary?.title || selectedSummary?.providerName || "AI Concierge"}
                 </span>
-                {selectedSummary?.subjectProfileId && selectedSummary.profileAvailable === false && (
-                  <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap">No longer available</span>
-                )}
+                {selectedSummary?.subjectProfileId && <DonorStatusPill status={selectedSummary.profileStatus} />}
               </div>
             ) : (
               <p className="text-[11px] text-muted-foreground truncate">{detail.user.email}</p>
@@ -921,6 +922,7 @@ export default function AdminConciergeMonitor() {
                     fallbackPhotoUrl={selectedSummary?.profilePhotoUrl}
                     fallbackLabel={selectedSummary?.title}
                     profileAvailable={selectedSummary?.profileAvailable}
+                    profileStatus={selectedSummary?.profileStatus}
                     brandColor={brandColor}
                     heading={
                       (selectedSummary?.subjectType || "").toLowerCase() === "surrogate" ? "Interested Surrogate"

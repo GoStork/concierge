@@ -442,8 +442,8 @@ export default function DonorEditPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="AVAILABLE">Available</SelectItem>
+                    <SelectItem value="PENDING">Pending</SelectItem>
                     <SelectItem value="MATCHED">Matched</SelectItem>
-                    <SelectItem value="ON_HOLD">On Hold</SelectItem>
                     <SelectItem value="INACTIVE">Inactive</SelectItem>
                   </SelectContent>
                 </Select>

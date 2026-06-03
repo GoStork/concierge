@@ -573,6 +573,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
                 photos={getPhotoList(nextProfile)}
                 title={buildTitle(nextProfile)}
                 statusLabel={buildStatusLabel(nextProfile)}
+                donorStatus={nextProfile.donorStatus}
                 isExperienced={nextProfile.isExperienced}
                 isPremium={nextProfile.isPremium}
                 tabs={nextTabs}
@@ -591,6 +592,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
               photos={getPhotoList(profile)}
               title={buildTitle(profile)}
               statusLabel={buildStatusLabel(profile)}
+              donorStatus={profile.donorStatus}
               isExperienced={profile.isExperienced}
               isPremium={profile.isPremium}
               tabs={tabs}
@@ -630,6 +632,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
               photos={getPhotoList(profile)}
               title={buildTitle(profile)}
               statusLabel={buildStatusLabel(profile)}
+              donorStatus={profile.donorStatus}
               isExperienced={profile.isExperienced}
               isPremium={profile.isPremium}
               tabs={tabs}

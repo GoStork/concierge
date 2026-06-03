@@ -220,6 +220,13 @@ export function matchesFilter(donor: any, key: string, values: string[]): boolea
     });
   }
 
+  if (key === "status") {
+    // Canonical donor status (AVAILABLE | PENDING | MATCHED). Falls back to
+    // AVAILABLE if the row has no status set (legacy rows / clients).
+    const status = (donor.status || "AVAILABLE").toString().toUpperCase();
+    return values.some(v => v.toUpperCase() === status);
+  }
+
   if (key === "ethnicity" || key === "race") {
     // Always check race first (race is the primary field), then ethnicity as fallback
     const raceVal = (donor.race || "").toString().toLowerCase();
