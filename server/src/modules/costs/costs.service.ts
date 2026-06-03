@@ -485,36 +485,38 @@ export class CostsService {
     if (ip?.needsEggDonor === true || eggIsDonor) parentNeeds.add("egg_donor");
     if (spermIsDonor || lacksSperm) parentNeeds.add("sperm_donor");
     // interestedServices is the explicit, parent-chosen list from the
-    // "Services You're Looking For" chips on the settings page. It's the
-    // most reliable single signal we have - parent-set, no inference.
-    // The chip labels map 1:1 onto serviceType tags.
+    // "Services You're Looking For" chips on the settings page. Map each
+    // chip 1:1 onto its serviceType tag so a parent who picked a chip
+    // sees that provider type's programs everywhere.
     const interestedSet = new Set((ip?.interestedServices ?? []).map((s: string) => s.toLowerCase()));
     if (interestedSet.has("fertility clinic")) parentNeeds.add("ivf_clinic");
     if (interestedSet.has("surrogate") || interestedSet.has("surrogacy")) parentNeeds.add("surrogacy");
     if (interestedSet.has("egg donor")) parentNeeds.add("egg_donor");
     if (interestedSet.has("sperm donor")) parentNeeds.add("sperm_donor");
-    // NOTE: we used to force-add the donor type the parent is viewing
-    // ("standing on the profile is implicit interest"), but that surfaced
-    // surrogacy programs to sperm-only parents who happened to navigate
-    // to a surrogate page, which felt inconsistent (egg donor in the same
-    // situation didn't show because that provider had no programs - same
-    // logic, different data accident). The matcher now respects only what
-    // the parent has explicitly declared in their interestedServices chips
-    // and biological baseline. implicitNeed is still computed because the
-    // vialTypes filter and comp override downstream key off the profile
-    // type - but it no longer forces a parentNeeds entry.
+    // Standing on a specific donor / surrogate profile IS an explicit
+    // signal of interest in that service type. Surface the provider's
+    // matching programs even when the parent's chips don't include it -
+    // the parent navigated here to learn more about THIS person, so
+    // they care about the cost path to acquire her / him. Without this,
+    // a sperm-only parent who clicks through to a surrogate from a 3-way
+    // chat (or marketplace nav) sees an empty cost section even though
+    // the agency has a published surrogacy program. The vialTypes filter
+    // and comp-override paths continue to narrow / personalize the result
+    // for sperm-donor and surrogate / fresh-egg-donor profiles.
+    if (implicitNeed) parentNeeds.add(implicitNeed);
 
     // Profile is "partial" when we don't know ANY of the relevant tags.
     // The client gates the grid behind "Complete your profile" CTA.
     // interestedServices counts as "knowing" - a parent who picked chips
     // has declared their interest even if they haven't finished biological
-    // baseline yet.
+    // baseline yet. A specific-donor view also counts - the parent is
+    // literally pointing at a profile of that type.
     const hasInterested = (ip?.interestedServices ?? []).length > 0;
     const knowsSurrogacy = ip?.needsSurrogate != null || ip?.carrier != null || hasInterested;
     const knowsEggDonor = ip?.needsEggDonor != null || ip?.eggSource != null || hasInterested;
     const knowsSpermDonor = ip?.spermSource != null || primary?.gender != null || hasInterested;
-    const resolvedIsPartialProfile = isPartialProfile ||
-      (!knowsSurrogacy && !knowsEggDonor && !knowsSpermDonor && subtypes.length === 0);
+    const resolvedIsPartialProfile = !implicitNeed && (isPartialProfile ||
+      (!knowsSurrogacy && !knowsEggDonor && !knowsSpermDonor && subtypes.length === 0));
 
     if (resolvedIsPartialProfile) {
       return { programs: [], matchingSubtypes: subtypes, isPartialProfile: true };
