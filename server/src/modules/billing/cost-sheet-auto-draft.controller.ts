@@ -294,6 +294,66 @@ export class CostSheetAutoDraftController {
       select: { parentAcknowledgedAt: true },
     });
     this.logger.log(`Parent acknowledged cost sheet: quote=${quoteId} at ${updated.parentAcknowledgedAt?.toISOString()}`);
+
+    // Tell BOTH sides what just happened in the chat:
+    //  - the parent sees a confirmation that their acknowledgement was sent
+    //    and that the next step is paying the invoice the provider will send
+    //  - the provider sees an actionable system message so they know to send
+    //    the invoice next. Both messages share the same content so the
+    //    transcript reads consistently in either pane.
+    try {
+      const sessionWithProvider = await this.db.aiChatSession.findUnique({
+        where: { id: sessionId },
+        select: {
+          id: true, userId: true, providerId: true,
+          user: { select: { name: true, firstName: true, parentAccountId: true } },
+          provider: { select: { name: true } },
+        },
+      });
+      if (sessionWithProvider) {
+        const parentLabel = sessionWithProvider.user?.firstName || sessionWithProvider.user?.name || "The parent";
+        const providerName = sessionWithProvider.provider?.name || "the provider";
+        const totalFormatted = formatMoneyCents(quote.totalCostCents);
+        const ackMessage =
+          `${parentLabel} acknowledged the cost sheet (${totalFormatted}). ${providerName} can now send the invoice - that's the next step before the journey moves forward.`;
+        await this.db.aiChatMessage.create({
+          data: {
+            sessionId,
+            role: "assistant",
+            content: ackMessage,
+            senderType: "system",
+            senderName: "GoStork",
+          },
+        });
+
+        // In-app notify every provider-side member so they see "invoice next"
+        // in their inbox, not just inside this chat.
+        if (sessionWithProvider.providerId) {
+          const providerMembers = await this.db.user.findMany({
+            where: { providerId: sessionWithProvider.providerId },
+            select: { id: true },
+          });
+          for (const m of providerMembers) {
+            await this.db.inAppNotification.create({
+              data: {
+                userId: m.id,
+                eventType: "COST_SHEET_ACKNOWLEDGED",
+                payload: {
+                  sessionId,
+                  quoteId,
+                  totalCostCents: quote.totalCostCents,
+                  parentName: parentLabel,
+                  message: `${parentLabel} acknowledged your ${totalFormatted} cost sheet. Send the invoice next.`,
+                },
+              },
+            });
+          }
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`acknowledge chat-message / notification failed for quote=${quoteId}: ${err.message}`);
+    }
+
     return { ok: true, parentAcknowledgedAt: updated.parentAcknowledgedAt };
   }
 }

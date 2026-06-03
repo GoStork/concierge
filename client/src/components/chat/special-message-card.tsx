@@ -36,7 +36,7 @@ export function CostSheetParentAck({
     return (
       <div className="border-t px-4 py-2 bg-[hsl(var(--brand-success))]/10 flex items-center gap-2 text-xs text-[hsl(var(--brand-success))]">
         <Check className="w-3.5 h-3.5" />
-        Thanks for confirming - we'll see you on the call.
+        Thanks - we let the provider know. They'll send the invoice next.
       </div>
     );
   }
