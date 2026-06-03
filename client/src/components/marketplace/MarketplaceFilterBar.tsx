@@ -1612,32 +1612,6 @@ export function MarketplaceFilterBar({
 
       {isIvf && ivfMobileFilterButtons}
 
-      {!isIvf && (
-        <Drawer open={locationDrawerOpen} onOpenChange={setLocationDrawerOpen} repositionInputs={false}>
-          <DrawerTrigger asChild>
-            <button
-              className={tinderLabel(!!hasLocation, darkLabels)}
-              style={TINDER_LABEL_STYLE}
-              data-testid="filter-btn-location"
-            >
-              Location
-            </button>
-          </DrawerTrigger>
-          <DrawerContent>
-            <DrawerHeader><DrawerTitle>Location</DrawerTitle></DrawerHeader>
-            <div className="p-4">
-              <LocationDrawerInput
-                initialValue={location || ""}
-                onCommit={(v) => onLocationChange?.(v)}
-                placeholder="City, state, or country"
-                testId="input-location-mobile"
-                onClose={() => setLocationDrawerOpen(false)}
-              />
-            </div>
-          </DrawerContent>
-        </Drawer>
-      )}
-
       {isDonor && (
         <MobileMultiSelectDrawer
           label="Status"
@@ -1678,6 +1652,32 @@ export function MarketplaceFilterBar({
           dark={darkLabels}
           optionLabels={{ AVAILABLE: "Available", SOLD_OUT: "Sold Out" }}
         />
+      )}
+
+      {!isIvf && (
+        <Drawer open={locationDrawerOpen} onOpenChange={setLocationDrawerOpen} repositionInputs={false}>
+          <DrawerTrigger asChild>
+            <button
+              className={tinderLabel(!!hasLocation, darkLabels)}
+              style={TINDER_LABEL_STYLE}
+              data-testid="filter-btn-location"
+            >
+              Location
+            </button>
+          </DrawerTrigger>
+          <DrawerContent>
+            <DrawerHeader><DrawerTitle>Location</DrawerTitle></DrawerHeader>
+            <div className="p-4">
+              <LocationDrawerInput
+                initialValue={location || ""}
+                onCommit={(v) => onLocationChange?.(v)}
+                placeholder="City, state, or country"
+                testId="input-location-mobile"
+                onClose={() => setLocationDrawerOpen(false)}
+              />
+            </div>
+          </DrawerContent>
+        </Drawer>
       )}
 
       {!isIvf && (
@@ -1872,6 +1872,18 @@ export function MarketplaceFilterBar({
 
       {isIvf && ivfDesktopFilterButtons}
 
+      {isDonor && (
+        <MultiSelectPopover label="Status" filterKey="status" options={["AVAILABLE", "PENDING", "MATCHED", "SOLD_OUT"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-status" optionLabels={{ AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched", SOLD_OUT: "Sold Out" }} />
+      )}
+
+      {isSurrogate && (
+        <MultiSelectPopover label="Status" filterKey="status" options={["AVAILABLE", "PENDING", "MATCHED"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-status" optionLabels={{ AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched" }} />
+      )}
+
+      {isSperm && (
+        <MultiSelectPopover label="Status" filterKey="status" options={["AVAILABLE", "SOLD_OUT"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-status" optionLabels={{ AVAILABLE: "Available", SOLD_OUT: "Sold Out" }} />
+      )}
+
       {!isIvf && (
         <Popover open={locationPopoverOpen} onOpenChange={setLocationPopoverOpen}>
           <PopoverTrigger asChild>
@@ -1904,18 +1916,6 @@ export function MarketplaceFilterBar({
             </div>
           </PopoverContent>
         </Popover>
-      )}
-
-      {isDonor && (
-        <MultiSelectPopover label="Status" filterKey="status" options={["AVAILABLE", "PENDING", "MATCHED", "SOLD_OUT"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-status" optionLabels={{ AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched", SOLD_OUT: "Sold Out" }} />
-      )}
-
-      {isSurrogate && (
-        <MultiSelectPopover label="Status" filterKey="status" options={["AVAILABLE", "PENDING", "MATCHED"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-status" optionLabels={{ AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched" }} />
-      )}
-
-      {isSperm && (
-        <MultiSelectPopover label="Status" filterKey="status" options={["AVAILABLE", "SOLD_OUT"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-status" optionLabels={{ AVAILABLE: "Available", SOLD_OUT: "Sold Out" }} />
       )}
 
       {!isIvf && (
