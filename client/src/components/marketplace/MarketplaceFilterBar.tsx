@@ -1638,10 +1638,6 @@ export function MarketplaceFilterBar({
         </Drawer>
       )}
 
-      {!isIvf && (
-        <MobileRangeDrawer label="Age" filterKey="age" min={18} max={45} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} />
-      )}
-
       {isDonor && (
         <MobileMultiSelectDrawer
           label="Status"
@@ -1682,6 +1678,10 @@ export function MarketplaceFilterBar({
           dark={darkLabels}
           optionLabels={{ AVAILABLE: "Available", SOLD_OUT: "Sold Out" }}
         />
+      )}
+
+      {!isIvf && (
+        <MobileRangeDrawer label="Age" filterKey="age" min={18} max={45} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} />
       )}
 
       {(isDonor || isSperm) && (
@@ -1906,10 +1906,6 @@ export function MarketplaceFilterBar({
         </Popover>
       )}
 
-      {!isIvf && (
-        <RangePopover label="Age" filterKey="age" min={18} max={45} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} />
-      )}
-
       {isDonor && (
         <MultiSelectPopover label="Status" filterKey="status" options={["AVAILABLE", "PENDING", "MATCHED", "SOLD_OUT"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-status" optionLabels={{ AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched", SOLD_OUT: "Sold Out" }} />
       )}
@@ -1920,6 +1916,10 @@ export function MarketplaceFilterBar({
 
       {isSperm && (
         <MultiSelectPopover label="Status" filterKey="status" options={["AVAILABLE", "SOLD_OUT"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-status" optionLabels={{ AVAILABLE: "Available", SOLD_OUT: "Sold Out" }} />
+      )}
+
+      {!isIvf && (
+        <RangePopover label="Age" filterKey="age" min={18} max={45} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} />
       )}
 
       {(isDonor || isSperm) && (
