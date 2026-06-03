@@ -2499,6 +2499,7 @@ function ProgramsView({
   parentId,
   subType,
   tabFilter,
+  providerServices,
 }: {
   providerType: string;
   providerTypeId?: string;
@@ -2508,6 +2509,10 @@ function ProgramsView({
   parentId?: string;
   subType?: string;
   tabFilter?: IvfTab;
+  // Approved services on this provider. Used to filter the "Services
+  // covered" chip row down to tags the provider can actually offer - a
+  // surrogacy agency shouldn't see an IVF chip on a program row.
+  providerServices?: ServiceInfo[];
 }) {
   const { toast } = useToast();
   const [expandedProgramId, setExpandedProgramId] = useState<string | null>(null);
@@ -2648,6 +2653,32 @@ function ProgramsView({
 
   const isIvfType = isIvfClinicType(providerType);
   const isMultiServiceProvider = providerType.toLowerCase() === "multi-service";
+
+  // Allowed serviceType tags for THIS provider. Derived from the providers's
+  // approved services so a surrogacy agency only sees a "Surrogacy" chip,
+  // an IVF clinic + egg bank sees "IVF" + "Egg Donor", etc. Mirrors the
+  // server's costs.service.ts mapping (provider type name -> serviceType
+  // tag) so the chip set stays in sync with what the matcher accepts.
+  // Falls back to the full set when we don't know the provider's services
+  // (single-service legacy view, parent-facing view, etc.) so we never
+  // accidentally hide every chip.
+  const allowedServiceTagSet = (() => {
+    if (!providerServices || providerServices.length === 0) {
+      return new Set<string>(ALL_SERVICE_TYPES);
+    }
+    const tags = new Set<string>();
+    for (const svc of providerServices) {
+      const n = (svc.providerTypeName || "").toLowerCase();
+      if (n.includes("ivf") || n.includes("clinic")) tags.add("ivf_clinic");
+      if (n.includes("surrogacy")) tags.add("surrogacy");
+      if (n.includes("egg donor") || n.includes("egg bank")) tags.add("egg_donor");
+      if (n.includes("sperm bank") || n.includes("sperm donor")) tags.add("sperm_donor");
+    }
+    // Defensive: if mapping produced nothing (unknown provider type name)
+    // fall back to the full set instead of locking the clinic out.
+    return tags.size > 0 ? tags : new Set<string>(ALL_SERVICE_TYPES);
+  })();
+  const allowedServiceTags = ALL_SERVICE_TYPES.filter((tag) => allowedServiceTagSet.has(tag));
   // Every upload-first provider (IVF + surrogacy + egg donor + sperm bank +
   // multi-service) gets the dropzone and the classification card. Only the
   // subtype layer differs - IVF uses the 14-subtype taxonomy, egg donor uses
@@ -2970,7 +3001,7 @@ function ProgramsView({
                 <div className="px-4 pt-3 pb-1 space-y-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <Label className="text-xs text-muted-foreground">Services covered:</Label>
-                    {ALL_SERVICE_TYPES.map((tag) => {
+                    {allowedServiceTags.map((tag) => {
                       const selected = (program.serviceTypes ?? []).includes(tag);
                       return (
                         <button
@@ -3079,6 +3110,7 @@ export default function ProviderCostsTab({
         isAdminView={isAdminView}
         canManagePrograms={canManagePrograms}
         parentId={parentId}
+        providerServices={providerServices}
       />
     );
   }
@@ -3103,6 +3135,7 @@ export default function ProviderCostsTab({
       isAdminView={isAdminView}
       canManagePrograms={canManagePrograms}
       parentId={parentId}
+      providerServices={providerServices}
     />
   );
 }
