@@ -291,6 +291,12 @@ interface SingleCostsTabProps {
   programCurrentSubType?: string | null;
   programTabFilter?: IvfTab;
   onSubTypeChange?: (subType: string, tab?: string) => void;
+  // Services-covered multi-select - lifted into the classification card
+  // alongside the subtype + Fixed/Not-Fixed toggles. Disabled until the
+  // provider has at least one approved service we can map a tag from.
+  allowedServiceTags?: string[];
+  programServiceTypes?: string[];
+  onServiceTypesChange?: (next: string[]) => void;
 }
 
 interface ProviderCostsTabProps {
@@ -470,6 +476,9 @@ function SingleCostsTab({
   programCurrentSubType,
   programTabFilter,
   onSubTypeChange,
+  allowedServiceTags,
+  programServiceTypes,
+  onServiceTypesChange,
 }: SingleCostsTabProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1411,6 +1420,45 @@ function SingleCostsTab({
             )}
             <div className="flex items-start gap-3 flex-wrap">
               <div className="flex-1 min-w-[200px] space-y-2">
+                {/* Services-covered multi-toggle (lifted into the card so
+                    all three AI classifications - services, subtype,
+                    Fixed/Not-Fixed - live on the same surface). Rendered
+                    as a segmented row of buttons that match the Fixed-
+                    Cost toggle's styling; each one is independently
+                    toggleable since a single program can bundle multiple
+                    services (e.g. surrogacy + egg donor combined). */}
+                {allowedServiceTags && allowedServiceTags.length > 0 && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs text-muted-foreground">Services covered:</span>
+                    <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm">
+                      {allowedServiceTags.map((tag) => {
+                        const selected = (programServiceTypes ?? []).includes(tag);
+                        return (
+                          <button
+                            key={`svc-toggle-${tag}`}
+                            type="button"
+                            className={cn(
+                              "px-3 py-1.5 text-xs rounded-[var(--radius)] transition-all font-medium",
+                              selected
+                                ? "bg-accent text-accent-foreground shadow-sm"
+                                : "text-foreground hover:bg-accent/10",
+                            )}
+                            onClick={() => {
+                              const current = programServiceTypes ?? [];
+                              const next = selected
+                                ? current.filter((t) => t !== tag)
+                                : [...current, tag];
+                              onServiceTypesChange?.(next);
+                            }}
+                            data-testid={`btn-svc-${tag}`}
+                          >
+                            {SERVICE_TYPE_LABELS[tag] ?? tag}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {/* Program-type picker (moved into the card so both AI
                     classifications - subtype + Fixed/Not-Fixed - live on
                     the same green/amber surface). Renders as a segmented
@@ -2995,46 +3043,12 @@ function ProgramsView({
 
             {isExpanded && (
               <div className="border-t">
-                {/* Service-type tags - multi-select. Provider can add/remove
-                    tags to fix AI's classification. At least one tag should
-                    be set so parent matching works. */}
-                <div className="px-4 pt-3 pb-1 space-y-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Label className="text-xs text-muted-foreground">Services covered:</Label>
-                    {allowedServiceTags.map((tag) => {
-                      const selected = (program.serviceTypes ?? []).includes(tag);
-                      return (
-                        <button
-                          key={`tag-toggle-${program.id}-${tag}`}
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const current = program.serviceTypes ?? [];
-                            const next = selected
-                              ? current.filter((t) => t !== tag)
-                              : [...current, tag];
-                            updateServiceTypesMutation.mutate({ id: program.id, serviceTypes: next });
-                          }}
-                          disabled={updateServiceTypesMutation.isPending}
-                          className={cn(
-                            "px-3 py-1 text-xs rounded-full border transition-colors font-medium",
-                            selected
-                              ? "bg-accent text-accent-foreground border-accent"
-                              : "bg-background text-foreground/70 border-border hover:bg-accent/10"
-                          )}
-                          data-testid={`btn-toggle-tag-${tag}`}
-                        >
-                          {SERVICE_TYPE_LABELS[tag]}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                {/* Program-type picker used to live here as a standalone
-                    row above the cost-sheet body. It now lives inside the
-                    classification card (rendered by SingleCostsTab below)
-                    so both AI-classifications - program type + Fixed/Not-
-                    Fixed - sit in the same green/amber surface. */}
+                {/* Both the Services covered multi-select and the Program
+                    type picker used to live as standalone rows above the
+                    cost-sheet body. They now live inside the classification
+                    card (rendered by SingleCostsTab below) so all three
+                    AI-classifications - services + program type + Fixed/
+                    Not-Fixed - sit on the same green/amber surface. */}
                 <div className="p-4">
                   <SingleCostsTab
                     providerType={providerType}
@@ -3052,6 +3066,11 @@ function ProgramsView({
                     programTabFilter={tabFilter}
                     onSubTypeChange={(newSub, newTab) =>
                       updateSubTypeMutation.mutate({ id: program.id, subType: newSub, tab: newTab })
+                    }
+                    allowedServiceTags={allowedServiceTags}
+                    programServiceTypes={program.serviceTypes ?? []}
+                    onServiceTypesChange={(next) =>
+                      updateServiceTypesMutation.mutate({ id: program.id, serviceTypes: next })
                     }
                   />
                 </div>
