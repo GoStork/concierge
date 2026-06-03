@@ -2006,6 +2006,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
           title={title}
           statusLabel={statusLabel}
           donorStatus={swipeProfile.donorStatus}
+          frozenLotStatus={swipeProfile.frozenLotStatus}
           isExperienced={swipeProfile.isExperienced}
           isPremium={swipeProfile.isPremium}
           tabs={tabs}

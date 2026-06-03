@@ -83,13 +83,16 @@ async function computeProfileAvailability(
   const spermIds = [...new Set(sessions.filter(s => t(s).includes("sperm")).map(s => s.subjectProfileId!))];
   const clinicIds = [...new Set(sessions.filter(s => t(s).includes("clinic") || t(s).includes("agency")).map(s => s.subjectProfileId!))];
   const [existEgg, existSurr, existSperm, existClinic] = await Promise.all([
-    eggIds.length   ? prisma.eggDonor.findMany({ where: { id: { in: eggIds } },   select: { id: true, status: true, hiddenFromSearch: true } }) : [],
+    eggIds.length   ? prisma.eggDonor.findMany({ where: { id: { in: eggIds } },   select: { id: true, status: true, hiddenFromSearch: true, frozenLotStatus: true } }) : [],
     surrIds.length  ? prisma.surrogate.findMany({ where: { id: { in: surrIds } },  select: { id: true, status: true, hiddenFromSearch: true } }) : [],
     spermIds.length ? prisma.spermDonor.findMany({ where: { id: { in: spermIds } },select: { id: true, status: true, hiddenFromSearch: true } }) : [],
     clinicIds.length? prisma.provider.findMany({ where: { id: { in: clinicIds } }, select: { id: true } }) : [],
   ]);
-  const donorMap = new Map<string, { status: string | null; hiddenFromSearch: boolean }>();
-  for (const e of [...existEgg, ...existSurr, ...existSperm]) {
+  const donorMap = new Map<string, { status: string | null; hiddenFromSearch: boolean; frozenLotStatus?: string | null }>();
+  for (const e of existEgg) {
+    donorMap.set(e.id, { status: e.status, hiddenFromSearch: e.hiddenFromSearch, frozenLotStatus: e.frozenLotStatus });
+  }
+  for (const e of [...existSurr, ...existSperm]) {
     donorMap.set(e.id, { status: e.status, hiddenFromSearch: e.hiddenFromSearch });
   }
   const existingProviderIds = new Set(existClinic.map(e => e.id));
@@ -107,7 +110,13 @@ async function computeProfileAvailability(
       continue;
     }
     const status = donor.status || "AVAILABLE";
-    const available = status === "AVAILABLE" && !donor.hiddenFromSearch;
+    // A donor is bookable if any purchasable path is open. For egg donors
+    // that means status===AVAILABLE OR frozenLotStatus===AVAILABLE (a
+    // "Fresh & Frozen" donor whose fresh side is MATCHED but who has
+    // frozen lots in stock is still bookable via the frozen route).
+    const freshAvailable = status === "AVAILABLE";
+    const frozenAvailable = donor.frozenLotStatus === "AVAILABLE";
+    const available = (freshAvailable || frozenAvailable) && !donor.hiddenFromSearch;
     result.set(id, { available, status });
   }
   return result;

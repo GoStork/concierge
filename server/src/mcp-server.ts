@@ -1344,10 +1344,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       // Base WHERE: absolute requirements that are NEVER relaxed.
       // age and height are medical/physical absolutes; isExperienced and donationType are functional.
-      // AI concierge ONLY recommends bookable inventory: AVAILABLE (ready now)
-      // or PENDING (not yet approved but coming back). MATCHED is committed to
-      // another parent so we never surface it; INACTIVE is soft-deleted.
-      const baseWhere: any = { hiddenFromSearch: { not: true }, status: { in: ["AVAILABLE", "PENDING"] } };
+      // Bookability rule: surface a donor if there's ANY purchasable path -
+      // fresh-cycle status is AVAILABLE/PENDING (Fresh Donor + Fresh & Frozen)
+      // OR frozenLotStatus = AVAILABLE (Frozen Eggs + Fresh & Frozen). A
+      // "Fresh & Frozen" donor whose fresh is MATCHED but whose frozen
+      // lot is AVAILABLE is still bookable via frozen eggs, so we surface
+      // her. INACTIVE is soft-deleted and always excluded.
+      const baseWhere: any = {
+        hiddenFromSearch: { not: true },
+        OR: [
+          { status: { in: ["AVAILABLE", "PENDING"] } },
+          { frozenLotStatus: "AVAILABLE" },
+        ],
+        NOT: { status: "INACTIVE" },
+      };
       if (excludeSet.size > 0) baseWhere.id = { notIn: Array.from(excludeSet) };
       if (maxAge) baseWhere.age = { lte: maxAge };
       if (isExperienced) baseWhere.isExperienced = true;

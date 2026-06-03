@@ -28,11 +28,35 @@ export interface TabSection {
 // AVAILABLE/PENDING/MATCHED/SOLD_OUT (e.g. an unexpected upstream label
 // that escaped normalization, or a null) collapses to AVAILABLE so the
 // card still renders cleanly - INACTIVE rows are excluded at the API layer
-// and never reach the mapper. SOLD_OUT only applies to sperm donors but
-// the type union is shared so all three mappers can route through here.
+// and never reach the mapper. SOLD_OUT only applies to sperm donors and
+// pure Frozen Eggs donors but the type union is shared so all three
+// mappers can route through here.
 function normalizeProfileStatus(raw: string | null | undefined): "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT" {
   if (raw === "PENDING" || raw === "MATCHED" || raw === "SOLD_OUT") return raw;
   return "AVAILABLE";
+}
+
+function normalizeFrozenLotStatus(raw: string | null | undefined): "AVAILABLE" | "SOLD_OUT" | null {
+  if (raw === "AVAILABLE" || raw === "SOLD_OUT") return raw;
+  return null;
+}
+
+// Resolve the headline `donorStatus` badge for an egg donor based on type:
+//   - "Fresh Donor"      -> fresh status (AVAILABLE/PENDING/MATCHED)
+//   - "Frozen Eggs"      -> frozen lot status (AVAILABLE/SOLD_OUT), since
+//                           the donor has no fresh cycle and the DB's
+//                           `status` column is meaningless for them
+//   - "Fresh & Frozen"   -> fresh status (the frozen side is rendered
+//                           as a second badge on the card)
+function resolveEggDonorHeadlineStatus(
+  dbDonor: any,
+): "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT" {
+  const dt = (dbDonor.donorType || "").toLowerCase();
+  if (dt === "frozen eggs") {
+    const fl = normalizeFrozenLotStatus(dbDonor.frozenLotStatus);
+    return fl === "SOLD_OUT" ? "SOLD_OUT" : "AVAILABLE";
+  }
+  return normalizeProfileStatus(dbDonor.status);
 }
 
 export interface SwipeDeckProfile {
@@ -55,6 +79,21 @@ export interface SwipeDeckProfile {
   // an explicit badge so parents see at a glance that the donor can't be
   // booked right now (or is not yet approved).
   donorStatus: "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT" | null;
+  // Frozen-lot inventory state, only populated for egg donors who offer
+  // frozen eggs (donorType "Frozen Eggs" or "Fresh & Frozen"). null when
+  // the donor has no frozen offering. For "Fresh & Frozen" donors this
+  // lives ALONGSIDE donorStatus so the card can render both badges:
+  // donorStatus carries the fresh-cycle state, frozenLotStatus carries the
+  // frozen-lot state. For pure "Frozen Eggs" donors, donorStatus mirrors
+  // frozenLotStatus (since fresh has no meaning) so existing single-badge
+  // render paths still work.
+  frozenLotStatus: "AVAILABLE" | "SOLD_OUT" | null;
+  // Raw "Frozen Egg Availability" string from the scraper - preserved so
+  // the profile detail can show "Less than 6 eggs available" as a low-
+  // stock signal next to the numberOfEggs count, without needing a
+  // separate LOW_STOCK status state. null when the donor has no frozen
+  // offering or we have no raw label.
+  frozenEggAvailabilityRaw: string | null;
   isExperienced: boolean;
   firstName: string | null;
   externalId: string | null;
@@ -138,7 +177,9 @@ export function mapDatabaseDonorToSwipeProfile(dbDonor: any): SwipeDeckProfile {
     providerType: "donor",
     createdAt: dbDonor.createdAt ?? null,
     statusBadge: null,
-    donorStatus: normalizeProfileStatus(dbDonor.status),
+    donorStatus: resolveEggDonorHeadlineStatus(dbDonor),
+    frozenLotStatus: normalizeFrozenLotStatus(dbDonor.frozenLotStatus),
+    frozenEggAvailabilityRaw: (dbDonor.profileData as any)?.["Frozen Egg Availability"] || null,
     isExperienced: !!(dbDonor as any).isExperienced,
     firstName: dbDonor.firstName ?? null,
     externalId: dbDonor.externalId ?? null,
@@ -209,6 +250,8 @@ export function mapDatabaseSurrogateToSwipeProfile(dbSurrogate: any): SwipeDeckP
     createdAt: dbSurrogate.createdAt ?? null,
     statusBadge: null,
     donorStatus: normalizeProfileStatus(dbSurrogate.status),
+    frozenLotStatus: null,
+    frozenEggAvailabilityRaw: null,
     isExperienced: !!(dbSurrogate as any).isExperienced,
     firstName: dbSurrogate.firstName ?? null,
     externalId: dbSurrogate.externalId ?? null,
@@ -279,6 +322,8 @@ export function mapDatabaseSpermDonorToSwipeProfile(dbSperm: any): SwipeDeckProf
     createdAt: dbSperm.createdAt ?? null,
     statusBadge: null,
     donorStatus: normalizeProfileStatus(dbSperm.status),
+    frozenLotStatus: null,
+    frozenEggAvailabilityRaw: null,
     isExperienced: !!(dbSperm as any).isExperienced,
     firstName: dbSperm.firstName ?? null,
     externalId: dbSperm.externalId ?? null,
@@ -562,6 +607,12 @@ export function getDonorTabs(profile: SwipeDeckProfile, matchedPrefs: MatchedPre
   } else {
     if (profile.numberOfEggs != null && profile.numberOfEggs > 0) {
       costItems.push({ label: `Eggs: ${profile.numberOfEggs}`, value: "", icon: Hash });
+    }
+    // Surface low-stock signal as a separate item. Mirrors the raw scraper
+    // label ("Less than 6 eggs available") so parents see the warning next
+    // to the count - not a separate canonical status, just a metric.
+    if (profile.frozenEggAvailabilityRaw && /less than/i.test(profile.frozenEggAvailabilityRaw)) {
+      costItems.push({ label: profile.frozenEggAvailabilityRaw, value: "", icon: Hash });
     }
     const isFreshAndFrozen = profile.eggType != null
       && profile.eggType.toLowerCase().includes("fresh")

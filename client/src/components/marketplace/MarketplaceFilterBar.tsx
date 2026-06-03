@@ -1642,7 +1642,21 @@ export function MarketplaceFilterBar({
         <MobileRangeDrawer label="Age" filterKey="age" min={18} max={45} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} />
       )}
 
-      {(isDonor || isSurrogate) && (
+      {isDonor && (
+        <MobileMultiSelectDrawer
+          label="Status"
+          filterKey="status"
+          options={["AVAILABLE", "PENDING", "MATCHED", "SOLD_OUT"]}
+          activeFilters={activeFilters}
+          dispatch={dispatch}
+          testIdPrefix="filter-status"
+          btnStyle={obs}
+          dark={darkLabels}
+          optionLabels={{ AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched", SOLD_OUT: "Sold Out" }}
+        />
+      )}
+
+      {isSurrogate && (
         <MobileMultiSelectDrawer
           label="Status"
           filterKey="status"
@@ -1896,7 +1910,11 @@ export function MarketplaceFilterBar({
         <RangePopover label="Age" filterKey="age" min={18} max={45} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} />
       )}
 
-      {(isDonor || isSurrogate) && (
+      {isDonor && (
+        <MultiSelectPopover label="Status" filterKey="status" options={["AVAILABLE", "PENDING", "MATCHED", "SOLD_OUT"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-status" optionLabels={{ AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched", SOLD_OUT: "Sold Out" }} />
+      )}
+
+      {isSurrogate && (
         <MultiSelectPopover label="Status" filterKey="status" options={["AVAILABLE", "PENDING", "MATCHED"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-status" optionLabels={{ AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched" }} />
       )}
 

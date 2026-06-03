@@ -47,6 +47,33 @@ export function normalizeDonorStatus(
   return "AVAILABLE";
 }
 
+/**
+ * Translates an upstream agency's raw "Frozen Egg Availability" label
+ * (e.g. EDC's "Frozen Eggs Available" / "Less than 6 eggs available" /
+ * "No Frozen Eggs Available") to the canonical EggDonor.frozenLotStatus
+ * value (AVAILABLE | SOLD_OUT | null).
+ *
+ * Low-stock language ("Less than 6 eggs available") maps to AVAILABLE
+ * because the donor IS still bookable - the count is surfaced separately
+ * on the profile detail (via numberOfEggs and the raw text). SOLD_OUT
+ * means there's literally no purchasable inventory left.
+ *
+ * Returns null when the raw text is missing/blank so we can distinguish
+ * "no frozen offering" (pure Fresh Donor) from "frozen offering exists
+ * and is available".
+ */
+export function normalizeFrozenLotStatus(
+  rawText: string | null | undefined,
+): "AVAILABLE" | "SOLD_OUT" | null {
+  const t = (rawText || "").toLowerCase().trim();
+  if (!t) return null;
+  if (/\bno\s+frozen\s+eggs?\s+available\b/.test(t)) return "SOLD_OUT";
+  if (/\bfrozen\s+eggs?\s+available\b/.test(t)) return "AVAILABLE";
+  if (/\bless\s+than\b/.test(t)) return "AVAILABLE"; // low stock but still bookable
+  if (/\b(sold\s*out|out\s*of\s*stock|no\s*eggs?|no\s*lots?)\b/.test(t)) return "SOLD_OUT";
+  return "AVAILABLE";
+}
+
 export function profileDataToText(profileData: any): string {
   if (!profileData) return "";
   const skipKeys = new Set(["Photos", "_sections", "photos", "All Photos"]);
@@ -1418,6 +1445,18 @@ async function upsertEggDonor(
     ? { ...(normalizedProfile as any), ...(existing?.profileData as any || {}) }
     : normalizedProfile;
 
+  // Derive frozen-lot inventory state. Only meaningful for donors who offer
+  // frozen eggs (donorType "Frozen Eggs" or "Fresh & Frozen") - pure Fresh
+  // Donors get null so the marketplace card knows to render no frozen badge.
+  const frozenAvailRaw = (mergedProfile as any)?.["Frozen Egg Availability"]
+    ?? (donor.profileData as any)?.["Frozen Egg Availability"]
+    ?? null;
+  const donorTypeStr = (donor.donorType || "").toLowerCase();
+  const hasFrozenOffering = donorTypeStr.includes("frozen");
+  const computedFrozenLotStatus = hasFrozenOffering
+    ? normalizeFrozenLotStatus(frozenAvailRaw)
+    : null;
+
   const upsertedDonor = await prisma.eggDonor.upsert({
     where: {
       providerId_externalId: { providerId, externalId: extId },
@@ -1448,6 +1487,7 @@ async function upsertEggDonor(
       videoUrl: skipIfManual("videoUrl", donor.videoUrl || (donor.profileData?.["Video URL"] as string) || null, mf),
       profileUrl: donor.profileUrl || null,
       status: skipIfManual("status", existing?.status === "INACTIVE" && (!donor.status || donor.status === "AVAILABLE") ? "INACTIVE" : (donor.status || "AVAILABLE"), mf),
+      frozenLotStatus: skipIfManual("frozenLotStatus", computedFrozenLotStatus, mf),
       isExperienced: skipIfManual("isExperienced", detectExperienced(mergedProfile, "egg-donor"), mf),
       profileData: mergedProfile,
       cardHash: donor.cardHash || undefined,
@@ -1482,6 +1522,7 @@ async function upsertEggDonor(
       videoUrl: donor.videoUrl || (donor.profileData?.["Video URL"] as string) || null,
       profileUrl: donor.profileUrl || null,
       status: donor.status || "AVAILABLE",
+      frozenLotStatus: computedFrozenLotStatus,
       isExperienced: detectExperienced(normalizedProfile, "egg-donor"),
       profileData: normalizedProfile,
       cardHash: donor.cardHash || null,

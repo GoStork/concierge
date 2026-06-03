@@ -422,6 +422,7 @@ function DonorGridCard({
         title={buildTitle(profile)}
         statusLabel={buildStatusLabel(profile, viewedIds, previousVisitAt)}
         donorStatus={profile.donorStatus}
+        frozenLotStatus={profile.frozenLotStatus}
         isExperienced={profile.isExperienced}
         isPremium={profile.isPremium}
         tabs={tabs}
@@ -637,6 +638,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
                 title={buildTitle(nextProfile)}
                 statusLabel={buildStatusLabel(nextProfile, viewedIds, previousVisitAt)}
                 donorStatus={nextProfile.donorStatus}
+                frozenLotStatus={nextProfile.frozenLotStatus}
                 isExperienced={nextProfile.isExperienced}
                 isPremium={nextProfile.isPremium}
                 tabs={nextTabs}
@@ -656,6 +658,8 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
               title={buildTitle(profile)}
               statusLabel={buildStatusLabel(profile, viewedIds, previousVisitAt)}
               donorStatus={profile.donorStatus}
+              frozenLotStatus={profile.frozenLotStatus}
+        frozenLotStatus={profile.frozenLotStatus}
               isExperienced={profile.isExperienced}
               isPremium={profile.isPremium}
               tabs={tabs}

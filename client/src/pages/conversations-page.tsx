@@ -375,6 +375,7 @@ function WhisperProfileCard({ card, brandColor }: { card: any; brandColor: strin
           title={title}
           statusLabel={statusLabel}
           donorStatus={swipeProfile.donorStatus}
+          frozenLotStatus={swipeProfile.frozenLotStatus}
           isExperienced={swipeProfile.isExperienced}
           isPremium={swipeProfile.isPremium}
           tabs={tabs}

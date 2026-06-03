@@ -221,11 +221,18 @@ export function matchesFilter(donor: any, key: string, values: string[]): boolea
   }
 
   if (key === "status") {
-    // Canonical donor status (AVAILABLE | PENDING | MATCHED for egg
-    // donors + surrogates; AVAILABLE | SOLD_OUT for sperm donors). Falls
-    // back to AVAILABLE if the row has no status set (legacy rows / clients).
+    // Canonical donor status. An egg donor can independently carry a
+    // frozen-lot inventory state (frozenLotStatus). A donor matches the
+    // "Sold Out" filter if EITHER their primary status OR their frozen
+    // lot is SOLD_OUT (Fresh & Frozen donors have both columns set).
+    // For other states (AVAILABLE / PENDING / MATCHED) match against
+    // the primary status column only - frozen-lot doesn't carry those.
+    const wanted = values.map(v => v.toUpperCase());
     const status = (donor.status || "AVAILABLE").toString().toUpperCase();
-    return values.some(v => v.toUpperCase() === status);
+    const frozen = (donor.frozenLotStatus || "").toString().toUpperCase();
+    if (wanted.includes(status)) return true;
+    if (frozen && wanted.includes(frozen)) return true;
+    return false;
   }
 
   if (key === "ethnicity" || key === "race") {

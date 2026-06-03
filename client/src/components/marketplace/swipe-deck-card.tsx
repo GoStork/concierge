@@ -19,9 +19,16 @@ interface SwipeDeckCardProps {
   // Canonical DB status (AVAILABLE | PENDING | MATCHED | SOLD_OUT). Drives
   // the colored status pill so parents instantly see whether the donor is
   // bookable. AVAILABLE renders nothing; PENDING/MATCHED apply to egg
-  // donors + surrogates; SOLD_OUT applies to sperm donors when no vials
-  // are in stock.
+  // donors + surrogates; SOLD_OUT applies to sperm donors and pure Frozen
+  // Eggs donors with no inventory left.
   donorStatus?: "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT" | null;
+  // Frozen-lot inventory status, ONLY rendered when a donor is "Fresh &
+  // Frozen" (both modes simultaneously) - in that case donorStatus carries
+  // the fresh-cycle state and frozenLotStatus carries the frozen-lot
+  // state, and the card renders both labelled badges. For pure Fresh
+  // Donors leave undefined/null. For pure Frozen Eggs donors, the
+  // donorStatus pill already reflects the frozen state - leave this null.
+  frozenLotStatus?: "AVAILABLE" | "SOLD_OUT" | null;
   isExperienced?: boolean;
   isPremium?: boolean;
   tabs: TabSection[];
@@ -48,6 +55,7 @@ export function SwipeDeckCard({
   title,
   statusLabel,
   donorStatus,
+  frozenLotStatus,
   isExperienced = false,
   isPremium = false,
   tabs,
@@ -221,7 +229,51 @@ export function SwipeDeckCard({
                   {statusLabel}
                 </Badge>
               )}
-              {donorStatus && donorStatus !== "AVAILABLE" && (() => {
+              {/* Hybrid "Fresh & Frozen" donors carry two independent
+                  inventory dimensions, so we render two prefixed badges
+                  ("Fresh: ..." and "Frozen: ..."). Pure Fresh Donors and
+                  pure Frozen Eggs donors get the single unlabelled badge
+                  via the fallback branch below. */}
+              {frozenLotStatus != null ? (
+                <>
+                  {(() => {
+                    const freshLabel =
+                      donorStatus === "PENDING"  ? "Pending"  :
+                      donorStatus === "MATCHED"  ? "Matched"  :
+                      donorStatus === "SOLD_OUT" ? "Sold Out" :
+                      "Available";
+                    const freshBg =
+                      donorStatus === "PENDING"  ? "bg-[hsl(var(--brand-warning))]/90 text-white" :
+                      donorStatus === "MATCHED"  ? "bg-muted-foreground/80 text-background"      :
+                      donorStatus === "SOLD_OUT" ? "bg-destructive/90 text-destructive-foreground" :
+                      "bg-[hsl(var(--brand-success))]/90 text-white";
+                    return (
+                      <Badge
+                        className={`font-ui px-2.5 py-1 ${freshBg}`}
+                        style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+                        data-testid={`badge-fresh-status-${id}`}
+                      >
+                        Fresh: {freshLabel}
+                      </Badge>
+                    );
+                  })()}
+                  {(() => {
+                    const frozenLabel = frozenLotStatus === "SOLD_OUT" ? "Sold Out" : "Available";
+                    const frozenBg = frozenLotStatus === "SOLD_OUT"
+                      ? "bg-destructive/90 text-destructive-foreground"
+                      : "bg-[hsl(var(--brand-success))]/90 text-white";
+                    return (
+                      <Badge
+                        className={`font-ui px-2.5 py-1 ${frozenBg}`}
+                        style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+                        data-testid={`badge-frozen-status-${id}`}
+                      >
+                        Frozen: {frozenLabel}
+                      </Badge>
+                    );
+                  })()}
+                </>
+              ) : donorStatus && donorStatus !== "AVAILABLE" && (() => {
                 const ds = getDonorStatusStyle(donorStatus)!;
                 const pillBg =
                   donorStatus === "PENDING"  ? "bg-[hsl(var(--brand-warning))]/90 text-white" :

@@ -630,6 +630,14 @@ model EggDonor {
   hasVideo             Boolean?
   profileUrl           String?
   status               String                      @default("AVAILABLE")
+  // Frozen-egg-lot inventory status for donors offering frozen eggs.
+  // AVAILABLE (lots in stock - check numberOfEggs / raw profileData
+  // "Frozen Egg Availability" for the low-stock count) | SOLD_OUT (no
+  // lots left) | null (pure Fresh Donors with no frozen offering).
+  // For "Fresh & Frozen" donors this lives ALONGSIDE the `status` column:
+  // status reflects the fresh-cycle matching state, frozenLotStatus
+  // reflects the frozen inventory. The marketplace card renders both.
+  frozenLotStatus      String?
   profileData          Json?
   createdAt            DateTime                    @default(now())
   updatedAt            DateTime                    @updatedAt
