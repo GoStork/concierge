@@ -574,11 +574,21 @@ function AccountTab() {
       toast({ title: "Password must be at least 6 characters", variant: "destructive" });
       return;
     }
-    if ((editRelationship === "Partnered" || editRelationship === "Married") && !editPartnerName.trim()) {
+    // Partner's full name / age are only required when the parent is
+    // looking for a Fertility Clinic - that's the only journey where we
+    // need the partner's identity for matching (IVF intake, clinic
+    // paperwork). For Egg Donor / Surrogate / Sperm Donor journeys the
+    // partner's specific details aren't part of the match, so don't block
+    // save on them. partnerGender is still set via its own Select and is
+    // never required - the cost-sheet matcher gracefully handles null.
+    const partnerDetailsRequired =
+      (editRelationship === "Partnered" || editRelationship === "Married") &&
+      editServices.includes("Fertility Clinic");
+    if (partnerDetailsRequired && !editPartnerName.trim()) {
       toast({ title: "Partner's full name is required", variant: "destructive" });
       return;
     }
-    if ((editRelationship === "Partnered" || editRelationship === "Married") && !editPartnerAge) {
+    if (partnerDetailsRequired && !editPartnerAge) {
       toast({ title: "Partner's age is required", variant: "destructive" });
       return;
     }
@@ -974,7 +984,10 @@ function AccountTab() {
                       {(editRelationship === "Partnered" || editRelationship === "Married") && (
                         <>
                           <div className="space-y-2">
-                            <Label htmlFor="edit-partner-name">Partner's Full Name <span className="text-destructive">*</span></Label>
+                            <Label htmlFor="edit-partner-name">
+                              Partner's Full Name
+                              {editServices.includes("Fertility Clinic") && <span className="text-destructive"> *</span>}
+                            </Label>
                             <Input
                               id="edit-partner-name"
                               value={editPartnerName}
@@ -984,7 +997,10 @@ function AccountTab() {
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor="edit-partner-age">Partner's Age <span className="text-destructive">*</span></Label>
+                            <Label htmlFor="edit-partner-age">
+                              Partner's Age
+                              {editServices.includes("Fertility Clinic") && <span className="text-destructive"> *</span>}
+                            </Label>
                             <NumberInput
                               id="edit-partner-age"
                               allowDecimal={false}
