@@ -387,9 +387,12 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
           )}
           {/* Phase 2 ack footer: parent-only, only while not yet acknowledged
               and not cancelled - a cancelled cost sheet shouldn't invite the
-              parent to acknowledge it. */}
+              parent to acknowledge it. key={quoteId} guarantees a fresh
+              CostSheetParentAck instance per quote so the local `acknowledged`
+              flag never leaks across the superseded -> new quote transition. */}
           {viewerRole === "parent" && quoteId && sessionId && !data.parentAcknowledgedAt && !isCancelled && (
             <CostSheetParentAck
+              key={quoteId}
               sessionId={sessionId}
               quoteId={quoteId}
               brandColor={brandColor}

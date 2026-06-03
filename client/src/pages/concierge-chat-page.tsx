@@ -2300,9 +2300,13 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
         {/* Parent-only ack footer. Shows Acknowledge + Have questions buttons
             so the cost sheet is interactive even when no PDF was attached. A
             cancelled cost sheet skips the ack so the parent isn't asked to
-            confirm something the provider already retracted. */}
+            confirm something the provider already retracted.
+            key={quoteId} guarantees a fresh CostSheetParentAck instance per
+            quote so the local `acknowledged` flag never leaks across the
+            superseded -> new quote transition. */}
         {quoteId && sessionId && !data.parentAcknowledgedAt && !isCancelled && (
           <CostSheetParentAck
+            key={quoteId}
             sessionId={sessionId}
             quoteId={quoteId}
             brandColor={brandColor}
@@ -3291,7 +3295,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             .catch(() => {});
         }
 
-        // Periodically refresh delivery status on existing messages (every 3rd poll)
+        // Periodically refresh delivery status AND uiCardData on existing
+        // messages (every 3rd poll). The uiCardData refresh is what makes
+        // cancel-and-ack flow on existing cost-sheet cards (or any uiCard
+        // mutated server-side) without forcing the parent to hard refresh.
         statusPollCounter.current = (statusPollCounter.current || 0) + 1;
         if (statusPollCounter.current >= 3) {
           statusPollCounter.current = 0;
@@ -3309,15 +3316,29 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             }
             if (statusData.humanAgentPhotoUrl) setHumanAgentPhotoUrl(statusData.humanAgentPhotoUrl);
             const allMsgs: any[] = Array.isArray(statusData) ? statusData : (statusData.messages || []);
-            const statusMap = new Map(allMsgs.map((m: any) => [m.id, { deliveredAt: m.deliveredAt, readAt: m.readAt }]));
+            const serverByIdMap = new Map(allMsgs.map((m: any) => [m.id, m]));
             setMessages(prev => {
               let changed = false;
               const updated = prev.map(m => {
                 if (!m.id) return m;
-                const status = statusMap.get(m.id);
-                if (status && (status.deliveredAt !== m.deliveredAt || status.readAt !== m.readAt)) {
+                const server: any = serverByIdMap.get(m.id);
+                if (!server) return m;
+                const next: any = m;
+                const statusChanged =
+                  server.deliveredAt !== m.deliveredAt || server.readAt !== m.readAt;
+                // Detect uiCardData mutation by JSON-comparing - the
+                // server side flips fields like cancelledAt /
+                // parentAcknowledgedAt on the same message, and the
+                // chat needs those changes to flow through to the card.
+                const cardChanged = JSON.stringify(server.uiCardData || null) !== JSON.stringify(m.uiCardData || null);
+                if (statusChanged || cardChanged) {
                   changed = true;
-                  return { ...m, deliveredAt: status.deliveredAt, readAt: status.readAt };
+                  return {
+                    ...next,
+                    deliveredAt: server.deliveredAt,
+                    readAt: server.readAt,
+                    ...(cardChanged ? { uiCardData: server.uiCardData, uiCardType: server.uiCardType } : {}),
+                  };
                 }
                 return m;
               });
@@ -4352,8 +4373,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                     ? (msg.senderName?.charAt(0) || "G")
                     : (aiName?.charAt(0) || "A"))
                 : null;
+              // Key by stable message id (NOT index) so React mounts new
+              // messages cleanly. With index keys, polling-appended messages
+              // can inherit the React state of a sibling at the same index -
+              // most visibly the cost-sheet card's Acknowledge / I have
+              // questions buttons could appear stuck or inert until a hard
+              // refresh. Index is only the fallback for unsaved local stubs.
               return (
-            <div key={i}>
+            <div key={msg.id || `local-${i}`}>
               {/* Date separator - full width, outside the avatar row */}
               {msg.createdAt && (() => {
                 const msgDate = new Date(msg.createdAt).toDateString();
