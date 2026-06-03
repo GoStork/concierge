@@ -19,7 +19,7 @@ import { setMarketplaceSearchQuery, setMarketplaceTab, toggleFavoriteDonor, pass
 import { MarketplaceFilterBar } from "@/components/marketplace/MarketplaceFilterBar";
 import { Tabs as UnderlineTabs, TabsList as UnderlineTabsList, TabsTrigger as UnderlineTabsTrigger } from "@/components/ui/underline-tabs";
 import { SwipeDeckCard } from "@/components/marketplace/swipe-deck-card";
-import { useViewedProfileIds, recordProfileView, useScrollPastView } from "@/lib/profile-views";
+import { useMarketplaceViewContext, recordProfileView, useScrollPastView } from "@/lib/profile-views";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
   getPhotoList, getMatchedPreferences, buildTitle, buildStatusLabel,
@@ -393,7 +393,7 @@ function ProviderGrid({ providers, searchQuery, providerTypeName, onSchedule }: 
 // the "New" badge clears as the parent scrolls. Tap / save / pass also record
 // immediately so the badge disappears the moment the parent engages.
 function DonorGridCard({
-  donor, profile, tabs, type, viewedIds, showSkippedOnly,
+  donor, profile, tabs, type, viewedIds, previousVisitAt, showSkippedOnly,
   favoritedIds, passedIds, dispatch, navigate, syncPref,
 }: {
   donor: any;
@@ -401,6 +401,7 @@ function DonorGridCard({
   tabs: any[];
   type: "egg-donor" | "surrogate" | "sperm-donor";
   viewedIds: Set<string>;
+  previousVisitAt: Date | null;
   showSkippedOnly: boolean;
   favoritedIds: string[];
   passedIds: string[];
@@ -419,7 +420,7 @@ function DonorGridCard({
         id={profile.id}
         photos={getPhotoList(profile)}
         title={buildTitle(profile)}
-        statusLabel={buildStatusLabel(profile, viewedIds)}
+        statusLabel={buildStatusLabel(profile, viewedIds, previousVisitAt)}
         donorStatus={profile.donorStatus}
         isExperienced={profile.isExperienced}
         isPremium={profile.isPremium}
@@ -458,7 +459,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
   const showExperiencedOnly = useAppSelector((state) => state.ui.showExperiencedOnly);
   const [currentIndex, setCurrentIndex] = useState(0);
   const { user } = useAuth();
-  const viewedIds = useViewedProfileIds();
+  const { viewedIds, previousVisitAt } = useMarketplaceViewContext();
 
   const userCountry = (user as any)?.country || null;
   const userIdentification = (user as any)?.identification || null;
@@ -634,7 +635,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
                 id={nextProfile.id}
                 photos={getPhotoList(nextProfile)}
                 title={buildTitle(nextProfile)}
-                statusLabel={buildStatusLabel(nextProfile, viewedIds)}
+                statusLabel={buildStatusLabel(nextProfile, viewedIds, previousVisitAt)}
                 donorStatus={nextProfile.donorStatus}
                 isExperienced={nextProfile.isExperienced}
                 isPremium={nextProfile.isPremium}
@@ -653,7 +654,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
               id={profile.id}
               photos={getPhotoList(profile)}
               title={buildTitle(profile)}
-              statusLabel={buildStatusLabel(profile, viewedIds)}
+              statusLabel={buildStatusLabel(profile, viewedIds, previousVisitAt)}
               donorStatus={profile.donorStatus}
               isExperienced={profile.isExperienced}
               isPremium={profile.isPremium}
@@ -695,6 +696,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
             tabs={tabs}
             type={type}
             viewedIds={viewedIds}
+            previousVisitAt={previousVisitAt}
             showSkippedOnly={showSkippedOnly}
             favoritedIds={favoritedIds}
             passedIds={passedIds}

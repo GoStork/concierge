@@ -4,7 +4,7 @@ import { Loader2 } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { getProfileUrlSlug } from "./chat-utils";
 import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-deck-card";
-import { useViewedProfileIds, recordProfileView } from "@/lib/profile-views";
+import { useMarketplaceViewContext, recordProfileView } from "@/lib/profile-views";
 import {
   mapDatabaseDonorToSwipeProfile,
   mapDatabaseSurrogateToSwipeProfile,
@@ -23,7 +23,7 @@ interface WhisperProfileCardProps {
 
 export function WhisperProfileCard({ card, brandColor }: WhisperProfileCardProps) {
   const navigate = useNavigate();
-  const viewedIds = useViewedProfileIds();
+  const { viewedIds, previousVisitAt } = useMarketplaceViewContext();
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -65,7 +65,7 @@ export function WhisperProfileCard({ card, brandColor }: WhisperProfileCardProps
         : mapDatabaseDonorToSwipeProfile(profile);
     const photos = getPhotoList(swipeProfile);
     const title = buildTitle(swipeProfile);
-    const statusLabel = buildStatusLabel(swipeProfile, viewedIds);
+    const statusLabel = buildStatusLabel(swipeProfile, viewedIds, previousVisitAt);
     const baseTabs = isSurrogate ? getSurrogateTabs(swipeProfile, []) : getDonorTabs(swipeProfile, [], t === "sperm donor");
     const reasons = card.reasons || [];
     const tabs: TabSection[] = reasons.length > 0

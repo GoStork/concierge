@@ -12,7 +12,7 @@ import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { deriveChatPalette } from "@/lib/chat-palette";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { DonorStatusPill, getDonorStatusStyle } from "@/lib/donor-status";
-import { useViewedProfileIds, recordProfileView } from "@/lib/profile-views";
+import { useMarketplaceViewContext, recordProfileView } from "@/lib/profile-views";
 import { formatMoneyCents } from "@/lib/format-money";
 import { formatLocationDisplay } from "@/lib/format-location";
 import { Button } from "@/components/ui/button";
@@ -1969,7 +1969,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
     );
   }
 
-  const viewedIds = useViewedProfileIds();
+  const { viewedIds, previousVisitAt } = useMarketplaceViewContext();
 
   const profileId = profile?.id;
   const profileTypeForView: "egg-donor" | "surrogate" | "sperm-donor" =
@@ -1992,7 +1992,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
         : mapDatabaseDonorToSwipeProfile(profile);
     const photos = getPhotoList(swipeProfile);
     const title = buildTitle(swipeProfile);
-    const statusLabel = buildStatusLabel(swipeProfile, viewedIds);
+    const statusLabel = buildStatusLabel(swipeProfile, viewedIds, previousVisitAt);
     const tabs = buildMatchTabs(profile, card.type, card.reasons);
 
     return (

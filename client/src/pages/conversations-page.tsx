@@ -31,7 +31,7 @@ import { useAppDispatch } from "@/store";
 import { setHideBottomNav } from "@/store/uiSlice";
 import { deriveChatPalette } from "@/lib/chat-palette";
 import { DonorStatusPill, getDonorStatusStyle } from "@/lib/donor-status";
-import { useViewedProfileIds, recordProfileView } from "@/lib/profile-views";
+import { useMarketplaceViewContext, recordProfileView } from "@/lib/profile-views";
 import { format } from "date-fns";
 import ConciergeChatPage, { ParentChatSidePanel, type ParentSidePanelData } from "@/pages/concierge-chat-page";
 import { AgreementSidebarSection } from "@/components/chat/agreement-sidebar-section";
@@ -318,7 +318,7 @@ function _InlineBookingNotification_DEAD({ booking, brandColor, onUpdate }: { bo
 
 function WhisperProfileCard({ card, brandColor }: { card: any; brandColor: string }) {
   const navigate = useNavigate();
-  const viewedIds = useViewedProfileIds();
+  const { viewedIds, previousVisitAt } = useMarketplaceViewContext();
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -360,7 +360,7 @@ function WhisperProfileCard({ card, brandColor }: { card: any; brandColor: strin
         : mapDatabaseDonorToSwipeProfile(profile);
     const photos = getPhotoList(swipeProfile);
     const title = buildTitle(swipeProfile);
-    const statusLabel = buildStatusLabel(swipeProfile, viewedIds);
+    const statusLabel = buildStatusLabel(swipeProfile, viewedIds, previousVisitAt);
     const baseTabs = isSurrogate ? getSurrogateTabs(swipeProfile, []) : getDonorTabs(swipeProfile, [], t === "sperm donor");
     const reasons = card.reasons || [];
     const tabs: TabSection[] = reasons.length > 0

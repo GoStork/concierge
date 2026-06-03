@@ -22,8 +22,12 @@ interface PendingView {
 const QUERY_KEY = ["/api/users/parent-account/profile-views/recent"];
 const FLUSH_INTERVAL_MS = 1500;
 
-// Module-level so all consumers share the same Set and flush timer.
+// Module-level so all consumers share the same Set, watermark, and flush
+// timer. Hydrated once from the backend /profile-views/recent endpoint;
+// the watermark only changes when the parent starts a new session
+// (server-controlled, 30-min sliding window).
 const viewedSet = new Set<string>();
+let previousVisitAt: Date | null = null;
 const pendingQueue: Map<string, PendingView> = new Map();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let listenerSeq = 0;
@@ -37,19 +41,24 @@ function notify(): void {
   for (const cb of listeners.values()) cb();
 }
 
-function hydrate(ids: string[]): void {
-  if (!ids || ids.length === 0) return;
-  let added = false;
-  for (const id of ids) {
-    // We don't know the type from the API today (the endpoint returns
-    // just IDs since marketplace profiles are unique by UUID across types).
-    // Add the bare ID so the Set.has(id) check in mappers works regardless.
+function hydrate(payload: { viewedIds: string[]; previousVisitAt: string }): void {
+  let changed = false;
+  for (const id of payload.viewedIds || []) {
     if (!viewedSet.has(id)) {
       viewedSet.add(id);
-      added = true;
+      changed = true;
     }
   }
-  if (added) notify();
+  if (payload.previousVisitAt) {
+    const parsed = new Date(payload.previousVisitAt);
+    if (!Number.isNaN(parsed.getTime())) {
+      if (!previousVisitAt || previousVisitAt.getTime() !== parsed.getTime()) {
+        previousVisitAt = parsed;
+        changed = true;
+      }
+    }
+  }
+  if (changed) notify();
 }
 
 async function flush(): Promise<void> {
@@ -90,19 +99,22 @@ export function recordProfileView(profileId: string, profileType: ProfileType): 
   scheduleFlush();
 }
 
-// React hook: returns a stable Set<string> of viewed profile IDs and
-// triggers a re-render whenever the set changes. Components use:
-//   const viewedIds = useViewedProfileIds();
-//   const isNew = !viewedIds.has(profile.id) && profile.createdAt > ...;
-export function useViewedProfileIds(): Set<string> {
-  const { data } = useQuery<{ ids: string[] }>({
+// React hook returning the marketplace view context: the Set of viewed
+// profile IDs + previousVisitAt watermark. Components use:
+//   const { viewedIds, previousVisitAt } = useMarketplaceViewContext();
+//   const isNew = !viewedIds.has(profile.id) && profile.createdAt > previousVisitAt;
+// The watermark is server-controlled with a 30-min sliding session window
+// so consecutive reloads don't clear all New badges; see backend
+// getRecentProfileViews for the rule.
+export function useMarketplaceViewContext(): { viewedIds: Set<string>; previousVisitAt: Date | null } {
+  const { data } = useQuery<{ viewedIds: string[]; previousVisitAt: string }>({
     queryKey: QUERY_KEY,
     staleTime: 5 * 60 * 1000,
     retry: false,
   });
 
   useEffect(() => {
-    if (data?.ids) hydrate(data.ids);
+    if (data) hydrate(data);
   }, [data]);
 
   const [, force] = useState(0);
@@ -114,10 +126,16 @@ export function useViewedProfileIds(): Set<string> {
     };
   }, []);
 
-  // Returning the underlying mutable Set is fine because we trigger re-
-  // renders via the listener whenever it changes. Components only call
-  // .has() on it.
-  return viewedSet;
+  // Returning the module-level state directly is fine - we trigger re-
+  // renders via the listener whenever either changes. Components only
+  // read .has() and the timestamp.
+  return { viewedIds: viewedSet, previousVisitAt };
+}
+
+// Backwards-compatible thin alias for call sites that only need the Set.
+// Prefer useMarketplaceViewContext when the watermark is also needed.
+export function useViewedProfileIds(): Set<string> {
+  return useMarketplaceViewContext().viewedIds;
 }
 
 // IntersectionObserver-backed "scroll past" detection. The callback fires
@@ -174,26 +192,13 @@ export function useScrollPastView(
   return setRef;
 }
 
-// Whether a profile should currently render the "New" badge for the
-// active parent account. Rule: createdAt within the last 24h AND not in
-// the viewed set. The mapper-level statusBadge ("New" | null) is computed
-// from this.
-export function isProfileNew(
-  createdAt: string | Date | null | undefined,
-  profileId: string,
-  viewedIds: Set<string>,
-): boolean {
-  if (!createdAt) return false;
-  if (viewedIds.has(profileId)) return false;
-  const created = createdAt instanceof Date ? createdAt : new Date(createdAt);
-  if (Number.isNaN(created.getTime())) return false;
-  return created.getTime() > Date.now() - 24 * 60 * 60 * 1000;
-}
-
-// Resets the cached query so the next mount re-fetches from the server.
-// Use when the parent account changes (logout / account switch).
+// Resets all module-level state so the next mount re-fetches from the
+// server. Call this when the parent account changes (logout / account
+// switch) so the viewed set + watermark from the previous account don't
+// leak into the new one.
 export function invalidateViewedProfiles(): void {
   viewedSet.clear();
+  previousVisitAt = null;
   pendingQueue.clear();
   if (flushTimer !== null) {
     clearTimeout(flushTimer);

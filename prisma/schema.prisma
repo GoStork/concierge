@@ -196,6 +196,16 @@ model ParentAccount {
   customEthnicities      String[]               @default([])
   customFilterTags       Json                   @default("{}")
   preferredAppExperience String?
+  // Marketplace "New" badge watermark. WatermarkAt is the timestamp used
+  // as the cutoff: a profile is "New" iff createdAt > marketplaceWatermarkAt
+  // AND not in the ParentProfileView set. WatermarkUpdatedAt is when the
+  // marketplace was last opened by this account; if more than 30 min have
+  // passed since then, the next visit slides marketplaceWatermarkAt to
+  // that previous value (= the actual "last visit"). Reloads within 30 min
+  // don't slide the watermark, so the parent keeps seeing the same set of
+  // "New" badges throughout a browsing session.
+  marketplaceWatermarkAt        DateTime?
+  marketplaceWatermarkUpdatedAt DateTime?
   members                User[]
   intendedParentProfile  IntendedParentProfile?
   journeyPreferences     JourneyPreferences?

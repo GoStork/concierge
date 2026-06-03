@@ -491,19 +491,26 @@ export function buildTitle(profile: SwipeDeckProfile): string {
   return `${typeLabel} #${numericId}`;
 }
 
-// Compute the purple "New" label for the card. Callers pass the parent's
-// set of already-viewed profile IDs (from useViewedProfileIds()) so the
-// badge clears per-profile on first interaction. A profile is "New" iff
-// it was created in the last 24h AND the parent hasn't seen it yet.
-// Callers that don't have access to the viewed set (legacy code paths)
-// can pass an empty Set - everything within 24h still shows "New", just
-// without the per-parent clearing.
-export function buildStatusLabel(profile: SwipeDeckProfile, viewedIds: Set<string> = new Set()): string | null {
-  if (!profile.createdAt) return null;
+// Compute the purple "New" label for the card. A profile is "New" iff
+// it was created after the parent's previous marketplace visit AND the
+// parent hasn't yet seen this specific profile. previousVisitAt is the
+// server-controlled watermark from useMarketplaceViewContext - it slides
+// forward only when the parent starts a fresh session (30 min sliding
+// window), so reloads within the same session keep the same set of New
+// badges visible.
+// Callers that don't have a watermark (e.g. unauthenticated previews)
+// can omit it - in that case nothing renders as New, which is the safe
+// default.
+export function buildStatusLabel(
+  profile: SwipeDeckProfile,
+  viewedIds: Set<string> = new Set(),
+  previousVisitAt: Date | null = null,
+): string | null {
+  if (!profile.createdAt || !previousVisitAt) return null;
   if (viewedIds.has(profile.id)) return null;
   const createdMs = new Date(profile.createdAt).getTime();
   if (Number.isNaN(createdMs)) return null;
-  if (createdMs <= Date.now() - 24 * 60 * 60 * 1000) return null;
+  if (createdMs <= previousVisitAt.getTime()) return null;
   return "New";
 }
 

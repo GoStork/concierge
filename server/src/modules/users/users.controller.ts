@@ -1727,26 +1727,71 @@ export class UsersController {
   }
 
   private readonly ALLOWED_PROFILE_TYPES = ["egg-donor", "surrogate", "sperm-donor"];
+  private readonly MARKETPLACE_SESSION_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 
-  // Profile views power the marketplace "New" badge: a donor/surrogate is
-  // "New" for a given parent account iff createdAt > now - 24h AND no row
-  // exists in ParentProfileView for that (parentAccountId, profileId,
-  // profileType) tuple. See ParentProfileView model and the SwipeDeckCard
-  // statusBadge logic for the rule.
+  // Returns the marketplace view context for the current parent account:
+  //
+  //   previousVisitAt: ISO timestamp - the cutoff for the "New" badge.
+  //                    A profile is "New" iff profile.createdAt > previousVisitAt
+  //                    AND its id is NOT in viewedIds.
+  //   viewedIds:       all profile IDs this account has interacted with
+  //                    (tapped, hearted, passed, scrolled-past, or had
+  //                    surfaced as a MATCH_CARD). Used to clear the New
+  //                    badge per-profile on first interaction.
+  //
+  // Side effect: slides the watermark forward following a 30-min sliding
+  // session window. If the last bump was more than 30 min ago, the parent
+  // is starting a fresh session - slide marketplaceWatermarkAt to that
+  // last-bump time so anything created since then shows as New. Reloads
+  // within 30 min keep the existing watermark so the parent keeps seeing
+  // the same set of New badges throughout a browsing session.
   @Get("parent-account/profile-views/recent")
   @UseGuards(SessionOrJwtGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: "Return the IDs of donor/surrogate profiles this parent account has viewed in the last 24h. Used to clear the marketplace 'New' badge per profile." })
+  @ApiOperation({ summary: "Return the marketplace view context: previousVisitAt watermark for the 'New' badge cutoff + viewed profile IDs. Slides the watermark on a 30-min sliding-session window." })
   async getRecentProfileViews(@Req() req: Request) {
     const user = req.user as any;
     const accountId = await this.ensureParentAccountForEthnicities(user.id);
-    if (!accountId) return { ids: [] };
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    if (!accountId) return { previousVisitAt: new Date().toISOString(), viewedIds: [] };
+
+    const account = await this.prisma.parentAccount.findUnique({
+      where: { id: accountId },
+      select: { marketplaceWatermarkAt: true, marketplaceWatermarkUpdatedAt: true },
+    });
+    const now = new Date();
+    let previousVisitAt: Date;
+    if (!account || !account.marketplaceWatermarkUpdatedAt) {
+      // First-ever marketplace visit for this account - nothing is "new"
+      // because the parent is seeing the whole catalog for the first time.
+      previousVisitAt = now;
+    } else {
+      const sinceLastBump = now.getTime() - account.marketplaceWatermarkUpdatedAt.getTime();
+      if (sinceLastBump > this.MARKETPLACE_SESSION_WINDOW_MS) {
+        // True new session - slide the watermark to the actual previous
+        // visit time so anything created since then shows as New.
+        previousVisitAt = account.marketplaceWatermarkUpdatedAt;
+      } else {
+        // Same session (within 30 min) - keep the existing cutoff so the
+        // parent doesn't lose the New badges on a quick reload.
+        previousVisitAt = account.marketplaceWatermarkAt ?? account.marketplaceWatermarkUpdatedAt;
+      }
+    }
+    await this.prisma.parentAccount.update({
+      where: { id: accountId },
+      data: {
+        marketplaceWatermarkAt: previousVisitAt,
+        marketplaceWatermarkUpdatedAt: now,
+      },
+    });
+
     const views = await this.prisma.parentProfileView.findMany({
-      where: { parentAccountId: accountId, viewedAt: { gte: since } },
+      where: { parentAccountId: accountId },
       select: { profileId: true },
     });
-    return { ids: views.map(v => v.profileId) };
+    return {
+      previousVisitAt: previousVisitAt.toISOString(),
+      viewedIds: views.map(v => v.profileId),
+    };
   }
 
   @Post("parent-account/profile-views")
