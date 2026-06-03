@@ -472,6 +472,18 @@ export class CostsService {
     if (ip?.needsSurrogate === true || carrierIsSurrogate) parentNeeds.add("surrogacy");
     if (ip?.needsEggDonor === true || eggIsDonor) parentNeeds.add("egg_donor");
     if (spermIsDonor || lacksSperm) parentNeeds.add("sperm_donor");
+    // interestedServices is the explicit, parent-chosen list from the
+    // "Services You're Looking For" chips on the settings page. It's the
+    // most reliable single signal we have, because it's directly user-set.
+    // Without this mapping, a parent who picked "Sperm Donor" on the chip
+    // editor would still see "no matching programs" until they completed
+    // the biological-baseline chat (spermSource etc.) - which is silly,
+    // they already told us. Map the chip labels to serviceType tags.
+    const interestedSet = new Set((ip?.interestedServices ?? []).map((s: string) => s.toLowerCase()));
+    if (interestedSet.has("fertility clinic")) parentNeeds.add("ivf_clinic");
+    if (interestedSet.has("surrogate") || interestedSet.has("surrogacy")) parentNeeds.add("surrogacy");
+    if (interestedSet.has("egg donor")) parentNeeds.add("egg_donor");
+    if (interestedSet.has("sperm donor")) parentNeeds.add("sperm_donor");
     // The profile-view itself is an explicit signal of interest in that
     // service. Add it even when the IP profile is empty so the cards still
     // surface (instead of dead-ending the parent on "no matching programs"
@@ -480,9 +492,13 @@ export class CostsService {
 
     // Profile is "partial" when we don't know ANY of the relevant tags.
     // The client gates the grid behind "Complete your profile" CTA.
-    const knowsSurrogacy = ip?.needsSurrogate != null || ip?.carrier != null;
-    const knowsEggDonor = ip?.needsEggDonor != null || ip?.eggSource != null;
-    const knowsSpermDonor = ip?.spermSource != null || primary?.gender != null;
+    // interestedServices counts as "knowing" - a parent who picked chips
+    // has declared their interest even if they haven't finished biological
+    // baseline yet.
+    const hasInterested = (ip?.interestedServices ?? []).length > 0;
+    const knowsSurrogacy = ip?.needsSurrogate != null || ip?.carrier != null || hasInterested;
+    const knowsEggDonor = ip?.needsEggDonor != null || ip?.eggSource != null || hasInterested;
+    const knowsSpermDonor = ip?.spermSource != null || primary?.gender != null || hasInterested;
     // A specific-donor view IS the missing knowledge - skip the partial gate
     // when one is in scope so the parent sees programs immediately instead
     // of being bounced back to onboarding.

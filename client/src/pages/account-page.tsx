@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -73,6 +74,11 @@ function AccountTab() {
   const [showPassword, setShowPassword] = useState(false);
   const [editLocation, setEditLocation] = useState({ address: "", city: "", state: "", zip: "", country: "" });
   const [editGender, setEditGender] = useState("");
+  // partnerGender lives on User in the DB and is read by the cost-sheet
+  // subtype matcher. The AI persists it from the family-type chip during
+  // intake, but if the parent never reached that step (or wants to fix it
+  // manually) we need an explicit editor here. Values: "man" | "woman".
+  const [editPartnerGender, setEditPartnerGender] = useState("");
   const [editOrientation, setEditOrientation] = useState("");
   const [editRelationship, setEditRelationship] = useState("");
   const [editAge, setEditAge] = useState("");
@@ -209,6 +215,7 @@ function AccountTab() {
     setConfirmPassword("");
     setEditLocation({ address: "", city: userCity || "", state: userState || "", zip: "", country: userCountry || "" });
     setEditGender((user as any).gender || "");
+    setEditPartnerGender((user as any).partnerGender || "");
     setEditOrientation((user as any).sexualOrientation || "");
     setEditRelationship((user as any).relationshipStatus || "");
     const dob = (user as any).dateOfBirth;
@@ -599,6 +606,10 @@ function AccountTab() {
           const hasPartner = editRelationship === "Partnered" || editRelationship === "Married";
           payload.partnerFirstName = hasPartner ? (editPartnerName || null) : null;
           payload.partnerAge = hasPartner && editPartnerAge ? Number(editPartnerAge) : null;
+          // Only send partnerGender when partner is in the picture. Backend
+          // accepts "man" / "woman" / null; setting to null when single
+          // clears any stale value.
+          payload.partnerGender = hasPartner ? (editPartnerGender || null) : null;
           payload.interestedServices = editServices;
           // Journey
           payload.journeyStage = editJourneyStage || null;
@@ -745,7 +756,7 @@ function AccountTab() {
     if (isInitializingRef.current) { isInitializingRef.current = false; setIsDirty(false); return; }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, editName, editMobileE164, editMobileDisplay, editMobileIsoCode, editMobileIsValid, editPassword, confirmPassword, editLocation, editGender, editOrientation, editRelationship, editAge, editPartnerName, editPartnerAge, editServices, editJourneyStage, editIsFirstIvf, editEggSource, editSpermSource, editCarrier, editHasEmbryos, editEmbryoCount, editEmbryosTested, editNeedsClinic, editCurrentClinicName, editClinicPriority, editClinicPriorityTags, editSurrogateCountries, editSurrogateTermination, editSurrogateTwins, editSurrogateAgeRange, editSurrogateBudget, editSurrogateExperience, editSurrogateMedPrefs, editSameSexCouple, editSurrogateRace, editSurrogateEthnicity, editSurrogateRelationship, editSurrogateBmiRange, editSurrogateTotalCostRange, editSurrogateLiveBirthsRange, editSurrogateMaxCSections, editSurrogateMaxMiscarriages, editSurrogateMaxAbortions, editSurrogateLastDeliveryYear, editSurrogateCovidVaccinated, editSurrogateSelectiveReduction, editSurrogateInternationalParents, editDonorPreferences, editDonorEyeColor, editDonorHairColor, editDonorHeight, editDonorEducation, editDonorEthnicity, editSpermDonorType, editSpermDonorPreferences, editSpermDonorAgeRange, editSpermDonorEyeColor, editSpermDonorHairColor, editSpermDonorHeightRange, editSpermDonorRace, editSpermDonorEthnicity, editSpermDonorEducation, editSpermDonorMaxPrice, editSpermDonorVialType, editEggDonorAgeRange, editEggDonorCompensationRange, editEggDonorTotalCostRange, editEggDonorLotCostRange, editEggDonorEggType, editEggDonorDonationType, editClinicAgeGroup, editCurrentAgencyName, editCurrentAttorneyName]);
+  }, [editing, editName, editMobileE164, editMobileDisplay, editMobileIsoCode, editMobileIsValid, editPassword, confirmPassword, editLocation, editGender, editOrientation, editRelationship, editAge, editPartnerName, editPartnerAge, editPartnerGender, editServices, editJourneyStage, editIsFirstIvf, editEggSource, editSpermSource, editCarrier, editHasEmbryos, editEmbryoCount, editEmbryosTested, editNeedsClinic, editCurrentClinicName, editClinicPriority, editClinicPriorityTags, editSurrogateCountries, editSurrogateTermination, editSurrogateTwins, editSurrogateAgeRange, editSurrogateBudget, editSurrogateExperience, editSurrogateMedPrefs, editSameSexCouple, editSurrogateRace, editSurrogateEthnicity, editSurrogateRelationship, editSurrogateBmiRange, editSurrogateTotalCostRange, editSurrogateLiveBirthsRange, editSurrogateMaxCSections, editSurrogateMaxMiscarriages, editSurrogateMaxAbortions, editSurrogateLastDeliveryYear, editSurrogateCovidVaccinated, editSurrogateSelectiveReduction, editSurrogateInternationalParents, editDonorPreferences, editDonorEyeColor, editDonorHairColor, editDonorHeight, editDonorEducation, editDonorEthnicity, editSpermDonorType, editSpermDonorPreferences, editSpermDonorAgeRange, editSpermDonorEyeColor, editSpermDonorHairColor, editSpermDonorHeightRange, editSpermDonorRace, editSpermDonorEthnicity, editSpermDonorEducation, editSpermDonorMaxPrice, editSpermDonorVialType, editEggDonorAgeRange, editEggDonorCompensationRange, editEggDonorTotalCostRange, editEggDonorLotCostRange, editEggDonorEggType, editEggDonorDonationType, editClinicAgeGroup, editCurrentAgencyName, editCurrentAttorneyName]);
 
   // Derive gender-aware options for biological baseline fields
   // Gender is stored as "I'm a man" / "I'm a woman" / "I'm non-binary"
@@ -951,13 +962,11 @@ function AccountTab() {
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="edit-age">Your Age</Label>
-                        <Input
+                        <NumberInput
                           id="edit-age"
-                          type="number"
-                          min={18}
-                          max={80}
+                          allowDecimal={false}
                           value={editAge}
-                          onChange={e => setEditAge(e.target.value)}
+                          onChange={setEditAge}
                           placeholder="e.g. 34"
                           data-testid="input-edit-age"
                         />
@@ -976,16 +985,26 @@ function AccountTab() {
                           </div>
                           <div className="space-y-2">
                             <Label htmlFor="edit-partner-age">Partner's Age <span className="text-destructive">*</span></Label>
-                            <Input
+                            <NumberInput
                               id="edit-partner-age"
-                              type="number"
-                              min={18}
-                              max={120}
+                              allowDecimal={false}
                               value={editPartnerAge}
-                              onChange={e => setEditPartnerAge(e.target.value)}
+                              onChange={setEditPartnerAge}
                               placeholder="Partner's age"
                               data-testid="input-edit-partner-age"
                             />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Partner's Gender</Label>
+                            <Select value={editPartnerGender} onValueChange={setEditPartnerGender}>
+                              <SelectTrigger data-testid="select-partner-gender">
+                                <SelectValue placeholder="Select gender" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="woman">Woman</SelectItem>
+                                <SelectItem value="man">Man</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
                         </>
                       )}
@@ -1139,6 +1158,7 @@ function AccountTab() {
                       </div>
                       <div className="space-y-2">
                         <Label>Your Age</Label>
+                        {/* short age display, disabled, no commas needed */}
                         <Input
                           disabled
                           type="number"
@@ -1155,7 +1175,18 @@ function AccountTab() {
                           </div>
                           <div className="space-y-2">
                             <Label>Partner's Age</Label>
+                            {/* short age display, disabled, no commas needed */}
                             <Input disabled type="number" value={(user as any).partnerAge || ""} placeholder="-- Not specified --" data-testid="text-account-partner-age" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Partner's Gender</Label>
+                            <Select disabled value={(user as any).partnerGender || ""}>
+                              <SelectTrigger data-testid="select-partner-gender"><SelectValue placeholder="-- Not specified --" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="woman">Woman</SelectItem>
+                                <SelectItem value="man">Man</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
                         </>
                       )}

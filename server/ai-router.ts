@@ -5330,11 +5330,37 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           case "straight_couple":
             if (effectiveGender === "I'm a man") userData.partnerGender = "woman";
             else if (effectiveGender === "I'm a woman") userData.partnerGender = "man";
-            // If gender is still unknown, Eva's next turn will set it and
-            // a subsequent SAVE block with familyType=straight_couple will
-            // finalize partnerGender. The matcher tolerates the null in the
-            // interim.
+            // If gender is still unknown, the straight-couple-aware fallback
+            // below catches the follow-up turn that finally sets it.
             break;
+        }
+      }
+
+      // Straight-couple late-bind: Eva's straight-couple flow is two turns.
+      // Turn 1 saves familyType=straight_couple + relationshipStatus=couple
+      // (partnerGender stays null because gender is still unknown). Turn 2
+      // saves only gender ("man" / "woman") via the "I'm the man" / "I'm
+      // the woman" quick reply - NO familyType - so the block above doesn't
+      // fire and partnerGender stays null forever, breaking the matcher.
+      // Catch the follow-up: if THIS save set gender, and the chat / DB
+      // shows a straight-couple signal that ISN'T explicitly two_dads or
+      // two_moms, derive partnerGender as the opposite of the just-set gender.
+      const justSetGender = userData.gender as string | undefined;
+      const noPartnerGenderInSave = userData.partnerGender === undefined;
+      if (justSetGender && noPartnerGenderInSave) {
+        const allChatLower = (Array.isArray(chatHistory) ? chatHistory : [])
+          .filter((m: any) => m.role === "user")
+          .map((m: any) => (m.content || "").toLowerCase())
+          .join(" ") + " " + (userMessage || "").toLowerCase();
+        const looksTwoMoms = /\btwo moms\b/.test(allChatLower);
+        const looksTwoDads = /\btwo dads\b/.test(allChatLower);
+        const looksStraightCouple =
+          /\bman and a woman\b|\bstraight couple\b|\bmy wife\b|\bmy husband\b/.test(allChatLower) ||
+          (userRecord as any)?.relationshipStatus === "Partnered" ||
+          (userRecord as any)?.relationshipStatus === "Married";
+        if (looksStraightCouple && !looksTwoMoms && !looksTwoDads) {
+          if (justSetGender === "I'm a man") userData.partnerGender = "woman";
+          else if (justSetGender === "I'm a woman") userData.partnerGender = "man";
         }
       }
 
