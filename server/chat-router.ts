@@ -1434,6 +1434,68 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
 
     const message = await prisma.aiChatMessage.create({ data: messageData });
 
+    // Cost-sheet recap (post-consultation direct chat path). When the
+    // provider answers a parent question that was clearly about the cost
+    // sheet, re-post the cost-sheet card so the parent sees Acknowledge /
+    // "I have questions" buttons again. We key off the most recent parent
+    // message in the session - if it mentions cost-sheet keywords AND there
+    // is still an unacknowledged active ProviderQuote, post the recap.
+    try {
+      const lastParentMsg = await prisma.aiChatMessage.findFirst({
+        where: { sessionId: session.id, senderType: "user" },
+        orderBy: { createdAt: "desc" },
+        select: { content: true, createdAt: true },
+      });
+      const lastParentText = (lastParentMsg?.content || "").toLowerCase();
+      const isCostSheetQuestion =
+        lastParentText.includes("cost sheet") || lastParentText.includes("quote") ||
+        lastParentText.includes("the price") || lastParentText.includes("the total") ||
+        lastParentText.includes("the invoice");
+      if (isCostSheetQuestion) {
+        const activeQuote = await prisma.providerQuote.findFirst({
+          where: { sessionId: session.id, supersededAt: null, parentAcknowledgedAt: null },
+          orderBy: { createdAt: "desc" },
+          include: { provider: { select: { name: true } } },
+        });
+        // Don't re-post if the latest quote-card message in this session is
+        // already newer than the parent's most recent question - we'd be
+        // duplicating an unread card.
+        if (activeQuote && lastParentMsg) {
+          const latestQuoteCard = await prisma.aiChatMessage.findFirst({
+            where: { sessionId: session.id, uiCardType: "cost_sheet" },
+            orderBy: { createdAt: "desc" },
+            select: { createdAt: true },
+          });
+          const needsRecap = !latestQuoteCard || latestQuoteCard.createdAt < lastParentMsg.createdAt;
+          if (needsRecap) {
+            await prisma.aiChatMessage.create({
+              data: {
+                sessionId: session.id,
+                role: "assistant",
+                content: `Here's the cost sheet again so you can acknowledge it or ask another question. Total: $${(activeQuote.totalCostCents / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`,
+                senderType: "system",
+                senderName: activeQuote.provider?.name || "Provider",
+                uiCardType: "cost_sheet",
+                uiCardData: {
+                  quoteId: activeQuote.id,
+                  providerName: activeQuote.provider?.name || null,
+                  totalCostCents: activeQuote.totalCostCents,
+                  costSheetFileUrl: activeQuote.costSheetFileUrl,
+                  costSheetFileName: activeQuote.costSheetFileName,
+                  notes: activeQuote.notes,
+                  parentAcknowledgedAt: null,
+                  sentAt: activeQuote.createdAt.toISOString(),
+                  isRecap: true,
+                },
+              },
+            });
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[provider-direct-msg] cost-sheet recap failed for session ${session.id}: ${err.message}`);
+    }
+
     // Auto-transition: first provider message after booking flips the session to PROVIDER_CONNECTED.
     // CONSULTATION_BOOKED means a call is on the calendar; PROVIDER_CONNECTED means active dialogue.
     if (isConsultationBooked && !session.providerJoinedAt) {
