@@ -466,6 +466,14 @@ export class CostsService {
     const ip = account?.intendedParentProfile;
     const primary = account?.members?.[0];
 
+    // The parent's persisted preference about the tailor form overrides
+    // the per-request showAll flag. "show_all" means the parent already
+    // ticked the skip checkbox on a previous profile and asked us to stop
+    // filtering globally. "tailored" means they filled the form and
+    // we should run the matcher normally (no auto-skip).
+    const persistedPref = (ip as any)?.costProgramsPreference as string | null | undefined;
+    if (persistedPref === "show_all") showAll = true;
+
     // Build the parent's needs set as an array of serviceType tags. Eva
     // stores values like "Egg donor" / "Sperm donor" / "Gestational surrogate"
     // / "Self" - normalize before comparing.
@@ -521,7 +529,7 @@ export class CostsService {
       (!knowsSurrogacy && !knowsEggDonor && !knowsSpermDonor && subtypes.length === 0));
 
     if (resolvedIsPartialProfile) {
-      return { programs: [], matchingSubtypes: subtypes, isPartialProfile: true };
+      return { programs: [], matchingSubtypes: subtypes, isPartialProfile: true, costProgramsPreference: persistedPref ?? null };
     }
 
     // showAll bypasses the parent-needs intersection - we surface every
@@ -529,7 +537,7 @@ export class CostsService {
     // first completing onboarding. Donor-specific narrowing (vialTypes,
     // comp override) still applies downstream.
     if (!showAll && parentNeeds.size === 0) {
-      return { programs: [], matchingSubtypes: subtypes, isPartialProfile: false };
+      return { programs: [], matchingSubtypes: subtypes, isPartialProfile: false, costProgramsPreference: persistedPref ?? null };
     }
 
     const parentNeedsArr = Array.from(parentNeeds);
@@ -732,7 +740,7 @@ export class CostsService {
         });
       });
 
-    return { programs: result, matchingSubtypes: subtypes, isPartialProfile: resolvedIsPartialProfile };
+    return { programs: result, matchingSubtypes: subtypes, isPartialProfile: resolvedIsPartialProfile, costProgramsPreference: persistedPref ?? null };
   }
 
   async resetOrphanedParsingSheets() {

@@ -52,6 +52,9 @@ export function ClinicCostProgramsSection({
     programs: ProgramCardData[];
     matchingSubtypes: string[];
     isPartialProfile: boolean;
+    // null = ask the parent; "tailored" / "show_all" = decision recorded,
+    // never re-render the tailor form on any provider profile.
+    costProgramsPreference: string | null;
   }>({
     queryKey: [
       "/api/costs/provider",
@@ -92,10 +95,14 @@ export function ClinicCostProgramsSection({
   const programs = data?.programs ?? [];
   // We render the tailor form (instead of the generic empty state) when
   // the matcher returned nothing OR explicitly flagged the profile as
-  // partial. Both mean "the parent doesn't have enough on file for us to
-  // be confident in filtering". The form gives them a fast way to fill
-  // the gap without leaving the page.
-  const showTailorForm = !showAll && (data?.isPartialProfile || programs.length === 0);
+  // partial AND the parent hasn't already made a decision about it.
+  // Once costProgramsPreference is set to "tailored" or "show_all" on
+  // their IP profile, we trust that choice and never re-prompt - even
+  // on a different provider where the matcher comes back empty.
+  const hasDecided =
+    data?.costProgramsPreference === "tailored" ||
+    data?.costProgramsPreference === "show_all";
+  const showTailorForm = !showAll && !hasDecided && (data?.isPartialProfile || programs.length === 0);
 
   return (
     <section className="space-y-3" data-testid="clinic-cost-programs">

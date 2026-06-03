@@ -1231,6 +1231,18 @@ model IntendedParentProfile {
 
   interestedServices String[] @default([])
   journeyStage       String?
+  // Parent's decision about the provider-profile cost-programs tailor form.
+  // Values:
+  //   null         - we haven't asked yet; the inline form is shown when the
+  //                  matcher returns empty.
+  //   "tailored"   - parent filled the form; never re-render it. If a future
+  //                  matcher still returns empty (e.g. provider doesn't carry
+  //                  the parent's needed service), show the "no published
+  //                  programs" empty state instead of re-asking.
+  //   "show_all"   - parent ticked "skip and show me everything"; the matcher
+  //                  bypasses the parent-needs intersection on every provider
+  //                  profile from now on.
+  costProgramsPreference String?
   // Phase 1 Legal Services: AI populates this from chat context to drive
   // the lawyer cost-sheet matching rules. Values come from a controlled
   // taxonomy (parentage_order, surrogacy_contract, donor_contract_drafting,

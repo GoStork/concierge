@@ -547,6 +547,21 @@ export class UsersController {
           if (body[field] !== undefined) profileData[field] = body[field] || null;
         }
 
+        // costProgramsPreference is a controlled enum: null | "tailored"
+        // | "show_all". The provider-profile tailor form writes "tailored"
+        // when the parent answers and "show_all" when they tick skip; both
+        // values stop us from re-rendering the form on future provider
+        // profiles.
+        if (body.costProgramsPreference !== undefined) {
+          const pref = body.costProgramsPreference;
+          if (pref !== null && pref !== "tailored" && pref !== "show_all" && pref !== "") {
+            throw new BadRequestException(
+              "costProgramsPreference must be 'tailored', 'show_all', or null",
+            );
+          }
+          profileData.costProgramsPreference = pref || null;
+        }
+
         // Non-nullable booleans (schema: Boolean @default(false)) - skip null to avoid Prisma error
         const nonNullableBoolFields = ["hasEmbryos", "embryosTested", "needsClinic", "needsEggDonor", "needsSurrogate"];
         for (const field of nonNullableBoolFields) {

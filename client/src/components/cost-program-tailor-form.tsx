@@ -155,18 +155,28 @@ export function CostProgramTailorForm({
   }, [expanded, ipQuery.data, userQuery.data]);
 
   const saveMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async ({ markAs }: { markAs: "tailored" | "show_all" }) => {
       const payload: any = {};
-      payload.interestedServices = services;
-      if (gender) payload.gender = gender;
-      if (relationship) payload.relationshipStatus = relationship;
-      const hasPartner = relationship === "Partnered" || relationship === "Married";
-      payload.partnerGender = hasPartner ? (partnerGender || null) : null;
-      if (eggSource) payload.eggSource = eggSource;
-      if (spermSource) payload.spermSource = spermSource;
-      if (carrier) payload.carrier = carrier;
-      if (hasEmbryos === "yes") payload.hasEmbryos = true;
-      else if (hasEmbryos === "no") payload.hasEmbryos = false;
+      // Record the parent's decision so we never re-render this form on
+      // any future provider profile. "tailored" = they answered;
+      // "show_all" = they skipped and want the unfiltered catalog. Both
+      // values are read by getProviderParentPrograms server-side.
+      payload.costProgramsPreference = markAs;
+      // Only persist the answers themselves when the parent actually
+      // filled the form. Skipping should NOT overwrite any fields they
+      // may have set elsewhere.
+      if (markAs === "tailored") {
+        payload.interestedServices = services;
+        if (gender) payload.gender = gender;
+        if (relationship) payload.relationshipStatus = relationship;
+        const hasPartner = relationship === "Partnered" || relationship === "Married";
+        payload.partnerGender = hasPartner ? (partnerGender || null) : null;
+        if (eggSource) payload.eggSource = eggSource;
+        if (spermSource) payload.spermSource = spermSource;
+        if (carrier) payload.carrier = carrier;
+        if (hasEmbryos === "yes") payload.hasEmbryos = true;
+        else if (hasEmbryos === "no") payload.hasEmbryos = false;
+      }
       await apiRequest("PUT", "/api/user/profile", payload);
     },
     onSuccess: () => {
@@ -189,11 +199,18 @@ export function CostProgramTailorForm({
   });
 
   const handleSubmit = () => {
-    if (skip) {
-      onSkip();
-      return;
-    }
-    saveMutation.mutate();
+    saveMutation.mutate(
+      { markAs: skip ? "show_all" : "tailored" },
+      {
+        onSuccess: () => {
+          if (skip) onSkip();
+          // onSaved is already called by the mutation's own onSuccess
+          // (which invalidates the cost-programs query); for skip path
+          // we additionally flip the session-level showAll so the
+          // current page re-renders without waiting for the round trip.
+        },
+      },
+    );
   };
 
   const hasPartner = relationship === "Partnered" || relationship === "Married";
