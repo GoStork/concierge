@@ -56,9 +56,11 @@ function getUserRoles(user: any): string[] {
 /**
  * Computes marketplace-availability for a set of chat-session subject profiles,
  * across ALL types (egg donor, surrogate, sperm donor, IVF clinic, surrogacy
- * agency). A donor/surrogate is available only if it still exists, has status
- * AVAILABLE, and is NOT hiddenFromSearch (i.e. it would show in the marketplace).
- * Providers (clinic/agency) have no per-profile status, so existence is enough.
+ * agency). A donor/surrogate is "available" iff it would currently appear in
+ * the marketplace listing - matching the marketplace filter exactly: it still
+ * exists, is NOT hiddenFromSearch, and has any status other than INACTIVE
+ * (so AVAILABLE, MATCHED, and ON_HOLD all count). Providers (clinic/agency)
+ * have no per-profile status, so existence is enough.
  *
  * Returns a Map<subjectProfileId, boolean>. Profiles with no subjectProfileId/
  * subjectType are simply absent from the map (caller leaves profileAvailable null).
@@ -81,7 +83,7 @@ async function computeProfileAvailability(
     spermIds.length ? prisma.spermDonor.findMany({ where: { id: { in: spermIds } },select: { id: true, status: true, hiddenFromSearch: true } }) : [],
     clinicIds.length? prisma.provider.findMany({ where: { id: { in: clinicIds } }, select: { id: true } }) : [],
   ]);
-  const isAvail = (e: { status: string | null; hiddenFromSearch: boolean }) => (e.status || "AVAILABLE") === "AVAILABLE" && !e.hiddenFromSearch;
+  const isAvail = (e: { status: string | null; hiddenFromSearch: boolean }) => (e.status || "AVAILABLE") !== "INACTIVE" && !e.hiddenFromSearch;
   const availableDonorIds = new Set([
     ...existEgg.filter(isAvail).map(e => e.id),
     ...existSurr.filter(isAvail).map(e => e.id),
