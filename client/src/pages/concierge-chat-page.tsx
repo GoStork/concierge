@@ -3640,10 +3640,16 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               return;
             }
 
-            if (data.consultationCard) {
-              if (data.consultationCard.providerName) setProviderChatName(data.consultationCard.providerName);
-              setProviderInChat(true);
-            }
+            // NOTE: Do NOT flip providerInChat / providerChatName here just because the AI
+            // streamed a consultationCard. A consultationCard means "AI is OFFERING a calendar
+            // to the parent" - not "the parent has booked / a provider has joined". Flipping
+            // providerInChat here would (1) relabel the chat header from "AI Concierge" to
+            // "via <provider>" (often the wrong agency, since one session can discuss many),
+            // (2) reveal the right-side donor profile panel, and (3) switch the page from the
+            // centered single-column AI layout to the 3-column provider-consultation layout.
+            // All three are reserved for AFTER an actual booking - the polling/loader paths
+            // (data.providerJoined, status === CONSULTATION_BOOKED|PROVIDER_CONNECTED, or a
+            // real senderType==="provider" message) handle that transition correctly.
 
             if (data.message?.id) knownMessageIds.current.add(data.message.id);
 

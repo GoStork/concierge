@@ -1714,7 +1714,17 @@ const sendMessageMutation = useMutation({
     ) : null;
 
     const parentProviderJoined = !!selectedParentSession?.providerJoinedAt;
-    const hasProvider = !!selectedParentSession?.providerId;
+    // Treat a session as "provider-attached" only once the parent has actually
+    // engaged the provider (booking placed, joined, or 3-way chat started).
+    // A stale providerId left over from how the chat was opened (e.g. clicked
+    // a sperm-bank donor) must NOT relabel the chat header as that provider's
+    // when the parent is still in AI Concierge mode talking about a different
+    // agency.
+    const hasProvider = !!selectedParentSession?.providerId && (
+      parentProviderJoined ||
+      selectedParentSession?.status === "CONSULTATION_BOOKED" ||
+      selectedParentSession?.status === "PROVIDER_CONNECTED"
+    );
     const parentHeaderName = hasProvider
       ? (selectedParentSession!.providerName || "Provider")
       : (selectedParentSession?.matchmakerName || "AI Concierge");
@@ -1736,8 +1746,19 @@ const sendMessageMutation = useMutation({
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          {/* Provider session: stacked layout - donor (primary) + provider (subtitle) */}
-          {selectedParentSession!.providerId && selectedParentSession!.title ? (
+          {/* Provider session: stacked layout - donor (primary) + provider (subtitle).
+              Only render this layout once the parent has ACTUALLY connected with the
+              provider (booking placed, joined, or 3-way chat started). An AI Concierge
+              session can carry a stale providerId from the marketplace context it was
+              opened in (e.g. clicking a sperm-bank donor), but until the parent books
+              a consultation the chat is still the parent's general AI concierge - not
+              that provider's consultation channel - so "via Sperm Bank" misattributes
+              it after the parent has moved on to a different agency in conversation. */}
+          {selectedParentSession!.providerId && selectedParentSession!.title && (
+            !!selectedParentSession!.providerJoinedAt ||
+            selectedParentSession!.status === "CONSULTATION_BOOKED" ||
+            selectedParentSession!.status === "PROVIDER_CONNECTED"
+          ) ? (
             <button
               type="button"
               onClick={() => setParentHeaderPanelOpen(o => !o)}
