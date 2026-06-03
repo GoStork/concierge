@@ -365,35 +365,53 @@ export class CostsService {
     specificDonorId?: string,
     specificDonorType?: string,
   ) {
-    // When the parent is viewing a specific surrogate or fresh egg donor
-    // profile, swap the program's generic compensation range with that
-    // person's actual comp so the total reflects what THIS donor / surrogate
-    // would cost. Falls back to the program's range when no specific profile
-    // is in scope (e.g. the provider profile cards still show the range).
+    // Two effects of being on a specific donor / surrogate profile:
+    //   1. implicitNeed - the profile-view itself is an explicit signal of
+    //      interest in that service type, so the matcher should include it
+    //      even when the parent's IP profile is empty. Without this, a parent
+    //      who hasn't completed onboarding sees "no matching programs" on
+    //      provider profiles whose costs they clearly want to see.
+    //   2. specificCompensation - swap the program's generic comp range with
+    //      this person's actual comp before totaling. Only fires for
+    //      surrogates (baseCompensation) and FRESH egg donors (donorCompensation).
+    //      Frozen egg donors and sperm donors are flat-product pricing; the
+    //      program's range is preserved for them.
     let specificComp: number | null = null;
+    let implicitNeed: string | null = null;
     if (specificDonorId && specificDonorType) {
       const t = specificDonorType.toLowerCase();
       if (t === "surrogate" || t === "surrogates") {
+        implicitNeed = "surrogacy";
         const s = await this.prisma.surrogate.findUnique({
           where: { id: specificDonorId },
           select: { baseCompensation: true },
         });
         if (s?.baseCompensation != null) specificComp = Number(s.baseCompensation);
       } else if (t === "egg-donor" || t === "eggdonor" || t === "egg-donors" || t === "eggdonors") {
+        implicitNeed = "egg_donor";
         const d = await this.prisma.eggDonor.findUnique({
           where: { id: specificDonorId },
-          select: { donorCompensation: true },
+          select: { donorCompensation: true, donorType: true },
         });
-        if (d?.donorCompensation != null) specificComp = Number(d.donorCompensation);
+        // Comp override only for FRESH egg donors - frozen lots are sold
+        // at a flat price, not per-person comp.
+        const isFresh = (d?.donorType ?? "").toLowerCase().includes("fresh");
+        if (isFresh && d?.donorCompensation != null) {
+          specificComp = Number(d.donorCompensation);
+        }
+      } else if (t === "sperm-donor" || t === "spermdonor" || t === "sperm-donors" || t === "spermdonors") {
+        implicitNeed = "sperm_donor";
+        // No comp override - vials are flat-product pricing.
       }
     }
-    return this._getProviderParentPrograms(providerId, parentAccountId, specificComp);
+    return this._getProviderParentPrograms(providerId, parentAccountId, specificComp, implicitNeed);
   }
 
   private async _getProviderParentPrograms(
     providerId: string,
     parentAccountId: string,
     specificCompensation: number | null,
+    implicitNeed: string | null,
   ) {
     const { subtypes, isPartialProfile } =
       await this.getMatchingSubtypesForParent(parentAccountId);
@@ -454,14 +472,22 @@ export class CostsService {
     if (ip?.needsSurrogate === true || carrierIsSurrogate) parentNeeds.add("surrogacy");
     if (ip?.needsEggDonor === true || eggIsDonor) parentNeeds.add("egg_donor");
     if (spermIsDonor || lacksSperm) parentNeeds.add("sperm_donor");
+    // The profile-view itself is an explicit signal of interest in that
+    // service. Add it even when the IP profile is empty so the cards still
+    // surface (instead of dead-ending the parent on "no matching programs"
+    // when they're literally standing on a donor / surrogate page).
+    if (implicitNeed) parentNeeds.add(implicitNeed);
 
     // Profile is "partial" when we don't know ANY of the relevant tags.
     // The client gates the grid behind "Complete your profile" CTA.
     const knowsSurrogacy = ip?.needsSurrogate != null || ip?.carrier != null;
     const knowsEggDonor = ip?.needsEggDonor != null || ip?.eggSource != null;
     const knowsSpermDonor = ip?.spermSource != null || primary?.gender != null;
-    const resolvedIsPartialProfile = isPartialProfile ||
-      (!knowsSurrogacy && !knowsEggDonor && !knowsSpermDonor && subtypes.length === 0);
+    // A specific-donor view IS the missing knowledge - skip the partial gate
+    // when one is in scope so the parent sees programs immediately instead
+    // of being bounced back to onboarding.
+    const resolvedIsPartialProfile = !implicitNeed && (isPartialProfile ||
+      (!knowsSurrogacy && !knowsEggDonor && !knowsSpermDonor && subtypes.length === 0));
 
     if (resolvedIsPartialProfile) {
       return { programs: [], matchingSubtypes: subtypes, isPartialProfile: true };

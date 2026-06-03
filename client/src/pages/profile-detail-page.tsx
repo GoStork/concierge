@@ -712,27 +712,27 @@ export default function DonorProfilePage() {
           hasIvfClinicService is the "enable" flag - we pass true because we
           only land on this page through a fertility provider in the first
           place; the server's matcher decides which (if any) programs apply. */}
-      {providerId && (user as any)?.parentAccountId && (() => {
-        // Surrogates and FRESH egg donors have per-person compensation - pass
-        // the donor / surrogate id through so the server swaps the program's
-        // generic comp range with this person's actual comp before totaling.
-        // Frozen egg donors / sperm donors don't have a per-person comp model
-        // (egg lots / vials are sold as a flat product), so we leave the
-        // program's range intact.
-        const donorTypeLower = (donor?.donorType ?? "").toLowerCase();
-        const isFreshEggDonor = type === "egg-donor" && donorTypeLower.includes("fresh");
-        const isSurrogate = type === "surrogate";
-        const enableComp = isSurrogate || isFreshEggDonor;
-        return (
-          <ClinicCostProgramsSection
-            providerId={providerId}
-            parentAccountId={(user as any)?.parentAccountId ?? null}
-            hasIvfClinicService={true}
-            specificDonorId={enableComp ? donorId : undefined}
-            specificDonorType={enableComp ? type : undefined}
-          />
-        );
-      })()}
+      {providerId && (user as any)?.parentAccountId && (
+        // Always pass the donor type. Two server-side effects:
+        //   1. The matcher treats "viewing this profile" as an implicit need
+        //      ("sperm_donor" / "egg_donor" / "surrogacy") and adds it to the
+        //      parent's needs, even if the IP profile doesn't yet declare it.
+        //      Without this, a parent who hasn't completed their profile would
+        //      see "no matching programs" on a sperm donor profile while the
+        //      sperm bank actually has 5 approved sperm-donor programs.
+        //   2. For surrogates and FRESH egg donors, the server replaces the
+        //      program's generic compensation range with that person's actual
+        //      comp (Surrogate.baseCompensation / EggDonor.donorCompensation).
+        //      Frozen egg donors / sperm donors are flat-product pricing, so
+        //      the server skips the swap there.
+        <ClinicCostProgramsSection
+          providerId={providerId}
+          parentAccountId={(user as any)?.parentAccountId ?? null}
+          hasIvfClinicService={true}
+          specificDonorId={donorId}
+          specificDonorType={type}
+        />
+      )}
 
       {profileDetails && Object.keys(profileDetails).length > 0 && (() => {
         const pd = profileDetails as Record<string, any>;
