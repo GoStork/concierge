@@ -230,6 +230,28 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`[CONSULTATION] Created session ${targetSessionId} for provider ${consultProviderId}`);
     }
 
+    // Once the parent has booked a consultation with this provider, any pending
+    // whispers on OTHER (anonymous) sessions between the same parent+provider
+    // are moot - the provider can talk to the parent directly now. Mark them
+    // AUTO_RESOLVED so they stop polluting the provider's Chats badge with a
+    // ghost unread on a sidebar row the sibling-filter has already hidden.
+    try {
+      const orphans = await this.prisma.silentQuery.updateMany({
+        where: {
+          providerId: consultProviderId,
+          status: "PENDING",
+          sessionId: { not: targetSessionId },
+          session: { userId: { in: accountIds } },
+        },
+        data: { status: "AUTO_RESOLVED" },
+      });
+      if (orphans.count > 0) {
+        this.logger.log(`[CONSULTATION] Auto-resolved ${orphans.count} sibling whisper(s) for parent+provider ${consultProviderId}`);
+      }
+    } catch (e: any) {
+      this.logger.warn(`[CONSULTATION] Sibling whisper auto-resolve failed: ${e.message}`);
+    }
+
     // Announce the consultation in the provider's chat. Backdated 1s before the
     // booking's createdAt so the AI message renders ABOVE the inline booking
     // widget (chat-message-list merges messages + bookings by createdAt) - the

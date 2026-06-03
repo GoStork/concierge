@@ -4678,13 +4678,24 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                           const cardProviderId = msg.consultationCard?.providerId ?? null;
                           // Also match by providerUserId for admin calendar cards (no providerId).
                           const cardProviderUserId = msg.consultationCard?.providerUserId ?? null;
+                          // A fresh calendar card is asking the parent to book a NEW meeting -
+                          // don't shadow it with a past/completed meeting from the same provider
+                          // (e.g. an earlier Sperm Bank consult when the parent is now booking
+                          // with the egg donor's agency). Only attach future, non-cancelled bookings.
+                          const cardCreatedAt = msg.createdAt ? new Date(msg.createdAt).getTime() : 0;
+                          const nowMs = Date.now();
                           const providerBookings = sessionBookings.filter(
                             (b: any) => {
                               const bookingProviderId = (b.providerUser?.provider?.id ?? null);
                               const bookingProviderUserId = (b.providerUser?.id ?? b.providerUserId ?? null);
                               const idMatch = bookingProviderId === cardProviderId;
                               const userIdMatch = cardProviderUserId && bookingProviderUserId === cardProviderUserId;
-                              return (idMatch || userIdMatch) && b.status !== "CANCELLED";
+                              if (!(idMatch || userIdMatch)) return false;
+                              if (b.status === "CANCELLED") return false;
+                              const scheduledMs = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
+                              const createdMs = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                              // Future meeting OR a meeting created at/after this calendar card was shown.
+                              return scheduledMs > nowMs || createdMs >= cardCreatedAt;
                             }
                           );
                           return providerBookings.sort((a: any, b: any) =>

@@ -896,7 +896,8 @@ export default function MarketplacePage() {
     queryFn: async () => {
       const res = await fetch(providerUrl, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch providers");
-      return res.json();
+      const data: ProviderWithRelations[] = await res.json();
+      return data.filter((p) => p.name !== "GoStork");
     },
     enabled: isProviderTab,
   });

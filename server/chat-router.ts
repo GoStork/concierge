@@ -1146,6 +1146,51 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
   }
 });
 
+// List the PENDING whisper questions for one session so the provider can answer
+// each one individually from the right panel. The /concierge-sessions summary
+// only returns aggregate counters - this endpoint returns the actual question
+// text and per-question SLA metadata.
+chatRouter.get("/api/provider/concierge-sessions/:id/pending-whispers", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const session = await prisma.aiChatSession.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, providerId: true, subjectType: true },
+    });
+    if (!session) return res.status(404).json({ message: "Session not found" });
+    if (session.providerId !== user.providerId) return res.status(403).json({ message: "Forbidden" });
+    if (!canProviderAccessSession(user.roles || [], (session as any).subjectType)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const pending = await prisma.silentQuery.findMany({
+      where: { sessionId: session.id, providerId: user.providerId, status: "PENDING" },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        questionText: true,
+        createdAt: true,
+        reminderCount: true,
+      },
+    });
+
+    const now = Date.now();
+    const result = pending.map(p => ({
+      id: p.id,
+      questionText: p.questionText,
+      createdAt: p.createdAt,
+      ageMinutes: Math.max(0, Math.floor((now - p.createdAt.getTime()) / 60000)),
+      nudgeCount: p.reminderCount,
+    }));
+
+    res.json(result);
+  } catch (e: any) {
+    console.error("Provider pending whispers error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
 // Provider/admin parent detail page. Tenant-gated: requesting provider must
 // share at least one PROVIDER_CONNECTED chat session or a Booking with this
 // parent. Admins bypass. Returns the same SessionUser shape the chat sidebar
@@ -1231,7 +1276,7 @@ chatRouter.get("/api/provider/parents/:id", requireAuth, async (req, res) => {
 chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
-  const { content, uiCardType, uiCardData } = req.body;
+  const { content, uiCardType, uiCardData, silentQueryId } = req.body;
   if (!content || typeof content !== "string" || !content.trim()) {
     return res.status(400).json({ message: "Content is required" });
   }
@@ -1261,15 +1306,37 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
       ? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}.`
       : nameParts[0] || provider?.name || "Agency Expert";
 
-    // Whisper answer flow only runs while the parent is still in anonymous Q&A (ACTIVE).
-    // Once they book a consultation, parent identity is revealed and the provider chats directly.
-    const pendingWhispers = await prisma.silentQuery.findMany({
-      where: { sessionId: session.id, providerId: user.providerId, status: "PENDING" },
-      orderBy: { createdAt: "asc" },
-      take: 1,
-    });
+    // Whisper answer flow: if the client passed an explicit silentQueryId, answer
+    // that specific question (right-panel "answer this question" flow). Otherwise
+    // fall back to the legacy oldest-first behavior so the main composer keeps
+    // working. Whispers stay answerable in any session state - even after the
+    // consultation is booked - so the provider can clear leftover questions.
+    let pendingWhispers: { id: string; questionText: string; sessionId: string; providerId: string; status: string }[] = [];
+    if (silentQueryId && typeof silentQueryId === "string") {
+      const targeted = await prisma.silentQuery.findUnique({ where: { id: silentQueryId } });
+      if (
+        targeted &&
+        targeted.sessionId === session.id &&
+        targeted.providerId === user.providerId &&
+        targeted.status === "PENDING"
+      ) {
+        pendingWhispers = [targeted as any];
+      } else {
+        return res.status(400).json({ message: "Pending whisper not found for this session" });
+      }
+    } else {
+      pendingWhispers = await prisma.silentQuery.findMany({
+        where: { sessionId: session.id, providerId: user.providerId, status: "PENDING" },
+        orderBy: { createdAt: "asc" },
+        take: 1,
+      }) as any;
+    }
 
-    if (pendingWhispers.length > 0 && session.status === "ACTIVE") {
+    // Treat any pending whisper (targeted or oldest-first) as the answer target,
+    // regardless of session status. Pre-booking this stays anonymous via Eva;
+    // post-booking the relay still reads naturally because the parent has been
+    // talking to Eva all along.
+    if (pendingWhispers.length > 0) {
       const whisper = pendingWhispers[0];
 
       // Provider may attach a file with the whisper answer. The chat-upload
@@ -1410,7 +1477,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
         });
       }
 
-      return res.json({ success: true, whisperAnswered: true });
+      return res.json({ success: true, whisperAnswered: true, silentQueryId: whisper.id });
     }
 
     const messageData: any = {
@@ -1503,6 +1570,31 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
         where: { id: session.id },
         data: { providerJoinedAt: new Date(), status: "PROVIDER_CONNECTED", updatedAt: new Date() },
       });
+      // Belt-and-suspenders with calendar.controller.ts: when this session flips
+      // to PROVIDER_CONNECTED, sweep any leftover PENDING whispers on the same
+      // parent+provider's OTHER (anonymous) sessions to AUTO_RESOLVED. The
+      // sibling-filter in the provider sidebar hides those sessions, so the
+      // whispers would otherwise stay pending forever and ghost the badge.
+      try {
+        const accountOwner = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
+        const parentUserIds = accountOwner?.parentAccountId
+          ? (await prisma.user.findMany({ where: { parentAccountId: accountOwner.parentAccountId }, select: { id: true } })).map(u => u.id)
+          : [session.userId];
+        const swept = await prisma.silentQuery.updateMany({
+          where: {
+            providerId: session.providerId!,
+            status: "PENDING",
+            sessionId: { not: session.id },
+            session: { userId: { in: parentUserIds } },
+          },
+          data: { status: "AUTO_RESOLVED" },
+        });
+        if (swept.count > 0) {
+          console.log(`[provider-connected] Auto-resolved ${swept.count} sibling whisper(s) for session ${session.id}`);
+        }
+      } catch (e: any) {
+        console.warn(`[provider-connected] Sibling whisper auto-resolve failed: ${e.message}`);
+      }
     } else {
       await prisma.aiChatSession.update({ where: { id: session.id }, data: { updatedAt: new Date() } });
     }

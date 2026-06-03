@@ -612,12 +612,11 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   });
   const totalUnread = useMemo(() => {
     const parentUnread = (chatSessions || []).reduce((sum, s) => sum + (s.unreadCount || 0), 0);
-    // For providers: count unread messages + pending whisper questions while still in ACTIVE state.
-    // Once a session is CONSULTATION_BOOKED or PROVIDER_CONNECTED, whispers don't apply (provider
-    // chats directly), so we don't double-count them in the badge.
+    // For providers: count unread messages + pending whisper questions in any
+    // session state. Whispers remain answerable from the right-side Q&A panel
+    // even after the consultation is booked, so they always belong in the badge.
     const providerUnread = (providerChatSessions || []).reduce((sum, s) => {
-      const pending = (s.status === "PROVIDER_CONNECTED" || s.status === "CONSULTATION_BOOKED") ? 0 : (s.pendingQuestions || 0);
-      return sum + (s.unreadCount || 0) + pending;
+      return sum + (s.unreadCount || 0) + (s.pendingQuestions || 0);
     }, 0);
     return parentUnread + providerUnread;
   }, [chatSessions, providerChatSessions]);

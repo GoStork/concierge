@@ -13,6 +13,10 @@ import { Loader2, CheckCircle2, Building2, User as UserIcon, Sparkles, RefreshCw
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ProviderW9Section } from "./provider-w9-section";
 import { W9TemplateConfig } from "./w9-template-config";
 import { useAuth } from "@/hooks/use-auth";
@@ -166,13 +170,8 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [getUrl] }),
   });
 
-  const onSyncClick = () => {
-    const ok = window.confirm(
-      "Overwrite Legal Identity fields with the values from your signed W-9?\n\n" +
-      "This replaces Legal Name, Business Name, Tax Classification, Tax ID, and Address with whatever's on the W-9. Manual edits will be lost."
-    );
-    if (ok) syncMutation.mutate();
-  };
+  const [syncConfirmOpen, setSyncConfirmOpen] = useState(false);
+  const onSyncClick = () => setSyncConfirmOpen(true);
 
   if (isLoading) {
     return (
@@ -396,6 +395,24 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
         {saveMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
         Save Legal Identity
       </Button>
+
+      <AlertDialog open={syncConfirmOpen} onOpenChange={setSyncConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Overwrite Legal Identity from W-9?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This replaces Legal Name, Business Name, Tax Classification, Tax ID, and Address
+              with whatever's on the signed W-9. Manual edits will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => syncMutation.mutate()}>
+              Overwrite from W-9
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

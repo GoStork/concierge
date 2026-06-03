@@ -212,7 +212,7 @@ export class CostsController {
 
       const providerTypeId = parsed.fields.providerTypeId;
       const subType = parsed.fields.subType;
-      const providerType = parsed.fields.providerType;
+      const providerTypeFromClient = parsed.fields.providerType;
       const programId = parsed.fields.programId;
       const { sheet, buffer, contentType, programId: resolvedProgramId } = await this.costsService.uploadFile(
         providerId,
@@ -223,6 +223,19 @@ export class CostsController {
         subType,
         programId,
       );
+
+      // When a provider offers >1 service (e.g. Eggspecting: IVF Clinic +
+      // Surrogacy Agency + Egg Donor Agency), the client sends whichever
+      // service is first by createdAt as `providerType`. That signal is
+      // misleading: a surrogacy PDF dropped on this provider would be
+      // parsed under the IVF prompt branch and force-classified as an IVF
+      // subtype. Override to "multi-service" so the AI prompt uses the
+      // union branch and the AI's content-detected serviceTypes drives
+      // classification instead.
+      const activeServiceCount = await this.prisma.providerService.count({
+        where: { providerId, status: "APPROVED" },
+      });
+      const providerType = activeServiceCount > 1 ? "multi-service" : providerTypeFromClient;
 
       if (providerType) {
         this.backgroundParseAndSave(sheet.id, buffer, contentType, providerType, parsed.filename, subType);

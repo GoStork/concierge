@@ -265,13 +265,64 @@ Return ONLY a valid JSON array with objects having these exact fields:
     // donor agencies/banks get a simpler fresh/frozen pick. Surrogacy and
     // sperm banks don't need any subtype - the classifier just emits
     // programName + country + isFixedCost + tiers.
+    //
+    // "multi-service" is the signal a provider has >1 ProviderService row
+    // (e.g. Eggspecting: IVF Clinic + Surrogacy Agency + Egg Donor Agency).
+    // In that case the prompt is the UNION of all branches and validation
+    // is driven by the AI's emitted serviceTypes tags, not by the
+    // provider's primary service - otherwise a surrogacy PDF dropped on
+    // a multi-service provider would be force-classified as an IVF subtype.
     const lowerType = providerTypeName.toLowerCase();
-    const isIvfProvider = lowerType.includes("ivf") || lowerType.includes("clinic");
-    const isEggProvider = lowerType.includes("egg");
+    const isMultiServiceProvider = lowerType === "multi-service";
+    const isIvfProvider = !isMultiServiceProvider && (lowerType.includes("ivf") || lowerType.includes("clinic"));
+    const isEggProvider = !isMultiServiceProvider && lowerType.includes("egg");
     // No-subtype providers: surrogacy + sperm bank + anything else.
-    const noSubtypeProvider = !isIvfProvider && !isEggProvider;
+    const noSubtypeProvider = !isMultiServiceProvider && !isIvfProvider && !isEggProvider;
 
-    const classificationSection = isIvfProvider ? `== PART B: CLASSIFICATION ==
+    const classificationSection = isMultiServiceProvider ? `== PART B: CLASSIFICATION ==
+
+This provider offers MULTIPLE services (e.g. IVF Clinic + Surrogacy Agency + Egg Donor Agency). You must FIRST decide which service the uploaded cost sheet covers by reading the document content, then pick the right classification path:
+
+STEP 1 - Emit "serviceTypes" array (1+ tags) from: "ivf_clinic", "surrogacy", "egg_donor", "sperm_donor". Detection cues:
+- "ivf_clinic": IVF cycle / FET / embryo creation / shipping embryos / PGT / embryo transfer / stimulation / retrieval done by a clinic, clinical fees stated.
+- "surrogacy": "Surrogate Compensation", "Surrogacy", "Gestational Carrier" / "GC fee", "Surrogate Insurance", "Surrogate Screening", "Surrogate Sign-on bonus", "Maternity Leave", "Lloyds of London", "Newborn Insurance", "Escrow", "Agency fee" in a surrogacy context.
+- "egg_donor": "Egg Donor Compensation", "Egg Donor Agency Fees", "Donor screening", "Donor IVF cycle", "Fresh Donor Cycle", "Frozen Egg Lot", "donor matching fee".
+- "sperm_donor": "Sperm Donor", "Sperm Bank", "Vial of sperm", per-vial pricing.
+A bundled sheet can have multiple tags (e.g. an Egg Donor agency that includes the surrogacy match -> ["egg_donor", "surrogacy"]).
+
+STEP 2 - Pick "subType" based on STEP 1:
+- If "ivf_clinic" is in serviceTypes, you MUST pick exactly one of the 14 IVF subtypes:
+${subtypeMenu}
+  Then "tab" is the parent of that subtype. See the heuristics block below.
+- Else if "egg_donor" is in serviceTypes AND "ivf_clinic" is NOT (pure egg-donor agency / egg bank sheet, no IVF clinical fees), pick "fresh" or "frozen":
+    - "fresh" - Fresh donor cycle (synchronized donor + recipient, fresh retrieval -> immediate fertilization).
+    - "frozen" - Frozen egg lot purchase from an egg bank (vitrified eggs, per-lot pricing).
+- Else (pure surrogacy / pure sperm bank / no IVF + no egg donor), emit "subType": "" and "tab": "".
+
+IVF SUBTYPE HEURISTICS (only when "ivf_clinic" is in serviceTypes):
+
+A. PROGRAM HAS BOTH CREATION AND TRANSFER:
+- "ivf_cycle_donor_eggs_*": explicit donor egg usage AND there's an embryo transfer step.
+- "ivf_cycle_*_surrogate_carry": surrogacy/GC/gestational carrier IS part of the program AND there are IVF clinical fees (not just agency fees).
+- "ivf_cycle_reciprocal": explicitly reciprocal IVF / shared-motherhood / partner-IVF.
+- "ivf_cycle_own_eggs_own_carry": basic full cycle without donor/surrogate language. Default for unmarked IVF.
+
+B. PROGRAM HAS CREATION BUT NO TRANSFER (parent freezes embryos):
+- "embryo_creation_only_*": doc mentions egg retrieval + embryo creation + cryopreservation / freezing / storage but does NOT mention embryo transfer, FET, or carrier.
+
+C. PROGRAM HAS TRANSFER BUT NO CREATION OR SHIPPING (in-house FET):
+- "fet_to_*": embryos are already at THIS clinic. Look for: "FET", "Frozen Embryo Transfer", absence of "shipping", "receiving fee", "embryo retrieval", "stimulation".
+
+D. PROGRAM SHIPS EMBRYOS IN FROM ANOTHER CLINIC:
+- "shipping_embryos_*": "embryo receiving fee", "shipping embryos", "incoming embryo transfer".
+
+E. PROGRAM SHIPS GAMETES IN AND CREATES EMBRYOS:
+- "shipping_eggs_sperm_*": clinic receives raw gametes AND creates embryos here.
+
+F. PROGRAM IS PURE EGG FREEZING:
+- "egg_freezing_*": retrieval + storage only, no embryo creation, no transfer.
+
+CRITICAL: do NOT force-pick an IVF subtype for a non-IVF document. A surrogacy agency cost sheet (background checks + escrow + agency fees + GC compensation + insurance + legal, with the clinical fees explicitly stated as "Paid directly to clinic" or absent) is NOT an IVF cycle. Emit subType="" in that case.` : isIvfProvider ? `== PART B: CLASSIFICATION ==
 
 Pick exactly one subtype from this list:
 ${subtypeMenu}
@@ -312,14 +363,19 @@ When uncertain, prefer "fresh" (the more common product).` : `== PART B: CLASSIF
 
 This is a ${providerTypeName} cost sheet. There is NO subtype distinction for this provider type - just extract the program label, country, and Fixed/Not-Fixed flag below.`;
 
-    const subtypeOutputSchema = isIvfProvider
+    const subtypeOutputSchema = isMultiServiceProvider
+      ? `    "tab": "<tab-id or empty string>",
+    "subType": "<subtype-id or fresh|frozen or empty string>",`
+      : isIvfProvider
       ? `    "tab": "<tab-id>",
     "subType": "<subtype-id>",`
       : isEggProvider
       ? `    "subType": "<fresh | frozen>",`
       : ``;
 
-    const subtypeTrailingNote = isIvfProvider
+    const subtypeTrailingNote = isMultiServiceProvider
+      ? `\n"tab" is the parent of "subType" when subType is one of the 14 IVF subtypes; empty string otherwise. Confidence: 0.9+ on explicit keyword matches; 0.6-0.8 inferred; <0.5 guessing.`
+      : isIvfProvider
       ? `\n"tab" must be the parent of "subType". Confidence: 0.9+ on explicit keyword matches; 0.6-0.8 inferred; <0.5 guessing.`
       : `\nConfidence: 0.9+ on explicit keyword matches; 0.6-0.8 inferred; <0.5 guessing.`;
 
@@ -509,7 +565,12 @@ ${subtypeTrailingNote}`;
         .filter((t: string) => ALLOWED_TAGS.has(t));
       serviceTypes = Array.from(new Set(serviceTypes));
       if (serviceTypes.length === 0) {
-        const defaultTag = isIvfProvider ? "ivf_clinic"
+        // Multi-service providers have no sensible default - leave the
+        // serviceTypes empty so the editor surfaces "Awaiting service tag"
+        // and the clinic picks. Forcing a tag here would silently mis-tag
+        // half the uploads on a 3-service provider.
+        const defaultTag = isMultiServiceProvider ? null
+          : isIvfProvider ? "ivf_clinic"
           : isEggProvider ? "egg_donor"
           : providerTypeName.toLowerCase().includes("surrogacy") ? "surrogacy"
           : providerTypeName.toLowerCase().includes("sperm") ? "sperm_donor"
@@ -517,7 +578,35 @@ ${subtypeTrailingNote}`;
         if (defaultTag) serviceTypes = [defaultTag];
       }
 
-      if (isIvfProvider) {
+      if (isMultiServiceProvider) {
+        // Validation routes by the AI's emitted serviceTypes, not the
+        // provider's primary service. Three valid shapes:
+        //   ivf_clinic in tags         -> subType must be one of 14 IVF ids
+        //   egg_donor in tags, no ivf  -> subType is "fresh" | "frozen"
+        //   pure surrogacy / sperm     -> subType + tab are empty strings
+        const rawSubType = String(cls.subType ?? "").trim();
+        const hasIvfTag = serviceTypes.includes("ivf_clinic");
+        const hasEggTag = serviceTypes.includes("egg_donor");
+        if (hasIvfTag) {
+          const subTypeId = rawSubType as SubType;
+          if ((ALL_SUBTYPES as string[]).includes(subTypeId)) {
+            const tab = TAB_OF[subTypeId];
+            classification = { tab, subType: subTypeId, isFixedCost, confidence, reasoning, programName, country, serviceTypes };
+            this.logger.log(`parseAndClassify [Multi/IVF]: ${items.length} items, ${subTypeId} (fixed=${isFixedCost}, conf=${confidence.toFixed(2)}, name="${programName}", country="${country}", tags=${JSON.stringify(serviceTypes)})`);
+          } else {
+            this.logger.warn(`parseAndClassify [Multi/IVF]: ivf_clinic tag but invalid subType "${cls.subType}", emitting classification without subType`);
+            classification = { tab: "" as any, subType: "" as any, isFixedCost, confidence, reasoning, programName, country, serviceTypes };
+          }
+        } else if (hasEggTag) {
+          const subType = (rawSubType.toLowerCase() === "frozen" ? "frozen" : "fresh") as any;
+          classification = { tab: "" as any, subType, isFixedCost, confidence, reasoning, programName, country, serviceTypes };
+          this.logger.log(`parseAndClassify [Multi/Egg]: ${items.length} items, ${subType} (fixed=${isFixedCost}, name="${programName}", country="${country}", tags=${JSON.stringify(serviceTypes)})`);
+        } else {
+          // Pure surrogacy / sperm bank / etc. - no subType.
+          classification = { tab: "" as any, subType: "" as any, isFixedCost, confidence, reasoning, programName, country, serviceTypes };
+          this.logger.log(`parseAndClassify [Multi/Agency]: ${items.length} items (fixed=${isFixedCost}, name="${programName}", country="${country}", tags=${JSON.stringify(serviceTypes)})`);
+        }
+      } else if (isIvfProvider) {
         const subTypeId = String(cls.subType ?? "") as SubType;
         if ((ALL_SUBTYPES as string[]).includes(subTypeId)) {
           const tab = TAB_OF[subTypeId];

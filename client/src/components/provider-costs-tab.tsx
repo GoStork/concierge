@@ -149,10 +149,11 @@ function isIvfClinicType(name: string): boolean {
 }
 
 // All upload-first providers (IVF + Surrogacy + Egg Donor + Sperm Bank +
-// Egg Bank). All get the AI dropzone + classification card + tier section,
-// but only IVF surfaces the 14-subtype dropdown.
+// Egg Bank + multi-service). All get the AI dropzone + classification card
+// + tier section, but only IVF surfaces the 14-subtype dropdown.
 function supportsUploadFirst(name: string): boolean {
   const lower = name.toLowerCase();
+  if (lower === "multi-service") return true;
   return lower.includes("ivf")
     || lower.includes("clinic")
     || lower.includes("surrogacy")
@@ -164,11 +165,16 @@ function supportsUploadFirst(name: string): boolean {
 
 // Subtype-having providers. IVF has the 14-subtype taxonomy. Egg donor has
 // the simpler "fresh"/"frozen" pair. Surrogacy / sperm bank have no subtype.
+// Multi-service providers don't get a fixed subtype dropdown - subtype is
+// per-program and surfaces only when the program's serviceTypes include
+// the relevant tag (handled inline at the program-row level).
 function hasIvfSubtypes(name: string): boolean {
+  if (name.toLowerCase() === "multi-service") return false;
   return isIvfClinicType(name);
 }
 function hasFreshFrozenSubtypes(name: string): boolean {
   const lower = name.toLowerCase();
+  if (lower === "multi-service") return false;
   return lower.includes("egg donor") || lower.includes("egg bank");
 }
 
@@ -2584,14 +2590,34 @@ function ProgramsView({
   const uploadFileInputRef = useRef<HTMLInputElement>(null);
 
   const isIvfType = isIvfClinicType(providerType);
-  // Every upload-first provider (IVF + surrogacy + egg donor + sperm bank)
-  // gets the dropzone and the classification card. Only the subtype layer
-  // differs - IVF uses the 14-subtype taxonomy, egg donor uses fresh/frozen,
-  // surrogacy/sperm-bank get nothing.
+  const isMultiServiceProvider = providerType.toLowerCase() === "multi-service";
+  // Every upload-first provider (IVF + surrogacy + egg donor + sperm bank +
+  // multi-service) gets the dropzone and the classification card. Only the
+  // subtype layer differs - IVF uses the 14-subtype taxonomy, egg donor uses
+  // fresh/frozen, surrogacy/sperm-bank get nothing. For multi-service the
+  // subtype layer is per-program (driven by that program's serviceTypes),
+  // computed inline below.
   const uploadFirstType = supportsUploadFirst(providerType);
   const showFreshFrozenSubtype = hasFreshFrozenSubtypes(providerType);
   const showIvfSubtypeDropdown = hasIvfSubtypes(providerType);
   const showAnySubtypeDropdown = showIvfSubtypeDropdown || showFreshFrozenSubtype;
+
+  // Per-program subtype-dropdown selectors. For single-service providers
+  // these collapse to the provider-level flags. For multi-service providers
+  // they read the program's serviceTypes tags - so an IVF program on
+  // Eggspecting gets the IVF dropdown, a surrogacy program gets none.
+  function programShowsIvfSubtype(program: CostProgram): boolean {
+    if (!isMultiServiceProvider) return showIvfSubtypeDropdown;
+    return (program.serviceTypes ?? []).includes("ivf_clinic");
+  }
+  function programShowsFreshFrozen(program: CostProgram): boolean {
+    if (!isMultiServiceProvider) return showFreshFrozenSubtype;
+    const tags = program.serviceTypes ?? [];
+    return tags.includes("egg_donor") && !tags.includes("ivf_clinic");
+  }
+  function programShowsAnySubtype(program: CostProgram): boolean {
+    return programShowsIvfSubtype(program) || programShowsFreshFrozen(program);
+  }
 
   function startEdit(program: CostProgram) {
     setEditingProgramId(program.id);
@@ -2810,14 +2836,14 @@ function ProgramsView({
                         Awaiting service tag
                       </Badge>
                     )}
-                    {showAnySubtypeDropdown && program.subType && (
+                    {programShowsAnySubtype(program) && program.subType && (
                       <Badge variant="outline" className="text-xs bg-secondary/40 border-secondary text-foreground/80">
-                        {showIvfSubtypeDropdown
+                        {programShowsIvfSubtype(program)
                           ? labelOfSubtype(program.subType)
                           : (FRESH_FROZEN_SUBTYPES.find((s) => s.id === program.subType)?.label ?? program.subType)}
                       </Badge>
                     )}
-                    {showAnySubtypeDropdown && !program.subType && (program.serviceTypes ?? []).length > 0 && (
+                    {programShowsAnySubtype(program) && !program.subType && (program.serviceTypes ?? []).length > 0 && (
                       <Badge variant="outline" className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/30">
                         Awaiting classification
                       </Badge>
@@ -2916,7 +2942,7 @@ function ProgramsView({
                     })}
                   </div>
                 </div>
-                {showAnySubtypeDropdown && (
+                {programShowsAnySubtype(program) && (
                   <div className="px-4 pt-3 pb-1 space-y-2">
                     {/* Subtype picker. IVF shows the 14-subtype taxonomy
                         (grouped by tab). Egg donor shows the simpler 2-
@@ -2930,7 +2956,7 @@ function ProgramsView({
                         onChange={(e) => {
                           const newSub = e.target.value;
                           if (!newSub) return;
-                          const newTab = showIvfSubtypeDropdown ? tabOfSubtype(newSub) : undefined;
+                          const newTab = programShowsIvfSubtype(program) ? tabOfSubtype(newSub) : undefined;
                           updateSubTypeMutation.mutate({
                             id: program.id,
                             subType: newSub,
@@ -2939,7 +2965,7 @@ function ProgramsView({
                         }}
                       >
                         <option value="">Select program type...</option>
-                        {showIvfSubtypeDropdown
+                        {programShowsIvfSubtype(program)
                           ? (tabFilter
                               ? SUBTYPES_BY_TAB[tabFilter]
                               : IVF_TABS.flatMap((t) =>
@@ -2971,8 +2997,8 @@ function ProgramsView({
                     parentId={parentId}
                     subType={subType}
                     programId={program.id}
-                    programSubType={isIvfType ? (program.subType ?? null) : undefined}
-                    programTab={isIvfType ? (program.tab ?? tabFilter ?? null) : undefined}
+                    programSubType={programShowsIvfSubtype(program) ? (program.subType ?? null) : undefined}
+                    programTab={programShowsIvfSubtype(program) ? (program.tab ?? tabFilter ?? null) : undefined}
                   />
                 </div>
               </div>
@@ -3034,16 +3060,21 @@ export default function ProviderCostsTab({
     );
   }
 
-  // Multi-service provider (e.g. Family Creations - Surrogacy + Egg Donor):
-  // we used to render outer tabs to switch between services. With the
-  // serviceTypes tagging system, every cost sheet carries its own
-  // service-type tag(s) and we show one flat list across services. The AI
-  // tags each program on upload; provider can override the tags on the
-  // row. No providerTypeId filter so all programs show.
-  const primarySvc = services[0];
+  // Multi-service provider (e.g. Eggspecting - IVF Clinic + Surrogacy +
+  // Egg Donor). Every cost sheet carries its own service-type tag(s) and
+  // we show one flat list across services. The AI tags each program on
+  // upload; provider can override the tags on the row.
+  //
+  // CRITICAL: pass "multi-service" instead of the first service's name.
+  // (a) The upload endpoint forwards this to the AI prompt branch that
+  //     unions all heuristics - otherwise a surrogacy PDF dropped here
+  //     gets force-classified as an IVF subtype.
+  // (b) /api/costs/templates/multi-service returns no templates, so the
+  //     editor doesn't fabricate IVF default fields as a fallback when
+  //     a sheet parses empty.
   return (
     <ProgramsView
-      providerType={primarySvc.providerTypeName}
+      providerType="multi-service"
       providerTypeId={undefined}
       providerId={providerId}
       isAdminView={isAdminView}

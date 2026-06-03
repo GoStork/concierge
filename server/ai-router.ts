@@ -595,25 +595,19 @@ function escapeHtml(str: string): string {
 }
 
 async function findLatestMatchCard(sessionId: string): Promise<any | null> {
-  const [richMessages, anyMatchCardMessages] = await Promise.all([
-    prisma.aiChatMessage.findMany({
-      where: { sessionId, uiCardType: "rich" },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-      select: { uiCardData: true },
-    }),
-    prisma.aiChatMessage.findMany({
-      where: { sessionId, NOT: { uiCardData: { equals: null } } },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-      select: { uiCardData: true },
-    }),
-  ]);
-  for (const msg of richMessages) {
-    const mc = (msg.uiCardData as any)?.matchCards?.[0];
-    if (mc?.providerId && mc?.type) return mc;
-  }
-  for (const msg of anyMatchCardMessages) {
+  // Single date-ordered scan across ALL messages with uiCardData. We do NOT
+  // prefer uiCardType="rich" — the session-init greeting stores the parent's
+  // currently-viewed donor card with uiCardType=null, and that subject must
+  // win over any older rich message from an earlier interaction. Sorting
+  // strictly by createdAt is the only way "latest" stays correct when the
+  // parent jumps between providers in the same shared session.
+  const messages = await prisma.aiChatMessage.findMany({
+    where: { sessionId, NOT: { uiCardData: { equals: null } } },
+    orderBy: { createdAt: "desc" },
+    take: 30,
+    select: { uiCardData: true },
+  });
+  for (const msg of messages) {
     const mc = (msg.uiCardData as any)?.matchCards?.[0];
     if (mc?.providerId && mc?.type) return mc;
   }
@@ -1298,6 +1292,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
             role: "assistant",
             content: builtGreeting,
             senderType: "ai",
+            uiCardType: "rich",
             uiCardData: matchCardData,
           },
         });
@@ -1353,6 +1348,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
         role: "assistant",
         content: builtGreeting,
         senderType: "ai",
+        ...(greetingUiCardData ? { uiCardType: "rich" } : {}),
         uiCardData: { ...(greetingUiCardData || {}), ...(greetingQuickReplies.length ? { quickReplies: greetingQuickReplies } : {}) },
       },
     });
@@ -6453,10 +6449,27 @@ NEVER promise to search without actually calling the search tool. NEVER end with
 
     const consultationMatch = finalContent.match(/\[\[CONSULTATION_BOOKING:(.*?)\]\]/);
     if (consultationMatch) {
-      const consultProviderId = consultationMatch[1].trim();
+      let consultProviderId = consultationMatch[1].trim();
       console.log(`[CONSULTATION] Processing CONSULTATION_BOOKING for providerId="${consultProviderId}"`);
       if (!consultProviderId) {
         console.warn("[CONSULTATION] Empty provider ID in CONSULTATION_BOOKING tag");
+      }
+      // Guard: the AI sometimes carries forward an earlier provider's ID (e.g., a previously
+      // booked Sperm Bank) when the parent is actually trying to book a different agency
+      // (e.g., the egg donor's agency that was just shown). Override with the latest match
+      // card's ownerProviderId when they disagree - the latest card is what the parent is
+      // looking at right now.
+      if (currentSessionId) {
+        try {
+          const latestMc = await findLatestMatchCard(currentSessionId);
+          const correctOwnerId = latestMc?.ownerProviderId || null;
+          if (correctOwnerId && correctOwnerId !== consultProviderId) {
+            console.warn(`[CONSULTATION] Provider ID mismatch: AI used "${consultProviderId}" but latest match card's ownerProviderId is "${correctOwnerId}". Overriding to latest match card's agency.`);
+            consultProviderId = correctOwnerId;
+          }
+        } catch (e) {
+          console.error("[CONSULTATION] Error validating providerId against latest match card:", e);
+        }
       }
       try {
         const cpResult = await mcpClient!.callTool({

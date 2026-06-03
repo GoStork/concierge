@@ -46,6 +46,7 @@ function formatItemValue(item: ProgramCardLineItem): string {
 
 function formatTotal(min: number, max: number): string {
   if (min === max) return formatMoneyDollars(min);
+  if (min === 0) return formatMoneyDollars(max);
   return `${formatMoneyDollars(min)} - ${formatMoneyDollars(max)}`;
 }
 

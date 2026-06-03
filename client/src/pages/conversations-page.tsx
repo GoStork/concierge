@@ -19,10 +19,11 @@ import {
   ArrowLeft, MessageSquare, User, Loader2, FileText, X,
   CheckCircle2, ChevronRight, Shield, ThumbsUp, ThumbsDown,
   Sparkles, Building2, MessageCircle, Heart, CornerRightDown,
-  CalendarDays, Video, Trash2, Headphones,
+  CalendarDays, Video, Trash2, Headphones, HelpCircle,
   // Used by legacy dead code pending removal
   CalendarClock, Check, Clock, Crown, Download, ExternalLink, Paperclip, PenLine, Send,
 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { hasProviderRole } from "@shared/roles";
@@ -856,6 +857,73 @@ const sendMessageMutation = useMutation({
       );
       queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions", selectedSessionId] });
       queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions"] });
+      // The legacy oldest-first whisper-answer path can fire here too (when the
+      // provider types in the main composer with no targeted silentQueryId).
+      // Refresh the per-session whispers list so the panel doesn't show a
+      // ghost question after it's been answered via this route.
+      queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions", selectedSessionId, "pending-whispers"] });
+    },
+  });
+
+  // Per-session pending whisper questions surfaced in the right-side AI
+  // Concierge Q&A panel. Each row is independently answerable - the provider
+  // no longer has to guess which question the main composer is replying to.
+  type PendingWhisper = { id: string; questionText: string; createdAt: string; ageMinutes: number; nudgeCount: number };
+  const pendingWhispersQuery = useQuery<PendingWhisper[]>({
+    queryKey: ["/api/provider/concierge-sessions", selectedSessionId, "pending-whispers"],
+    queryFn: async () => {
+      if (!selectedSessionId) return [];
+      const res = await fetch(`/api/provider/concierge-sessions/${selectedSessionId}/pending-whispers`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: isProvider && !!selectedSessionId,
+    refetchInterval: 30000,
+  });
+
+  // Per-question draft text. Keyed by silentQueryId so multiple unanswered
+  // questions on the same session each have their own independent input.
+  const [whisperDrafts, setWhisperDrafts] = useState<Record<string, string>>({});
+  const [whisperPendingId, setWhisperPendingId] = useState<string | null>(null);
+
+  const answerWhisperMutation = useMutation({
+    mutationFn: async ({ sessionId, silentQueryId, content }: { sessionId: string; silentQueryId: string; content: string }) => {
+      const res = await fetch(`/api/provider/concierge-sessions/${sessionId}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ content, silentQueryId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to send answer");
+      }
+      return res.json();
+    },
+    onMutate: ({ silentQueryId }) => {
+      setWhisperPendingId(silentQueryId);
+    },
+    onSuccess: (_data, vars) => {
+      // Drop the answered question from the panel list immediately.
+      queryClient.setQueryData<PendingWhisper[]>(
+        ["/api/provider/concierge-sessions", vars.sessionId, "pending-whispers"],
+        (old) => (old || []).filter(q => q.id !== vars.silentQueryId),
+      );
+      // Clear the per-question draft.
+      setWhisperDrafts(prev => {
+        const next = { ...prev };
+        delete next[vars.silentQueryId];
+        return next;
+      });
+      // Refresh the sessions list so the top-bar Chats badge drops.
+      queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions", vars.sessionId] });
+    },
+    onError: (e: any) => {
+      toast({ title: "Failed to send", description: e?.message || "Try again", variant: "destructive" });
+    },
+    onSettled: () => {
+      setWhisperPendingId(null);
     },
   });
 
@@ -2223,6 +2291,31 @@ const sendMessageMutation = useMutation({
         />
 
           <div className="flex-1 flex flex-col min-h-0">
+            {(pendingWhispersQuery.data?.length || 0) > 0 && (
+              <div
+                className="border-b px-4 py-2.5 flex items-center gap-2 shrink-0"
+                style={{ backgroundColor: `hsl(var(--brand-warning) / 0.1)`, borderColor: `hsl(var(--brand-warning) / 0.3)` }}
+                data-testid="pending-whispers-banner"
+              >
+                <HelpCircle className="w-4 h-4 flex-shrink-0" style={{ color: `hsl(var(--brand-warning))` }} />
+                <p className="text-xs flex-1" style={{ color: `hsl(var(--brand-warning))` }}>
+                  <span className="font-semibold">{pendingWhispersQuery.data!.length} pending question{pendingWhispersQuery.data!.length > 1 ? "s" : ""}</span>
+                  <span className="opacity-80"> from this parent - answer {pendingWhispersQuery.data!.length > 1 ? "them" : "it"} in the side panel.</span>
+                </p>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs hidden lg:inline-flex"
+                  onClick={() => {
+                    const panel = document.querySelector('[data-testid="whisper-questions-panel"]');
+                    if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
+                  data-testid="btn-jump-to-whispers"
+                >
+                  Jump to panel
+                </Button>
+              </div>
+            )}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" data-testid="provider-chat-messages">
               <ChatMessageList
                 ref={chatEndRef}
@@ -2341,58 +2434,125 @@ const sendMessageMutation = useMutation({
           </div>
         </div>{/* end header + messages column */}
 
-          {!hasJoined && !isConsultationBooked ? (
-            <div className="w-72 border-l overflow-y-auto p-4 bg-muted/30 hidden lg:block" data-testid="provider-sidebar">
-              <div className="space-y-4">
+          {(() => {
+            // Per-question whisper Q&A panel - reused inside both the pre-booking
+            // standalone sidebar and the post-booking ChatProfileSidebar so the
+            // provider can keep answering leftover whispers even after the
+            // consultation is booked. Each row is its own targeted-answer flow.
+            const pendingWhispers = pendingWhispersQuery.data || [];
+            const whispersPanel = (
+              <div className="space-y-3" data-testid="whisper-questions-panel">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
                   <h4 className="font-semibold text-sm" style={{ fontFamily: "var(--font-display)" }}>AI Concierge Q&A</h4>
+                  {pendingWhispers.length > 0 && (
+                    <span
+                      className="ml-auto min-w-[20px] h-[20px] rounded-full flex items-center justify-center text-[10px] font-bold text-primary-foreground px-1.5"
+                      style={{ backgroundColor: brandColor }}
+                      data-testid="whisper-pending-count"
+                    >
+                      {pendingWhispers.length}
+                    </span>
+                  )}
                 </div>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Questions from this prospective parent are forwarded here by the AI concierge. Your answers are relayed back - the parent's identity stays private until they schedule a consultation.
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Questions from this parent forwarded by the AI concierge. Your answer is relayed back - the parent's identity stays private until they schedule a consultation.
                 </p>
-                {selectedSession && selectedSession.pendingQuestions > 0 && (() => {
-                  const ageMin = selectedSession.pendingMaxAgeMinutes || 0;
-                  // Color escalates with age: green <2h, warning 2-24h, accent (alert) >24h
-                  const isOverdue = ageMin >= 24 * 60;
-                  const isApproaching = !isOverdue && ageMin >= 2 * 60;
-                  const tint = isOverdue
-                    ? "bg-accent/15 border-accent/40 text-accent-foreground"
-                    : isApproaching
-                      ? "bg-[hsl(var(--brand-warning))]/10 border-[hsl(var(--brand-warning))]/20 text-[hsl(var(--brand-warning))]"
-                      : "bg-[hsl(var(--brand-success))]/10 border-[hsl(var(--brand-success))]/20 text-[hsl(var(--brand-success))]";
-                  const ageText = ageMin < 60
-                    ? `${ageMin}m`
-                    : ageMin < 24 * 60
-                      ? `${Math.floor(ageMin / 60)}h ${ageMin % 60}m`
-                      : `${Math.floor(ageMin / 1440)}d ${Math.floor((ageMin % 1440) / 60)}h`;
-                  const slaCopy = isOverdue
-                    ? "SLA breached - parent may move on. GoStork has been notified."
-                    : isApproaching
-                      ? "Reply within 24h to keep this lead warm."
-                      : "Reply quickly - parents who hear back within 2h convert at a higher rate.";
-                  return (
-                    <div className={`rounded-[var(--radius)] p-3 border ${tint}`} data-testid="whisper-sla-card">
-                      <p className="text-sm font-medium">{selectedSession.pendingQuestions} question{selectedSession.pendingQuestions > 1 ? "s" : ""} pending</p>
-                      <p className="text-xs mt-1 opacity-90">Oldest: {ageText} ago</p>
-                      {selectedSession.pendingNudgeCount > 0 && (
-                        <p className="text-xs mt-1 opacity-75">Nudged {selectedSession.pendingNudgeCount}x</p>
-                      )}
-                      <p className="text-xs text-muted-foreground mt-2">{slaCopy}</p>
-                      <p className="text-xs text-muted-foreground mt-2">Reply below to answer - attach a file if it helps.</p>
-                    </div>
-                  );
-                })()}
+                {pendingWhispers.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic" data-testid="no-pending-whispers">
+                    No pending questions. New questions from this parent will appear here.
+                  </p>
+                ) : (
+                  pendingWhispers.map((q) => {
+                    const ageMin = q.ageMinutes || 0;
+                    const isOverdue = ageMin >= 24 * 60;
+                    const isApproaching = !isOverdue && ageMin >= 2 * 60;
+                    const tint = isOverdue
+                      ? "bg-accent/15 border-accent/40 text-accent-foreground"
+                      : isApproaching
+                        ? "bg-[hsl(var(--brand-warning))]/10 border-[hsl(var(--brand-warning))]/30 text-[hsl(var(--brand-warning))]"
+                        : "bg-[hsl(var(--brand-success))]/10 border-[hsl(var(--brand-success))]/30 text-[hsl(var(--brand-success))]";
+                    const ageLabel = ageMin < 60
+                      ? `${ageMin}m`
+                      : ageMin < 24 * 60
+                        ? `${Math.floor(ageMin / 60)}h`
+                        : `${Math.floor(ageMin / 1440)}d`;
+                    const draft = whisperDrafts[q.id] || "";
+                    const isPending = whisperPendingId === q.id;
+                    return (
+                      <div
+                        key={q.id}
+                        className="rounded-[var(--radius)] border border-border bg-background p-3 space-y-2.5"
+                        data-testid={`whisper-question-${q.id}`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <HelpCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: brandColor }} />
+                          <p className="text-sm leading-snug flex-1 break-words font-medium">{q.questionText}</p>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${tint}`}>
+                            {ageLabel} ago{isOverdue ? " - SLA breached" : ""}
+                          </span>
+                          {q.nudgeCount > 0 && (
+                            <span className="text-[10px] text-muted-foreground">Nudged {q.nudgeCount}x</span>
+                          )}
+                        </div>
+                        <Textarea
+                          value={draft}
+                          onChange={(e) => setWhisperDrafts((prev) => ({ ...prev, [q.id]: e.target.value }))}
+                          placeholder="Type your answer to this question..."
+                          className="min-h-[64px] text-sm resize-none"
+                          disabled={isPending}
+                          data-testid={`whisper-answer-input-${q.id}`}
+                        />
+                        <div className="flex justify-end">
+                          <Button
+                            size="sm"
+                            disabled={!draft.trim() || isPending || !selectedSessionId}
+                            onClick={() =>
+                              answerWhisperMutation.mutate({
+                                sessionId: selectedSessionId!,
+                                silentQueryId: q.id,
+                                content: draft.trim(),
+                              })
+                            }
+                            style={{ backgroundColor: brandColor }}
+                            className="text-primary-foreground gap-1.5 text-xs"
+                            data-testid={`whisper-answer-send-${q.id}`}
+                          >
+                            {isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                            Send to parent
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
-            </div>
-          ) : (
+            );
+
+            if (!hasJoined && !isConsultationBooked) {
+              return (
+                <div className="w-72 border-l overflow-y-auto p-4 bg-muted/30 hidden lg:block" data-testid="provider-sidebar">
+                  {whispersPanel}
+                </div>
+              );
+            }
+
+            return (
             <ChatProfileSidebar
               user={detail.user}
               brandColor={brandColor}
               isOnline={!!onlineStatuses[detail.user.id]}
               testId="provider-sidebar"
               topSections={
-                (hasJoined || isConsultationBooked) ? (
+                <>
+                  {whispersPanel ? (
+                    <div className="border-b pb-4 mb-4" data-testid="whisper-questions-section">
+                      {whispersPanel}
+                    </div>
+                  ) : null}
+                {(hasJoined || isConsultationBooked) ? (
                   <div className="border-b pb-4 mb-4" data-testid="consultation-status-section">
                     <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Match Status</h4>
                     <div className="space-y-2">
@@ -2435,7 +2595,8 @@ const sendMessageMutation = useMutation({
                       )}
                     </div>
                   </div>
-                ) : null
+                ) : null}
+                </>
               }
               extraSections={
                 <>
@@ -2484,7 +2645,8 @@ const sendMessageMutation = useMutation({
                 </>
               }
             />
-          )}
+            );
+          })()}
       </div>
     ) : null;
 

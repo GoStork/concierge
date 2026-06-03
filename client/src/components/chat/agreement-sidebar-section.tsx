@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FileText, Loader2, X } from "lucide-react";
@@ -254,11 +255,29 @@ export function AgreementSidebarSection({
         </div>
       )}
 
-      {generateAgreementMutation.isError && (
-        <p className="text-xs text-destructive mt-1.5" data-testid="text-agreement-error">
-          {(generateAgreementMutation.error as Error)?.message || "Failed to generate agreement"}
-        </p>
-      )}
+      {generateAgreementMutation.isError && (() => {
+        const errMsg = (generateAgreementMutation.error as Error)?.message || "Failed to generate agreement";
+        const isMissingTemplate = /not uploaded an agreement template/i.test(errMsg);
+        return (
+          <p className="text-xs text-destructive mt-1.5" data-testid="text-agreement-error">
+            {errMsg}
+            {isMissingTemplate && (
+              <>
+                {" "}
+                <Link
+                  to="/account/documents"
+                  className="underline underline-offset-2 font-semibold hover:opacity-80"
+                  style={{ color: "hsl(var(--primary))" }}
+                  data-testid="link-upload-agreement-template"
+                >
+                  Upload one in your Documents settings
+                </Link>
+                .
+              </>
+            )}
+          </p>
+        );
+      })()}
 
       {/* Agreement status widget - hidden in embedded mode */}
       {!embedded && agr && agr.status !== "DRAFT" && agr.status !== "CREATED" && (() => {
