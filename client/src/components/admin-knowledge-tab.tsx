@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Brain, Globe, Loader2, Plus, Trash2, Pencil, ArrowUpDown, CheckCircle, AlertCircle, X } from "lucide-react";
@@ -54,10 +55,10 @@ function RuleForm({
         </div>
         <div className="flex items-center gap-2">
           <Label className="text-xs">Priority</Label>
-          <Input
-            type="number"
-            value={sortOrder}
-            onChange={(e) => setSortOrder(parseInt(e.target.value) || 0)}
+          <NumberInput
+            value={String(sortOrder)}
+            onChange={(v) => setSortOrder(parseInt(v) || 0)}
+            allowDecimal={false}
             className="w-16 h-8 text-xs"
             data-testid="input-rule-sort"
           />

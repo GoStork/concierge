@@ -8,6 +8,10 @@ import { formatLocationDisplay } from "@/lib/format-location";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { MessageStatus } from "@/components/ui/message-status";
 import { OnlineIndicator } from "@/components/ui/online-indicator";
 import { useOnlineStatus } from "@/hooks/use-online-status";
@@ -877,6 +881,30 @@ const sendMessageMutation = useMutation({
   const [providerUploading, setProviderUploading] = useState(false);
   type ProviderInlinePanel = null | "costSheet" | "invoice" | "agreement";
   const [providerInlinePanel, setProviderInlinePanel] = useState<ProviderInlinePanel>(null);
+  // Seeded by "Edit & Resend" on a sent cost-sheet card; cleared when the
+  // panel closes so the next "Send Cost Sheet" click starts blank.
+  const [costSheetEditPrefill, setCostSheetEditPrefill] = useState<{ totalCostCents: number; notes: string | null } | null>(null);
+  // Seeded by "Edit & Resend" on a sent invoice card. The invoice panel reads
+  // these to pre-fill the form and cancels this invoice on successful resend.
+  const [invoiceEditPrefill, setInvoiceEditPrefill] = useState<{
+    invoiceId: string;
+    lineItems: Array<{ serviceType: any; description: string | null; amountCents: number }>;
+    description: string | null;
+  } | null>(null);
+  // Per-invoice mutation pending flag so the card's buttons disable only on
+  // the row that's currently being cancelled/edited.
+  const [invoiceActionPendingId, setInvoiceActionPendingId] = useState<string | null>(null);
+  // Same idea for the cost-sheet Cancel button.
+  const [costSheetActionPendingId, setCostSheetActionPendingId] = useState<string | null>(null);
+  // Pending confirmation for a destructive cancel action. Set when the user
+  // clicks Cancel on either an invoice or a cost-sheet card; cleared after
+  // Cancel/Confirm in the AlertDialog (the only allowed dialog per project
+  // rules - destructive-action confirms only, never for forms).
+  const [pendingCancel, setPendingCancel] = useState<
+    | { kind: "invoice"; invoiceId: string }
+    | { kind: "costSheet"; quoteId: string }
+    | null
+  >(null);
   const [providerHeaderPanelOpen, setProviderHeaderPanelOpen] = useState(false);
   const [parentHeaderPanelOpen, setParentHeaderPanelOpen] = useState(false);
 
@@ -895,6 +923,110 @@ const sendMessageMutation = useMutation({
   const removeProviderStagedFile = (index: number) => {
     setProviderStagedFiles(prev => prev.filter((_, i) => i !== index));
   };
+
+  // Provider clicks "Cancel Invoice" on an in-chat invoice card. Opens the
+  // brand AlertDialog (defined at the bottom of this component); confirming
+  // there calls confirmPendingCancel, which POSTs to the cancel endpoint.
+  // The server updates the chat card's uiCardData.status to CANCELLED and
+  // posts a system note, so a session refetch is enough to reflect both.
+  const cancelInvoiceFromCard = useCallback(({ invoiceId }: { invoiceId: string }) => {
+    if (!selectedSessionId) return;
+    setPendingCancel({ kind: "invoice", invoiceId });
+  }, [selectedSessionId]);
+
+  const runCancelInvoice = useCallback(async (invoiceId: string) => {
+    if (!selectedSessionId) return;
+    setInvoiceActionPendingId(invoiceId);
+    try {
+      const res = await fetch(
+        `/api/sessions/${selectedSessionId}/invoices/${invoiceId}/cancel`,
+        { method: "POST", credentials: "include" },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.message || "Failed to cancel invoice");
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions", selectedSessionId] });
+    } catch (err: any) {
+      alert(err?.message || "Failed to cancel invoice");
+    } finally {
+      setInvoiceActionPendingId(null);
+    }
+  }, [selectedSessionId, queryClient]);
+
+  // Provider clicks "Edit & Resend" on an in-chat invoice card. Fetches the
+  // invoice (for its line items + description), seeds the prefill state, and
+  // opens the invoice panel. The panel cancels the old invoice on successful
+  // resend so the parent never sees two pending invoices at once.
+  const editInvoiceFromCard = useCallback(async ({ invoiceId }: { invoiceId: string }) => {
+    if (!selectedSessionId) return;
+    setInvoiceActionPendingId(invoiceId);
+    try {
+      const res = await fetch(
+        `/api/sessions/${selectedSessionId}/invoices/${invoiceId}`,
+        { credentials: "include" },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.message || "Failed to load invoice");
+      }
+      const { invoice } = await res.json();
+      const lineItems = (invoice?.lineItems || []).map((li: any) => ({
+        serviceType: li.serviceType,
+        description: li.description,
+        amountCents: li.amountCents,
+      }));
+      setInvoiceEditPrefill({
+        invoiceId: invoice.id,
+        lineItems,
+        description: invoice.description || null,
+      });
+      setProviderInlinePanel("invoice");
+    } catch (err: any) {
+      alert(err?.message || "Failed to load invoice");
+    } finally {
+      setInvoiceActionPendingId(null);
+    }
+  }, [selectedSessionId]);
+
+  // Provider clicks "Cancel" on an in-chat cost-sheet card. Opens the brand
+  // AlertDialog; confirmation runs the cancel POST below.
+  const cancelCostSheetFromCard = useCallback(({ quoteId }: { quoteId: string }) => {
+    if (!selectedSessionId) return;
+    setPendingCancel({ kind: "costSheet", quoteId });
+  }, [selectedSessionId]);
+
+  const runCancelCostSheet = useCallback(async (quoteId: string) => {
+    if (!selectedSessionId) return;
+    setCostSheetActionPendingId(quoteId);
+    try {
+      const res = await fetch(
+        `/api/sessions/${selectedSessionId}/cost-sheets/${quoteId}/cancel`,
+        { method: "POST", credentials: "include" },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.message || "Failed to cancel cost sheet");
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions", selectedSessionId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions/cost-sheets", selectedSessionId] });
+    } catch (err: any) {
+      alert(err?.message || "Failed to cancel cost sheet");
+    } finally {
+      setCostSheetActionPendingId(null);
+    }
+  }, [selectedSessionId, queryClient]);
+
+  const confirmPendingCancel = useCallback(async () => {
+    const target = pendingCancel;
+    if (!target) return;
+    setPendingCancel(null);
+    if (target.kind === "invoice") {
+      await runCancelInvoice(target.invoiceId);
+    } else {
+      await runCancelCostSheet(target.quoteId);
+    }
+  }, [pendingCancel, runCancelInvoice, runCancelCostSheet]);
 
   const handleProviderMeeting = async () => {
     if (!selectedSessionId) return;
@@ -2130,6 +2262,17 @@ const sendMessageMutation = useMutation({
                 onOpenInlineVideo={setInlineVideoBookingId}
                 onBookingUpdate={() => sessionBookingsQuery.refetch()}
                 msgTestIdPrefix="provider-msg"
+                onEditCostSheet={(hasJoined || isConsultationBooked)
+                  ? (initial) => {
+                      setCostSheetEditPrefill(initial);
+                      setProviderInlinePanel("costSheet");
+                    }
+                  : undefined}
+                onEditInvoice={(hasJoined || isConsultationBooked) ? editInvoiceFromCard : undefined}
+                onCancelInvoice={(hasJoined || isConsultationBooked) ? cancelInvoiceFromCard : undefined}
+                invoiceActionPendingId={invoiceActionPendingId}
+                onCancelCostSheet={(hasJoined || isConsultationBooked) ? cancelCostSheetFromCard : undefined}
+                costSheetActionPendingId={costSheetActionPendingId}
               />
             </div>
 
@@ -2146,30 +2289,35 @@ const sendMessageMutation = useMutation({
                 enableFileUpload
                 testIdPrefix="provider"
                 onMeetingClick={handleProviderMeeting}
-                onCostSheetClick={(hasJoined || isConsultationBooked) ? () => setProviderInlinePanel("costSheet") : undefined}
-                onInvoiceClick={(hasJoined || isConsultationBooked) ? () => setProviderInlinePanel("invoice") : undefined}
+                onCostSheetClick={(hasJoined || isConsultationBooked) ? () => { setCostSheetEditPrefill(null); setProviderInlinePanel("costSheet"); } : undefined}
+                onInvoiceClick={(hasJoined || isConsultationBooked) ? () => { setInvoiceEditPrefill(null); setProviderInlinePanel("invoice"); } : undefined}
                 onAgreementClick={(hasJoined || isConsultationBooked) ? () => setProviderInlinePanel("agreement") : undefined}
                 inlinePanel={
                   providerInlinePanel === "costSheet" ? (
                     <CostSheetSidebarSection
-                      key={`cs-embed-${selectedSessionId || "none"}`}
+                      key={`cs-embed-${selectedSessionId || "none"}-${costSheetEditPrefill ? costSheetEditPrefill.totalCostCents : "blank"}`}
                       sessionId={selectedSessionId}
                       brandColor={brandColor}
                       sessionQueryKey="/api/provider/concierge-sessions"
                       embedded
-                      onClose={() => setProviderInlinePanel(null)}
+                      onClose={() => { setProviderInlinePanel(null); setCostSheetEditPrefill(null); }}
                       subjectType={selectedSession?.subjectType ?? null}
                       subjectProfileId={selectedSession?.subjectProfileId ?? null}
                       providerId={(user as any)?.providerId ?? null}
+                      initialTotalCostCents={costSheetEditPrefill?.totalCostCents ?? null}
+                      initialNotes={costSheetEditPrefill?.notes ?? null}
                     />
                   ) : providerInlinePanel === "invoice" ? (
                     <InvoiceSidebarSection
-                      key={`inv-embed-${selectedSessionId || "none"}`}
+                      key={`inv-embed-${selectedSessionId || "none"}-${invoiceEditPrefill?.invoiceId || "blank"}`}
                       sessionId={selectedSessionId}
                       brandColor={brandColor}
                       sessionQueryKey="/api/provider/concierge-sessions"
                       embedded
-                      onClose={() => setProviderInlinePanel(null)}
+                      onClose={() => { setProviderInlinePanel(null); setInvoiceEditPrefill(null); }}
+                      initialLineItems={invoiceEditPrefill?.lineItems ?? null}
+                      initialDescription={invoiceEditPrefill?.description ?? null}
+                      cancelInvoiceIdOnSend={invoiceEditPrefill?.invoiceId ?? null}
                     />
                   ) : providerInlinePanel === "agreement" ? (
                     <AgreementSidebarSection
@@ -2364,6 +2512,32 @@ const sendMessageMutation = useMutation({
             onClose={() => setInlineVideoBookingId(null)}
           />
         )}
+        <AlertDialog
+          open={!!pendingCancel}
+          onOpenChange={(open) => { if (!open) setPendingCancel(null); }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {pendingCancel?.kind === "invoice" ? "Cancel this invoice?" : "Cancel this cost sheet?"}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {pendingCancel?.kind === "invoice"
+                  ? "The parent will no longer be able to pay this invoice. You can send a revised invoice afterward."
+                  : "The parent will see this cost sheet as cancelled, and a new invoice will require a fresh cost sheet first."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep it</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={confirmPendingCancel}
+                data-testid="confirm-cancel-action"
+              >
+                {pendingCancel?.kind === "invoice" ? "Cancel invoice" : "Cancel cost sheet"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </>
     );
   }

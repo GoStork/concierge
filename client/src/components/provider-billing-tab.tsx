@@ -20,6 +20,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, CheckCircle2, Undo2, AlertCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import {
@@ -452,13 +453,9 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Refund amount (USD)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  max={(remainingCents / 100).toFixed(2)}
+                <NumberInput
                   value={amountDollars}
-                  onChange={e => setAmountDollars(e.target.value)}
+                  onChange={setAmountDollars}
                 />
                 <p className="text-xs text-muted-foreground">
                   Max refundable: ${(remainingCents / 100).toFixed(2)}
@@ -663,13 +660,10 @@ function CombinedPreview({ services, configByService }: CombinedPreviewProps) {
                   </p>
                 )}
               </div>
-              <Input
-                type="number"
-                min="0"
-                step="500"
+              <NumberInput
                 placeholder="Sample Total Quoted Cost ($)"
                 value={quotedTotals[st] || ""}
-                onChange={e => setQuotedTotals(prev => ({ ...prev, [st]: e.target.value }))}
+                onChange={v => setQuotedTotals(prev => ({ ...prev, [st]: v }))}
                 className="flex-1"
               />
             </div>

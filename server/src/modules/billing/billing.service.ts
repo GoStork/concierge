@@ -494,9 +494,9 @@ export class BillingService {
       data: {
         sessionId: invoice.sessionId,
         role: "assistant",
-        content: `A payment request has been sent to you for your service with ${invoice.providerName}. Please complete payment to continue your journey.`,
+        content: `${invoice.providerName} sent an invoice. Total: ${formatCents(invoice.serviceAmount)}`,
         senderType: "system",
-        senderName: "GoStork",
+        senderName: invoice.providerName || "Provider",
         uiCardType: "invoice",
         uiCardData: {
           invoiceId: invoice.id,
@@ -545,6 +545,74 @@ export class BillingService {
     });
 
     return invoice;
+  }
+
+  // ─── Cancel an invoice (provider/admin) ────────────────────────────────────
+
+  /**
+   * Cancel an AWAITING_PAYMENT invoice. Used when a provider needs to retract
+   * an invoice they sent (mistake, change in scope, parent asked for a revision).
+   * Flips Invoice.status to "CANCELLED", flips the in-chat card's
+   * uiCardData.status so the Pay button disappears and the badge updates, and
+   * posts a short system note. No Stripe refund logic - the invoice never
+   * captured funds (status must be AWAITING_PAYMENT). For PAID/AUTHORIZED
+   * invoices, admins use the refund flow instead.
+   */
+  async cancelInvoice(invoiceId: string, actorLabel?: string) {
+    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) throw new NotFoundException("Invoice not found");
+    if (invoice.status !== "AWAITING_PAYMENT") {
+      throw new BadRequestException(
+        `Only pending invoices can be cancelled (current status: ${invoice.status}).`,
+      );
+    }
+
+    const updated = await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: { status: "CANCELLED" },
+    });
+
+    // Flip the in-chat card's status so the parent's Pay button disappears and
+    // the badge reads "Cancelled" on both sides.
+    try {
+      const existingCardMsg = await this.prisma.aiChatMessage.findFirst({
+        where: {
+          sessionId: invoice.sessionId,
+          uiCardType: "invoice",
+          uiCardData: { path: ["invoiceId"], equals: invoice.id },
+        },
+        select: { id: true, uiCardData: true },
+      });
+      if (existingCardMsg) {
+        const updatedData = {
+          ...((existingCardMsg.uiCardData as any) || {}),
+          status: "CANCELLED",
+        };
+        await this.prisma.aiChatMessage.update({
+          where: { id: existingCardMsg.id },
+          data: { uiCardData: updatedData },
+        });
+      }
+    } catch (e: any) {
+      this.logger.warn(`Failed to update invoice card status to CANCELLED: ${e?.message}`);
+    }
+
+    // Short system note so the thread shows the cancellation explicitly.
+    try {
+      await this.prisma.aiChatMessage.create({
+        data: {
+          sessionId: invoice.sessionId,
+          role: "assistant",
+          content: `${actorLabel || invoice.providerName} cancelled this invoice (${formatCents(invoice.serviceAmount)}).`,
+          senderType: "system",
+          senderName: invoice.providerName || "Provider",
+        },
+      });
+    } catch (e: any) {
+      this.logger.warn(`Failed to post invoice cancellation message: ${e?.message}`);
+    }
+
+    return updated;
   }
 
   // ─── Post readiness prompt in chat after video call ends ────────────────────

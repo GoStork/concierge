@@ -31,6 +31,19 @@ interface ChatMessageListProps {
   msgTestIdPrefix?: string;
   /** Chat session id - threaded through to SpecialMessageCard for signed cost-sheet links. */
   sessionId?: string | null;
+  /** Provider-only: open the send form pre-filled to revise and resend a sent cost sheet. */
+  onEditCostSheet?: (initial: { totalCostCents: number; notes: string | null }) => void;
+  /** Provider-only: open the invoice panel pre-filled with this invoice. Caller
+   *  is expected to cancel the existing invoice and seed the form. */
+  onEditInvoice?: (initial: { invoiceId: string }) => void;
+  /** Provider-only: cancel a still-pending invoice. */
+  onCancelInvoice?: (initial: { invoiceId: string }) => void;
+  /** Disables the per-card invoice action buttons while a mutation runs. */
+  invoiceActionPendingId?: string | null;
+  /** Provider-only: cancel a still-active cost sheet. */
+  onCancelCostSheet?: (initial: { quoteId: string }) => void;
+  /** Disables the per-card cost-sheet action buttons while a mutation runs. */
+  costSheetActionPendingId?: string | null;
 }
 
 /** Renders a chat message with **bold** and line break support. */
@@ -73,6 +86,12 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
     onBookingUpdate,
     msgTestIdPrefix = "provider-msg",
     sessionId,
+    onEditCostSheet,
+    onEditInvoice,
+    onCancelInvoice,
+    invoiceActionPendingId,
+    onCancelCostSheet,
+    costSheetActionPendingId,
   },
   ref,
 ) {
@@ -260,6 +279,12 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                       viewerRole={viewerRole}
                       onOpenInlineVideo={onOpenInlineVideo}
                       sessionId={sessionId}
+                      onEditCostSheet={onEditCostSheet}
+                      onEditInvoice={onEditInvoice}
+                      onCancelInvoice={onCancelInvoice}
+                      invoiceActionPendingId={invoiceActionPendingId}
+                      onCancelCostSheet={onCancelCostSheet}
+                      costSheetActionPendingId={costSheetActionPendingId}
                     />
                     {(!showBubble || isAttachmentMsg) && msg.createdAt && (
                       <span className="flex items-center gap-0.5 mt-0.5 px-1" style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55 }}>

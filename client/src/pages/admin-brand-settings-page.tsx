@@ -10,6 +10,7 @@ import { Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -2868,24 +2869,20 @@ export function BrandSettingsForm({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Base Font Size (px)</Label>
-                  <Input
-                    type="number"
-                    min={10}
-                    max={24}
-                    value={form.baseFontSize}
-                    onChange={(e) => updateField("baseFontSize", Number(e.target.value))}
+                  <NumberInput
+                    allowDecimal={false}
+                    value={String(form.baseFontSize ?? "")}
+                    onChange={(v) => updateField("baseFontSize", v === "" ? 0 : Number(v))}
                     disabled={formDisabled}
                     data-testid="input-base-font-size"
                   />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Small Text Size (px)</Label>
-                  <Input
-                    type="number"
-                    min={10}
-                    max={16}
-                    value={form.smallTextSize}
-                    onChange={(e) => updateField("smallTextSize", Number(e.target.value))}
+                  <NumberInput
+                    allowDecimal={false}
+                    value={String(form.smallTextSize ?? "")}
+                    onChange={(v) => updateField("smallTextSize", v === "" ? 0 : Number(v))}
                     disabled={formDisabled}
                     data-testid="input-small-text-size"
                   />
@@ -2968,39 +2965,27 @@ export function BrandSettingsForm({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Base Line Height</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={3}
-                    step={0.1}
-                    value={form.lineHeight}
-                    onChange={(e) => updateField("lineHeight", Number(e.target.value))}
+                  <NumberInput
+                    value={String(form.lineHeight ?? "")}
+                    onChange={(v) => updateField("lineHeight", v === "" ? 0 : Number(v))}
                     disabled={formDisabled}
                     data-testid="input-line-height"
                   />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Body Line Height</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={2.5}
-                    step={0.1}
-                    value={form.bodyLineHeight}
-                    onChange={(e) => updateField("bodyLineHeight", Number(e.target.value))}
+                  <NumberInput
+                    value={String(form.bodyLineHeight ?? "")}
+                    onChange={(v) => updateField("bodyLineHeight", v === "" ? 0 : Number(v))}
                     disabled={formDisabled}
                     data-testid="input-body-line-height"
                   />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Heading Line Height</Label>
-                  <Input
-                    type="number"
-                    min={0.9}
-                    max={2}
-                    step={0.1}
-                    value={form.headingLineHeight}
-                    onChange={(e) => updateField("headingLineHeight", Number(e.target.value))}
+                  <NumberInput
+                    value={String(form.headingLineHeight ?? "")}
+                    onChange={(v) => updateField("headingLineHeight", v === "" ? 0 : Number(v))}
                     disabled={formDisabled}
                     data-testid="input-heading-line-height"
                   />

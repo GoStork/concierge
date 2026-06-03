@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { typeToUrlSlug, deriveTypeFromPath, getPhotoSrc } from "@/lib/profile-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -101,6 +102,13 @@ function FieldRow({
           <option value="true">Yes</option>
           <option value="false">No</option>
         </select>
+      ) : type === "number" ? (
+        <NumberInput
+          value={value}
+          onChange={(v) => onChange(field, v)}
+          className="text-sm"
+          data-testid={`input-${field}`}
+        />
       ) : (
         <Input
           type={type}

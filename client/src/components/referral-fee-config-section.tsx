@@ -20,6 +20,7 @@ import { Loader2, Save, DollarSign, Percent } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NumberInput } from "@/components/ui/number-input";
 import { formatMoneyCents } from "@/lib/format-money";
 
 export const LINE_SERVICE_TYPES = ["SURROGACY", "EGG_DONATION", "SPERM_DONATION", "IVF_CLINIC", "OTHER"] as const;
@@ -122,13 +123,20 @@ export function ReferralFeeConfigSection({
     previewParentPaysCents > 0 &&
     (feeType === "FLAT" ? parseFloat(flatAmount) > 0 : parseFloat(percentage) > 0 && previewBasisCents > 0);
 
+  const defaultFirstPaymentMissing =
+    parentPaysBasis === "DEFAULT_FIRST_PAYMENT" &&
+    (!defaultServiceAmount || parseFloat(defaultServiceAmount) <= 0);
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const body: any = {
         feeType,
         flatAmount: feeType === "FLAT" ? Math.round(parseFloat(flatAmount) * 100) : null,
         percentage: feeType === "PERCENTAGE" ? parseFloat(percentage) : null,
-        defaultServiceAmount: defaultServiceAmount ? Math.round(parseFloat(defaultServiceAmount) * 100) : null,
+        defaultServiceAmount:
+          parentPaysBasis === "TOTAL_COST"
+            ? null
+            : defaultServiceAmount ? Math.round(parseFloat(defaultServiceAmount) * 100) : null,
         parentPaysBasis,
         sampleTotalCostCents: sampleTotalCost ? Math.round(parseFloat(sampleTotalCost) * 100) : null,
         isActive: true,
@@ -154,138 +162,144 @@ export function ReferralFeeConfigSection({
 
   return (
     <section className="space-y-4">
-      {/* Fee type radio */}
-      <div className="space-y-2">
-        <Label>
-          GoStork Referral Fee Type
-          {isProviderMode && <span className="text-xs text-muted-foreground ml-2 font-normal">(set by GoStork)</span>}
-        </Label>
-        <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
-          {[
-            { value: "PERCENTAGE", label: "Percentage From Total", icon: <Percent className="w-3.5 h-3.5" /> },
-            { value: "FLAT", label: "Flat Amount", icon: <DollarSign className="w-3.5 h-3.5" /> },
-          ].map(opt => (
-            <label
-              key={opt.value}
-              className={`flex items-center gap-2 text-sm cursor-pointer ${isProviderMode ? "cursor-not-allowed opacity-70" : ""}`}
-            >
-              <input
-                type="radio"
-                name={`feeType-${serviceType}`}
-                value={opt.value}
-                checked={feeType === opt.value}
-                disabled={isProviderMode}
-                onChange={() => !isProviderMode && setFeeType(opt.value as "FLAT" | "PERCENTAGE")}
-                className="accent-primary"
-              />
-              {opt.icon}
-              {opt.label}
-            </label>
-          ))}
+      {/* GoStork Referral Fee Type + amount input grouped in an outlined box */}
+      <div className="rounded-lg border p-4 space-y-4">
+        <div className="space-y-2">
+          <Label>
+            GoStork Referral Fee Type
+            {isProviderMode && <span className="text-xs text-muted-foreground ml-2 font-normal">(set by GoStork)</span>}
+          </Label>
+          <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
+            {[
+              { value: "PERCENTAGE", label: "Percentage From Total", icon: <Percent className="w-3.5 h-3.5" /> },
+              { value: "FLAT", label: "Flat Amount", icon: <DollarSign className="w-3.5 h-3.5" /> },
+            ].map(opt => (
+              <label
+                key={opt.value}
+                className={`flex items-center gap-2 text-sm cursor-pointer ${isProviderMode ? "cursor-not-allowed opacity-70" : ""}`}
+              >
+                <input
+                  type="radio"
+                  name={`feeType-${serviceType}`}
+                  value={opt.value}
+                  checked={feeType === opt.value}
+                  disabled={isProviderMode}
+                  onChange={() => !isProviderMode && setFeeType(opt.value as "FLAT" | "PERCENTAGE")}
+                  className="accent-primary"
+                />
+                {opt.icon}
+                {opt.label}
+              </label>
+            ))}
+          </div>
         </div>
+
+        {feeType === "PERCENTAGE" ? (
+          <div className="space-y-1.5 max-w-md">
+            <Label>
+              GoStork Referral Percentage (%)
+              {isProviderMode && <span className="text-xs text-muted-foreground ml-2 font-normal">(set by GoStork)</span>}
+            </Label>
+            <NumberInput
+              placeholder="e.g. 10"
+              value={percentage}
+              onChange={setPercentage}
+              disabled={isProviderMode}
+            />
+            <p className="text-xs text-muted-foreground">
+              GoStork keeps this % of the Total Quoted Cost the provider sends the parent for this service.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-1.5 max-w-md">
+            <Label>
+              Flat Amount ($)
+              {isProviderMode && <span className="text-xs text-muted-foreground ml-2 font-normal">(set by GoStork)</span>}
+            </Label>
+            <NumberInput
+              placeholder="e.g. 500"
+              value={flatAmount}
+              onChange={setFlatAmount}
+              disabled={isProviderMode}
+            />
+            <p className="text-xs text-muted-foreground">
+              GoStork keeps this fixed dollar amount regardless of service cost.
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* Fee amount input */}
-      {feeType === "PERCENTAGE" ? (
-        <div className="space-y-1.5">
-          <Label>
-            GoStork Referral Percentage (%)
-            {isProviderMode && <span className="text-xs text-muted-foreground ml-2 font-normal">(set by GoStork)</span>}
-          </Label>
-          <Input
-            type="number"
-            min="0"
-            max="100"
-            step="0.1"
-            placeholder="e.g. 10"
-            value={percentage}
-            onChange={e => setPercentage(e.target.value)}
-            disabled={isProviderMode}
-          />
-          <p className="text-xs text-muted-foreground">
-            GoStork keeps this % of the Total Quoted Cost the provider sends the parent for this service.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-1.5">
-          <Label>
-            Flat Amount ($)
-            {isProviderMode && <span className="text-xs text-muted-foreground ml-2 font-normal">(set by GoStork)</span>}
-          </Label>
-          <Input
-            type="number"
-            min="0"
-            step="50"
-            placeholder="e.g. 500"
-            value={flatAmount}
-            onChange={e => setFlatAmount(e.target.value)}
-            disabled={isProviderMode}
-          />
-          <p className="text-xs text-muted-foreground">
-            GoStork keeps this fixed dollar amount regardless of service cost.
-          </p>
-        </div>
-      )}
-
-      {/* Parent-pays basis radio. Editable by both admin and provider -
-          this controls the provider's own invoice flow, not GoStork's
-          referral economics. */}
-      <div className="space-y-2">
+      {/* Parent Pays Basis grouped in an outlined box. The Default First Payment
+          amount input only renders when that basis is selected - picking
+          Total Quoted Cost means there is no first-payment override. */}
+      <div className="rounded-lg border p-4 space-y-3">
         <Label>Parent Pays Basis</Label>
-        <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
-          {[
-            { value: "DEFAULT_FIRST_PAYMENT", label: "Default First Payment" },
-            { value: "TOTAL_COST", label: "Total Quoted Cost" },
-          ].map(opt => (
-            <label
-              key={opt.value}
-              className="flex items-center gap-2 text-sm cursor-pointer"
-            >
-              <input
-                type="radio"
-                name={`parentPaysBasis-${serviceType}`}
-                value={opt.value}
-                checked={parentPaysBasis === opt.value}
-                onChange={() => setParentPaysBasis(opt.value as "DEFAULT_FIRST_PAYMENT" | "TOTAL_COST")}
-                className="accent-primary"
-              />
-              {opt.label}
-            </label>
-          ))}
+        <div className="space-y-2">
+          {/* Total Quoted Cost option */}
+          <label
+            className="flex items-center gap-2 text-sm cursor-pointer"
+          >
+            <input
+              type="radio"
+              name={`parentPaysBasis-${serviceType}`}
+              value="TOTAL_COST"
+              checked={parentPaysBasis === "TOTAL_COST"}
+              onChange={() => setParentPaysBasis("TOTAL_COST")}
+              className="accent-primary"
+            />
+            Total Quoted Cost
+          </label>
+
+          {/* Default First Payment option + inline amount */}
+          <label
+            className="flex items-start gap-2 text-sm cursor-pointer"
+          >
+            <input
+              type="radio"
+              name={`parentPaysBasis-${serviceType}`}
+              value="DEFAULT_FIRST_PAYMENT"
+              checked={parentPaysBasis === "DEFAULT_FIRST_PAYMENT"}
+              onChange={() => setParentPaysBasis("DEFAULT_FIRST_PAYMENT")}
+              className="accent-primary mt-1"
+            />
+            <div className="flex-1 space-y-2">
+              <span>Default First Payment ($)</span>
+              {parentPaysBasis === "DEFAULT_FIRST_PAYMENT" && (
+                <div className="space-y-1.5 max-w-md">
+                  <NumberInput
+                    placeholder="e.g. 10,000"
+                    value={defaultServiceAmount}
+                    onChange={setDefaultServiceAmount}
+                    required
+                    aria-invalid={defaultFirstPaymentMissing}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The standard amount collected from the parent. Pre-fills the invoice - admin or agency can override per invoice.
+                  </p>
+                  {defaultFirstPaymentMissing && (
+                    <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>
+                      Default First Payment amount is required when this option is selected.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </label>
         </div>
         <p className="text-xs text-muted-foreground">
           {parentPaysBasis === "TOTAL_COST"
             ? "Each invoice charges the parent the full Total Quoted Cost from the provider's cost sheet."
-            : "Each invoice charges the parent the Default First Payment (below). The provider can still send a cost sheet that drives the GoStork % calculation."}
-        </p>
-      </div>
-
-      {/* Default first payment */}
-      <div className="space-y-1.5">
-        <Label>Default First Payment ($) <span className="text-muted-foreground font-normal">(optional)</span></Label>
-        <Input
-          type="number"
-          min="0"
-          step="100"
-          placeholder="e.g. 10000"
-          value={defaultServiceAmount}
-          onChange={e => setDefaultServiceAmount(e.target.value)}
-        />
-        <p className="text-xs text-muted-foreground">
-          The standard amount collected from the parent. Pre-fills the invoice - admin or agency can override per invoice.
+            : "Each invoice charges the parent the Default First Payment above. The provider can still send a cost sheet that drives the GoStork % calculation."}
         </p>
       </div>
 
       {/* Sample Total Quoted Cost (drives preview when basis = TOTAL_COST or fee = PERCENTAGE) */}
-      <div className="space-y-1.5">
+      <div className="space-y-1.5 max-w-md">
         <Label>Sample Total Quoted Cost ($) <span className="text-muted-foreground font-normal">(preview only)</span></Label>
-        <Input
-          type="number"
-          min="0"
-          step="500"
-          placeholder="e.g. 25000"
+        <NumberInput
+          placeholder="e.g. 25,000"
           value={sampleTotalCost}
-          onChange={e => setSampleTotalCost(e.target.value)}
+          onChange={setSampleTotalCost}
         />
         <p className="text-xs text-muted-foreground">
           Pretend the provider quoted this total - the preview below shows the resulting invoice split for this service.
@@ -294,7 +308,7 @@ export function ReferralFeeConfigSection({
 
       {/* Live split preview */}
       {showPreview && (
-        <div className="rounded-lg border p-4 space-y-2 bg-secondary/40">
+        <div className="rounded-lg border p-4 space-y-2 bg-secondary/40 max-w-md">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Payment Split Preview</p>
           <div className="space-y-1.5 text-sm">
             <div className="flex justify-between text-muted-foreground">
@@ -359,12 +373,10 @@ export function ReferralFeeConfigSection({
           {depositMilestone === "AT_CLEARANCE" && (
             <div className="space-y-1.5">
               <Label>Average Days to Medical Clearance</Label>
-              <Input
-                type="number"
-                min="1"
-                max="90"
+              <NumberInput
+                allowDecimal={false}
                 value={averageClearanceDays}
-                onChange={e => setAverageClearanceDays(e.target.value)}
+                onChange={setAverageClearanceDays}
                 placeholder="21"
               />
               <p className="text-xs text-muted-foreground">
@@ -389,7 +401,7 @@ export function ReferralFeeConfigSection({
       )}
 
       <Button
-        disabled={saveMutation.isPending}
+        disabled={saveMutation.isPending || defaultFirstPaymentMissing}
         onClick={() => saveMutation.mutate()}
         style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}
       >

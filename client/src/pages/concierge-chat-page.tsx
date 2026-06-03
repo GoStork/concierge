@@ -2243,7 +2243,10 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
     const providerName: string = data.providerName || "Your provider";
     const notes: string | null = data.notes || null;
     const sentAt: string | null = data.sentAt || null;
+    const cancelledAt: string | null = data.cancelledAt || null;
+    const isCancelled = !!cancelledAt;
     const totalFormatted = formatMoneyCents(totalCents);
+    const cancelledBorder = "hsl(var(--muted-foreground) / 0.4)";
     // Route through our authenticated download endpoint which mints a fresh
     // signed URL each click. The raw GCS URL returned by uploadBufferPublic
     // 403s when the bucket has uniform bucket-level access enabled.
@@ -2252,22 +2255,30 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
       : null;
     return (
       <div
-        className="rounded-[var(--radius)] border-2 bg-background overflow-hidden max-w-md"
-        style={{ borderColor: brandColor }}
+        className={`rounded-[var(--radius)] border-2 bg-background overflow-hidden max-w-md ${isCancelled ? "opacity-70" : ""}`}
+        style={{ borderColor: isCancelled ? cancelledBorder : brandColor }}
         data-testid="cost-sheet-card"
       >
         <div className="flex items-center gap-3 px-4 py-3">
-          <div className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: brandColor }}>
+          <div className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground shrink-0" style={{ backgroundColor: isCancelled ? cancelledBorder : brandColor }}>
             <FileText className="w-5 h-5" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold">Cost Sheet from {providerName}</p>
+            <p className={`text-sm font-semibold ${isCancelled ? "line-through text-muted-foreground" : ""}`}>
+              Cost Sheet from {providerName}
+            </p>
             <p className="text-xs text-muted-foreground">
-              Total quoted cost
-              {sentAt ? ` - ${new Date(sentAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}
+              {isCancelled
+                ? `Cancelled${cancelledAt ? ` - ${new Date(cancelledAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}`
+                : `Total quoted cost${sentAt ? ` - ${new Date(sentAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}`}
             </p>
           </div>
-          <p className="text-lg font-bold shrink-0" style={{ color: brandColor }}>{totalFormatted}</p>
+          <p
+            className={`text-lg font-bold shrink-0 ${isCancelled ? "line-through" : ""}`}
+            style={{ color: isCancelled ? "hsl(var(--muted-foreground))" : brandColor }}
+          >
+            {totalFormatted}
+          </p>
         </div>
         {(downloadUrl || notes) && (
           <div className="border-t px-4 py-2.5 space-y-2 bg-muted/30">
@@ -2283,12 +2294,14 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
                 {fileName || "Open cost sheet"}
               </a>
             )}
-            {notes && <p className="text-xs text-muted-foreground italic">{notes}</p>}
+            {notes && <p className="text-xs text-muted-foreground italic whitespace-pre-line">{notes}</p>}
           </div>
         )}
         {/* Parent-only ack footer. Shows Acknowledge + Have questions buttons
-            so the cost sheet is interactive even when no PDF was attached. */}
-        {quoteId && sessionId && !data.parentAcknowledgedAt && (
+            so the cost sheet is interactive even when no PDF was attached. A
+            cancelled cost sheet skips the ack so the parent isn't asked to
+            confirm something the provider already retracted. */}
+        {quoteId && sessionId && !data.parentAcknowledgedAt && !isCancelled && (
           <CostSheetParentAck
             sessionId={sessionId}
             quoteId={quoteId}
@@ -4751,7 +4764,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           // fields, Link form, Pay button - stays visible. The composer
           // stays anchored at the bottom. shrink-0 on this wrapper
           // guarantees flex won't squeeze the panel mid-form-expand.
-          <div className="border-t px-3 py-3 bg-muted/30 shrink-0" data-testid="payment-panel-slot">
+          <div className="border-t px-3 py-3 bg-muted/30 flex-1 min-h-0 overflow-y-auto" data-testid="payment-panel-slot">
             <InvoicePaymentPanel
               paymentToken={inlinePaymentToken}
               brandColor={brandColor}

@@ -7,6 +7,7 @@ import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
@@ -160,10 +161,10 @@ function RuleForm({
         </div>
         <div className="flex items-center gap-2">
           <Label className="text-xs">Priority</Label>
-          <Input
-            type="number"
-            value={sortOrder}
-            onChange={(e) => setSortOrder(parseInt(e.target.value) || 0)}
+          <NumberInput
+            allowDecimal={false}
+            value={String(sortOrder)}
+            onChange={(v) => setSortOrder(parseInt(v) || 0)}
             className="w-16 h-8 text-xs"
             data-testid="input-rule-sort"
           />

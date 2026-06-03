@@ -1345,6 +1345,53 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
         data: { status: "RELAYED" },
       });
 
+      // If the original parent question was about the cost sheet AND the
+      // current active quote is still unacknowledged, re-render the
+      // cost-sheet card after the relay. This puts the Acknowledge / "I have
+      // questions" buttons back in front of the parent so the Q&A loop has a
+      // clear next step. We key off the question text ("cost sheet" / "quote"
+      // / "invoice" / "price") so unrelated whispers don't re-post the card.
+      try {
+        const q = (whisper.questionText || "").toLowerCase();
+        const isCostSheetQuestion =
+          q.includes("cost sheet") || q.includes("quote") ||
+          q.includes("the price") || q.includes("the total") || q.includes("the invoice");
+        if (isCostSheetQuestion) {
+          const activeQuote = await prisma.providerQuote.findFirst({
+            where: { sessionId: session.id, supersededAt: null, parentAcknowledgedAt: null },
+            orderBy: { createdAt: "desc" },
+            include: { provider: { select: { name: true } } },
+          });
+          if (activeQuote) {
+            await prisma.aiChatMessage.create({
+              data: {
+                sessionId: session.id,
+                role: "assistant",
+                content: `Here's the cost sheet again so you can acknowledge it or ask another question. Total: $${(activeQuote.totalCostCents / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`,
+                senderType: "system",
+                senderName: activeQuote.provider?.name || "Provider",
+                uiCardType: "cost_sheet",
+                uiCardData: {
+                  quoteId: activeQuote.id,
+                  providerName: activeQuote.provider?.name || null,
+                  totalCostCents: activeQuote.totalCostCents,
+                  costSheetFileUrl: activeQuote.costSheetFileUrl,
+                  costSheetFileName: activeQuote.costSheetFileName,
+                  notes: activeQuote.notes,
+                  parentAcknowledgedAt: null,
+                  sentAt: activeQuote.createdAt.toISOString(),
+                  isRecap: true,
+                },
+              },
+            });
+          }
+        }
+      } catch (err: any) {
+        // Re-posting the card is a nice-to-have; never fail the whisper
+        // relay if it errors. Log and continue.
+        console.warn(`[whisper-answer] cost-sheet recap failed for session ${session.id}: ${err.message}`);
+      }
+
       // Notify the parent that they have a new message from Eva
       const sessionOwnerForNotify = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
       const notifyUserIds = sessionOwnerForNotify?.parentAccountId

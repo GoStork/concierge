@@ -5,7 +5,7 @@
  */
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Shield, Clock, CheckCircle2 } from "lucide-react";
+import { ExternalLink, Shield, Clock, CheckCircle2, Pencil, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { InvoiceStatusBadge } from "./invoice-status-badge";
@@ -79,9 +79,18 @@ interface InvoiceCardProps {
    *  the standalone /pay/:token page in a new tab. Used by the in-chat
    *  embedded payment panel. */
   onPayInline?: () => void;
+  /** Provider-only. Click "Edit & Resend" - parent caller cancels this
+   *  invoice and re-opens the invoice form pre-filled with the line items
+   *  so the provider can revise and resend. */
+  onEditResend?: () => void;
+  /** Provider-only. Click "Cancel" - parent caller flips the invoice to
+   *  CANCELLED so the parent can no longer pay it. */
+  onCancel?: () => void;
+  /** Disables the provider action buttons while a mutation is in flight. */
+  actionPending?: boolean;
 }
 
-export function InvoiceCard({ data, isParent = true, onPayInline }: InvoiceCardProps) {
+export function InvoiceCard({ data, isParent = true, onPayInline, onEditResend, onCancel, actionPending = false }: InvoiceCardProps) {
   const isPaid = data.status === "PAID" || data.status === "AUTHORIZED";
 
   return (
@@ -153,6 +162,39 @@ export function InvoiceCard({ data, isParent = true, onPayInline }: InvoiceCardP
           </div>
         )}
       </div>
+
+      {/* Provider-only footer: Edit & Resend / Cancel while still pending.
+          Mirrors the cost-sheet card's Edit & Resend affordance so a provider
+          who sent the wrong invoice can revise it without going through admin. */}
+      {!isParent && data.status === "AWAITING_PAYMENT" && (onEditResend || onCancel) && (
+        <div className="border-t px-4 py-2 bg-secondary/30 flex flex-wrap gap-2">
+          {onEditResend && (
+            <button
+              type="button"
+              onClick={onEditResend}
+              disabled={actionPending}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-background border hover:bg-muted/50 transition-colors disabled:opacity-50"
+              style={{ borderColor: "hsl(var(--primary))", color: "hsl(var(--primary))" }}
+              data-testid={`invoice-edit-${data.invoiceId}`}
+            >
+              <Pencil className="w-3 h-3" />
+              Edit & Resend
+            </button>
+          )}
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={actionPending}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-background border border-border hover:bg-muted/50 transition-colors text-foreground disabled:opacity-50"
+              data-testid={`invoice-cancel-${data.invoiceId}`}
+            >
+              <X className="w-3 h-3" />
+              Cancel Invoice
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Footer CTA */}
       {isParent && data.status === "AWAITING_PAYMENT" && (

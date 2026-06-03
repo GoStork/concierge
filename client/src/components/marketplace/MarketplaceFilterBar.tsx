@@ -1280,6 +1280,7 @@ function YearInput({ label, filterKey, activeFilters, dispatch }: {
         <span className="text-muted-foreground" style={{ fontSize: 'var(--drawer-body-size, 16px)' }}>{label}</span>
         {current && <span className="font-ui tabular-nums" style={{ fontSize: 'var(--drawer-body-size, 16px)' }}>{current}+</span>}
       </div>
+      {/* short date field (4-digit year), no commas needed */}
       <Input
         type="number"
         min={2000}

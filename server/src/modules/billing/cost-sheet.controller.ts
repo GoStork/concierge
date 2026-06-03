@@ -267,6 +267,81 @@ export class CostSheetController {
     }
   }
 
+  // ─── Cancel a cost sheet (provider or admin) ───────────────────────────────
+  // Marks the quote as superseded (the same way Edit & Resend does) without
+  // creating a replacement, and stamps `cancelledAt` into the chat card's
+  // uiCardData so the UI can show a "Cancelled" indicator and hide the
+  // parent-side Acknowledge/Have questions actions.
+
+  @Post("api/sessions/:sessionId/cost-sheets/:quoteId/cancel")
+  @UseGuards(SessionOrJwtGuard)
+  async cancelCostSheet(
+    @Req() req: Request,
+    @Param("sessionId") sessionId: string,
+    @Param("quoteId") quoteId: string,
+  ) {
+    const user = req.user as any;
+    await this.loadAuthorisedSession(sessionId, user);
+
+    const quote = await this.db.providerQuote.findUnique({ where: { id: quoteId } });
+    if (!quote) throw new NotFoundException("Cost sheet not found");
+    if (quote.sessionId !== sessionId) {
+      throw new ForbiddenException("Cost sheet does not belong to this session");
+    }
+    if (quote.supersededAt) {
+      throw new HttpException("Cost sheet is no longer active", HttpStatus.BAD_REQUEST);
+    }
+
+    const now = new Date();
+    const updated = await this.db.providerQuote.update({
+      where: { id: quoteId },
+      data: { supersededAt: now },
+    });
+
+    // Flip the in-chat card so both sides see "Cancelled" and the parent's
+    // Acknowledge / Have questions buttons stop rendering.
+    try {
+      const existingCardMsg = await this.db.aiChatMessage.findFirst({
+        where: {
+          sessionId,
+          uiCardType: "cost_sheet",
+          uiCardData: { path: ["quoteId"], equals: quoteId },
+        },
+        select: { id: true, uiCardData: true },
+      });
+      if (existingCardMsg) {
+        const updatedData = {
+          ...((existingCardMsg.uiCardData as any) || {}),
+          cancelledAt: now.toISOString(),
+        };
+        await this.db.aiChatMessage.update({
+          where: { id: existingCardMsg.id },
+          data: { uiCardData: updatedData },
+        });
+      }
+    } catch (e: any) {
+      this.logger.warn(`Failed to update cost-sheet card cancelled state: ${e?.message}`);
+    }
+
+    // Short system note so the thread shows the cancellation explicitly.
+    try {
+      const actorLabel = user?.firstName || user?.name || "Provider";
+      await this.db.aiChatMessage.create({
+        data: {
+          sessionId,
+          role: "assistant",
+          content: `${actorLabel} cancelled this cost sheet (${formatMoneyCents(quote.totalCostCents)}).`,
+          senderType: "system",
+          senderName: "Provider",
+        },
+      });
+    } catch (e: any) {
+      this.logger.warn(`Failed to post cost-sheet cancellation message: ${e?.message}`);
+    }
+
+    return { quote: updated };
+  }
+
   // ─── Manually trigger an invoice (provider or admin) ───────────────────────
 
   @Post("api/sessions/:sessionId/invoice")
@@ -297,6 +372,58 @@ export class CostSheetController {
     // Post the invoice card + send email/SMS to the parent.
     await this.billing.sendPaymentNotificationsToParent(invoice.id);
 
+    return { invoice };
+  }
+
+  // ─── Cancel an invoice (provider or admin) ─────────────────────────────────
+  // Provider clicks Cancel on their in-chat invoice card. Only AWAITING_PAYMENT
+  // invoices can be cancelled this way - paid/authorized ones go through the
+  // admin refund flow instead. Updates the chat card status so the parent's
+  // Pay button disappears.
+
+  @Post("api/sessions/:sessionId/invoices/:invoiceId/cancel")
+  @UseGuards(SessionOrJwtGuard)
+  async cancelInvoice(
+    @Req() req: Request,
+    @Param("sessionId") sessionId: string,
+    @Param("invoiceId") invoiceId: string,
+  ) {
+    const user = req.user as any;
+    await this.loadAuthorisedSession(sessionId, user);
+
+    const existing = await this.db.invoice.findUnique({ where: { id: invoiceId } });
+    if (!existing) throw new NotFoundException("Invoice not found");
+    if (existing.sessionId !== sessionId) {
+      throw new ForbiddenException("Invoice does not belong to this session");
+    }
+
+    const actorLabel = user?.firstName || user?.name || existing.providerName;
+    const invoice = await this.billing.cancelInvoice(invoiceId, actorLabel);
+    return { invoice };
+  }
+
+  // ─── Read a single invoice (for edit prefill) ──────────────────────────────
+  // Returns line items + description so the provider's "Edit & Resend" flow can
+  // seed the invoice form with what was already sent.
+
+  @Get("api/sessions/:sessionId/invoices/:invoiceId")
+  @UseGuards(SessionOrJwtGuard)
+  async getInvoice(
+    @Req() req: Request,
+    @Param("sessionId") sessionId: string,
+    @Param("invoiceId") invoiceId: string,
+  ) {
+    const user = req.user as any;
+    await this.loadAuthorisedSession(sessionId, user);
+
+    const invoice = await this.db.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { lineItems: { orderBy: { displayOrder: "asc" } } },
+    });
+    if (!invoice) throw new NotFoundException("Invoice not found");
+    if (invoice.sessionId !== sessionId) {
+      throw new ForbiddenException("Invoice does not belong to this session");
+    }
     return { invoice };
   }
 

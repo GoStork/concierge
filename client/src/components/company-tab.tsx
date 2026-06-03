@@ -7,6 +7,7 @@ import { api } from "@shared/routes";
 import { hasProviderRole } from "@shared/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -573,6 +574,7 @@ export default function CompanyTab() {
           <Label>Year Founded</Label>
           <div className="relative">
             <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            {/* short date field (4-digit year), no commas needed */}
             <Input
               value={yearFounded}
               onChange={e => setYearFounded(e.target.value)}
@@ -744,11 +746,11 @@ export default function CompanyTab() {
               <div className="flex gap-8">
                 <div className="space-y-2">
                   <Label>Max Age of IP 1</Label>
-                  <Input type="number" min={18} max={80} value={ivfMaxAgeIp1} onChange={e => setIvfMaxAgeIp1(e.target.value)} placeholder="e.g. 50" disabled={readOnly} />
+                  <NumberInput allowDecimal={false} value={ivfMaxAgeIp1} onChange={setIvfMaxAgeIp1} placeholder="e.g. 50" disabled={readOnly} />
                 </div>
                 <div className="space-y-2">
                   <Label>Max Age of IP 2</Label>
-                  <Input type="number" min={18} max={80} value={ivfMaxAgeIp2} onChange={e => setIvfMaxAgeIp2(e.target.value)} placeholder="e.g. 55" disabled={readOnly} />
+                  <NumberInput allowDecimal={false} value={ivfMaxAgeIp2} onChange={setIvfMaxAgeIp2} placeholder="e.g. 55" disabled={readOnly} />
                 </div>
               </div>
               <div className="space-y-2">
@@ -828,7 +830,7 @@ export default function CompanyTab() {
               </div>
               <div className="flex items-center gap-3">
                 <label className="text-sm">How long do IPs need to stay after baby is born (months)</label>
-                <Input type="number" min={0} max={24} value={surrogacyStayAfterBirthMonths} onChange={e => setSurrogacyStayAfterBirthMonths(e.target.value)} placeholder="e.g. 2" className="w-24" disabled={readOnly} />
+                <NumberInput allowDecimal={false} value={surrogacyStayAfterBirthMonths} onChange={setSurrogacyStayAfterBirthMonths} placeholder="e.g. 2" className="w-24" disabled={readOnly} />
               </div>
               <div className="space-y-2">
                 <Label>Who is listed on the birth certificate?</Label>
@@ -900,27 +902,27 @@ export default function CompanyTab() {
           <div className="grid grid-cols-2 gap-4 max-w-sm">
             <div className="space-y-2">
               <Label>Max Deliveries</Label>
-              <Input type="number" min={0} value={ivfSurrogateMaxDeliveries} onChange={e => setIvfSurrogateMaxDeliveries(e.target.value)} placeholder="e.g. 5" disabled={readOnly} />
+              <NumberInput allowDecimal={false} value={ivfSurrogateMaxDeliveries} onChange={setIvfSurrogateMaxDeliveries} placeholder="e.g. 5" disabled={readOnly} />
             </div>
             <div className="space-y-2">
               <Label>Max C-Sections</Label>
-              <Input type="number" min={0} value={ivfSurrogateMaxCSections} onChange={e => setIvfSurrogateMaxCSections(e.target.value)} placeholder="e.g. 3" disabled={readOnly} />
+              <NumberInput allowDecimal={false} value={ivfSurrogateMaxCSections} onChange={setIvfSurrogateMaxCSections} placeholder="e.g. 3" disabled={readOnly} />
             </div>
             <div className="space-y-2">
               <Label>Max Miscarriages</Label>
-              <Input type="number" min={0} value={ivfSurrogateMaxMiscarriages} onChange={e => setIvfSurrogateMaxMiscarriages(e.target.value)} placeholder="e.g. 2" disabled={readOnly} />
+              <NumberInput allowDecimal={false} value={ivfSurrogateMaxMiscarriages} onChange={setIvfSurrogateMaxMiscarriages} placeholder="e.g. 2" disabled={readOnly} />
             </div>
             <div className="space-y-2">
               <Label>Max Abortions</Label>
-              <Input type="number" min={0} value={ivfSurrogateMaxAbortions} onChange={e => setIvfSurrogateMaxAbortions(e.target.value)} placeholder="e.g. 2" disabled={readOnly} />
+              <NumberInput allowDecimal={false} value={ivfSurrogateMaxAbortions} onChange={setIvfSurrogateMaxAbortions} placeholder="e.g. 2" disabled={readOnly} />
             </div>
             <div className="space-y-2">
               <Label>Max Years from Last Pregnancy</Label>
-              <Input type="number" min={0} value={ivfSurrogateMaxYearsFromLastPregnancy} onChange={e => setIvfSurrogateMaxYearsFromLastPregnancy(e.target.value)} placeholder="e.g. 5" disabled={readOnly} />
+              <NumberInput allowDecimal={false} value={ivfSurrogateMaxYearsFromLastPregnancy} onChange={setIvfSurrogateMaxYearsFromLastPregnancy} placeholder="e.g. 5" disabled={readOnly} />
             </div>
             <div className="space-y-2">
               <Label>Months Post Vaginal Delivery</Label>
-              <Input type="number" min={0} value={ivfSurrogateMonthsPostVaginal} onChange={e => setIvfSurrogateMonthsPostVaginal(e.target.value)} placeholder="e.g. 6" disabled={readOnly} />
+              <NumberInput allowDecimal={false} value={ivfSurrogateMonthsPostVaginal} onChange={setIvfSurrogateMonthsPostVaginal} placeholder="e.g. 6" disabled={readOnly} />
             </div>
           </div>
           <div className="space-y-3">

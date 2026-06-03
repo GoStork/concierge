@@ -2,8 +2,16 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Textarea } from "@/components/ui/textarea";
-import { Receipt, Loader2, Paperclip, Send, ChevronDown, ChevronUp, X } from "lucide-react";
+import { Receipt, Loader2, Paperclip, Send, ChevronDown, ChevronUp, X, Plus, Trash2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
 
 interface CostSheetSidebarSectionProps {
@@ -38,11 +46,23 @@ interface CostSheetSidebarSectionProps {
 }
 
 type VialType = "ICI" | "IUI" | "IVF";
-const VIAL_LABEL: Record<VialType, string> = {
-  ICI: "ICI",
-  IUI: "IUI",
-  IVF: "IVF",
-};
+
+interface VialOption {
+  /** Full cost-sheet item label, e.g. "ICI Premium" or "IUI Platinum". */
+  label: string;
+  /** Vial family for downstream unit labels ("vial(s)" stays the same regardless). */
+  family: VialType;
+  cost: number;
+  /** Optional descriptor from the cost sheet item ("Washed, >=20 Million Motile..."). */
+  comment?: string | null;
+}
+
+function familyFromLabel(label: string): VialType {
+  const up = label.toUpperCase();
+  if (up.startsWith("ICI")) return "ICI";
+  if (up.startsWith("IUI")) return "IUI";
+  return "IVF";
+}
 
 interface PreviewResponse {
   feeType: "FLAT" | "PERCENTAGE";
@@ -94,16 +114,19 @@ export function CostSheetSidebarSection({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // Prefill controls (sperm = vial type + qty; egg = qty of lots).
-  const [selectedVial, setSelectedVial] = useState<VialType | null>(null);
-  const [quantity, setQuantity] = useState<number>(1);
+  // Sperm donors get a multi-line builder: each line picks one vial option
+  // (e.g. "ICI Premium") + a quantity. Egg donors keep a single qty stepper
+  // since there is only ever one per-lot price.
+  const [vialLines, setVialLines] = useState<Array<{ id: string; label: string; quantity: number }>>([]);
+  const [eggQuantity, setEggQuantity] = useState<number>(1);
   // Once the provider types in Total Cost directly, the picker stops driving it.
   // Edit-mode (seeded from an existing quote) starts manually-edited so the
   // donor unit-price effect never overrides the seeded total.
   const hasInitialTotal =
     typeof initialTotalCostCents === "number" && initialTotalCostCents > 0;
   const [manuallyEdited, setManuallyEdited] = useState(hasInitialTotal);
-  const [prefillInitialized, setPrefillInitialized] = useState(hasInitialTotal);
+  const [linesSeeded, setLinesSeeded] = useState(hasInitialTotal);
+  const nextLineId = () => `line-${Math.random().toString(36).slice(2, 9)}`;
 
   const subjectTypeLower = (subjectType || "").toLowerCase();
   const isSpermDonor = embedded && subjectTypeLower.includes("sperm") && !!providerId && !!subjectProfileId;
@@ -129,40 +152,66 @@ export function CostSheetSidebarSection({
     staleTime: 300_000,
   });
 
-  // Available unit prices keyed off the donor type.
-  const spermPrices: Partial<Record<VialType, number>> = {};
-  if (isSpermDonor && donorData) {
-    if (typeof donorData.iciCost === "number" && donorData.iciCost > 0) spermPrices.ICI = donorData.iciCost;
-    if (typeof donorData.iuiCost === "number" && donorData.iuiCost > 0) spermPrices.IUI = donorData.iuiCost;
-    if (typeof donorData.ivfCost === "number" && donorData.ivfCost > 0) spermPrices.IVF = donorData.ivfCost;
-  }
-  const availableVials = Object.keys(spermPrices) as VialType[];
+  // Build the full vial-option list. Prefer the server-enriched `vialCosts`
+  // array (one entry per matching cost-sheet line, e.g. "ICI Premium" +
+  // "ICI Platinum"). Fall back to the collapsed per-family min costs for
+  // older payloads.
+  const vialOptions: VialOption[] = (() => {
+    if (!isSpermDonor || !donorData) return [];
+    const rawList: Array<{ label?: string; cost?: number; comment?: string | null }> = Array.isArray(donorData.vialCosts)
+      ? donorData.vialCosts
+      : [];
+    const fromList = rawList
+      .filter(v => typeof v?.cost === "number" && v.cost > 0 && typeof v.label === "string")
+      .map<VialOption>(v => ({
+        label: v.label!,
+        family: familyFromLabel(v.label!),
+        cost: v.cost!,
+        comment: v.comment ?? null,
+      }));
+    if (fromList.length > 0) return fromList;
+    const fallback: VialOption[] = [];
+    if (typeof donorData.iciCost === "number" && donorData.iciCost > 0) fallback.push({ label: "ICI", family: "ICI", cost: donorData.iciCost });
+    if (typeof donorData.iuiCost === "number" && donorData.iuiCost > 0) fallback.push({ label: "IUI", family: "IUI", cost: donorData.iuiCost });
+    if (typeof donorData.ivfCost === "number" && donorData.ivfCost > 0) fallback.push({ label: "IVF", family: "IVF", cost: donorData.ivfCost });
+    return fallback;
+  })();
   const eggLotCost: number | null = isEggDonor && typeof donorData?.eggLotCost === "number" && donorData.eggLotCost > 0
     ? donorData.eggLotCost
     : null;
 
-  const unitPrice: number | null = isSpermDonor
-    ? (selectedVial && spermPrices[selectedVial] != null ? spermPrices[selectedVial]! : null)
-    : eggLotCost;
-  const hasPrefill = unitPrice != null;
+  // Aggregate sperm-line totals (sum of cost × qty across all lines) and
+  // total vials (sum of qty). Lines whose label no longer matches any
+  // vialOption contribute 0 - they show a "Select vial type" placeholder.
+  const linesTotal = vialLines.reduce((sum, line) => {
+    const opt = vialOptions.find(o => o.label === line.label);
+    return sum + (opt ? opt.cost * Math.max(1, line.quantity) : 0);
+  }, 0);
+  const linesQtyTotal = vialLines.reduce((sum, line) => sum + Math.max(1, line.quantity), 0);
 
-  // Default selected vial = cheapest available; runs once when data arrives.
-  useEffect(() => {
-    if (!isSpermDonor || selectedVial || availableVials.length === 0) return;
-    const cheapest = availableVials.reduce((best, v) =>
-      spermPrices[v]! < spermPrices[best]! ? v : best,
-    availableVials[0]);
-    setSelectedVial(cheapest);
-  }, [isSpermDonor, availableVials.join(","), selectedVial]);
+  const pickerTotalDollars: number | null = isSpermDonor
+    ? (vialLines.length > 0 && linesTotal > 0 ? linesTotal : null)
+    : (eggLotCost != null ? eggLotCost * Math.max(1, eggQuantity) : null);
+  const pickerQtyTotal: number = isSpermDonor ? Math.max(1, linesQtyTotal) : Math.max(1, eggQuantity);
+  const hasPrefill = pickerTotalDollars != null;
 
-  // Prefill Total Cost once on form open when data is ready.
+  // Seed one default line (cheapest vial @ qty 1) the first time vial options
+  // arrive for a fresh form (no initial total). Edit-mode keeps lines empty
+  // so the seeded Total Cost stays untouched.
   useEffect(() => {
-    if (!embedded || prefillInitialized || manuallyEdited) return;
-    if (unitPrice == null) return;
-    const total = unitPrice * Math.max(1, quantity);
-    setTotalCostInput(String(total));
-    setPrefillInitialized(true);
-  }, [embedded, unitPrice, quantity, prefillInitialized, manuallyEdited]);
+    if (!isSpermDonor || linesSeeded || vialLines.length > 0 || vialOptions.length === 0) return;
+    const cheapest = vialOptions.reduce((best, v) => (v.cost < best.cost ? v : best), vialOptions[0]);
+    setVialLines([{ id: nextLineId(), label: cheapest.label, quantity: 1 }]);
+    setLinesSeeded(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSpermDonor, vialOptions.map(v => v.label).join("|"), linesSeeded, vialLines.length]);
+
+  // Whenever picker state changes (lines, qty), keep Total Cost in sync -
+  // unless the provider has manually overridden it by typing in the textbox.
+  useEffect(() => {
+    if (!embedded || manuallyEdited || pickerTotalDollars == null) return;
+    setTotalCostInput(String(pickerTotalDollars));
+  }, [embedded, manuallyEdited, pickerTotalDollars]);
 
   // Load history of past quotes for this session.
   const { data: quotesData } = useQuery<{ quotes: ProviderQuoteRow[] }>({
@@ -192,17 +241,27 @@ export function CostSheetSidebarSection({
       try {
         // Picker-driven totals carry their unit count; manually-typed totals
         // are flat fees of quantity 1 regardless of any prior picker state.
-        const effectiveQty = !manuallyEdited && hasPrefill ? Math.max(1, quantity) : 1;
+        const effectiveQty = !manuallyEdited && hasPrefill ? pickerQtyTotal : 1;
         const res = await fetch("/api/billing/invoice-preview", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ sessionId, totalCostCents: cents, quantity: effectiveQty }),
         });
-        const data = await res.json();
+        const text = await res.text();
+        let data: any = null;
+        try {
+          data = text ? JSON.parse(text) : null;
+        } catch {
+          setPreview(null);
+          setPreviewError(
+            `Preview failed (HTTP ${res.status}). The server did not return JSON - log in again if your session expired, or check the server logs.`,
+          );
+          return;
+        }
         if (!res.ok) {
           setPreview(null);
-          setPreviewError(data?.message || "Preview failed");
+          setPreviewError(data?.message || `Preview failed (HTTP ${res.status})`);
         } else {
           setPreview(data);
         }
@@ -213,7 +272,7 @@ export function CostSheetSidebarSection({
       }
     }, 350);
     return () => clearTimeout(t);
-  }, [totalCostInput, sessionId, quantity, manuallyEdited, hasPrefill]);
+  }, [totalCostInput, sessionId, pickerQtyTotal, manuallyEdited, hasPrefill]);
 
   const sendMutation = useMutation({
     mutationFn: async () => {
@@ -223,9 +282,26 @@ export function CostSheetSidebarSection({
 
       const form = new FormData();
       form.append("totalCostCents", String(cents));
-      const effectiveQty = !manuallyEdited && hasPrefill ? Math.max(1, quantity) : 1;
+      const effectiveQty = !manuallyEdited && hasPrefill ? pickerQtyTotal : 1;
       form.append("quantity", String(effectiveQty));
-      if (notes.trim()) form.append("notes", notes.trim());
+
+      // Build a human-readable breakdown of the line items so the parent
+      // (and the chat history) see what the total is made of. Prepended to
+      // any free-text note the provider typed.
+      let combinedNotes = "";
+      if (isSpermDonor && vialLines.length > 0 && !manuallyEdited) {
+        const lineSummaries = vialLines
+          .map(line => {
+            const opt = vialOptions.find(o => o.label === line.label);
+            if (!opt) return null;
+            const qty = Math.max(1, line.quantity);
+            return `${qty} × ${opt.label} @ $${opt.cost.toLocaleString()} = $${(opt.cost * qty).toLocaleString()}`;
+          })
+          .filter((s): s is string => s !== null);
+        if (lineSummaries.length > 0) combinedNotes = lineSummaries.join("\n");
+      }
+      if (notes.trim()) combinedNotes = combinedNotes ? `${combinedNotes}\n\n${notes.trim()}` : notes.trim();
+      if (combinedNotes) form.append("notes", combinedNotes);
       if (file) form.append("file", file);
 
       const res = await fetch(`/api/sessions/${sessionId}/cost-sheet`, {
@@ -244,8 +320,9 @@ export function CostSheetSidebarSection({
       setError(null);
       setExpanded(false);
       setManuallyEdited(false);
-      setPrefillInitialized(false);
-      setQuantity(1);
+      setLinesSeeded(false);
+      setVialLines([]);
+      setEggQuantity(1);
       queryClient.invalidateQueries({ queryKey: ["/api/sessions/cost-sheets", sessionId] });
       if (sessionQueryKey && sessionId) {
         queryClient.invalidateQueries({ queryKey: [sessionQueryKey, sessionId] });
@@ -257,17 +334,24 @@ export function CostSheetSidebarSection({
 
   const disabled = readOnly || !sessionId;
 
-  // Picker-driven update: explicit user clicks on chips / qty stepper
-  // overwrite Total Cost (even if the field was prefilled). A subsequent
-  // manual edit of the Total Cost input flips manuallyEdited and pauses
-  // picker-driven updates until the next explicit chip / qty interaction.
-  const applyPickerTotal = (vial: VialType | null, qty: number) => {
-    const price = isSpermDonor
-      ? (vial && spermPrices[vial] != null ? spermPrices[vial]! : null)
-      : eggLotCost;
-    if (price == null) return;
-    setTotalCostInput(String(price * Math.max(1, qty)));
-    setManuallyEdited(false);
+  // Any explicit picker interaction (add/remove line, qty change, egg stepper)
+  // un-mutes the sync effect so Total Cost re-derives from the picker.
+  const touchPicker = () => setManuallyEdited(false);
+
+  const addVialLine = () => {
+    touchPicker();
+    const cheapest = vialOptions.length > 0
+      ? vialOptions.reduce((best, v) => (v.cost < best.cost ? v : best), vialOptions[0])
+      : null;
+    setVialLines(prev => [...prev, { id: nextLineId(), label: cheapest?.label ?? "", quantity: 1 }]);
+  };
+  const updateVialLine = (id: string, patch: Partial<{ label: string; quantity: number }>) => {
+    touchPicker();
+    setVialLines(prev => prev.map(l => (l.id === id ? { ...l, ...patch } : l)));
+  };
+  const removeVialLine = (id: string) => {
+    touchPicker();
+    setVialLines(prev => prev.filter(l => l.id !== id));
   };
 
   const unitLabel = isSpermDonor ? "vial" : "egg lot";
@@ -318,66 +402,153 @@ export function CostSheetSidebarSection({
           className="rounded-lg border p-3 space-y-3"
           style={{ background: "hsl(var(--muted) / 0.4)" }}
         >
-          {hasPrefill && (
+          {/* Sperm: multi-line builder. One row per vial type + quantity. */}
+          {isSpermDonor && vialOptions.length > 0 && (
             <div
               className="rounded-md border p-2.5 space-y-2"
               style={{ background: "hsl(var(--secondary) / 0.5)" }}
             >
               <p className="font-medium text-muted-foreground uppercase tracking-wide text-[10px]">
-                {isSpermDonor ? "Vial pricing on file" : "Egg lot pricing on file"}
+                Vial pricing on file
               </p>
-              {isSpermDonor && availableVials.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {availableVials.map(v => {
-                    const active = selectedVial === v;
-                    return (
-                      <button
-                        key={v}
-                        type="button"
-                        onClick={() => { setSelectedVial(v); applyPickerTotal(v, quantity); }}
-                        className="text-xs px-2.5 py-1 rounded-full border transition-colors"
-                        style={active
-                          ? { background: brandColor, color: "white", borderColor: brandColor }
-                          : { background: "hsl(var(--background))", borderColor: "hsl(var(--border))" }}
-                        data-testid={`btn-vial-type-${v.toLowerCase()}`}
-                      >
-                        {VIAL_LABEL[v]} - ${spermPrices[v]!.toLocaleString()}
-                      </button>
-                    );
-                  })}
+
+              {vialLines.length === 0 && (
+                <p className="text-xs text-muted-foreground">No line items yet. Add one to build the cost sheet.</p>
+              )}
+
+              <div className="space-y-2">
+                {vialLines.map(line => {
+                  const opt = vialOptions.find(o => o.label === line.label) ?? null;
+                  const qty = Math.max(1, line.quantity);
+                  const lineSubtotal = opt ? opt.cost * qty : 0;
+                  return (
+                    <div
+                      key={line.id}
+                      className="rounded-md border p-2 space-y-1.5"
+                      style={{ background: "hsl(var(--background))" }}
+                      data-testid={`cost-line-${line.id}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={line.label || undefined}
+                          onValueChange={v => updateVialLine(line.id, { label: v })}
+                        >
+                          <SelectTrigger className="h-8 text-xs flex-1" data-testid={`select-vial-${line.id}`}>
+                            <SelectValue placeholder="Select vial type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {vialOptions.map(o => (
+                              <SelectItem key={o.label} value={o.label} className="text-xs">
+                                {o.label} - ${o.cost.toLocaleString()}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            onClick={() => updateVialLine(line.id, { quantity: Math.max(1, qty - 1) })}
+                            aria-label="Decrease vial count"
+                            data-testid={`btn-line-qty-minus-${line.id}`}
+                          >
+                            -
+                          </Button>
+                          <span className="text-sm font-semibold w-6 text-center" data-testid={`text-line-qty-${line.id}`}>
+                            {qty}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            onClick={() => updateVialLine(line.id, { quantity: qty + 1 })}
+                            aria-label="Increase vial count"
+                            data-testid={`btn-line-qty-plus-${line.id}`}
+                          >
+                            +
+                          </Button>
+                        </div>
+
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 shrink-0"
+                          onClick={() => removeVialLine(line.id)}
+                          aria-label="Remove line"
+                          data-testid={`btn-line-remove-${line.id}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+
+                      {opt && (
+                        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                          <span>{qty} × ${opt.cost.toLocaleString()}</span>
+                          <span className="font-semibold text-foreground">${lineSubtotal.toLocaleString()}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addVialLine}
+                className="w-full h-8 text-xs"
+                data-testid="btn-add-cost-line"
+              >
+                <Plus className="w-3.5 h-3.5 mr-1" /> Add line
+              </Button>
+
+              {vialLines.length > 0 && linesTotal > 0 && (
+                <div className="flex items-center justify-between border-t pt-2 text-sm">
+                  <span className="font-medium">Total ({linesQtyTotal} {linesQtyTotal === 1 ? "vial" : "vials"})</span>
+                  <span className="font-semibold">${linesTotal.toLocaleString()}</span>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Eggs: single per-lot price + qty stepper. */}
+          {isEggDonor && eggLotCost != null && (
+            <div
+              className="rounded-md border p-2.5 space-y-2"
+              style={{ background: "hsl(var(--secondary) / 0.5)" }}
+            >
+              <p className="font-medium text-muted-foreground uppercase tracking-wide text-[10px]">
+                Egg lot pricing on file
+              </p>
               <div className="flex items-center justify-between gap-2">
-                <label className="text-xs font-medium">
-                  Number of {unitLabelPlural}
-                </label>
+                <span className="text-xs">Per egg lot: ${eggLotCost.toLocaleString()}</span>
                 <div className="flex items-center gap-2">
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     className="h-7 w-7 p-0"
-                    onClick={() => {
-                      const next = Math.max(1, quantity - 1);
-                      setQuantity(next);
-                      applyPickerTotal(selectedVial, next);
-                    }}
+                    onClick={() => { touchPicker(); setEggQuantity(q => Math.max(1, q - 1)); }}
                     aria-label={`Decrease ${unitLabel} count`}
                     data-testid="btn-prefill-qty-minus"
                   >
                     -
                   </Button>
-                  <span className="text-sm font-semibold w-6 text-center" data-testid="text-prefill-qty">{quantity}</span>
+                  <span className="text-sm font-semibold w-6 text-center" data-testid="text-prefill-qty">
+                    {eggQuantity}
+                  </span>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     className="h-7 w-7 p-0"
-                    onClick={() => {
-                      const next = quantity + 1;
-                      setQuantity(next);
-                      applyPickerTotal(selectedVial, next);
-                    }}
+                    onClick={() => { touchPicker(); setEggQuantity(q => q + 1); }}
                     aria-label={`Increase ${unitLabel} count`}
                     data-testid="btn-prefill-qty-plus"
                   >
@@ -385,23 +556,18 @@ export function CostSheetSidebarSection({
                   </Button>
                 </div>
               </div>
-              {unitPrice != null && (
-                <p className="text-[11px] text-muted-foreground">
-                  {quantity} × ${unitPrice.toLocaleString()} = ${(unitPrice * Math.max(1, quantity)).toLocaleString()}
-                </p>
-              )}
+              <p className="text-[11px] text-muted-foreground">
+                {eggQuantity} × ${eggLotCost.toLocaleString()} = ${(eggLotCost * eggQuantity).toLocaleString()}
+              </p>
             </div>
           )}
 
           <div className="space-y-1.5">
             <label className="text-xs font-medium">Total Cost ($)</label>
-            <Input
-              type="number"
-              min="0"
-              step="50"
+            <NumberInput
               placeholder="e.g. 25000"
               value={totalCostInput}
-              onChange={e => { setTotalCostInput(e.target.value); setManuallyEdited(true); }}
+              onChange={v => { setTotalCostInput(v); setManuallyEdited(true); }}
             />
           </div>
 

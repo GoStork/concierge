@@ -6,6 +6,7 @@ import { formatMoneyDollars } from "@/lib/format-money";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1833,11 +1834,10 @@ function SingleCostsTab({
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs text-muted-foreground">$</span>
-                  <Input
-                    type="number"
-                    value={tier.minValue ?? ""}
-                    onChange={(e) => {
-                      const v = e.target.value === "" ? null : Number(e.target.value);
+                  <NumberInput
+                    value={tier.minValue != null ? String(tier.minValue) : ""}
+                    onChange={(raw) => {
+                      const v = raw === "" ? null : Number(raw);
                       updateEditItem(tier._editIdx, "minValue", v);
                       updateEditItem(tier._editIdx, "maxValue", v);
                     }}
@@ -2038,11 +2038,11 @@ function SingleCostsTab({
                                 {effectiveEditing ? (
                                   isNumericOnlyField(getBaseKey(item.key)) ? (
                                     <div className="flex items-center gap-1">
-                                      <Input
-                                        type="number"
-                                        value={item.minValue ?? ""}
-                                        onChange={(e) => {
-                                          const val = e.target.value === "" ? null : Number(e.target.value);
+                                      <NumberInput
+                                        allowDecimal={false}
+                                        value={item.minValue != null ? String(item.minValue) : ""}
+                                        onChange={(raw) => {
+                                          const val = raw === "" ? null : Number(raw);
                                           updateEditItem(item._editIdx, "minValue", val);
                                           updateEditItem(item._editIdx, "maxValue", val);
                                         }}
@@ -2050,7 +2050,6 @@ function SingleCostsTab({
                                         onKeyDown={(e) => { if (e.key === "Enter") triggerAutoSave(); }}
                                         placeholder="Quantity"
                                         className="w-28 h-8 text-sm"
-                                        min={0}
                                         data-testid={`input-numeric-${item._editIdx}`}
                                       />
                                     </div>
@@ -2058,14 +2057,13 @@ function SingleCostsTab({
                                   <>
                                     <div className="flex items-center gap-1">
                                       <span className="text-xs text-muted-foreground">$</span>
-                                      <Input
-                                        type="number"
-                                        value={item.minValue ?? ""}
-                                        onChange={(e) =>
+                                      <NumberInput
+                                        value={item.minValue != null ? String(item.minValue) : ""}
+                                        onChange={(raw) =>
                                           updateEditItem(
                                             item._editIdx,
                                             "minValue",
-                                            e.target.value === "" ? null : Number(e.target.value),
+                                            raw === "" ? null : Number(raw),
                                           )
                                         }
                                         onBlur={triggerAutoSave}
@@ -2078,14 +2076,13 @@ function SingleCostsTab({
                                     <span className="text-muted-foreground">–</span>
                                     <div className="flex items-center gap-1">
                                       <span className="text-xs text-muted-foreground">$</span>
-                                      <Input
-                                        type="number"
-                                        value={item.maxValue ?? ""}
-                                        onChange={(e) =>
+                                      <NumberInput
+                                        value={item.maxValue != null ? String(item.maxValue) : ""}
+                                        onChange={(raw) =>
                                           updateEditItem(
                                             item._editIdx,
                                             "maxValue",
-                                            e.target.value === "" ? null : Number(e.target.value),
+                                            raw === "" ? null : Number(raw),
                                           )
                                         }
                                         onBlur={triggerAutoSave}

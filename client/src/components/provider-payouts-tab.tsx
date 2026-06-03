@@ -782,6 +782,7 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
           <Field label="Phone (optional)"><Input type="tel" value={repPhone} onChange={e => setRepPhone(e.target.value)} /></Field>
         </div>
         <div className="grid grid-cols-3 gap-3">
+          {/* short date fields, no commas needed */}
           <Field label="Birth month" required><Input type="number" min={1} max={12} value={repDobMonth} onChange={e => setRepDobMonth(e.target.value)} placeholder="MM" /></Field>
           <Field label="Birth day" required><Input type="number" min={1} max={31} value={repDobDay} onChange={e => setRepDobDay(e.target.value)} placeholder="DD" /></Field>
           <Field label="Birth year" required><Input type="number" min={1900} max={2010} value={repDobYear} onChange={e => setRepDobYear(e.target.value)} placeholder="YYYY" /></Field>

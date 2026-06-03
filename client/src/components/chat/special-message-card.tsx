@@ -1,11 +1,12 @@
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatMoneyCents } from "@/lib/format-money";
-import { CheckCircle2, FileText, Download, Video, CalendarDays, ExternalLink, UserCheck, Receipt, Paperclip, PenLine, Check, MessageSquare, Pencil } from "lucide-react";
+import { CheckCircle2, FileText, Download, Video, CalendarDays, ExternalLink, UserCheck, Receipt, Paperclip, PenLine, Check, MessageSquare, Pencil, X } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { SessionMessage } from "./chat-types";
 import { CostSheetDraftApprovalCard } from "./cost-sheet-draft-approval-card";
+import { InvoiceCard } from "@/components/invoice-card";
 
 // Phase 2: small parent-side affordance for the cost-sheet card footer.
 // Acknowledge persists ProviderQuote.parentAcknowledgedAt. "Have questions"
@@ -81,9 +82,21 @@ interface SpecialMessageCardProps {
   onEditCostSheet?: (initial: { totalCostCents: number; notes: string | null }) => void;
   /** Phase 2: parent ack "Have questions" pre-fills the chat input. */
   onPrefillInput?: (text: string) => void;
+  /** Provider-only: open the invoice panel pre-filled with this invoice's
+   *  line items so the provider can revise and resend (server cancels the
+   *  old invoice first). */
+  onEditInvoice?: (initial: { invoiceId: string }) => void;
+  /** Provider-only: cancel an AWAITING_PAYMENT invoice. */
+  onCancelInvoice?: (initial: { invoiceId: string }) => void;
+  /** Disables the provider's invoice action buttons while a mutation runs. */
+  invoiceActionPendingId?: string | null;
+  /** Provider-only: cancel an active cost sheet (supersedes without resending). */
+  onCancelCostSheet?: (initial: { quoteId: string }) => void;
+  /** Disables the cost-sheet action buttons while a mutation runs. */
+  costSheetActionPendingId?: string | null;
 }
 
-export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo, sessionId, onEditCostSheetDraft, onEditCostSheet, onPrefillInput }: SpecialMessageCardProps) {
+export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo, sessionId, onEditCostSheetDraft, onEditCostSheet, onPrefillInput, onEditInvoice, onCancelInvoice, invoiceActionPendingId, onCancelCostSheet, costSheetActionPendingId }: SpecialMessageCardProps) {
   const data = msg.uiCardData as any;
   if (!data) return null;
 
@@ -279,6 +292,30 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
     );
   }
 
+  if (msg.uiCardType === "invoice") {
+    const invoiceId: string | undefined = (data as any).invoiceId;
+    const isProvider = viewerRole === "provider";
+    return (
+      <div className="mt-1" data-testid="invoice-card">
+        <InvoiceCard
+          data={data as any}
+          isParent={viewerRole === "parent"}
+          onEditResend={
+            isProvider && invoiceId && onEditInvoice
+              ? () => onEditInvoice({ invoiceId })
+              : undefined
+          }
+          onCancel={
+            isProvider && invoiceId && onCancelInvoice
+              ? () => onCancelInvoice({ invoiceId })
+              : undefined
+          }
+          actionPending={!!invoiceId && invoiceActionPendingId === invoiceId}
+        />
+      </div>
+    );
+  }
+
   if (msg.uiCardType === "cost_sheet") {
     const totalCents: number = data.totalCostCents ?? 0;
     const hasFile: boolean = !!data.costSheetFileUrl;
@@ -287,7 +324,10 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
     const providerName: string = data.providerName || "Your provider";
     const notes: string | null = data.notes || null;
     const sentAt: string | null = data.sentAt || null;
+    const cancelledAt: string | null = data.cancelledAt || null;
+    const isCancelled = !!cancelledAt;
     const totalFormatted = formatMoneyCents(totalCents);
+    const csActionPending = !!quoteId && costSheetActionPendingId === quoteId;
     // Route through our authenticated download endpoint which mints a fresh
     // signed URL each click. The raw GCS URL returned by uploadBufferPublic
     // 403s when the bucket has uniform bucket-level access enabled.
@@ -295,28 +335,37 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
       ? `/api/sessions/${sessionId}/cost-sheets/${quoteId}/file`
       : null;
 
+    const borderColorWhenCancelled = "hsl(var(--muted-foreground) / 0.4)";
     return (
       <div className="mt-1" data-testid="cost-sheet-card">
         <div
-          className="rounded-[var(--radius)] border-2 bg-background overflow-hidden"
-          style={{ borderColor: brandColor }}
+          className={`rounded-[var(--radius)] border-2 bg-background overflow-hidden ${isCancelled ? "opacity-70" : ""}`}
+          style={{ borderColor: isCancelled ? borderColorWhenCancelled : brandColor }}
         >
           <div className="flex items-center gap-3 px-4 py-3">
             <div
               className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground shrink-0"
-              style={{ backgroundColor: brandColor }}
+              style={{ backgroundColor: isCancelled ? borderColorWhenCancelled : brandColor }}
             >
               <Receipt className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold">Cost Sheet from {providerName}</p>
+              <p className={`text-sm font-semibold ${isCancelled ? "line-through text-muted-foreground" : ""}`}>
+                Cost Sheet from {providerName}
+              </p>
               <p className="text-xs text-muted-foreground">
-                Total quoted cost
-                {sentAt ? ` - ${new Date(sentAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}
+                {isCancelled
+                  ? `Cancelled${cancelledAt ? ` - ${new Date(cancelledAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}`
+                  : `Total quoted cost${sentAt ? ` - ${new Date(sentAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}`}
               </p>
             </div>
             <div className="text-right shrink-0">
-              <p className="text-lg font-bold" style={{ color: brandColor }}>{totalFormatted}</p>
+              <p
+                className={`text-lg font-bold ${isCancelled ? "line-through" : ""}`}
+                style={{ color: isCancelled ? "hsl(var(--muted-foreground))" : brandColor }}
+              >
+                {totalFormatted}
+              </p>
             </div>
           </div>
           {(downloadUrl || notes) && (
@@ -333,11 +382,13 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
                   {fileName || "Open cost sheet"}
                 </a>
               )}
-              {notes && <p className="text-xs text-muted-foreground italic">{notes}</p>}
+              {notes && <p className="text-xs text-muted-foreground italic whitespace-pre-line">{notes}</p>}
             </div>
           )}
-          {/* Phase 2 ack footer: parent-only, only while not yet acknowledged. */}
-          {viewerRole === "parent" && quoteId && sessionId && !data.parentAcknowledgedAt && (
+          {/* Phase 2 ack footer: parent-only, only while not yet acknowledged
+              and not cancelled - a cancelled cost sheet shouldn't invite the
+              parent to acknowledge it. */}
+          {viewerRole === "parent" && quoteId && sessionId && !data.parentAcknowledgedAt && !isCancelled && (
             <CostSheetParentAck
               sessionId={sessionId}
               quoteId={quoteId}
@@ -345,20 +396,37 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
               onPrefillInput={onPrefillInput}
             />
           )}
-          {/* Provider-only: open the send form pre-filled with this quote so
-              they can revise and resend. The new quote supersedes this one. */}
-          {viewerRole === "provider" && onEditCostSheet && (
+          {/* Provider-only: Edit & Resend opens the send form pre-filled with
+              this quote (new quote supersedes this one). Cancel marks this
+              quote as cancelled without replacing it. Both hide once the quote
+              is already cancelled. */}
+          {viewerRole === "provider" && !isCancelled && (onEditCostSheet || onCancelCostSheet) && (
             <div className="border-t px-4 py-2 bg-secondary/30 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => onEditCostSheet({ totalCostCents: totalCents, notes })}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-background border hover:bg-muted/50 transition-colors"
-                style={{ borderColor: brandColor, color: brandColor }}
-                data-testid={`cost-sheet-edit-${quoteId || msg.id}`}
-              >
-                <Pencil className="w-3 h-3" />
-                Edit & Resend
-              </button>
+              {onEditCostSheet && (
+                <button
+                  type="button"
+                  onClick={() => onEditCostSheet({ totalCostCents: totalCents, notes })}
+                  disabled={csActionPending}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-background border hover:bg-muted/50 transition-colors disabled:opacity-50"
+                  style={{ borderColor: brandColor, color: brandColor }}
+                  data-testid={`cost-sheet-edit-${quoteId || msg.id}`}
+                >
+                  <Pencil className="w-3 h-3" />
+                  Edit & Resend
+                </button>
+              )}
+              {onCancelCostSheet && quoteId && (
+                <button
+                  type="button"
+                  onClick={() => onCancelCostSheet({ quoteId })}
+                  disabled={csActionPending}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-background border border-border hover:bg-muted/50 transition-colors text-foreground disabled:opacity-50"
+                  data-testid={`cost-sheet-cancel-${quoteId}`}
+                >
+                  <X className="w-3 h-3" />
+                  Cancel
+                </button>
+              )}
             </div>
           )}
         </div>

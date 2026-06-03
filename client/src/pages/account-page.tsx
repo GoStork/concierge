@@ -32,9 +32,36 @@ import DocumentsTab from "@/components/documents-tab";
 import ScrapersSummaryPage from "@/pages/scrapers-summary-page";
 import { hasProviderRole, isParentAccountAdmin } from "@shared/roles";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { OptionPills } from "@/components/ui/option-pills";
 import { Slider } from "@/components/ui/slider";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+
+const GENDER_OPTIONS = [
+  { value: "I'm a woman", label: "Woman" },
+  { value: "I'm a man", label: "Man" },
+  { value: "I'm non-binary", label: "Non-binary" },
+];
+
+const ORIENTATION_OPTIONS = [
+  { value: "Straight", label: "Straight" },
+  { value: "Gay", label: "Gay" },
+  { value: "Lesbian", label: "Lesbian" },
+  { value: "Bi", label: "Bi" },
+  { value: "Queer", label: "Queer" },
+];
+
+const RELATIONSHIP_OPTIONS = [
+  { value: "Single", label: "Single" },
+  { value: "Partnered", label: "Partnered" },
+  { value: "Married", label: "Married" },
+  { value: "Separated/Divorced/Widowed", label: "Separated/Divorced/Widowed" },
+];
+
+const PARTNER_GENDER_OPTIONS = [
+  { value: "woman", label: "Woman" },
+  { value: "man", label: "Man" },
+];
 
 const allTabs = [
   { to: '/account', label: 'My Account', icon: User, end: true, roles: null },
@@ -930,45 +957,30 @@ function AccountTab() {
                     <>
                       <div className="space-y-2">
                         <Label>Gender Identity</Label>
-                        <Select value={editGender} onValueChange={setEditGender}>
-                          <SelectTrigger data-testid="select-gender">
-                            <SelectValue placeholder="Select gender" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="I'm a woman">Woman</SelectItem>
-                            <SelectItem value="I'm a man">Man</SelectItem>
-                            <SelectItem value="I'm non-binary">Non-binary</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <OptionPills
+                          options={GENDER_OPTIONS}
+                          value={editGender}
+                          onChange={setEditGender}
+                          testIdPrefix="pill-gender"
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Sexual Orientation</Label>
-                        <Select value={editOrientation} onValueChange={setEditOrientation}>
-                          <SelectTrigger data-testid="select-orientation">
-                            <SelectValue placeholder="Select orientation" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Straight">Straight</SelectItem>
-                            <SelectItem value="Gay">Gay</SelectItem>
-                            <SelectItem value="Lesbian">Lesbian</SelectItem>
-                            <SelectItem value="Bi">Bi</SelectItem>
-                            <SelectItem value="Queer">Queer</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <OptionPills
+                          options={ORIENTATION_OPTIONS}
+                          value={editOrientation}
+                          onChange={setEditOrientation}
+                          testIdPrefix="pill-orientation"
+                        />
                       </div>
-                      <div className="space-y-2">
+                      <div className="space-y-2 md:col-span-2">
                         <Label>Relationship Status</Label>
-                        <Select value={editRelationship} onValueChange={setEditRelationship}>
-                          <SelectTrigger data-testid="select-relationship">
-                            <SelectValue placeholder="Select status" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Single">Single</SelectItem>
-                            <SelectItem value="Partnered">Partnered</SelectItem>
-                            <SelectItem value="Married">Married</SelectItem>
-                            <SelectItem value="Separated/Divorced/Widowed">Separated/Divorced/Widowed</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <OptionPills
+                          options={RELATIONSHIP_OPTIONS}
+                          value={editRelationship}
+                          onChange={setEditRelationship}
+                          testIdPrefix="pill-relationship"
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="edit-age">Your Age</Label>
@@ -1012,15 +1024,12 @@ function AccountTab() {
                           </div>
                           <div className="space-y-2">
                             <Label>Partner's Gender</Label>
-                            <Select value={editPartnerGender} onValueChange={setEditPartnerGender}>
-                              <SelectTrigger data-testid="select-partner-gender">
-                                <SelectValue placeholder="Select gender" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="woman">Woman</SelectItem>
-                                <SelectItem value="man">Man</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <OptionPills
+                              options={PARTNER_GENDER_OPTIONS}
+                              value={editPartnerGender}
+                              onChange={setEditPartnerGender}
+                              testIdPrefix="pill-partner-gender"
+                            />
                           </div>
                         </>
                       )}
@@ -1138,39 +1147,33 @@ function AccountTab() {
                     <>
                       <div className="space-y-2">
                         <Label>Gender Identity</Label>
-                        <Select disabled value={(user as any).gender || ""}>
-                          <SelectTrigger data-testid="select-gender"><SelectValue placeholder="-- Not specified --" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="I'm a woman">Woman</SelectItem>
-                            <SelectItem value="I'm a man">Man</SelectItem>
-                            <SelectItem value="I'm non-binary">Non-binary</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <OptionPills
+                          options={GENDER_OPTIONS}
+                          value={(user as any).gender || ""}
+                          onChange={() => {}}
+                          disabled
+                          testIdPrefix="pill-gender"
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Sexual Orientation</Label>
-                        <Select disabled value={(user as any).sexualOrientation || ""}>
-                          <SelectTrigger data-testid="select-orientation"><SelectValue placeholder="-- Not specified --" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Straight">Straight</SelectItem>
-                            <SelectItem value="Gay">Gay</SelectItem>
-                            <SelectItem value="Lesbian">Lesbian</SelectItem>
-                            <SelectItem value="Bi">Bi</SelectItem>
-                            <SelectItem value="Queer">Queer</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <OptionPills
+                          options={ORIENTATION_OPTIONS}
+                          value={(user as any).sexualOrientation || ""}
+                          onChange={() => {}}
+                          disabled
+                          testIdPrefix="pill-orientation"
+                        />
                       </div>
-                      <div className="space-y-2">
+                      <div className="space-y-2 md:col-span-2">
                         <Label>Relationship Status</Label>
-                        <Select disabled value={(user as any).relationshipStatus || ""}>
-                          <SelectTrigger data-testid="select-relationship"><SelectValue placeholder="-- Not specified --" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Single">Single</SelectItem>
-                            <SelectItem value="Partnered">Partnered</SelectItem>
-                            <SelectItem value="Married">Married</SelectItem>
-                            <SelectItem value="Separated/Divorced/Widowed">Separated/Divorced/Widowed</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <OptionPills
+                          options={RELATIONSHIP_OPTIONS}
+                          value={(user as any).relationshipStatus || ""}
+                          onChange={() => {}}
+                          disabled
+                          testIdPrefix="pill-relationship"
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Your Age</Label>
@@ -1196,13 +1199,13 @@ function AccountTab() {
                           </div>
                           <div className="space-y-2">
                             <Label>Partner's Gender</Label>
-                            <Select disabled value={(user as any).partnerGender || ""}>
-                              <SelectTrigger data-testid="select-partner-gender"><SelectValue placeholder="-- Not specified --" /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="woman">Woman</SelectItem>
-                                <SelectItem value="man">Man</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <OptionPills
+                              options={PARTNER_GENDER_OPTIONS}
+                              value={(user as any).partnerGender || ""}
+                              onChange={() => {}}
+                              disabled
+                              testIdPrefix="pill-partner-gender"
+                            />
                           </div>
                         </>
                       )}

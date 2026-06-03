@@ -85,6 +85,12 @@ interface InvoiceSidebarSectionProps {
   /** When true, render in inline-above-composer mode (form always open, X to close). */
   embedded?: boolean;
   onClose?: () => void;
+  /** Pre-fill the form for an Edit & Resend flow. When supplied, the form seeds
+   *  its line items + description from this invoice and, on successful send,
+   *  cancels the old invoice first so the parent only sees one open invoice. */
+  initialLineItems?: Array<{ serviceType: LineServiceType; description: string | null; amountCents: number }> | null;
+  initialDescription?: string | null;
+  cancelInvoiceIdOnSend?: string | null;
 }
 
 interface PreviewLine {
@@ -127,11 +133,14 @@ export function InvoiceSidebarSection({
   sessionQueryKey,
   embedded = false,
   onClose,
+  initialLineItems = null,
+  initialDescription = null,
+  cancelInvoiceIdOnSend = null,
 }: InvoiceSidebarSectionProps) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(embedded);
   const [overrideInput, setOverrideInput] = useState("");
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(initialDescription || "");
   const [error, setError] = useState<string | null>(null);
   // Tracks whether the override field has been seeded with the default basis
   // amount from billing settings. Once seeded, the user's edits take over.
@@ -139,7 +148,18 @@ export function InvoiceSidebarSection({
   // Itemized lines. Agency starts with one row; can add/remove. When any line
   // has a positive amount, the invoice is sent as itemized and the "Parent
   // Pays" override is ignored. Empty lines (no amount) are filtered out.
-  const [lineItems, setLineItems] = useState<LineItemDraft[]>(() => [newLine("SURROGACY")]);
+  const [lineItems, setLineItems] = useState<LineItemDraft[]>(() => {
+    if (initialLineItems && initialLineItems.length > 0) {
+      return initialLineItems.map(li => {
+        const draft = newLine(li.serviceType);
+        const dollars = (li.amountCents || 0) / 100;
+        draft.amountInput = Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
+        draft.description = li.description || "";
+        return draft;
+      });
+    }
+    return [newLine("SURROGACY")];
+  });
 
   const totalLineCents = lineItems.reduce((sum, li) => {
     const v = parseFloat(li.amountInput);
@@ -237,8 +257,12 @@ export function InvoiceSidebarSection({
   // every line's amount. The amount is not user-editable per row - if the
   // agency wants a different value they update Billing settings (or rely on
   // the active-quote fallback for unconfigured services).
+  // SKIP when we're in Edit & Resend mode (initialLineItems prefill) - the
+  // form should reflect what was on the original invoice, not whatever the
+  // defaults currently resolve to.
   useEffect(() => {
     if (!feeConfigsData) return;
+    if (initialLineItems && initialLineItems.length > 0) return;
     setLineItems(prev =>
       prev.map(li => ({ ...li, amountInput: defaultDollarsForService(li.serviceType, activeQuoteTotalCents) })),
     );
@@ -373,6 +397,19 @@ export function InvoiceSidebarSection({
       }
       body.lineItems = cleanedLines;
       if (description.trim()) body.description = description.trim();
+
+      // Edit & Resend: cancel the existing invoice BEFORE creating the new one
+      // so the parent never sees two pending invoices for the same session.
+      if (cancelInvoiceIdOnSend) {
+        const cancelRes = await fetch(
+          `/api/sessions/${sessionId}/invoices/${cancelInvoiceIdOnSend}/cancel`,
+          { method: "POST", credentials: "include" },
+        );
+        if (!cancelRes.ok) {
+          const err = await cancelRes.json().catch(() => ({}));
+          throw new Error(err?.message || "Failed to cancel prior invoice");
+        }
+      }
 
       const res = await fetch(`/api/sessions/${sessionId}/invoice`, {
         method: "POST",
