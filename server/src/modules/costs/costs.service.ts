@@ -378,6 +378,12 @@ export class CostsService {
     //      program's range is preserved for them.
     let specificComp: number | null = null;
     let implicitNeed: string | null = null;
+    // For sperm-donor profile views: the donor's vialTypes (["ICI","IUI","IVF"]
+    // - any subset) tell the parent which procedures THIS specific donor's
+    // vials are sold for. We use them to filter the bank's program list so
+    // only relevant programs show up. A donor with vialTypes=["ICI"] should
+    // not surface IUI Premium / IVF programs - they're not available for him.
+    let spermDonorVialTypes: string[] | null = null;
     if (specificDonorId && specificDonorType) {
       const t = specificDonorType.toLowerCase();
       if (t === "surrogate" || t === "surrogates") {
@@ -402,9 +408,14 @@ export class CostsService {
       } else if (t === "sperm-donor" || t === "spermdonor" || t === "sperm-donors" || t === "spermdonors") {
         implicitNeed = "sperm_donor";
         // No comp override - vials are flat-product pricing.
+        const sd = await this.prisma.spermDonor.findUnique({
+          where: { id: specificDonorId },
+          select: { vialTypes: true },
+        });
+        spermDonorVialTypes = sd?.vialTypes ?? [];
       }
     }
-    return this._getProviderParentPrograms(providerId, parentAccountId, specificComp, implicitNeed);
+    return this._getProviderParentPrograms(providerId, parentAccountId, specificComp, implicitNeed, spermDonorVialTypes);
   }
 
   private async _getProviderParentPrograms(
@@ -412,6 +423,7 @@ export class CostsService {
     parentAccountId: string,
     specificCompensation: number | null,
     implicitNeed: string | null,
+    spermDonorVialTypes: string[] | null,
   ) {
     const { subtypes, isPartialProfile } =
       await this.getMatchingSubtypesForParent(parentAccountId);
@@ -556,6 +568,25 @@ export class CostsService {
       orderBy: { createdAt: "asc" },
     });
 
+    // Vial-type narrowing for sperm-donor profile views. The donor's
+    // vialTypes field tells us which procedures THIS donor's vials are
+    // sold for (e.g. ["ICI"] - ICI only, not IUI/IVF). Filter the bank's
+    // program list down to programs that target one of those vial types.
+    // Match on a word-boundary token in the program name so "ICI" doesn't
+    // pick up "IUI" or any other false positive. When the donor has no
+    // vialTypes set (data gap), don't filter - show everything rather
+    // than nothing. Same when there's no specific donor in scope (provider
+    // profile view).
+    const filteredPrograms = (() => {
+      if (!spermDonorVialTypes || spermDonorVialTypes.length === 0) return programs;
+      const tokens = spermDonorVialTypes
+        .map((v) => (v || "").trim().toUpperCase())
+        .filter(Boolean);
+      if (tokens.length === 0) return programs;
+      const re = new RegExp(`\\b(${tokens.join("|")})\\b`, "i");
+      return programs.filter((p) => re.test(p.name));
+    })();
+
     const COUNTED_ONLY_KEYS = new Set([
       "Number of Egg Retrievals Included",
       "Number of Sperm Collections Included",
@@ -577,7 +608,7 @@ export class CostsService {
       return cat === "compensation" || key.includes("compensation");
     };
 
-    const result = programs
+    const result = filteredPrograms
       .filter((p) => p.costSheets.length > 0)
       .flatMap((p) => {
         const sheet = p.costSheets[0];
