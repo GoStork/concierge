@@ -1442,7 +1442,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
     // is still an unacknowledged active ProviderQuote, post the recap.
     try {
       const lastParentMsg = await prisma.aiChatMessage.findFirst({
-        where: { sessionId: session.id, senderType: "user" },
+        where: { sessionId: session.id, senderType: "parent" },
         orderBy: { createdAt: "desc" },
         select: { content: true, createdAt: true },
       });
