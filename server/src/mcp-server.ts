@@ -1434,11 +1434,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
       const spermDonorSelectCols = `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, compensation, "iciCost", "iuiCost", "ivfCost", "totalCost", "isExperienced", "photoUrl"`;
 
-      // Base WHERE: absolute requirements never relaxed
-      // AI concierge ONLY recommends bookable inventory: AVAILABLE (ready now)
-      // or PENDING (not yet approved but coming back). MATCHED is committed to
-      // another parent so we never surface it; INACTIVE is soft-deleted.
-      const baseWhere: any = { hiddenFromSearch: { not: true }, status: { in: ["AVAILABLE", "PENDING"] } };
+      // Base WHERE: absolute requirements never relaxed.
+      // Sperm donors only have AVAILABLE | SOLD_OUT | INACTIVE. AI concierge
+      // recommends AVAILABLE only - SOLD_OUT means no vials in stock (not
+      // bookable), INACTIVE is soft-deleted. PENDING / MATCHED don't apply
+      // to sperm (those are egg-donor / surrogate states).
+      const baseWhere: any = { hiddenFromSearch: { not: true }, status: "AVAILABLE" };
       if (excludeSet.size > 0) baseWhere.id = { notIn: Array.from(excludeSet) };
       if (maxAge) baseWhere.age = { lte: maxAge };
       if (height) baseWhere.height = { contains: height, mode: "insensitive" };

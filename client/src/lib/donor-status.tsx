@@ -1,10 +1,12 @@
 import { ReactNode } from "react";
 
-// Canonical donor/surrogate statuses surfaced to the UI. INACTIVE is omitted
-// here because INACTIVE rows are never rendered (marketplace / chat / AI all
-// filter them out at the API layer); if you see "INACTIVE" land in the UI,
-// something upstream is leaking.
-export type DonorStatus = "AVAILABLE" | "PENDING" | "MATCHED";
+// Canonical donor / surrogate / sperm-donor statuses surfaced to the UI.
+// INACTIVE is omitted here because INACTIVE rows are never rendered
+// (marketplace / chat / AI all filter them out at the API layer); if you
+// see "INACTIVE" land in the UI, something upstream is leaking.
+// PENDING and MATCHED apply to egg donors + surrogates; SOLD_OUT applies
+// to sperm donors. AVAILABLE is universal.
+export type DonorStatus = "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT";
 
 export interface StatusBadgeStyle {
   label: string;
@@ -31,6 +33,12 @@ const STYLES: Record<DonorStatus, StatusBadgeStyle> = {
     description: "Matched with another family",
     pillClassName: "bg-muted text-muted-foreground",
     dotClassName: "bg-muted-foreground/50",
+  },
+  SOLD_OUT: {
+    label: "Sold Out",
+    description: "No vials currently in stock",
+    pillClassName: "bg-destructive/15 text-destructive",
+    dotClassName: "bg-destructive",
   },
 };
 

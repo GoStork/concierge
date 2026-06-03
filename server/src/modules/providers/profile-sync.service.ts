@@ -11,19 +11,24 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 /**
  * Single source of truth for translating an upstream agency's raw availability
  * label (scraped <b class="donorStatus">, JSON field, etc.) to our canonical
- * donor/surrogate status set: AVAILABLE | MATCHED | PENDING | INACTIVE.
+ * donor/surrogate/sperm status set:
+ *   AVAILABLE | PENDING | MATCHED | SOLD_OUT | INACTIVE.
  *
  *   AVAILABLE - bookable right now (parent can pursue)
  *   PENDING   - not yet approved/available (e.g. EDC's "Pending Availability"
  *               or OJMS's "Pending"); AI concierge MAY still recommend her
  *               because she's coming back imminently
- *   MATCHED   - committed to another parent / reserved / cycling; AI concierge
- *               MUST NOT recommend her (the parent can't move forward)
+ *   MATCHED   - committed to another parent / reserved / cycling; only
+ *               applies to egg donors + surrogates - AI concierge MUST NOT
+ *               recommend her (the parent can't move forward)
+ *   SOLD_OUT  - sperm-donor-only state: all vials sold, no inventory left.
+ *               Functionally non-bookable (like MATCHED for egg/surrogate)
+ *               but renders differently because sperm has different commerce.
  *   INACTIVE  - soft-deleted; never shown anywhere (stale-detection or
  *               agency-marked as removed)
  *
- * Use this from every scraper so we never end up with three different regex
- * blocks drifting apart (which is how "Pending Availability" was being mis-
+ * Use this from every scraper so we never end up with multiple regex blocks
+ * drifting apart (which is how "Pending Availability" was being mis-
  * classified as MATCHED across the EggDonor table). When `isInactiveCardClass`
  * is true (e.g. the EDC card had the `inactiveDonor` class), INACTIVE wins
  * regardless of the text.
@@ -31,11 +36,12 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 export function normalizeDonorStatus(
   rawText: string | null | undefined,
   isInactiveCardClass: boolean = false,
-): "AVAILABLE" | "MATCHED" | "PENDING" | "INACTIVE" {
+): "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT" | "INACTIVE" {
   if (isInactiveCardClass) return "INACTIVE";
   const t = (rawText || "").toLowerCase();
   if (!t) return "AVAILABLE";
   if (/\b(inactive|unavail|retired|removed|deleted)\b/.test(t)) return "INACTIVE";
+  if (/\b(sold\s*out|out\s*of\s*stock|no\s*vials)\b/.test(t)) return "SOLD_OUT";
   if (/\b(pending)\b/.test(t)) return "PENDING";
   if (/\b(reserved|cycling|matched|committed|in\s*cycle)\b/.test(t)) return "MATCHED";
   return "AVAILABLE";
@@ -596,7 +602,7 @@ Extract ALL sperm donor profiles visible on this page. For each donor, extract:
 - iuiCost: Cost for IUI vials as a number (no $ sign), or null if not shown
 - ivfCost: Cost for IVF vials as a number (no $ sign), or null if not shown
 - compensation: Generic price per vial as a number (no $ sign) if only one price is shown and vial type is unclear
-- status: "AVAILABLE" or "SOLD_OUT"
+- status: "AVAILABLE" (bookable now), "SOLD_OUT" (all vials sold), or "INACTIVE" (removed)
 - photoUrl: URL to donor's photo if visible
 - profileUrl: URL to this donor's individual profile page (if visible as a link)
 

@@ -221,8 +221,9 @@ export function matchesFilter(donor: any, key: string, values: string[]): boolea
   }
 
   if (key === "status") {
-    // Canonical donor status (AVAILABLE | PENDING | MATCHED). Falls back to
-    // AVAILABLE if the row has no status set (legacy rows / clients).
+    // Canonical donor status (AVAILABLE | PENDING | MATCHED for egg
+    // donors + surrogates; AVAILABLE | SOLD_OUT for sperm donors). Falls
+    // back to AVAILABLE if the row has no status set (legacy rows / clients).
     const status = (donor.status || "AVAILABLE").toString().toUpperCase();
     return values.some(v => v.toUpperCase() === status);
   }

@@ -442,8 +442,14 @@ export default function DonorEditPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="AVAILABLE">Available</SelectItem>
-                    <SelectItem value="PENDING">Pending</SelectItem>
-                    <SelectItem value="MATCHED">Matched</SelectItem>
+                    {paramType === "sperm-donor" ? (
+                      <SelectItem value="SOLD_OUT">Sold Out</SelectItem>
+                    ) : (
+                      <>
+                        <SelectItem value="PENDING">Pending</SelectItem>
+                        <SelectItem value="MATCHED">Matched</SelectItem>
+                      </>
+                    )}
                     <SelectItem value="INACTIVE">Inactive</SelectItem>
                   </SelectContent>
                 </Select>

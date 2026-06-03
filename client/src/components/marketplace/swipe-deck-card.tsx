@@ -16,10 +16,12 @@ interface SwipeDeckCardProps {
   photos: string[];
   title: string;
   statusLabel?: string | null;
-  // Canonical DB status (AVAILABLE | PENDING | MATCHED). Drives the colored
-  // status pill so parents instantly see whether the donor is bookable.
-  // AVAILABLE renders nothing; PENDING/MATCHED render a distinct badge.
-  donorStatus?: "AVAILABLE" | "PENDING" | "MATCHED" | null;
+  // Canonical DB status (AVAILABLE | PENDING | MATCHED | SOLD_OUT). Drives
+  // the colored status pill so parents instantly see whether the donor is
+  // bookable. AVAILABLE renders nothing; PENDING/MATCHED apply to egg
+  // donors + surrogates; SOLD_OUT applies to sperm donors when no vials
+  // are in stock.
+  donorStatus?: "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT" | null;
   isExperienced?: boolean;
   isPremium?: boolean;
   tabs: TabSection[];
@@ -221,9 +223,13 @@ export function SwipeDeckCard({
               )}
               {donorStatus && donorStatus !== "AVAILABLE" && (() => {
                 const ds = getDonorStatusStyle(donorStatus)!;
+                const pillBg =
+                  donorStatus === "PENDING"  ? "bg-[hsl(var(--brand-warning))]/90 text-white" :
+                  donorStatus === "SOLD_OUT" ? "bg-destructive/90 text-destructive-foreground" :
+                  /* MATCHED */                "bg-muted-foreground/80 text-background";
                 return (
                   <Badge
-                    className={`font-ui px-2.5 py-1 ${donorStatus === "PENDING" ? "bg-[hsl(var(--brand-warning))]/90 text-white" : "bg-muted-foreground/80 text-background"}`}
+                    className={`font-ui px-2.5 py-1 ${pillBg}`}
                     style={{ fontSize: 'var(--badge-text-size, 13px)' }}
                     data-testid={`badge-donor-status-${id}`}
                     title={ds.description}

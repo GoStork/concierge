@@ -143,7 +143,7 @@ const FILTER_DISPLAY_NAMES: Record<string, string> = {
 };
 
 const FILTER_VALUE_DISPLAY_NAMES: Record<string, Record<string, string>> = {
-  status: { AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched" },
+  status: { AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched", SOLD_OUT: "Sold Out" },
 };
 
 function formatFilterPills(filters: Record<string, string[]>): { key: string; label: string }[] {
@@ -1642,7 +1642,7 @@ export function MarketplaceFilterBar({
         <MobileRangeDrawer label="Age" filterKey="age" min={18} max={45} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} />
       )}
 
-      {!isIvf && (
+      {(isDonor || isSurrogate) && (
         <MobileMultiSelectDrawer
           label="Status"
           filterKey="status"
@@ -1653,6 +1653,20 @@ export function MarketplaceFilterBar({
           btnStyle={obs}
           dark={darkLabels}
           optionLabels={{ AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched" }}
+        />
+      )}
+
+      {isSperm && (
+        <MobileMultiSelectDrawer
+          label="Status"
+          filterKey="status"
+          options={["AVAILABLE", "SOLD_OUT"]}
+          activeFilters={activeFilters}
+          dispatch={dispatch}
+          testIdPrefix="filter-status"
+          btnStyle={obs}
+          dark={darkLabels}
+          optionLabels={{ AVAILABLE: "Available", SOLD_OUT: "Sold Out" }}
         />
       )}
 
@@ -1882,8 +1896,12 @@ export function MarketplaceFilterBar({
         <RangePopover label="Age" filterKey="age" min={18} max={45} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} />
       )}
 
-      {!isIvf && (
+      {(isDonor || isSurrogate) && (
         <MultiSelectPopover label="Status" filterKey="status" options={["AVAILABLE", "PENDING", "MATCHED"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-status" optionLabels={{ AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched" }} />
+      )}
+
+      {isSperm && (
+        <MultiSelectPopover label="Status" filterKey="status" options={["AVAILABLE", "SOLD_OUT"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-status" optionLabels={{ AVAILABLE: "Available", SOLD_OUT: "Sold Out" }} />
       )}
 
       {(isDonor || isSperm) && (

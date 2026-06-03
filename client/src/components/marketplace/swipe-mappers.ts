@@ -25,12 +25,13 @@ export interface TabSection {
 }
 
 // Coerce a raw DB status string to the canonical UI set. Anything outside
-// AVAILABLE/PENDING/MATCHED (e.g. an unexpected upstream label that escaped
-// normalization, or a null) collapses to AVAILABLE so the card still
-// renders cleanly - INACTIVE rows are excluded at the API layer and never
-// reach the mapper.
-function normalizeProfileStatus(raw: string | null | undefined): "AVAILABLE" | "PENDING" | "MATCHED" {
-  if (raw === "PENDING" || raw === "MATCHED") return raw;
+// AVAILABLE/PENDING/MATCHED/SOLD_OUT (e.g. an unexpected upstream label
+// that escaped normalization, or a null) collapses to AVAILABLE so the
+// card still renders cleanly - INACTIVE rows are excluded at the API layer
+// and never reach the mapper. SOLD_OUT only applies to sperm donors but
+// the type union is shared so all three mappers can route through here.
+function normalizeProfileStatus(raw: string | null | undefined): "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT" {
+  if (raw === "PENDING" || raw === "MATCHED" || raw === "SOLD_OUT") return raw;
   return "AVAILABLE";
 }
 
@@ -53,7 +54,7 @@ export interface SwipeDeckProfile {
   // (presence on the marketplace is the signal); PENDING and MATCHED render
   // an explicit badge so parents see at a glance that the donor can't be
   // booked right now (or is not yet approved).
-  donorStatus: "AVAILABLE" | "PENDING" | "MATCHED" | null;
+  donorStatus: "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT" | null;
   isExperienced: boolean;
   firstName: string | null;
   externalId: string | null;
