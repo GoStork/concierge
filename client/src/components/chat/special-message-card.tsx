@@ -1,6 +1,6 @@
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatMoneyCents } from "@/lib/format-money";
-import { CheckCircle2, FileText, Download, Video, CalendarDays, ExternalLink, UserCheck, Receipt, Paperclip, PenLine, Check, MessageSquare } from "lucide-react";
+import { CheckCircle2, FileText, Download, Video, CalendarDays, ExternalLink, UserCheck, Receipt, Paperclip, PenLine, Check, MessageSquare, Pencil } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -55,12 +55,12 @@ export function CostSheetParentAck({
       {onPrefillInput && (
         <button
           type="button"
-          onClick={() => onPrefillInput("I have a question about the cost sheet")}
+          onClick={() => onPrefillInput("I have a question about the cost sheet: ")}
           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-background border border-border hover:bg-muted/50 transition-colors text-foreground"
           data-testid={`cost-sheet-question-${quoteId}`}
         >
           <MessageSquare className="w-3 h-3" />
-          Have questions
+          I have questions
         </button>
       )}
     </div>
@@ -76,11 +76,14 @@ interface SpecialMessageCardProps {
   sessionId?: string | null;
   /** Phase 2: when provider clicks Edit on a cost-sheet draft, open the sidebar form pre-filled. */
   onEditCostSheetDraft?: (initial: { lineItems: any[]; totalCostCents: number; notes: string | null }) => void;
+  /** Provider-only: clicking "Edit & Resend" on a sent cost-sheet card opens the send form
+   *  pre-filled with the prior quote. Posting supersedes the prior quote server-side. */
+  onEditCostSheet?: (initial: { totalCostCents: number; notes: string | null }) => void;
   /** Phase 2: parent ack "Have questions" pre-fills the chat input. */
   onPrefillInput?: (text: string) => void;
 }
 
-export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo, sessionId, onEditCostSheetDraft, onPrefillInput }: SpecialMessageCardProps) {
+export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo, sessionId, onEditCostSheetDraft, onEditCostSheet, onPrefillInput }: SpecialMessageCardProps) {
   const data = msg.uiCardData as any;
   if (!data) return null;
 
@@ -341,6 +344,22 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
               brandColor={brandColor}
               onPrefillInput={onPrefillInput}
             />
+          )}
+          {/* Provider-only: open the send form pre-filled with this quote so
+              they can revise and resend. The new quote supersedes this one. */}
+          {viewerRole === "provider" && onEditCostSheet && (
+            <div className="border-t px-4 py-2 bg-secondary/30 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => onEditCostSheet({ totalCostCents: totalCents, notes })}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-background border hover:bg-muted/50 transition-colors"
+                style={{ borderColor: brandColor, color: brandColor }}
+                data-testid={`cost-sheet-edit-${quoteId || msg.id}`}
+              >
+                <Pencil className="w-3 h-3" />
+                Edit & Resend
+              </button>
+            </div>
           )}
         </div>
       </div>

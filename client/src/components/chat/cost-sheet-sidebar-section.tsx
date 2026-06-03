@@ -27,6 +27,14 @@ interface CostSheetSidebarSectionProps {
   subjectType?: string | null;
   subjectProfileId?: string | null;
   providerId?: string | null;
+  /**
+   * When the provider opens this panel from an existing cost-sheet card in
+   * the chat ("Edit & Resend"), the prior quote's values seed the form so
+   * they can tweak and resend. Posting creates a new quote that supersedes
+   * the previous one server-side, mirroring a fresh send.
+   */
+  initialTotalCostCents?: number | null;
+  initialNotes?: string | null;
 }
 
 type VialType = "ICI" | "IUI" | "IVF";
@@ -69,11 +77,17 @@ export function CostSheetSidebarSection({
   subjectType,
   subjectProfileId,
   providerId,
+  initialTotalCostCents,
+  initialNotes,
 }: CostSheetSidebarSectionProps) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(embedded);
-  const [totalCostInput, setTotalCostInput] = useState("");
-  const [notes, setNotes] = useState("");
+  const [totalCostInput, setTotalCostInput] = useState(
+    typeof initialTotalCostCents === "number" && initialTotalCostCents > 0
+      ? String(initialTotalCostCents / 100)
+      : "",
+  );
+  const [notes, setNotes] = useState(initialNotes ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
@@ -84,8 +98,12 @@ export function CostSheetSidebarSection({
   const [selectedVial, setSelectedVial] = useState<VialType | null>(null);
   const [quantity, setQuantity] = useState<number>(1);
   // Once the provider types in Total Cost directly, the picker stops driving it.
-  const [manuallyEdited, setManuallyEdited] = useState(false);
-  const [prefillInitialized, setPrefillInitialized] = useState(false);
+  // Edit-mode (seeded from an existing quote) starts manually-edited so the
+  // donor unit-price effect never overrides the seeded total.
+  const hasInitialTotal =
+    typeof initialTotalCostCents === "number" && initialTotalCostCents > 0;
+  const [manuallyEdited, setManuallyEdited] = useState(hasInitialTotal);
+  const [prefillInitialized, setPrefillInitialized] = useState(hasInitialTotal);
 
   const subjectTypeLower = (subjectType || "").toLowerCase();
   const isSpermDonor = embedded && subjectTypeLower.includes("sperm") && !!providerId && !!subjectProfileId;

@@ -4067,6 +4067,21 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }, [input]);
 
+  // Prefill the chat composer with a seed string and focus it. Used by the
+  // cost-sheet card's "I have questions" button so the parent can edit/extend
+  // the seed before sending. We do NOT auto-send - the parent chooses when.
+  const handlePrefillCostSheetQuestion = (text: string) => {
+    setInput(text);
+    requestAnimationFrame(() => {
+      const el = chatInputRef.current;
+      if (!el) return;
+      el.focus();
+      // Place caret at the end so the parent can keep typing.
+      const len = el.value.length;
+      try { el.setSelectionRange(len, len); } catch { /* ignore */ }
+    });
+  };
+
   if (noMatchmakerYet) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center" data-testid="concierge-no-matchmaker">
@@ -4651,7 +4666,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                               (m.content || "").includes("Thank you for letting us know")
                             )
                           : undefined;
-                        return <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} sessionId={sessionId} isAnswered={isAnswered} positiveChipStyle={chipPositiveStyle} declineChipStyle={chipDeclineStyle} onAnswer={handleQuickReply} onYesReady={handleReadinessYes} onPayInvoiceInline={setInlinePaymentToken} />;
+                        return <ConciergeSpecialCard msg={msg} brandColor={brandColor} onOpenInlineVideo={setInlineVideoBookingId} sessionId={sessionId} isAnswered={isAnswered} positiveChipStyle={chipPositiveStyle} declineChipStyle={chipDeclineStyle} onAnswer={handleQuickReply} onYesReady={handleReadinessYes} onPayInvoiceInline={setInlinePaymentToken} onPrefillCostSheetQuestion={handlePrefillCostSheetQuestion} />;
                       })()}
                       {(cardReplacesbubble || !showBubble || isAttachmentMsg) && msg.createdAt && (
                         <span
