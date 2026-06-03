@@ -289,19 +289,53 @@ export function CostSheetSidebarSection({
       // (and the chat history) see what the total is made of. Prepended to
       // any free-text note the provider typed.
       let combinedNotes = "";
+      // Also build a STRUCTURED line-item array so the invoice sidebar can
+      // pre-fill itself with the same rows (instead of one collapsed line).
+      // Shape mirrors what the invoice endpoint accepts: serviceType +
+      // description + amountCents. Each picker line maps to one row.
+      const structuredLines: Array<{
+        serviceType: "SPERM_DONATION" | "EGG_DONATION";
+        label: string;
+        quantity: number;
+        unitCostCents: number;
+        amountCents: number;
+        description: string;
+      }> = [];
       if (isSpermDonor && vialLines.length > 0 && !manuallyEdited) {
         const lineSummaries = vialLines
           .map(line => {
             const opt = vialOptions.find(o => o.label === line.label);
             if (!opt) return null;
             const qty = Math.max(1, line.quantity);
-            return `${qty} × ${opt.label} @ $${opt.cost.toLocaleString()} = $${(opt.cost * qty).toLocaleString()}`;
+            const lineAmount = opt.cost * qty;
+            structuredLines.push({
+              serviceType: "SPERM_DONATION",
+              label: opt.label,
+              quantity: qty,
+              unitCostCents: opt.cost * 100,
+              amountCents: lineAmount * 100,
+              description: `${qty} × ${opt.label} @ $${opt.cost.toLocaleString()}`,
+            });
+            return `${qty} × ${opt.label} @ $${opt.cost.toLocaleString()} = $${lineAmount.toLocaleString()}`;
           })
           .filter((s): s is string => s !== null);
         if (lineSummaries.length > 0) combinedNotes = lineSummaries.join("\n");
+      } else if (isEggDonor && eggLotCost != null && !manuallyEdited) {
+        const qty = Math.max(1, eggQuantity);
+        const lineAmount = eggLotCost * qty;
+        structuredLines.push({
+          serviceType: "EGG_DONATION",
+          label: "Egg Lot",
+          quantity: qty,
+          unitCostCents: eggLotCost * 100,
+          amountCents: lineAmount * 100,
+          description: `${qty} × Egg Lot @ $${eggLotCost.toLocaleString()}`,
+        });
+        combinedNotes = `${qty} × Egg Lot @ $${eggLotCost.toLocaleString()} = $${lineAmount.toLocaleString()}`;
       }
       if (notes.trim()) combinedNotes = combinedNotes ? `${combinedNotes}\n\n${notes.trim()}` : notes.trim();
       if (combinedNotes) form.append("notes", combinedNotes);
+      if (structuredLines.length > 0) form.append("lineItems", JSON.stringify(structuredLines));
       if (file) form.append("file", file);
 
       const res = await fetch(`/api/sessions/${sessionId}/cost-sheet`, {

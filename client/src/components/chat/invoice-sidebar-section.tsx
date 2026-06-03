@@ -119,9 +119,18 @@ interface PreviewResponse {
   lines?: PreviewLine[];
 }
 
+interface QuoteLineItem {
+  serviceType?: string;
+  label?: string;
+  quantity?: number;
+  unitCostCents?: number;
+  amountCents: number;
+  description?: string;
+}
 interface ProviderQuoteRow {
   id: string;
   totalCostCents: number;
+  lineItems?: QuoteLineItem[] | null;
   supersededAt: string | null;
   createdAt: string;
 }
@@ -145,6 +154,10 @@ export function InvoiceSidebarSection({
   // Tracks whether the override field has been seeded with the default basis
   // amount from billing settings. Once seeded, the user's edits take over.
   const [defaultPrefilled, setDefaultPrefilled] = useState(false);
+  // Quote-id we've already seeded line items from. Prevents re-seeding on
+  // every re-render and lets us re-seed when the provider sends a NEW quote
+  // (supersedes the old one) while the invoice form is still open.
+  const [seededFromQuoteId, setSeededFromQuoteId] = useState<string | null>(null);
   // Itemized lines. Agency starts with one row; can add/remove. When any line
   // has a positive amount, the invoice is sent as itemized and the "Parent
   // Pays" override is ignored. Empty lines (no amount) are filtered out.
@@ -257,17 +270,52 @@ export function InvoiceSidebarSection({
   // every line's amount. The amount is not user-editable per row - if the
   // agency wants a different value they update Billing settings (or rely on
   // the active-quote fallback for unconfigured services).
-  // SKIP when we're in Edit & Resend mode (initialLineItems prefill) - the
-  // form should reflect what was on the original invoice, not whatever the
-  // defaults currently resolve to.
+  // SKIP when we're in Edit & Resend mode (initialLineItems prefill) OR when
+  // the form was already seeded from the active quote's structured line
+  // items - in either case the form should reflect those values, not the
+  // generic defaults.
   useEffect(() => {
     if (!feeConfigsData) return;
     if (initialLineItems && initialLineItems.length > 0) return;
+    if (seededFromQuoteId && activeQuote && seededFromQuoteId === activeQuote.id) return;
     setLineItems(prev =>
       prev.map(li => ({ ...li, amountInput: defaultDollarsForService(li.serviceType, activeQuoteTotalCents) })),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feeConfigsData, activeQuoteTotalCents]);
+  }, [feeConfigsData, activeQuoteTotalCents, seededFromQuoteId, activeQuote?.id]);
+
+  // Seed the invoice form with the active quote's structured line items
+  // (one form row per cost-sheet line). Only fires when:
+  //   - we're not in Edit & Resend mode (initialLineItems wins there), and
+  //   - the active quote actually has structured lineItems persisted, and
+  //   - we haven't already seeded from THIS quote id.
+  // Re-seeding triggers when the provider sends a new quote (different id)
+  // while the invoice form is open.
+  useEffect(() => {
+    if (initialLineItems && initialLineItems.length > 0) return;
+    if (!activeQuote || !Array.isArray(activeQuote.lineItems) || activeQuote.lineItems.length === 0) return;
+    if (seededFromQuoteId === activeQuote.id) return;
+    // Build one LineItemDraft per quote line. Map serviceType safely: if
+    // the quote's serviceType isn't a recognised LineServiceType, fall back
+    // to OTHER so the dropdown still renders.
+    const drafts: LineItemDraft[] = activeQuote.lineItems
+      .filter(li => Number.isFinite(li.amountCents) && li.amountCents > 0)
+      .map(li => {
+        const st: LineServiceType = (li.serviceType && li.serviceType in LINE_TYPE_LABELS)
+          ? (li.serviceType as LineServiceType)
+          : "OTHER";
+        const dollars = li.amountCents / 100;
+        const draft = newLine(st);
+        draft.amountInput = Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
+        // Prefer the structured description; fall back to the picker label
+        // (e.g. "ICI Premium") so the agency sees what's in each row.
+        draft.description = li.description || li.label || "";
+        return draft;
+      });
+    if (drafts.length === 0) return;
+    setLineItems(drafts);
+    setSeededFromQuoteId(activeQuote.id);
+  }, [activeQuote?.id, activeQuote?.lineItems, initialLineItems, seededFromQuoteId]);
 
   const updateLine = (key: string, patch: Partial<LineItemDraft>) => {
     setLineItems(prev => prev.map(li => (li.key === key ? { ...li, ...patch } : li)));

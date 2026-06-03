@@ -77,7 +77,7 @@ export class CostSheetController {
     @Req() req: Request,
     @Param("sessionId") sessionId: string,
     @UploadedFile() file: any,
-    @Body() body: { totalCostCents?: string | number; notes?: string; quantity?: string | number },
+    @Body() body: { totalCostCents?: string | number; notes?: string; quantity?: string | number; lineItems?: string },
   ) {
     const user = req.user as any;
     const { session, isAdmin, roles: csRoles } = await this.loadAuthorisedSession(sessionId, user);
@@ -95,6 +95,42 @@ export class CostSheetController {
     // invoice is later created. Defaults to 1.
     const rawQty = Number(body.quantity);
     const quantity = Number.isFinite(rawQty) && rawQty >= 1 ? Math.round(rawQty) : 1;
+
+    // Structured line items sent by the picker (one entry per vial / egg
+    // lot). The form encodes the array as a JSON string so multer can carry
+    // it alongside the file upload. We parse + lightly validate before
+    // persisting to ProviderQuote.lineItems so the invoice form can later
+    // pre-fill with the same rows instead of collapsing them into one line.
+    let parsedLineItems: Array<{
+      serviceType: string;
+      label?: string;
+      quantity?: number;
+      unitCostCents?: number;
+      amountCents: number;
+      description?: string;
+    }> | null = null;
+    if (typeof body.lineItems === "string" && body.lineItems.trim()) {
+      try {
+        const raw = JSON.parse(body.lineItems);
+        if (Array.isArray(raw)) {
+          parsedLineItems = raw
+            .filter((it: any) => it && typeof it === "object" && Number.isFinite(Number(it.amountCents)) && Number(it.amountCents) > 0)
+            .map((it: any) => ({
+              serviceType: String(it.serviceType || "OTHER"),
+              label: typeof it.label === "string" ? it.label : undefined,
+              quantity: Number.isFinite(Number(it.quantity)) ? Math.round(Number(it.quantity)) : undefined,
+              unitCostCents: Number.isFinite(Number(it.unitCostCents)) ? Math.round(Number(it.unitCostCents)) : undefined,
+              amountCents: Math.round(Number(it.amountCents)),
+              description: typeof it.description === "string" ? it.description : undefined,
+            }));
+          if (parsedLineItems.length === 0) parsedLineItems = null;
+        }
+      } catch {
+        // Malformed JSON: ignore silently - the quote still has its total
+        // and notes, so the invoice falls back to a single combined line.
+        parsedLineItems = null;
+      }
+    }
 
     // Upload file to GCS if provided. Public URL so parent + provider + admin can all open it.
     let costSheetFileUrl: string | null = null;
@@ -129,6 +165,7 @@ export class CostSheetController {
           costSheetFileUrl,
           costSheetFileName,
           notes: body.notes?.trim() || null,
+          lineItems: parsedLineItems ?? undefined,
           source: isAdmin ? "ADMIN_OVERRIDE" : "PROVIDER",
           createdByUserId: user.id || null,
         },
