@@ -37,6 +37,16 @@ function normalizeProfileStatus(raw: string | null | undefined): "AVAILABLE" | "
 export interface SwipeDeckProfile {
   id: string;
   providerType: "donor" | "surrogate";
+  // Timestamp the profile row was created in our DB. Used together with the
+  // parent's viewed-profile set to decide whether to render the "New" badge:
+  // a profile is "New" iff createdAt > now - 24h AND the parent hasn't yet
+  // tapped, hearted, passed, scrolled-past, or received it as a MATCH_CARD.
+  // See client/src/lib/profile-views.tsx (isProfileNew).
+  createdAt: string | null;
+  // Legacy marker - kept on the type for back-compat with prior callers,
+  // but the per-parent "New" decision is now computed at render time via
+  // isProfileNew(). The mapper leaves this null; consumers should use the
+  // helper instead of reading statusBadge directly.
   statusBadge: "New" | "Experienced" | null;
   // Canonical donor/surrogate status from the DB (AVAILABLE | PENDING | MATCHED).
   // Drives the colored status pill on the card. AVAILABLE renders nothing
@@ -125,7 +135,8 @@ export function mapDatabaseDonorToSwipeProfile(dbDonor: any): SwipeDeckProfile {
   return {
     id: dbDonor.id,
     providerType: "donor",
-    statusBadge: dbDonor.status === "AVAILABLE" ? "New" : null,
+    createdAt: dbDonor.createdAt ?? null,
+    statusBadge: null,
     donorStatus: normalizeProfileStatus(dbDonor.status),
     isExperienced: !!(dbDonor as any).isExperienced,
     firstName: dbDonor.firstName ?? null,
@@ -194,7 +205,8 @@ export function mapDatabaseSurrogateToSwipeProfile(dbSurrogate: any): SwipeDeckP
   return {
     id: dbSurrogate.id,
     providerType: "surrogate",
-    statusBadge: dbSurrogate.status === "AVAILABLE" ? "New" : null,
+    createdAt: dbSurrogate.createdAt ?? null,
+    statusBadge: null,
     donorStatus: normalizeProfileStatus(dbSurrogate.status),
     isExperienced: !!(dbSurrogate as any).isExperienced,
     firstName: dbSurrogate.firstName ?? null,
@@ -263,7 +275,8 @@ export function mapDatabaseSpermDonorToSwipeProfile(dbSperm: any): SwipeDeckProf
   return {
     id: dbSperm.id,
     providerType: "donor",
-    statusBadge: dbSperm.status === "AVAILABLE" ? "New" : null,
+    createdAt: dbSperm.createdAt ?? null,
+    statusBadge: null,
     donorStatus: normalizeProfileStatus(dbSperm.status),
     isExperienced: !!(dbSperm as any).isExperienced,
     firstName: dbSperm.firstName ?? null,
@@ -478,12 +491,20 @@ export function buildTitle(profile: SwipeDeckProfile): string {
   return `${typeLabel} #${numericId}`;
 }
 
-export function buildStatusLabel(profile: SwipeDeckProfile): string | null {
-  if (profile.statusBadge === "Experienced") {
-    return profile.providerType === "surrogate" ? "Experienced Surrogate" : "Experienced Donor";
-  }
-  if (profile.statusBadge === "New") return "New";
-  return null;
+// Compute the purple "New" label for the card. Callers pass the parent's
+// set of already-viewed profile IDs (from useViewedProfileIds()) so the
+// badge clears per-profile on first interaction. A profile is "New" iff
+// it was created in the last 24h AND the parent hasn't seen it yet.
+// Callers that don't have access to the viewed set (legacy code paths)
+// can pass an empty Set - everything within 24h still shows "New", just
+// without the per-parent clearing.
+export function buildStatusLabel(profile: SwipeDeckProfile, viewedIds: Set<string> = new Set()): string | null {
+  if (!profile.createdAt) return null;
+  if (viewedIds.has(profile.id)) return null;
+  const createdMs = new Date(profile.createdAt).getTime();
+  if (Number.isNaN(createdMs)) return null;
+  if (createdMs <= Date.now() - 24 * 60 * 60 * 1000) return null;
+  return "New";
 }
 
 export function getDonorTabs(profile: SwipeDeckProfile, matchedPrefs: MatchedPref[], isSpermDonor = false): TabSection[] {

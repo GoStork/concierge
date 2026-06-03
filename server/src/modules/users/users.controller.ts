@@ -1725,4 +1725,61 @@ export class UsersController {
     await this.prisma.parentAccount.update({ where: { id: accountId }, data: { customFilterTags: allTags } });
     return { tags: allTags };
   }
+
+  private readonly ALLOWED_PROFILE_TYPES = ["egg-donor", "surrogate", "sperm-donor"];
+
+  // Profile views power the marketplace "New" badge: a donor/surrogate is
+  // "New" for a given parent account iff createdAt > now - 24h AND no row
+  // exists in ParentProfileView for that (parentAccountId, profileId,
+  // profileType) tuple. See ParentProfileView model and the SwipeDeckCard
+  // statusBadge logic for the rule.
+  @Get("parent-account/profile-views/recent")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Return the IDs of donor/surrogate profiles this parent account has viewed in the last 24h. Used to clear the marketplace 'New' badge per profile." })
+  async getRecentProfileViews(@Req() req: Request) {
+    const user = req.user as any;
+    const accountId = await this.ensureParentAccountForEthnicities(user.id);
+    if (!accountId) return { ids: [] };
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const views = await this.prisma.parentProfileView.findMany({
+      where: { parentAccountId: accountId, viewedAt: { gte: since } },
+      select: { profileId: true },
+    });
+    return { ids: views.map(v => v.profileId) };
+  }
+
+  @Post("parent-account/profile-views")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Record one or more profile views for the current parent account. Batched so scroll-past doesn't hammer the API. Idempotent: re-recording an existing view is a no-op." })
+  async recordProfileViews(@Body() body: { views: Array<{ profileId: string; profileType: string }> }, @Req() req: Request) {
+    const user = req.user as any;
+    const accountId = await this.ensureParentAccountForEthnicities(user.id);
+    if (!accountId) throw new NotFoundException("No account found");
+    const views = Array.isArray(body?.views) ? body.views : [];
+    if (views.length === 0) return { recorded: 0 };
+    // Cap to prevent a malicious / buggy client flooding the table in one call.
+    const capped = views.slice(0, 500);
+    const seen = new Set<string>();
+    const rows: { parentAccountId: string; profileId: string; profileType: string }[] = [];
+    for (const v of capped) {
+      if (!v?.profileId || typeof v.profileId !== "string") continue;
+      const profileType = (v.profileType || "").toLowerCase();
+      if (!this.ALLOWED_PROFILE_TYPES.includes(profileType)) continue;
+      const key = `${profileType}:${v.profileId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({ parentAccountId: accountId, profileId: v.profileId, profileType });
+    }
+    if (rows.length === 0) return { recorded: 0 };
+    // Idempotent insert: existing (parentAccountId, profileId, profileType)
+    // rows are silently skipped so the first viewedAt sticks.
+    const result = await this.prisma.parentProfileView.createMany({
+      data: rows,
+      skipDuplicates: true,
+    });
+    return { recorded: result.count };
+  }
 }

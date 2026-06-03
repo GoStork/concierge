@@ -199,6 +199,26 @@ model ParentAccount {
   members                User[]
   intendedParentProfile  IntendedParentProfile?
   journeyPreferences     JourneyPreferences?
+  profileViews           ParentProfileView[]
+}
+
+// Tracks which donor/surrogate profiles a parent account has already "seen"
+// so the marketplace's "New" badge can disappear per-profile on first
+// interaction. A profile is marked New iff it was created in the last 24h
+// AND no view row exists here. Triggers that create a row: tapping a card
+// to expand, hearting/passing it, scrolling past it (>=1s in viewport),
+// or having it surfaced as an AI [[MATCH_CARD]]. Scoped at the parent
+// ACCOUNT level so all members of a shared account share "seen" state.
+model ParentProfileView {
+  id              String        @id @default(uuid())
+  parentAccountId String
+  parentAccount   ParentAccount @relation(fields: [parentAccountId], references: [id], onDelete: Cascade)
+  profileId       String
+  profileType     String        // "egg-donor" | "surrogate" | "sperm-donor"
+  viewedAt        DateTime      @default(now())
+
+  @@unique([parentAccountId, profileId, profileType])
+  @@index([parentAccountId, viewedAt])
 }
 
 model User {

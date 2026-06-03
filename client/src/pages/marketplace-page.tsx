@@ -19,6 +19,7 @@ import { setMarketplaceSearchQuery, setMarketplaceTab, toggleFavoriteDonor, pass
 import { MarketplaceFilterBar } from "@/components/marketplace/MarketplaceFilterBar";
 import { Tabs as UnderlineTabs, TabsList as UnderlineTabsList, TabsTrigger as UnderlineTabsTrigger } from "@/components/ui/underline-tabs";
 import { SwipeDeckCard } from "@/components/marketplace/swipe-deck-card";
+import { useViewedProfileIds, recordProfileView, useScrollPastView } from "@/lib/profile-views";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
   getPhotoList, getMatchedPreferences, buildTitle, buildStatusLabel,
@@ -387,6 +388,55 @@ function ProviderGrid({ providers, searchQuery, providerTypeName, onSchedule }: 
   );
 }
 
+// Grid-mode card wrapper. Uses an IntersectionObserver (via useScrollPastView)
+// to record the profile as "viewed" once it has been on screen for >=1s, so
+// the "New" badge clears as the parent scrolls. Tap / save / pass also record
+// immediately so the badge disappears the moment the parent engages.
+function DonorGridCard({
+  donor, profile, tabs, type, viewedIds, showSkippedOnly,
+  favoritedIds, passedIds, dispatch, navigate, syncPref,
+}: {
+  donor: any;
+  profile: ReturnType<typeof mapDatabaseDonorToSwipeProfile>;
+  tabs: any[];
+  type: "egg-donor" | "surrogate" | "sperm-donor";
+  viewedIds: Set<string>;
+  showSkippedOnly: boolean;
+  favoritedIds: string[];
+  passedIds: string[];
+  dispatch: ReturnType<typeof useAppDispatch>;
+  navigate: ReturnType<typeof useNavigate>;
+  syncPref: (prefType: "favorite" | "skip", donorId: string, action: "add" | "remove") => void;
+}) {
+  const setScrollRef = useScrollPastView(donor.id, type);
+  return (
+    <div
+      ref={setScrollRef}
+      className={`h-[600px] ${showSkippedOnly ? "grayscale opacity-60" : ""}`}
+      data-testid={`card-container-${donor.id}`}
+    >
+      <SwipeDeckCard
+        id={profile.id}
+        photos={getPhotoList(profile)}
+        title={buildTitle(profile)}
+        statusLabel={buildStatusLabel(profile, viewedIds)}
+        donorStatus={profile.donorStatus}
+        isExperienced={profile.isExperienced}
+        isPremium={profile.isPremium}
+        tabs={tabs}
+        disableSwipe
+        isSaved={favoritedIds.includes(donor.id)}
+        isPassed={passedIds.includes(donor.id)}
+        onPass={() => { recordProfileView(donor.id, type); dispatch(passDonor(donor.id)); syncPref("skip", donor.id, "add"); }}
+        onSave={() => { recordProfileView(donor.id, type); const isFav = favoritedIds.includes(donor.id); dispatch(toggleFavoriteDonor(donor.id)); syncPref("favorite", donor.id, isFav ? "remove" : "add"); }}
+        onUndo={passedIds.includes(donor.id) ? () => { dispatch(undoPassDonor(donor.id)); syncPref("skip", donor.id, "remove"); } : undefined}
+        onMessage={() => { recordProfileView(donor.id, type); navigate(`/concierge?donorId=${donor.id}&donorType=${type}&providerId=${donor.providerId}&photoUrl=${encodeURIComponent(donor.photoUrl || "")}`); }}
+        onViewFullProfile={() => { recordProfileView(donor.id, type); navigate(`/${typeToUrlSlug(type)}/${donor.providerId}/${donor.id}`); }}
+      />
+    </div>
+  );
+}
+
 function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore, hasNextPage, isFetchingMore }: {
   donors: any[] | undefined;
   searchQuery: string;
@@ -408,6 +458,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
   const showExperiencedOnly = useAppSelector((state) => state.ui.showExperiencedOnly);
   const [currentIndex, setCurrentIndex] = useState(0);
   const { user } = useAuth();
+  const viewedIds = useViewedProfileIds();
 
   const userCountry = (user as any)?.country || null;
   const userIdentification = (user as any)?.identification || null;
@@ -490,6 +541,15 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
     }
   }, [currentIndex, filtered, type]);
 
+  // Deck-mode "scroll-past" equivalent: the moment a card becomes the
+  // current one in the swipe deck, the parent is literally looking at it,
+  // so record it as viewed. Clears the "New" badge on subsequent visits.
+  useEffect(() => {
+    if (!isMobile || !filtered || filtered.length === 0) return;
+    const current = filtered[currentIndex];
+    if (current) recordProfileView(current.id, type);
+  }, [isMobile, currentIndex, filtered, type]);
+
   const mapDonor = (d: any) => {
     if (type === "surrogate") return mapDatabaseSurrogateToSwipeProfile(d);
     if (type === "sperm-donor") return mapDatabaseSpermDonorToSwipeProfile(d);
@@ -520,6 +580,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
   };
 
   const handleSave = (donorId: string) => {
+    recordProfileView(donorId, type);
     const isFav = favoritedIds.includes(donorId);
     dispatch(toggleFavoriteDonor(donorId));
     syncPref("favorite", donorId, isFav ? "remove" : "add");
@@ -527,6 +588,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
   };
 
   const handlePass = (donorId: string) => {
+    recordProfileView(donorId, type);
     dispatch(passDonor(donorId));
     syncPref("skip", donorId, "add");
   };
@@ -572,7 +634,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
                 id={nextProfile.id}
                 photos={getPhotoList(nextProfile)}
                 title={buildTitle(nextProfile)}
-                statusLabel={buildStatusLabel(nextProfile)}
+                statusLabel={buildStatusLabel(nextProfile, viewedIds)}
                 donorStatus={nextProfile.donorStatus}
                 isExperienced={nextProfile.isExperienced}
                 isPremium={nextProfile.isPremium}
@@ -591,7 +653,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
               id={profile.id}
               photos={getPhotoList(profile)}
               title={buildTitle(profile)}
-              statusLabel={buildStatusLabel(profile)}
+              statusLabel={buildStatusLabel(profile, viewedIds)}
               donorStatus={profile.donorStatus}
               isExperienced={profile.isExperienced}
               isPremium={profile.isPremium}
@@ -611,8 +673,8 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
                 }
                 setCurrentIndex((prev) => prev - 1);
               } : undefined}
-              onMessage={() => navigate(`/concierge?donorId=${currentDonor.id}&donorType=${type}&providerId=${currentDonor.providerId}&photoUrl=${encodeURIComponent(currentDonor.photoUrl || "")}`)}
-              onViewFullProfile={() => navigate(`/${typeToUrlSlug(type)}/${currentDonor.providerId}/${currentDonor.id}`)}
+              onMessage={() => { recordProfileView(currentDonor.id, type); navigate(`/concierge?donorId=${currentDonor.id}&donorType=${type}&providerId=${currentDonor.providerId}&photoUrl=${encodeURIComponent(currentDonor.photoUrl || "")}`); }}
+              onViewFullProfile={() => { recordProfileView(currentDonor.id, type); navigate(`/${typeToUrlSlug(type)}/${currentDonor.providerId}/${currentDonor.id}`); }}
             />
           </div>
         </div>
@@ -626,26 +688,20 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
         const profile = mapDonor(donor);
         const tabs = getTabs(profile);
         return (
-          <div key={donor.id} className={`h-[600px] ${showSkippedOnly ? "grayscale opacity-60" : ""}`} data-testid={`card-container-${donor.id}`}>
-            <SwipeDeckCard
-              id={profile.id}
-              photos={getPhotoList(profile)}
-              title={buildTitle(profile)}
-              statusLabel={buildStatusLabel(profile)}
-              donorStatus={profile.donorStatus}
-              isExperienced={profile.isExperienced}
-              isPremium={profile.isPremium}
-              tabs={tabs}
-              disableSwipe
-              isSaved={favoritedIds.includes(donor.id)}
-              isPassed={passedIds.includes(donor.id)}
-              onPass={() => { dispatch(passDonor(donor.id)); syncPref("skip", donor.id, "add"); }}
-              onSave={() => { const isFav = favoritedIds.includes(donor.id); dispatch(toggleFavoriteDonor(donor.id)); syncPref("favorite", donor.id, isFav ? "remove" : "add"); }}
-              onUndo={passedIds.includes(donor.id) ? () => { dispatch(undoPassDonor(donor.id)); syncPref("skip", donor.id, "remove"); } : undefined}
-              onMessage={() => navigate(`/concierge?donorId=${donor.id}&donorType=${type}&providerId=${donor.providerId}&photoUrl=${encodeURIComponent(donor.photoUrl || "")}`)}
-              onViewFullProfile={() => navigate(`/${typeToUrlSlug(type)}/${donor.providerId}/${donor.id}`)}
-            />
-          </div>
+          <DonorGridCard
+            key={donor.id}
+            donor={donor}
+            profile={profile}
+            tabs={tabs}
+            type={type}
+            viewedIds={viewedIds}
+            showSkippedOnly={showSkippedOnly}
+            favoritedIds={favoritedIds}
+            passedIds={passedIds}
+            dispatch={dispatch}
+            navigate={navigate}
+            syncPref={syncPref}
+          />
         );
       })}
       {/* Infinite scroll sentinel - load next page when this comes into view */}

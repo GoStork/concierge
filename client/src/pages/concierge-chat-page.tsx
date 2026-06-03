@@ -12,6 +12,7 @@ import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { deriveChatPalette } from "@/lib/chat-palette";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { DonorStatusPill, getDonorStatusStyle } from "@/lib/donor-status";
+import { useViewedProfileIds, recordProfileView } from "@/lib/profile-views";
 import { formatMoneyCents } from "@/lib/format-money";
 import { formatLocationDisplay } from "@/lib/format-location";
 import { Button } from "@/components/ui/button";
@@ -1968,6 +1969,20 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
     );
   }
 
+  const viewedIds = useViewedProfileIds();
+
+  const profileId = profile?.id;
+  const profileTypeForView: "egg-donor" | "surrogate" | "sperm-donor" =
+    cardType.toLowerCase() === "surrogate" ? "surrogate"
+      : cardType.toLowerCase() === "sperm donor" ? "sperm-donor"
+      : "egg-donor";
+  // The moment the AI surfaces a MATCH_CARD in chat, count it as having
+  // shown the parent this profile - so its "New" badge clears in any
+  // subsequent marketplace view.
+  useEffect(() => {
+    if (profileId) recordProfileView(profileId, profileTypeForView);
+  }, [profileId, profileTypeForView]);
+
   if (profile) {
     const t = cardType.toLowerCase();
     const swipeProfile = t === "surrogate"
@@ -1977,7 +1992,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
         : mapDatabaseDonorToSwipeProfile(profile);
     const photos = getPhotoList(swipeProfile);
     const title = buildTitle(swipeProfile);
-    const statusLabel = buildStatusLabel(swipeProfile);
+    const statusLabel = buildStatusLabel(swipeProfile, viewedIds);
     const tabs = buildMatchTabs(profile, card.type, card.reasons);
 
     return (

@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { getProfileUrlSlug } from "./chat-utils";
 import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-deck-card";
+import { useViewedProfileIds, recordProfileView } from "@/lib/profile-views";
 import {
   mapDatabaseDonorToSwipeProfile,
   mapDatabaseSurrogateToSwipeProfile,
@@ -22,6 +23,7 @@ interface WhisperProfileCardProps {
 
 export function WhisperProfileCard({ card, brandColor }: WhisperProfileCardProps) {
   const navigate = useNavigate();
+  const viewedIds = useViewedProfileIds();
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -34,6 +36,16 @@ export function WhisperProfileCard({ card, brandColor }: WhisperProfileCardProps
       .then(d => { if (d) setProfile(d); setLoading(false); })
       .catch(() => setLoading(false));
   }, [card?.ownerProviderId, card?.providerId, card?.type]);
+
+  // A whisper-card render means the AI surfaced this profile to the parent
+  // - count it as a view so the marketplace "New" badge clears next time.
+  useEffect(() => {
+    if (!profile?.id) return;
+    const t = (card?.type || "").toLowerCase();
+    const profileType: "egg-donor" | "surrogate" | "sperm-donor" =
+      t === "surrogate" ? "surrogate" : t === "sperm donor" ? "sperm-donor" : "egg-donor";
+    recordProfileView(profile.id, profileType);
+  }, [profile?.id, card?.type]);
 
   if (loading) {
     return (
@@ -53,7 +65,7 @@ export function WhisperProfileCard({ card, brandColor }: WhisperProfileCardProps
         : mapDatabaseDonorToSwipeProfile(profile);
     const photos = getPhotoList(swipeProfile);
     const title = buildTitle(swipeProfile);
-    const statusLabel = buildStatusLabel(swipeProfile);
+    const statusLabel = buildStatusLabel(swipeProfile, viewedIds);
     const baseTabs = isSurrogate ? getSurrogateTabs(swipeProfile, []) : getDonorTabs(swipeProfile, [], t === "sperm donor");
     const reasons = card.reasons || [];
     const tabs: TabSection[] = reasons.length > 0
