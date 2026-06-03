@@ -526,10 +526,20 @@ export class CostsService {
         providerTypeId: { in: Array.from(activeProviderTypeIds) as string[] },
         serviceTypes: { hasSome: parentNeedsArr },
         costSheets: { some: { status: "APPROVED" } },
-        // Non-IVF programs (no subType) always pass. IVF programs only pass
-        // when their subType is in the parent's matching subtype list.
+        // subType is the IVF-only taxonomy. The legacy migration backfilled
+        // it onto every program (including sperm-bank and egg-bank ones),
+        // which made non-IVF programs fail the "subType is null or in the
+        // parent's IVF subtype list" filter and broke matching for any
+        // parent who didn't need IVF. So scope the subType constraint to
+        // IVF-tagged programs only - non-IVF programs always pass.
         OR: [
+          // Non-IVF program: doesn't carry the ivf_clinic tag in
+          // serviceTypes, so its subType (stale or not) is irrelevant.
+          { NOT: { serviceTypes: { has: "ivf_clinic" } } },
+          // IVF program with no subType (newly created, not yet classified).
           { subType: null },
+          // IVF program with a subType that matches the parent's eligible
+          // biology-driven subtypes.
           ...(subtypes.length > 0 ? [{ subType: { in: subtypes } }] : []),
         ],
       },

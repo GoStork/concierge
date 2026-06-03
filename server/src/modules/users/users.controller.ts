@@ -483,6 +483,17 @@ export class UsersController {
       if (age !== null && (!Number.isInteger(age) || age < 18 || age > 120)) throw new BadRequestException("Invalid partner age");
       updateData.partnerAge = age;
     }
+    // partnerGender is the field the cost-sheet matcher reads to tell a
+    // straight couple apart from a 2-mom couple. Without this case the
+    // value sent from the settings page was silently dropped, the column
+    // stayed null, and the matcher could never finalize. Accept the short
+    // wire-format Eva and the settings UI both use.
+    if (body.partnerGender !== undefined) {
+      if (body.partnerGender !== null && body.partnerGender !== "man" && body.partnerGender !== "woman") {
+        throw new BadRequestException("partnerGender must be 'man', 'woman', or null");
+      }
+      updateData.partnerGender = body.partnerGender || null;
+    }
     if (body.referralSource !== undefined) {
       const validSources = ["Google", "Social Media", "Friend", "Fertility Clinic", "Egg Donor Agency", "Surrogacy Agency", "Fertility Lawyer", "Progyny", "Carrot", "Other"];
       if (body.referralSource && !validSources.includes(body.referralSource)) throw new BadRequestException("Invalid referral source");
