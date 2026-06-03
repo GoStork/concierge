@@ -1,15 +1,22 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
 import { CostSheetProgramCard, ProgramCardData } from "@/components/cost-sheet-program-card";
+import { CostProgramTailorForm } from "@/components/cost-program-tailor-form";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { DollarSign, Info, MessageCircle } from "lucide-react";
+import { DollarSign, MessageCircle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 /**
  * Parent-facing cost-programs grid on the clinic profile page. Fetches the
  * subset of the clinic's APPROVED programs that match the current parent's
  * biology / journey state, then renders them as cards.
+ *
+ * When the matcher returns nothing (because the parent's profile is too
+ * thin to filter against), the empty state renders an inline tailor form
+ * instead of dead-ending the parent. They can answer a few quick-reply
+ * questions to surface tailored programs, or tick "skip" to switch the
+ * query into showAll mode and see every program this provider has.
  *
  * Hidden entirely if no provider is given or the parent isn't logged in
  * with a parent account.
@@ -34,6 +41,13 @@ export function ClinicCostProgramsSection({
   const navigate = useNavigate();
   const enabled = hasIvfClinicService && !!providerId && !!parentAccountId;
 
+  // showAll flips the query into "ignore parentNeeds, list everything this
+  // provider has published". Set by the tailor form's skip checkbox.
+  // Session-scoped (resets when the parent navigates away) - we don't
+  // persist the bypass because the parent might want filtered results on
+  // the next visit once they've gone back and answered the questions.
+  const [showAll, setShowAll] = useState(false);
+
   const { data, isLoading } = useQuery<{
     programs: ProgramCardData[];
     matchingSubtypes: string[];
@@ -46,11 +60,13 @@ export function ClinicCostProgramsSection({
       parentAccountId,
       specificDonorId ?? "none",
       specificDonorType ?? "none",
+      showAll ? "all" : "filtered",
     ],
     queryFn: async () => {
       const params = new URLSearchParams({ parentAccountId: parentAccountId as string });
       if (specificDonorId) params.set("specificDonorId", specificDonorId);
       if (specificDonorType) params.set("specificDonorType", specificDonorType);
+      if (showAll) params.set("showAll", "true");
       const res = await fetch(
         `/api/costs/provider/${providerId}/parent-programs?${params.toString()}`,
         { credentials: "include" },
@@ -74,6 +90,12 @@ export function ClinicCostProgramsSection({
   }
 
   const programs = data?.programs ?? [];
+  // We render the tailor form (instead of the generic empty state) when
+  // the matcher returned nothing OR explicitly flagged the profile as
+  // partial. Both mean "the parent doesn't have enough on file for us to
+  // be confident in filtering". The form gives them a fast way to fill
+  // the gap without leaving the page.
+  const showTailorForm = !showAll && (data?.isPartialProfile || programs.length === 0);
 
   return (
     <section className="space-y-3" data-testid="clinic-cost-programs">
@@ -82,33 +104,23 @@ export function ClinicCostProgramsSection({
         <h2 className="font-heading text-xl text-foreground">Cost programs for your journey</h2>
       </div>
 
-      {/* Profile incomplete -> block the grid entirely. Speculative matches
-          aren't useful before the parent has told Eva the basics (embryos,
-          egg source, carrier). Single CTA back to the concierge. */}
-      {data?.isPartialProfile ? (
-        <Card className="border-accent/40 bg-accent/5">
-          <CardContent className="py-10 text-center space-y-3" data-testid="cost-programs-blocked-incomplete">
-            <Info className="w-10 h-10 mx-auto text-accent" />
-            <h3 className="font-heading text-lg text-foreground">Finish your profile to see cost programs</h3>
-            <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              We need a few details from you - whether you already have embryos, your egg source, and who will carry the pregnancy - before we can show you the right cost programs for this clinic.
-            </p>
-            <Button
-              size="sm"
-              onClick={() => navigate(`/chat?providerId=${providerId}&intent=complete_profile`)}
-              data-testid="btn-complete-profile"
-            >
-              <MessageCircle className="w-4 h-4 mr-1" /> Continue with Concierge
-            </Button>
-          </CardContent>
-        </Card>
+      {showTailorForm ? (
+        <CostProgramTailorForm
+          parentAccountId={parentAccountId as string}
+          // onSaved: the mutation already invalidated the cost-programs
+          // query, so the next render after the form collapses will pull
+          // the freshly-tailored list. Nothing extra to do here.
+          onSaved={() => { /* query invalidated by the form */ }}
+          onSkip={() => setShowAll(true)}
+        />
       ) : programs.length === 0 ? (
+        // showAll mode came back empty too - the provider genuinely has
+        // zero published programs. Offer the custom-quote CTA as before.
         <Card>
           <CardContent className="py-10 text-center space-y-3">
             <DollarSign className="w-10 h-10 mx-auto text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              This provider doesn't have a published cost program that matches your situation yet.
-              Ask our concierge to request a custom quote on your behalf.
+              This provider hasn't published a cost program yet. Ask our concierge to request a custom quote on your behalf.
             </p>
             <Button
               variant="outline"

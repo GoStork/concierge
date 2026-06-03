@@ -540,6 +540,7 @@ export class CostsController {
     @Query("parentAccountId") parentAccountId: string,
     @Query("specificDonorId") specificDonorId: string,
     @Query("specificDonorType") specificDonorType: string,
+    @Query("showAll") showAll: string,
     @Req() req: Request,
   ) {
     this.assertAuthenticated(req);
@@ -551,6 +552,7 @@ export class CostsController {
       parentAccountId,
       specificDonorId || undefined,
       specificDonorType || undefined,
+      showAll === "true" || showAll === "1",
     );
   }
 

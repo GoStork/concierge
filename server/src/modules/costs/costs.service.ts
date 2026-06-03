@@ -364,6 +364,7 @@ export class CostsService {
     parentAccountId: string,
     specificDonorId?: string,
     specificDonorType?: string,
+    showAll: boolean = false,
   ) {
     // Two effects of being on a specific donor / surrogate profile:
     //   1. implicitNeed - the profile-view itself is an explicit signal of
@@ -415,7 +416,7 @@ export class CostsService {
         spermDonorVialTypes = sd?.vialTypes ?? [];
       }
     }
-    return this._getProviderParentPrograms(providerId, parentAccountId, specificComp, implicitNeed, spermDonorVialTypes);
+    return this._getProviderParentPrograms(providerId, parentAccountId, specificComp, implicitNeed, spermDonorVialTypes, showAll);
   }
 
   private async _getProviderParentPrograms(
@@ -424,6 +425,7 @@ export class CostsService {
     specificCompensation: number | null,
     implicitNeed: string | null,
     spermDonorVialTypes: string[] | null,
+    showAll: boolean = false,
   ) {
     const { subtypes, isPartialProfile } =
       await this.getMatchingSubtypesForParent(parentAccountId);
@@ -515,14 +517,18 @@ export class CostsService {
     const knowsSurrogacy = ip?.needsSurrogate != null || ip?.carrier != null || hasInterested;
     const knowsEggDonor = ip?.needsEggDonor != null || ip?.eggSource != null || hasInterested;
     const knowsSpermDonor = ip?.spermSource != null || primary?.gender != null || hasInterested;
-    const resolvedIsPartialProfile = !implicitNeed && (isPartialProfile ||
+    const resolvedIsPartialProfile = !implicitNeed && !showAll && (isPartialProfile ||
       (!knowsSurrogacy && !knowsEggDonor && !knowsSpermDonor && subtypes.length === 0));
 
     if (resolvedIsPartialProfile) {
       return { programs: [], matchingSubtypes: subtypes, isPartialProfile: true };
     }
 
-    if (parentNeeds.size === 0) {
+    // showAll bypasses the parent-needs intersection - we surface every
+    // approved program this provider has so the parent can browse without
+    // first completing onboarding. Donor-specific narrowing (vialTypes,
+    // comp override) still applies downstream.
+    if (!showAll && parentNeeds.size === 0) {
       return { programs: [], matchingSubtypes: subtypes, isPartialProfile: false };
     }
 
@@ -537,7 +543,10 @@ export class CostsService {
     const programs = await this.prisma.costProgram.findMany({
       where: {
         providerId,
-        serviceTypes: { hasSome: parentNeedsArr },
+        // When showAll is on, skip the parent-needs intersection so every
+        // serviceTypes tag passes. The parent has explicitly opted to see
+        // everything the provider offers regardless of their own state.
+        ...(showAll ? {} : { serviceTypes: { hasSome: parentNeedsArr } }),
         costSheets: { some: { status: "APPROVED" } },
         // Two independent filters combined via AND so they don't fight the
         // top-level OR each other would otherwise overwrite.
