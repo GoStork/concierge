@@ -212,6 +212,7 @@ Return ONLY a valid JSON array with objects having these exact fields:
     if (bracketStart === -1) return [];
 
     const items: any[] = [];
+    const droppedFragments: string[] = [];
     let depth = 0;
     let objStart = -1;
     let inString = false;
@@ -231,15 +232,33 @@ Return ONLY a valid JSON array with objects having these exact fields:
         depth--;
         if (depth === 0 && objStart !== -1) {
           const objText = text.slice(objStart, i + 1);
-          try { items.push(JSON.parse(objText)); } catch { /* incomplete or malformed, skip */ }
+          try {
+            items.push(JSON.parse(objText));
+          } catch (e: any) {
+            // Drop one item but record what we tried to parse so we can
+            // see, in the server log, exactly which row Gemini broke.
+            // Trimmed to 200 chars so a long description doesn't flood
+            // the log; usually the first few keys (category / key) are
+            // enough to identify which PDF row it was.
+            droppedFragments.push(objText.slice(0, 200).replace(/\s+/g, " ").trim());
+          }
           objStart = -1;
         }
       } else if (c === "]" && depth === 0) {
         break;
       }
     }
+    // Stash on the instance for the caller to read after the fact (we
+    // don't want to change the return type and break every existing
+    // call site that just wants the items array).
+    this._lastDroppedFragments = droppedFragments;
     return items;
   }
+
+  // Filled by extractCompleteItemsFromStream every time it runs.
+  // The streaming caller reads this AFTER each call to know whether
+  // anything was silently dropped. Reset on each extractor invocation.
+  private _lastDroppedFragments: string[] = [];
 
   /**
    * One-shot: parse line items AND classify the program (tab, subType,
@@ -613,10 +632,23 @@ ${subtypeTrailingNote}`;
       // can then classify via the inline toggles instead of starting from
       // an empty sheet.
       const recoveredItems = this.extractCompleteItemsFromStream(responseText);
+      const dropped = this._lastDroppedFragments;
       if (recoveredItems.length > 0) {
         this.logger.warn(
           `parseAndClassify: full-JSON parse failed (${e}); recovered ${recoveredItems.length} items from per-object stream parser, dropping classification`,
         );
+        // Log every item the per-object parser had to skip so we can see
+        // in the server log exactly which row Gemini broke. The first
+        // ~120 chars usually carry the category + key, which is enough
+        // to identify the source row in the PDF.
+        if (dropped.length > 0) {
+          this.logger.warn(
+            `parseAndClassify: dropped ${dropped.length} item(s) the per-object parser could not parse:`,
+          );
+          for (let i = 0; i < dropped.length; i++) {
+            this.logger.warn(`  drop[${i}]: ${dropped[i]}`);
+          }
+        }
         parsed = { items: recoveredItems };
       } else {
         this.logger.error(`parseAndClassify: JSON parse failed and no items recoverable: ${e}`);
