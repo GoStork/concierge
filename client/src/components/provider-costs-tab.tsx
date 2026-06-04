@@ -531,9 +531,16 @@ function ProgramClassificationControls({
           across rows for a given state. */}
       <div className="flex items-center flex-shrink-0">
         {latestSheet && needsConfirm && (
+          // Label shortened from "Confirm Classification" -> "Confirm" so the
+          // button stops getting clipped by the row's overflow-hidden wrapper
+          // when the total column (e.g. "$166,910 - $171,910 (draft)") eats
+          // the remaining horizontal space. The Check icon + the surrounding
+          // Fixed-Cost / Not Fixed Costs controls convey the action without
+          // the longer label. flex-shrink-0 + whitespace-nowrap keep it from
+          // collapsing further if a future row is even tighter.
           <Button
             size="sm"
-            className="h-8 text-xs font-semibold shadow-md"
+            className="h-8 text-xs font-semibold shadow-md flex-shrink-0 whitespace-nowrap"
             disabled={
               classificationMutation.isPending ||
               !hasInteracted ||
@@ -542,7 +549,7 @@ function ProgramClassificationControls({
             title={
               latestSheet.isFixedCost === null || !hasInteracted
                 ? "Click Fixed-Cost or Not Fixed Costs first to acknowledge the AI's choice"
-                : undefined
+                : "Confirm classification"
             }
             onClick={(e) => {
               e.stopPropagation();
@@ -553,7 +560,7 @@ function ProgramClassificationControls({
             {classificationMutation.isPending
               ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
               : <Check className="w-3.5 h-3.5 mr-1.5" />}
-            Confirm Classification
+            Confirm
           </Button>
         )}
         {latestSheet && latestSheet.isFixedCostSource === "clinic_confirmed" && (
