@@ -61,7 +61,7 @@ import { scrapeProviderWebsite } from "./scrape.service";
 import { searchSartForClinic, mergeTeamMembers, verifyClinicUrl } from "./clinic-enrichment.service";
 import { Prisma } from "@prisma/client";
 
-const JSON_NULLABLE_FIELDS = ["ivfAcceptingPatients", "surrogacyCitizensNotAllowed", "surrogacyBirthCertificateListing"] as const;
+const JSON_NULLABLE_FIELDS = ["ivfAcceptingPatients", "surrogacyCitizensNotAllowed", "surrogacyBirthCertificateListing", "partnerProviderIds"] as const;
 
 function coerceJsonNullFields(input: Record<string, any>): Record<string, any> {
   const result = { ...input };
@@ -494,6 +494,30 @@ export class ProvidersController {
         ...(hasIvfFilters ? { ivfSuccessRates: { where: successRateWhere } } : {}),
       },
       orderBy,
+    });
+  }
+
+  @Get("by-type/ivf-clinic")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "List all approved IVF clinic providers (for partner clinic picker)" })
+  async listIvfClinics(@Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.roles?.includes("GOSTORK_ADMIN") && !user?.roles?.includes("GOSTORK_DEVELOPER")) {
+      throw new ForbiddenException("Forbidden");
+    }
+    return this.prisma.provider.findMany({
+      where: {
+        services: {
+          some: { providerType: { name: "IVF Clinic" }, status: "APPROVED" },
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        locations: { select: { city: true, state: true }, orderBy: { sortOrder: "asc" }, take: 3 },
+      },
+      orderBy: { name: "asc" },
     });
   }
 

@@ -65,6 +65,7 @@ model Provider {
   ivfSurrogatePreeclampsia              Boolean?
   ivfSurrogateMentalHealthHistory       String?
   // Surrogacy Agency matching requirements
+  partnerProviderIds                    Json?   // Array of linked IVF clinic provider IDs (for international surrogacy programs)
   surrogacyCitizensNotAllowed           Json?
   surrogacyTwinsAllowed                 Boolean                     @default(false)
   surrogacyStayAfterBirthMonths         Int?

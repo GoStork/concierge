@@ -2026,6 +2026,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         logoUrl: true,
         surrogacyTwinsAllowed: true,
         surrogacyCitizensNotAllowed: true,
+        partnerProviderIds: true,
         locations: {
           orderBy: { sortOrder: "asc" as const },
           select: { city: true, state: true },
@@ -2085,25 +2086,65 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         });
       }
 
-      const results = filtered.slice(0, take).map((a: any) => ({
-        id: a.id,
-        name: a.name,
-        logoUrl: a.logoUrl,
-        locations: a.locations,
-        surrogacyTwinsAllowed: a.surrogacyTwinsAllowed,
-        surrogacyCitizensNotAllowed: a.surrogacyCitizensNotAllowed,
-        numberOfBabiesBorn: a.surrogacyProfile?.numberOfBabiesBorn ?? null,
-        timeToMatch: a.surrogacyProfile?.timeToMatch ?? null,
-        familiesPerCoordinator: a.surrogacyProfile?.familiesPerCoordinator ?? null,
-        screening: a.surrogacyProfile?.screening ?? null,
-      }));
+      // For each agency with linked partner clinics, fetch the clinic's parent matching requirements
+      const agencyIds = filtered.map((a: any) => a.id);
+      const allPartnerIds = filtered.flatMap((a: any) =>
+        Array.isArray(a.partnerProviderIds) ? a.partnerProviderIds as string[] : []
+      );
+      const uniquePartnerIds = [...new Set(allPartnerIds)];
+      const partnerClinics = uniquePartnerIds.length > 0
+        ? await prisma.provider.findMany({
+            where: { id: { in: uniquePartnerIds } },
+            select: {
+              id: true,
+              name: true,
+              ivfTwinsAllowed: true,
+              ivfMaxAgeIp1: true,
+              ivfMaxAgeIp2: true,
+              ivfAcceptingPatients: true,
+              ivfBiologicalConnection: true,
+              ivfTransferFromOtherClinics: true,
+              locations: { select: { city: true, state: true }, orderBy: { sortOrder: "asc" as const }, take: 3 },
+            },
+          })
+        : [];
+      const partnerClinicMap = new Map(partnerClinics.map((c: any) => [c.id, c]));
+
+      const results = filtered.slice(0, take).map((a: any) => {
+        const linkedClinics = Array.isArray(a.partnerProviderIds)
+          ? (a.partnerProviderIds as string[]).map((pid: string) => partnerClinicMap.get(pid)).filter(Boolean)
+          : [];
+        return {
+          id: a.id,
+          name: a.name,
+          logoUrl: a.logoUrl,
+          locations: a.locations,
+          surrogacyTwinsAllowed: a.surrogacyTwinsAllowed,
+          surrogacyCitizensNotAllowed: a.surrogacyCitizensNotAllowed,
+          numberOfBabiesBorn: a.surrogacyProfile?.numberOfBabiesBorn ?? null,
+          timeToMatch: a.surrogacyProfile?.timeToMatch ?? null,
+          familiesPerCoordinator: a.surrogacyProfile?.familiesPerCoordinator ?? null,
+          screening: a.surrogacyProfile?.screening ?? null,
+          // Partner IVF clinic(s) for this international program
+          partnerClinics: linkedClinics.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            locations: c.locations,
+            ivfTwinsAllowed: c.ivfTwinsAllowed,
+            ivfMaxAgeIp1: c.ivfMaxAgeIp1,
+            ivfMaxAgeIp2: c.ivfMaxAgeIp2,
+            ivfAcceptingPatients: c.ivfAcceptingPatients,
+            ivfBiologicalConnection: c.ivfBiologicalConnection,
+          })),
+        };
+      });
 
       const agencyRelaxedNote = agencyRelaxedFilter
         ? ` NOTE: The "${agencyRelaxedFilter}" filter was relaxed because no agencies fully matched. The returned results may NOT satisfy that preference - you MUST run the AGENCY HARD-REJECT CHECK on each result and skip any that violate the parent's requirements.`
         : "";
 
       return {
-        content: [{ type: "text", text: `Found ${results.length} surrogacy agencies:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Before showing any MATCH_CARD, run the AGENCY HARD-REJECT CHECK on each result:\n- If parent wants twins AND surrogacyTwinsAllowed = false → REJECT that agency, skip to next.\n- If parent's citizenship country appears in surrogacyCitizensNotAllowed → REJECT that agency, skip to next.\nOnly show a MATCH_CARD (type "SurrogacyAgency") for agencies that pass ALL checks. Use the "id" as providerId. Mention specific locations from the locations array. If ALL results fail the check, educate the parent about the constraint and offer alternatives.${agencyRelaxedNote}` }],
+        content: [{ type: "text", text: `Found ${results.length} surrogacy agencies:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Before showing any MATCH_CARD, run the COMBINED PROGRAM HARD-REJECT CHECK on each result:\nAGENCY checks:\n- If parent wants twins AND surrogacyTwinsAllowed = false → REJECT.\n- If parent's citizenship is in surrogacyCitizensNotAllowed → REJECT.\nPARTNER CLINIC checks (if partnerClinics array is non-empty, ALSO check each linked clinic):\n- If parent's age (IP1) exceeds ivfMaxAgeIp1 → REJECT entire program.\n- If parent's age (IP2) exceeds ivfMaxAgeIp2 → REJECT entire program.\n- If parent's family type is NOT in ivfAcceptingPatients (and array is non-empty) → REJECT entire program.\n- If parent wants twins AND clinic's ivfTwinsAllowed = false → REJECT entire program.\nOnly show a MATCH_CARD (type "SurrogacyAgency") for programs that pass ALL checks. Use the agency "id" as providerId. If rejecting due to a CLINIC requirement, say which clinic rejected it and why. If ALL results fail, educate the parent and offer alternatives.${agencyRelaxedNote}` }],
       };
     }
 

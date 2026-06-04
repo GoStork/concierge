@@ -175,6 +175,15 @@ export default function AdminProviderEditPage() {
     queryKey: ["/api/provider-types"],
   });
 
+  const { data: allIvfClinics } = useQuery<any[]>({
+    queryKey: ["/api/admin/providers/by-type/ivf-clinic"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/providers/by-type/ivf-clinic", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
   const [manageServicesOpen, setManageServicesOpen] = useState(false);
 
   const [editName, setEditName] = useState("");
@@ -204,6 +213,7 @@ export default function AdminProviderEditPage() {
   const [ivfEggDonorType, setIvfEggDonorType] = useState("");
   // Surrogacy matching requirements
   const [surrogacyCitizensNotAllowed, setSurrogacyCitizensNotAllowed] = useState<string[]>([]);
+  const [partnerProviderIds, setPartnerProviderIds] = useState<string[]>([]);
   const [surrogacyTwinsAllowed, setSurrogacyTwinsAllowed] = useState(false);
   const [surrogacyStayAfterBirthMonths, setSurrogacyStayAfterBirthMonths] = useState("");
   const [surrogacyBirthCertificateListing, setSurrogacyBirthCertificateListing] = useState<string[]>([]);
@@ -257,6 +267,7 @@ export default function AdminProviderEditPage() {
       setIvfEggDonorType(provider.ivfEggDonorType || "");
       // Surrogacy matching requirements
       setSurrogacyCitizensNotAllowed(provider.surrogacyCitizensNotAllowed || []);
+      setPartnerProviderIds(Array.isArray(provider.partnerProviderIds) ? provider.partnerProviderIds : []);
       setSurrogacyTwinsAllowed(provider.surrogacyTwinsAllowed ?? false);
       setSurrogacyStayAfterBirthMonths(provider.surrogacyStayAfterBirthMonths != null ? String(provider.surrogacyStayAfterBirthMonths) : "");
       setSurrogacyBirthCertificateListing(Array.isArray(provider.surrogacyBirthCertificateListing) ? provider.surrogacyBirthCertificateListing : (provider.surrogacyBirthCertificateListing ? [provider.surrogacyBirthCertificateListing as string] : []));
@@ -307,7 +318,7 @@ export default function AdminProviderEditPage() {
     }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, editName, editAbout, editWebsite, editEmail, editPhone, editYearFounded, editLogoUrl, editLocations, editTeamMembers, ivfTwinsAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
+  }, [initialized, editName, editAbout, editWebsite, editEmail, editPhone, editYearFounded, editLogoUrl, editLocations, editTeamMembers, ivfTwinsAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, partnerProviderIds, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
 
   const editScrapeMutation = useMutation({
     mutationFn: async (url: string) => {
@@ -371,6 +382,7 @@ export default function AdminProviderEditPage() {
       ivfAcceptingPatients: ivfAcceptingPatients.length > 0 ? ivfAcceptingPatients : null,
       ivfEggDonorType: ivfEggDonorType || null,
       surrogacyCitizensNotAllowed: surrogacyCitizensNotAllowed.length > 0 ? surrogacyCitizensNotAllowed : null,
+      partnerProviderIds: partnerProviderIds.length > 0 ? partnerProviderIds : null,
       surrogacyTwinsAllowed,
       surrogacyStayAfterBirthMonths: surrogacyStayAfterBirthMonths ? parseInt(surrogacyStayAfterBirthMonths) : null,
       surrogacyBirthCertificateListing: surrogacyBirthCertificateListing.length > 0 ? surrogacyBirthCertificateListing : null,
@@ -1018,6 +1030,33 @@ export default function AdminProviderEditPage() {
                 {isSurrogacyAgency && (
                   <div className="space-y-4">
                     {isIvfClinic && <div className="border-t border-border pt-4" />}
+                    <div className="space-y-2">
+                      <Label>Partner IVF Clinics</Label>
+                      <p className="text-xs text-muted-foreground">Link the IVF clinic(s) that operate in the same country as this agency. The AI will combine both providers' matching requirements when evaluating parents for this international program.</p>
+                      <div className="flex flex-col gap-2 max-w-md">
+                        {(allIvfClinics || []).filter((c: any) => c.id !== id).map((clinic: any) => (
+                          <label key={clinic.id} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={partnerProviderIds.includes(clinic.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) setPartnerProviderIds([...partnerProviderIds, clinic.id]);
+                                else setPartnerProviderIds(partnerProviderIds.filter(pid => pid !== clinic.id));
+                              }}
+                              data-testid={`checkbox-partner-clinic-${clinic.id}`}
+                              className="accent-primary"
+                            />
+                            <span className="text-sm">{clinic.name}</span>
+                            {clinic.locations?.length > 0 && (
+                              <span className="text-xs text-muted-foreground">({clinic.locations.map((l: any) => l.state || l.city).filter(Boolean).slice(0, 2).join(", ")})</span>
+                            )}
+                          </label>
+                        ))}
+                        {(!allIvfClinics || allIvfClinics.length === 0) && (
+                          <p className="text-xs text-muted-foreground italic">Loading IVF clinics...</p>
+                        )}
+                      </div>
+                    </div>
                     <div className="space-y-2">
                       <Label>Citizens not allowed (countries)</Label>
                       <div className="max-w-xs">
