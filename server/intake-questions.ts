@@ -565,9 +565,20 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
   const surrogateCountriesRaw: string = profile?.surrogateCountries || "";
   const usaSelected = /usa|united states/i.test(surrogateCountriesRaw)
     || userSaid(allUserMessages, /\busa\b|united states/i);
+  // Profile may not yet have surrogateCountries saved (auto-extract races the
+  // intake state machine), so also look at user messages directly after D1 was
+  // asked. Restrict to user messages AFTER the D1 question so country names
+  // mentioned earlier (e.g. user location) don't fire this.
+  const d1AskIdx = chatHistory.findIndex((m: any) =>
+    m.role === "assistant" && /which countries are you open to for your surrogacy|colombia.*mexico.*surrogate/i.test(m.content || "")
+  );
+  const userMsgsAfterD1: string[] = d1AskIdx >= 0
+    ? chatHistory.slice(d1AskIdx).filter((m: any) => m.role === "user").map((m: any) => m.content || "")
+    : [];
+  const userPickedInternationalCountry = userMsgsAfterD1.some((s: string) => /\b(colombia|mexico)\b/i.test(s));
   // After D1 is answered, international-only (no USA) means Cycle A is skipped.
   const internationalOnly = d1AlreadyAsked
-    && !!surrogateCountriesRaw
+    && (!!surrogateCountriesRaw || userPickedInternationalCountry)
     && !usaSelected;
   // Skip Cycle A until D1 is answered when parent needs both.
   const skipClinicCycleForD1 = needsBothClinicAndSurrogate && !d1AlreadyAsked;
