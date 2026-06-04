@@ -161,7 +161,7 @@ Return ONLY a valid JSON array with objects having these exact fields:
       textContent = csvParts.join("\n\n");
 
       const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
+        model: "gemini-3.5-flash",
         generationConfig: {
           temperature: 0,
           // 32k headroom: a 30-item cost sheet with descriptions + comments
@@ -200,7 +200,7 @@ Return ONLY a valid JSON array with objects having these exact fields:
       const base64Data = fileBuffer.toString("base64");
 
       const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
+        model: "gemini-3.5-flash",
         generationConfig: {
           temperature: 0,
           // 32k headroom: a 30-item cost sheet with descriptions + comments
@@ -600,8 +600,19 @@ ${subtypeTrailingNote}`;
     }
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      generationConfig: { temperature: 0, maxOutputTokens: 8192 } as any,
+      model: "gemini-3.5-flash",
+      generationConfig: {
+        temperature: 0,
+        // 32k headroom: long cost sheets with 30+ items + comments easily
+        // exceed 8k tokens, and the classification block is the LAST thing
+        // in the response - it gets truncated off the end when we hit the
+        // cap. 32768 leaves room even for 50+ item sheets.
+        maxOutputTokens: 32768,
+        // JSON mode: constrain the decoder to valid JSON output. Combined
+        // with the jsonrepair middle fallback and the per-object stream
+        // parser, this is the three-layer parse strategy.
+        responseMimeType: "application/json",
+      } as any,
     });
 
     const timeoutMs = 180000;
@@ -917,7 +928,7 @@ ${rawTextSnippet ? `\nDocument excerpt (first 1500 chars):\n${rawTextSnippet.sli
 
     try {
       const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
+        model: "gemini-3.5-flash",
         generationConfig: {
           temperature: 0,
           // 32k headroom: a 30-item cost sheet with descriptions + comments
