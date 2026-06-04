@@ -659,7 +659,6 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
               statusLabel={buildStatusLabel(profile, viewedIds, previousVisitAt)}
               donorStatus={profile.donorStatus}
               frozenLotStatus={profile.frozenLotStatus}
-        frozenLotStatus={profile.frozenLotStatus}
               isExperienced={profile.isExperienced}
               isPremium={profile.isPremium}
               tabs={tabs}
