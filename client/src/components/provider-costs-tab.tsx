@@ -5,6 +5,9 @@ import { cn } from "@/lib/utils";
 import { formatMoneyDollars } from "@/lib/format-money";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Textarea } from "@/components/ui/textarea";
@@ -183,6 +186,348 @@ const FRESH_FROZEN_SUBTYPES: { id: string; label: string }[] = [
   { id: "frozen", label: "Frozen egg lot" },
 ];
 
+// Marketplace-style popover for the IVF subtype picker. Replaces the
+// native <select> whose dropdown the OS centers on the selected item
+// (and the Radix Select primitive whose value-prop semantics crash in
+// this specific spot). Single-select, grouped by Tab, anchors below
+// the trigger consistently. Mirrors MarketplaceFilterBar's pill style.
+function IvfSubtypePopover({
+  currentSubType,
+  tabFilter,
+  onSelect,
+}: {
+  currentSubType: string | null;
+  tabFilter?: IvfTab;
+  onSelect: (subType: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const isMobile = useIsMobile();
+  const groups = tabFilter
+    ? [{ id: tabFilter, label: IVF_TABS.find(t => t.id === tabFilter)?.label || tabFilter, subtypes: SUBTYPES_BY_TAB[tabFilter] }]
+    : IVF_TABS.map(t => ({ id: t.id, label: t.label, subtypes: SUBTYPES_BY_TAB[t.id] }));
+  const currentLabel = currentSubType ? labelOfSubtype(currentSubType) : null;
+
+  const trigger = (
+    <Button
+      variant="outline"
+      size="sm"
+      className="shrink-0 h-8 text-xs font-medium rounded-[var(--radius)] gap-1.5 px-3"
+      data-testid="select-subtype"
+    >
+      {currentLabel || "Select program type..."}
+      <ChevronDown className="w-3.5 h-3.5 opacity-60" />
+    </Button>
+  );
+
+  // Shared body - rendered inside the Popover (desktop) or Drawer (mobile).
+  const body = (
+    <>
+      {groups.map(g => (
+        <div key={g.id}>
+          <span
+            className="font-ui text-muted-foreground mb-1.5 block"
+            style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+          >
+            {g.label}
+          </span>
+          <div className="flex flex-wrap gap-2.5">
+            {g.subtypes.map(s => {
+              const selected = currentSubType === s.id;
+              return (
+                <Badge
+                  key={s.id}
+                  variant={selected ? "default" : "outline"}
+                  className="cursor-pointer font-ui px-4 py-2 rounded-full whitespace-normal text-left max-w-full"
+                  style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+                  onClick={() => {
+                    onSelect(s.id);
+                    setOpen(false);
+                  }}
+                  data-testid={`subtype-option-${s.id}`}
+                >
+                  {s.label}
+                </Badge>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+
+  // Mobile: bottom drawer (same UX as MarketplaceFilterBar's mobile filters).
+  if (isMobile) {
+    return (
+      <Drawer open={open} onOpenChange={setOpen}>
+        <DrawerTrigger asChild>{trigger}</DrawerTrigger>
+        <DrawerContent data-testid="drawer-subtype">
+          <DrawerHeader>
+            <DrawerTitle>Program type</DrawerTitle>
+          </DrawerHeader>
+          <div className="px-6 pb-6 max-h-[70vh] overflow-y-auto space-y-4">
+            {body}
+          </div>
+        </DrawerContent>
+      </Drawer>
+    );
+  }
+
+  // Desktop: anchored popover.
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <PopoverContent
+        className="w-[28rem] max-w-[calc(100vw-2rem)] p-4 max-h-[min(80vh,32rem)] overflow-y-auto"
+        align="start"
+        sideOffset={6}
+        collisionPadding={16}
+      >
+        <div className="space-y-3">
+          <div className="flex justify-between items-center sticky top-0 bg-popover pb-2 -mt-1 -mx-1 px-1 z-10">
+            <span className="font-ui" style={{ fontSize: 'var(--filter-label-size, 18px)' }}>Program type</span>
+          </div>
+          {body}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// Derive the service tags displayed on a program's main row from its
+// canonical subTypes[]. One IVF leaf maps to one "ivf_clinic" tag; the
+// non-IVF leaves map per SERVICE_TAG_OF_NON_IVF_LEAF. Dedupes.
+function serviceTagsFromSubTypes(subTypes: string[] | null | undefined): string[] {
+  const tags = new Set<string>();
+  for (const leaf of subTypes || []) {
+    if (leaf === "surrogacy") tags.add("surrogacy");
+    else if (leaf === "egg_donor_fresh" || leaf === "egg_donor_frozen") tags.add("egg_donor");
+    else if (leaf === "sperm_donor") tags.add("sperm_donor");
+    else tags.add("ivf_clinic"); // any IVF subtype id
+  }
+  return Array.from(tags);
+}
+
+// Unified coverage leaf taxonomy for the top-bar Coverage toggle row.
+// Each leaf is a single coverage concept admins toggle independently. The
+// "ivf" leaf is virtual - selecting it surfaces the Program type popover
+// (the 14-leaf IVF taxonomy) immediately to the right; the actual IVF
+// subtype lives in subTypes[] as one of the ivf_*/embryo_*/fet_*/etc IDs.
+const COVERAGE_LEAVES: { id: string; label: string; serviceTag: string }[] = [
+  { id: "surrogacy",         label: "Surrogacy",   serviceTag: "surrogacy" },
+  { id: "egg_donor_fresh",   label: "Fresh Donor", serviceTag: "egg_donor" },
+  { id: "egg_donor_frozen",  label: "Frozen Egg",  serviceTag: "egg_donor" },
+  { id: "sperm_donor",       label: "Sperm Donor", serviceTag: "sperm_donor" },
+  { id: "ivf",               label: "IVF",         serviceTag: "ivf_clinic" },
+];
+
+// Backwards alias - some call sites still import NON_IVF_LEAVES.
+const NON_IVF_LEAVES = COVERAGE_LEAVES.filter(l => l.id !== "ivf");
+
+// IVF subtype IDs (from cost-templates-config). True when a leaf in subTypes[]
+// is an IVF subtype - tells the Coverage row "IVF" toggle is on.
+function hasAnyIvfSubtype(subTypes: string[] | null | undefined): boolean {
+  const ivfPrefixes = ["ivf_", "embryo_creation_only", "fet_", "shipping_embryos", "shipping_eggs_sperm", "egg_freezing_"];
+  return (subTypes || []).some(s => ivfPrefixes.some(p => s.startsWith(p)));
+}
+
+// Derive which leaves are visible based on provider's allowed service tags.
+function leavesForServiceTags(tags: string[]): { id: string; label: string }[] {
+  const allowed = new Set(tags);
+  return COVERAGE_LEAVES.filter(l => allowed.has(l.serviceTag));
+}
+
+// Find the (single) IVF subtype currently in subTypes[]. Returns null if
+// the program has no IVF coverage. We treat IVF as a single-select picker
+// even though subTypes[] can technically hold multiple - keeps the UI tidy.
+function getIvfSubtype(subTypes: string[] | null | undefined): string | null {
+  const ivfPrefixes = ["ivf_", "embryo_creation_only", "fet_", "shipping_embryos", "shipping_eggs_sperm", "egg_freezing_"];
+  return (subTypes || []).find(s => ivfPrefixes.some(p => s.startsWith(p))) || null;
+}
+
+// Consolidated classification controls rendered inline inside each cost
+// program's top bar. Encapsulates: Coverage toggle row (Surrogacy / Fresh
+// Donor / Frozen Egg / Sperm Donor / IVF), Program type popover (visible
+// only when IVF leaf is on), Fixed-Cost / Not-Fixed segmented toggle, and
+// the Confirm Classification button OR Confirmed badge. Owns its own
+// mutations so ProgramsView can drop it in without prop-drilling.
+function ProgramClassificationControls({
+  program,
+  providerId,
+  allowedServiceTags,
+  providerType,
+}: {
+  program: CostProgram;
+  providerId: string;
+  allowedServiceTags: string[];
+  providerType: string;
+}) {
+  const { toast } = useToast();
+  const visibleLeaves = leavesForServiceTags(allowedServiceTags);
+  const current = program.subTypes ?? [];
+  const currentIvfSubtype = getIvfSubtype(current);
+  const ivfOn = !!currentIvfSubtype;
+  const latestSheet = program.latestSheet ?? null;
+  const needsConfirm =
+    latestSheet?.isFixedCostSource === "ai_proposed" ||
+    latestSheet?.isFixedCostSource == null ||
+    latestSheet?.legacyNeedsReview === true;
+  const [hasInteracted, setHasInteracted] = useState<boolean>(
+    latestSheet?.isFixedCostSource === "clinic_confirmed",
+  );
+
+  const updateSubTypesMutation = useMutation({
+    mutationFn: ({ subTypes }: { subTypes: string[] }) =>
+      apiRequest("PATCH", `/api/costs/programs/${program.id}`, { subTypes }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "programs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "sheets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "approved"] });
+    },
+    onError: (err: any) => toast({ title: "Failed to update coverage", description: err.message, variant: "destructive" }),
+  });
+
+  const classificationMutation = useMutation({
+    mutationFn: (payload: { isFixedCost?: boolean; confirm?: boolean }) =>
+      apiRequest("PATCH", `/api/costs/sheet/${latestSheet!.id}/classification`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "programs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "sheets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "approved"] });
+    },
+    onError: (err: any) => toast({ title: "Failed to save classification", description: err.message, variant: "destructive" }),
+  });
+
+  const toggleLeaf = (leafId: string) => {
+    if (leafId === "ivf") {
+      // Toggling IVF removes ALL IVF subtypes if currently on, or
+      // adds a sensible default if currently off (the Program type
+      // popover next to it lets admin refine).
+      if (ivfOn) {
+        const next = current.filter(s => !s.startsWith("ivf_") && !s.startsWith("embryo_") && !s.startsWith("fet_") && !s.startsWith("shipping_") && !s.startsWith("egg_freezing_"));
+        updateSubTypesMutation.mutate({ subTypes: next });
+      } else {
+        const next = [...current, "ivf_cycle_own_eggs_own_carry"];
+        updateSubTypesMutation.mutate({ subTypes: next });
+      }
+      return;
+    }
+    const has = current.includes(leafId);
+    const next = has ? current.filter(s => s !== leafId) : [...current, leafId];
+    updateSubTypesMutation.mutate({ subTypes: next });
+  };
+
+  const setIvfSubtype = (newSub: string) => {
+    // Replace current IVF leaf with the new one, keep non-IVF leaves intact.
+    const nonIvf = current.filter(s => !s.startsWith("ivf_") && !s.startsWith("embryo_") && !s.startsWith("fet_") && !s.startsWith("shipping_") && !s.startsWith("egg_freezing_"));
+    updateSubTypesMutation.mutate({ subTypes: [...nonIvf, newSub] });
+  };
+
+  return (
+    <>
+      {/* Coverage toggles (multi-select pills). */}
+      {visibleLeaves.length > 0 && (
+        <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm flex-wrap items-center">
+          {visibleLeaves.map(leaf => {
+            const selected = leaf.id === "ivf" ? ivfOn : current.includes(leaf.id);
+            return (
+              <button
+                key={`cov-${program.id}-${leaf.id}`}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); toggleLeaf(leaf.id); }}
+                className={cn(
+                  "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium",
+                  selected ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
+                )}
+                data-testid={`top-leaf-${program.id}-${leaf.id}`}
+              >
+                {leaf.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Program type popover - only when IVF is selected. */}
+      {ivfOn && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <IvfSubtypePopover
+            currentSubType={currentIvfSubtype}
+            onSelect={setIvfSubtype}
+          />
+        </div>
+      )}
+
+      {/* Fixed-Cost / Not Fixed segmented toggle. */}
+      {latestSheet && (
+        <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className={cn(
+              "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium",
+              latestSheet.isFixedCost === true ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
+            )}
+            onClick={() => { setHasInteracted(true); classificationMutation.mutate({ isFixedCost: true }); }}
+            disabled={classificationMutation.isPending}
+            data-testid={`top-mark-fixed-${program.id}`}
+          >
+            Fixed-Cost
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium",
+              latestSheet.isFixedCost === false ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
+            )}
+            onClick={() => { setHasInteracted(true); classificationMutation.mutate({ isFixedCost: false }); }}
+            disabled={classificationMutation.isPending}
+            data-testid={`top-mark-not-fixed-${program.id}`}
+          >
+            Not Fixed Costs
+          </button>
+        </div>
+      )}
+
+      {/* Confirm Classification button (needs-confirm state) OR Confirmed
+          badge. Always rendered while needsConfirm is true so the clinic
+          can see the action exists; disabled until they pick Fixed-Cost
+          or Not Fixed Costs (the tooltip explains why). Previously hidden
+          until isFixedCost was set, which hid the entire confirmation
+          step from anyone who hadn't already clicked a toggle. */}
+      {latestSheet && needsConfirm && (
+        <Button
+          size="sm"
+          className="h-8 text-xs font-semibold shadow-md"
+          disabled={
+            classificationMutation.isPending ||
+            !hasInteracted ||
+            latestSheet.isFixedCost === null
+          }
+          title={
+            latestSheet.isFixedCost === null || !hasInteracted
+              ? "Click Fixed-Cost or Not Fixed Costs first to acknowledge the AI's choice"
+              : undefined
+          }
+          onClick={(e) => {
+            e.stopPropagation();
+            classificationMutation.mutate({ isFixedCost: latestSheet.isFixedCost ?? false, confirm: true });
+          }}
+          data-testid={`top-confirm-${program.id}`}
+        >
+          {classificationMutation.isPending
+            ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+            : <Check className="w-3.5 h-3.5 mr-1.5" />}
+          Confirm Classification
+        </Button>
+      )}
+      {latestSheet && latestSheet.isFixedCostSource === "clinic_confirmed" && (
+        <Badge className="h-8 px-3 bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] border-[hsl(var(--brand-success))]/30 text-xs flex items-center">
+          <Check className="w-3.5 h-3.5 mr-1.5" />Confirmed
+        </Badge>
+      )}
+    </>
+  );
+}
+
 interface CostItemData {
   id?: string;
   templateFieldId?: string | null;
@@ -248,6 +593,7 @@ interface CostProgram {
   providerTypeId: string | null;
   tab: string | null;
   subType: string | null;
+  subTypes: string[];
   serviceTypes: string[];
   name: string;
   country: string;
@@ -258,6 +604,16 @@ interface CostProgram {
   // the total without firing its own queries that were susceptible to
   // stale-cache after a fresh upload+parse cycle.
   latestSheetItems?: CostItemData[];
+  // Phase: latest sheet metadata needed by the top-bar classification
+  // controls (Fixed/Not Fixed toggle + Confirm button). Null when no
+  // master sheet exists yet (newly created program).
+  latestSheet?: {
+    id: string;
+    isFixedCost: boolean | null;
+    isFixedCostSource: string | null;
+    legacyNeedsReview: boolean;
+    status: string;
+  } | null;
 }
 
 const SERVICE_TYPE_LABELS: Record<string, string> = {
@@ -287,7 +643,7 @@ interface SingleCostsTabProps {
   // both the AI-confirmation toggle and the subtype picker live in the
   // same green/amber surface.
   programShowsAnySubtype?: boolean;
-  programShowsIvfSubtype?: boolean; // true => IVF taxonomy dropdown; false => fresh/frozen toggle
+  programShowsIvfSubtype?: boolean; // true => IVF taxonomy dropdown; false => unified leaf-toggle row
   programCurrentSubType?: string | null;
   programTabFilter?: IvfTab;
   onSubTypeChange?: (subType: string, tab?: string) => void;
@@ -297,6 +653,11 @@ interface SingleCostsTabProps {
   allowedServiceTags?: string[];
   programServiceTypes?: string[];
   onServiceTypesChange?: (next: string[]) => void;
+  // Multi-select coverage: canonical subTypes[] (leaves) for non-IVF
+  // programs. Replaces the legacy services + program-type two-row UI with
+  // a single multi-select toggle row.
+  programCurrentSubTypes?: string[];
+  onSubTypesChange?: (next: string[]) => void;
 }
 
 interface ProviderCostsTabProps {
@@ -479,6 +840,8 @@ function SingleCostsTab({
   allowedServiceTags,
   programServiceTypes,
   onServiceTypesChange,
+  programCurrentSubTypes,
+  onSubTypesChange,
 }: SingleCostsTabProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1388,13 +1751,11 @@ function SingleCostsTab({
         </Alert>
       )}
 
-      {/* AI classification + Fixed/Not-Fixed confirmation card. The clinic
-          MUST confirm before they can submit for approval - until they do,
-          the card has an amber warning style and Submit is blocked.
-          Shown for every provider type now (surrogacy / sperm bank only see
-          the Fixed/Not-Fixed pair; egg donor sees fresh/frozen label;
-          IVF sees the full subtype label). Suppressed only when no sheet. */}
-      {displaySheet && !parentId && displaySheet.status !== "PARSING" && (displaySheet.subType || !hasIvfSubtypes(providerType)) && (
+      {/* Classification card hidden - all controls live inline in the
+          program top bar now (ProgramClassificationControls). Render
+          gated to false so we keep the surrounding JSX shape intact
+          without ripping out the editor's existing layout. */}
+      {false && displaySheet && !parentId && displaySheet.status !== "PARSING" && (displaySheet.subType || !hasIvfSubtypes(providerType)) && (
         <Card className={cn(
           "border-2",
           needsClassificationConfirmation
@@ -1427,118 +1788,83 @@ function SingleCostsTab({
                     Cost toggle's styling; each one is independently
                     toggleable since a single program can bundle multiple
                     services (e.g. surrogacy + egg donor combined). */}
-                {allowedServiceTags && allowedServiceTags.length > 0 && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-muted-foreground">Services covered:</span>
-                    <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm">
-                      {allowedServiceTags.map((tag) => {
-                        const selected = (programServiceTypes ?? []).includes(tag);
-                        return (
-                          <button
-                            key={`svc-toggle-${tag}`}
-                            type="button"
-                            className={cn(
-                              "px-3 py-1.5 text-xs rounded-[var(--radius)] transition-all font-medium",
-                              selected
-                                ? "bg-accent text-accent-foreground shadow-sm"
-                                : "text-foreground hover:bg-accent/10",
-                            )}
-                            onClick={() => {
-                              const current = programServiceTypes ?? [];
-                              const next = selected
-                                ? current.filter((t) => t !== tag)
-                                : [...current, tag];
-                              onServiceTypesChange?.(next);
-                            }}
-                            data-testid={`btn-svc-${tag}`}
-                          >
-                            {SERVICE_TYPE_LABELS[tag] ?? tag}
-                          </button>
-                        );
-                      })}
+                {/* Unified non-IVF coverage row. Each toggle is a flat
+                    leaf (e.g. "Surrogacy", "Fresh Donor", "Frozen Egg",
+                    "Sperm Donor"). Multi-select - one cost sheet can
+                    cover any combination. Writes to subTypes[] which the
+                    auto-draft matcher queries with hasSome. Legacy
+                    serviceTypes[] + subType are derived on save. */}
+                {/* Coverage row visible for ALL provider types - including
+                    IVF clinics whose programs may layer non-IVF leaves
+                    (e.g. an IVF cycle program at a multi-service provider
+                    that also covers Surrogacy or Fresh Donor). The IVF
+                    subtype dropdown sits separately below for the 14-leaf
+                    IVF taxonomy. */}
+                {allowedServiceTags && allowedServiceTags.length > 0 && (() => {
+                  const visibleLeaves = leavesForServiceTags(allowedServiceTags);
+                  if (visibleLeaves.length === 0) return null;
+                  const current = programCurrentSubTypes ?? [];
+                  return (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-muted-foreground">Coverage:</span>
+                      <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm flex-wrap">
+                        {visibleLeaves.map((leaf) => {
+                          const selected = current.includes(leaf.id);
+                          return (
+                            <button
+                              key={`leaf-${leaf.id}`}
+                              type="button"
+                              className={cn(
+                                "px-3 py-1.5 text-xs rounded-[var(--radius)] transition-all font-medium",
+                                selected
+                                  ? "bg-accent text-accent-foreground shadow-sm"
+                                  : "text-foreground hover:bg-accent/10",
+                              )}
+                              onClick={() => {
+                                const next = selected
+                                  ? current.filter((id) => id !== leaf.id)
+                                  : [...current, leaf.id];
+                                onSubTypesChange?.(next);
+                              }}
+                              data-testid={`btn-leaf-${leaf.id}`}
+                            >
+                              {leaf.label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                )}
-                {/* Program-type picker (moved into the card so both AI
-                    classifications - subtype + Fixed/Not-Fixed - live on
-                    the same green/amber surface). Renders as a segmented
-                    toggle for the 2-option fresh/frozen egg-donor case;
-                    falls back to a compact dropdown for IVF's 14-option
-                    taxonomy where a toggle would be unusable. */}
-                {programShowsAnySubtype && !programShowsIvfSubtypeProp && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-muted-foreground">Program type:</span>
-                    <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm">
-                      {FRESH_FROZEN_SUBTYPES.map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          className={cn(
-                            "px-3 py-1.5 text-xs rounded-[var(--radius)] transition-all font-medium",
-                            programCurrentSubType === s.id
-                              ? "bg-accent text-accent-foreground shadow-sm"
-                              : "text-foreground hover:bg-accent/10",
-                          )}
-                          onClick={() => onSubTypeChange?.(s.id)}
-                          data-testid={`btn-subtype-${s.id}`}
-                        >
-                          {s.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
+                {/* IVF clinics keep the 14-option dropdown - too many leaves
+                    for a toggle row. Dropdown writes single subType; save
+                    path mirrors it into subTypes=[subType]. */}
                 {programShowsAnySubtype && programShowsIvfSubtypeProp && (
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs text-muted-foreground">Program type:</span>
-                    <select
-                      className="h-8 text-sm rounded-[var(--radius)] border border-border bg-background px-2"
-                      value={programCurrentSubType ?? ""}
-                      onChange={(e) => {
-                        const newSub = e.target.value;
-                        if (!newSub) return;
-                        onSubTypeChange?.(newSub, tabOfSubtype(newSub) ?? undefined);
-                      }}
-                      data-testid="select-subtype"
-                    >
-                      <option value="">Select program type...</option>
-                      {(programTabFilter
-                        ? SUBTYPES_BY_TAB[programTabFilter]
-                        : IVF_TABS.flatMap((t) =>
-                            SUBTYPES_BY_TAB[t.id].map((s) => ({ ...s, _tabLabel: t.label })),
-                          )
-                      ).map((s: any) => (
-                        <option key={s.id} value={s.id}>
-                          {s._tabLabel ? `${s._tabLabel} - ${s.label}` : s.label}
-                        </option>
-                      ))}
-                    </select>
+                    <IvfSubtypePopover
+                      currentSubType={programCurrentSubType ?? null}
+                      tabFilter={programTabFilter}
+                      onSelect={(newSub) =>
+                        onSubTypeChange?.(newSub, tabOfSubtype(newSub) ?? undefined)
+                      }
+                    />
                   </div>
                 )}
 
-                <div className="flex items-center gap-2 flex-wrap">
-                  {/* Classification label - reused for surrogacy / sperm
-                      bank where there's no subtype picker, just the
-                      Fixed/Not-Fixed acknowledgement. */}
-                  {!programShowsAnySubtype && (
-                    <span className="text-xs text-muted-foreground">Cost-sheet classification:</span>
-                  )}
-                  {displaySheet.isFixedCostSource === "ai_proposed" && (
+                {/* AI proposed badge - only while still awaiting confirmation.
+                    The Confirmed badge has moved to the right column so it
+                    sits where the "Confirm Classification" button used to
+                    live (visual continuity). Descriptive Fixed-cost text
+                    removed to keep this block tight. */}
+                {displaySheet.isFixedCostSource === "ai_proposed" && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {!programShowsAnySubtype && (
+                      <span className="text-xs text-muted-foreground">Cost-sheet classification:</span>
+                    )}
                     <Badge className="bg-background text-[hsl(var(--brand-warning))] border border-[hsl(var(--brand-warning))]/50 text-xs font-medium">AI proposed</Badge>
-                  )}
-                  {displaySheet.isFixedCostSource === "clinic_confirmed" && (
-                    <Badge className="bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] border-[hsl(var(--brand-success))]/30 text-xs">
-                      <Check className="w-3 h-3 mr-1" />Confirmed
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {displaySheet.isFixedCost === true
-                    ? "Fixed-cost program - bundle price covers stated quantities (e.g. 3 retrievals, unlimited transfers)."
-                    : displaySheet.isFixedCost === false
-                    ? "Not a fixed-cost program - costs are itemized per service."
-                    : "Tell us whether this program is a bundled package or itemized pricing."}
-                </p>
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 {/* Segmented toggle: white interior so the unselected label
@@ -1603,10 +1929,40 @@ function SingleCostsTab({
                     Confirm Classification
                   </Button>
                 )}
+                {/* Confirmed state - sits where the Confirm Classification
+                    button was, keeping the right-aligned anchor consistent
+                    across the AI-proposed -> Confirmed transition. */}
+                {displaySheet.isFixedCostSource === "clinic_confirmed" && (
+                  <Badge className="h-9 px-3 bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] border-[hsl(var(--brand-success))]/30 text-xs flex items-center">
+                    <Check className="w-3.5 h-3.5 mr-1.5" />Confirmed
+                  </Badge>
+                )}
               </div>
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* AI parse-failure alert. backgroundParseAndSave swallows Gemini
+          errors silently - it flips the sheet to DRAFT with no items and
+          no classification, which looks indistinguishable from a fresh
+          empty sheet. Detect that state (DRAFT + file present + zero
+          items + no AI classification proposed) and tell the clinic
+          exactly what happened so they know to override or re-upload. */}
+      {!parentId &&
+        displaySheet?.status === "DRAFT" &&
+        displaySheet.filePath &&
+        !isParsing &&
+        (displaySheet.items?.length ?? 0) === 0 &&
+        displaySheet.isFixedCost === null &&
+        displaySheet.isFixedCostSource == null && (
+        <Alert variant="default" className="border-[hsl(var(--brand-warning))]/40 bg-[hsl(var(--brand-warning))]/5">
+          <AlertTriangle className="h-4 w-4 text-[hsl(var(--brand-warning))]" />
+          <AlertDescription className="text-foreground">
+            <strong>AI couldn't extract any data from this file.</strong>{" "}
+            The file is attached but no items, classification, or program type were detected. Click <strong>Override</strong> to add items manually, or re-upload the file in a clearer format (PDF with selectable text, XLS/XLSX preferred over scanned images).
+          </AlertDescription>
+        </Alert>
       )}
 
       {!parentId && (
@@ -1801,7 +2157,14 @@ function SingleCostsTab({
             </Button>
           )}
 
-          {isAdminView && !effectiveEditing && (displaySheet.status === "PENDING" || displaySheet.status === "DRAFT") && (
+          {/* Approve / Reject is a review action - it only makes sense on a
+              sheet a provider has submitted for approval (PENDING). When an
+              admin uploads a sheet themselves it starts as DRAFT, and the
+              right path is Override to fill in the data, then Submit/Approve
+              from the editor. The previous gate let DRAFT through too, which
+              put Approve / Reject on admin-uploaded sheets with no items -
+              nothing meaningful to approve. */}
+          {isAdminView && !effectiveEditing && displaySheet.status === "PENDING" && (
             <>
               <Button
                 size="sm"
@@ -2650,6 +3013,19 @@ function ProgramsView({
 
   // Update the program-level subType (also writes back to the program's
   // latest sheet via the controller).
+  const updateSubTypesMutation = useMutation({
+    mutationFn: ({ id, subTypes }: { id: string; subTypes: string[] }) =>
+      apiRequest("PATCH", `/api/costs/programs/${id}`, { subTypes }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "programs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "sheets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "approved"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to update coverage", description: err.message, variant: "destructive" });
+    },
+  });
+
   const updateSubTypeMutation = useMutation({
     mutationFn: ({ id, subType, tab }: { id: string; subType: string; tab?: string }) =>
       apiRequest("PATCH", `/api/costs/programs/${id}`, { subType, ...(tab ? { tab } : {}) }),
@@ -2955,35 +3331,19 @@ function ProgramsView({
                         : <Globe className="w-3 h-3" />}
                       {program.country}
                     </Badge>
-                    {/* Service-type tags - 1+ per program (e.g. surrogacy +
-                        egg_donor for a combined package). Always visible. */}
-                    {(program.serviceTypes ?? []).map((tag) => (
-                      <Badge
-                        key={`svc-${program.id}-${tag}`}
-                        variant="outline"
-                        className="text-xs bg-accent/15 text-accent border-accent/40"
-                        data-testid={`program-service-tag-${tag}`}
-                      >
-                        {SERVICE_TYPE_LABELS[tag] ?? tag}
-                      </Badge>
-                    ))}
-                    {(program.serviceTypes ?? []).length === 0 && (
-                      <Badge variant="outline" className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/30">
-                        Awaiting service tag
-                      </Badge>
-                    )}
-                    {programShowsAnySubtype(program) && program.subType && (
-                      <Badge variant="outline" className="text-xs bg-secondary/40 border-secondary text-foreground/80">
-                        {programShowsIvfSubtype(program)
-                          ? labelOfSubtype(program.subType)
-                          : (FRESH_FROZEN_SUBTYPES.find((s) => s.id === program.subType)?.label ?? program.subType)}
-                      </Badge>
-                    )}
-                    {programShowsAnySubtype(program) && !program.subType && (program.serviceTypes ?? []).length > 0 && (
-                      <Badge variant="outline" className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/30">
-                        Awaiting classification
-                      </Badge>
-                    )}
+                    {/* Consolidated classification controls: Coverage
+                        toggles (Surrogacy / Fresh Donor / Frozen Egg /
+                        Sperm Donor / IVF) + Program type popover (only
+                        when IVF is selected) + Fixed/Not Fixed segmented
+                        toggle + Confirm button or Confirmed badge. All
+                        live in the top bar so admins don't need to expand
+                        the program to classify it. */}
+                    <ProgramClassificationControls
+                      program={program}
+                      providerId={providerId}
+                      allowedServiceTags={allowedServiceTags}
+                      providerType={providerType}
+                    />
                     <ProgramTotalBadge program={program} />
                     {isAdminView && program.latestSheetStatus === "PENDING" && (
                       <Badge className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/40 border">
@@ -3071,6 +3431,10 @@ function ProgramsView({
                     programServiceTypes={program.serviceTypes ?? []}
                     onServiceTypesChange={(next) =>
                       updateServiceTypesMutation.mutate({ id: program.id, serviceTypes: next })
+                    }
+                    programCurrentSubTypes={program.subTypes ?? []}
+                    onSubTypesChange={(next) =>
+                      updateSubTypesMutation.mutate({ id: program.id, subTypes: next })
                     }
                   />
                 </div>
