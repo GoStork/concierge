@@ -443,13 +443,11 @@ function ProgramClassificationControls({
           alignment of the trailing group shifted everything sideways
           per row based on each row's total amount. */}
 
-      {/* Slot 1: Coverage (multi-select pills). Sized at w-[14rem] to
-          fit up to 4 chips (Surrogacy / Fresh Donor / Frozen Egg /
-          Sperm Donor / IVF) at their compact button widths. Narrower
-          providers (e.g. Family Creations: only Surrogacy + Egg Donor
-          chips) leave empty space on the right of the slot, which
-          keeps subsequent columns aligned across rows. */}
-      <div className="w-[14rem] flex items-center flex-shrink-0">
+      {/* Slot 1: Coverage (multi-select pills). Natural width with
+          flex-shrink-0 so the chip set doesn't compress on narrow
+          viewports. The same provider has the same visibleLeaves
+          on every row so widths match naturally across rows. */}
+      <div className="flex items-center flex-shrink-0">
         {visibleLeaves.length > 0 && (
           <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm items-center">
             {visibleLeaves.map(leaf => {
@@ -473,30 +471,23 @@ function ProgramClassificationControls({
         )}
       </div>
 
-      {/* Slot 2: IVF subtype picker. Only renders for programs with an
-          IVF leaf in subTypes[] (most providers don't, so the slot is
-          conditional). Wide enough to fit a long label like "Own eggs,
-          surrogate carry" plus the chevron. Slot is always emitted as
-          an element (with width 0 when collapsed) so the columns after
-          it - cost, confirm, total - line up across IVF and non-IVF
-          programs on the same page. */}
-      <div className={cn("flex items-center flex-shrink-0", ivfOn ? "w-[14rem]" : "w-0")}>
-        {ivfOn && (
-          <div onClick={(e) => e.stopPropagation()}>
-            <IvfSubtypePopover
-              currentSubType={currentIvfSubtype}
-              onSelect={setIvfSubtype}
-            />
-          </div>
-        )}
-      </div>
+      {/* Slot 2: IVF subtype picker. Only emitted when ivfOn so non-IVF
+          rows don't reserve a phantom column. The natural width of the
+          popover button is consistent across rows because the IVF
+          subtype labels are short strings from a small enum. */}
+      {ivfOn && (
+        <div className="flex items-center flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+          <IvfSubtypePopover
+            currentSubType={currentIvfSubtype}
+            onSelect={setIvfSubtype}
+          />
+        </div>
+      )}
 
       {/* Slot 3: Cost (Fixed-Cost / Not Fixed Costs segmented toggle).
-          w-[14rem] fits the longer "Not Fixed Costs" button without
-          wrapping; whitespace-nowrap on the buttons keeps the labels
-          on one line if the slot ever gets squeezed by a narrower
-          viewport. */}
-      <div className="w-[14rem] flex items-center flex-shrink-0">
+          Natural width; whitespace-nowrap on each button keeps the
+          labels on one line. */}
+      <div className="flex items-center flex-shrink-0">
         {latestSheet && (
           <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm" onClick={(e) => e.stopPropagation()}>
           <button
@@ -527,13 +518,12 @@ function ProgramClassificationControls({
       )}
       </div>
 
-      {/* Slot 3: Confirm Classification button (needs-confirm state)
-          OR Confirmed badge. Fixed at w-[12rem] to fit the longer
-          "Confirm Classification" button label; the much narrower
-          "Confirmed" badge sits left-aligned inside the slot, which
-          keeps the next column (total) at a consistent position
-          whether the program is still proposed or already confirmed. */}
-      <div className="w-[12rem] flex items-center flex-shrink-0">
+      {/* Slot 4: Confirm Classification button (needs-confirm state)
+          OR Confirmed badge. Natural width with flex-shrink-0; the
+          "Confirm Classification" button is fixed-length and the
+          "Confirmed" badge is even shorter, so widths are consistent
+          across rows for a given state. */}
+      <div className="flex items-center flex-shrink-0">
         {latestSheet && needsConfirm && (
           <Button
             size="sm"
@@ -3400,12 +3390,12 @@ function ProgramsView({
                     </>
                   ) : (
                     <>
-                      {/* Name column is FIXED width so the country chip
-                          (and every subsequent slot) sits at the same
-                          horizontal position on every row in the list,
-                          regardless of program-name length. Long names
-                          truncate with ellipsis; full text in title. */}
-                      <span className="font-medium text-sm truncate w-56 flex-shrink-0" title={program.name}>{program.name}</span>
+                      {/* Name column is fixed-width truncate so the
+                          country chip lands at a consistent X position
+                          across rows. Long names ellipsize with their
+                          full text reachable via the browser title
+                          tooltip. */}
+                      <span className="font-medium text-sm truncate w-48 flex-shrink-0" title={program.name}>{program.name}</span>
                       <Badge variant="outline" className="text-xs flex items-center gap-1 flex-shrink-0">
                         {getCountryFlag(program.country)
                           ? <span>{getCountryFlag(program.country)}</span>
@@ -3414,19 +3404,22 @@ function ProgramsView({
                       </Badge>
                     </>
                   )}
-                  {/* Fixed-width slots in ProgramClassificationControls
-                      keep coverage / cost / confirm at the same column
-                      positions across rows. The total wrapper below has
-                      its own fixed-width text-right slot so the price
-                      column aligns regardless of how many digits it has. */}
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <ProgramClassificationControls
-                      program={program}
-                      providerId={providerId}
-                      allowedServiceTags={allowedServiceTags}
-                      providerType={providerType}
-                    />
-                    <div className="w-44 text-right flex-shrink-0">
+                  {/* Classification slots use natural widths so they
+                      don't overflow narrow viewports. Same provider has
+                      the same chips on every row so the widths match
+                      naturally. The total + pending wrapper below has
+                      ml-auto to push it to the right edge of the
+                      content area, with whitespace-nowrap so the price
+                      never wraps onto a second line and collides with
+                      the action buttons. */}
+                  <ProgramClassificationControls
+                    program={program}
+                    providerId={providerId}
+                    allowedServiceTags={allowedServiceTags}
+                    providerType={providerType}
+                  />
+                  <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+                    <div className="whitespace-nowrap text-right">
                       <ProgramTotalBadge program={program} />
                     </div>
                     {isAdminView && program.latestSheetStatus === "PENDING" && (
