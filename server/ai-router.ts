@@ -4312,9 +4312,15 @@ ${phase0Section}`;
           const d1TextFull = d1HasEmbryosCarrier
             ? `One thing many families don't realize: since you already have frozen embryos, you can ship them internationally and do your surrogacy in Colombia or Mexico at a significant cost savings - without giving up the embryos you've worked so hard to create.\n\nHere's a quick breakdown:\n- United States: $150,000 and up (surrogate compensation, agency fee, legal, insurance)\n- Mexico: around $100,000 all-in\n- Colombia: starting from $65,000 all-in - our most popular option\n\nColombia has become the go-to for many of our families. The legal process is straightforward, you only need to stay a few weeks after the baby is born, and we have agencies there we trust completely.\n\nWith all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`
             : `Something worth knowing before we dive in: international surrogacy programs can include everything - IVF, egg donor, AND surrogate - all in one package, at a fraction of what you'd pay in the US.\n\nHere's a quick comparison:\n- United States: $150,000+ for surrogacy alone (IVF and egg donor are separate additional costs)\n- Mexico: around $100,000 for a complete program including IVF, egg donor, and surrogate\n- Colombia: starting from $65,000 for a complete program - our most popular option\n\nColombia's program is particularly well-regarded. The agencies we work with there have delivered hundreds of healthy babies, the legal process is clean, and you only need to stay a few weeks after birth.\n\nWith all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`;
-          const transitionText = needsHelpFindingClinic
-            ? `Got it! Now let's focus on finding the right IVF clinic for you.\n\nHow old are you?`
-            : `Got it! Now let's find you the perfect surrogate.\n\n${d1TextFull}`;
+          // INTERNATIONAL SURROGACY EARLY COUNTRY GATE: this bypass fires only
+          // when the parent needs a surrogate, so D1 must come BEFORE any
+          // Cycle A clinic question per ai-prompt-defaults.ts:526-534. If
+          // parent picks USA in D1, the state machine will run Cycle A
+          // afterward; if international-only, Cycle A is skipped entirely.
+          const transitionLead = needsHelpFindingClinic
+            ? `Got it! Before we look at clinics, here's something important about your surrogacy:`
+            : `Got it! Now let's find you the perfect surrogate.`;
+          const transitionText = `${transitionLead}\n\n${d1TextFull}`;
           finalContent = transitionText;
           sse.sendToken(transitionText);
           serverBypassServed = true;

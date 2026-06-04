@@ -551,10 +551,32 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
   }
 
   // ===========================================================================
+  // INTERNATIONAL SURROGACY EARLY COUNTRY GATE
+  // When parent needs BOTH a clinic AND a surrogate, D1 (international country
+  // selection) MUST fire before any Cycle A clinic question - otherwise we
+  // waste questions asking about US clinic preferences when the parent might
+  // pick Mexico/Colombia (which bundles the IVF clinic and skips US clinics
+  // entirely). See ai-prompt-defaults.ts:526-534 for the canonical rule.
+  // ===========================================================================
+  const needsBothClinicAndSurrogate = needsHelpFindingClinic
+    && (needsSurrogate || registeredForSurrogate)
+    && !alreadyHasSurrogate;
+  const d1AlreadyAsked = aiAsked(chatHistory, /which countries are you open to for your surrogacy|colombia.*mexico.*surrogate/i);
+  const surrogateCountriesRaw: string = profile?.surrogateCountries || "";
+  const usaSelected = /usa|united states/i.test(surrogateCountriesRaw)
+    || userSaid(allUserMessages, /\busa\b|united states/i);
+  // After D1 is answered, international-only (no USA) means Cycle A is skipped.
+  const internationalOnly = d1AlreadyAsked
+    && !!surrogateCountriesRaw
+    && !usaSelected;
+  // Skip Cycle A until D1 is answered when parent needs both.
+  const skipClinicCycleForD1 = needsBothClinicAndSurrogate && !d1AlreadyAsked;
+
+  // ===========================================================================
   // PHASE 3A: CLINIC CYCLE (only if needsHelpFindingClinic)
   // ===========================================================================
 
-  if (needsHelpFindingClinic) {
+  if (needsHelpFindingClinic && !skipClinicCycleForD1 && !internationalOnly) {
     const currentYear = new Date().getFullYear();
 
     // A1: Age
@@ -657,22 +679,22 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
     // explicitly (silent save) and already has a clinic, so neither bypass
     // fires. Without this, Tier 1 Gemini takes over and asks the wrong cycle.
     //
-    // Also gated on (needsHelpFindingClinic ? a_curation already sent : true) -
-    // if the clinic A-cycle is still in progress, let it finish first so we
-    // don't intersperse A-questions and D-questions.
+    // D1 fires before Cycle A when parent needs both (see
+    // INTERNATIONAL SURROGACY EARLY COUNTRY GATE above). Allow D1 if:
+    //   (a) parent doesn't need Cycle A at all (!needsHelpFindingClinic), OR
+    //   (b) parent needs both and we're skipping Cycle A pending D1, OR
+    //   (c) Cycle A is already done (A curation was sent).
     const aCurationSent = aiAsked(chatHistory, /shall i find your perfect clinic matches|perfect clinic matches/i);
-    const clinicCycleDone = !needsHelpFindingClinic || aCurationSent;
-    const d1Asked = aiAsked(chatHistory, /which countries are you open to for your surrogacy|colombia.*mexico.*surrogate/i);
-    if (clinicCycleDone && !d1Asked) {
+    const clinicCycleDone = !needsHelpFindingClinic || skipClinicCycleForD1 || aCurationSent;
+    if (clinicCycleDone && !d1AlreadyAsked) {
       const d1Text = hasEmbryos ? D1_HAS_EMBRYOS : D1_NO_EMBRYOS;
       return { step: "d1_countries", text: d1Text };
     }
 
     // D2: Termination preference (skip if parent did NOT select USA in D1)
-    const d1Answered = d1Asked; // alias for downstream readability
-    const surrogateCountries: string = profile?.surrogateCountries || "";
-    const selectedUSA = /usa|united states/i.test(surrogateCountries)
-      || userSaid(allUserMessages, /\busa\b|united states/i);
+    const d1Answered = d1AlreadyAsked; // alias for downstream readability
+    const surrogateCountries: string = surrogateCountriesRaw;
+    const selectedUSA = usaSelected;
 
     // Declared at the OUTER scope so the D CURATION check below (line ~674) can read it.
     // Previously this was a `const d2Asked` inside the `if (d1Answered && selectedUSA)`
