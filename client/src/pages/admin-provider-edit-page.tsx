@@ -975,8 +975,8 @@ export default function AdminProviderEditPage() {
                   </div>
                 )}
 
-                {/* Search input with autocomplete dropdown */}
-                <div className="relative max-w-md">
+                {/* Search input with inline results (inline avoids clipping by the Card's overflow-hidden) */}
+                <div className="max-w-md">
                   <Input
                     type="text"
                     value={partnerClinicSearch}
@@ -985,7 +985,7 @@ export default function AdminProviderEditPage() {
                     data-testid="input-partner-clinic-search"
                   />
                   {partnerClinicSearch.trim() && (
-                    <ul className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-[var(--container-radius)] border border-border bg-background shadow-md">
+                    <ul className="mt-1 w-full max-h-64 overflow-y-auto rounded-[var(--container-radius)] border border-border bg-background shadow-md">
                       {(() => {
                         const q = partnerClinicSearch.trim().toLowerCase();
                         const matches = (allIvfClinics || [])
