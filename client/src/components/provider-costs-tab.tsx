@@ -602,26 +602,40 @@ function ProgramConfirmIconButton({
   const classificationMutation = useMutation({
     mutationFn: (payload: { isFixedCost?: boolean; confirm?: boolean }) =>
       apiRequest("PATCH", `/api/costs/sheet/${latestSheet!.id}/classification`, payload),
-    onSuccess: invalidateRowAndSheet,
+    onSuccess: (_data, vars) => {
+      invalidateRowAndSheet();
+      // Explicit success feedback - the icon's color change alone is too
+      // subtle for the user to register that the click did anything, so we
+      // surface a toast on the confirm action specifically.
+      if (vars?.confirm === true) {
+        toast({
+          title: "Classification confirmed",
+          description: "This sheet's Fixed-Cost classification is locked in.",
+        });
+      }
+    },
     onError: (err: any) => toast({ title: "Failed to save classification", description: err.message, variant: "destructive" }),
   });
 
   if (!latestSheet) return null;
 
   if (isConfirmed) {
-    // Decorative state: clinic already confirmed. Tooltip explains why the
-    // icon is here and visually-disabled. Same footprint as the action
-    // buttons so the row layout doesn't shift when state changes.
+    // Decorative state: clinic already confirmed. Now visually distinct from
+    // the clickable needs-confirm state - a SOLID green circle background
+    // with a white check inside, vs. the needs-confirm state which is a
+    // simple ghost icon. Previously both states rendered the same green
+    // check on a transparent background, so clicking confirm did nothing
+    // visible even though the DB and cache had updated correctly.
     return (
       <Button
         size="sm"
         variant="ghost"
-        className="h-7 w-7 p-0 text-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success))]/10 cursor-default"
+        className="h-7 w-7 p-0 rounded-full bg-[hsl(var(--brand-success))] text-white hover:bg-[hsl(var(--brand-success))]/90 cursor-default flex items-center justify-center"
         title="Classification confirmed by the clinic"
         onClick={(e) => e.stopPropagation()}
         data-testid={`top-confirmed-${program.id}`}
       >
-        <Check className="w-4 h-4" />
+        <Check className="w-4 h-4 stroke-[3]" />
       </Button>
     );
   }
