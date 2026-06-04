@@ -258,11 +258,24 @@ export class CostsService {
     // taxonomy (surrogacy / sperm bank). Persist as null in those cases.
     const persistedTab = proposal.tab && (proposal.tab as string).length > 0 ? proposal.tab : null;
     const persistedSubType = proposal.subType && (proposal.subType as string).length > 0 ? proposal.subType : null;
+
+    // Derive the canonical subTypes[] coverage array from the legacy
+    // (serviceTypes, subType) pair using the same rules as the migration
+    // backfill (20260603_cost_sheet_multi_subtypes). Without this the
+    // multi-toggle UI on the program row stays blank even after the AI
+    // correctly classifies a sheet as e.g. ["surrogacy"]. The UI reads
+    // subTypes[], not the legacy serviceTypes.
+    const derivedSubTypes = this.deriveSubTypesLeaves(
+      proposal.serviceTypes ?? [],
+      persistedSubType,
+    );
+
     await this.prisma.providerCostSheet.update({
       where: { id: sheetId },
       data: {
         tab: persistedTab,
         subType: persistedSubType,
+        subTypes: derivedSubTypes,
         isFixedCost: proposal.isFixedCost,
         isFixedCostSource: "ai_proposed",
       },
@@ -293,12 +306,70 @@ export class CostsService {
       // provider may have edited tags by hand.
       if (proposal.serviceTypes && proposal.serviceTypes.length > 0 && (!program?.serviceTypes || program.serviceTypes.length === 0)) {
         data.serviceTypes = proposal.serviceTypes;
+        // Mirror onto the canonical subTypes[] using the same derivation
+        // we ran on the sheet. Without this the multi-toggle UI on the
+        // program row stays blank even when serviceTypes is correct.
+        data.subTypes = derivedSubTypes;
       }
       await this.prisma.costProgram.update({
         where: { id: sheet.programId },
         data,
       });
     }
+  }
+
+  /**
+   * Derive the canonical subTypes[] coverage array from the legacy
+   * (serviceTypes, subType) pair. Mirrors the SQL rules in the
+   * 20260603_cost_sheet_multi_subtypes migration so freshly-saved AI
+   * classifications populate the array the way the migration would
+   * have backfilled them.
+   *
+   *   IVF clinic   - subType is already one of the 14 IVF leaf ids
+   *   surrogacy    - emit "surrogacy"
+   *   sperm_donor  - emit "sperm_donor"
+   *   egg_donor + fresh  - emit "egg_donor_fresh"
+   *   egg_donor + frozen - emit "egg_donor_frozen"
+   *   egg_donor + null   - emit BOTH (conservatively cover both, admin
+   *                        can narrow later)
+   */
+  private deriveSubTypesLeaves(
+    serviceTypes: string[],
+    subType: string | null,
+  ): string[] {
+    const leaves = new Set<string>();
+
+    // IVF leaf: the legacy subType IS the leaf id when it matches one of
+    // the IVF taxonomy prefixes.
+    if (
+      subType &&
+      (subType.startsWith("ivf_") ||
+        subType.startsWith("embryo_") ||
+        subType.startsWith("fet_") ||
+        subType.startsWith("shipping_") ||
+        subType.startsWith("egg_freezing_"))
+    ) {
+      leaves.add(subType);
+    }
+
+    // Non-IVF leaves derived from serviceTypes.
+    if (serviceTypes.includes("surrogacy")) leaves.add("surrogacy");
+    if (serviceTypes.includes("sperm_donor")) leaves.add("sperm_donor");
+
+    if (serviceTypes.includes("egg_donor")) {
+      if (subType === "fresh") {
+        leaves.add("egg_donor_fresh");
+      } else if (subType === "frozen") {
+        leaves.add("egg_donor_frozen");
+      } else {
+        // Egg donor with no fresh/frozen distinction - conservatively
+        // cover both leaves so the matcher still finds the program.
+        leaves.add("egg_donor_fresh");
+        leaves.add("egg_donor_frozen");
+      }
+    }
+
+    return Array.from(leaves);
   }
 
   /**
