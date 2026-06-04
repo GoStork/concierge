@@ -3314,63 +3314,101 @@ function ProgramsView({
                 }
               }}
             >
-              {isEditing ? (
-                <>
-                  <div className="flex-1 grid grid-cols-2 gap-3">
-                    <Input
-                      value={formName}
-                      onChange={(e) => setFormName(e.target.value)}
-                      placeholder="Program name"
-                      className="h-8 text-sm"
-                    />
-                    <SingleCountryAutocompleteInput
-                      value={formCountry}
-                      onChange={setFormCountry}
-                      placeholder="Country"
-                    />
-                  </div>
-                  <Button
-                    size="sm"
-                    disabled={!formName.trim() || !formCountry.trim() || updateMutation.isPending}
-                    onClick={() => updateMutation.mutate({ id: program.id, name: formName.trim(), country: formCountry.trim() })}
-                  >
-                    {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={cancelEdit}>
-                    <X className="w-4 h-4" />
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <div className="flex-1 flex items-center gap-2 flex-wrap">
-                    <span className="font-medium text-sm">{program.name}</span>
-                    <Badge variant="outline" className="text-xs flex items-center gap-1">
-                      {getCountryFlag(program.country)
-                        ? <span>{getCountryFlag(program.country)}</span>
-                        : <Globe className="w-3 h-3" />}
-                      {program.country}
-                    </Badge>
-                    {/* Consolidated classification controls: Coverage
-                        toggles (Surrogacy / Fresh Donor / Frozen Egg /
-                        Sperm Donor / IVF) + Program type popover (only
-                        when IVF is selected) + Fixed/Not Fixed segmented
-                        toggle + Confirm button or Confirmed badge. All
-                        live in the top bar so admins don't need to expand
-                        the program to classify it. */}
-                    <ProgramClassificationControls
-                      program={program}
-                      providerId={providerId}
-                      allowedServiceTags={allowedServiceTags}
-                      providerType={providerType}
-                    />
-                    <ProgramTotalBadge program={program} />
-                    {isAdminView && program.latestSheetStatus === "PENDING" && (
-                      <Badge className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/40 border">
-                        Pending Review
+              <>
+                {/* Edit mode keeps the same inline row layout as view mode -
+                    just swaps the program-name span and the country chip
+                    for editable controls in their original positions. The
+                    classification toggles, total badge, and pending badge
+                    stay visible so admins don't lose context when renaming. */}
+                <div
+                  className="flex-1 flex items-center gap-2 flex-wrap"
+                  onClick={isEditing ? (e) => e.stopPropagation() : undefined}
+                >
+                  {isEditing ? (
+                    <>
+                      <Input
+                        value={formName}
+                        onChange={(e) => setFormName(e.target.value)}
+                        placeholder="Program name"
+                        className="h-7 text-sm w-56"
+                        data-testid={`input-program-name-${program.id}`}
+                      />
+                      <div className="w-44">
+                        <SingleCountryAutocompleteInput
+                          value={formCountry}
+                          onChange={setFormCountry}
+                          placeholder="Country"
+                          data-testid={`input-program-country-${program.id}`}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-medium text-sm">{program.name}</span>
+                      <Badge variant="outline" className="text-xs flex items-center gap-1">
+                        {getCountryFlag(program.country)
+                          ? <span>{getCountryFlag(program.country)}</span>
+                          : <Globe className="w-3 h-3" />}
+                        {program.country}
                       </Badge>
-                    )}
-                  </div>
-                  {(isAdminView || canManagePrograms) && (
+                    </>
+                  )}
+                  {/* Consolidated classification controls: Coverage
+                      toggles (Surrogacy / Fresh Donor / Frozen Egg /
+                      Sperm Donor / IVF) + Program type popover (only
+                      when IVF is selected) + Fixed/Not Fixed segmented
+                      toggle + Confirm button or Confirmed badge. All
+                      live in the top bar so admins don't need to expand
+                      the program to classify it. Kept visible in edit
+                      mode so the admin doesn't lose context while
+                      renaming. */}
+                  <ProgramClassificationControls
+                    program={program}
+                    providerId={providerId}
+                    allowedServiceTags={allowedServiceTags}
+                    providerType={providerType}
+                  />
+                  <ProgramTotalBadge program={program} />
+                  {isAdminView && program.latestSheetStatus === "PENDING" && (
+                    <Badge className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/40 border">
+                      Pending Review
+                    </Badge>
+                  )}
+                </div>
+                {isEditing ? (
+                  <>
+                    {/* Save / Cancel replace the Pencil in-place. Trash and
+                        chevron stay on the right edge so the row's
+                        controls don't shift around between modes. */}
+                    <Button
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      disabled={!formName.trim() || !formCountry.trim() || updateMutation.isPending}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateMutation.mutate({ id: program.id, name: formName.trim(), country: formCountry.trim() });
+                      }}
+                      data-testid={`btn-save-program-${program.id}`}
+                    >
+                      {updateMutation.isPending
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <Check className="w-3.5 h-3.5" />}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        cancelEdit();
+                      }}
+                      data-testid={`btn-cancel-program-${program.id}`}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </Button>
+                  </>
+                ) : (
+                  (isAdminView || canManagePrograms) && (
                     <>
                       <Button
                         size="sm"
@@ -3411,13 +3449,13 @@ function ProgramsView({
                         </AlertDialogContent>
                       </AlertDialog>
                     </>
-                  )}
-                  {/* Chevron is purely visual now - the whole row toggles. */}
-                  <div className="h-7 w-7 flex items-center justify-center text-muted-foreground" aria-hidden>
-                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                  </div>
-                </>
-              )}
+                  )
+                )}
+                {/* Chevron is purely visual now - the whole row toggles. */}
+                <div className="h-7 w-7 flex items-center justify-center text-muted-foreground" aria-hidden>
+                  {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </div>
+              </>
             </div>
 
             {isExpanded && (
