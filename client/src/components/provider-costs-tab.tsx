@@ -385,25 +385,31 @@ function ProgramClassificationControls({
   const hasInteracted = latestSheet?.isFixedCost != null;
   const setHasInteracted = (_v: boolean) => { /* no-op; see comment above */ };
 
+  // Invalidations target every query the row depends on:
+  //   - /api/costs/programs - the ProgramsView programs list (where this
+  //     row's latestSheet status comes from). Previously this was the
+  //     /api/costs/provider/.../programs key, which DOES NOT EXIST as a
+  //     real query - so the cache never busted and the row stayed on
+  //     "Confirm Classification" until the user reloaded.
+  //   - /api/costs/provider/.../sheets and /approved - SingleCostsTab's
+  //     queries inside the expanded program body, in case the user has
+  //     it open.
+  const invalidateRowAndSheet = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/costs/programs"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId], exact: false });
+  };
+
   const updateSubTypesMutation = useMutation({
     mutationFn: ({ subTypes }: { subTypes: string[] }) =>
       apiRequest("PATCH", `/api/costs/programs/${program.id}`, { subTypes }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "programs"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "sheets"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "approved"] });
-    },
+    onSuccess: invalidateRowAndSheet,
     onError: (err: any) => toast({ title: "Failed to update coverage", description: err.message, variant: "destructive" }),
   });
 
   const classificationMutation = useMutation({
     mutationFn: (payload: { isFixedCost?: boolean; confirm?: boolean }) =>
       apiRequest("PATCH", `/api/costs/sheet/${latestSheet!.id}/classification`, payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "programs"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "sheets"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId, "approved"] });
-    },
+    onSuccess: invalidateRowAndSheet,
     onError: (err: any) => toast({ title: "Failed to save classification", description: err.message, variant: "destructive" }),
   });
 
