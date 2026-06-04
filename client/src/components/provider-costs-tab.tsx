@@ -524,59 +524,111 @@ function ProgramClassificationControls({
       )}
       </div>
 
-      {/* Slot 4: Confirm Classification button (needs-confirm state)
-          OR Confirmed badge. Natural width with flex-shrink-0; the
-          "Confirm Classification" button is fixed-length and the
-          "Confirmed" badge is even shorter, so widths are consistent
-          across rows for a given state. */}
-      <div className="flex items-center flex-shrink-0">
-        {latestSheet && needsConfirm && (
-          // Label shortened from "Confirm Classification" -> "Confirm" so the
-          // button stops getting clipped by the row's overflow-hidden wrapper
-          // when the total column (e.g. "$166,910 - $171,910 (draft)") eats
-          // the remaining horizontal space. The Check icon + the surrounding
-          // Fixed-Cost / Not Fixed Costs controls convey the action without
-          // the longer label. flex-shrink-0 + whitespace-nowrap keep it from
-          // collapsing further if a future row is even tighter.
-          <Button
-            size="sm"
-            className="h-8 text-xs font-semibold shadow-md flex-shrink-0 whitespace-nowrap"
-            disabled={
-              classificationMutation.isPending ||
-              !hasInteracted ||
-              latestSheet.isFixedCost === null
-            }
-            title={
-              latestSheet.isFixedCost === null || !hasInteracted
-                ? "Click Fixed-Cost or Not Fixed Costs first to acknowledge the AI's choice"
-                : "Confirm classification"
-            }
-            onClick={(e) => {
-              e.stopPropagation();
-              classificationMutation.mutate({ isFixedCost: latestSheet.isFixedCost ?? false, confirm: true });
-            }}
-            data-testid={`top-confirm-${program.id}`}
-          >
-            {classificationMutation.isPending
-              ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-              : <Check className="w-3.5 h-3.5 mr-1.5" />}
-            Confirm
-          </Button>
-        )}
-        {latestSheet && latestSheet.isFixedCostSource === "clinic_confirmed" && (
-          // Icon-only badge: the wide total range ("$166,910 - $171,910 (draft)")
-          // was bleeding into the "Confirmed" text label. A circular green check
-          // conveys the same state in a fraction of the width and never collides
-          // with a wide total. The `title` keeps it accessible / hoverable.
-          <Badge
-            className="h-8 w-8 p-0 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] border-[hsl(var(--brand-success))]/30 flex items-center justify-center flex-shrink-0"
-            title="Classification confirmed"
-          >
-            <Check className="w-4 h-4" />
-          </Badge>
-        )}
-      </div>
+      {/* The Confirm button + Confirmed badge used to live here as Slot 4,
+          but the flex-1 / overflow-hidden wrapper that holds this whole
+          control bar kept clipping the button whenever the program's total
+          column was wide (e.g. "$30,600 (draft)" or "$166,910 - $171,910
+          (draft)"). Moved to ProgramConfirmIconButton, which is rendered
+          OUTSIDE the flex-1 wrapper as a sibling of the Pencil / Trash /
+          Chevron action icons, so the action area always has reserved
+          horizontal space and the icon can never get cut off. */}
     </>
+  );
+}
+
+// Compact icon-only button for confirming the AI's Fixed-Cost vs Not-Fixed
+// classification. Renders three visual states from the latest sheet:
+//   - clinic_confirmed -> filled green-tinted check (disabled, decorative)
+//   - ai_proposed/null + a Fixed-Cost choice picked -> solid green primary
+//     button you can click to confirm
+//   - ai_proposed/null + no Fixed-Cost choice yet -> muted disabled button
+//     with a tooltip telling the clinic to click Fixed-Cost or Not Fixed
+//     Costs first
+// Hover tooltip explains the current action in plain English so the icon
+// is never cryptic. Lives in the action-icon group (next to Pencil/Trash/
+// Chevron) so it gets the same reserved width as the other icon buttons
+// and can't be clipped by the row's overflow-hidden wrapper.
+function ProgramConfirmIconButton({
+  program,
+  providerId,
+}: {
+  program: CostProgram;
+  providerId: string;
+}) {
+  const { toast } = useToast();
+  const latestSheet = program.latestSheet ?? null;
+  const needsConfirm =
+    latestSheet?.isFixedCostSource === "ai_proposed" ||
+    latestSheet?.isFixedCostSource == null ||
+    latestSheet?.legacyNeedsReview === true;
+  const isConfirmed = latestSheet?.isFixedCostSource === "clinic_confirmed";
+  const hasInteracted = latestSheet?.isFixedCost != null;
+
+  const invalidateRowAndSheet = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/costs/programs"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId], exact: false });
+  };
+
+  const classificationMutation = useMutation({
+    mutationFn: (payload: { isFixedCost?: boolean; confirm?: boolean }) =>
+      apiRequest("PATCH", `/api/costs/sheet/${latestSheet!.id}/classification`, payload),
+    onSuccess: invalidateRowAndSheet,
+    onError: (err: any) => toast({ title: "Failed to save classification", description: err.message, variant: "destructive" }),
+  });
+
+  if (!latestSheet) return null;
+
+  if (isConfirmed) {
+    // Decorative state: clinic already confirmed. Tooltip explains why the
+    // icon is here and visually-disabled. Same footprint as the action
+    // buttons so the row layout doesn't shift when state changes.
+    return (
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 w-7 p-0 text-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success))]/10 cursor-default"
+        title="Classification confirmed by the clinic"
+        onClick={(e) => e.stopPropagation()}
+        data-testid={`top-confirmed-${program.id}`}
+      >
+        <Check className="w-4 h-4" />
+      </Button>
+    );
+  }
+
+  if (!needsConfirm) return null;
+
+  // Disabled until the clinic acknowledges the AI's Fixed-Cost / Not Fixed
+  // Costs choice by clicking one of the two toggles in the control bar.
+  // We keep the icon visible so the clinic understands an action is
+  // pending; the tooltip explains the gate.
+  const disabled = classificationMutation.isPending || !hasInteracted;
+  const titleText = !hasInteracted
+    ? "Click Fixed-Cost or Not Fixed Costs first to confirm the AI's classification"
+    : "Confirm classification";
+
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className={cn(
+        "h-7 w-7 p-0",
+        disabled
+          ? "text-muted-foreground/60"
+          : "text-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success))]/10",
+      )}
+      disabled={disabled}
+      title={titleText}
+      onClick={(e) => {
+        e.stopPropagation();
+        classificationMutation.mutate({ isFixedCost: latestSheet.isFixedCost ?? false, confirm: true });
+      }}
+      data-testid={`top-confirm-${program.id}`}
+    >
+      {classificationMutation.isPending
+        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        : <Check className="w-4 h-4" />}
+    </Button>
   );
 }
 
@@ -3490,6 +3542,12 @@ function ProgramsView({
                 ) : (
                   (isAdminView || canManagePrograms) && (
                     <>
+                      {/* Confirm-classification icon. Sits in the reserved
+                          action-icon space (sibling of Pencil/Trash/Chevron)
+                          so a wide total column can never clip it like it
+                          could when this button lived inside the flex-1
+                          overflow-hidden wrapper. */}
+                      <ProgramConfirmIconButton program={program} providerId={providerId} />
                       <Button
                         size="sm"
                         variant="ghost"
