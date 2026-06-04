@@ -434,42 +434,59 @@ function ProgramClassificationControls({
 
   return (
     <>
-      {/* Coverage toggles (multi-select pills). */}
-      {visibleLeaves.length > 0 && (
-        <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm flex-wrap items-center">
-          {visibleLeaves.map(leaf => {
-            const selected = leaf.id === "ivf" ? ivfOn : current.includes(leaf.id);
-            return (
-              <button
-                key={`cov-${program.id}-${leaf.id}`}
-                type="button"
-                onClick={(e) => { e.stopPropagation(); toggleLeaf(leaf.id); }}
-                className={cn(
-                  "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium",
-                  selected ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
-                )}
-                data-testid={`top-leaf-${program.id}-${leaf.id}`}
-              >
-                {leaf.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {/* Each section is wrapped in a fixed-width "slot" so the rows in
+          the programs list visually line up column-by-column - the
+          coverage toggle on row N sits at the same horizontal position
+          as the coverage toggle on row N+1, regardless of program name
+          length, presence of the IVF program-type popover, or total
+          badge width. Without these slots the flexbox right-edge
+          alignment of the trailing group shifted everything sideways
+          per row based on each row's total amount. */}
 
-      {/* Program type popover - only when IVF is selected. */}
-      {ivfOn && (
-        <div onClick={(e) => e.stopPropagation()}>
-          <IvfSubtypePopover
-            currentSubType={currentIvfSubtype}
-            onSelect={setIvfSubtype}
-          />
-        </div>
-      )}
+      {/* Slot 1: Coverage (multi-select pills) + IVF program type popover
+          when applicable. Fixed at w-[18rem] - fits 3-chip coverage
+          (Surrogacy / Fresh Donor / Frozen Egg / Sperm Donor / IVF)
+          plus the popover comfortably; narrower providers leave empty
+          space on the right of the slot, which keeps cost/confirm
+          aligned across rows. */}
+      <div className="w-[18rem] flex items-center gap-2 flex-shrink-0">
+        {visibleLeaves.length > 0 && (
+          <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm flex-wrap items-center">
+            {visibleLeaves.map(leaf => {
+              const selected = leaf.id === "ivf" ? ivfOn : current.includes(leaf.id);
+              return (
+                <button
+                  key={`cov-${program.id}-${leaf.id}`}
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); toggleLeaf(leaf.id); }}
+                  className={cn(
+                    "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium",
+                    selected ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
+                  )}
+                  data-testid={`top-leaf-${program.id}-${leaf.id}`}
+                >
+                  {leaf.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {ivfOn && (
+          <div onClick={(e) => e.stopPropagation()}>
+            <IvfSubtypePopover
+              currentSubType={currentIvfSubtype}
+              onSelect={setIvfSubtype}
+            />
+          </div>
+        )}
+      </div>
 
-      {/* Fixed-Cost / Not Fixed segmented toggle. */}
-      {latestSheet && (
-        <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm" onClick={(e) => e.stopPropagation()}>
+      {/* Slot 2: Cost (Fixed-Cost / Not Fixed Costs segmented toggle).
+          Fixed at w-[11rem] - the 2-button segmented toggle is the same
+          width for every program, so this is the most consistent column. */}
+      <div className="w-[11rem] flex items-center flex-shrink-0">
+        {latestSheet && (
+          <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm" onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
             className={cn(
@@ -496,44 +513,47 @@ function ProgramClassificationControls({
           </button>
         </div>
       )}
+      </div>
 
-      {/* Confirm Classification button (needs-confirm state) OR Confirmed
-          badge. Always rendered while needsConfirm is true so the clinic
-          can see the action exists; disabled until they pick Fixed-Cost
-          or Not Fixed Costs (the tooltip explains why). Previously hidden
-          until isFixedCost was set, which hid the entire confirmation
-          step from anyone who hadn't already clicked a toggle. */}
-      {latestSheet && needsConfirm && (
-        <Button
-          size="sm"
-          className="h-8 text-xs font-semibold shadow-md"
-          disabled={
-            classificationMutation.isPending ||
-            !hasInteracted ||
-            latestSheet.isFixedCost === null
-          }
-          title={
-            latestSheet.isFixedCost === null || !hasInteracted
-              ? "Click Fixed-Cost or Not Fixed Costs first to acknowledge the AI's choice"
-              : undefined
-          }
-          onClick={(e) => {
-            e.stopPropagation();
-            classificationMutation.mutate({ isFixedCost: latestSheet.isFixedCost ?? false, confirm: true });
-          }}
-          data-testid={`top-confirm-${program.id}`}
-        >
-          {classificationMutation.isPending
-            ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-            : <Check className="w-3.5 h-3.5 mr-1.5" />}
-          Confirm Classification
-        </Button>
-      )}
-      {latestSheet && latestSheet.isFixedCostSource === "clinic_confirmed" && (
-        <Badge className="h-8 px-3 bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] border-[hsl(var(--brand-success))]/30 text-xs flex items-center">
-          <Check className="w-3.5 h-3.5 mr-1.5" />Confirmed
-        </Badge>
-      )}
+      {/* Slot 3: Confirm Classification button (needs-confirm state)
+          OR Confirmed badge. Fixed at w-[12rem] to fit the longer
+          "Confirm Classification" button label; the much narrower
+          "Confirmed" badge sits left-aligned inside the slot, which
+          keeps the next column (total) at a consistent position
+          whether the program is still proposed or already confirmed. */}
+      <div className="w-[12rem] flex items-center flex-shrink-0">
+        {latestSheet && needsConfirm && (
+          <Button
+            size="sm"
+            className="h-8 text-xs font-semibold shadow-md"
+            disabled={
+              classificationMutation.isPending ||
+              !hasInteracted ||
+              latestSheet.isFixedCost === null
+            }
+            title={
+              latestSheet.isFixedCost === null || !hasInteracted
+                ? "Click Fixed-Cost or Not Fixed Costs first to acknowledge the AI's choice"
+                : undefined
+            }
+            onClick={(e) => {
+              e.stopPropagation();
+              classificationMutation.mutate({ isFixedCost: latestSheet.isFixedCost ?? false, confirm: true });
+            }}
+            data-testid={`top-confirm-${program.id}`}
+          >
+            {classificationMutation.isPending
+              ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              : <Check className="w-3.5 h-3.5 mr-1.5" />}
+            Confirm Classification
+          </Button>
+        )}
+        {latestSheet && latestSheet.isFixedCostSource === "clinic_confirmed" && (
+          <Badge className="h-8 px-3 bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] border-[hsl(var(--brand-success))]/30 text-xs flex items-center">
+            <Check className="w-3.5 h-3.5 mr-1.5" />Confirmed
+          </Badge>
+        )}
+      </div>
     </>
   );
 }
@@ -3344,12 +3364,12 @@ function ProgramsView({
                     </>
                   ) : (
                     <>
-                      {/* min-w-0 + truncate so a long program name doesn't
-                          push the classification chips, total, and action
-                          buttons off the end of the row. Everything to the
-                          right of the name keeps flex-shrink-0 so they
-                          always render at full width. */}
-                      <span className="font-medium text-sm truncate min-w-0" title={program.name}>{program.name}</span>
+                      {/* Name column is FIXED width so the country chip
+                          (and every subsequent slot) sits at the same
+                          horizontal position on every row in the list,
+                          regardless of program-name length. Long names
+                          truncate with ellipsis; full text in title. */}
+                      <span className="font-medium text-sm truncate w-56 flex-shrink-0" title={program.name}>{program.name}</span>
                       <Badge variant="outline" className="text-xs flex items-center gap-1 flex-shrink-0">
                         {getCountryFlag(program.country)
                           ? <span>{getCountryFlag(program.country)}</span>
@@ -3358,28 +3378,21 @@ function ProgramsView({
                       </Badge>
                     </>
                   )}
-                  {/* Consolidated classification controls: Coverage
-                      toggles (Surrogacy / Fresh Donor / Frozen Egg /
-                      Sperm Donor / IVF) + Program type popover (only
-                      when IVF is selected) + Fixed/Not Fixed segmented
-                      toggle + Confirm button or Confirmed badge. All
-                      live in the top bar so admins don't need to expand
-                      the program to classify it. Kept visible in edit
-                      mode so the admin doesn't lose context while
-                      renaming. */}
-                  {/* Group the classification controls + total + status
-                      badge into one shrink-locked container so they all
-                      stay rendered at full width on the same line. The
-                      program name to the left takes the squeeze (truncates
-                      with ellipsis) before anything here gets clipped. */}
-                  <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
+                  {/* Fixed-width slots in ProgramClassificationControls
+                      keep coverage / cost / confirm at the same column
+                      positions across rows. The total wrapper below has
+                      its own fixed-width text-right slot so the price
+                      column aligns regardless of how many digits it has. */}
+                  <div className="flex items-center gap-2 flex-shrink-0">
                     <ProgramClassificationControls
                       program={program}
                       providerId={providerId}
                       allowedServiceTags={allowedServiceTags}
                       providerType={providerType}
                     />
-                    <ProgramTotalBadge program={program} />
+                    <div className="w-44 text-right flex-shrink-0">
+                      <ProgramTotalBadge program={program} />
+                    </div>
                     {isAdminView && program.latestSheetStatus === "PENDING" && (
                       <Badge className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/40 border">
                         Pending Review
