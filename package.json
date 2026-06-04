@@ -93,6 +93,7 @@
     "googleapis": "^148.0.0",
     "ical.js": "^2.2.1",
     "input-otp": "^1.4.2",
+    "jsonrepair": "^3.14.0",
     "libphonenumber-js": "^1.12.41",
     "lucide-react": "^0.453.0",
     "mammoth": "^1.12.0",

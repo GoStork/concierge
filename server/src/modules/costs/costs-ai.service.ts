@@ -162,7 +162,19 @@ Return ONLY a valid JSON array with objects having these exact fields:
 
       const model = genAI.getGenerativeModel({
         model: "gemini-3.5-flash",
-        generationConfig: { temperature: 0, maxOutputTokens: 8192 } as any,
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 8192,
+          // JSON mode: Gemini's decoder masks every next-token candidate
+          // against the JSON grammar at inference time, so it can't emit
+          // syntactically broken output - no unescaped quotes, no missing
+          // commas, no trailing commas, no orphan brackets. Root-cause
+          // fix for the position-8119 SyntaxError class of bug. Costs a
+          // tiny bit more latency but means strict JSON.parse succeeds
+          // on the full response and we get to keep the classification
+          // block instead of falling back to per-object recovery.
+          responseMimeType: "application/json",
+        } as any,
       });
 
       const timeoutMs = 120000;
@@ -180,7 +192,19 @@ Return ONLY a valid JSON array with objects having these exact fields:
 
       const model = genAI.getGenerativeModel({
         model: "gemini-3.5-flash",
-        generationConfig: { temperature: 0, maxOutputTokens: 8192 } as any,
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 8192,
+          // JSON mode: Gemini's decoder masks every next-token candidate
+          // against the JSON grammar at inference time, so it can't emit
+          // syntactically broken output - no unescaped quotes, no missing
+          // commas, no trailing commas, no orphan brackets. Root-cause
+          // fix for the position-8119 SyntaxError class of bug. Costs a
+          // tiny bit more latency but means strict JSON.parse succeeds
+          // on the full response and we get to keep the classification
+          // block instead of falling back to per-object recovery.
+          responseMimeType: "application/json",
+        } as any,
       });
 
       const timeoutMs = 120000;
@@ -618,41 +642,61 @@ ${subtypeTrailingNote}`;
       throw new Error("AI did not return valid JSON");
     }
 
+    // Three-layer JSON parsing strategy:
+    //   1. Strict JSON.parse        - succeeds on responseMimeType-constrained
+    //                                  output (our default since this commit).
+    //   2. jsonrepair + JSON.parse  - middle fallback for legacy responses
+    //                                  with the common Gemini quirks (trailing
+    //                                  commas, missing commas between items,
+    //                                  unquoted keys, single quotes). Repairs
+    //                                  most malformed payloads while preserving
+    //                                  the classification block.
+    //   3. Per-object stream parser - last resort. Drops classification, but
+    //                                  rescues whatever item objects parse
+    //                                  cleanly even if the surrounding doc
+    //                                  is unrepairable.
     let parsed: any;
     try {
       parsed = JSON.parse(jsonMatch[0]);
-    } catch (e) {
-      // Gemini periodically emits a syntactically broken full response
-      // (trailing comma, missing comma, broken string escape) even though
-      // most individual item objects inside it are well-formed. The
-      // streaming extractor parses each {...} on its own, so it survives
-      // a flub anywhere outside that object's own boundaries. Recover any
-      // items it could complete; drop the classification block since we
-      // can't reliably extract it from the broken full payload. The clinic
-      // can then classify via the inline toggles instead of starting from
-      // an empty sheet.
-      const recoveredItems = this.extractCompleteItemsFromStream(responseText);
-      const dropped = this._lastDroppedFragments;
-      if (recoveredItems.length > 0) {
+    } catch (strictErr) {
+      // Layer 2: try jsonrepair before falling all the way back to the
+      // per-object parser. Often fixes everything and we keep the
+      // classification, so the AI's subType / isFixedCost guess survives.
+      try {
+        const { jsonrepair } = await import("jsonrepair");
+        const repaired = jsonrepair(jsonMatch[0]);
+        parsed = JSON.parse(repaired);
         this.logger.warn(
-          `parseAndClassify: full-JSON parse failed (${e}); recovered ${recoveredItems.length} items from per-object stream parser, dropping classification`,
+          `parseAndClassify: strict JSON.parse failed (${strictErr}); jsonrepair recovered the full response`,
         );
-        // Log every item the per-object parser had to skip so we can see
-        // in the server log exactly which row Gemini broke. The first
-        // ~120 chars usually carry the category + key, which is enough
-        // to identify the source row in the PDF.
-        if (dropped.length > 0) {
+      } catch (repairErr) {
+        // Layer 3: per-object recovery. Last resort - drops classification
+        // but rescues whatever item objects parsed cleanly during streaming.
+        const recoveredItems = this.extractCompleteItemsFromStream(responseText);
+        const dropped = this._lastDroppedFragments;
+        if (recoveredItems.length > 0) {
           this.logger.warn(
-            `parseAndClassify: dropped ${dropped.length} item(s) the per-object parser could not parse:`,
+            `parseAndClassify: strict + jsonrepair both failed (strict=${strictErr}, repair=${repairErr}); recovered ${recoveredItems.length} items from per-object stream parser, dropping classification`,
           );
-          for (let i = 0; i < dropped.length; i++) {
-            this.logger.warn(`  drop[${i}]: ${dropped[i]}`);
+          // Log every item the per-object parser had to skip so we can see
+          // in the server log exactly which row Gemini broke. The first
+          // ~120 chars usually carry the category + key, which is enough
+          // to identify the source row in the PDF.
+          if (dropped.length > 0) {
+            this.logger.warn(
+              `parseAndClassify: dropped ${dropped.length} item(s) the per-object parser could not parse:`,
+            );
+            for (let i = 0; i < dropped.length; i++) {
+              this.logger.warn(`  drop[${i}]: ${dropped[i]}`);
+            }
           }
+          parsed = { items: recoveredItems };
+        } else {
+          this.logger.error(
+            `parseAndClassify: JSON parse failed and no items recoverable (strict=${strictErr}, repair=${repairErr})`,
+          );
+          throw new Error("Failed to parse AI response as JSON");
         }
-        parsed = { items: recoveredItems };
-      } else {
-        this.logger.error(`parseAndClassify: JSON parse failed and no items recoverable: ${e}`);
-        throw new Error("Failed to parse AI response as JSON");
       }
     }
 
@@ -845,7 +889,19 @@ ${rawTextSnippet ? `\nDocument excerpt (first 1500 chars):\n${rawTextSnippet.sli
     try {
       const model = genAI.getGenerativeModel({
         model: "gemini-3.5-flash",
-        generationConfig: { temperature: 0, maxOutputTokens: 8192 } as any,
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 8192,
+          // JSON mode: Gemini's decoder masks every next-token candidate
+          // against the JSON grammar at inference time, so it can't emit
+          // syntactically broken output - no unescaped quotes, no missing
+          // commas, no trailing commas, no orphan brackets. Root-cause
+          // fix for the position-8119 SyntaxError class of bug. Costs a
+          // tiny bit more latency but means strict JSON.parse succeeds
+          // on the full response and we get to keep the classification
+          // block instead of falling back to per-object recovery.
+          responseMimeType: "application/json",
+        } as any,
       });
       const timeoutMs = 45000;
       const timeoutPromise = new Promise<never>((_, reject) =>
