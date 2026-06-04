@@ -176,9 +176,9 @@ export default function AdminProviderEditPage() {
   });
 
   const { data: allIvfClinics } = useQuery<any[]>({
-    queryKey: ["/api/admin/providers/by-type/ivf-clinic"],
+    queryKey: ["/api/providers/by-type/ivf-clinic"],
     queryFn: async () => {
-      const res = await fetch("/api/admin/providers/by-type/ivf-clinic", { credentials: "include" });
+      const res = await fetch("/api/providers/by-type/ivf-clinic", { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     },
@@ -946,6 +946,41 @@ export default function AdminProviderEditPage() {
               })()}
             </Card>
 
+            {isSurrogacyAgency && (
+              <Card className="p-6 space-y-4">
+                <h3 className="text-lg font-heading flex items-center gap-2">
+                  <Check className="w-5 h-5 text-primary" /> Partner IVF Clinics
+                </h3>
+                <p className="text-xs text-muted-foreground">Link the IVF clinic(s) that operate in the same country as this agency. The AI will combine both providers' matching requirements (and costs) when evaluating parents for this international program.</p>
+                <div className="flex flex-col gap-2 max-w-md">
+                  {(allIvfClinics || []).filter((c: any) => c.id !== id).map((clinic: any) => (
+                    <label key={clinic.id} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={partnerProviderIds.includes(clinic.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) setPartnerProviderIds([...partnerProviderIds, clinic.id]);
+                          else setPartnerProviderIds(partnerProviderIds.filter(pid => pid !== clinic.id));
+                        }}
+                        data-testid={`checkbox-partner-clinic-${clinic.id}`}
+                        className="accent-primary"
+                      />
+                      <span className="text-sm">{clinic.name}</span>
+                      {clinic.locations?.length > 0 && (
+                        <span className="text-xs text-muted-foreground">({clinic.locations.map((l: any) => l.state || l.city).filter(Boolean).slice(0, 2).join(", ")})</span>
+                      )}
+                    </label>
+                  ))}
+                  {!allIvfClinics && (
+                    <p className="text-xs text-muted-foreground italic">Loading IVF clinics...</p>
+                  )}
+                  {allIvfClinics && allIvfClinics.filter((c: any) => c.id !== id).length === 0 && (
+                    <p className="text-xs text-muted-foreground italic">No IVF clinics available to link.</p>
+                  )}
+                </div>
+              </Card>
+            )}
+
             {(isIvfClinic || isSurrogacyAgency) && (
               <Card className="p-6 space-y-6">
                 <h3 className="text-lg font-heading flex items-center gap-2">
@@ -1030,33 +1065,6 @@ export default function AdminProviderEditPage() {
                 {isSurrogacyAgency && (
                   <div className="space-y-4">
                     {isIvfClinic && <div className="border-t border-border pt-4" />}
-                    <div className="space-y-2">
-                      <Label>Partner IVF Clinics</Label>
-                      <p className="text-xs text-muted-foreground">Link the IVF clinic(s) that operate in the same country as this agency. The AI will combine both providers' matching requirements when evaluating parents for this international program.</p>
-                      <div className="flex flex-col gap-2 max-w-md">
-                        {(allIvfClinics || []).filter((c: any) => c.id !== id).map((clinic: any) => (
-                          <label key={clinic.id} className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={partnerProviderIds.includes(clinic.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) setPartnerProviderIds([...partnerProviderIds, clinic.id]);
-                                else setPartnerProviderIds(partnerProviderIds.filter(pid => pid !== clinic.id));
-                              }}
-                              data-testid={`checkbox-partner-clinic-${clinic.id}`}
-                              className="accent-primary"
-                            />
-                            <span className="text-sm">{clinic.name}</span>
-                            {clinic.locations?.length > 0 && (
-                              <span className="text-xs text-muted-foreground">({clinic.locations.map((l: any) => l.state || l.city).filter(Boolean).slice(0, 2).join(", ")})</span>
-                            )}
-                          </label>
-                        ))}
-                        {(!allIvfClinics || allIvfClinics.length === 0) && (
-                          <p className="text-xs text-muted-foreground italic">Loading IVF clinics...</p>
-                        )}
-                      </div>
-                    </div>
                     <div className="space-y-2">
                       <Label>Citizens not allowed (countries)</Label>
                       <div className="max-w-xs">
