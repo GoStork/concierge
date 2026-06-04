@@ -504,11 +504,15 @@ function ProgramClassificationControls({
   pending,
   onPatch,
   allowedServiceTags,
+  needsSubTypes,
+  needsFixedCost,
 }: {
   program: CostProgram;
   pending?: ProgramPending;
   onPatch: (patch: Partial<ProgramPending>) => void;
   allowedServiceTags: string[];
+  needsSubTypes?: boolean;
+  needsFixedCost?: boolean;
 }) {
   const visibleLeaves = leavesForServiceTags(allowedServiceTags);
   // Effective state = pending overlay (if any) on top of server values.
@@ -591,7 +595,10 @@ function ProgramClassificationControls({
             on every row so widths match naturally across rows. */}
         <div className="flex items-center flex-shrink-0">
           {visibleLeaves.length > 0 && (
-            <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm items-center">
+            <div className={cn(
+              "inline-flex gap-1 p-1 bg-background border-2 rounded-[var(--radius)] shadow-sm items-center",
+              needsSubTypes ? "border-destructive" : "border-accent/40",
+            )}>
               {visibleLeaves.map(leaf => {
                 const selected =
                   leaf.id === "ivf" ? ivfOn :
@@ -655,7 +662,13 @@ function ProgramClassificationControls({
           stage into onPatch so the bottom Save bar flushes it. */}
       <div className="flex items-center flex-shrink-0">
         {latestSheet && (
-          <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm" onClick={(e) => e.stopPropagation()}>
+          <div
+            className={cn(
+              "inline-flex gap-1 p-1 bg-background border-2 rounded-[var(--radius)] shadow-sm",
+              needsFixedCost ? "border-destructive" : "border-accent/40",
+            )}
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               type="button"
               className={cn(
@@ -2933,15 +2946,77 @@ function ProgramsView({
   const [isSaving, setIsSaving] = useState(false);
   const hasPending = Object.keys(pendingByProgram).length > 0;
 
+  // Server-state lookup used by the no-op cleanup in updateProgramPending.
+  // Ref so the callback identity stays stable across refetches.
+  const programsDataRef = useRef<CostProgram[]>([]);
+  useEffect(() => {
+    if (Array.isArray(programsQuery.data)) programsDataRef.current = programsQuery.data;
+  });
+
   const updateProgramPending = useCallback((id: string, patch: Partial<ProgramPending>) => {
     setPendingByProgram(prev => {
-      const next = { ...prev[id], ...patch };
-      // Clean up the entry entirely if every staged field matches the
-      // server value again (admin toggled and untoggled). Keeps the
-      // "X unsaved" badge honest.
-      return { ...prev, [id]: next };
+      const merged: ProgramPending = { ...prev[id], ...patch };
+      // Strip any staged field that now equals the server value again.
+      // Without this, e.g. clicking the same Fixed-Cost pill that's already
+      // selected re-stages a no-op and the sticky "X unsaved" bar refuses
+      // to clear after Save (the server PATCH succeeds, then the next
+      // render fires an onChange that re-stages the same value).
+      const program = programsDataRef.current.find(p => p.id === id);
+      if (program) {
+        if (merged.name !== undefined && merged.name === program.name) delete merged.name;
+        if (merged.country !== undefined && merged.country === program.country) delete merged.country;
+        if (merged.subTypes !== undefined) {
+          const server = program.subTypes ?? [];
+          const same = merged.subTypes.length === server.length
+            && merged.subTypes.every(s => server.includes(s));
+          if (same) delete merged.subTypes;
+        }
+        if (merged.isFixedCost !== undefined) {
+          const server = program.latestSheet?.isFixedCost ?? null;
+          if (merged.isFixedCost === server) delete merged.isFixedCost;
+        }
+      }
+      if (Object.keys(merged).length === 0) {
+        const { [id]: _drop, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [id]: merged };
     });
   }, []);
+
+  // Validation: returns the human-readable list of required fields the admin
+  // still needs to fill for this program. Empty array = ready to save.
+  const validateProgramForSave = useCallback((program: CostProgram, pending: ProgramPending | undefined): string[] => {
+    const missing: string[] = [];
+    const effectiveName = pending?.name !== undefined ? pending.name : program.name;
+    const effectiveCountry = pending?.country !== undefined ? pending.country : program.country;
+    const effectiveSubTypes = pending?.subTypes !== undefined ? pending.subTypes : (program.subTypes ?? []);
+    const effectiveIsFixedCost = pending?.isFixedCost !== undefined
+      ? pending.isFixedCost
+      : (program.latestSheet?.isFixedCost ?? null);
+    if (!effectiveName || !effectiveName.trim()) missing.push("Program name");
+    if (!effectiveCountry || !effectiveCountry.trim()) missing.push("Location");
+    if (effectiveSubTypes.length === 0) missing.push("Service / program type");
+    // Only require Fixed-Cost selection when the program has an underlying
+    // sheet (the toggle is only rendered in that case).
+    if (program.latestSheet && effectiveIsFixedCost === null) missing.push("Fixed-Cost / Not Fixed Costs");
+    return missing;
+  }, []);
+
+  // Per-program missing-field map, recomputed whenever pending or server
+  // data changes. Used both to render inline error styling on the row and
+  // to gate the Save button.
+  const pendingValidation = useMemo(() => {
+    const result: Record<string, string[]> = {};
+    for (const [id, pending] of Object.entries(pendingByProgram)) {
+      const program = (programsQuery.data || []).find(p => p.id === id);
+      if (!program) continue;
+      const missing = validateProgramForSave(program, pending);
+      if (missing.length > 0) result[id] = missing;
+    }
+    return result;
+  }, [pendingByProgram, programsQuery.data, validateProgramForSave]);
+  const invalidProgramCount = Object.keys(pendingValidation).length;
 
   const discardProgramPending = useCallback((id: string) => {
     setPendingByProgram(prev => {
@@ -3030,6 +3105,30 @@ function ProgramsView({
   // collected and surfaced at the end - one toast per failure.
   const saveAll = useCallback(async () => {
     if (!hasPending || isSaving) return;
+    // Pre-flight validation - never silently no-op. If any pending row is
+    // missing a required field, surface a destructive toast that lists the
+    // program name and exactly which fields are blank. Inline row styling
+    // (pendingValidation map -> destructive borders) already highlights the
+    // offending controls; the toast adds a single click-to-fix summary.
+    const invalid: { name: string; missing: string[] }[] = [];
+    for (const [id, patch] of Object.entries(pendingByProgram)) {
+      const program = (programsQuery.data || []).find(p => p.id === id);
+      if (!program) continue;
+      const missing = validateProgramForSave(program, patch);
+      if (missing.length > 0) {
+        invalid.push({ name: (patch.name ?? program.name) || "Untitled program", missing });
+      }
+    }
+    if (invalid.length > 0) {
+      toast({
+        title: invalid.length === 1
+          ? "Can't save: missing required fields"
+          : `Can't save: ${invalid.length} programs have missing fields`,
+        description: invalid.map(p => `${p.name} - ${p.missing.join(", ")}`).join("\n"),
+        variant: "destructive",
+      });
+      return;
+    }
     setIsSaving(true);
     const failures: string[] = [];
     try {
@@ -3130,7 +3229,7 @@ function ProgramsView({
         variant: "destructive",
       });
     }
-  }, [hasPending, isSaving, pendingByProgram, programsQuery.data, providerId, toast]);
+  }, [hasPending, isSaving, pendingByProgram, programsQuery.data, providerId, toast, validateProgramForSave, isAdminView]);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/costs/programs/${id}`),
@@ -3406,6 +3505,11 @@ function ProgramsView({
         const effectiveCountry = programPending?.country ?? program.country;
         const onProgramPatch = (patch: Partial<ProgramPending>) =>
           updateProgramPending(program.id, patch);
+        const rowMissing = pendingValidation[program.id] || [];
+        const needsName = rowMissing.includes("Program name");
+        const needsCountry = rowMissing.includes("Location");
+        const needsSubTypes = rowMissing.includes("Service / program type");
+        const needsFixedCost = rowMissing.includes("Fixed-Cost / Not Fixed Costs");
 
         const countryBadge = (
           <Badge
@@ -3471,6 +3575,8 @@ function ProgramsView({
             pending={programPending}
             onPatch={onProgramPatch}
             allowedServiceTags={allowedServiceTags}
+            needsSubTypes={needsSubTypes}
+            needsFixedCost={needsFixedCost}
           />
         );
 
@@ -3527,11 +3633,17 @@ function ProgramsView({
                           // long values - the previous `size={length}` + w-auto
                           // grew the box one character at a time and pushed the
                           // country chip to the right with every keystroke.
-                          className="h-7 text-sm flex-shrink-0 w-80"
+                          className={cn(
+                            "h-7 text-sm flex-shrink-0 w-80",
+                            needsName && "border-destructive ring-1 ring-destructive/40 focus-visible:ring-destructive",
+                          )}
                           data-testid={`input-program-name-${program.id}`}
                         />
                         <div
-                          className="w-44 flex-shrink-0"
+                          className={cn(
+                            "w-44 flex-shrink-0",
+                            needsCountry && "rounded-[var(--radius)] ring-1 ring-destructive/40",
+                          )}
                           onClick={(e) => e.stopPropagation()}
                           onKeyDown={(e) => e.stopPropagation()}
                         >
@@ -3540,7 +3652,7 @@ function ProgramsView({
                             onChange={(next) => onProgramPatch({ country: next })}
                             placeholder="Country"
                             data-testid={`input-program-country-${program.id}`}
-                            className="h-7"
+                            className={cn("h-7", needsCountry && "border-destructive")}
                           />
                         </div>
                       </>
@@ -3589,7 +3701,10 @@ function ProgramsView({
                       onClick={(e) => e.stopPropagation()}
                       onKeyDown={(e) => e.stopPropagation()}
                       placeholder="Program name"
-                      className="h-7 text-sm flex-1 min-w-0"
+                      className={cn(
+                        "h-7 text-sm flex-1 min-w-0",
+                        needsName && "border-destructive ring-1 ring-destructive/40 focus-visible:ring-destructive",
+                      )}
                       data-testid={`input-program-name-${program.id}-mobile`}
                     />
                   ) : (
@@ -3605,7 +3720,10 @@ function ProgramsView({
                 <div className="flex items-center gap-2 flex-wrap">
                   {(isAdminView || canManagePrograms) ? (
                     <div
-                      className="flex-1 min-w-[140px]"
+                      className={cn(
+                        "flex-1 min-w-[140px]",
+                        needsCountry && "rounded-[var(--radius)] ring-1 ring-destructive/40",
+                      )}
                       onClick={(e) => e.stopPropagation()}
                       onKeyDown={(e) => e.stopPropagation()}
                     >
@@ -3614,7 +3732,7 @@ function ProgramsView({
                         onChange={(next) => onProgramPatch({ country: next })}
                         placeholder="Country"
                         data-testid={`input-program-country-${program.id}-mobile`}
-                        className="h-7"
+                        className={cn("h-7", needsCountry && "border-destructive")}
                       />
                     </div>
                   ) : (
@@ -3698,33 +3816,54 @@ function ProgramsView({
           cover the last row's actions. */}
       {hasPending && (
         <div
-          className="sticky bottom-0 z-20 -mx-4 px-4 py-3 bg-background/95 backdrop-blur border-t shadow-[0_-4px_12px_-4px_rgba(0,0,0,0.06)] flex items-center justify-between gap-3"
+          className="sticky bottom-0 z-20 -mx-4 px-4 py-3 bg-background/95 backdrop-blur border-t shadow-[0_-4px_12px_-4px_rgba(0,0,0,0.06)] flex flex-col gap-2"
           data-testid="costs-save-bar"
         >
-          <span className="text-sm text-foreground">
-            <span className="font-medium">{Object.keys(pendingByProgram).length}</span>{" "}
-            unsaved {Object.keys(pendingByProgram).length === 1 ? "program" : "programs"}
-          </span>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={discardAllPending}
-              disabled={isSaving}
-              data-testid="btn-costs-discard"
-            >
-              Discard
-            </Button>
-            <Button
-              size="sm"
-              onClick={saveAll}
-              disabled={isSaving}
-              data-testid="btn-costs-save"
-            >
-              {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-              Save
-            </Button>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-foreground">
+              <span className="font-medium">{Object.keys(pendingByProgram).length}</span>{" "}
+              unsaved {Object.keys(pendingByProgram).length === 1 ? "program" : "programs"}
+              {invalidProgramCount > 0 && (
+                <span className="ml-2 text-destructive font-medium">
+                  · {invalidProgramCount} {invalidProgramCount === 1 ? "row needs" : "rows need"} required fields
+                </span>
+              )}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={discardAllPending}
+                disabled={isSaving}
+                data-testid="btn-costs-discard"
+              >
+                Discard
+              </Button>
+              <Button
+                size="sm"
+                onClick={saveAll}
+                disabled={isSaving}
+                data-testid="btn-costs-save"
+              >
+                {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                Save
+              </Button>
+            </div>
           </div>
+          {invalidProgramCount > 0 && (
+            <ul className="text-xs text-destructive space-y-0.5 list-disc list-inside" data-testid="costs-save-bar-errors">
+              {Object.entries(pendingValidation).map(([id, missing]) => {
+                const program = (programsQuery.data || []).find(p => p.id === id);
+                const pending = pendingByProgram[id];
+                const name = (pending?.name ?? program?.name) || "Untitled program";
+                return (
+                  <li key={id}>
+                    <span className="font-medium">{name}</span> - missing: {missing.join(", ")}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       )}
     </div>

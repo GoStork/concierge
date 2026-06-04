@@ -288,7 +288,8 @@ async function callTier2Claude(
   openAiTools: any[],
   sse: SSEHandle,
   mcpClientRef: Client | null,
-  forceToolUse = false
+  forceToolUse = false,
+  parentAccountId: string | null = null,
 ): Promise<{ content: string; toolCallsExecuted: boolean; searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] }> {
   const hasTools = openAiTools.length > 0;
 
@@ -339,6 +340,77 @@ async function callTier2Claude(
   const searchToolNames = ["search_surrogates", "search_egg_donors", "search_sperm_donors", "search_clinics"];
   console.log(`[TIER2] start: history=${chatHistory.length} turns, system=${fullSystem.length} chars, tools=${openAiTools.length}`);
 
+  // After search_surrogacy_agencies returns, reorder the agency list cheapest-first
+  // by the role-aware COMBINED country-program cost (agency surrogacy fee + each
+  // partner clinic's IVF / egg-donor program, matched to THIS parent's profile).
+  // Eva is instructed to present results in the returned order, so this guarantees
+  // the cheapest country program is offered first when multiple pass the
+  // hard-reject check. Falls through silently on any failure - ordering is a
+  // quality improvement, not a correctness gate; the cards still hydrate
+  // authoritative costs from /api/costs/.../country-program at render time.
+  const maybeReorderCountryPrograms = async (toolName: string, resultText: string): Promise<string> => {
+    if (toolName !== "search_surrogacy_agencies") return resultText;
+    if (!parentAccountId) return resultText;
+    try {
+      const jsonStart = resultText.indexOf("[");
+      const jsonEnd = resultText.lastIndexOf("]");
+      if (jsonStart < 0 || jsonEnd <= jsonStart) return resultText;
+      const before = resultText.slice(0, jsonStart);
+      const after = resultText.slice(jsonEnd + 1);
+      const agencies = JSON.parse(resultText.slice(jsonStart, jsonEnd + 1));
+      if (!Array.isArray(agencies) || agencies.length < 2) return resultText;
+
+      const { getNestApp } = await import("./nest-app-ref");
+      const nestApp = getNestApp();
+      if (!nestApp) return resultText;
+      const { CostsService } = await import("./src/modules/costs/costs.service");
+      let costsService: any = null;
+      try { costsService = nestApp.get(CostsService); } catch { return resultText; }
+      if (!costsService) return resultText;
+
+      const costs = await Promise.all(
+        agencies.map(async (a: any) => {
+          if (!a?.id) return { id: a?.id, sort: Number.POSITIVE_INFINITY, cost: null };
+          try {
+            const c = await costsService.getCombinedCountryProgramCost(a.id, parentAccountId);
+            const min = typeof c?.combinedMinTotal === "number" ? c.combinedMinTotal : null;
+            return {
+              id: a.id,
+              sort: min != null && min > 0 ? min : Number.POSITIVE_INFINITY,
+              cost: c,
+            };
+          } catch (e: any) {
+            console.log(`[COUNTRY ORDER] cost fetch failed for ${a.id}: ${e.message}`);
+            return { id: a.id, sort: Number.POSITIVE_INFINITY, cost: null };
+          }
+        }),
+      );
+      const costById = new Map(costs.map((c) => [c.id, c]));
+      const sorted = [...agencies].sort((a: any, b: any) => {
+        const sa = costById.get(a?.id)?.sort ?? Number.POSITIVE_INFINITY;
+        const sb = costById.get(b?.id)?.sort ?? Number.POSITIVE_INFINITY;
+        return sa - sb;
+      });
+      // Annotate each agency with the authoritative combined min/max + country
+      // so Eva can present the cheapest-first ordering with confidence.
+      const annotated = sorted.map((a: any) => {
+        const c = costById.get(a?.id)?.cost;
+        if (!c) return a;
+        return {
+          ...a,
+          estimatedCombinedMinTotal: c.combinedMinTotal,
+          estimatedCombinedMaxTotal: c.combinedMaxTotal,
+          estimatedCountry: c.country,
+        };
+      });
+      const orderingNote = `\n\nORDERING: The agencies above are sorted by COMBINED country-program cost (agency surrogacy fee + partner clinic IVF/egg-donor cost) ASCENDING. Present them to the parent in this order - cheapest first. Each agency carries estimatedCombinedMinTotal/MaxTotal/Country for your reference; NEVER write the dollar amount yourself, the [[MATCH_CARD:CountryProgram]] hydrates authoritative costs at render time.`;
+      return before + JSON.stringify(annotated, null, 2) + after + orderingNote;
+    } catch (e: any) {
+      console.log(`[COUNTRY ORDER] reorder failed: ${e.message}`);
+      return resultText;
+    }
+  };
+
   let currentMessage: any = userMessage;
   // Multi-step tool chain support. Gemini frequently chains 2-4 tool calls before
   // producing the final text (e.g. search_surrogates -> resolve_match_card ->
@@ -379,6 +451,7 @@ async function callTier2Claude(
             try {
               const toolResult = await mcpClientRef.callTool({ name: fc.name, arguments: fc.args as Record<string, unknown> }, undefined, { timeout: 180_000 });
               let resultText = (toolResult.content as any)?.[0]?.text || JSON.stringify(toolResult);
+              resultText = await maybeReorderCountryPrograms(fc.name, resultText);
               // Truncate large search results: 29KB of surrogate data overwhelms Gemini's
               // second-round context, causing it to return 0 chars. We only need the first
               // 1-2 results to show a match card - truncate to keep the round-trip manageable.
@@ -441,6 +514,7 @@ async function callTier2Claude(
             try {
               const toolResult = await mcpClientRef.callTool({ name: fc.name, arguments: fc.args as Record<string, unknown> }, undefined, { timeout: 180_000 });
               let resultText = (toolResult.content as any)?.[0]?.text || JSON.stringify(toolResult);
+              resultText = await maybeReorderCountryPrograms(fc.name, resultText);
               const MAX_TOOL_RESULT = 8000;
               if (searchToolNames.includes(fc.name) && resultText.length > MAX_TOOL_RESULT) {
                 resultText = resultText.slice(0, MAX_TOOL_RESULT) + "\n\n[Results truncated - present the first result above as a [[MATCH_CARD]] only]";
@@ -3698,7 +3772,8 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         needsTools && openAiTools.length > 0 ? openAiTools : [],
         sse,
         mcpClient,
-        forceToolUseForSearch
+        forceToolUseForSearch,
+        userRecord?.parentAccountId ?? null,
       );
       // If Claude executed a search tool but returned empty text, retry once with an explicit
       // instruction to present the results. This happens when Claude calls the tool successfully
