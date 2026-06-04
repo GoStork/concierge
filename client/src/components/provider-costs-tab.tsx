@@ -371,9 +371,19 @@ function ProgramClassificationControls({
     latestSheet?.isFixedCostSource === "ai_proposed" ||
     latestSheet?.isFixedCostSource == null ||
     latestSheet?.legacyNeedsReview === true;
-  const [hasInteracted, setHasInteracted] = useState<boolean>(
-    latestSheet?.isFixedCostSource === "clinic_confirmed",
-  );
+  // hasInteracted used to gate the Confirm button on whether the clinic
+  // had clicked one of the Fixed-Cost / Not Fixed Costs toggles in this
+  // render cycle. That guard was added when the AI's pre-population was
+  // unreliable - now it always populates correctly, and the guard mostly
+  // made the button look clickable while silently doing nothing because
+  // disabled. Derived directly from the data now: if a value exists
+  // (either AI-proposed or clinic-confirmed) the action is valid; if
+  // it's still null we keep the button disabled with a tooltip telling
+  // the clinic to pick a toggle first. setHasInteracted is still wired
+  // through the toggle clicks below but no longer gates anything - kept
+  // as a no-op for now to avoid touching every onClick.
+  const hasInteracted = latestSheet?.isFixedCost != null;
+  const setHasInteracted = (_v: boolean) => { /* no-op; see comment above */ };
 
   const updateSubTypesMutation = useMutation({
     mutationFn: ({ subTypes }: { subTypes: string[] }) =>
