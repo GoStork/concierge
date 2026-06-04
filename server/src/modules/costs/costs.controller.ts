@@ -110,70 +110,9 @@ export class CostsController {
     @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
-  private backgroundParseAndSave(
-    sheetId: string,
-    buffer: Buffer,
-    contentType: string,
-    providerType: string,
-    filename: string,
-    subType?: string,
-  ) {
-    (async () => {
-      try {
-        this.logger.log(`Background AI parse+classify started for sheet ${sheetId}`);
-        // Single Gemini call returns both items AND classification - saves
-        // the second round-trip vs the old parseFile + classifyDocument
-        // pair. Status stays PARSING until everything is persisted, so
-        // the client's poll only sees DRAFT once name/country/subtype/
-        // Fixed-cost are all on the row.
-        //
-        // Progress stages emitted to the sheet row (driving the real UI bar):
-        //   5%  - row created with "Uploading document" (set in uploadFile)
-        //   10% - here, before Gemini call
-        //   15-85% - items stream in (15 + min(70, count*3.5))
-        //   90% - stream done, persisting classification
-        //   95% - merging into template
-        //   100% - done (set in saveParseResults)
-        await this.costsService.updateParseProgress(sheetId, "Reading document with AI", 10, 0);
-
-        const { items, classification } = await this.costsAiService.parseAndClassifyDocument(
-          buffer, contentType, providerType, filename, subType,
-          async ({ itemsCount }) => {
-            // Items stream in - cap progress at 85% to leave headroom for
-            // the post-stream classify + template-merge steps.
-            const streamProgress = Math.min(85, 15 + Math.round(itemsCount * 3.5));
-            await this.costsService.updateParseProgress(
-              sheetId,
-              `Extracting items (${itemsCount} found)`,
-              streamProgress,
-              itemsCount,
-            );
-          },
-        );
-
-        await this.costsService.updateParseProgress(
-          sheetId,
-          "Classifying program type",
-          90,
-          items.length,
-        );
-        if (classification) {
-          await this.costsService.saveAiClassification(sheetId, classification);
-        }
-
-        await this.costsService.updateParseProgress(
-          sheetId,
-          "Mapping to GoStork template",
-          95,
-          items.length,
-        );
-        await this.costsService.saveParseResults(sheetId, items);
-      } catch (err: any) {
-        this.logger.error(`Background AI parse failed for sheet ${sheetId}: ${err.message}`);
-        await this.costsService.markParseError(sheetId);
-      }
-    })();
-  }
+  // backgroundParseAndSave moved to CostsService.runBackgroundParse so the
+  // same pipeline is reused by the startup resume sweep (when the server
+  // restarts mid-parse and we need to pick up orphaned PARSING sheets).
 
   @Sse("events")
   @UseGuards(SessionOrJwtGuard)
@@ -273,7 +212,7 @@ export class CostsController {
       const providerType = activeServiceCount > 1 ? "multi-service" : providerTypeFromClient;
 
       if (providerType) {
-        this.backgroundParseAndSave(sheet.id, buffer, contentType, providerType, parsed.filename, subType);
+        this.costsService.runBackgroundParse(sheet.id, buffer, contentType, providerType, parsed.filename, subType);
       }
 
       // Return the programId (whether pre-existing or auto-created in the

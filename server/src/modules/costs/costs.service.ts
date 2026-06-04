@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
+import { CostsAiService } from "./costs-ai.service";
 import * as crypto from "crypto";
 import { recalcAndPersistTotalCostsForProvider } from "./total-cost.utils";
 import {
@@ -26,7 +27,62 @@ export class CostsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(StorageService) private readonly storage: StorageService,
+    @Inject(CostsAiService) private readonly costsAi: CostsAiService,
   ) {}
+
+  /**
+   * Run the full Gemini parse + classification + template-merge pipeline for
+   * an already-uploaded sheet, emitting live progress to ProviderCostSheet so
+   * the client's poll can render a real progress bar.
+   *
+   * Fire-and-forget by design - the caller (POST /upload OR the startup
+   * resume sweep) returns immediately and the work continues in the
+   * background. On any failure the sheet is flipped to a DRAFT with
+   * parseStage = "Parse failed - using empty template" so the row never
+   * stays stuck in PARSING forever.
+   *
+   * Extracted from CostsController.backgroundParseAndSave so the same
+   * pipeline is reused by resumeOrphanedParsingSheets() on server boot.
+   */
+  runBackgroundParse(
+    sheetId: string,
+    buffer: Buffer,
+    contentType: string,
+    providerType: string,
+    filename: string,
+    subType?: string,
+  ): void {
+    (async () => {
+      try {
+        this.logger.log(`Background AI parse+classify started for sheet ${sheetId}`);
+        await this.updateParseProgress(sheetId, "Reading document with AI", 10, 0);
+
+        const { items, classification } = await this.costsAi.parseAndClassifyDocument(
+          buffer, contentType, providerType, filename, subType,
+          async ({ itemsCount }) => {
+            const streamProgress = Math.min(85, 15 + Math.round(itemsCount * 3.5));
+            await this.updateParseProgress(
+              sheetId,
+              `Extracting items (${itemsCount} found)`,
+              streamProgress,
+              itemsCount,
+            );
+          },
+        );
+
+        await this.updateParseProgress(sheetId, "Classifying program type", 90, items.length);
+        if (classification) {
+          await this.saveAiClassification(sheetId, classification);
+        }
+
+        await this.updateParseProgress(sheetId, "Mapping to GoStork template", 95, items.length);
+        await this.saveParseResults(sheetId, items);
+      } catch (err: any) {
+        this.logger.error(`Background AI parse failed for sheet ${sheetId}: ${err.message}`);
+        await this.markParseError(sheetId);
+      }
+    })();
+  }
 
   private async resolveTemplateFieldIds(
     providerTypeId: string | undefined | null,
@@ -865,13 +921,87 @@ export class CostsService {
     return { programs: result, matchingSubtypes: subtypes, isPartialProfile: resolvedIsPartialProfile, costProgramsPreference: persistedPref ?? null };
   }
 
-  async resetOrphanedParsingSheets() {
-    const result = await this.prisma.providerCostSheet.updateMany({
+  /**
+   * Pick up cost sheets that were mid-parse when the server died (status
+   * still PARSING, parseProgress < 100). Downloads the original PDF/XLSX
+   * back from GCS and re-runs runBackgroundParse so the work completes
+   * automatically without the provider re-uploading. The client poll
+   * watching parseProgress on the row picks up the new updates seamlessly.
+   *
+   * Sheets whose file is missing (deleted from GCS, or the upload itself
+   * never finished writing) get a soft fail: status flips to DRAFT and
+   * parseStage records why. They show up in the UI as an empty template
+   * the provider can either delete or re-upload, instead of staying stuck
+   * spinning forever.
+   *
+   * Called from CostsModule.onModuleInit on every server boot.
+   */
+  async resumeOrphanedParsingSheets() {
+    const orphans = await this.prisma.providerCostSheet.findMany({
       where: { status: "PARSING" },
-      data: { status: "DRAFT" },
+      select: {
+        id: true,
+        providerId: true,
+        providerTypeId: true,
+        subType: true,
+        filePath: true,
+        originalFileName: true,
+      },
     });
-    if (result.count > 0) {
-      this.logger.warn(`Reset ${result.count} orphaned PARSING sheet(s) to DRAFT on startup`);
+    if (orphans.length === 0) return;
+
+    this.logger.warn(`Found ${orphans.length} orphaned PARSING sheet(s) on startup; resuming...`);
+
+    for (const sheet of orphans) {
+      try {
+        if (!sheet.filePath || !sheet.originalFileName) {
+          this.logger.warn(`Sheet ${sheet.id} has no stored file - cannot resume; marking as DRAFT`);
+          await this.markParseError(sheet.id);
+          continue;
+        }
+
+        let downloaded: { buffer: Buffer; contentType: string };
+        try {
+          downloaded = await this.storage.downloadBuffer(sheet.filePath);
+        } catch (err: any) {
+          this.logger.warn(`Sheet ${sheet.id} GCS download failed (${err.message}); marking as DRAFT`);
+          await this.markParseError(sheet.id);
+          continue;
+        }
+
+        // Derive providerType the same way the upload endpoint does:
+        // single-service providers use the ProviderType.name verbatim,
+        // multi-service providers (e.g. Eggspecting: IVF Clinic + Surrogacy
+        // + Egg Donor) get the "multi-service" union branch so the AI
+        // doesn't force-classify a surrogacy PDF into an IVF subtype.
+        const activeServiceCount = await this.prisma.providerService.count({
+          where: { providerId: sheet.providerId, status: "APPROVED" },
+        });
+        let providerType: string | null = "multi-service";
+        if (activeServiceCount <= 1 && sheet.providerTypeId) {
+          const pt = await this.prisma.providerType.findUnique({
+            where: { id: sheet.providerTypeId },
+            select: { name: true },
+          });
+          providerType = pt?.name ?? "multi-service";
+        }
+
+        // Reset the visible progress so the user's poll sees activity
+        // immediately ("Resuming parse..." -> the normal stages from there).
+        await this.updateParseProgress(sheet.id, "Resuming parse after server restart", 8, 0);
+
+        this.runBackgroundParse(
+          sheet.id,
+          downloaded.buffer,
+          downloaded.contentType,
+          providerType,
+          sheet.originalFileName,
+          sheet.subType || undefined,
+        );
+      } catch (err: any) {
+        this.logger.error(`Failed to resume sheet ${sheet.id}: ${err.message}`);
+        await this.markParseError(sheet.id).catch(() => {});
+      }
     }
   }
 
