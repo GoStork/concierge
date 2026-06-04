@@ -501,45 +501,40 @@ function ProgramClassificationControls({
         </div>
       )}
 
-      {/* Slot 3: Cost (Fixed / Not Fixed segmented toggle).
-          Labels shortened from "Fixed-Cost" + "Not Fixed Costs" to plain
-          "Fixed" + "Not Fixed" with a single "Costs:" label outside the
-          toggle, so the word "cost" is said once instead of twice. Saves
-          enough horizontal space that wide totals like "$6,500 - $20,000
-          (draft)" stop pushing the toggle into the action-icon column. */}
-      <div className="flex items-center flex-shrink-0 gap-1.5">
+      {/* Slot 3: Cost (Fixed-Cost / Not Fixed Costs segmented toggle).
+          The original long labels are back now that the country chip
+          abbreviates to "USA" / "UK" / etc. - that reclaimed enough
+          horizontal space on the row for the full labels to fit
+          without colliding with wide totals like "$6,500 - $20,000
+          (draft)". */}
+      <div className="flex items-center flex-shrink-0">
         {latestSheet && (
-          <>
-            <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">Costs:</span>
-            <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm" onClick={(e) => e.stopPropagation()}>
-              <button
-                type="button"
-                className={cn(
-                  "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium whitespace-nowrap",
-                  latestSheet.isFixedCost === true ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
-                )}
-                onClick={() => { setHasInteracted(true); classificationMutation.mutate({ isFixedCost: true }); }}
-                disabled={classificationMutation.isPending}
-                data-testid={`top-mark-fixed-${program.id}`}
-                title="All costs in this program are fixed"
-              >
-                Fixed
-              </button>
-              <button
-                type="button"
-                className={cn(
-                  "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium whitespace-nowrap",
-                  latestSheet.isFixedCost === false ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
-                )}
-                onClick={() => { setHasInteracted(true); classificationMutation.mutate({ isFixedCost: false }); }}
-                disabled={classificationMutation.isPending}
-                data-testid={`top-mark-not-fixed-${program.id}`}
-                title="Some costs in this program vary (range or by case)"
-              >
-                Not Fixed
-              </button>
-            </div>
-          </>
+          <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className={cn(
+                "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium whitespace-nowrap",
+                latestSheet.isFixedCost === true ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
+              )}
+              onClick={() => { setHasInteracted(true); classificationMutation.mutate({ isFixedCost: true }); }}
+              disabled={classificationMutation.isPending}
+              data-testid={`top-mark-fixed-${program.id}`}
+            >
+              Fixed-Cost
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium whitespace-nowrap",
+                latestSheet.isFixedCost === false ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
+              )}
+              onClick={() => { setHasInteracted(true); classificationMutation.mutate({ isFixedCost: false }); }}
+              disabled={classificationMutation.isPending}
+              data-testid={`top-mark-not-fixed-${program.id}`}
+            >
+              Not Fixed Costs
+            </button>
+          </div>
         )}
       </div>
 
@@ -623,7 +618,7 @@ function ProgramConfirmIconButton({
   // pending; the tooltip explains the gate.
   const disabled = classificationMutation.isPending || !hasInteracted;
   const titleText = !hasInteracted
-    ? "Click Fixed or Not Fixed first to confirm the AI's classification"
+    ? "Click Fixed-Cost or Not Fixed Costs first to confirm the AI's classification"
     : "Confirm classification";
 
   return (
