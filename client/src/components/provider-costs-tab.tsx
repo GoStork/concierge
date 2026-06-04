@@ -557,8 +557,15 @@ function ProgramClassificationControls({
           </Button>
         )}
         {latestSheet && latestSheet.isFixedCostSource === "clinic_confirmed" && (
-          <Badge className="h-8 px-3 bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] border-[hsl(var(--brand-success))]/30 text-xs flex items-center">
-            <Check className="w-3.5 h-3.5 mr-1.5" />Confirmed
+          // Icon-only badge: the wide total range ("$166,910 - $171,910 (draft)")
+          // was bleeding into the "Confirmed" text label. A circular green check
+          // conveys the same state in a fraction of the width and never collides
+          // with a wide total. The `title` keeps it accessible / hoverable.
+          <Badge
+            className="h-8 w-8 p-0 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] border-[hsl(var(--brand-success))]/30 flex items-center justify-center flex-shrink-0"
+            title="Classification confirmed"
+          >
+            <Check className="w-4 h-4" />
           </Badge>
         )}
       </div>
@@ -1964,8 +1971,12 @@ function SingleCostsTab({
                     button was, keeping the right-aligned anchor consistent
                     across the AI-proposed -> Confirmed transition. */}
                 {displaySheet.isFixedCostSource === "clinic_confirmed" && (
-                  <Badge className="h-9 px-3 bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] border-[hsl(var(--brand-success))]/30 text-xs flex items-center">
-                    <Check className="w-3.5 h-3.5 mr-1.5" />Confirmed
+                  // Match the inline row badge style: icon-only circular check.
+                  <Badge
+                    className="h-9 w-9 p-0 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] border-[hsl(var(--brand-success))]/30 flex items-center justify-center flex-shrink-0"
+                    title="Classification confirmed"
+                  >
+                    <Check className="w-4 h-4" />
                   </Badge>
                 )}
               </div>
