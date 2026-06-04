@@ -17,7 +17,7 @@ import { OnlineIndicator } from "@/components/ui/online-indicator";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import {
   ArrowLeft, MessageSquare, User, Loader2, FileText, X,
-  CheckCircle2, ChevronRight, Shield, ThumbsUp, ThumbsDown,
+  CheckCircle2, ChevronRight, ChevronDown, ChevronUp, Shield, ThumbsUp, ThumbsDown,
   Sparkles, Building2, MessageCircle, Heart, CornerRightDown,
   CalendarDays, Video, Trash2, Headphones, HelpCircle,
   // Used by legacy dead code pending removal
@@ -902,6 +902,14 @@ const sendMessageMutation = useMutation({
   // questions on the same session each have their own independent input.
   const [whisperDrafts, setWhisperDrafts] = useState<Record<string, string>>({});
   const [whisperPendingId, setWhisperPendingId] = useState<string | null>(null);
+  // Mobile-only collapse state for the inline Q&A panel - so a provider who
+  // can't answer right now can dismiss the panel and still see the chat.
+  // Resets to expanded when switching sessions so a new question on a
+  // different session can't get silently hidden by a prior dismissal.
+  const [whispersPanelCollapsedMobile, setWhispersPanelCollapsedMobile] = useState(false);
+  useEffect(() => {
+    setWhispersPanelCollapsedMobile(false);
+  }, [selectedSessionId]);
 
   const answerWhisperMutation = useMutation({
     mutationFn: async ({ sessionId, silentQueryId, content }: { sessionId: string; silentQueryId: string; content: string }) => {
@@ -943,6 +951,105 @@ const sendMessageMutation = useMutation({
       setWhisperPendingId(null);
     },
   });
+
+  // Per-session whisper Q&A card content. Built once and rendered in two
+  // places: inline below the warning banner on mobile/tablet (the right-side
+  // sidebar is hidden at < lg, so without this the provider only sees a
+  // banner pointing at a panel that doesn't exist on their screen), and in
+  // the right-side ChatProfileSidebar / pre-booking sidebar on desktop.
+  const whispersPanel = (() => {
+    const pendingWhispers = pendingWhispersQuery.data || [];
+    return (
+      <div className="space-y-3" data-testid="whisper-questions-panel">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
+          <h4 className="font-semibold text-sm" style={{ fontFamily: "var(--font-display)" }}>AI Concierge Q&A</h4>
+          {pendingWhispers.length > 0 && (
+            <span
+              className="ml-auto min-w-[20px] h-[20px] rounded-full flex items-center justify-center text-[10px] font-bold text-primary-foreground px-1.5"
+              style={{ backgroundColor: brandColor }}
+              data-testid="whisper-pending-count"
+            >
+              {pendingWhispers.length}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Questions from this parent forwarded by the AI concierge. Your answer is relayed back - the parent's identity stays private until they schedule a consultation.
+        </p>
+        {pendingWhispers.length === 0 ? (
+          <p className="text-xs text-muted-foreground italic" data-testid="no-pending-whispers">
+            No pending questions. New questions from this parent will appear here.
+          </p>
+        ) : (
+          pendingWhispers.map((q) => {
+            const ageMin = q.ageMinutes || 0;
+            const isOverdue = ageMin >= 24 * 60;
+            const isApproaching = !isOverdue && ageMin >= 2 * 60;
+            const tint = isOverdue
+              ? "bg-accent/15 border-accent/40 text-accent-foreground"
+              : isApproaching
+                ? "bg-[hsl(var(--brand-warning))]/10 border-[hsl(var(--brand-warning))]/30 text-[hsl(var(--brand-warning))]"
+                : "bg-[hsl(var(--brand-success))]/10 border-[hsl(var(--brand-success))]/30 text-[hsl(var(--brand-success))]";
+            const ageLabel = ageMin < 60
+              ? `${ageMin}m`
+              : ageMin < 24 * 60
+                ? `${Math.floor(ageMin / 60)}h`
+                : `${Math.floor(ageMin / 1440)}d`;
+            const draft = whisperDrafts[q.id] || "";
+            const isPending = whisperPendingId === q.id;
+            return (
+              <div
+                key={q.id}
+                className="rounded-[var(--radius)] border border-border bg-background p-3 space-y-2.5"
+                data-testid={`whisper-question-${q.id}`}
+              >
+                <div className="flex items-start gap-2">
+                  <HelpCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: brandColor }} />
+                  <p className="text-sm leading-snug flex-1 break-words font-medium">{q.questionText}</p>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${tint}`}>
+                    {ageLabel} ago{isOverdue ? " - SLA breached" : ""}
+                  </span>
+                  {q.nudgeCount > 0 && (
+                    <span className="text-[10px] text-muted-foreground">Nudged {q.nudgeCount}x</span>
+                  )}
+                </div>
+                <Textarea
+                  value={draft}
+                  onChange={(e) => setWhisperDrafts((prev) => ({ ...prev, [q.id]: e.target.value }))}
+                  placeholder="Type your answer to this question..."
+                  className="min-h-[64px] text-sm resize-none"
+                  disabled={isPending}
+                  data-testid={`whisper-answer-input-${q.id}`}
+                />
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    disabled={!draft.trim() || isPending || !selectedSessionId}
+                    onClick={() =>
+                      answerWhisperMutation.mutate({
+                        sessionId: selectedSessionId!,
+                        silentQueryId: q.id,
+                        content: draft.trim(),
+                      })
+                    }
+                    style={{ backgroundColor: brandColor }}
+                    className="text-primary-foreground gap-1.5 text-xs"
+                    data-testid={`whisper-answer-send-${q.id}`}
+                  >
+                    {isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                    Send to parent
+                  </Button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    );
+  })();
 
   const consultationStatusMutation = useMutation({
     mutationFn: async ({ sessionId, status }: { sessionId: string; status: string }) => {
@@ -2332,20 +2439,53 @@ const sendMessageMutation = useMutation({
           <div className="flex-1 flex flex-col min-h-0">
             {(pendingWhispersQuery.data?.length || 0) > 0 && (
               <div
-                className="border-b px-4 py-2.5 flex items-center gap-2 shrink-0"
+                className="border-b px-4 py-2.5 flex items-center gap-2 shrink-0 cursor-pointer lg:cursor-default select-none"
                 style={{ backgroundColor: `hsl(var(--brand-warning) / 0.1)`, borderColor: `hsl(var(--brand-warning) / 0.3)` }}
                 data-testid="pending-whispers-banner"
+                role="button"
+                tabIndex={0}
+                aria-expanded={!whispersPanelCollapsedMobile}
+                aria-controls="provider-whispers-inline-mobile"
+                onClick={(e) => {
+                  // Mobile-only: tapping the banner toggles the inline
+                  // panel below. The desktop "Jump to panel" button has
+                  // its own click handler and stops propagation, so it
+                  // never accidentally triggers the toggle on lg+.
+                  if ((e.target as HTMLElement).closest('[data-testid="btn-jump-to-whispers"]')) return;
+                  setWhispersPanelCollapsedMobile(c => !c);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setWhispersPanelCollapsedMobile(c => !c);
+                  }
+                }}
               >
                 <HelpCircle className="w-4 h-4 flex-shrink-0" style={{ color: `hsl(var(--brand-warning))` }} />
                 <p className="text-xs flex-1" style={{ color: `hsl(var(--brand-warning))` }}>
                   <span className="font-semibold">{pendingWhispersQuery.data!.length} pending question{pendingWhispersQuery.data!.length > 1 ? "s" : ""}</span>
-                  <span className="opacity-80"> from this parent - answer {pendingWhispersQuery.data!.length > 1 ? "them" : "it"} in the side panel.</span>
+                  <span className="opacity-80"> from this parent</span>
+                  <span className="opacity-80 hidden lg:inline"> - answer {pendingWhispersQuery.data!.length > 1 ? "them" : "it"} in the side panel</span>
+                  <span className="opacity-80 lg:hidden"> - tap to {whispersPanelCollapsedMobile ? "expand" : "collapse"}</span>
+                  <span className="opacity-80">.</span>
                 </p>
+                {/* Chevron indicator on mobile - reinforces that the banner
+                    is the toggle for the inline panel. Hidden on lg+ where
+                    the side panel is always visible and the toggle is a
+                    no-op. */}
+                <span
+                  className="lg:hidden h-6 w-6 flex items-center justify-center flex-shrink-0"
+                  style={{ color: `hsl(var(--brand-warning))` }}
+                  aria-hidden
+                >
+                  {whispersPanelCollapsedMobile ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                </span>
                 <Button
                   size="sm"
                   variant="ghost"
                   className="h-7 text-xs hidden lg:inline-flex"
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     const panel = document.querySelector('[data-testid="whisper-questions-panel"]');
                     if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
                   }}
@@ -2353,6 +2493,22 @@ const sendMessageMutation = useMutation({
                 >
                   Jump to panel
                 </Button>
+              </div>
+            )}
+            {/* Mobile / tablet inline copy of the Q&A panel - the right-side
+                sidebar that holds this panel on desktop is hidden at < lg, so
+                without rendering it here the provider sees a banner pointing
+                at a panel they can't reach. Capped at 55vh so the chat
+                messages and composer below stay visible. Collapsible via the
+                banner toggle so a provider who can't answer right now can
+                still see the chat. */}
+            {(pendingWhispersQuery.data?.length || 0) > 0 && !whispersPanelCollapsedMobile && (
+              <div
+                id="provider-whispers-inline-mobile"
+                className="lg:hidden border-b bg-muted/30 px-4 py-3 max-h-[55vh] overflow-y-auto shrink-0"
+                data-testid="provider-whispers-inline-mobile"
+              >
+                {whispersPanel}
               </div>
             )}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" data-testid="provider-chat-messages">
@@ -2474,102 +2630,9 @@ const sendMessageMutation = useMutation({
         </div>{/* end header + messages column */}
 
           {(() => {
-            // Per-question whisper Q&A panel - reused inside both the pre-booking
-            // standalone sidebar and the post-booking ChatProfileSidebar so the
-            // provider can keep answering leftover whispers even after the
-            // consultation is booked. Each row is its own targeted-answer flow.
-            const pendingWhispers = pendingWhispersQuery.data || [];
-            const whispersPanel = (
-              <div className="space-y-3" data-testid="whisper-questions-panel">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
-                  <h4 className="font-semibold text-sm" style={{ fontFamily: "var(--font-display)" }}>AI Concierge Q&A</h4>
-                  {pendingWhispers.length > 0 && (
-                    <span
-                      className="ml-auto min-w-[20px] h-[20px] rounded-full flex items-center justify-center text-[10px] font-bold text-primary-foreground px-1.5"
-                      style={{ backgroundColor: brandColor }}
-                      data-testid="whisper-pending-count"
-                    >
-                      {pendingWhispers.length}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Questions from this parent forwarded by the AI concierge. Your answer is relayed back - the parent's identity stays private until they schedule a consultation.
-                </p>
-                {pendingWhispers.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic" data-testid="no-pending-whispers">
-                    No pending questions. New questions from this parent will appear here.
-                  </p>
-                ) : (
-                  pendingWhispers.map((q) => {
-                    const ageMin = q.ageMinutes || 0;
-                    const isOverdue = ageMin >= 24 * 60;
-                    const isApproaching = !isOverdue && ageMin >= 2 * 60;
-                    const tint = isOverdue
-                      ? "bg-accent/15 border-accent/40 text-accent-foreground"
-                      : isApproaching
-                        ? "bg-[hsl(var(--brand-warning))]/10 border-[hsl(var(--brand-warning))]/30 text-[hsl(var(--brand-warning))]"
-                        : "bg-[hsl(var(--brand-success))]/10 border-[hsl(var(--brand-success))]/30 text-[hsl(var(--brand-success))]";
-                    const ageLabel = ageMin < 60
-                      ? `${ageMin}m`
-                      : ageMin < 24 * 60
-                        ? `${Math.floor(ageMin / 60)}h`
-                        : `${Math.floor(ageMin / 1440)}d`;
-                    const draft = whisperDrafts[q.id] || "";
-                    const isPending = whisperPendingId === q.id;
-                    return (
-                      <div
-                        key={q.id}
-                        className="rounded-[var(--radius)] border border-border bg-background p-3 space-y-2.5"
-                        data-testid={`whisper-question-${q.id}`}
-                      >
-                        <div className="flex items-start gap-2">
-                          <HelpCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: brandColor }} />
-                          <p className="text-sm leading-snug flex-1 break-words font-medium">{q.questionText}</p>
-                        </div>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${tint}`}>
-                            {ageLabel} ago{isOverdue ? " - SLA breached" : ""}
-                          </span>
-                          {q.nudgeCount > 0 && (
-                            <span className="text-[10px] text-muted-foreground">Nudged {q.nudgeCount}x</span>
-                          )}
-                        </div>
-                        <Textarea
-                          value={draft}
-                          onChange={(e) => setWhisperDrafts((prev) => ({ ...prev, [q.id]: e.target.value }))}
-                          placeholder="Type your answer to this question..."
-                          className="min-h-[64px] text-sm resize-none"
-                          disabled={isPending}
-                          data-testid={`whisper-answer-input-${q.id}`}
-                        />
-                        <div className="flex justify-end">
-                          <Button
-                            size="sm"
-                            disabled={!draft.trim() || isPending || !selectedSessionId}
-                            onClick={() =>
-                              answerWhisperMutation.mutate({
-                                sessionId: selectedSessionId!,
-                                silentQueryId: q.id,
-                                content: draft.trim(),
-                              })
-                            }
-                            style={{ backgroundColor: brandColor }}
-                            className="text-primary-foreground gap-1.5 text-xs"
-                            data-testid={`whisper-answer-send-${q.id}`}
-                          >
-                            {isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                            Send to parent
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            );
-
+            // The whispersPanel JSX is hoisted to the component body so it
+            // can also be rendered inline on mobile / tablet (where this
+            // sidebar is hidden). We still use it here for desktop.
             if (!hasJoined && !isConsultationBooked) {
               return (
                 <div className="w-72 border-l overflow-y-auto p-4 bg-muted/30 hidden lg:block" data-testid="provider-sidebar">

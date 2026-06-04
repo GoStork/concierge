@@ -3463,11 +3463,129 @@ function ProgramsView({
         const isExpanded = expandedProgramId === program.id;
         const isEditing = editingProgramId === program.id;
 
+        // Shared pieces between the desktop and mobile top-bar layouts.
+        // Both branches stay in the DOM (toggled via responsive `hidden`),
+        // so each visible branch points at its own JSX instance - cheap,
+        // and far simpler than trying to express the 1-row vs 3-row
+        // arrangement through flex-wrap + order alone (the wide draft
+        // total kept squeezing the name to 0px in the single-row form).
+        const countryBadge = (
+          <Badge
+            variant="outline"
+            className="text-xs flex items-center gap-1 flex-shrink-0"
+            title={program.country}
+          >
+            {getCountryFlag(program.country)
+              ? <span>{getCountryFlag(program.country)}</span>
+              : <Globe className="w-3 h-3" />}
+            {getCountryShortName(program.country)}
+          </Badge>
+        );
+        const pendingBadge = isAdminView && program.latestSheetStatus === "PENDING" ? (
+          <Badge className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/40 border flex-shrink-0">
+            Pending Review
+          </Badge>
+        ) : null;
+        const chevronIcon = (
+          <div className="h-7 w-7 flex items-center justify-center text-muted-foreground flex-shrink-0" aria-hidden>
+            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </div>
+        );
+
+        const renderActions = (testidSuffix: string) => isEditing ? (
+          <>
+            {/* Save / Cancel replace the Pencil in-place. Trash and
+                chevron stay on the right edge so the row's controls
+                don't shift around between modes. */}
+            <Button
+              size="sm"
+              className="h-7 w-7 p-0 flex-shrink-0"
+              disabled={!formName.trim() || !formCountry.trim() || updateMutation.isPending}
+              onClick={(e) => {
+                e.stopPropagation();
+                updateMutation.mutate({ id: program.id, name: formName.trim(), country: formCountry.trim() });
+              }}
+              data-testid={`btn-save-program-${program.id}${testidSuffix}`}
+            >
+              {updateMutation.isPending
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <Check className="w-3.5 h-3.5" />}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0 flex-shrink-0"
+              onClick={(e) => {
+                e.stopPropagation();
+                cancelEdit();
+              }}
+              data-testid={`btn-cancel-program-${program.id}${testidSuffix}`}
+            >
+              <X className="w-3.5 h-3.5" />
+            </Button>
+          </>
+        ) : (
+          (isAdminView || canManagePrograms) ? (
+            <>
+              {/* Confirm-classification icon - sits in the reserved
+                  action-icon area so a wide total column can't clip it. */}
+              <ProgramConfirmIconButton program={program} providerId={providerId} />
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0 flex-shrink-0"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  startEdit(program);
+                }}
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild onClick={(e) => e.stopPropagation()}>
+                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0 flex-shrink-0">
+                    <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Program</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently delete "{program.name}" and all its cost data. This cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      onClick={() => {
+                        if (expandedProgramId === program.id) setExpandedProgramId(null);
+                        deleteMutation.mutate(program.id);
+                      }}
+                    >
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
+          ) : null
+        );
+
+        const renderClassification = () => (
+          <ProgramClassificationControls
+            program={program}
+            providerId={providerId}
+            allowedServiceTags={allowedServiceTags}
+            providerType={providerType}
+          />
+        );
+
         return (
           <div key={program.id} className="border rounded-[var(--container-radius)] overflow-hidden">
             <div
               className={cn(
-                "flex items-center gap-3 px-4 py-3 bg-muted/20 transition-colors",
+                "px-4 py-3 bg-muted/20 transition-colors",
                 !isEditing && "cursor-pointer hover:bg-muted/40"
               )}
               onClick={isEditing ? undefined : () => setExpandedProgramId(isExpanded ? null : program.id)}
@@ -3480,12 +3598,9 @@ function ProgramsView({
                 }
               }}
             >
-              <>
-                {/* Edit mode keeps the same inline row layout as view mode -
-                    just swaps the program-name span and the country chip
-                    for editable controls in their original positions. The
-                    classification toggles, total badge, and pending badge
-                    stay visible so admins don't lose context when renaming. */}
+              {/* Desktop layout: single horizontal row, unchanged from
+                  the previous single-line design. */}
+              <div className="hidden sm:flex items-center gap-3">
                 <div
                   className="flex-1 flex items-center gap-2 flex-nowrap min-w-0 overflow-hidden"
                   onClick={isEditing ? (e) => e.stopPropagation() : undefined}
@@ -3516,136 +3631,90 @@ function ProgramsView({
                           full text reachable via the browser title
                           tooltip. */}
                       <span className="font-medium text-sm truncate w-48 flex-shrink-0" title={program.name}>{program.name}</span>
-                      {/* Abbreviated country name (e.g. "United States" -> "USA")
-                          to reclaim horizontal space for the classification
-                          toggles + total + action icons on the right. Full
-                          name is preserved in the tooltip for disambiguation. */}
-                      <Badge
-                        variant="outline"
-                        className="text-xs flex items-center gap-1 flex-shrink-0"
-                        title={program.country}
-                      >
-                        {getCountryFlag(program.country)
-                          ? <span>{getCountryFlag(program.country)}</span>
-                          : <Globe className="w-3 h-3" />}
-                        {getCountryShortName(program.country)}
-                      </Badge>
+                      {countryBadge}
                     </>
                   )}
                   {/* Classification slots use natural widths so they
                       don't overflow narrow viewports. Same provider has
                       the same chips on every row so the widths match
                       naturally. */}
-                  <ProgramClassificationControls
-                    program={program}
-                    providerId={providerId}
-                    allowedServiceTags={allowedServiceTags}
-                    providerType={providerType}
-                  />
+                  {renderClassification()}
                 </div>
 
-                {/* Total + pending live OUTSIDE the flex-1 wrapper, as
-                    true siblings of the pencil/trash/chevron action
-                    buttons in the outer row. This way the flex layout
-                    reserves real horizontal space for them - the total
-                    can't visually bleed past its allocated box and
-                    overlap the icons, even when the price is a wide
-                    range like "$166,910 - $171,910 (draft)". */}
                 <div className="whitespace-nowrap text-right flex-shrink-0">
                   <ProgramTotalBadge program={program} />
                 </div>
-                {isAdminView && program.latestSheetStatus === "PENDING" && (
-                  <Badge className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/40 border flex-shrink-0">
-                    Pending Review
-                  </Badge>
-                )}
-                {isEditing ? (
-                  <>
-                    {/* Save / Cancel replace the Pencil in-place. Trash and
-                        chevron stay on the right edge so the row's
-                        controls don't shift around between modes. */}
-                    <Button
-                      size="sm"
-                      className="h-7 w-7 p-0"
-                      disabled={!formName.trim() || !formCountry.trim() || updateMutation.isPending}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        updateMutation.mutate({ id: program.id, name: formName.trim(), country: formCountry.trim() });
-                      }}
-                      data-testid={`btn-save-program-${program.id}`}
-                    >
-                      {updateMutation.isPending
-                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        : <Check className="w-3.5 h-3.5" />}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        cancelEdit();
-                      }}
-                      data-testid={`btn-cancel-program-${program.id}`}
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </Button>
-                  </>
-                ) : (
-                  (isAdminView || canManagePrograms) && (
-                    <>
-                      {/* Confirm-classification icon. Sits in the reserved
-                          action-icon space (sibling of Pencil/Trash/Chevron)
-                          so a wide total column can never clip it like it
-                          could when this button lived inside the flex-1
-                          overflow-hidden wrapper. */}
-                      <ProgramConfirmIconButton program={program} providerId={providerId} />
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 w-7 p-0"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          startEdit(program);
-                        }}
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild onClick={(e) => e.stopPropagation()}>
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0">
-                            <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete Program</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This will permanently delete "{program.name}" and all its cost data. This cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              onClick={() => {
-                                if (expandedProgramId === program.id) setExpandedProgramId(null);
-                                deleteMutation.mutate(program.id);
-                              }}
-                            >
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </>
-                  )
-                )}
-                {/* Chevron is purely visual now - the whole row toggles. */}
-                <div className="h-7 w-7 flex items-center justify-center text-muted-foreground" aria-hidden>
-                  {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                {pendingBadge}
+                {renderActions("")}
+                {chevronIcon}
+              </div>
+
+              {/* Mobile layout: 3 logical rows.
+                    Row 1: name (flex-grows + truncates) + chevron
+                    Row 2: country + total + admin actions (right)
+                    Row 3: classification controls, horizontally scrollable
+                  Each row is its own flex container so the wide draft
+                  total can't push the name off-screen, and the
+                  classification toggles always have their own width
+                  to spread into without competing for row 1 space. */}
+              <div className="sm:hidden flex flex-col gap-2">
+                {/* Row 1 */}
+                <div
+                  className="flex items-center gap-2 min-w-0"
+                  onClick={isEditing ? (e) => e.stopPropagation() : undefined}
+                >
+                  {isEditing ? (
+                    <Input
+                      value={formName}
+                      onChange={(e) => setFormName(e.target.value)}
+                      placeholder="Program name"
+                      className="h-7 text-sm flex-1 min-w-0"
+                      data-testid={`input-program-name-${program.id}-mobile`}
+                    />
+                  ) : (
+                    <span className="font-medium text-sm truncate flex-1 min-w-0" title={program.name}>{program.name}</span>
+                  )}
+                  {chevronIcon}
                 </div>
-              </>
+
+                {/* Row 2 */}
+                <div
+                  className="flex items-center gap-2 flex-wrap"
+                  onClick={isEditing ? (e) => e.stopPropagation() : undefined}
+                >
+                  {isEditing ? (
+                    <div className="flex-1 min-w-[140px]">
+                      <SingleCountryAutocompleteInput
+                        value={formCountry}
+                        onChange={setFormCountry}
+                        placeholder="Country"
+                        data-testid={`input-program-country-${program.id}-mobile`}
+                      />
+                    </div>
+                  ) : (
+                    countryBadge
+                  )}
+                  <div className="whitespace-nowrap text-right flex-shrink-0">
+                    <ProgramTotalBadge program={program} />
+                  </div>
+                  {pendingBadge}
+                  <div className="ml-auto flex items-center gap-0.5 flex-shrink-0">
+                    {renderActions("-mobile")}
+                  </div>
+                </div>
+
+                {/* Row 3: classification - full-bleed horizontal scroll
+                    so the IVF subtype popover trigger + Fixed-Cost
+                    toggle stay reachable on the narrowest phones. */}
+                <div
+                  className="-mx-4 px-4 overflow-x-auto"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-center gap-2 flex-nowrap py-0.5 w-fit">
+                    {renderClassification()}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {isExpanded && (
