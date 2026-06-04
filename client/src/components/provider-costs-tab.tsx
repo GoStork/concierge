@@ -3367,7 +3367,7 @@ function ProgramsView({
                     classification toggles, total badge, and pending badge
                     stay visible so admins don't lose context when renaming. */}
                 <div
-                  className="flex-1 flex items-center gap-2 flex-nowrap min-w-0"
+                  className="flex-1 flex items-center gap-2 flex-nowrap min-w-0 overflow-hidden"
                   onClick={isEditing ? (e) => e.stopPropagation() : undefined}
                 >
                   {isEditing ? (
@@ -3407,28 +3407,30 @@ function ProgramsView({
                   {/* Classification slots use natural widths so they
                       don't overflow narrow viewports. Same provider has
                       the same chips on every row so the widths match
-                      naturally. The total + pending wrapper below has
-                      ml-auto to push it to the right edge of the
-                      content area, with whitespace-nowrap so the price
-                      never wraps onto a second line and collides with
-                      the action buttons. */}
+                      naturally. */}
                   <ProgramClassificationControls
                     program={program}
                     providerId={providerId}
                     allowedServiceTags={allowedServiceTags}
                     providerType={providerType}
                   />
-                  <div className="ml-auto flex items-center gap-2 flex-shrink-0">
-                    <div className="whitespace-nowrap text-right">
-                      <ProgramTotalBadge program={program} />
-                    </div>
-                    {isAdminView && program.latestSheetStatus === "PENDING" && (
-                      <Badge className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/40 border">
-                        Pending Review
-                      </Badge>
-                    )}
-                  </div>
                 </div>
+
+                {/* Total + pending live OUTSIDE the flex-1 wrapper, as
+                    true siblings of the pencil/trash/chevron action
+                    buttons in the outer row. This way the flex layout
+                    reserves real horizontal space for them - the total
+                    can't visually bleed past its allocated box and
+                    overlap the icons, even when the price is a wide
+                    range like "$166,910 - $171,910 (draft)". */}
+                <div className="whitespace-nowrap text-right flex-shrink-0">
+                  <ProgramTotalBadge program={program} />
+                </div>
+                {isAdminView && program.latestSheetStatus === "PENDING" && (
+                  <Badge className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/40 border flex-shrink-0">
+                    Pending Review
+                  </Badge>
+                )}
                 {isEditing ? (
                   <>
                     {/* Save / Cancel replace the Pencil in-place. Trash and
