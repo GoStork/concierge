@@ -28,6 +28,15 @@ export interface ClassificationResult {
   // "sperm_donor"). A bundled cost sheet (e.g. egg-donor + surrogate
   // package) gets multiple tags; parent matcher unions them.
   serviceTypes: string[];
+  // Egg-donor fresh/frozen flavor when "egg_donor" is in serviceTypes -
+  // populated for BOTH pure egg-donor sheets (where it duplicates subType)
+  // AND mixed sheets like "IVF + Egg Donation" where the primary subType
+  // is the IVF leaf (e.g. ivf_cycle_donor_eggs_surrogate_carry) but the
+  // donor route is still fresh vs frozen. Without this, mixed sheets fall
+  // back to "subtypes carries BOTH egg_donor_fresh and egg_donor_frozen"
+  // and the matcher can't distinguish a Fresh-donor program from a
+  // Frozen-lot one for filter purposes.
+  eggDonorSubType?: "fresh" | "frozen";
 }
 
 @Injectable()
@@ -409,6 +418,12 @@ ${subtypeMenu}
     - "frozen" - Frozen egg lot purchase from an egg bank (vitrified eggs, per-lot pricing).
 - Else (pure surrogacy / pure sperm bank / no IVF + no egg donor), emit "subType": "" and "tab": "".
 
+STEP 2b - Whenever "egg_donor" is in serviceTypes (including mixed IVF + egg-donor sheets where the primary subType is an IVF leaf), ALSO emit "eggDonorSubType" as "fresh" or "frozen":
+- "fresh" - Donor stimulation language: "donor meds", "ovarian stimulations", "synchronized cycle", "fresh donor", "donor candidates evaluation", "minimum N eggs from retrieval".
+- "frozen" - Egg bank language: "frozen egg lot", "vitrified eggs", "X eggs per lot", "thaw guarantee", "egg bank", per-lot pricing.
+- Default to "fresh" if the sheet describes donor evaluation/screening + retrieval but is ambiguous on cycle type.
+- Omit this field entirely (or set null) when "egg_donor" is NOT in serviceTypes.
+
 IVF SUBTYPE HEURISTICS (only when "ivf_clinic" is in serviceTypes):
 
 A. PROGRAM HAS BOTH CREATION AND TRANSFER:
@@ -475,10 +490,12 @@ This is a ${providerTypeName} cost sheet. There is NO subtype distinction for th
 
     const subtypeOutputSchema = isMultiServiceProvider
       ? `    "tab": "<tab-id or empty string>",
-    "subType": "<subtype-id or fresh|frozen or empty string>",`
+    "subType": "<subtype-id or fresh|frozen or empty string>",
+    "eggDonorSubType": "<fresh | frozen | omit when serviceTypes has no egg_donor>",`
       : isIvfProvider
       ? `    "tab": "<tab-id>",
-    "subType": "<subtype-id>",`
+    "subType": "<subtype-id>",
+    "eggDonorSubType": "<fresh | frozen | omit when serviceTypes has no egg_donor>",`
       : isEggProvider
       ? `    "subType": "<fresh | frozen>",`
       : ``;
@@ -762,6 +779,16 @@ ${subtypeTrailingNote}`;
       const rawCountry = typeof cls.country === "string" ? cls.country.trim() : "";
       const country = rawCountry.length > 0 && rawCountry.length <= 60 ? rawCountry : "United States";
 
+      // Extracted alongside subType so mixed IVF+egg-donor sheets carry the
+      // fresh/frozen distinction even though their primary subType is the
+      // IVF leaf. Only honored downstream when "egg_donor" is in
+      // serviceTypes (see CostsService.saveAiClassification).
+      const rawEggDonorSubType = typeof cls.eggDonorSubType === "string" ? cls.eggDonorSubType.toLowerCase().trim() : "";
+      const eggDonorSubType: "fresh" | "frozen" | undefined =
+        rawEggDonorSubType === "frozen" ? "frozen"
+        : rawEggDonorSubType === "fresh" ? "fresh"
+        : undefined;
+
       // serviceTypes - validate the AI's array against the allowed tokens.
       // Fall back to a single default tag derived from the provider type
       // so a malformed/missing field still gives the program a sensible tag.
@@ -794,19 +821,24 @@ ${subtypeTrailingNote}`;
         const rawSubType = String(cls.subType ?? "").trim();
         const hasIvfTag = serviceTypes.includes("ivf_clinic");
         const hasEggTag = serviceTypes.includes("egg_donor");
+        // Only attach the egg-donor fresh/frozen flavor when egg_donor is
+        // actually one of the serviceTypes - otherwise this is noise.
+        const eggDonorFlavor = hasEggTag ? eggDonorSubType : undefined;
         if (hasIvfTag) {
           const subTypeId = rawSubType as SubType;
           if ((ALL_SUBTYPES as string[]).includes(subTypeId)) {
             const tab = TAB_OF[subTypeId];
-            classification = { tab, subType: subTypeId, isFixedCost, confidence, reasoning, programName, country, serviceTypes };
-            this.logger.log(`parseAndClassify [Multi/IVF]: ${items.length} items, ${subTypeId} (fixed=${isFixedCost}, conf=${confidence.toFixed(2)}, name="${programName}", country="${country}", tags=${JSON.stringify(serviceTypes)})`);
+            classification = { tab, subType: subTypeId, isFixedCost, confidence, reasoning, programName, country, serviceTypes, eggDonorSubType: eggDonorFlavor };
+            this.logger.log(`parseAndClassify [Multi/IVF]: ${items.length} items, ${subTypeId} (fixed=${isFixedCost}, conf=${confidence.toFixed(2)}, name="${programName}", country="${country}", tags=${JSON.stringify(serviceTypes)}, eggDonor=${eggDonorFlavor ?? "n/a"})`);
           } else {
             this.logger.warn(`parseAndClassify [Multi/IVF]: ivf_clinic tag but invalid subType "${cls.subType}", emitting classification without subType`);
-            classification = { tab: "" as any, subType: "" as any, isFixedCost, confidence, reasoning, programName, country, serviceTypes };
+            classification = { tab: "" as any, subType: "" as any, isFixedCost, confidence, reasoning, programName, country, serviceTypes, eggDonorSubType: eggDonorFlavor };
           }
         } else if (hasEggTag) {
+          // Pure egg-donor: subType IS fresh/frozen. Mirror it onto
+          // eggDonorSubType so downstream code can rely on a single field.
           const subType = (rawSubType.toLowerCase() === "frozen" ? "frozen" : "fresh") as any;
-          classification = { tab: "" as any, subType, isFixedCost, confidence, reasoning, programName, country, serviceTypes };
+          classification = { tab: "" as any, subType, isFixedCost, confidence, reasoning, programName, country, serviceTypes, eggDonorSubType: eggDonorFlavor ?? subType };
           this.logger.log(`parseAndClassify [Multi/Egg]: ${items.length} items, ${subType} (fixed=${isFixedCost}, name="${programName}", country="${country}", tags=${JSON.stringify(serviceTypes)})`);
         } else {
           // Pure surrogacy / sperm bank / etc. - no subType.
@@ -814,18 +846,22 @@ ${subtypeTrailingNote}`;
           this.logger.log(`parseAndClassify [Multi/Agency]: ${items.length} items (fixed=${isFixedCost}, name="${programName}", country="${country}", tags=${JSON.stringify(serviceTypes)})`);
         }
       } else if (isIvfProvider) {
+        // Single-service IVF clinic. Can still bundle egg-donor coverage
+        // when the cost sheet describes an IVF + Egg Donation package -
+        // honor eggDonorSubType only when serviceTypes confirms it.
+        const eggDonorFlavor = serviceTypes.includes("egg_donor") ? eggDonorSubType : undefined;
         const subTypeId = String(cls.subType ?? "") as SubType;
         if ((ALL_SUBTYPES as string[]).includes(subTypeId)) {
           const tab = TAB_OF[subTypeId];
-          classification = { tab, subType: subTypeId, isFixedCost, confidence, reasoning, programName, country, serviceTypes };
-          this.logger.log(`parseAndClassify [IVF]: ${items.length} items, ${subTypeId} (fixed=${isFixedCost}, conf=${confidence.toFixed(2)}, name="${programName}", country="${country}", tags=${JSON.stringify(serviceTypes)})`);
+          classification = { tab, subType: subTypeId, isFixedCost, confidence, reasoning, programName, country, serviceTypes, eggDonorSubType: eggDonorFlavor };
+          this.logger.log(`parseAndClassify [IVF]: ${items.length} items, ${subTypeId} (fixed=${isFixedCost}, conf=${confidence.toFixed(2)}, name="${programName}", country="${country}", tags=${JSON.stringify(serviceTypes)}, eggDonor=${eggDonorFlavor ?? "n/a"})`);
         } else {
           this.logger.warn(`parseAndClassify [IVF]: invalid subType "${cls.subType}", returning items without classification`);
         }
       } else if (isEggProvider) {
         const rawSub = String(cls.subType ?? "").toLowerCase().trim();
         const subType = (rawSub === "frozen" ? "frozen" : "fresh") as any;
-        classification = { tab: "" as any, subType, isFixedCost, confidence, reasoning, programName, country, serviceTypes };
+        classification = { tab: "" as any, subType, isFixedCost, confidence, reasoning, programName, country, serviceTypes, eggDonorSubType: subType };
         this.logger.log(`parseAndClassify [Egg]: ${items.length} items, ${subType} (fixed=${isFixedCost}, name="${programName}", country="${country}", tags=${JSON.stringify(serviceTypes)})`);
       } else {
         // No-subtype provider (surrogacy / sperm bank / etc.)

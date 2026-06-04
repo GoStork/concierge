@@ -442,14 +442,10 @@ model ProviderCostSheet {
   category          String?
   description       String?
   lineItemTemplate  Json?
-  // Fixed-vs-not-fixed: AI proposes (heuristic) on parse, clinic confirms.
-  // null = AI has not run yet. When true, the overlay's mandatoryFixed[]
-  // fields become required on submit. Source records who set the value.
+  // Fixed-vs-not-fixed classification. null = AI has not run yet (or the
+  // admin hasn't picked). When true, the overlay's mandatoryFixed[] fields
+  // become required on submit.
   isFixedCost       Boolean?
-  isFixedCostSource String?
-  // True for rows migrated from the legacy 2-subtype world. Clinic must
-  // confirm the auto-defaulted subtype before the flag clears.
-  legacyNeedsReview Boolean       @default(false)
   // Live progress for the background Gemini parse. Updated by the
   // controller's backgroundParseAndSave as the AI streams items back.
   // parseStage is a short human label ("Reading document...",

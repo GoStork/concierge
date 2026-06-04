@@ -315,6 +315,99 @@ function IvfSubtypePopover({
   );
 }
 
+// Egg-donor subtype picker - mirrors IvfSubtypePopover's visual treatment
+// (badge grid, mobile drawer / desktop popover) but with the flat 2-option
+// fresh/frozen list instead of the tab-grouped 14-subtype IVF taxonomy.
+// Used as a sub-popover next to the top-bar "Egg Donor" coverage leaf,
+// analogous to how the IVF leaf surfaces IvfSubtypePopover.
+function EggDonorSubtypePopover({
+  currentSubType,
+  onSelect,
+  triggerClassName,
+}: {
+  currentSubType: string | null;
+  onSelect: (subType: string) => void;
+  triggerClassName?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const isMobile = useIsMobile();
+  const currentLabel = labelOfEggDonorSubtype(currentSubType);
+
+  const trigger = (
+    <Button
+      variant="outline"
+      size="sm"
+      className={cn(
+        "shrink-0 h-8 text-xs font-medium rounded-[var(--radius)] gap-1.5 px-3",
+        triggerClassName,
+      )}
+      data-testid="select-egg-donor-subtype"
+    >
+      <span className="truncate text-left">{currentLabel || "Select donor type..."}</span>
+      <ChevronDown className="w-3.5 h-3.5 opacity-60 flex-shrink-0" />
+    </Button>
+  );
+
+  const body = (
+    <div className="flex flex-wrap gap-2.5">
+      {EGG_DONOR_SUBTYPES.map(s => {
+        const selected = currentSubType === s.id;
+        return (
+          <Badge
+            key={s.id}
+            variant={selected ? "default" : "outline"}
+            className="cursor-pointer font-ui px-4 py-2 rounded-full whitespace-normal text-left max-w-full"
+            style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+            onClick={() => {
+              onSelect(s.id);
+              setOpen(false);
+            }}
+            data-testid={`egg-donor-subtype-option-${s.id}`}
+          >
+            {s.label}
+          </Badge>
+        );
+      })}
+    </div>
+  );
+
+  if (isMobile) {
+    return (
+      <Drawer open={open} onOpenChange={setOpen}>
+        <DrawerTrigger asChild>{trigger}</DrawerTrigger>
+        <DrawerContent data-testid="drawer-egg-donor-subtype">
+          <DrawerHeader>
+            <DrawerTitle>Donor type</DrawerTitle>
+          </DrawerHeader>
+          <div className="px-6 pb-6 max-h-[70vh] overflow-y-auto space-y-4">
+            {body}
+          </div>
+        </DrawerContent>
+      </Drawer>
+    );
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <PopoverContent
+        className="w-[22rem] max-w-[calc(100vw-2rem)] p-4 max-h-[var(--radix-popover-content-available-height)] overflow-y-auto"
+        align="start"
+        side="bottom"
+        sideOffset={6}
+        collisionPadding={16}
+      >
+        <div className="space-y-3">
+          <div className="flex justify-between items-center sticky top-0 bg-popover pb-2 -mt-1 -mx-1 px-1 z-10">
+            <span className="font-ui" style={{ fontSize: 'var(--filter-label-size, 18px)' }}>Donor type</span>
+          </div>
+          {body}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 // Derive the service tags displayed on a program's main row from its
 // canonical subTypes[]. One IVF leaf maps to one "ivf_clinic" tag; the
 // non-IVF leaves map per SERVICE_TAG_OF_NON_IVF_LEAF. Dedupes.
@@ -336,14 +429,21 @@ function serviceTagsFromSubTypes(subTypes: string[] | null | undefined): string[
 // subtype lives in subTypes[] as one of the ivf_*/embryo_*/fet_*/etc IDs.
 const COVERAGE_LEAVES: { id: string; label: string; serviceTag: string }[] = [
   { id: "surrogacy",         label: "Surrogacy",   serviceTag: "surrogacy" },
-  { id: "egg_donor_fresh",   label: "Fresh Donor", serviceTag: "egg_donor" },
-  { id: "egg_donor_frozen",  label: "Frozen Egg",  serviceTag: "egg_donor" },
+  { id: "egg_donor",         label: "Egg Donor",   serviceTag: "egg_donor" },
   { id: "sperm_donor",       label: "Sperm Donor", serviceTag: "sperm_donor" },
   { id: "ivf",               label: "IVF",         serviceTag: "ivf_clinic" },
 ];
 
 // Backwards alias - some call sites still import NON_IVF_LEAVES.
 const NON_IVF_LEAVES = COVERAGE_LEAVES.filter(l => l.id !== "ivf");
+
+// Egg-donor subtype options surfaced by the EggDonor sub-popover. The
+// virtual "egg_donor" coverage leaf is on when one of these ids lives in
+// subTypes[]; the backend matcher continues to read the granular ids.
+const EGG_DONOR_SUBTYPES: { id: string; label: string }[] = [
+  { id: "egg_donor_fresh",  label: "Fresh Donor" },
+  { id: "egg_donor_frozen", label: "Frozen Egg" },
+];
 
 // IVF subtype IDs (from cost-templates-config). True when a leaf in subTypes[]
 // is an IVF subtype - tells the Coverage row "IVF" toggle is on.
@@ -366,98 +466,93 @@ function getIvfSubtype(subTypes: string[] | null | undefined): string | null {
   return (subTypes || []).find(s => ivfPrefixes.some(p => s.startsWith(p))) || null;
 }
 
+// Find the (single) egg-donor subtype currently in subTypes[]. The top-bar
+// "Egg Donor" coverage leaf is a virtual toggle whose on/off state is
+// derived from this; the actual fresh/frozen distinction is picked in a
+// sub-popover styled to match the IVF program-type popover.
+function getEggDonorSubtype(subTypes: string[] | null | undefined): string | null {
+  return (subTypes || []).find(s => s === "egg_donor_fresh" || s === "egg_donor_frozen") || null;
+}
+
+function labelOfEggDonorSubtype(subType: string | null | undefined): string | null {
+  return EGG_DONOR_SUBTYPES.find(s => s.id === subType)?.label ?? null;
+}
+
+// Pending-state shape held at the ProgramsView level. One entry per
+// program with at least one unsaved edit; absent entries = clean rows.
+// Save bar at the bottom of the Costs tab flushes all of these in order
+// via the existing PATCH endpoints when the user clicks SAVE.
+type ProgramPending = {
+  name?: string;
+  country?: string;
+  subTypes?: string[];
+  isFixedCost?: boolean | null;
+  // Line-item edits bubbled up from SingleCostsTab. The bottom Save bar
+  // flushes these via /api/costs/save-draft per program.
+  items?: CostItemData[];
+};
+
 // Consolidated classification controls rendered inline inside each cost
-// program's top bar. Encapsulates: Coverage toggle row (Surrogacy / Fresh
-// Donor / Frozen Egg / Sperm Donor / IVF), Program type popover (visible
-// only when IVF leaf is on), Fixed-Cost / Not-Fixed segmented toggle, and
-// the Confirm Classification button OR Confirmed badge. Owns its own
-// mutations so ProgramsView can drop it in without prop-drilling.
+// program's top bar. Encapsulates: Coverage toggle row (Surrogacy / Egg
+// Donor / Sperm Donor / IVF), Program type popover (visible only when
+// IVF leaf is on), Egg-donor Fresh/Frozen popover (visible only when the
+// egg-donor leaf is on), and the Fixed-Cost / Not-Fixed segmented toggle.
+// All edits are STAGED into the pending bag - they don't fire mutations
+// directly. The parent's Save bar flushes them when clicked.
 function ProgramClassificationControls({
   program,
-  providerId,
+  pending,
+  onPatch,
   allowedServiceTags,
-  providerType,
 }: {
   program: CostProgram;
-  providerId: string;
+  pending?: ProgramPending;
+  onPatch: (patch: Partial<ProgramPending>) => void;
   allowedServiceTags: string[];
-  providerType: string;
 }) {
-  const { toast } = useToast();
   const visibleLeaves = leavesForServiceTags(allowedServiceTags);
-  const current = program.subTypes ?? [];
+  // Effective state = pending overlay (if any) on top of server values.
+  const current = pending?.subTypes ?? program.subTypes ?? [];
   const currentIvfSubtype = getIvfSubtype(current);
   const ivfOn = !!currentIvfSubtype;
+  const currentEggDonorSubtype = getEggDonorSubtype(current);
+  const eggDonorOn = !!currentEggDonorSubtype;
   const latestSheet = program.latestSheet ?? null;
-  const needsConfirm =
-    latestSheet?.isFixedCostSource === "ai_proposed" ||
-    latestSheet?.isFixedCostSource == null ||
-    latestSheet?.legacyNeedsReview === true;
-  // hasInteracted used to gate the Confirm button on whether the clinic
-  // had clicked one of the Fixed-Cost / Not Fixed Costs toggles in this
-  // render cycle. That guard was added when the AI's pre-population was
-  // unreliable - now it always populates correctly, and the guard mostly
-  // made the button look clickable while silently doing nothing because
-  // disabled. Derived directly from the data now: if a value exists
-  // (either AI-proposed or clinic-confirmed) the action is valid; if
-  // it's still null we keep the button disabled with a tooltip telling
-  // the clinic to pick a toggle first. setHasInteracted is still wired
-  // through the toggle clicks below but no longer gates anything - kept
-  // as a no-op for now to avoid touching every onClick.
-  const hasInteracted = latestSheet?.isFixedCost != null;
-  const setHasInteracted = (_v: boolean) => { /* no-op; see comment above */ };
-
-  // Invalidations target every query the row depends on:
-  //   - /api/costs/programs - the ProgramsView programs list (where this
-  //     row's latestSheet status comes from). Previously this was the
-  //     /api/costs/provider/.../programs key, which DOES NOT EXIST as a
-  //     real query - so the cache never busted and the row stayed on
-  //     "Confirm Classification" until the user reloaded.
-  //   - /api/costs/provider/.../sheets and /approved - SingleCostsTab's
-  //     queries inside the expanded program body, in case the user has
-  //     it open.
-  const invalidateRowAndSheet = () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/costs/programs"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId], exact: false });
-  };
-
-  const updateSubTypesMutation = useMutation({
-    mutationFn: ({ subTypes }: { subTypes: string[] }) =>
-      apiRequest("PATCH", `/api/costs/programs/${program.id}`, { subTypes }),
-    onSuccess: invalidateRowAndSheet,
-    onError: (err: any) => toast({ title: "Failed to update coverage", description: err.message, variant: "destructive" }),
-  });
-
-  const classificationMutation = useMutation({
-    mutationFn: (payload: { isFixedCost?: boolean; confirm?: boolean }) =>
-      apiRequest("PATCH", `/api/costs/sheet/${latestSheet!.id}/classification`, payload),
-    onSuccess: invalidateRowAndSheet,
-    onError: (err: any) => toast({ title: "Failed to save classification", description: err.message, variant: "destructive" }),
-  });
+  const effectiveIsFixedCost =
+    pending?.isFixedCost !== undefined ? pending.isFixedCost : latestSheet?.isFixedCost ?? null;
 
   const toggleLeaf = (leafId: string) => {
     if (leafId === "ivf") {
-      // Toggling IVF removes ALL IVF subtypes if currently on, or
-      // adds a sensible default if currently off (the Program type
-      // popover next to it lets admin refine).
       if (ivfOn) {
         const next = current.filter(s => !s.startsWith("ivf_") && !s.startsWith("embryo_") && !s.startsWith("fet_") && !s.startsWith("shipping_") && !s.startsWith("egg_freezing_"));
-        updateSubTypesMutation.mutate({ subTypes: next });
+        onPatch({ subTypes: next });
       } else {
-        const next = [...current, "ivf_cycle_own_eggs_own_carry"];
-        updateSubTypesMutation.mutate({ subTypes: next });
+        onPatch({ subTypes: [...current, "ivf_cycle_own_eggs_own_carry"] });
+      }
+      return;
+    }
+    if (leafId === "egg_donor") {
+      if (eggDonorOn) {
+        const next = current.filter(s => s !== "egg_donor_fresh" && s !== "egg_donor_frozen");
+        onPatch({ subTypes: next });
+      } else {
+        onPatch({ subTypes: [...current, "egg_donor_fresh"] });
       }
       return;
     }
     const has = current.includes(leafId);
     const next = has ? current.filter(s => s !== leafId) : [...current, leafId];
-    updateSubTypesMutation.mutate({ subTypes: next });
+    onPatch({ subTypes: next });
   };
 
   const setIvfSubtype = (newSub: string) => {
-    // Replace current IVF leaf with the new one, keep non-IVF leaves intact.
     const nonIvf = current.filter(s => !s.startsWith("ivf_") && !s.startsWith("embryo_") && !s.startsWith("fet_") && !s.startsWith("shipping_") && !s.startsWith("egg_freezing_"));
-    updateSubTypesMutation.mutate({ subTypes: [...nonIvf, newSub] });
+    onPatch({ subTypes: [...nonIvf, newSub] });
+  };
+
+  const setEggDonorSubtype = (newSub: string) => {
+    const others = current.filter(s => s !== "egg_donor_fresh" && s !== "egg_donor_frozen");
+    onPatch({ subTypes: [...others, newSub] });
   };
 
   return (
@@ -471,58 +566,84 @@ function ProgramClassificationControls({
           alignment of the trailing group shifted everything sideways
           per row based on each row's total amount. */}
 
-      {/* Slot 1: Coverage (multi-select pills). Natural width with
-          flex-shrink-0 so the chip set doesn't compress on narrow
-          viewports. The same provider has the same visibleLeaves
-          on every row so widths match naturally across rows. */}
-      <div className="flex items-center flex-shrink-0">
-        {visibleLeaves.length > 0 && (
-          <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm items-center">
-            {visibleLeaves.map(leaf => {
-              const selected = leaf.id === "ivf" ? ivfOn : current.includes(leaf.id);
-              return (
-                <button
-                  key={`cov-${program.id}-${leaf.id}`}
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); toggleLeaf(leaf.id); }}
-                  className={cn(
-                    "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium whitespace-nowrap",
-                    selected ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
-                  )}
-                  data-testid={`top-leaf-${program.id}-${leaf.id}`}
-                >
-                  {leaf.label}
-                </button>
-              );
-            })}
+      {/* Slots 1 + 2 + 2b are wrapped together in a single flex-nowrap
+          group so the Coverage pills and the corresponding sub-coverage
+          popovers (IVF program type, Egg-donor Fresh/Frozen) never get
+          separated when the outer flex-wrap kicks in - they describe the
+          SAME classification choice and reading "IVF" on one line with
+          "Own eggs, surrogate carries" stranded on another reads as two
+          unrelated controls. The Fixed-Cost toggle (slot 3) stays a
+          separate flex item, free to wrap independently when space is
+          tight. */}
+      <div className="flex items-center gap-2 flex-shrink-0 flex-nowrap">
+        {/* Slot 1: Coverage (multi-select pills). Natural width with
+            flex-shrink-0 so the chip set doesn't compress on narrow
+            viewports. The same provider has the same visibleLeaves
+            on every row so widths match naturally across rows. */}
+        <div className="flex items-center flex-shrink-0">
+          {visibleLeaves.length > 0 && (
+            <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm items-center">
+              {visibleLeaves.map(leaf => {
+                const selected =
+                  leaf.id === "ivf" ? ivfOn :
+                  leaf.id === "egg_donor" ? eggDonorOn :
+                  current.includes(leaf.id);
+                return (
+                  <button
+                    key={`cov-${program.id}-${leaf.id}`}
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); toggleLeaf(leaf.id); }}
+                    className={cn(
+                      "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium whitespace-nowrap",
+                      selected ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
+                    )}
+                    data-testid={`top-leaf-${program.id}-${leaf.id}`}
+                  >
+                    {leaf.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Slot 2: IVF subtype picker. Only emitted when ivfOn so non-IVF
+            rows don't reserve a phantom column. Fixed-width trigger (w-72
+            = 288px) so the Fixed-Cost / Not Fixed Costs toggle in the next
+            slot starts at exactly the same X position on every IVF row,
+            regardless of which subtype is selected. The width was sized
+            against the longest label ("Transfer to surrogate (in-house
+            embryos)"), with truncation as a safety net for any future
+            label that grows beyond it. */}
+        {ivfOn && (
+          <div className="flex items-center flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+            <IvfSubtypePopover
+              currentSubType={currentIvfSubtype}
+              onSelect={setIvfSubtype}
+              triggerClassName="w-72 justify-between"
+            />
+          </div>
+        )}
+
+        {/* Slot 2b: Egg-donor subtype picker. Surfaces alongside the IVF
+            subtype picker so a program covering both (e.g. donor-eggs IVF +
+            standalone egg-donor service) can pick a Fresh/Frozen variant
+            without polluting the coverage row with two flat leaves. Fixed
+            trigger width keeps downstream slots column-aligned across rows. */}
+        {eggDonorOn && (
+          <div className="flex items-center flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+            <EggDonorSubtypePopover
+              currentSubType={currentEggDonorSubtype}
+              onSelect={setEggDonorSubtype}
+              triggerClassName="w-44 justify-between"
+            />
           </div>
         )}
       </div>
 
-      {/* Slot 2: IVF subtype picker. Only emitted when ivfOn so non-IVF
-          rows don't reserve a phantom column. Fixed-width trigger (w-72
-          = 288px) so the Fixed-Cost / Not Fixed Costs toggle in the next
-          slot starts at exactly the same X position on every IVF row,
-          regardless of which subtype is selected. The width was sized
-          against the longest label ("Transfer to surrogate (in-house
-          embryos)"), with truncation as a safety net for any future
-          label that grows beyond it. */}
-      {ivfOn && (
-        <div className="flex items-center flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-          <IvfSubtypePopover
-            currentSubType={currentIvfSubtype}
-            onSelect={setIvfSubtype}
-            triggerClassName="w-72 justify-between"
-          />
-        </div>
-      )}
-
       {/* Slot 3: Cost (Fixed-Cost / Not Fixed Costs segmented toggle).
-          The original long labels are back now that the country chip
-          abbreviates to "USA" / "UK" / etc. - that reclaimed enough
-          horizontal space on the row for the full labels to fit
-          without colliding with wide totals like "$6,500 - $20,000
-          (draft)". */}
+          Reads pending overlay first, falls back to latestSheet. Sets
+          stage into onPatch so the bottom Save bar flushes it. */}
       <div className="flex items-center flex-shrink-0">
         {latestSheet && (
           <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm" onClick={(e) => e.stopPropagation()}>
@@ -530,10 +651,9 @@ function ProgramClassificationControls({
               type="button"
               className={cn(
                 "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium whitespace-nowrap",
-                latestSheet.isFixedCost === true ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
+                effectiveIsFixedCost === true ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
               )}
-              onClick={() => { setHasInteracted(true); classificationMutation.mutate({ isFixedCost: true }); }}
-              disabled={classificationMutation.isPending}
+              onClick={() => onPatch({ isFixedCost: true })}
               data-testid={`top-mark-fixed-${program.id}`}
             >
               Fixed-Cost
@@ -542,10 +662,9 @@ function ProgramClassificationControls({
               type="button"
               className={cn(
                 "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium whitespace-nowrap",
-                latestSheet.isFixedCost === false ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
+                effectiveIsFixedCost === false ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
               )}
-              onClick={() => { setHasInteracted(true); classificationMutation.mutate({ isFixedCost: false }); }}
-              disabled={classificationMutation.isPending}
+              onClick={() => onPatch({ isFixedCost: false })}
               data-testid={`top-mark-not-fixed-${program.id}`}
             >
               Not Fixed Costs
@@ -554,125 +673,7 @@ function ProgramClassificationControls({
         )}
       </div>
 
-      {/* The Confirm button + Confirmed badge used to live here as Slot 4,
-          but the flex-1 / overflow-hidden wrapper that holds this whole
-          control bar kept clipping the button whenever the program's total
-          column was wide (e.g. "$30,600 (draft)" or "$166,910 - $171,910
-          (draft)"). Moved to ProgramConfirmIconButton, which is rendered
-          OUTSIDE the flex-1 wrapper as a sibling of the Pencil / Trash /
-          Chevron action icons, so the action area always has reserved
-          horizontal space and the icon can never get cut off. */}
     </>
-  );
-}
-
-// Compact icon-only button for confirming the AI's Fixed-Cost vs Not-Fixed
-// classification. Renders three visual states from the latest sheet:
-//   - clinic_confirmed -> filled green-tinted check (disabled, decorative)
-//   - ai_proposed/null + a Fixed-Cost choice picked -> solid green primary
-//     button you can click to confirm
-//   - ai_proposed/null + no Fixed-Cost choice yet -> muted disabled button
-//     with a tooltip telling the clinic to click Fixed-Cost or Not Fixed
-//     Costs first
-// Hover tooltip explains the current action in plain English so the icon
-// is never cryptic. Lives in the action-icon group (next to Pencil/Trash/
-// Chevron) so it gets the same reserved width as the other icon buttons
-// and can't be clipped by the row's overflow-hidden wrapper.
-function ProgramConfirmIconButton({
-  program,
-  providerId,
-}: {
-  program: CostProgram;
-  providerId: string;
-}) {
-  const { toast } = useToast();
-  const latestSheet = program.latestSheet ?? null;
-  const needsConfirm =
-    latestSheet?.isFixedCostSource === "ai_proposed" ||
-    latestSheet?.isFixedCostSource == null ||
-    latestSheet?.legacyNeedsReview === true;
-  const isConfirmed = latestSheet?.isFixedCostSource === "clinic_confirmed";
-  const hasInteracted = latestSheet?.isFixedCost != null;
-
-  const invalidateRowAndSheet = () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/costs/programs"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId], exact: false });
-  };
-
-  const classificationMutation = useMutation({
-    mutationFn: (payload: { isFixedCost?: boolean; confirm?: boolean }) =>
-      apiRequest("PATCH", `/api/costs/sheet/${latestSheet!.id}/classification`, payload),
-    onSuccess: (_data, vars) => {
-      invalidateRowAndSheet();
-      // Explicit success feedback - the icon's color change alone is too
-      // subtle for the user to register that the click did anything, so we
-      // surface a toast on the confirm action specifically.
-      if (vars?.confirm === true) {
-        toast({
-          title: "Classification confirmed",
-          description: "This sheet's Fixed-Cost classification is locked in.",
-        });
-      }
-    },
-    onError: (err: any) => toast({ title: "Failed to save classification", description: err.message, variant: "destructive" }),
-  });
-
-  if (!latestSheet) return null;
-
-  if (isConfirmed) {
-    // Decorative state: clinic already confirmed. Now visually distinct from
-    // the clickable needs-confirm state - a SOLID green circle background
-    // with a white check inside, vs. the needs-confirm state which is a
-    // simple ghost icon. Previously both states rendered the same green
-    // check on a transparent background, so clicking confirm did nothing
-    // visible even though the DB and cache had updated correctly.
-    return (
-      <Button
-        size="sm"
-        variant="ghost"
-        className="h-7 w-7 p-0 rounded-full bg-[hsl(var(--brand-success))] text-white hover:bg-[hsl(var(--brand-success))]/90 cursor-default flex items-center justify-center"
-        title="Classification confirmed by the clinic"
-        onClick={(e) => e.stopPropagation()}
-        data-testid={`top-confirmed-${program.id}`}
-      >
-        <Check className="w-4 h-4 stroke-[3]" />
-      </Button>
-    );
-  }
-
-  if (!needsConfirm) return null;
-
-  // Disabled until the clinic acknowledges the AI's Fixed-Cost / Not Fixed
-  // Costs choice by clicking one of the two toggles in the control bar.
-  // We keep the icon visible so the clinic understands an action is
-  // pending; the tooltip explains the gate.
-  const disabled = classificationMutation.isPending || !hasInteracted;
-  const titleText = !hasInteracted
-    ? "Click Fixed-Cost or Not Fixed Costs first to confirm the AI's classification"
-    : "Confirm classification";
-
-  return (
-    <Button
-      size="sm"
-      variant="ghost"
-      className={cn(
-        "h-7 w-7 p-0",
-        disabled
-          ? "text-muted-foreground/60"
-          : "text-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success))]/10",
-      )}
-      disabled={disabled}
-      title={titleText}
-      onClick={(e) => {
-        e.stopPropagation();
-        classificationMutation.mutate({ isFixedCost: latestSheet.isFixedCost ?? false, confirm: true });
-      }}
-      data-testid={`top-confirm-${program.id}`}
-    >
-      {classificationMutation.isPending
-        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-        : <Check className="w-4 h-4" />}
-    </Button>
   );
 }
 
@@ -731,8 +732,6 @@ interface CostSheet {
   tab: string | null;
   subType: string | null;
   isFixedCost: boolean | null;
-  isFixedCostSource: string | null;
-  legacyNeedsReview: boolean;
   parseStage?: string | null;
   parseProgress?: number | null;
   parseItemsCount?: number | null;
@@ -756,13 +755,11 @@ interface CostProgram {
   // stale-cache after a fresh upload+parse cycle.
   latestSheetItems?: CostItemData[];
   // Phase: latest sheet metadata needed by the top-bar classification
-  // controls (Fixed/Not Fixed toggle + Confirm button). Null when no
-  // master sheet exists yet (newly created program).
+  // controls (Fixed/Not Fixed toggle). Null when no master sheet exists
+  // yet (newly created program).
   latestSheet?: {
     id: string;
     isFixedCost: boolean | null;
-    isFixedCostSource: string | null;
-    legacyNeedsReview: boolean;
     status: string;
   } | null;
 }
@@ -790,25 +787,24 @@ interface SingleCostsTabProps {
   programId?: string;
   programSubType?: string | null;
   programTab?: string | null;
-  // Program-type picker config - lifted into the classification card so
-  // both the AI-confirmation toggle and the subtype picker live in the
-  // same green/amber surface.
   programShowsAnySubtype?: boolean;
-  programShowsIvfSubtype?: boolean; // true => IVF taxonomy dropdown; false => unified leaf-toggle row
+  programShowsIvfSubtype?: boolean;
   programCurrentSubType?: string | null;
   programTabFilter?: IvfTab;
   onSubTypeChange?: (subType: string, tab?: string) => void;
-  // Services-covered multi-select - lifted into the classification card
-  // alongside the subtype + Fixed/Not-Fixed toggles. Disabled until the
-  // provider has at least one approved service we can map a tag from.
   allowedServiceTags?: string[];
   programServiceTypes?: string[];
   onServiceTypesChange?: (next: string[]) => void;
-  // Multi-select coverage: canonical subTypes[] (leaves) for non-IVF
-  // programs. Replaces the legacy services + program-type two-row UI with
-  // a single multi-select toggle row.
   programCurrentSubTypes?: string[];
   onSubTypesChange?: (next: string[]) => void;
+  // When set, line-item edits are bubbled up to the parent (ProgramsView)
+  // instead of auto-saved inline. The parent's bottom Save bar owns the
+  // flush. Disables the debounced saveDraftMutation and hides every
+  // internal "Save / Override / Submit for Approval" button.
+  onItemsChange?: (items: CostItemData[]) => void;
+  // Pending overlay from the parent: if present, used as the source of
+  // truth for editItems on mount so unsaved edits survive a re-render.
+  pendingItems?: CostItemData[];
 }
 
 interface ProviderCostsTabProps {
@@ -993,12 +989,20 @@ function SingleCostsTab({
   onServiceTypesChange,
   programCurrentSubTypes,
   onSubTypesChange,
+  onItemsChange,
+  pendingItems,
 }: SingleCostsTabProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingFileRef = useRef<File | null>(null);
-  const [editItems, setEditItems] = useState<CostItemData[]>([]);
-  const [isEditing, setIsEditing] = useState(!isAdminView);
+  const [editItems, setEditItems] = useState<CostItemData[]>(pendingItems ?? []);
+  // Line items are always editable now. The Override gate (admin only) is
+  // gone - any field change flows into the parent's pending bag via
+  // onItemsChange, and the bottom Save bar flushes everything.
+  const [isEditing, setIsEditing] = useState(true);
+  // True when the parent owns the save flow. Suppresses internal
+  // auto-save, internal Save/Cancel/Submit bars, and Override gates.
+  const parentOwnsSave = !!onItemsChange;
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectFeedback, setRejectFeedback] = useState("");
   const [rejectSheetId, setRejectSheetId] = useState("");
@@ -1014,7 +1018,6 @@ function SingleCostsTab({
   // value alone doesn't count - the clinic has to interact with the toggle
   // so we know they actually saw and considered it before clicking Confirm.
   // Resets when the displayed sheet changes (different program expanded).
-  const [hasInteractedWithFixedToggle, setHasInteractedWithFixedToggle] = useState(false);
 
   // When inside an IVF program, use programSubType (ivf_cycle / shipping_embryos) for the template query.
   // For egg donation programs the existing subType prop (fresh/frozen) is used as-is.
@@ -1147,6 +1150,9 @@ function SingleCostsTab({
         const finalItems = [...merged, ...customItems].map((item, i) => ({ ...item, sortOrder: i }));
 
         stopParseProgress(true);
+        // Data load (AI parse result), not a user edit - skip the
+        // bubble so the bottom Save bar doesn't pop up on its own.
+        itemsBubbleSkipRef.current = true;
         setEditItems(finalItems);
         setIsEditing(true);
         setTimeout(() => {
@@ -1213,6 +1219,10 @@ function SingleCostsTab({
               isIncluded: item.isIncluded !== false,
               sortOrder: item.sortOrder ?? idx,
             }));
+            // Data load (poll picked up the freshly-parsed sheet), not
+            // a user edit - skip the bubble so the bottom Save bar
+            // doesn't appear automatically when parsing finishes.
+            itemsBubbleSkipRef.current = true;
             setEditItems(items);
             setIsEditing(true);
             setIsDirty(true);
@@ -1378,6 +1388,10 @@ function SingleCostsTab({
   editItemsRef.current = editItems;
 
   const triggerAutoSave = useCallback(() => {
+    // Parent (ProgramsView) owns the save flow now. We bubble item
+    // changes up via onItemsChange below; the bottom Save bar flushes
+    // them. Skip the internal debounced auto-save entirely.
+    if (parentOwnsSave) return;
     if (!isEditing) return;
     if (isAdminView && !isDirty) return;
     const items = editItemsRef.current;
@@ -1388,7 +1402,20 @@ function SingleCostsTab({
       setAutoSaveStatus("saving");
       saveDraftMutationRef.current.mutate(editItemsRef.current);
     }, 500);
-  }, [isEditing, isAdminView, isDirty]);
+  }, [parentOwnsSave, isEditing, isAdminView, isDirty]);
+
+  // Bubble editItems up to the parent so the bottom Save bar can flush
+  // them. Skips the first mount (initial state already came from
+  // pendingItems) and bails when the parent isn't managing saves.
+  const itemsBubbleSkipRef = useRef(true);
+  useEffect(() => {
+    if (!parentOwnsSave || !onItemsChange) return;
+    if (itemsBubbleSkipRef.current) {
+      itemsBubbleSkipRef.current = false;
+      return;
+    }
+    onItemsChange(editItems);
+  }, [editItems, parentOwnsSave, onItemsChange]);
 
   const createQuoteMutation = useMutation({
     mutationFn: async () => {
@@ -1413,18 +1440,15 @@ function SingleCostsTab({
     },
   });
 
-  // Update the AI-proposed classification (tab + subType + isFixedCost).
-  // The server only flips source -> clinic_confirmed when payload.confirm
-  // === true (sent by the explicit Confirm button). Toggling the Fixed pill
-  // alone just updates the value but keeps the AI-proposed status so the
-  // clinic still has to explicitly Confirm before Submit unblocks.
+  // Update the classification (tab + subType + isFixedCost). The clinic
+  // can change any of these freely; the save action is the only persistence
+  // step - there is no separate confirm gate.
   const classificationMutation = useMutation({
-    mutationFn: async (payload: { sheetId: string; tab?: string; subType?: string; isFixedCost?: boolean; confirm?: boolean }) => {
+    mutationFn: async (payload: { sheetId: string; tab?: string; subType?: string; isFixedCost?: boolean }) => {
       return apiRequest("PATCH", `/api/costs/sheet/${payload.sheetId}/classification`, {
         tab: payload.tab,
         subType: payload.subType,
         isFixedCost: payload.isFixedCost,
-        confirm: payload.confirm,
       });
     },
     onSuccess: () => {
@@ -1634,13 +1658,6 @@ function SingleCostsTab({
 
   const displaySheet = parentId ? activeCustomSheet : latestMaster;
 
-  // Reset the "user actively touched the Fixed-cost toggle" gate whenever
-  // we land on a new sheet. Already-confirmed sheets implicitly count as
-  // touched so the gate doesn't re-block them.
-  useEffect(() => {
-    setHasInteractedWithFixedToggle(displaySheet?.isFixedCostSource === "clinic_confirmed");
-  }, [displaySheet?.id, displaySheet?.isFixedCostSource]);
-
   useEffect(() => {
     if (parsingSheet && !isParsing) {
       if (pollRef.current) clearInterval(pollRef.current);
@@ -1683,6 +1700,11 @@ function SingleCostsTab({
     const mergeWithTpl = (items: CostItemData[]) =>
       templateItems.length > 0 ? mergeSheetWithTemplate(items, templateItems) : items;
 
+    // Skip the next bubble-up. setEditItems below is a data-LOAD, not a
+    // user edit - if we don't gate it, just opening the row dirties the
+    // program and the bottom Save bar appears for nothing. The bubble
+    // effect (around line 1404) clears the ref after one render.
+    itemsBubbleSkipRef.current = true;
     if (draftSheet && draftSheet.items && draftSheet.items.length > 0) {
       setEditItems(mergeWithTpl(filterBySubType(draftSheet.items.map(mapSheetItem))));
       setIsEditing(true);
@@ -1695,6 +1717,10 @@ function SingleCostsTab({
     } else if (templateItems.length > 0) {
       setEditItems([...templateItems]);
       if (!isAdminView) setIsEditing(true);
+    } else {
+      // No data load actually happened - release the skip so the next
+      // genuine user edit still bubbles.
+      itemsBubbleSkipRef.current = false;
     }
   }, [sheetsQuery.isLoading, templatesQuery.isLoading, draftSheet?.id, pendingSheet?.id, latestMaster?.id, latestMaster?.status, templateItems.length, isAdminView, parentId, programId]);
 
@@ -1817,23 +1843,6 @@ function SingleCostsTab({
       )
     : [];
 
-  // Block Submit until the clinic confirms the AI classification. Triggers
-  // when the sheet is AI-proposed and not yet confirmed, OR when the sheet
-  // is a legacy-migrated row that the clinic hasn't reviewed, OR when the
-  // sheet has no subtype yet (Awaiting classification state). The warning
-  // banner above the form spells out what's blocking.
-  // Subtype is only a confirmation requirement for provider types that
-  // HAVE subtypes (IVF + egg donor). Surrogacy + sperm bank just need the
-  // Fixed/Not-Fixed acknowledgement.
-  const requiresSubtype = hasIvfSubtypes(providerType) || hasFreshFrozenSubtypes(providerType);
-  const needsClassificationConfirmation = !!displaySheet && !parentId && displaySheet.status !== "PARSING" && (
-    (requiresSubtype && !displaySheet.subType) ||
-    displaySheet.legacyNeedsReview === true ||
-    displaySheet.isFixedCostSource === "ai_proposed" ||
-    displaySheet.isFixedCostSource == null ||
-    displaySheet.isFixedCost == null
-  );
-
   const diffStats = useMemo(() => {
     if (!showDiffView || !pendingSheet) return null;
     let changed = 0;
@@ -1878,216 +1887,6 @@ function SingleCostsTab({
         </Alert>
       )}
 
-      {/* Legacy-review banner: shown for sheets auto-migrated from the
-          2-subtype world. Clinic must confirm tab + subtype + Fixed-cost
-          before the banner clears. */}
-      {displaySheet?.legacyNeedsReview && displaySheet.status !== "PARSING" && (
-        <Alert className="border-[hsl(var(--brand-warning))]/40 bg-[hsl(var(--brand-warning))]/10" data-testid="alert-legacy-review">
-          <AlertTriangle className="h-4 w-4 text-[hsl(var(--brand-warning))]" />
-          <AlertDescription className="text-sm">
-            <strong>Confirm this program's classification.</strong> We reorganized cost sheets into 4 tabs with subtypes. We auto-defaulted this sheet to{" "}
-            <span className="font-semibold">{labelOfSubtype(displaySheet.subType) ?? "Own eggs, own/self carry"}</span> -
-            please confirm or change it below.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Classification card hidden - all controls live inline in the
-          program top bar now (ProgramClassificationControls). Render
-          gated to false so we keep the surrounding JSX shape intact
-          without ripping out the editor's existing layout. */}
-      {false && displaySheet && !parentId && displaySheet.status !== "PARSING" && (displaySheet.subType || !hasIvfSubtypes(providerType)) && (
-        <Card className={cn(
-          "border-2",
-          needsClassificationConfirmation
-            ? "border-[hsl(var(--brand-warning))] bg-[hsl(var(--brand-warning))]/10"
-            : "border-[hsl(var(--brand-success))]/40 bg-[hsl(var(--brand-success))]/5"
-        )} data-testid="card-classification">
-          <CardContent className="py-4 space-y-3">
-            {needsClassificationConfirmation && (
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="w-5 h-5 text-[hsl(var(--brand-warning))] shrink-0 mt-0.5" />
-                <div>
-                  {/* Heading: readable foreground color. The amber accent
-                      lives on the card border + icon, not on the text - keeps
-                      contrast high against the amber-tinted card surface. */}
-                  <p className="text-sm font-semibold text-foreground">
-                    Confirm the AI classification before submitting
-                  </p>
-                  <p className="text-xs text-foreground/80 mt-0.5">
-                    Review the program type below. Click <strong>Fixed-Cost</strong> or <strong>Not Fixed Costs</strong> to acknowledge the AI's choice (or change it), then click <strong>Confirm Classification</strong>. You can't submit for approval until this is confirmed.
-                  </p>
-                </div>
-              </div>
-            )}
-            <div className="flex items-start gap-3 flex-wrap">
-              <div className="flex-1 min-w-[200px] space-y-2">
-                {/* Services-covered multi-toggle (lifted into the card so
-                    all three AI classifications - services, subtype,
-                    Fixed/Not-Fixed - live on the same surface). Rendered
-                    as a segmented row of buttons that match the Fixed-
-                    Cost toggle's styling; each one is independently
-                    toggleable since a single program can bundle multiple
-                    services (e.g. surrogacy + egg donor combined). */}
-                {/* Unified non-IVF coverage row. Each toggle is a flat
-                    leaf (e.g. "Surrogacy", "Fresh Donor", "Frozen Egg",
-                    "Sperm Donor"). Multi-select - one cost sheet can
-                    cover any combination. Writes to subTypes[] which the
-                    auto-draft matcher queries with hasSome. Legacy
-                    serviceTypes[] + subType are derived on save. */}
-                {/* Coverage row visible for ALL provider types - including
-                    IVF clinics whose programs may layer non-IVF leaves
-                    (e.g. an IVF cycle program at a multi-service provider
-                    that also covers Surrogacy or Fresh Donor). The IVF
-                    subtype dropdown sits separately below for the 14-leaf
-                    IVF taxonomy. */}
-                {allowedServiceTags && allowedServiceTags.length > 0 && (() => {
-                  const visibleLeaves = leavesForServiceTags(allowedServiceTags);
-                  if (visibleLeaves.length === 0) return null;
-                  const current = programCurrentSubTypes ?? [];
-                  return (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs text-muted-foreground">Coverage:</span>
-                      <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm flex-wrap">
-                        {visibleLeaves.map((leaf) => {
-                          const selected = current.includes(leaf.id);
-                          return (
-                            <button
-                              key={`leaf-${leaf.id}`}
-                              type="button"
-                              className={cn(
-                                "px-3 py-1.5 text-xs rounded-[var(--radius)] transition-all font-medium",
-                                selected
-                                  ? "bg-accent text-accent-foreground shadow-sm"
-                                  : "text-foreground hover:bg-accent/10",
-                              )}
-                              onClick={() => {
-                                const next = selected
-                                  ? current.filter((id) => id !== leaf.id)
-                                  : [...current, leaf.id];
-                                onSubTypesChange?.(next);
-                              }}
-                              data-testid={`btn-leaf-${leaf.id}`}
-                            >
-                              {leaf.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()}
-                {/* IVF clinics keep the 14-option dropdown - too many leaves
-                    for a toggle row. Dropdown writes single subType; save
-                    path mirrors it into subTypes=[subType]. */}
-                {programShowsAnySubtype && programShowsIvfSubtypeProp && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-muted-foreground">Program type:</span>
-                    <IvfSubtypePopover
-                      currentSubType={programCurrentSubType ?? null}
-                      tabFilter={programTabFilter}
-                      onSelect={(newSub) =>
-                        onSubTypeChange?.(newSub, tabOfSubtype(newSub) ?? undefined)
-                      }
-                    />
-                  </div>
-                )}
-
-                {/* AI proposed badge - only while still awaiting confirmation.
-                    The Confirmed badge has moved to the right column so it
-                    sits where the "Confirm Classification" button used to
-                    live (visual continuity). Descriptive Fixed-cost text
-                    removed to keep this block tight. */}
-                {displaySheet.isFixedCostSource === "ai_proposed" && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {!programShowsAnySubtype && (
-                      <span className="text-xs text-muted-foreground">Cost-sheet classification:</span>
-                    )}
-                    <Badge className="bg-background text-[hsl(var(--brand-warning))] border border-[hsl(var(--brand-warning))]/50 text-xs font-medium">AI proposed</Badge>
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                {/* Segmented toggle: white interior so the unselected label
-                    sits on a clean surface (was blending into the cream-on-
-                    amber card behind it). Border tinted with --accent to
-                    cohere with the mauve selected pill. */}
-                <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm">
-                  <button
-                    type="button"
-                    className={cn(
-                      "px-3 py-1.5 text-xs rounded-[var(--radius)] transition-all font-medium",
-                      displaySheet.isFixedCost === true
-                        ? "bg-accent text-accent-foreground shadow-sm"
-                        : "text-foreground hover:bg-accent/10"
-                    )}
-                    onClick={() => {
-                      setHasInteractedWithFixedToggle(true);
-                      classificationMutation.mutate({ sheetId: displaySheet.id, isFixedCost: true });
-                    }}
-                    disabled={classificationMutation.isPending}
-                    data-testid="btn-mark-fixed"
-                  >
-                    Fixed-Cost
-                  </button>
-                  <button
-                    type="button"
-                    className={cn(
-                      "px-3 py-1.5 text-xs rounded-[var(--radius)] transition-all font-medium",
-                      displaySheet.isFixedCost === false
-                        ? "bg-accent text-accent-foreground shadow-sm"
-                        : "text-foreground hover:bg-accent/10"
-                    )}
-                    onClick={() => {
-                      setHasInteractedWithFixedToggle(true);
-                      classificationMutation.mutate({ sheetId: displaySheet.id, isFixedCost: false });
-                    }}
-                    disabled={classificationMutation.isPending}
-                    data-testid="btn-mark-not-fixed"
-                  >
-                    Not Fixed Costs
-                  </button>
-                </div>
-                {needsClassificationConfirmation && displaySheet.isFixedCost !== null && (
-                  <Button
-                    size="sm"
-                    className="h-9 font-semibold shadow-md"
-                    disabled={classificationMutation.isPending || !hasInteractedWithFixedToggle}
-                    title={!hasInteractedWithFixedToggle ? "Click Fixed-Cost or Not Fixed Costs first to acknowledge the AI's choice" : undefined}
-                    onClick={() =>
-                      classificationMutation.mutate({
-                        sheetId: displaySheet.id,
-                        isFixedCost: displaySheet.isFixedCost ?? false,
-                        confirm: true,
-                      })
-                    }
-                    data-testid="btn-confirm-classification"
-                  >
-                    {classificationMutation.isPending
-                      ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                      : <Check className="w-3.5 h-3.5 mr-1.5" />
-                    }
-                    Confirm Classification
-                  </Button>
-                )}
-                {/* Confirmed state - sits where the Confirm Classification
-                    button was, keeping the right-aligned anchor consistent
-                    across the AI-proposed -> Confirmed transition. */}
-                {displaySheet.isFixedCostSource === "clinic_confirmed" && (
-                  // Match the inline row badge style: icon-only circular check.
-                  <Badge
-                    className="h-9 w-9 p-0 rounded-full bg-[hsl(var(--brand-success))]/15 text-[hsl(var(--brand-success))] border-[hsl(var(--brand-success))]/30 flex items-center justify-center flex-shrink-0"
-                    title="Classification confirmed"
-                  >
-                    <Check className="w-4 h-4" />
-                  </Badge>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* AI parse-failure alert. backgroundParseAndSave swallows Gemini
           errors silently - it flips the sheet to DRAFT with no items and
           no classification, which looks indistinguishable from a fresh
@@ -2099,8 +1898,7 @@ function SingleCostsTab({
         displaySheet.filePath &&
         !isParsing &&
         (displaySheet.items?.length ?? 0) === 0 &&
-        displaySheet.isFixedCost === null &&
-        displaySheet.isFixedCostSource == null && (
+        displaySheet.isFixedCost === null && (
         <Alert variant="default" className="border-[hsl(var(--brand-warning))]/40 bg-[hsl(var(--brand-warning))]/5">
           <AlertTriangle className="h-4 w-4 text-[hsl(var(--brand-warning))]" />
           <AlertDescription className="text-foreground space-y-3">
@@ -2108,11 +1906,11 @@ function SingleCostsTab({
               <strong>AI couldn't extract any data from this file.</strong>{" "}
               The file is attached but no items, classification, or program type were detected. Add items manually, or re-upload the file in a clearer format (PDF with selectable text, XLS/XLSX preferred over scanned images).
             </div>
-            {/* Override button duplicated here next to the explanation so the
-                clinic doesn't have to hunt for it in the status bar at the
-                very bottom of the editor. Same handler as the status-bar
-                Override, so either entry point starts editing the sheet. */}
-            {isAdminView && (
+            {/* When the parent owns saving (program-row flow) the line
+                items are already editable inline below - no need for an
+                Override entry point. Old standalone view kept the
+                button for legacy callers (parent-quotes etc.). */}
+            {isAdminView && !parentOwnsSave && (
               <Button
                 size="sm"
                 onClick={() => startEditingFromSheet(displaySheet)}
@@ -2306,7 +2104,7 @@ function SingleCostsTab({
           </span>
           <div className="flex-1" />
 
-          {isAdminView && !effectiveEditing && (
+          {isAdminView && !effectiveEditing && !parentOwnsSave && (
             <Button
               size="sm"
               variant="outline"
@@ -2399,7 +2197,7 @@ function SingleCostsTab({
         <div className="flex items-center gap-3 flex-wrap" data-testid="sheet-status-bar-empty">
           <Badge className="bg-muted text-muted-foreground border-border">No submission yet</Badge>
           <div className="flex-1" />
-          {isAdminView && (
+          {isAdminView && !parentOwnsSave && (
             <Button
               size="sm"
               variant="outline"
@@ -2916,7 +2714,10 @@ function SingleCostsTab({
         </Card>
       )}
 
-      {isAdminView && effectiveEditing && editItems.length > 0 && (
+      {/* Internal admin Save/Cancel bar - hidden when the parent
+          (ProgramsView) owns the save flow. The bottom-of-tab Save bar
+          flushes everything in one shot instead. */}
+      {!parentOwnsSave && isAdminView && effectiveEditing && editItems.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t flex gap-2 justify-end items-center" data-testid="admin-edit-actions">
           {autoSaveStatus === "saving" && (
             <span className="text-xs text-muted-foreground flex items-center gap-1 mr-auto" data-testid="text-auto-save-status">
@@ -2963,7 +2764,9 @@ function SingleCostsTab({
         </div>
       )}
 
-      {!isAdminView && editItems.length > 0 && (isDirty || !displaySheet || displaySheet.status === "DRAFT" || displaySheet.status === "REJECTED") && (
+      {/* Provider's internal Submit for Approval bar - same gating: only
+          when the parent isn't already handling the save flow. */}
+      {!parentOwnsSave && !isAdminView && editItems.length > 0 && (isDirty || !displaySheet || displaySheet.status === "DRAFT" || displaySheet.status === "REJECTED") && (
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t flex gap-2 justify-end items-center" data-testid="edit-actions">
           {autoSaveStatus === "saving" && (
             <span className="text-xs text-muted-foreground flex items-center gap-1 mr-auto" data-testid="text-auto-save-status">
@@ -2982,12 +2785,6 @@ function SingleCostsTab({
               Missing: {missingMandatory.join(", ")}
             </p>
           )}
-          {needsClassificationConfirmation && missingMandatory.length === 0 && (
-            <p className="text-xs text-[hsl(var(--brand-warning))] font-medium self-center mr-2 flex items-center gap-1" data-testid="text-needs-classification-confirm">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              Confirm the AI classification first
-            </p>
-          )}
           <Button
             onClick={() => {
               if (autoSavePendingTimerRef.current) { clearTimeout(autoSavePendingTimerRef.current); autoSavePendingTimerRef.current = null; }
@@ -2996,7 +2793,7 @@ function SingleCostsTab({
                 sheetId: displaySheet?.status === "APPROVED" ? undefined : displaySheet?.id,
               });
             }}
-            disabled={submitMutation.isPending || missingMandatory.length > 0 || isParsing || needsClassificationConfirmation}
+            disabled={submitMutation.isPending || missingMandatory.length > 0 || isParsing}
             data-testid="btn-submit-for-approval"
           >
             {submitMutation.isPending ? (
@@ -3113,10 +2910,40 @@ function ProgramsView({
   const { toast } = useToast();
   const [expandedProgramId, setExpandedProgramId] = useState<string | null>(null);
   const autoExpandedRef = useRef(false);
+  const pendingAutoEditProgramIdRef = useRef<string | null>(null);
   const [isAddingProgram, setIsAddingProgram] = useState(false);
-  const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
+  // Inputs for the legacy "Add Program" form (still uses immediate create).
   const [formName, setFormName] = useState("");
   const [formCountry, setFormCountry] = useState("");
+
+  // Unified pending-edit bag. Keys = programId, values = the fields the
+  // admin has changed since the last save. Empty bag = clean state, no
+  // Save bar visible. Save handler iterates this map and POSTs each
+  // entry's diff to the existing PATCH endpoints.
+  const [pendingByProgram, setPendingByProgram] = useState<Record<string, ProgramPending>>({});
+  const [isSaving, setIsSaving] = useState(false);
+  const hasPending = Object.keys(pendingByProgram).length > 0;
+
+  const updateProgramPending = useCallback((id: string, patch: Partial<ProgramPending>) => {
+    setPendingByProgram(prev => {
+      const next = { ...prev[id], ...patch };
+      // Clean up the entry entirely if every staged field matches the
+      // server value again (admin toggled and untoggled). Keeps the
+      // "X unsaved" badge honest.
+      return { ...prev, [id]: next };
+    });
+  }, []);
+
+  const discardProgramPending = useCallback((id: string) => {
+    setPendingByProgram(prev => {
+      const { [id]: _, ...rest } = prev;
+      return rest;
+    });
+  }, []);
+
+  const discardAllPending = useCallback(() => {
+    setPendingByProgram({});
+  }, []);
 
   const programsQueryKey = ["/api/costs/programs", providerId, providerTypeId || "all", subType || "none"];
   const programsQuery = useQuery<CostProgram[]>({
@@ -3148,6 +2975,21 @@ function ProgramsView({
     else if (programs.length === 1) setExpandedProgramId(programs[0].id);
   }, [isAdminView, programs.length]);
 
+  // After an upload, expand the new program's row as soon as AI parsing
+  // finishes so the admin sees the classified name + country populated
+  // and can review/tweak inline. Name + country are now always-editable
+  // inputs, so there's no per-row edit-mode flip to do.
+  useEffect(() => {
+    const targetId = pendingAutoEditProgramIdRef.current;
+    if (!targetId) return;
+    const program = (programsQuery.data || []).find((p) => p.id === targetId);
+    if (!program) return;
+    if (program.latestSheetStatus && program.latestSheetStatus !== "PARSING") {
+      pendingAutoEditProgramIdRef.current = null;
+      setExpandedProgramId(program.id);
+    }
+  }, [programsQuery.data]);
+
   const invalidatePrograms = () => queryClient.invalidateQueries({ queryKey: programsQueryKey });
 
   const createMutation = useMutation({
@@ -3172,18 +3014,114 @@ function ProgramsView({
     },
   });
 
-  const updateMutation = useMutation({
-    mutationFn: ({ id, name, country }: { id: string; name: string; country: string }) =>
-      apiRequest("PATCH", `/api/costs/programs/${id}`, { name, country }),
-    onSuccess: () => {
-      invalidatePrograms();
-      setEditingProgramId(null);
-      toast({ title: "Program updated", variant: "success" });
-    },
-    onError: (err: any) => {
-      toast({ title: "Failed to update program", description: err.message, variant: "destructive" });
-    },
-  });
+  // Single Save handler that flushes every pending program's diff to the
+  // appropriate endpoint. Runs sequentially per-program (program PATCH then
+  // sheet classification PATCH) so a failure on one row's program update
+  // doesn't fire its sheet update with stale assumptions. Errors are
+  // collected and surfaced at the end - one toast per failure.
+  const saveAll = useCallback(async () => {
+    if (!hasPending || isSaving) return;
+    setIsSaving(true);
+    const failures: string[] = [];
+    try {
+      for (const [programId, patch] of Object.entries(pendingByProgram)) {
+        const program = (programsQuery.data || []).find(p => p.id === programId);
+        if (!program) continue;
+        // 1) Program-level fields (name, country, subTypes). One PATCH
+        // bundles everything the endpoint accepts.
+        const programPayload: Record<string, unknown> = {};
+        if (patch.name !== undefined) programPayload.name = patch.name.trim();
+        if (patch.country !== undefined) programPayload.country = patch.country.trim();
+        if (patch.subTypes !== undefined) programPayload.subTypes = patch.subTypes;
+        if (Object.keys(programPayload).length > 0) {
+          try {
+            await apiRequest("PATCH", `/api/costs/programs/${programId}`, programPayload);
+          } catch (err: any) {
+            failures.push(`${program.name}: ${err.message || "program update failed"}`);
+            continue;
+          }
+        }
+        // 2) Sheet-level classification (isFixedCost) lives on the
+        // program's latest master sheet. Only emit if the admin
+        // actually toggled it AND the program has a sheet to write to.
+        if (patch.isFixedCost !== undefined && program.latestSheet) {
+          try {
+            await apiRequest(
+              "PATCH",
+              `/api/costs/sheet/${program.latestSheet.id}/classification`,
+              { isFixedCost: patch.isFixedCost },
+            );
+          } catch (err: any) {
+            failures.push(`${program.name}: ${err.message || "classification update failed"}`);
+          }
+        }
+        // 3) Line-item edits flush. For admins we route to /submit
+        // instead of /save-draft - /submit auto-approves the sheet when
+        // the caller is GOSTORK_ADMIN (CostsController.submitSheet line
+        // 348-350), so the row exits "(draft)" in the same Save click.
+        // Non-admin providers stay on /save-draft (sheet remains DRAFT
+        // until an admin approves it through the review queue).
+        if (patch.items !== undefined) {
+          const existingSheetId =
+            program.latestSheet && program.latestSheet.status !== "APPROVED"
+              ? program.latestSheet.id
+              : undefined;
+          try {
+            await apiRequest(
+              "POST",
+              isAdminView ? "/api/costs/submit" : "/api/costs/save-draft",
+              {
+                providerId,
+                items: patch.items,
+                sheetId: existingSheetId,
+                providerTypeId: program.providerTypeId,
+                programId,
+              },
+            );
+          } catch (err: any) {
+            failures.push(`${program.name}: ${err.message || "items save failed"}`);
+          }
+        } else if (isAdminView && program.latestSheet && program.latestSheet.status !== "APPROVED") {
+          // Admin edited only program-level fields (name / country /
+          // subTypes / Fixed-Cost) and didn't touch line items. The
+          // sheet would otherwise stay on its existing DRAFT/PENDING
+          // status and the row would keep showing "(draft)". Approve
+          // the current sheet so the Save click feels atomic.
+          try {
+            await apiRequest("POST", `/api/costs/approve/${program.latestSheet.id}`);
+          } catch (err: any) {
+            failures.push(`${program.name}: ${err.message || "approve failed"}`);
+          }
+        }
+      }
+    } finally {
+      setIsSaving(false);
+    }
+    // Always refresh - even partial successes need a re-fetch.
+    invalidatePrograms();
+    queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId], exact: false });
+    if (failures.length === 0) {
+      setPendingByProgram({});
+      toast({ title: "Changes saved", variant: "success" });
+    } else {
+      // Keep failed rows in pending so admin can retry. Successful ones
+      // get cleared, identified by absence from `failures`.
+      const failedIds = new Set(
+        failures
+          .map(f => f.split(":")[0])
+          .map(name => (programsQuery.data || []).find(p => p.name === name)?.id)
+          .filter(Boolean) as string[],
+      );
+      setPendingByProgram(prev =>
+        Object.fromEntries(Object.entries(prev).filter(([id]) => failedIds.has(id))),
+      );
+      toast({
+        title: failures.length === 1 ? "Save failed" : `${failures.length} saves failed`,
+        description: failures.join("\n"),
+        variant: "destructive",
+      });
+    }
+  }, [hasPending, isSaving, pendingByProgram, programsQuery.data, providerId, toast]);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/costs/programs/${id}`),
@@ -3250,6 +3188,9 @@ function ProgramsView({
     onSuccess: (result) => {
       invalidatePrograms();
       setExpandedProgramId(result.programId);
+      // Arm the auto-edit effect - the row will flip into edit mode the
+      // moment its latestSheetStatus transitions away from PARSING.
+      pendingAutoEditProgramIdRef.current = result.programId;
       toast({ title: "Uploaded - AI is classifying your cost sheet...", variant: "success" });
     },
     onError: (err: any) => {
@@ -3316,23 +3257,10 @@ function ProgramsView({
     return programShowsIvfSubtype(program) || programShowsFreshFrozen(program);
   }
 
-  function startEdit(program: CostProgram) {
-    setEditingProgramId(program.id);
-    setFormName(program.name);
-    setFormCountry(program.country);
-  }
-
-  function cancelEdit() {
-    setEditingProgramId(null);
-    setFormName("");
-    setFormCountry("");
-  }
-
   function startAdd() {
     setIsAddingProgram(true);
     setFormName("");
     setFormCountry("");
-    setEditingProgramId(null);
   }
 
   const canManage = isAdminView || canManagePrograms;
@@ -3461,14 +3389,15 @@ function ProgramsView({
 
       {programs.map((program) => {
         const isExpanded = expandedProgramId === program.id;
-        const isEditing = editingProgramId === program.id;
+        const programPending = pendingByProgram[program.id];
+        // Effective field values = pending overlay (if any) on top of
+        // the server values. Inputs read these so the admin sees their
+        // own keystrokes while the row stays "dirty" until Save fires.
+        const effectiveName = programPending?.name ?? program.name;
+        const effectiveCountry = programPending?.country ?? program.country;
+        const onProgramPatch = (patch: Partial<ProgramPending>) =>
+          updateProgramPending(program.id, patch);
 
-        // Shared pieces between the desktop and mobile top-bar layouts.
-        // Both branches stay in the DOM (toggled via responsive `hidden`),
-        // so each visible branch points at its own JSX instance - cheap,
-        // and far simpler than trying to express the 1-row vs 3-row
-        // arrangement through flex-wrap + order alone (the wide draft
-        // total kept squeezing the name to 0px in the single-row form).
         const countryBadge = (
           <Badge
             variant="outline"
@@ -3492,153 +3421,135 @@ function ProgramsView({
           </div>
         );
 
-        const renderActions = (testidSuffix: string) => isEditing ? (
-          <>
-            {/* Save / Cancel replace the Pencil in-place. Trash and
-                chevron stay on the right edge so the row's controls
-                don't shift around between modes. */}
-            <Button
-              size="sm"
-              className="h-7 w-7 p-0 flex-shrink-0"
-              disabled={!formName.trim() || !formCountry.trim() || updateMutation.isPending}
-              onClick={(e) => {
-                e.stopPropagation();
-                updateMutation.mutate({ id: program.id, name: formName.trim(), country: formCountry.trim() });
-              }}
-              data-testid={`btn-save-program-${program.id}${testidSuffix}`}
-            >
-              {updateMutation.isPending
-                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                : <Check className="w-3.5 h-3.5" />}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 w-7 p-0 flex-shrink-0"
-              onClick={(e) => {
-                e.stopPropagation();
-                cancelEdit();
-              }}
-              data-testid={`btn-cancel-program-${program.id}${testidSuffix}`}
-            >
-              <X className="w-3.5 h-3.5" />
-            </Button>
-          </>
-        ) : (
+        // Trash only - Pencil + green-check Save are gone now that name
+        // and country live in always-editable inputs flushed by the
+        // bottom Save bar.
+        const renderActions = (_testidSuffix: string) =>
           (isAdminView || canManagePrograms) ? (
-            <>
-              {/* Confirm-classification icon - sits in the reserved
-                  action-icon area so a wide total column can't clip it. */}
-              <ProgramConfirmIconButton program={program} providerId={providerId} />
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 w-7 p-0 flex-shrink-0"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  startEdit(program);
-                }}
-              >
-                <Pencil className="w-3.5 h-3.5" />
-              </Button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild onClick={(e) => e.stopPropagation()}>
-                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0 flex-shrink-0">
-                    <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Program</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This will permanently delete "{program.name}" and all its cost data. This cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      onClick={() => {
-                        if (expandedProgramId === program.id) setExpandedProgramId(null);
-                        deleteMutation.mutate(program.id);
-                      }}
-                    >
-                      Delete
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </>
-          ) : null
-        );
+            <AlertDialog>
+              <AlertDialogTrigger asChild onClick={(e) => e.stopPropagation()}>
+                <Button size="sm" variant="ghost" className="h-7 w-7 p-0 flex-shrink-0">
+                  <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete Program</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete "{program.name}" and all its cost data. This cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={() => {
+                      if (expandedProgramId === program.id) setExpandedProgramId(null);
+                      discardProgramPending(program.id);
+                      deleteMutation.mutate(program.id);
+                    }}
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : null;
 
         const renderClassification = () => (
           <ProgramClassificationControls
             program={program}
-            providerId={providerId}
+            pending={programPending}
+            onPatch={onProgramPatch}
             allowedServiceTags={allowedServiceTags}
-            providerType={providerType}
           />
         );
 
         return (
           <div key={program.id} className="border rounded-[var(--container-radius)] overflow-hidden">
             <div
-              className={cn(
-                "px-4 py-3 bg-muted/20 transition-colors",
-                !isEditing && "cursor-pointer hover:bg-muted/40"
-              )}
-              onClick={isEditing ? undefined : () => setExpandedProgramId(isExpanded ? null : program.id)}
-              role={isEditing ? undefined : "button"}
-              tabIndex={isEditing ? undefined : 0}
-              onKeyDown={isEditing ? undefined : (e) => {
+              className="px-4 py-3 bg-muted/20 transition-colors cursor-pointer hover:bg-muted/40"
+              onClick={() => setExpandedProgramId(isExpanded ? null : program.id)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   setExpandedProgramId(isExpanded ? null : program.id);
                 }
               }}
             >
-              {/* Desktop layout: single horizontal row, unchanged from
-                  the previous single-line design. */}
+              {/* Desktop layout: prefers a single horizontal row, but the
+                  inner wrapper falls back to flex-wrap so wide
+                  configurations (e.g. Egg Donor + IVF where both subtype
+                  popovers are visible alongside the Fixed-Cost toggle)
+                  drop the classification group onto a second line. The
+                  name+country and classification slots are each grouped
+                  into their own flex item so that, when wrapping kicks
+                  in, name+country stays on row 1 and ALL classification
+                  controls move together to row 2 (rather than only the
+                  trailing few slipping down piecemeal). Mirrors the
+                  mobile multi-row treatment without forcing it on
+                  narrower configurations that still fit on one line. */}
               <div className="hidden sm:flex items-center gap-3">
                 <div
-                  className="flex-1 flex items-center gap-2 flex-nowrap min-w-0 overflow-hidden"
-                  onClick={isEditing ? (e) => e.stopPropagation() : undefined}
+                  className="flex-1 flex items-center gap-2 flex-wrap min-w-0"
                 >
-                  {isEditing ? (
-                    <>
-                      <Input
-                        value={formName}
-                        onChange={(e) => setFormName(e.target.value)}
-                        placeholder="Program name"
-                        className="h-7 text-sm w-56 flex-shrink-0"
-                        data-testid={`input-program-name-${program.id}`}
-                      />
-                      <div className="w-44 flex-shrink-0">
-                        <SingleCountryAutocompleteInput
-                          value={formCountry}
-                          onChange={setFormCountry}
-                          placeholder="Country"
-                          data-testid={`input-program-country-${program.id}`}
+                  {/* Group A: name + country. Single flex item so the
+                      pair stays together on row 1 even when wrapping.
+                      stopPropagation is on the controls themselves, NOT
+                      this wrapper - otherwise the empty horizontal gap
+                      between controls swallows the row-toggle click and
+                      makes the chevron feel broken in that band. */}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {(isAdminView || canManagePrograms) ? (
+                      <>
+                        {/* Name + country are always inline-editable now.
+                            Edits stage into pendingByProgram and flush via
+                            the bottom Save bar. Input sizes to content so
+                            long titles aren't clipped. */}
+                        <Input
+                          value={effectiveName}
+                          onChange={(e) => onProgramPatch({ name: e.target.value })}
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          placeholder="Program name"
+                          // Fixed width with the input scrolling internally for
+                          // long values - the previous `size={length}` + w-auto
+                          // grew the box one character at a time and pushed the
+                          // country chip to the right with every keystroke.
+                          className="h-7 text-sm flex-shrink-0 w-80"
+                          data-testid={`input-program-name-${program.id}`}
                         />
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      {/* Name column is fixed-width truncate so the
-                          country chip lands at a consistent X position
-                          across rows. Long names ellipsize with their
-                          full text reachable via the browser title
-                          tooltip. */}
-                      <span className="font-medium text-sm truncate w-48 flex-shrink-0" title={program.name}>{program.name}</span>
-                      {countryBadge}
-                    </>
-                  )}
-                  {/* Classification slots use natural widths so they
-                      don't overflow narrow viewports. Same provider has
-                      the same chips on every row so the widths match
-                      naturally. */}
-                  {renderClassification()}
+                        <div
+                          className="w-44 flex-shrink-0"
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        >
+                          <SingleCountryAutocompleteInput
+                            value={effectiveCountry}
+                            onChange={(next) => onProgramPatch({ country: next })}
+                            placeholder="Country"
+                            data-testid={`input-program-country-${program.id}`}
+                            className="h-7"
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-medium text-sm whitespace-nowrap flex-shrink-0" title={program.name}>{program.name}</span>
+                        {countryBadge}
+                      </>
+                    )}
+                  </div>
+                  {/* Group B: all classification slots wrapped in a single
+                      flex item so they wrap to row 2 together when they
+                      can't fit next to group A. Internal flex-wrap so
+                      the group can still split further on an extremely
+                      narrow viewport. */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {renderClassification()}
+                  </div>
                 </div>
 
                 <div className="whitespace-nowrap text-right flex-shrink-0">
@@ -3658,15 +3569,16 @@ function ProgramsView({
                   classification toggles always have their own width
                   to spread into without competing for row 1 space. */}
               <div className="sm:hidden flex flex-col gap-2">
-                {/* Row 1 */}
-                <div
-                  className="flex items-center gap-2 min-w-0"
-                  onClick={isEditing ? (e) => e.stopPropagation() : undefined}
-                >
-                  {isEditing ? (
+                {/* Row 1 - stopPropagation lives on the Input itself so
+                    tapping the gap between the name and the chevron
+                    still toggles the row open. */}
+                <div className="flex items-center gap-2 min-w-0">
+                  {(isAdminView || canManagePrograms) ? (
                     <Input
-                      value={formName}
-                      onChange={(e) => setFormName(e.target.value)}
+                      value={effectiveName}
+                      onChange={(e) => onProgramPatch({ name: e.target.value })}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
                       placeholder="Program name"
                       className="h-7 text-sm flex-1 min-w-0"
                       data-testid={`input-program-name-${program.id}-mobile`}
@@ -3677,18 +3589,23 @@ function ProgramsView({
                   {chevronIcon}
                 </div>
 
-                {/* Row 2 */}
-                <div
-                  className="flex items-center gap-2 flex-wrap"
-                  onClick={isEditing ? (e) => e.stopPropagation() : undefined}
-                >
-                  {isEditing ? (
-                    <div className="flex-1 min-w-[140px]">
+                {/* Row 2 - same treatment: stopPropagation on the
+                    country autocomplete wrapper only, so the empty
+                    space alongside the total / action icons still
+                    toggles the row open. */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {(isAdminView || canManagePrograms) ? (
+                    <div
+                      className="flex-1 min-w-[140px]"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
                       <SingleCountryAutocompleteInput
-                        value={formCountry}
-                        onChange={setFormCountry}
+                        value={effectiveCountry}
+                        onChange={(next) => onProgramPatch({ country: next })}
                         placeholder="Country"
                         data-testid={`input-program-country-${program.id}-mobile`}
+                        className="h-7"
                       />
                     </div>
                   ) : (
@@ -3740,18 +3657,11 @@ function ProgramsView({
                     programShowsIvfSubtype={programShowsIvfSubtype(program)}
                     programCurrentSubType={program.subType ?? null}
                     programTabFilter={tabFilter}
-                    onSubTypeChange={(newSub, newTab) =>
-                      updateSubTypeMutation.mutate({ id: program.id, subType: newSub, tab: newTab })
-                    }
                     allowedServiceTags={allowedServiceTags}
                     programServiceTypes={program.serviceTypes ?? []}
-                    onServiceTypesChange={(next) =>
-                      updateServiceTypesMutation.mutate({ id: program.id, serviceTypes: next })
-                    }
                     programCurrentSubTypes={program.subTypes ?? []}
-                    onSubTypesChange={(next) =>
-                      updateSubTypesMutation.mutate({ id: program.id, subTypes: next })
-                    }
+                    pendingItems={programPending?.items}
+                    onItemsChange={(next) => updateProgramPending(program.id, { items: next })}
                   />
                 </div>
               </div>
@@ -3767,6 +3677,45 @@ function ProgramsView({
           {(isAdminView || canManagePrograms) && (
             <p className="text-xs mt-1">Click "Add Program" to create the first program.</p>
           )}
+        </div>
+      )}
+
+      {/* Sticky Save bar - the single flush point for every program-row
+          edit (name, country, coverage pills, IVF/egg-donor subtype,
+          Fixed-Cost). Visible only when at least one row is dirty.
+          sticky bottom-0 keeps it on screen as the admin scrolls the
+          program list; the parent tab content provides bottom padding
+          (pb-28 on the SingleCostsTab containers) so this bar doesn't
+          cover the last row's actions. */}
+      {hasPending && (
+        <div
+          className="sticky bottom-0 z-20 -mx-4 px-4 py-3 bg-background/95 backdrop-blur border-t shadow-[0_-4px_12px_-4px_rgba(0,0,0,0.06)] flex items-center justify-between gap-3"
+          data-testid="costs-save-bar"
+        >
+          <span className="text-sm text-foreground">
+            <span className="font-medium">{Object.keys(pendingByProgram).length}</span>{" "}
+            unsaved {Object.keys(pendingByProgram).length === 1 ? "program" : "programs"}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={discardAllPending}
+              disabled={isSaving}
+              data-testid="btn-costs-discard"
+            >
+              Discard
+            </Button>
+            <Button
+              size="sm"
+              onClick={saveAll}
+              disabled={isSaving}
+              data-testid="btn-costs-save"
+            >
+              {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              Save
+            </Button>
+          </div>
         </div>
       )}
     </div>

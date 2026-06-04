@@ -198,6 +198,11 @@ interface SingleCountryAutocompleteInputProps {
   onChange: (country: string) => void;
   placeholder?: string;
   "data-testid"?: string;
+  /** Merged into the underlying <input>. Use this to override the default
+   *  h-9 height when mounting the autocomplete next to a smaller control
+   *  (e.g. the h-7 program-name Input in the cost-sheet edit row, where
+   *  the size mismatch made the focus ring bleed out of the row). */
+  className?: string;
 }
 
 export function SingleCountryAutocompleteInput({
@@ -205,6 +210,7 @@ export function SingleCountryAutocompleteInput({
   onChange,
   placeholder = "Type a country name...",
   "data-testid": testId,
+  className,
 }: SingleCountryAutocompleteInputProps) {
   const [inputValue, setInputValue] = React.useState(value);
   const [open, setOpen] = React.useState(false);
@@ -272,7 +278,10 @@ export function SingleCountryAutocompleteInput({
         onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
         placeholder={placeholder}
         data-testid={testId}
-        className="flex h-9 w-full rounded-[var(--container-radius)] border border-border bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className={cn(
+          "flex h-9 w-full rounded-[var(--container-radius)] border border-border bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          className,
+        )}
       />
       {open && suggestions.length > 0 && (
         <ul className="absolute z-50 mt-1 w-full rounded-[var(--container-radius)] border border-border bg-background shadow-md">

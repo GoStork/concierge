@@ -468,16 +468,15 @@ export class CostsController {
   }
 
   /**
-   * Clinic confirms or overrides the AI's proposed classification on a
-   * freshly-parsed (or legacy-migrated) sheet. Setting any of tab/subType/
-   * isFixedCost flips the source to 'clinic_confirmed' and clears
-   * legacyNeedsReview.
+   * Update the classification (tab + subType + isFixedCost) on a sheet.
+   * Any value written here is the authoritative one; the admin can keep
+   * editing freely and Save is the only persistence step.
    */
   @Patch("sheet/:sheetId/classification")
   @UseGuards(SessionOrJwtGuard)
   async updateSheetClassification(
     @Param("sheetId") sheetId: string,
-    @Body() body: { tab?: string; subType?: string; isFixedCost?: boolean; confirm?: boolean },
+    @Body() body: { tab?: string; subType?: string; isFixedCost?: boolean },
     @Req() req: Request,
   ) {
     const sheet = await this.costsService.getSheet(sheetId);

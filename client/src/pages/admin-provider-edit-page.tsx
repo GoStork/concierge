@@ -1548,7 +1548,7 @@ export default function AdminProviderEditPage() {
             }
             providerServices={
               (provider.services || [])
-                .filter((s: any) => s.providerType)
+                .filter((s: any) => s.providerType && s.status === "APPROVED")
                 .map((s: any) => ({
                   providerTypeId: s.providerType.id || s.providerTypeId,
                   providerTypeName: s.providerType.name,

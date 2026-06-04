@@ -24,11 +24,122 @@ import {
 export class CostsService {
   private readonly logger = new Logger(CostsService.name);
 
+  // Canonical country names used to infer the default program country from
+  // a provider's existing Locations. Kept in sync with the client's
+  // COUNTRIES list in country-autocomplete-input.tsx so a provider whose
+  // locations show "Mexico City, Mexico" defaults new cost-sheet uploads
+  // to Mexico instead of the legacy hardcoded "United States".
+  private static readonly KNOWN_COUNTRIES: readonly string[] = [
+    "Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Antigua and Barbuda",
+    "Argentina", "Armenia", "Australia", "Austria", "Azerbaijan", "Bahamas", "Bahrain",
+    "Bangladesh", "Barbados", "Belarus", "Belgium", "Belize", "Benin", "Bhutan",
+    "Bolivia", "Bosnia and Herzegovina", "Botswana", "Brazil", "Brunei", "Bulgaria",
+    "Burkina Faso", "Burundi", "Cabo Verde", "Cambodia", "Cameroon", "Canada",
+    "Central African Republic", "Chad", "Chile", "China", "Colombia", "Comoros",
+    "Congo", "Costa Rica", "Croatia", "Cuba", "Cyprus", "Czech Republic", "Denmark",
+    "Djibouti", "Dominica", "Dominican Republic", "Ecuador", "Egypt", "El Salvador",
+    "Equatorial Guinea", "Eritrea", "Estonia", "Eswatini", "Ethiopia", "Fiji",
+    "Finland", "France", "Gabon", "Gambia", "Georgia", "Germany", "Ghana", "Greece",
+    "Grenada", "Guatemala", "Guinea", "Guinea-Bissau", "Guyana", "Haiti", "Honduras",
+    "Hungary", "Iceland", "India", "Indonesia", "Iran", "Iraq", "Ireland", "Israel",
+    "Italy", "Jamaica", "Japan", "Jordan", "Kazakhstan", "Kenya", "Kiribati",
+    "Kuwait", "Kyrgyzstan", "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia",
+    "Libya", "Liechtenstein", "Lithuania", "Luxembourg", "Madagascar", "Malawi",
+    "Malaysia", "Maldives", "Mali", "Malta", "Marshall Islands", "Mauritania",
+    "Mauritius", "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia",
+    "Montenegro", "Morocco", "Mozambique", "Myanmar", "Namibia", "Nauru", "Nepal",
+    "Netherlands", "New Zealand", "Nicaragua", "Niger", "Nigeria", "North Korea",
+    "North Macedonia", "Norway", "Oman", "Pakistan", "Palau", "Palestine", "Panama",
+    "Papua New Guinea", "Paraguay", "Peru", "Philippines", "Poland", "Portugal",
+    "Qatar", "Romania", "Russia", "Rwanda", "Saint Kitts and Nevis", "Saint Lucia",
+    "Saint Vincent and the Grenadines", "Samoa", "San Marino", "Sao Tome and Principe",
+    "Saudi Arabia", "Senegal", "Serbia", "Seychelles", "Sierra Leone", "Singapore",
+    "Slovakia", "Slovenia", "Solomon Islands", "Somalia", "South Africa", "South Korea",
+    "South Sudan", "Spain", "Sri Lanka", "Sudan", "Suriname", "Sweden", "Switzerland",
+    "Syria", "Taiwan", "Tajikistan", "Tanzania", "Thailand", "Timor-Leste", "Togo",
+    "Tonga", "Trinidad and Tobago", "Tunisia", "Turkey", "Turkmenistan", "Tuvalu",
+    "Uganda", "Ukraine", "United Arab Emirates", "United Kingdom", "United States",
+    "Uruguay", "Uzbekistan", "Vanuatu", "Vatican City", "Venezuela", "Vietnam",
+    "Yemen", "Zambia", "Zimbabwe",
+  ];
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(StorageService) private readonly storage: StorageService,
     @Inject(CostsAiService) private readonly costsAi: CostsAiService,
   ) {}
+
+  /**
+   * Look at the provider's existing ProviderLocation rows and infer the most
+   * likely country, so a fresh cost-sheet upload (or program reset) defaults
+   * to the right place instead of always landing on "United States". Returns
+   * "United States" when the provider has no locations or none match a known
+   * country name.
+   *
+   * ProviderLocation has no dedicated `country` column - the country is
+   * either stored in `state` for non-US scrapes ("Mexico City" / "Mexico")
+   * or appended to the city/address string ("Barranquilla, Colombia"), so
+   * we scan those text fields against the canonical country list. Most
+   * common derived country across all locations wins; ties break to the
+   * first location's country by sortOrder.
+   */
+  private async deriveDefaultCountryFromLocations(providerId: string): Promise<string> {
+    const locations = await this.prisma.providerLocation.findMany({
+      where: { providerId },
+      orderBy: { sortOrder: "asc" },
+      select: { address: true, city: true, state: true },
+    });
+    if (locations.length === 0) {
+      this.logger.log(`[country-derive] provider=${providerId} no locations -> United States`);
+      return "United States";
+    }
+
+    const counts = new Map<string, number>();
+    let firstMatch: string | null = null;
+    const debugRows: string[] = [];
+    for (const loc of locations) {
+      const matched = this.detectCountryInLocation(loc);
+      debugRows.push(`{a=${JSON.stringify(loc.address)},c=${JSON.stringify(loc.city)},s=${JSON.stringify(loc.state)}}->${matched ?? "(no match)"}`);
+      if (!matched) continue;
+      if (firstMatch === null) firstMatch = matched;
+      counts.set(matched, (counts.get(matched) ?? 0) + 1);
+    }
+    if (counts.size === 0) {
+      this.logger.warn(`[country-derive] provider=${providerId} no country matched in ${locations.length} locations -> United States | ${debugRows.join(" | ")}`);
+      return "United States";
+    }
+
+    let best = firstMatch as string;
+    let bestCount = counts.get(best) ?? 0;
+    for (const [country, count] of counts) {
+      if (count > bestCount) {
+        best = country;
+        bestCount = count;
+      }
+    }
+    this.logger.log(`[country-derive] provider=${providerId} -> ${best} (from ${locations.length} locations) | ${debugRows.join(" | ")}`);
+    return best;
+  }
+
+  private detectCountryInLocation(loc: {
+    address: string | null;
+    city: string | null;
+    state: string | null;
+  }): string | null {
+    const fields: string[] = [loc.state, loc.city, loc.address]
+      .filter((s): s is string => !!s && s.trim().length > 0)
+      .map(s => s.toLowerCase());
+    if (fields.length === 0) return null;
+    for (const country of CostsService.KNOWN_COUNTRIES) {
+      const lc = country.toLowerCase();
+      for (const field of fields) {
+        if (field === lc || field.endsWith(", " + lc) || field.endsWith(" " + lc)) {
+          return country;
+        }
+      }
+    }
+    return null;
+  }
 
   /**
    * Run the full Gemini parse + classification + template-merge pipeline for
@@ -157,15 +268,19 @@ export class CostsService {
     // placeholder program with default name + country. The AI classifier
     // fills these in once it runs (see saveAiClassification). This keeps
     // the UX a single "drop a file" action - no separate "create program
-    // with name + country" step beforehand.
+    // with name + country" step beforehand. Country is derived from the
+    // provider's existing Locations rows so a Colombia / Mexico / etc.
+    // provider doesn't land on "United States" as the visible default
+    // (Eran's request: don't make non-US clinics correct USA every upload).
     let resolvedProgramId = programId || null;
     if (!resolvedProgramId) {
+      const defaultCountry = await this.deriveDefaultCountryFromLocations(providerId);
       const newProgram = await this.prisma.costProgram.create({
         data: {
           providerId,
           providerTypeId: providerTypeId || null,
           name: "Untitled",
-          country: "United States",
+          country: defaultCountry,
           subType: null,
           tab: null,
         },
@@ -309,20 +424,16 @@ export class CostsService {
   }
 
   /**
-   * Persist the AI's proposed classification on a freshly-parsed sheet. We
-   * do NOT overwrite values the clinic has already confirmed - this only
-   * sets the proposal when the source is null or still 'ai_proposed'.
+   * Persist the AI's proposed classification on a freshly-parsed sheet.
+   * Always overwrites - the admin can re-edit any value afterward via the
+   * inline controls, and Save is the single persistence step.
    */
   async saveAiClassification(
     sheetId: string,
-    proposal: { tab: Tab; subType: SubType; isFixedCost: boolean; confidence: number; reasoning: string; programName?: string; country?: string; serviceTypes?: string[] },
+    proposal: { tab: Tab; subType: SubType; isFixedCost: boolean; confidence: number; reasoning: string; programName?: string; country?: string; serviceTypes?: string[]; eggDonorSubType?: "fresh" | "frozen" },
   ) {
     const sheet = await this.prisma.providerCostSheet.findUnique({ where: { id: sheetId } });
     if (!sheet) return;
-    if (sheet.isFixedCostSource === "clinic_confirmed") {
-      this.logger.log(`Skipping AI classification for sheet ${sheetId} - clinic already confirmed`);
-      return;
-    }
     // Empty tab/subType mean the provider type doesn't use the IVF
     // taxonomy (surrogacy / sperm bank). Persist as null in those cases.
     const persistedTab = proposal.tab && (proposal.tab as string).length > 0 ? proposal.tab : null;
@@ -333,10 +444,13 @@ export class CostsService {
     // backfill (20260603_cost_sheet_multi_subtypes). Without this the
     // multi-toggle UI on the program row stays blank even after the AI
     // correctly classifies a sheet as e.g. ["surrogacy"]. The UI reads
-    // subTypes[], not the legacy serviceTypes.
+    // subTypes[], not the legacy serviceTypes. The third arg lets a
+    // mixed IVF+egg-donor sheet narrow the egg-donor leg from BOTH
+    // fresh+frozen to just the one the AI extracted.
     const derivedSubTypes = this.deriveSubTypesLeaves(
       proposal.serviceTypes ?? [],
       persistedSubType,
+      proposal.eggDonorSubType,
     );
 
     await this.prisma.providerCostSheet.update({
@@ -346,7 +460,6 @@ export class CostsService {
         subType: persistedSubType,
         subTypes: derivedSubTypes,
         isFixedCost: proposal.isFixedCost,
-        isFixedCostSource: "ai_proposed",
       },
     });
     // Mirror onto the parent program so the tab/subtype hierarchy stays
@@ -363,11 +476,16 @@ export class CostsService {
       if (proposal.programName && isPlaceholderName) {
         data.name = proposal.programName;
       }
-      // Only override country when the program is still on the default "United States"
-      // AND the AI confidently picked something else. This avoids stomping a clinic's
-      // explicit pick with an AI guess.
-      const isDefaultCountry = !program?.country || program.country === "United States";
-      if (proposal.country && isDefaultCountry && proposal.country !== "United States") {
+      // Override country ONLY when the program is still on the legacy
+      // "United States" fallback (i.e. uploadFile couldn't derive a
+      // country from the provider's locations). When locations did give
+      // us a real country - Colombia for Inser, Mexico for an MX clinic,
+      // etc. - that's the authoritative signal: a US-formatted cost sheet
+      // dropped on Inser shouldn't silently flip Colombia to USA because
+      // the AI noticed dollar signs in the sheet. Clinics that disagree
+      // can edit the country manually in the auto-edit-mode row.
+      const isLegacyDefault = !program?.country || program.country === "United States";
+      if (proposal.country && isLegacyDefault && proposal.country !== "United States") {
         data.country = proposal.country;
       }
       // Only seed serviceTypes when the program doesn't yet have any tags
@@ -405,6 +523,7 @@ export class CostsService {
   private deriveSubTypesLeaves(
     serviceTypes: string[],
     subType: string | null,
+    eggDonorSubType?: "fresh" | "frozen",
   ): string[] {
     const leaves = new Set<string>();
 
@@ -426,7 +545,18 @@ export class CostsService {
     if (serviceTypes.includes("sperm_donor")) leaves.add("sperm_donor");
 
     if (serviceTypes.includes("egg_donor")) {
-      if (subType === "fresh") {
+      // Precedence:
+      //   1. explicit eggDonorSubType from the AI (set even on mixed
+      //      IVF+egg-donor sheets) - narrows to a single leaf so the
+      //      Fresh/Frozen matcher filter actually discriminates.
+      //   2. legacy subType === "fresh"|"frozen" (pure egg-donor sheets).
+      //   3. fall back to BOTH leaves so the program still matches when
+      //      we genuinely don't know.
+      if (eggDonorSubType === "fresh") {
+        leaves.add("egg_donor_fresh");
+      } else if (eggDonorSubType === "frozen") {
+        leaves.add("egg_donor_frozen");
+      } else if (subType === "fresh") {
         leaves.add("egg_donor_fresh");
       } else if (subType === "frozen") {
         leaves.add("egg_donor_frozen");
@@ -442,13 +572,12 @@ export class CostsService {
   }
 
   /**
-   * Clinic confirms or overrides the classification. Source flips to
-   * 'clinic_confirmed' so future AI parses on the same sheet leave it alone.
-   * Also clears legacyNeedsReview because the clinic has now actively chosen.
+   * Clinic updates the classification. Any value set here is the
+   * authoritative one - there is no separate confirm step.
    */
   async saveClinicClassification(
     sheetId: string,
-    payload: { tab?: Tab; subType?: SubType; isFixedCost?: boolean; confirm?: boolean },
+    payload: { tab?: Tab; subType?: SubType; isFixedCost?: boolean },
   ) {
     const sheet = await this.prisma.providerCostSheet.findUnique({ where: { id: sheetId } });
     if (!sheet) throw new Error("Sheet not found");
@@ -469,14 +598,6 @@ export class CostsService {
     const data: any = { tab, subType };
     if (payload.isFixedCost !== undefined) {
       data.isFixedCost = payload.isFixedCost;
-    }
-    // Only flip source to clinic_confirmed (and clear legacyNeedsReview)
-    // when the clinic explicitly confirmed. Toggling the Fixed pill alone
-    // updates the value but keeps the AI-proposed status so Submit stays
-    // blocked until the clinic clicks the prominent Confirm button.
-    if (payload.confirm === true) {
-      data.isFixedCostSource = "clinic_confirmed";
-      data.legacyNeedsReview = false;
     }
     const updated = await this.prisma.providerCostSheet.update({
       where: { id: sheetId },
@@ -1076,12 +1197,22 @@ export class CostsService {
     // its placeholder state - name + country + tab + subType. Without this,
     // the program keeps the AI-classified label from the deleted upload and
     // the next upload looks confused (old name on a freshly-parsed sheet).
+    // The reset country mirrors the upload-time default (derived from the
+    // provider's Locations) so a Colombia / Mexico / etc. provider doesn't
+    // get bounced back to a US placeholder mid-flow.
     if (programId) {
+      const program = await this.prisma.costProgram.findUnique({
+        where: { id: programId },
+        select: { providerId: true },
+      });
+      const resetCountry = program
+        ? await this.deriveDefaultCountryFromLocations(program.providerId)
+        : "United States";
       await this.prisma.costProgram.update({
         where: { id: programId },
         data: {
           name: "Untitled",
-          country: "United States",
+          country: resetCountry,
           tab: null,
           subType: null,
         },
@@ -1485,9 +1616,8 @@ export class CostsService {
     const statusByProgram = new Map<string, string>();
     const itemsByProgram = new Map<string, any[]>();
     // Phase: the consolidated top-bar UI needs the latest sheet's id +
-    // isFixedCost + isFixedCostSource so it can render the Fixed/Not Fixed
-    // toggle and the Confirm Classification button inline. Ship them down
-    // here so the client doesn't have to fire a second query.
+    // isFixedCost so it can render the Fixed/Not Fixed toggle inline.
+    // Ship it down here so the client doesn't have to fire a second query.
     const latestSheetByProgram = new Map<string, any>();
     for (const s of latestSheets) {
       if (s.programId && !statusByProgram.has(s.programId)) {
@@ -1496,8 +1626,6 @@ export class CostsService {
         latestSheetByProgram.set(s.programId, {
           id: s.id,
           isFixedCost: s.isFixedCost,
-          isFixedCostSource: s.isFixedCostSource,
-          legacyNeedsReview: s.legacyNeedsReview,
           status: s.status,
         });
       }
@@ -1601,8 +1729,9 @@ export class CostsService {
           // existing matcher fallback still works pre-migration.
           if (data.subType !== undefined) sheetData.subType = data.subType;
         }
-        sheetData.legacyNeedsReview = false;
-        await this.prisma.providerCostSheet.update({ where: { id: latest.id }, data: sheetData });
+        if (Object.keys(sheetData).length > 0) {
+          await this.prisma.providerCostSheet.update({ where: { id: latest.id }, data: sheetData });
+        }
       }
     }
     return updated;
