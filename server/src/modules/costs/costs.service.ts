@@ -233,8 +233,21 @@ export class CostsService {
     try {
       await this.prisma.providerCostSheet.update({ where: { id: sheetId }, data });
     } catch (err: any) {
-      // Best-effort. Don't crash the parse if a single progress write fails
-      // (e.g. row was deleted mid-parse because the clinic cancelled).
+      // Best-effort. Don't crash the parse if a single progress write fails.
+      // The dominant case is "row was deleted mid-parse because the clinic
+      // cancelled or trashed the program" - Prisma raises P2025 ("No record
+      // was found for an update") and the background parse keeps trying to
+      // update progress for the deleted row every ~250ms until it finishes,
+      // which spams the log with 4-line warnings each. Detect that specific
+      // case and stay silent (or one concise line for visibility); reserve
+      // the loud warning for genuinely unexpected failures.
+      const isRecordGone =
+        err?.code === "P2025" ||
+        /No record was found for an update/i.test(err?.message ?? "");
+      if (isRecordGone) {
+        // Optional: this.logger.debug(`updateParseProgress(${sheetId}) skipped - row deleted`);
+        return;
+      }
       this.logger.warn(`updateParseProgress(${sheetId}) failed: ${err.message}`);
     }
   }
