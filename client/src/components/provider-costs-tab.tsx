@@ -585,6 +585,9 @@ interface CostSheet {
   isFixedCost: boolean | null;
   isFixedCostSource: string | null;
   legacyNeedsReview: boolean;
+  parseStage?: string | null;
+  parseProgress?: number | null;
+  parseItemsCount?: number | null;
 }
 
 interface CostProgram {
@@ -908,26 +911,14 @@ function SingleCostsTab({
     queryClient.invalidateQueries({ queryKey: ["/api/costs/programs"] });
   };
 
+  // Real progress is driven by polling the sheet row's parseStage /
+  // parseProgress / parseItemsCount fields, which the backend updates as
+  // Gemini streams items in. The local-only setters here just initialize
+  // the bar (so the UI doesn't flash at 0%) and clear it when done. No
+  // fake setInterval - the bar moves only when the server reports new state.
   const startParseProgress = useCallback(() => {
-    setParseProgress(0);
-    setParseStage("Reading document...");
-    const stages = [
-      { at: 10, label: "Analyzing document structure..." },
-      { at: 25, label: "Extracting cost items..." },
-      { at: 45, label: "Mapping to GoStork template..." },
-      { at: 65, label: "Categorizing line items..." },
-      { at: 80, label: "Validating amounts..." },
-      { at: 90, label: "Finalizing..." },
-    ];
-    let current = 0;
-    const timer = setInterval(() => {
-      current += Math.random() * 3 + 0.5;
-      if (current > 95) current = 95;
-      const stage = [...stages].reverse().find((s) => current >= s.at);
-      if (stage) setParseStage(stage.label);
-      setParseProgress(Math.round(current));
-    }, 400);
-    parseTimerRef.current = timer;
+    setParseProgress(5);
+    setParseStage("Uploading document...");
   }, []);
 
   const stopParseProgress = useCallback((success: boolean) => {
@@ -1027,33 +1018,35 @@ function SingleCostsTab({
 
   const startPollingForParse = useCallback((sheetId: string, resuming: boolean) => {
     setIsParsing(true);
+    // Initial UI state - replaced by the first poll response which carries
+    // the real parseStage / parseProgress / parseItemsCount that the
+    // backend has been writing as Gemini streams.
     if (resuming) {
-      setParseProgress(50);
-      setParseStage("Analyzing document structure...");
-      if (parseTimerRef.current) clearInterval(parseTimerRef.current);
-      let current = 50;
-      parseTimerRef.current = setInterval(() => {
-        current += Math.random() * 2 + 0.3;
-        if (current > 95) current = 95;
-        const stages = [
-          { at: 50, label: "Mapping to GoStork template..." },
-          { at: 65, label: "Categorizing line items..." },
-          { at: 80, label: "Validating amounts..." },
-          { at: 90, label: "Finalizing..." },
-        ];
-        const stage = [...stages].reverse().find((s) => current >= s.at);
-        if (stage) setParseStage(stage.label);
-        setParseProgress(Math.round(current));
-      }, 400);
+      setParseProgress(15);
+      setParseStage("Resuming parse...");
     } else {
       startParseProgress();
     }
+    // Faster cadence (1s) for the streaming era - the backend now updates
+    // progress 2-3x/sec while items pour in, so 2s feels laggy.
     const poll = setInterval(async () => {
       try {
         const res = await fetch(`/api/costs/sheet/${sheetId}`, { credentials: "include" });
         if (res.status === 404) { clearInterval(poll); stopParseProgress(false); setIsParsing(false); invalidateAll(); return; }
         if (!res.ok) return;
         const sheet = await res.json();
+        // Mid-parse: pull real stage + percentage off the row. The backend
+        // increments these as Gemini's stream chunks arrive (see
+        // CostsController.backgroundParseAndSave). itemsCount shown in the
+        // label gives the user live feedback that work is actually happening.
+        if (sheet.status === "PARSING") {
+          if (typeof sheet.parseProgress === "number" && sheet.parseProgress > 0) {
+            setParseProgress(sheet.parseProgress);
+          }
+          if (typeof sheet.parseStage === "string" && sheet.parseStage.length > 0) {
+            setParseStage(sheet.parseStage);
+          }
+        }
         if (sheet.status !== "PARSING") {
           clearInterval(poll);
           stopParseProgress(true);
@@ -1080,7 +1073,7 @@ function SingleCostsTab({
           }
         }
       } catch {}
-    }, 2000);
+    }, 1000);
     return poll;
   }, [startParseProgress, stopParseProgress, invalidateAll, toast]);
 
@@ -1958,9 +1951,25 @@ function SingleCostsTab({
         displaySheet.isFixedCostSource == null && (
         <Alert variant="default" className="border-[hsl(var(--brand-warning))]/40 bg-[hsl(var(--brand-warning))]/5">
           <AlertTriangle className="h-4 w-4 text-[hsl(var(--brand-warning))]" />
-          <AlertDescription className="text-foreground">
-            <strong>AI couldn't extract any data from this file.</strong>{" "}
-            The file is attached but no items, classification, or program type were detected. Click <strong>Override</strong> to add items manually, or re-upload the file in a clearer format (PDF with selectable text, XLS/XLSX preferred over scanned images).
+          <AlertDescription className="text-foreground space-y-3">
+            <div>
+              <strong>AI couldn't extract any data from this file.</strong>{" "}
+              The file is attached but no items, classification, or program type were detected. Add items manually, or re-upload the file in a clearer format (PDF with selectable text, XLS/XLSX preferred over scanned images).
+            </div>
+            {/* Override button duplicated here next to the explanation so the
+                clinic doesn't have to hunt for it in the status bar at the
+                very bottom of the editor. Same handler as the status-bar
+                Override, so either entry point starts editing the sheet. */}
+            {isAdminView && (
+              <Button
+                size="sm"
+                onClick={() => startEditingFromSheet(displaySheet)}
+                data-testid="btn-alert-override"
+              >
+                <Pencil className="w-3.5 h-3.5 mr-1.5" />
+                Override - add items manually
+              </Button>
+            )}
           </AlertDescription>
         </Alert>
       )}

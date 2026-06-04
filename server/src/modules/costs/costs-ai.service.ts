@@ -200,6 +200,48 @@ Return ONLY a valid JSON array with objects having these exact fields:
   }
 
   /**
+   * Walk the streamed JSON text, find the items array, and pull out every
+   * COMPLETE { ... } object inside it. Tolerant of a truncated final object
+   * at the end of the stream (returns only the finished ones). Used by the
+   * streaming parse path to emit partial item counts as Gemini types.
+   */
+  private extractCompleteItemsFromStream(text: string): any[] {
+    const itemsKeyIdx = text.indexOf('"items"');
+    if (itemsKeyIdx === -1) return [];
+    const bracketStart = text.indexOf("[", itemsKeyIdx);
+    if (bracketStart === -1) return [];
+
+    const items: any[] = [];
+    let depth = 0;
+    let objStart = -1;
+    let inString = false;
+    let escape = false;
+
+    for (let i = bracketStart + 1; i < text.length; i++) {
+      const c = text[i];
+      if (escape) { escape = false; continue; }
+      if (c === "\\" && inString) { escape = true; continue; }
+      if (c === '"') { inString = !inString; continue; }
+      if (inString) continue;
+
+      if (c === "{") {
+        if (depth === 0) objStart = i;
+        depth++;
+      } else if (c === "}") {
+        depth--;
+        if (depth === 0 && objStart !== -1) {
+          const objText = text.slice(objStart, i + 1);
+          try { items.push(JSON.parse(objText)); } catch { /* incomplete or malformed, skip */ }
+          objStart = -1;
+        }
+      } else if (c === "]" && depth === 0) {
+        break;
+      }
+    }
+    return items;
+  }
+
+  /**
    * One-shot: parse line items AND classify the program (tab, subType,
    * isFixedCost, name, country) in a single Gemini call. Saves a full
    * round-trip vs running parseFile + classifyDocument sequentially.
@@ -207,6 +249,12 @@ Return ONLY a valid JSON array with objects having these exact fields:
    * Returns { items, classification }. Classification can be null if the
    * model omitted or malformed it - the caller should still use items in
    * that case (graceful degradation matches the old two-call behavior).
+   *
+   * onProgress (optional) is invoked as the AI streams its response - the
+   * callback receives the current item count so the controller can persist
+   * live progress to the DB. Items are parsed incrementally from the
+   * stream; the caller can render "12 items extracted so far" while the
+   * model is still typing.
    */
   async parseAndClassifyDocument(
     fileBuffer: Buffer,
@@ -214,6 +262,7 @@ Return ONLY a valid JSON array with objects having these exact fields:
     providerTypeName: string,
     originalFileName: string,
     subType?: string,
+    onProgress?: (info: { itemsCount: number; streaming: boolean }) => void | Promise<void>,
   ): Promise<{
     items: Array<{
       category: string;
@@ -495,17 +544,53 @@ ${subtypeTrailingNote}`;
     });
 
     const timeoutMs = 180000;
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("AI parse+classify timed out after 3 minutes")), timeoutMs),
-    );
-    const generate = textContent != null
-      ? model.generateContent(`${systemPrompt}\n\nFilename: ${originalFileName}\n\nDocument content (CSV):\n${textContent}`)
-      : model.generateContent([
-          { inlineData: { mimeType: contentType, data: fileBuffer.toString("base64") } },
-          { text: `${systemPrompt}\n\nFilename: ${originalFileName}\n\nParse and classify the cost sheet from this document.` },
-        ]);
-    const result = await Promise.race([generate, timeoutPromise]);
-    const responseText = result.response.text();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("AI parse+classify timed out after 3 minutes")), timeoutMs);
+    });
+
+    // Streaming path: feed Gemini's chunks into the partial-item extractor
+    // so the controller can publish live progress (parseItemsCount on the
+    // sheet row) while the AI is still typing. This is the only behavioural
+    // change vs the old generateContent() call - final aggregate output is
+    // identical (we still parse the full JSON at the end).
+    const streamPromise = (async () => {
+      const streamResult = textContent != null
+        ? await model.generateContentStream(`${systemPrompt}\n\nFilename: ${originalFileName}\n\nDocument content (CSV):\n${textContent}`)
+        : await model.generateContentStream([
+            { inlineData: { mimeType: contentType, data: fileBuffer.toString("base64") } },
+            { text: `${systemPrompt}\n\nFilename: ${originalFileName}\n\nParse and classify the cost sheet from this document.` },
+          ]);
+
+      let accumulated = "";
+      let lastReportedCount = 0;
+      let lastReportAt = 0;
+      for await (const chunk of streamResult.stream) {
+        accumulated += chunk.text();
+        if (onProgress) {
+          // Re-scan the accumulated text each chunk but throttle progress
+          // callbacks to every ~250ms to avoid hammering the DB on fast
+          // streams. Always emit when the count actually grows.
+          const now = Date.now();
+          const items = this.extractCompleteItemsFromStream(accumulated);
+          if (items.length !== lastReportedCount && (now - lastReportAt >= 250 || items.length - lastReportedCount >= 3)) {
+            lastReportedCount = items.length;
+            lastReportAt = now;
+            try { await onProgress({ itemsCount: items.length, streaming: true }); } catch { /* progress is best-effort */ }
+          }
+        }
+      }
+      const finalResponse = await streamResult.response;
+      return { text: accumulated || finalResponse.text() };
+    })();
+
+    let responseText: string;
+    try {
+      const result = await Promise.race([streamPromise, timeoutPromise]);
+      responseText = result.text;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
 
     // Extract the outer JSON object. Forgiving against ```json fences.
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
@@ -518,8 +603,25 @@ ${subtypeTrailingNote}`;
     try {
       parsed = JSON.parse(jsonMatch[0]);
     } catch (e) {
-      this.logger.error(`parseAndClassify: JSON parse failed: ${e}`);
-      throw new Error("Failed to parse AI response as JSON");
+      // Gemini periodically emits a syntactically broken full response
+      // (trailing comma, missing comma, broken string escape) even though
+      // most individual item objects inside it are well-formed. The
+      // streaming extractor parses each {...} on its own, so it survives
+      // a flub anywhere outside that object's own boundaries. Recover any
+      // items it could complete; drop the classification block since we
+      // can't reliably extract it from the broken full payload. The clinic
+      // can then classify via the inline toggles instead of starting from
+      // an empty sheet.
+      const recoveredItems = this.extractCompleteItemsFromStream(responseText);
+      if (recoveredItems.length > 0) {
+        this.logger.warn(
+          `parseAndClassify: full-JSON parse failed (${e}); recovered ${recoveredItems.length} items from per-object stream parser, dropping classification`,
+        );
+        parsed = { items: recoveredItems };
+      } else {
+        this.logger.error(`parseAndClassify: JSON parse failed and no items recoverable: ${e}`);
+        throw new Error("Failed to parse AI response as JSON");
+      }
     }
 
     // Items branch - normalize to the same shape as parseFile returns.
