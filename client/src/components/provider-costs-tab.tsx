@@ -2522,7 +2522,12 @@ function SingleCostsTab({
                             </div>
                           ) : (
                             <div className="flex flex-col sm:flex-row sm:items-start gap-2">
-                              <div className="flex-1 min-w-0">
+                              {/* Label/name column - fixed width so the
+                                  comment + values columns line up across
+                                  items in the same category. Wraps to its
+                                  own line on mobile via the parent's
+                                  flex-col-on-small. */}
+                              <div className="w-full sm:w-44 sm:flex-shrink-0">
                                 {effectiveEditing && (item.isCustom || item._isVariant) ? (
                                   <Input
                                     value={item.key}
@@ -2547,7 +2552,38 @@ function SingleCostsTab({
                                 )}
                               </div>
 
-                              <div className="flex items-center gap-2">
+                              {/* Inline comment column - flexes to fill the
+                                  middle of the row. In edit mode it's a
+                                  Textarea with field-sizing: content so it
+                                  auto-grows vertically as the user types or
+                                  pastes a multi-line note (the row's
+                                  items-start alignment keeps the label and
+                                  value cells anchored at the top while the
+                                  comment expands downward). In read-only
+                                  view the same column renders the comment
+                                  as a wrapping paragraph - or stays empty
+                                  to keep horizontal alignment intact when
+                                  an item has no comment. */}
+                              <div className="flex-1 min-w-0 self-stretch">
+                                {effectiveEditing ? (
+                                  <Textarea
+                                    value={item.comment || ""}
+                                    onChange={(e) => updateEditItem(item._editIdx, "comment", e.target.value || null)}
+                                    onBlur={triggerAutoSave}
+                                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); triggerAutoSave(); } }}
+                                    placeholder="Note (visible to parents)"
+                                    rows={1}
+                                    className="text-xs min-h-[2rem] resize-none [field-sizing:content]"
+                                    data-testid={`input-comment-${item._editIdx}`}
+                                  />
+                                ) : item.comment ? (
+                                  <p className="text-xs text-muted-foreground italic" data-testid={`text-comment-${item._editIdx}`}>
+                                    {item.comment}
+                                  </p>
+                                ) : null}
+                              </div>
+
+                              <div className="flex items-center gap-2 flex-shrink-0">
                                 {effectiveEditing ? (
                                   isNumericOnlyField(getBaseKey(item.key)) ? (
                                     <div className="flex items-center gap-1">
@@ -2673,22 +2709,10 @@ function SingleCostsTab({
                             </div>
                           )}
 
-                          {effectiveEditing && (
-                            <Textarea
-                              value={item.comment || ""}
-                              onChange={(e) => updateEditItem(item._editIdx, "comment", e.target.value || null)}
-                              onBlur={triggerAutoSave}
-                              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); triggerAutoSave(); } }}
-                              placeholder="Note (visible to parents)"
-                              className="text-xs h-16 resize-none"
-                              data-testid={`input-comment-${item._editIdx}`}
-                            />
-                          )}
-                          {!effectiveEditing && item.comment && (
-                            <p className="text-xs text-muted-foreground italic" data-testid={`text-comment-${item._editIdx}`}>
-                              {item.comment}
-                            </p>
-                          )}
+                          {/* Comment input + read-only paragraph used to
+                              live here on their own line; they're now
+                              rendered inline inside the label/values row
+                              above (in the middle column). */}
                         </div>
                       );
                     })}
