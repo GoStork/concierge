@@ -443,15 +443,15 @@ function ProgramClassificationControls({
           alignment of the trailing group shifted everything sideways
           per row based on each row's total amount. */}
 
-      {/* Slot 1: Coverage (multi-select pills) + IVF program type popover
-          when applicable. Fixed at w-[18rem] - fits 3-chip coverage
-          (Surrogacy / Fresh Donor / Frozen Egg / Sperm Donor / IVF)
-          plus the popover comfortably; narrower providers leave empty
-          space on the right of the slot, which keeps cost/confirm
-          aligned across rows. */}
-      <div className="w-[18rem] flex items-center gap-2 flex-shrink-0">
+      {/* Slot 1: Coverage (multi-select pills). Sized at w-[14rem] to
+          fit up to 4 chips (Surrogacy / Fresh Donor / Frozen Egg /
+          Sperm Donor / IVF) at their compact button widths. Narrower
+          providers (e.g. Family Creations: only Surrogacy + Egg Donor
+          chips) leave empty space on the right of the slot, which
+          keeps subsequent columns aligned across rows. */}
+      <div className="w-[14rem] flex items-center flex-shrink-0">
         {visibleLeaves.length > 0 && (
-          <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm flex-wrap items-center">
+          <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm items-center">
             {visibleLeaves.map(leaf => {
               const selected = leaf.id === "ivf" ? ivfOn : current.includes(leaf.id);
               return (
@@ -460,7 +460,7 @@ function ProgramClassificationControls({
                   type="button"
                   onClick={(e) => { e.stopPropagation(); toggleLeaf(leaf.id); }}
                   className={cn(
-                    "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium",
+                    "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium whitespace-nowrap",
                     selected ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
                   )}
                   data-testid={`top-leaf-${program.id}-${leaf.id}`}
@@ -471,6 +471,16 @@ function ProgramClassificationControls({
             })}
           </div>
         )}
+      </div>
+
+      {/* Slot 2: IVF subtype picker. Only renders for programs with an
+          IVF leaf in subTypes[] (most providers don't, so the slot is
+          conditional). Wide enough to fit a long label like "Own eggs,
+          surrogate carry" plus the chevron. Slot is always emitted as
+          an element (with width 0 when collapsed) so the columns after
+          it - cost, confirm, total - line up across IVF and non-IVF
+          programs on the same page. */}
+      <div className={cn("flex items-center flex-shrink-0", ivfOn ? "w-[14rem]" : "w-0")}>
         {ivfOn && (
           <div onClick={(e) => e.stopPropagation()}>
             <IvfSubtypePopover
@@ -481,16 +491,18 @@ function ProgramClassificationControls({
         )}
       </div>
 
-      {/* Slot 2: Cost (Fixed-Cost / Not Fixed Costs segmented toggle).
-          Fixed at w-[11rem] - the 2-button segmented toggle is the same
-          width for every program, so this is the most consistent column. */}
-      <div className="w-[11rem] flex items-center flex-shrink-0">
+      {/* Slot 3: Cost (Fixed-Cost / Not Fixed Costs segmented toggle).
+          w-[14rem] fits the longer "Not Fixed Costs" button without
+          wrapping; whitespace-nowrap on the buttons keeps the labels
+          on one line if the slot ever gets squeezed by a narrower
+          viewport. */}
+      <div className="w-[14rem] flex items-center flex-shrink-0">
         {latestSheet && (
           <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm" onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
             className={cn(
-              "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium",
+              "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium whitespace-nowrap",
               latestSheet.isFixedCost === true ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
             )}
             onClick={() => { setHasInteracted(true); classificationMutation.mutate({ isFixedCost: true }); }}
@@ -3365,7 +3377,7 @@ function ProgramsView({
                     classification toggles, total badge, and pending badge
                     stay visible so admins don't lose context when renaming. */}
                 <div
-                  className="flex-1 flex items-center gap-2 flex-nowrap min-w-0 overflow-hidden"
+                  className="flex-1 flex items-center gap-2 flex-nowrap min-w-0"
                   onClick={isEditing ? (e) => e.stopPropagation() : undefined}
                 >
                   {isEditing ? (
