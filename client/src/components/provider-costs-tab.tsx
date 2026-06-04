@@ -276,9 +276,20 @@ function IvfSubtypePopover({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      {/* Open downward by default - matches the dropdown mental model and
+          keeps the popover well away from the sticky top nav. Radix's
+          collision detection still auto-flips to "top" when the trigger is
+          too close to the bottom of the viewport, but max-h is then
+          clamped to --radix-popover-content-available-height so the
+          popover never overflows past the viewport edge into unreachable
+          space. The previous fixed cap (min(80vh, 32rem)) could exceed
+          what Radix had room for when flipping upward, which is what made
+          the top of the content unreachable: the popover's actual top
+          sat above the visible viewport with no way to scroll up to it. */}
       <PopoverContent
-        className="w-[28rem] max-w-[calc(100vw-2rem)] p-4 max-h-[min(80vh,32rem)] overflow-y-auto"
+        className="w-[28rem] max-w-[calc(100vw-2rem)] p-4 max-h-[var(--radix-popover-content-available-height)] overflow-y-auto"
         align="start"
+        side="bottom"
         sideOffset={6}
         collisionPadding={16}
       >
