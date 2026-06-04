@@ -36,9 +36,18 @@ CREATE TABLE IF NOT EXISTS "ProviderLegalIdentity" (
 CREATE UNIQUE INDEX IF NOT EXISTS "ProviderLegalIdentity_providerId_key"
   ON "ProviderLegalIdentity" ("providerId");
 
-ALTER TABLE "ProviderLegalIdentity"
-  ADD CONSTRAINT "ProviderLegalIdentity_providerId_fkey"
-  FOREIGN KEY ("providerId") REFERENCES "Provider"("id") ON DELETE CASCADE;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'ProviderLegalIdentity_providerId_fkey'
+      AND conrelid = '"ProviderLegalIdentity"'::regclass
+  ) THEN
+    ALTER TABLE "ProviderLegalIdentity"
+      ADD CONSTRAINT "ProviderLegalIdentity_providerId_fkey"
+      FOREIGN KEY ("providerId") REFERENCES "Provider"("id") ON DELETE CASCADE;
+  END IF;
+END $$;
 
 -- Backfill from ProviderBrandSettings. Each existing brand settings row
 -- with a legalName or taxId becomes a ProviderLegalIdentity row tagged
