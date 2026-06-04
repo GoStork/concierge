@@ -126,12 +126,47 @@ export class CostsController {
         // pair. Status stays PARSING until everything is persisted, so
         // the client's poll only sees DRAFT once name/country/subtype/
         // Fixed-cost are all on the row.
+        //
+        // Progress stages emitted to the sheet row (driving the real UI bar):
+        //   5%  - row created with "Uploading document" (set in uploadFile)
+        //   10% - here, before Gemini call
+        //   15-85% - items stream in (15 + min(70, count*3.5))
+        //   90% - stream done, persisting classification
+        //   95% - merging into template
+        //   100% - done (set in saveParseResults)
+        await this.costsService.updateParseProgress(sheetId, "Reading document with AI", 10, 0);
+
         const { items, classification } = await this.costsAiService.parseAndClassifyDocument(
           buffer, contentType, providerType, filename, subType,
+          async ({ itemsCount }) => {
+            // Items stream in - cap progress at 85% to leave headroom for
+            // the post-stream classify + template-merge steps.
+            const streamProgress = Math.min(85, 15 + Math.round(itemsCount * 3.5));
+            await this.costsService.updateParseProgress(
+              sheetId,
+              `Extracting items (${itemsCount} found)`,
+              streamProgress,
+              itemsCount,
+            );
+          },
+        );
+
+        await this.costsService.updateParseProgress(
+          sheetId,
+          "Classifying program type",
+          90,
+          items.length,
         );
         if (classification) {
           await this.costsService.saveAiClassification(sheetId, classification);
         }
+
+        await this.costsService.updateParseProgress(
+          sheetId,
+          "Mapping to GoStork template",
+          95,
+          items.length,
+        );
         await this.costsService.saveParseResults(sheetId, items);
       } catch (err: any) {
         this.logger.error(`Background AI parse failed for sheet ${sheetId}: ${err.message}`);
@@ -620,7 +655,7 @@ export class CostsController {
   @UseGuards(SessionOrJwtGuard)
   async updateProgram(
     @Param("programId") programId: string,
-    @Body() body: { name?: string; country?: string; subType?: string; tab?: string; serviceTypes?: string[] },
+    @Body() body: { name?: string; country?: string; subType?: string; tab?: string; serviceTypes?: string[]; subTypes?: string[] },
     @Req() req: Request,
   ) {
     const existing = await this.prisma.costProgram.findUnique({ where: { id: programId } });
@@ -633,6 +668,7 @@ export class CostsController {
       body.subType,
       body.tab,
       body.serviceTypes,
+      body.subTypes,
     );
   }
 

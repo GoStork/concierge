@@ -282,6 +282,35 @@ export function matchSubtypes(rawInput: MatcherInput): MatchResult {
     }
   }
 
+  // -------- Non-IVF leaves (surrogacy / egg donor / sperm donor) --------
+  // These leaves live on agency / bank cost programs. A program's
+  // subTypes[] can carry any combination (e.g. surrogacy + egg_donor_fresh
+  // for a combined-package program). We return every leaf the parent could
+  // plausibly need so the auto-draft matcher can intersect with the
+  // provider's programs via hasSome.
+  //
+  // Conservative defaults: when a relevant signal is unknown, include the
+  // leaf (false positive in matching is recoverable; false negative means
+  // a relevant agency program is silently skipped).
+
+  // Surrogacy: anyone whose carrier is (or could be) "surrogate".
+  if (eqOrUnknown(input.carrier, "surrogate")) {
+    subtypes.push("surrogacy");
+  }
+
+  // Egg donor: anyone whose eggSource is (or could be) "donor".
+  // We don't yet distinguish fresh vs frozen at the profile level, so we
+  // include BOTH leaves - the provider's program chooses which fits.
+  if (eqOrUnknown(input.eggSource, "donor")) {
+    subtypes.push("egg_donor_fresh");
+    subtypes.push("egg_donor_frozen");
+  }
+
+  // Sperm donor: anyone whose spermSource is (or could be) "donor".
+  if (eqOrUnknown(input.spermSource, "donor")) {
+    subtypes.push("sperm_donor");
+  }
+
   // -------- Partial-profile detection --------
   // We mark partial when a *relevant* field was null AND that nullness
   // actually influenced the result (i.e. expanded the set). Conservative

@@ -136,14 +136,17 @@ export class CostSheetAutoDraftService {
       const { subtypes } = matchSubtypes(matcherInput);
       if (subtypes.length === 0) return this.skip("no_matching_subtypes");
 
-      // Provider's APPROVED programs that match one of the parent's subtypes.
-      // Tiebreak: most recently updated sheet wins.
+      // Provider's APPROVED programs that match any of the parent's eligible
+      // leaves. Uses the canonical subTypes[] (multi-leaf) with hasSome so a
+      // combined-package cost sheet (e.g. ["surrogacy","egg_donor_fresh"])
+      // matches a parent eligible for either leaf. Tiebreak: most recently
+      // updated sheet wins.
       const sheets = await this.prisma.providerCostSheet.findMany({
         where: {
           providerId,
           status: "APPROVED",
           parentClientId: null,
-          subType: { in: subtypes },
+          subTypes: { hasSome: subtypes },
         },
         include: { items: true },
         orderBy: { updatedAt: "desc" },
@@ -151,7 +154,13 @@ export class CostSheetAutoDraftService {
       if (sheets.length === 0) return this.skip("no_matching_approved_sheets");
 
       const picked = sheets[0];
-      const pickedSubType = isValidSubType(picked.subType) ? (picked.subType as SubType) : null;
+      // Pick the most specific leaf for labelling: intersection of the
+      // sheet's covered leaves with the parent's eligible leaves.
+      const pickedLeaves = ((picked as any).subTypes as string[] | undefined) || [];
+      const overlap = pickedLeaves.filter(l => (subtypes as string[]).includes(l));
+      const pickedSubType: SubType | null = isValidSubType(overlap[0])
+        ? (overlap[0] as SubType)
+        : (isValidSubType(picked.subType) ? (picked.subType as SubType) : null);
 
       // Chat context for dynamic amounts (surrogate comp, donor comp).
       const recentMsgs = await this.prisma.aiChatMessage.findMany({

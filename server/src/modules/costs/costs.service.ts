@@ -126,6 +126,9 @@ export class CostsService {
         filePath: gcsPath,
         originalFileName: filename,
         status: "PARSING",
+        parseStage: "Uploading document",
+        parseProgress: 5,
+        parseItemsCount: 0,
       },
     });
 
@@ -188,7 +191,12 @@ export class CostsService {
 
     await this.prisma.providerCostSheet.update({
       where: { id: sheetId },
-      data: { status: "DRAFT" },
+      data: {
+        status: "DRAFT",
+        parseStage: "Complete",
+        parseProgress: 100,
+        parseItemsCount: parsedItems.length,
+      },
     });
 
     this.logger.log(`Auto-parse complete for sheet ${sheetId}: ${parsedItems.length} items extracted`);
@@ -197,8 +205,38 @@ export class CostsService {
   async markParseError(sheetId: string) {
     await this.prisma.providerCostSheet.update({
       where: { id: sheetId },
-      data: { status: "DRAFT" },
+      data: {
+        status: "DRAFT",
+        parseStage: "Parse failed - using empty template",
+        parseProgress: 100,
+      },
     });
+  }
+
+  /**
+   * Live progress update for the background AI parse. Called by the
+   * controller as Gemini streams items back so the client poll can render
+   * a real, non-fake progress bar. itemsCount is the running count of
+   * complete items extracted from the partial stream.
+   */
+  async updateParseProgress(
+    sheetId: string,
+    stage: string,
+    progress: number,
+    itemsCount?: number,
+  ) {
+    const data: any = {
+      parseStage: stage,
+      parseProgress: Math.max(0, Math.min(100, Math.round(progress))),
+    };
+    if (itemsCount !== undefined) data.parseItemsCount = itemsCount;
+    try {
+      await this.prisma.providerCostSheet.update({ where: { id: sheetId }, data });
+    } catch (err: any) {
+      // Best-effort. Don't crash the parse if a single progress write fails
+      // (e.g. row was deleted mid-parse because the clinic cancelled).
+      this.logger.warn(`updateParseProgress(${sheetId}) failed: ${err.message}`);
+    }
   }
 
   /**
@@ -1232,16 +1270,29 @@ export class CostsService {
     });
     const statusByProgram = new Map<string, string>();
     const itemsByProgram = new Map<string, any[]>();
+    // Phase: the consolidated top-bar UI needs the latest sheet's id +
+    // isFixedCost + isFixedCostSource so it can render the Fixed/Not Fixed
+    // toggle and the Confirm Classification button inline. Ship them down
+    // here so the client doesn't have to fire a second query.
+    const latestSheetByProgram = new Map<string, any>();
     for (const s of latestSheets) {
       if (s.programId && !statusByProgram.has(s.programId)) {
         statusByProgram.set(s.programId, s.status);
         itemsByProgram.set(s.programId, s.items);
+        latestSheetByProgram.set(s.programId, {
+          id: s.id,
+          isFixedCost: s.isFixedCost,
+          isFixedCostSource: s.isFixedCostSource,
+          legacyNeedsReview: s.legacyNeedsReview,
+          status: s.status,
+        });
       }
     }
     return programs.map((p) => ({
       ...p,
       latestSheetStatus: statusByProgram.get(p.id) ?? null,
       latestSheetItems: itemsByProgram.get(p.id) ?? [],
+      latestSheet: latestSheetByProgram.get(p.id) ?? null,
     }));
   }
 
@@ -1260,7 +1311,15 @@ export class CostsService {
 
   // Mirror subType/tab to the program's latest non-parent sheet so the
   // editor's classification card stays consistent with the program-level value.
-  async updateProgram(programId: string, name: string, country: string, subType?: string, tab?: string, serviceTypes?: string[]) {
+  async updateProgram(
+    programId: string,
+    name: string,
+    country: string,
+    subType?: string,
+    tab?: string,
+    serviceTypes?: string[],
+    subTypes?: string[],
+  ) {
     const data: any = { name, country };
     if (subType !== undefined) data.subType = subType;
     if (tab !== undefined) data.tab = tab;
@@ -1273,11 +1332,46 @@ export class CostsService {
       ));
       data.serviceTypes = cleaned;
     }
+    // Canonical multi-leaf write path. Validate every leaf against the full
+    // SubType union (14 IVF + 4 non-IVF), drop unknowns, dedupe. Mirror to
+    // legacy subType (= first leaf or null) and to serviceTypes[] (derived
+    // from each leaf's parent service tag).
+    if (subTypes !== undefined) {
+      const { ALL_SUBTYPES, SERVICE_TAG_OF_NON_IVF_LEAF, NON_IVF_LEAVES } = await import(
+        "./cost-templates-config"
+      );
+      const validLeaves: string[] = Array.from(new Set(
+        (Array.isArray(subTypes) ? subTypes : [])
+          .map((t: any) => String(t).trim())
+          .filter((t: string) => (ALL_SUBTYPES as string[]).includes(t)),
+      ));
+      data.subTypes = validLeaves;
+      // Mirror to legacy single subType.
+      data.subType = validLeaves[0] ?? null;
+      // Mirror to legacy serviceTypes if not explicitly provided in the same
+      // call. Each non-IVF leaf maps to one service tag; IVF leaves all map
+      // to ivf_clinic.
+      if (serviceTypes === undefined) {
+        const tags = new Set<string>();
+        for (const leaf of validLeaves) {
+          if ((NON_IVF_LEAVES as readonly string[]).includes(leaf)) {
+            const tag = (SERVICE_TAG_OF_NON_IVF_LEAF as Record<string, string>)[leaf];
+            if (tag) tags.add(tag);
+          } else {
+            // IVF leaf
+            tags.add("ivf_clinic");
+          }
+        }
+        data.serviceTypes = Array.from(tags);
+      }
+    }
     const updated = await this.prisma.costProgram.update({
       where: { id: programId },
       data,
     });
-    if (subType !== undefined || tab !== undefined) {
+    // Mirror canonical fields to the latest master cost sheet so legacy
+    // readers (matcher fallback, AI prompts) see the same picture.
+    if (subType !== undefined || tab !== undefined || subTypes !== undefined) {
       const latest = await this.prisma.providerCostSheet.findFirst({
         where: { programId, parentClientId: null },
         orderBy: { createdAt: "desc" },
@@ -1287,6 +1381,12 @@ export class CostsService {
         const sheetData: any = {};
         if (subType !== undefined) sheetData.subType = subType;
         if (tab !== undefined) sheetData.tab = tab;
+        if (subTypes !== undefined) {
+          sheetData.subTypes = data.subTypes;
+          // Also mirror the picked legacy subType back to the sheet so the
+          // existing matcher fallback still works pre-migration.
+          if (data.subType !== undefined) sheetData.subType = data.subType;
+        }
         sheetData.legacyNeedsReview = false;
         await this.prisma.providerCostSheet.update({ where: { id: latest.id }, data: sheetData });
       }

@@ -395,12 +395,20 @@ model CostProgram {
   providerTypeId String?
   // tab: "ivf_cycle" | "shipping_embryos" | "shipping_eggs_sperm" | "egg_freezing"
   tab            String?
-  // subType: one of the 10 enum ids defined in cost-templates-config.ts
+  // subType: legacy single-leaf value. Kept for backwards compat - new code
+  // should read subTypes[] (plural) below. Save paths write both: subTypes[0]
+  // back into subType so legacy readers keep working.
   subType        String?
-  // serviceTypes: array of "surrogacy" | "egg_donor" | "sperm_donor" |
-  // "ivf_clinic". A combined-package cost sheet (e.g. egg donor + surrogate
-  // bundle) gets multiple tags; the parent matcher unions the tags against
-  // the parent's needs. AI proposes; provider can override.
+  // subTypes: canonical multi-leaf coverage. Each entry is a flat leaf from
+  // cost-templates-config (e.g. "surrogacy", "egg_donor_fresh", "egg_donor_frozen",
+  // "sperm_donor", or one of the 14 IVF SubType ids). A single combined-package
+  // program (e.g. surrogacy + fresh egg donation) gets multiple leaves; the
+  // auto-draft matcher queries with hasSome against the parent's eligible
+  // leaves. Empty array means the program is unconfigured for auto-draft.
+  subTypes       String[]            @default([])
+  // serviceTypes: legacy "service tag" multi-select ("surrogacy" | "egg_donor"
+  // | "sperm_donor" | "ivf_clinic"). Derivable from subTypes (each leaf maps
+  // to one service tag); kept for filters that still read it.
   serviceTypes   String[]            @default([])
   name           String
   country        String
@@ -416,8 +424,12 @@ model ProviderCostSheet {
   parentClientId    String?
   // tab: "ivf_cycle" | "shipping_embryos" | "shipping_eggs_sperm" | "egg_freezing"
   tab               String?
-  // subType: one of the 10 enum ids defined in cost-templates-config.ts
+  // subType: legacy single-leaf value. Kept for backwards compat. New code
+  // reads subTypes[] (plural). Save paths write subTypes[0] back into subType.
   subType           String?
+  // subTypes: canonical multi-leaf coverage. See CostProgram.subTypes above
+  // for the leaf taxonomy. Auto-draft queries with hasSome.
+  subTypes          String[]      @default([])
   programId         String?
   fileUrl           String?
   filePath          String?
@@ -437,6 +449,15 @@ model ProviderCostSheet {
   // True for rows migrated from the legacy 2-subtype world. Clinic must
   // confirm the auto-defaulted subtype before the flag clears.
   legacyNeedsReview Boolean       @default(false)
+  // Live progress for the background Gemini parse. Updated by the
+  // controller's backgroundParseAndSave as the AI streams items back.
+  // parseStage is a short human label ("Reading document...",
+  // "Extracting items (12 found)", "Mapping to template", ...).
+  // parseProgress is 0-100. parseItemsCount lets the UI render a live
+  // "X items extracted so far" counter while status is still PARSING.
+  parseStage        String?
+  parseProgress     Int?          @default(0)
+  parseItemsCount   Int?          @default(0)
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
   items             CostItem[]

@@ -41,7 +41,14 @@ export type SubType =
   | "shipping_eggs_sperm_to_self"
   | "shipping_eggs_sperm_to_surrogate"
   // Egg Freezing (retrieval + storage, no embryos)
-  | "egg_freezing_retrieval_storage";
+  | "egg_freezing_retrieval_storage"
+  // Non-IVF flat leaves. Each one is the canonical multi-toggle-row id for
+  // surrogacy / egg donor / sperm donor providers. Coverage is multi-select
+  // on the provider side (one cost sheet can carry multiple leaves).
+  | "surrogacy"
+  | "egg_donor_fresh"
+  | "egg_donor_frozen"
+  | "sperm_donor";
 
 export const ALL_SUBTYPES: SubType[] = [
   "ivf_cycle_own_eggs_own_carry",
@@ -58,9 +65,35 @@ export const ALL_SUBTYPES: SubType[] = [
   "shipping_eggs_sperm_to_self",
   "shipping_eggs_sperm_to_surrogate",
   "egg_freezing_retrieval_storage",
+  "surrogacy",
+  "egg_donor_fresh",
+  "egg_donor_frozen",
+  "sperm_donor",
 ];
 
-export const TAB_OF: Record<SubType, Tab> = {
+// Non-IVF leaves used by the unified multi-toggle UI on surrogacy / egg-donor
+// / sperm-donor cost programs. IVF clinics keep their 14-subtype dropdown.
+export const NON_IVF_LEAVES = [
+  "surrogacy",
+  "egg_donor_fresh",
+  "egg_donor_frozen",
+  "sperm_donor",
+] as const;
+export type NonIvfLeaf = typeof NON_IVF_LEAVES[number];
+
+// Map each non-IVF leaf back to its legacy service tag (used for backwards
+// compatibility when writing serviceTypes[] alongside subTypes[]).
+export const SERVICE_TAG_OF_NON_IVF_LEAF: Record<NonIvfLeaf, string> = {
+  surrogacy: "surrogacy",
+  egg_donor_fresh: "egg_donor",
+  egg_donor_frozen: "egg_donor",
+  sperm_donor: "sperm_donor",
+};
+
+// Maps IVF subtypes to their parent Tab. Non-IVF leaves (surrogacy,
+// egg_donor_fresh, egg_donor_frozen, sperm_donor) have no Tab and are
+// intentionally absent from this map. Callers must guard for undefined.
+export const TAB_OF: Partial<Record<SubType, Tab>> = {
   ivf_cycle_own_eggs_own_carry: "ivf_cycle",
   ivf_cycle_own_eggs_surrogate_carry: "ivf_cycle",
   ivf_cycle_donor_eggs_own_carry: "ivf_cycle",
@@ -101,6 +134,10 @@ export const SUBTYPE_LABEL: Record<SubType, string> = {
   shipping_eggs_sperm_to_self: "Create embryos + transfer to own/self",
   shipping_eggs_sperm_to_surrogate: "Create embryos + transfer to surrogate",
   egg_freezing_retrieval_storage: "Egg retrieval + storage",
+  surrogacy: "Surrogacy",
+  egg_donor_fresh: "Fresh Donor",
+  egg_donor_frozen: "Frozen Egg",
+  sperm_donor: "Sperm Donor",
 };
 
 export interface FieldDef {
@@ -411,7 +448,10 @@ const SHIPPING_EGGS_SPERM_CORE = [
   "Administrative Fees",
 ];
 
-export const SUBTYPE_OVERLAY: Record<SubType, SubtypeOverlay> = {
+// Field overlays per IVF subtype. Non-IVF leaves don't have IVF-style
+// itemized fields (their cost sheets come from agency PDFs), so they're
+// intentionally absent from this map.
+export const SUBTYPE_OVERLAY: Partial<Record<SubType, SubtypeOverlay>> = {
   // ===== IVF Cycle =====
   ivf_cycle_own_eggs_own_carry: {
     includeFields: IVF_CORE,
@@ -618,6 +658,12 @@ export function resolveTemplate(
 ): ResolvedTemplate {
   const tab = TAB_OF[subType];
   const overlay = SUBTYPE_OVERLAY[subType];
+  if (!tab || !overlay) {
+    // Non-IVF leaves (surrogacy / egg_donor_* / sperm_donor) don't have
+    // itemized IVF-style fields. They come from agency-uploaded cost-sheet
+    // PDFs and the field schema is captured per-sheet, not per-subtype.
+    throw new Error(`resolveTemplate is IVF-only; called with non-IVF subType "${subType}"`);
+  }
   const base = TAB_BASE[tab];
 
   const baseByName = new Map(base.map((f) => [f.fieldName, f]));
