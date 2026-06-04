@@ -164,15 +164,24 @@ Return ONLY a valid JSON array with objects having these exact fields:
         model: "gemini-3.5-flash",
         generationConfig: {
           temperature: 0,
-          maxOutputTokens: 8192,
-          // JSON mode: Gemini's decoder masks every next-token candidate
-          // against the JSON grammar at inference time, so it can't emit
-          // syntactically broken output - no unescaped quotes, no missing
-          // commas, no trailing commas, no orphan brackets. Root-cause
-          // fix for the position-8119 SyntaxError class of bug. Costs a
-          // tiny bit more latency but means strict JSON.parse succeeds
-          // on the full response and we get to keep the classification
-          // block instead of falling back to per-object recovery.
+          // 32k headroom: a 30-item cost sheet with descriptions + comments
+          // can run 8-10k tokens for the items alone before we even get to
+          // the classification block. The previous 8192 ceiling was being
+          // hit mid-response - the items array survived (it's first in the
+          // JSON output) but the classification object got truncated off
+          // the end, which is why subType / isFixedCost / serviceTypes /
+          // programName / country were all coming back empty on long sheets.
+          // Gemini 2.0+ Flash supports up to 32768 output tokens, so we
+          // give it the full budget.
+          maxOutputTokens: 32768,
+          // JSON mode: Gemini's decoder is supposed to mask every next-
+          // token candidate against the JSON grammar at inference time so
+          // it can't emit syntactically broken output. In practice we still
+          // see occasional broken JSON (see the server log "strict JSON.
+          // parse failed; jsonrepair recovered" warnings), so jsonrepair
+          // stays as a middle fallback. JSON mode does still help by
+          // increasing the rate at which strict parse succeeds and by
+          // discouraging the model from veering into prose.
           responseMimeType: "application/json",
         } as any,
       });
@@ -194,15 +203,24 @@ Return ONLY a valid JSON array with objects having these exact fields:
         model: "gemini-3.5-flash",
         generationConfig: {
           temperature: 0,
-          maxOutputTokens: 8192,
-          // JSON mode: Gemini's decoder masks every next-token candidate
-          // against the JSON grammar at inference time, so it can't emit
-          // syntactically broken output - no unescaped quotes, no missing
-          // commas, no trailing commas, no orphan brackets. Root-cause
-          // fix for the position-8119 SyntaxError class of bug. Costs a
-          // tiny bit more latency but means strict JSON.parse succeeds
-          // on the full response and we get to keep the classification
-          // block instead of falling back to per-object recovery.
+          // 32k headroom: a 30-item cost sheet with descriptions + comments
+          // can run 8-10k tokens for the items alone before we even get to
+          // the classification block. The previous 8192 ceiling was being
+          // hit mid-response - the items array survived (it's first in the
+          // JSON output) but the classification object got truncated off
+          // the end, which is why subType / isFixedCost / serviceTypes /
+          // programName / country were all coming back empty on long sheets.
+          // Gemini 2.0+ Flash supports up to 32768 output tokens, so we
+          // give it the full budget.
+          maxOutputTokens: 32768,
+          // JSON mode: Gemini's decoder is supposed to mask every next-
+          // token candidate against the JSON grammar at inference time so
+          // it can't emit syntactically broken output. In practice we still
+          // see occasional broken JSON (see the server log "strict JSON.
+          // parse failed; jsonrepair recovered" warnings), so jsonrepair
+          // stays as a middle fallback. JSON mode does still help by
+          // increasing the rate at which strict parse succeeds and by
+          // discouraging the model from veering into prose.
           responseMimeType: "application/json",
         } as any,
       });
@@ -804,7 +822,18 @@ ${subtypeTrailingNote}`;
         this.logger.log(`parseAndClassify [${providerTypeName}]: ${items.length} items (fixed=${isFixedCost}, name="${programName}", country="${country}", tags=${JSON.stringify(serviceTypes)})`);
       }
     } else {
-      this.logger.warn(`parseAndClassify: missing classification block, returning items only`);
+      // Diagnostic: log what keys WERE in the parsed response so we can
+      // tell if Gemini omitted the classification block entirely vs. the
+      // response was truncated mid-block (in which case parsed would have
+      // an "items" array but no "classification" key, and the response
+      // text would end mid-object). Usually means we hit maxOutputTokens.
+      const presentKeys = parsed && typeof parsed === "object" ? Object.keys(parsed) : [];
+      const tailSnippet = responseText.slice(-200).replace(/\s+/g, " ");
+      this.logger.warn(
+        `parseAndClassify: missing classification block, returning items only. ` +
+        `keys present in parsed=[${presentKeys.join(", ")}]; ` +
+        `responseText length=${responseText.length}; tail=${JSON.stringify(tailSnippet)}`,
+      );
     }
 
     return { items, classification };
@@ -891,15 +920,24 @@ ${rawTextSnippet ? `\nDocument excerpt (first 1500 chars):\n${rawTextSnippet.sli
         model: "gemini-3.5-flash",
         generationConfig: {
           temperature: 0,
-          maxOutputTokens: 8192,
-          // JSON mode: Gemini's decoder masks every next-token candidate
-          // against the JSON grammar at inference time, so it can't emit
-          // syntactically broken output - no unescaped quotes, no missing
-          // commas, no trailing commas, no orphan brackets. Root-cause
-          // fix for the position-8119 SyntaxError class of bug. Costs a
-          // tiny bit more latency but means strict JSON.parse succeeds
-          // on the full response and we get to keep the classification
-          // block instead of falling back to per-object recovery.
+          // 32k headroom: a 30-item cost sheet with descriptions + comments
+          // can run 8-10k tokens for the items alone before we even get to
+          // the classification block. The previous 8192 ceiling was being
+          // hit mid-response - the items array survived (it's first in the
+          // JSON output) but the classification object got truncated off
+          // the end, which is why subType / isFixedCost / serviceTypes /
+          // programName / country were all coming back empty on long sheets.
+          // Gemini 2.0+ Flash supports up to 32768 output tokens, so we
+          // give it the full budget.
+          maxOutputTokens: 32768,
+          // JSON mode: Gemini's decoder is supposed to mask every next-
+          // token candidate against the JSON grammar at inference time so
+          // it can't emit syntactically broken output. In practice we still
+          // see occasional broken JSON (see the server log "strict JSON.
+          // parse failed; jsonrepair recovered" warnings), so jsonrepair
+          // stays as a middle fallback. JSON mode does still help by
+          // increasing the rate at which strict parse succeeds and by
+          // discouraging the model from veering into prose.
           responseMimeType: "application/json",
         } as any,
       });
