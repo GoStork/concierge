@@ -161,7 +161,7 @@ Return ONLY a valid JSON array with objects having these exact fields:
       textContent = csvParts.join("\n\n");
 
       const model = genAI.getGenerativeModel({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         generationConfig: {
           temperature: 0,
           // 32k headroom: a 30-item cost sheet with descriptions + comments
@@ -200,7 +200,7 @@ Return ONLY a valid JSON array with objects having these exact fields:
       const base64Data = fileBuffer.toString("base64");
 
       const model = genAI.getGenerativeModel({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         generationConfig: {
           temperature: 0,
           // 32k headroom: a 30-item cost sheet with descriptions + comments
@@ -600,7 +600,7 @@ ${subtypeTrailingNote}`;
     }
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       generationConfig: { temperature: 0, maxOutputTokens: 8192 } as any,
     });
 
@@ -917,7 +917,7 @@ ${rawTextSnippet ? `\nDocument excerpt (first 1500 chars):\n${rawTextSnippet.sli
 
     try {
       const model = genAI.getGenerativeModel({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         generationConfig: {
           temperature: 0,
           // 32k headroom: a 30-item cost sheet with descriptions + comments
