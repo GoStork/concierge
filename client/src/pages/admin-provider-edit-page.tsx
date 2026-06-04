@@ -185,6 +185,7 @@ export default function AdminProviderEditPage() {
   });
 
   const [manageServicesOpen, setManageServicesOpen] = useState(false);
+  const [partnerClinicSearch, setPartnerClinicSearch] = useState("");
 
   const [editName, setEditName] = useState("");
   const [editAbout, setEditAbout] = useState("");
@@ -952,32 +953,70 @@ export default function AdminProviderEditPage() {
                   <Check className="w-5 h-5 text-primary" /> Partner IVF Clinics
                 </h3>
                 <p className="text-xs text-muted-foreground">Link the IVF clinic(s) that operate in the same country as this agency. The AI will combine both providers' matching requirements (and costs) when evaluating parents for this international program.</p>
-                <div className="flex flex-col gap-2 max-w-md">
-                  {(allIvfClinics || []).filter((c: any) => c.id !== id).map((clinic: any) => (
-                    <label key={clinic.id} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={partnerProviderIds.includes(clinic.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) setPartnerProviderIds([...partnerProviderIds, clinic.id]);
-                          else setPartnerProviderIds(partnerProviderIds.filter(pid => pid !== clinic.id));
-                        }}
-                        data-testid={`checkbox-partner-clinic-${clinic.id}`}
-                        className="accent-primary"
-                      />
-                      <span className="text-sm">{clinic.name}</span>
-                      {clinic.locations?.length > 0 && (
-                        <span className="text-xs text-muted-foreground">({clinic.locations.map((l: any) => l.state || l.city).filter(Boolean).slice(0, 2).join(", ")})</span>
-                      )}
-                    </label>
-                  ))}
-                  {!allIvfClinics && (
-                    <p className="text-xs text-muted-foreground italic">Loading IVF clinics...</p>
-                  )}
-                  {allIvfClinics && allIvfClinics.filter((c: any) => c.id !== id).length === 0 && (
-                    <p className="text-xs text-muted-foreground italic">No IVF clinics available to link.</p>
+
+                {/* Selected partner clinics as removable chips */}
+                {partnerProviderIds.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {partnerProviderIds.map((pid) => {
+                      const clinic = (allIvfClinics || []).find((c: any) => c.id === pid);
+                      return (
+                        <Badge key={pid} variant="outline" className="flex items-center gap-1" data-testid={`chip-partner-clinic-${pid}`}>
+                          {clinic?.name || pid}
+                          <button
+                            type="button"
+                            onClick={() => setPartnerProviderIds(partnerProviderIds.filter((x) => x !== pid))}
+                            className="ml-1 text-muted-foreground hover:text-destructive"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Search input with autocomplete dropdown */}
+                <div className="relative max-w-md">
+                  <Input
+                    type="text"
+                    value={partnerClinicSearch}
+                    onChange={(e) => setPartnerClinicSearch(e.target.value)}
+                    placeholder="Search IVF clinics to add..."
+                    data-testid="input-partner-clinic-search"
+                  />
+                  {partnerClinicSearch.trim() && (
+                    <ul className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-[var(--container-radius)] border border-border bg-background shadow-md">
+                      {(() => {
+                        const q = partnerClinicSearch.trim().toLowerCase();
+                        const matches = (allIvfClinics || [])
+                          .filter((c: any) => c.id !== id && !partnerProviderIds.includes(c.id) && c.name.toLowerCase().includes(q))
+                          .slice(0, 10);
+                        if (matches.length === 0) {
+                          return <li className="px-3 py-2 text-sm text-muted-foreground italic">No matching clinics</li>;
+                        }
+                        return matches.map((clinic: any) => (
+                          <li
+                            key={clinic.id}
+                            className="cursor-pointer px-3 py-2 text-sm flex items-center gap-2 hover:bg-muted"
+                            onClick={() => {
+                              setPartnerProviderIds([...partnerProviderIds, clinic.id]);
+                              setPartnerClinicSearch("");
+                            }}
+                            data-testid={`option-partner-clinic-${clinic.id}`}
+                          >
+                            <span>{clinic.name}</span>
+                            {clinic.locations?.length > 0 && (
+                              <span className="text-xs text-muted-foreground">({clinic.locations.map((l: any) => l.state || l.city).filter(Boolean).slice(0, 2).join(", ")})</span>
+                            )}
+                          </li>
+                        ));
+                      })()}
+                    </ul>
                   )}
                 </div>
+                {!allIvfClinics && (
+                  <p className="text-xs text-muted-foreground italic">Loading IVF clinics...</p>
+                )}
               </Card>
             )}
 
