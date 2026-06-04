@@ -759,17 +759,12 @@ export class CostsService {
       : [];
     const providerIds = [...new Set([agencyId, ...partnerIds])];
 
-    // Country label - prefer the agency's first location's state (we store
-    // country names in the state field for international providers), falling
-    // back to city.
-    const loc = agency.locations?.[0];
-    const country = loc?.state || loc?.city || "";
-
     // Gather every parent-matched program across all providers in the program.
     type Candidate = {
       providerId: string;
       providerName: string;
       programName: string;
+      programCountry: string;
       services: string[]; // intersection with the 3 journey services
       minTotal: number;
       maxTotal: number;
@@ -784,15 +779,36 @@ export class CostsService {
         pid === agencyId
           ? { name: agency.name }
           : await this.prisma.provider.findUnique({ where: { id: pid }, select: { name: true } });
-      const res = await this.getProviderParentPrograms(pid, parentAccountId);
+      // implicitNeed = "surrogacy": the parent is actively in the international
+      // surrogacy matching flow (they selected this country), so bypass the
+      // "complete your profile" gate and surface the program costs - same
+      // semantics as standing on a specific surrogate profile.
+      const res = await this._getProviderParentPrograms(pid, parentAccountId, null, "surrogacy", null, false);
       if (res.isPartialProfile) isPartialProfile = true;
       for (const prog of res.programs) {
-        const services = (prog.serviceTypes || []).filter((s: string) => JOURNEY_SERVICES.includes(s));
+        let services = (prog.serviceTypes || []).filter((s: string) => JOURNEY_SERVICES.includes(s));
+        // ROLE AWARENESS: when the agency has separate partner clinics (e.g.
+        // Colombia: Bioética agency + Inser clinic), the agency supplies the
+        // surrogacy leg and the clinic(s) supply the IVF / egg-donor legs.
+        // Some clinic programs are over-tagged with "surrogacy" in their
+        // serviceTypes; without this constraint the set-cover would let the
+        // clinic's combined program stand in for the agency and the real
+        // agency fee would be dropped, undercounting the journey. When the
+        // agency IS the clinic (no partner ids, e.g. Mexico/Eggspecting), a
+        // single provider legitimately supplies every leg - no constraint.
+        if (partnerIds.length > 0) {
+          if (pid === agencyId) {
+            services = services.filter((s) => s === "surrogacy");
+          } else {
+            services = services.filter((s) => s === "ivf_clinic" || s === "egg_donor");
+          }
+        }
         if (services.length === 0) continue;
         candidates.push({
           providerId: pid,
           providerName: prov?.name || "",
           programName: prog.programName,
+          programCountry: prog.country || "",
           services,
           minTotal: prog.minTotal,
           maxTotal: prog.maxTotal,
@@ -800,6 +816,14 @@ export class CostsService {
         });
       }
     }
+
+    // Country label - the cost programs carry the authoritative country
+    // ("Colombia", "Mexico"). The agency's location state can be a US state
+    // (e.g. a Mexico program run by a provider with a GA mailing address), so
+    // prefer the program country and only fall back to location.
+    const loc = agency.locations?.[0];
+    const country =
+      candidates.find((c) => c.programCountry)?.programCountry || loc?.state || loc?.city || "";
 
     // Needed services = whatever the matcher actually surfaced for this parent
     // (it already filtered to the parent's biology + intent). Always includes

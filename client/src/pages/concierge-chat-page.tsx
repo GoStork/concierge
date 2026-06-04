@@ -1839,7 +1839,7 @@ function CountryProgramCard({ card, brandColor, onAction }: { card: MatchCard; b
     );
   }
 
-  const country = data?.country || card.country || card.location || "";
+  const country = card.country || data?.country || card.location || "";
   const flag = getCountryFlag(country);
   const agencyName = data?.agencyName || card.name || "";
   const components: any[] = data?.components || [];

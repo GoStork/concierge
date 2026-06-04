@@ -298,6 +298,8 @@ export const insertProviderSchema = z.object({
   surrogacyStayAfterBirthMonths: z.number().int().nullable().optional(),
   surrogacyBirthCertificateListing: z.array(z.string()).nullable().optional(),
   surrogacySurrogateRemovableFromCert: z.boolean().nullable().optional(),
+  // Partner IVF clinic(s) for international surrogacy programs (agency -> clinic links)
+  partnerProviderIds: z.array(z.string()).nullable().optional(),
 });
 
 export const insertProviderTypeSchema = z.object({
