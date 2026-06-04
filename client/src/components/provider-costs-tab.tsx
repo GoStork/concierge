@@ -3321,7 +3321,7 @@ function ProgramsView({
                     classification toggles, total badge, and pending badge
                     stay visible so admins don't lose context when renaming. */}
                 <div
-                  className="flex-1 flex items-center gap-2 flex-wrap"
+                  className="flex-1 flex items-center gap-2 flex-nowrap min-w-0 overflow-hidden"
                   onClick={isEditing ? (e) => e.stopPropagation() : undefined}
                 >
                   {isEditing ? (
@@ -3330,10 +3330,10 @@ function ProgramsView({
                         value={formName}
                         onChange={(e) => setFormName(e.target.value)}
                         placeholder="Program name"
-                        className="h-7 text-sm w-56"
+                        className="h-7 text-sm w-56 flex-shrink-0"
                         data-testid={`input-program-name-${program.id}`}
                       />
-                      <div className="w-44">
+                      <div className="w-44 flex-shrink-0">
                         <SingleCountryAutocompleteInput
                           value={formCountry}
                           onChange={setFormCountry}
@@ -3344,8 +3344,13 @@ function ProgramsView({
                     </>
                   ) : (
                     <>
-                      <span className="font-medium text-sm">{program.name}</span>
-                      <Badge variant="outline" className="text-xs flex items-center gap-1">
+                      {/* min-w-0 + truncate so a long program name doesn't
+                          push the classification chips, total, and action
+                          buttons off the end of the row. Everything to the
+                          right of the name keeps flex-shrink-0 so they
+                          always render at full width. */}
+                      <span className="font-medium text-sm truncate min-w-0" title={program.name}>{program.name}</span>
+                      <Badge variant="outline" className="text-xs flex items-center gap-1 flex-shrink-0">
                         {getCountryFlag(program.country)
                           ? <span>{getCountryFlag(program.country)}</span>
                           : <Globe className="w-3 h-3" />}
@@ -3362,18 +3367,25 @@ function ProgramsView({
                       the program to classify it. Kept visible in edit
                       mode so the admin doesn't lose context while
                       renaming. */}
-                  <ProgramClassificationControls
-                    program={program}
-                    providerId={providerId}
-                    allowedServiceTags={allowedServiceTags}
-                    providerType={providerType}
-                  />
-                  <ProgramTotalBadge program={program} />
-                  {isAdminView && program.latestSheetStatus === "PENDING" && (
-                    <Badge className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/40 border">
-                      Pending Review
-                    </Badge>
-                  )}
+                  {/* Group the classification controls + total + status
+                      badge into one shrink-locked container so they all
+                      stay rendered at full width on the same line. The
+                      program name to the left takes the squeeze (truncates
+                      with ellipsis) before anything here gets clipped. */}
+                  <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
+                    <ProgramClassificationControls
+                      program={program}
+                      providerId={providerId}
+                      allowedServiceTags={allowedServiceTags}
+                      providerType={providerType}
+                    />
+                    <ProgramTotalBadge program={program} />
+                    {isAdminView && program.latestSheetStatus === "PENDING" && (
+                      <Badge className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/40 border">
+                        Pending Review
+                      </Badge>
+                    )}
+                  </div>
                 </div>
                 {isEditing ? (
                   <>
