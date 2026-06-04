@@ -82,7 +82,7 @@ Never end a turn saying "you may need to restart" or "run the build yourself" - 
 
 - **PostgreSQL (Supabase):** Primary database.
 - **Redis:** Session store.
-- **Google Gemini 2.0 Flash / 2.5 Flash:** AI for scraping, data extraction, and OCR.
+- **Google Gemini 3.5 Flash:** AI for scraping, data extraction, OCR, cost-sheet parsing+classification, and the concierge AI router. Replaced the prior Gemini 2.0/2.5 Flash usage across the codebase. All `model: "..."` calls in `server/` should use `gemini-3.5-flash` unless there's a specific reason for an older version.
 - **SendGrid:** Email notifications.
 - **Twilio:** SMS notifications.
 - **Google Calendar API:** Calendar synchronization.
