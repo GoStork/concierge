@@ -195,10 +195,18 @@ function IvfSubtypePopover({
   currentSubType,
   tabFilter,
   onSelect,
+  triggerClassName,
 }: {
   currentSubType: string | null;
   tabFilter?: IvfTab;
   onSelect: (subType: string) => void;
+  // Per-callsite styling for the trigger button. The inline program-row
+  // usage passes a fixed width so every IVF row's Fixed-Cost toggle lines
+  // up at the same X position regardless of which subtype is selected
+  // (the longest label is "Transfer to surrogate (in-house embryos)";
+  // shorter labels render with extra padding on the right). The expanded
+  // SingleCostsTab usage leaves it unset for a natural-width button.
+  triggerClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const isMobile = useIsMobile();
@@ -211,11 +219,14 @@ function IvfSubtypePopover({
     <Button
       variant="outline"
       size="sm"
-      className="shrink-0 h-8 text-xs font-medium rounded-[var(--radius)] gap-1.5 px-3"
+      className={cn(
+        "shrink-0 h-8 text-xs font-medium rounded-[var(--radius)] gap-1.5 px-3",
+        triggerClassName,
+      )}
       data-testid="select-subtype"
     >
-      {currentLabel || "Select program type..."}
-      <ChevronDown className="w-3.5 h-3.5 opacity-60" />
+      <span className="truncate text-left">{currentLabel || "Select program type..."}</span>
+      <ChevronDown className="w-3.5 h-3.5 opacity-60 flex-shrink-0" />
     </Button>
   );
 
@@ -489,14 +500,19 @@ function ProgramClassificationControls({
       </div>
 
       {/* Slot 2: IVF subtype picker. Only emitted when ivfOn so non-IVF
-          rows don't reserve a phantom column. The natural width of the
-          popover button is consistent across rows because the IVF
-          subtype labels are short strings from a small enum. */}
+          rows don't reserve a phantom column. Fixed-width trigger (w-72
+          = 288px) so the Fixed-Cost / Not Fixed Costs toggle in the next
+          slot starts at exactly the same X position on every IVF row,
+          regardless of which subtype is selected. The width was sized
+          against the longest label ("Transfer to surrogate (in-house
+          embryos)"), with truncation as a safety net for any future
+          label that grows beyond it. */}
       {ivfOn && (
         <div className="flex items-center flex-shrink-0" onClick={(e) => e.stopPropagation()}>
           <IvfSubtypePopover
             currentSubType={currentIvfSubtype}
             onSelect={setIvfSubtype}
+            triggerClassName="w-72 justify-between"
           />
         </div>
       )}
