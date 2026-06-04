@@ -542,6 +542,26 @@ export class CostsController {
     );
   }
 
+  // Part 4: combined cost for an international surrogacy program (agency +
+  // partner IVF clinic(s)) for the requesting parent. parentAccountId is
+  // derived from the session user when not passed explicitly, so the chat
+  // match card can call it with just the agency id.
+  @Get("provider/:agencyId/country-program")
+  @UseGuards(SessionOrJwtGuard)
+  async getCountryProgram(
+    @Param("agencyId") agencyId: string,
+    @Query("parentAccountId") parentAccountId: string,
+    @Req() req: Request,
+  ) {
+    this.assertAuthenticated(req);
+    const user = this.getUserFromRequest(req);
+    const resolvedParentAccountId = parentAccountId || user?.parentAccountId;
+    if (!resolvedParentAccountId) {
+      throw new HttpException("parentAccountId required", HttpStatus.BAD_REQUEST);
+    }
+    return this.costsService.getCombinedCountryProgramCost(agencyId, resolvedParentAccountId);
+  }
+
   @Post("save-draft")
   @UseGuards(SessionOrJwtGuard)
   async saveDraft(

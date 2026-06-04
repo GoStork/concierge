@@ -14,6 +14,7 @@ import { getPhotoSrc } from "@/lib/profile-utils";
 import { DonorStatusPill, getDonorStatusStyle } from "@/lib/donor-status";
 import { useMarketplaceViewContext, recordProfileView } from "@/lib/profile-views";
 import { formatMoneyCents } from "@/lib/format-money";
+import { getCountryFlag } from "@/lib/country-flag";
 import { formatLocationDisplay } from "@/lib/format-location";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +53,7 @@ interface MatchCard {
   eggSource?: string;
   ageGroup?: string;
   isNewPatient?: boolean;
+  country?: string;
 }
 
 export interface ConsultationCardData {
@@ -1808,6 +1810,136 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
   );
 }
 
+// Part 4: international program card. One card per country (e.g. Mexico,
+// Colombia) showing the COMBINED cost of the surrogacy agency + its partner
+// IVF clinic(s) for this parent - apples-to-apples across countries. Cost is
+// hydrated server-side (no AI math) from /country-program.
+function CountryProgramCard({ card, brandColor, onAction }: { card: MatchCard; brandColor: string; onAction: (text: string) => void }) {
+  const [data, setData] = useState<any>(null);
+  const [failed, setFailed] = useState(false);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/costs/provider/${card.providerId}/country-program`, { credentials: "include" });
+        if (res.ok) setData(await res.json());
+        else setFailed(true);
+      } catch {
+        setFailed(true);
+      }
+    })();
+  }, [card.providerId]);
+
+  if (!data && !failed) {
+    return (
+      <div className="min-w-[320px] max-w-[420px] w-full rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const country = data?.country || card.country || card.location || "";
+  const flag = getCountryFlag(country);
+  const agencyName = data?.agencyName || card.name || "";
+  const components: any[] = data?.components || [];
+  const fmt = (n: number) => `$${Math.round(n).toLocaleString()}`;
+  const totalLabel = data
+    ? (data.combinedMinTotal === data.combinedMaxTotal
+        ? fmt(data.combinedMinTotal)
+        : `${fmt(data.combinedMinTotal)} - ${fmt(data.combinedMaxTotal)}`)
+    : null;
+  const hasCost = data?.hasCost && components.length > 0;
+
+  return (
+    <div
+      className="min-w-[320px] max-w-[420px] w-full animate-[slideUp_0.4s_ease-out_forwards] border border-[hsl(var(--brand-success))]/40 bg-card overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
+      style={{ borderRadius: "var(--container-radius, 0.5rem)" }}
+      data-testid={`country-program-card-${card.providerId}`}
+      onClick={() => navigate(`/providers/${card.providerId}`, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } })}
+    >
+      {/* Header: country flag + name + Program pill */}
+      <div className="px-5 pt-5 pb-3 flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          {flag ? <span className="text-2xl" aria-hidden>{flag}</span> : <Globe className="w-5 h-5 text-muted-foreground shrink-0" />}
+          <div className="min-w-0">
+            <h3 className="font-heading text-xl text-foreground leading-tight">{country || agencyName}</h3>
+            <p className="text-xs text-muted-foreground truncate">{agencyName}{country ? " program" : ""}</p>
+          </div>
+        </div>
+        <Badge className="bg-secondary text-secondary-foreground border-secondary rounded-full shrink-0">Program</Badge>
+      </div>
+
+      {/* Combined total */}
+      {hasCost && (
+        <div className="px-5 pb-3">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">Estimated all-in cost</p>
+          <p className="text-3xl font-heading text-primary mt-1">{totalLabel}</p>
+        </div>
+      )}
+
+      {/* Per-provider / per-service breakdown */}
+      {hasCost && (
+        <div className="border-t border-border/60 px-5 py-4 space-y-2">
+          {components.map((c: any, i: number) => (
+            <div key={i} className="flex items-start justify-between gap-3 text-sm">
+              <div className="flex items-start gap-2 flex-1 min-w-0">
+                <CheckCircle2 className="w-4 h-4 text-[hsl(var(--brand-success))] shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <span className="text-foreground">{c.serviceLabel}</span>
+                  {c.providerName && <span className="text-xs text-muted-foreground block truncate">via {c.providerName}</span>}
+                </div>
+              </div>
+              <span className="tabular-nums text-foreground shrink-0">
+                {c.minTotal === c.maxTotal ? fmt(c.minTotal) : `${fmt(c.minTotal)} - ${fmt(c.maxTotal)}`}
+              </span>
+            </div>
+          ))}
+          {data?.missingServices?.length > 0 && (
+            <p className="text-xs text-muted-foreground italic pt-1">
+              {data.missingServices.map((s: string) => s === "egg_donor" ? "egg donor" : s === "ivf_clinic" ? "IVF" : s).join(", ")} pricing available on consultation
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Match reasons */}
+      {card.reasons?.length > 0 && (
+        <div className="px-5 pb-4 flex flex-wrap gap-1.5">
+          {card.reasons.map((r) => (
+            <span key={r} className="text-xs px-2 py-0.5 rounded-full border border-border bg-background text-foreground font-ui">
+              {r}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {!hasCost && (
+        <div className="px-5 pb-4">
+          <p className="text-sm text-muted-foreground">Get a personalized all-in quote on a free consultation.</p>
+        </div>
+      )}
+
+      <div className="border-t border-border/50 px-4 py-3 flex gap-2">
+        <Button
+          variant="outline"
+          className="flex-1 text-xs font-ui h-8"
+          onClick={(e) => { e.stopPropagation(); navigate(`/providers/${card.providerId}`, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } }); }}
+        >
+          View Program
+        </Button>
+        <Button
+          className="flex-1 text-xs font-ui h-8 text-primary-foreground"
+          style={{ backgroundColor: brandColor }}
+          onClick={(e) => { e.stopPropagation(); onAction(`I'd like to schedule a consultation for the ${country || agencyName} program`); }}
+        >
+          Book Consultation
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function AgencyMatchCard({ card, brandColor, onAction }: { card: MatchCard; brandColor: string; onAction: (text: string) => void }) {
   const [provider, setProvider] = useState<any>(null);
   const navigate = useNavigate();
@@ -1926,9 +2058,10 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
   const cardType = card.type || "";
   const isClinic = cardType.toLowerCase() === "clinic";
   const isAgency = cardType.toLowerCase() === "surrogacyagency" || cardType.toLowerCase() === "surrogacy agency";
+  const isCountryProgram = cardType.toLowerCase() === "countryprogram" || cardType.toLowerCase() === "country program";
 
   useEffect(() => {
-    if (isClinic || isAgency) return;
+    if (isClinic || isAgency || isCountryProgram) return;
     const fetchProfile = async () => {
       try {
         const typeSlug = cardType.toLowerCase().replace(" ", "-");
@@ -1943,10 +2076,14 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
       }
     };
     fetchProfile();
-  }, [card.providerId, card.type, isClinic, isAgency]);
+  }, [card.providerId, card.type, isClinic, isAgency, isCountryProgram]);
 
   if (isClinic) {
     return <ClinicMatchCard card={card} brandColor={brandColor} onAction={onAction} onViewProfile={onViewProfile} />;
+  }
+
+  if (isCountryProgram) {
+    return <CountryProgramCard card={card} brandColor={brandColor} onAction={onAction} />;
   }
 
   if (isAgency) {

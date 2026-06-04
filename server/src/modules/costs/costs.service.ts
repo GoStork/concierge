@@ -718,6 +718,153 @@ export class CostsService {
     return this._getProviderParentPrograms(providerId, parentAccountId, specificComp, implicitNeed, spermDonorVialTypes, showAll);
   }
 
+  /**
+   * Combined cost for an international surrogacy program (Part 4).
+   *
+   * An international program is agency-led: the surrogacy agency plus one or
+   * more partner IVF clinics (linked via Provider.partnerProviderIds) deliver
+   * the full journey together. When the agency IS the clinic (e.g. a Mexico
+   * provider that offers both services under one company), there are no
+   * partner ids and a single provider supplies every leg.
+   *
+   * We sum the parent-matched program total across all providers in the
+   * program, picking - per needed service - the cheapest matched program,
+   * and treating a combined-package program (one sheet tagged with multiple
+   * serviceTypes) as covering all of those services at once so it is never
+   * double-counted. All totals come from getProviderParentPrograms (the same
+   * matcher the parent profile uses) - no arithmetic is re-implemented here.
+   *
+   * Returns null if the agency does not exist. components is empty + a
+   * missingServices list is returned when no matched programs are priced.
+   */
+  async getCombinedCountryProgramCost(agencyId: string, parentAccountId: string) {
+    const agency = await this.prisma.provider.findUnique({
+      where: { id: agencyId },
+      select: {
+        id: true,
+        name: true,
+        logoUrl: true,
+        partnerProviderIds: true,
+        locations: {
+          select: { city: true, state: true },
+          orderBy: { sortOrder: "asc" as const },
+          take: 1,
+        },
+      },
+    });
+    if (!agency) return null;
+
+    const partnerIds = Array.isArray(agency.partnerProviderIds)
+      ? (agency.partnerProviderIds as string[])
+      : [];
+    const providerIds = [...new Set([agencyId, ...partnerIds])];
+
+    // Country label - prefer the agency's first location's state (we store
+    // country names in the state field for international providers), falling
+    // back to city.
+    const loc = agency.locations?.[0];
+    const country = loc?.state || loc?.city || "";
+
+    // Gather every parent-matched program across all providers in the program.
+    type Candidate = {
+      providerId: string;
+      providerName: string;
+      programName: string;
+      services: string[]; // intersection with the 3 journey services
+      minTotal: number;
+      maxTotal: number;
+      lineItems: any[];
+    };
+    const JOURNEY_SERVICES = ["surrogacy", "ivf_clinic", "egg_donor"];
+    const candidates: Candidate[] = [];
+    let isPartialProfile = false;
+
+    for (const pid of providerIds) {
+      const prov =
+        pid === agencyId
+          ? { name: agency.name }
+          : await this.prisma.provider.findUnique({ where: { id: pid }, select: { name: true } });
+      const res = await this.getProviderParentPrograms(pid, parentAccountId);
+      if (res.isPartialProfile) isPartialProfile = true;
+      for (const prog of res.programs) {
+        const services = (prog.serviceTypes || []).filter((s: string) => JOURNEY_SERVICES.includes(s));
+        if (services.length === 0) continue;
+        candidates.push({
+          providerId: pid,
+          providerName: prov?.name || "",
+          programName: prog.programName,
+          services,
+          minTotal: prog.minTotal,
+          maxTotal: prog.maxTotal,
+          lineItems: prog.lineItems || [],
+        });
+      }
+    }
+
+    // Needed services = whatever the matcher actually surfaced for this parent
+    // (it already filtered to the parent's biology + intent). Always includes
+    // whatever showed up; we never invent a service the parent doesn't need.
+    const neededServices = new Set<string>();
+    for (const c of candidates) c.services.forEach((s) => neededServices.add(s));
+
+    // Greedy set-cover: prefer programs that cover the most still-needed
+    // services (so a combined Mexico package wins as one line), breaking ties
+    // by lowest min total. Few services (<=3) so greedy is optimal in practice.
+    const covered = new Set<string>();
+    const chosen: Candidate[] = [];
+    const pool = [...candidates];
+    while (covered.size < neededServices.size && pool.length > 0) {
+      pool.sort((a, b) => {
+        const aNew = a.services.filter((s) => !covered.has(s)).length;
+        const bNew = b.services.filter((s) => !covered.has(s)).length;
+        if (bNew !== aNew) return bNew - aNew;
+        return a.minTotal - b.minTotal;
+      });
+      const pick = pool.shift()!;
+      const addsNew = pick.services.some((s) => !covered.has(s));
+      if (!addsNew) continue;
+      chosen.push(pick);
+      pick.services.forEach((s) => covered.add(s));
+    }
+
+    const SERVICE_LABEL: Record<string, string> = {
+      surrogacy: "Surrogacy",
+      ivf_clinic: "IVF",
+      egg_donor: "Egg Donor",
+    };
+
+    const components = chosen.map((c) => ({
+      providerId: c.providerId,
+      providerName: c.providerName,
+      // Label the services this line covers (e.g. "Surrogacy + IVF" for a
+      // combined package, or just "IVF" for a standalone clinic program).
+      serviceLabel: c.services.map((s) => SERVICE_LABEL[s] || s).join(" + "),
+      services: c.services,
+      programName: c.programName,
+      minTotal: c.minTotal,
+      maxTotal: c.maxTotal,
+    }));
+
+    const combinedMinTotal = chosen.reduce((sum, c) => sum + c.minTotal, 0);
+    const combinedMaxTotal = chosen.reduce((sum, c) => sum + c.maxTotal, 0);
+    const missingServices = JOURNEY_SERVICES.filter(
+      (s) => neededServices.has(s) && !covered.has(s),
+    );
+
+    return {
+      agencyId: agency.id,
+      agencyName: agency.name,
+      agencyLogo: agency.logoUrl || null,
+      country,
+      combinedMinTotal,
+      combinedMaxTotal,
+      components,
+      missingServices,
+      isPartialProfile,
+      hasCost: components.length > 0,
+    };
+  }
+
   private async _getProviderParentPrograms(
     providerId: string,
     parentAccountId: string,
@@ -983,6 +1130,7 @@ export class CostsService {
           tabLabel: p.tab && isValidTab(p.tab) ? TAB_LABEL[p.tab as Tab] : null,
           isFixedCost: sheet.isFixedCost,
           updatedAt: sheet.updatedAt,
+          serviceTypes: Array.isArray(p.serviceTypes) ? p.serviceTypes : [],
         };
 
         // Render the compensation row at the donor's / surrogate's actual

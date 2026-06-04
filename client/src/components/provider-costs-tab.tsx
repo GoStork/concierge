@@ -517,6 +517,10 @@ function ProgramClassificationControls({
   const ivfOn = !!currentIvfSubtype;
   const currentEggDonorSubtype = getEggDonorSubtype(current);
   const eggDonorOn = !!currentEggDonorSubtype;
+  // "Shipping Eggs + Sperm" programs mean the parent ships their own eggs
+  // to the clinic - there's no donor in the equation, so the Fresh/Frozen
+  // donor picker doesn't apply. Hide it for those subtypes.
+  const ivfSubtypeExcludesDonor = currentIvfSubtype?.startsWith("shipping_eggs_sperm") ?? false;
   const latestSheet = program.latestSheet ?? null;
   const effectiveIsFixedCost =
     pending?.isFixedCost !== undefined ? pending.isFixedCost : latestSheet?.isFixedCost ?? null;
@@ -547,7 +551,12 @@ function ProgramClassificationControls({
 
   const setIvfSubtype = (newSub: string) => {
     const nonIvf = current.filter(s => !s.startsWith("ivf_") && !s.startsWith("embryo_") && !s.startsWith("fet_") && !s.startsWith("shipping_") && !s.startsWith("egg_freezing_"));
-    onPatch({ subTypes: [...nonIvf, newSub] });
+    // shipping_eggs_sperm means parent ships own gametes - no donor applies.
+    // Drop any stale egg_donor_fresh/frozen so saved data matches the UI.
+    const cleaned = newSub.startsWith("shipping_eggs_sperm")
+      ? nonIvf.filter(s => s !== "egg_donor_fresh" && s !== "egg_donor_frozen")
+      : nonIvf;
+    onPatch({ subTypes: [...cleaned, newSub] });
   };
 
   const setEggDonorSubtype = (newSub: string) => {
@@ -630,7 +639,7 @@ function ProgramClassificationControls({
             standalone egg-donor service) can pick a Fresh/Frozen variant
             without polluting the coverage row with two flat leaves. Fixed
             trigger width keeps downstream slots column-aligned across rows. */}
-        {eggDonorOn && (
+        {eggDonorOn && !ivfSubtypeExcludesDonor && (
           <div className="flex items-center flex-shrink-0" onClick={(e) => e.stopPropagation()}>
             <EggDonorSubtypePopover
               currentSubType={currentEggDonorSubtype}
