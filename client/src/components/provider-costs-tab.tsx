@@ -63,7 +63,7 @@ import {
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { SingleCountryAutocompleteInput } from "@/components/ui/country-autocomplete-input";
-import { getCountryFlag } from "@/lib/country-flag";
+import { getCountryFlag, getCountryShortName } from "@/lib/country-flag";
 
 // Mirror of server/src/modules/costs/cost-templates-config.ts. Keep these
 // in sync. We don't import from server/ to avoid bundling server code.
@@ -501,38 +501,46 @@ function ProgramClassificationControls({
         </div>
       )}
 
-      {/* Slot 3: Cost (Fixed-Cost / Not Fixed Costs segmented toggle).
-          Natural width; whitespace-nowrap on each button keeps the
-          labels on one line. */}
-      <div className="flex items-center flex-shrink-0">
+      {/* Slot 3: Cost (Fixed / Not Fixed segmented toggle).
+          Labels shortened from "Fixed-Cost" + "Not Fixed Costs" to plain
+          "Fixed" + "Not Fixed" with a single "Costs:" label outside the
+          toggle, so the word "cost" is said once instead of twice. Saves
+          enough horizontal space that wide totals like "$6,500 - $20,000
+          (draft)" stop pushing the toggle into the action-icon column. */}
+      <div className="flex items-center flex-shrink-0 gap-1.5">
         {latestSheet && (
-          <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm" onClick={(e) => e.stopPropagation()}>
-          <button
-            type="button"
-            className={cn(
-              "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium whitespace-nowrap",
-              latestSheet.isFixedCost === true ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
-            )}
-            onClick={() => { setHasInteracted(true); classificationMutation.mutate({ isFixedCost: true }); }}
-            disabled={classificationMutation.isPending}
-            data-testid={`top-mark-fixed-${program.id}`}
-          >
-            Fixed-Cost
-          </button>
-          <button
-            type="button"
-            className={cn(
-              "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium",
-              latestSheet.isFixedCost === false ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
-            )}
-            onClick={() => { setHasInteracted(true); classificationMutation.mutate({ isFixedCost: false }); }}
-            disabled={classificationMutation.isPending}
-            data-testid={`top-mark-not-fixed-${program.id}`}
-          >
-            Not Fixed Costs
-          </button>
-        </div>
-      )}
+          <>
+            <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">Costs:</span>
+            <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                className={cn(
+                  "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium whitespace-nowrap",
+                  latestSheet.isFixedCost === true ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
+                )}
+                onClick={() => { setHasInteracted(true); classificationMutation.mutate({ isFixedCost: true }); }}
+                disabled={classificationMutation.isPending}
+                data-testid={`top-mark-fixed-${program.id}`}
+                title="All costs in this program are fixed"
+              >
+                Fixed
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium whitespace-nowrap",
+                  latestSheet.isFixedCost === false ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
+                )}
+                onClick={() => { setHasInteracted(true); classificationMutation.mutate({ isFixedCost: false }); }}
+                disabled={classificationMutation.isPending}
+                data-testid={`top-mark-not-fixed-${program.id}`}
+                title="Some costs in this program vary (range or by case)"
+              >
+                Not Fixed
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* The Confirm button + Confirmed badge used to live here as Slot 4,
@@ -615,7 +623,7 @@ function ProgramConfirmIconButton({
   // pending; the tooltip explains the gate.
   const disabled = classificationMutation.isPending || !hasInteracted;
   const titleText = !hasInteracted
-    ? "Click Fixed-Cost or Not Fixed Costs first to confirm the AI's classification"
+    ? "Click Fixed or Not Fixed first to confirm the AI's classification"
     : "Confirm classification";
 
   return (
@@ -3483,11 +3491,19 @@ function ProgramsView({
                           full text reachable via the browser title
                           tooltip. */}
                       <span className="font-medium text-sm truncate w-48 flex-shrink-0" title={program.name}>{program.name}</span>
-                      <Badge variant="outline" className="text-xs flex items-center gap-1 flex-shrink-0">
+                      {/* Abbreviated country name (e.g. "United States" -> "USA")
+                          to reclaim horizontal space for the classification
+                          toggles + total + action icons on the right. Full
+                          name is preserved in the tooltip for disambiguation. */}
+                      <Badge
+                        variant="outline"
+                        className="text-xs flex items-center gap-1 flex-shrink-0"
+                        title={program.country}
+                      >
                         {getCountryFlag(program.country)
                           ? <span>{getCountryFlag(program.country)}</span>
                           : <Globe className="w-3 h-3" />}
-                        {program.country}
+                        {getCountryShortName(program.country)}
                       </Badge>
                     </>
                   )}

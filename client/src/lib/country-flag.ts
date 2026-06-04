@@ -72,3 +72,31 @@ export function countryNameToIsoCode(name: string): string | null {
   const lower = name.trim().toLowerCase();
   return OVERRIDES[lower] ?? buildNameToCode().get(lower) ?? null;
 }
+
+/**
+ * Compact display name for a country, optimized for tight UI chips (e.g. the
+ * country badge in the provider costs program rows where horizontal space is
+ * fought for by the toggles, totals, and action icons).
+ *
+ * Returns common abbreviations for the long multi-word names that are most
+ * common in this product (United States, United Kingdom, UAE), and the
+ * original name for everything else so we don't accidentally hide useful
+ * detail for less-common countries.
+ */
+const SHORT_NAMES: Record<string, string> = {
+  "united states": "USA",
+  "united states of america": "USA",
+  "united kingdom": "UK",
+  "great britain": "UK",
+  "united arab emirates": "UAE",
+  "dominican republic": "DR",
+  "czech republic": "Czechia",
+  "south korea": "S. Korea",
+  "north korea": "N. Korea",
+  "russian federation": "Russia",
+};
+export function getCountryShortName(name: string): string {
+  if (!name) return "";
+  const lower = name.trim().toLowerCase();
+  return SHORT_NAMES[lower] ?? name;
+}
