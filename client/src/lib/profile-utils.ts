@@ -232,6 +232,7 @@ export interface ResolvedSpermDonorFields {
   occupation: string | null;
   relationshipStatus: string | null;
   donorType: string | null;
+  donationTypes: string | null;
   vialTypes: string[];
   vialCosts: { label: string; cost: number }[];
   iciCost: number | null;
@@ -259,6 +260,7 @@ export function resolveSpermDonorFields(d: any): ResolvedSpermDonorFields {
     occupation: F(d.occupation) || F(pd["Occupation"]) || extractFromSections(pd, "Occupation") || extractFromSections(pd, "What is your current or most recent occupation?"),
     relationshipStatus: normalizeRelationshipStatus(F(d.relationshipStatus) || F(pd["Relationship Status"]) || extractFromSections(pd, "Relationship Status")),
     donorType: F(d.donorType),
+    donationTypes: F(d.donationTypes) || F(pd["Donation Types"]) || F(pd["Donation Type"]) || F(pd["Type of Donation"]) || extractFromSections(pd, "Donation Types") || extractFromSections(pd, "Donation Type"),
     vialTypes: Array.isArray(d.vialTypes) ? d.vialTypes : [],
     vialCosts: Array.isArray(d.vialCosts) ? d.vialCosts : [],
     iciCost: d.iciCost != null ? Number(d.iciCost) : null,

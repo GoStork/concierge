@@ -10,7 +10,7 @@ import path from "path";
 import fs from "fs";
 import { isUserOnline } from "./online-tracker";
 import jwt from "jsonwebtoken";
-import { getNextIntakeQuestion } from "./intake-questions";
+import { getNextIntakeQuestion, buildD1HasEmbryos, buildD1NoEmbryos, type D1Costs } from "./intake-questions";
 
 // Singleton Anthropic client - enables HTTP connection pooling across requests.
 let _anthropicClient: Anthropic | null = null;
@@ -358,7 +358,12 @@ async function callTier2Claude(
       const before = resultText.slice(0, jsonStart);
       const after = resultText.slice(jsonEnd + 1);
       const agencies = JSON.parse(resultText.slice(jsonStart, jsonEnd + 1));
-      if (!Array.isArray(agencies) || agencies.length < 2) return resultText;
+      // Annotate even single-agency results - Eva uses estimatedCombinedMinTotal
+      // in the D1 international education message ("Colombia: starting from $X")
+      // and the per-country search returns exactly one agency. Skipping the
+      // annotation for length < 2 left D1 with no DB cost data and made Eva
+      // fall back to hardcoded $100K/$65K estimates in the prompt.
+      if (!Array.isArray(agencies) || agencies.length < 1) return resultText;
 
       const { getNestApp } = await import("./nest-app-ref");
       const nestApp = getNestApp();
@@ -403,7 +408,9 @@ async function callTier2Claude(
           estimatedCountry: c.country,
         };
       });
-      const orderingNote = `\n\nORDERING: The agencies above are sorted by COMBINED country-program cost (agency surrogacy fee + partner clinic IVF/egg-donor cost) ASCENDING. Present them to the parent in this order - cheapest first. Each agency carries estimatedCombinedMinTotal/MaxTotal/Country for your reference; NEVER write the dollar amount yourself, the [[MATCH_CARD:CountryProgram]] hydrates authoritative costs at render time.`;
+      const orderingNote = annotated.length >= 2
+        ? `\n\nORDERING: The agencies above are sorted by COMBINED country-program cost (agency surrogacy fee + partner clinic IVF/egg-donor cost) ASCENDING. Present them to the parent in this order - cheapest first. Each agency carries estimatedCombinedMinTotal/MaxTotal/Country for your reference; for [[MATCH_CARD:CountryProgram]] cards do NOT write the dollar amount yourself, the card hydrates authoritative costs at render time. For the D1 INTERNATIONAL EDUCATION message you MUST use the MIN of estimatedCombinedMinTotal across agencies for each country as "starting from $X" - this is the real DB cost for THIS parent's coverage (IVF + egg donor + surrogate, etc.).`
+        : `\n\nCOST: Each agency above carries estimatedCombinedMinTotal/MaxTotal/Country - this is the authoritative COMBINED program cost (agency surrogacy fee + partner clinic IVF/egg-donor cost) matched to THIS parent's coverage. For the D1 INTERNATIONAL EDUCATION message you MUST use estimatedCombinedMinTotal as the country's "starting from $X" - this is the real DB cost, NOT a hardcoded estimate. For [[MATCH_CARD:CountryProgram]] cards do NOT write the dollar amount yourself, the card hydrates authoritative costs at render time.`;
       return before + JSON.stringify(annotated, null, 2) + after + orderingNote;
     } catch (e: any) {
       console.log(`[COUNTRY ORDER] reorder failed: ${e.message}`);
@@ -587,6 +594,114 @@ async function getPromptSections(): Promise<Map<string, string> | null> {
 
 function assemblePromptFromSections(sections: Map<string, string>, sectionKeys: string[]): string {
   return sectionKeys.map(k => sections.get(k) || "").filter(Boolean).join("\n\n");
+}
+
+// D1 country starting-cost lookup. Used by all three intake bypass paths
+// (carrier bypass, D-cycle bypass, generic intake-question bypass) to put
+// REAL DB numbers into the international education message instead of the
+// previous hardcoded "$100K Mexico / $65K Colombia" fallbacks. Costs are
+// matched to THIS parent's coverage via the role-aware combiner - same
+// authority as the CountryProgramCard, so the education quote and the
+// later match-card cost can never diverge. Returns nulls when no priced
+// program matches the parent's coverage in a country (rare); the builder
+// then emits a "programs available" line instead of a fabricated number.
+async function getD1CountryCosts(parentAccountId: string | null | undefined): Promise<D1Costs> {
+  const out: D1Costs = { us: null, mexico: null, colombia: null };
+  if (!parentAccountId) return out;
+  try {
+    const { getNestApp } = await import("./nest-app-ref");
+    const nestApp = getNestApp();
+    if (!nestApp) return out;
+    const { CostsService } = await import("./src/modules/costs/costs.service");
+    let costsService: any = null;
+    try { costsService = nestApp.get(CostsService); } catch { return out; }
+    if (!costsService) return out;
+
+    // For each international country, find every surrogacy agency provider
+    // located there (or whose published programs are tagged that country),
+    // compute the parent-specific combined cost, and take the MIN. This
+    // generalizes beyond the current Bioética / Eggspecting pair so a new
+    // country / agency added tomorrow gets picked up automatically.
+    const findAgenciesForCountry = async (country: string): Promise<string[]> => {
+      // Providers that (a) actually offer a "Surrogacy Agency" service (APPROVED)
+      // AND (b) have at least one CostProgram in that country tagged "surrogacy".
+      // (a) filters out clinics whose IVF programs happen to be over-tagged with
+      // the surrogacy service tag - e.g. Inser is a clinic, not an agency, so
+      // we must not treat it as a country-program candidate. The role-aware
+      // combiner then computes the parent's full journey (agency surrogacy +
+      // partner clinic IVF/egg donor) for whichever real agency we pick.
+      const rows: { id: string }[] = await prisma.$queryRaw`
+        SELECT DISTINCT p.id::text AS id
+        FROM "Provider" p
+        JOIN "ProviderService" ps ON ps."providerId" = p.id AND ps.status = 'APPROVED'
+        JOIN "ProviderType" pt ON pt.id = ps."providerTypeId" AND pt.name ILIKE '%surrogacy%agency%'
+        JOIN "CostProgram" cp ON cp."providerId" = p.id
+        WHERE cp.country ILIKE ${country}
+          AND 'surrogacy' = ANY(cp."serviceTypes")
+      ` as any;
+      return rows.map(r => r.id);
+    };
+
+    const computeCountryMin = async (country: string): Promise<number | null> => {
+      const ids = await findAgenciesForCountry(country);
+      if (ids.length === 0) return null;
+      const mins: number[] = [];
+      for (const id of ids) {
+        try {
+          const r = await costsService.getCombinedCountryProgramCost(id, parentAccountId);
+          if (r?.hasCost && typeof r.combinedMinTotal === "number" && r.combinedMinTotal > 0) {
+            mins.push(r.combinedMinTotal);
+          }
+        } catch (e: any) {
+          console.log(`[D1 COSTS] ${country} agency ${id} failed: ${e.message}`);
+        }
+      }
+      return mins.length > 0 ? Math.min(...mins) : null;
+    };
+
+    // US surrogacy alone: min of all USA CostProgram totals tagged surrogacy.
+    // We don't run them through getCombinedCountryProgramCost because in the
+    // US the journey isn't a single bundled program - parents pay an agency
+    // for surrogacy plus a separate clinic for IVF. The US line in the
+    // education message is "surrogacy alone" so the aggregate min is correct.
+    const computeUsMin = async (): Promise<number | null> => {
+      try {
+        const rows: { min: number | null }[] = await prisma.$queryRaw`
+          SELECT MIN(program_total) AS min
+          FROM (
+            SELECT COALESCE(SUM(COALESCE(ci."minValue", 0)), 0) AS program_total
+            FROM "CostProgram" cp
+            JOIN "ProviderCostSheet" pcs ON pcs."programId" = cp.id AND pcs.status = 'APPROVED'
+            JOIN "CostItem" ci ON ci."providerCostSheetId" = pcs.id
+              AND COALESCE(ci."isIncluded", true) = true
+              AND COALESCE(ci."isTier", false) = false
+            WHERE cp.country IN ('USA', 'United States', 'US', 'United States of America')
+              AND 'surrogacy' = ANY(cp."serviceTypes")
+            GROUP BY cp.id
+            HAVING COALESCE(SUM(COALESCE(ci."minValue", 0)), 0) > 0
+          ) sub
+        ` as any;
+        const v = rows?.[0]?.min;
+        return typeof v === "number" && v > 0 ? v : null;
+      } catch (e: any) {
+        console.log(`[D1 COSTS] US min failed: ${e.message}`);
+        return null;
+      }
+    };
+
+    const [mexico, colombia, us] = await Promise.all([
+      computeCountryMin("Mexico"),
+      computeCountryMin("Colombia"),
+      computeUsMin(),
+    ]);
+    out.mexico = mexico;
+    out.colombia = colombia;
+    out.us = us;
+    console.log(`[D1 COSTS] parent=${parentAccountId} us=${us} mexico=${mexico} colombia=${colombia}`);
+  } catch (e: any) {
+    console.log(`[D1 COSTS] lookup failed: ${e.message}`);
+  }
+  return out;
 }
 
 // Simple non-streaming Claude call for interceptor retries (replaces gpt-4o retries)
@@ -3168,9 +3283,67 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       skipDirectives.push("DO NOT ask about sperm donor preferences (C2) - already saved. Use saved preferences when running Match Cycle C.");
     }
 
+    // D1 COUNTRY SAVE FALLBACK - Gemini sometimes ignores the prompt's mandatory
+    // [[SAVE:{"surrogateCountries":"..."}]] when the parent answers the D1
+    // [[MULTI_SELECT:USA|Mexico|Colombia]] question. When the SAVE is missing,
+    // profile.surrogateCountries stays null, the skip directive below never
+    // fires, the CURATION summary defaults to "USA" even though the parent
+    // selected Mexico/Colombia, and the next turn ends up in PATH B (US
+    // surrogates) instead of PATH A (international agencies). Fix it
+    // server-side: if Eva's previous message asked the D1 question and the
+    // parent's last message names one or more of the three supported
+    // countries, save the selection BEFORE building the skip directives so
+    // the rest of this request sees it.
+    if (!profile?.surrogateCountries && userRecord?.parentAccountId) {
+      const lastAssistantMsg = [...chatHistory].reverse().find((m: any) => m.role === "assistant")?.content || "";
+      const askedD1 = /\bwhich countries are you open to\b|\[\[MULTI_SELECT:USA\|Mexico\|Colombia\]\]/i.test(lastAssistantMsg);
+      // Parent's last user message in this turn lives in `messages` (the array
+      // built earlier). Grab the most recent user content as the candidate
+      // selection. Bounded to short messages (a country pick is rarely more
+      // than ~40 chars - "USA, Mexico and Colombia" is 25) so we don't
+      // accidentally regex-match country names mentioned inside long
+      // narrative replies.
+      const lastUserMsg = ((messages || []).filter((m: any) => m.role === "user").at(-1)?.content || "").toString();
+      const shortMsg = lastUserMsg.length <= 60 ? lastUserMsg : "";
+      if (askedD1 && shortMsg) {
+        const picks: string[] = [];
+        if (/\b(usa|united states|america|us\b)/i.test(shortMsg)) picks.push("USA");
+        if (/\bmexico\b/i.test(shortMsg)) picks.push("Mexico");
+        if (/\bcolombia\b/i.test(shortMsg)) picks.push("Colombia");
+        if (picks.length > 0) {
+          const value = picks.join(",");
+          try {
+            await prisma.intendedParentProfile.upsert({
+              where: { parentAccountId: userRecord.parentAccountId },
+              update: { surrogateCountries: value },
+              create: { parentAccountId: userRecord.parentAccountId, surrogateCountries: value },
+            });
+            if ((userRecord as any).parentAccount?.intendedParentProfile) {
+              (userRecord as any).parentAccount.intendedParentProfile.surrogateCountries = value;
+            }
+            (profile as any).surrogateCountries = value;
+            console.log(`[D1 SAVE FALLBACK] Patched surrogateCountries=${value} for account ${userRecord.parentAccountId} (Eva missed the SAVE tag)`);
+          } catch (e: any) {
+            console.log(`[D1 SAVE FALLBACK] Failed to patch: ${e.message}`);
+          }
+        }
+      }
+    }
+
     // Surrogate preferences already saved (D1/D2/D3)
     if (profile?.surrogateCountries) {
-      skipDirectives.push(`DO NOT ask about surrogate countries (D1) - already saved: ${profile.surrogateCountries}. Skip the international education message and country question.`);
+      const countries = profile.surrogateCountries;
+      const hasUSA = /\busa\b|\bunited states\b/i.test(countries);
+      const hasInternational = /\bmexico\b|\bcolombia\b/i.test(countries);
+      let pathDirective = "";
+      if (hasInternational && !hasUSA) {
+        pathDirective = ` INTERNATIONAL-ONLY: parent selected ${countries} - take PATH A (search_surrogacy_agencies). DO NOT call search_surrogates (that's PATH B for US). The CURATION summary MUST say "open to surrogacy in ${countries}" (NOT USA) and end with "Shall I find you the right international agency?" - never "find your perfect surrogate matches now" (that's US-only phrasing).`;
+      } else if (hasUSA && !hasInternational) {
+        pathDirective = ` USA-ONLY: parent selected USA only - take PATH B (search_surrogates).`;
+      } else if (hasUSA && hasInternational) {
+        pathDirective = ` USA + INTERNATIONAL: parent selected ${countries} - take PATH C (US surrogates first, then international agencies).`;
+      }
+      skipDirectives.push(`DO NOT ask about surrogate countries (D1) - already saved: ${countries}. Skip the international education message and country question.${pathDirective}`);
     }
     if (profile?.surrogateTermination) {
       skipDirectives.push(`DO NOT ask about termination preference (D2) - already saved: ${profile.surrogateTermination}.`);
@@ -4309,9 +4482,10 @@ ${phase0Section}`;
           // Trust chat over stale profile.hasEmbryos - if user said "no embryos" this session,
           // never show the HAS_EMBRYOS variant just because a prior test left hasEmbryos=true in DB.
           const d1HasEmbryosCarrier = chatMentionsHavingEmbryos || (profile?.hasEmbryos === true && !chatMentionsNoEmbryos);
+          const d1CarrierCosts = await getD1CountryCosts(userRecord?.parentAccountId ?? null);
           const d1TextFull = d1HasEmbryosCarrier
-            ? `One thing many families don't realize: since you already have frozen embryos, you can ship them internationally and do your surrogacy in Colombia or Mexico at a significant cost savings - without giving up the embryos you've worked so hard to create.\n\nHere's a quick breakdown:\n- United States: $150,000 and up (surrogate compensation, agency fee, legal, insurance)\n- Mexico: around $100,000 all-in\n- Colombia: starting from $65,000 all-in - our most popular option\n\nColombia has become the go-to for many of our families. The legal process is straightforward, you only need to stay a few weeks after the baby is born, and we have agencies there we trust completely.\n\nWith all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`
-            : `Something worth knowing before we dive in: international surrogacy programs can include everything - IVF, egg donor, AND surrogate - all in one package, at a fraction of what you'd pay in the US.\n\nHere's a quick comparison:\n- United States: $150,000+ for surrogacy alone (IVF and egg donor are separate additional costs)\n- Mexico: around $100,000 for a complete program including IVF, egg donor, and surrogate\n- Colombia: starting from $65,000 for a complete program - our most popular option\n\nColombia's program is particularly well-regarded. The agencies we work with there have delivered hundreds of healthy babies, the legal process is clean, and you only need to stay a few weeks after birth.\n\nWith all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`;
+            ? buildD1HasEmbryos(d1CarrierCosts)
+            : buildD1NoEmbryos(d1CarrierCosts);
           // INTERNATIONAL SURROGACY EARLY COUNTRY GATE: this bypass fires only
           // when the parent needs a surrogate, so D1 must come BEFORE any
           // Cycle A clinic question per ai-prompt-defaults.ts:526-534. If
@@ -4371,9 +4545,10 @@ ${phase0Section}`;
         console.log(`[D-CYCLE BYPASS] Firing: needsClinic=${needsClinic} registeredForClinic=${registeredForClinic}`);
         // Trust chat over stale profile.hasEmbryos (see carrier bypass for same reasoning).
         const d1HasEmbryos = chatMentionsHavingEmbryos || (profile?.hasEmbryos === true && !chatMentionsNoEmbryos);
+        const d1DCycleCosts = await getD1CountryCosts(userRecord?.parentAccountId ?? null);
         const d1Text = d1HasEmbryos
-          ? `One thing many families don't realize: since you already have frozen embryos, you can ship them internationally and do your surrogacy in Colombia or Mexico at a significant cost savings - without giving up the embryos you've worked so hard to create.\n\nHere's a quick breakdown:\n- United States: $150,000 and up (surrogate compensation, agency fee, legal, insurance)\n- Mexico: around $100,000 all-in\n- Colombia: starting from $65,000 all-in - our most popular option\n\nColombia has become the go-to for many of our families. The legal process is straightforward, you only need to stay a few weeks after the baby is born, and we have agencies there we trust completely.\n\nWith all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`
-          : `Something worth knowing before we dive in: international surrogacy programs can include everything - IVF, egg donor, AND surrogate - all in one package, at a fraction of what you'd pay in the US.\n\nHere's a quick comparison:\n- United States: $150,000+ for surrogacy alone (IVF and egg donor are separate additional costs)\n- Mexico: around $100,000 for a complete program including IVF, egg donor, and surrogate\n- Colombia: starting from $65,000 for a complete program - our most popular option\n\nColombia's program is particularly well-regarded. The agencies we work with there have delivered hundreds of healthy babies, the legal process is clean, and you only need to stay a few weeks after birth.\n\nWith all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`;
+          ? buildD1HasEmbryos(d1DCycleCosts)
+          : buildD1NoEmbryos(d1DCycleCosts);
         finalContent = d1Text;
         sse.sendToken(d1Text);
         serverBypassServed = true;
@@ -4389,6 +4564,10 @@ ${phase0Section}`;
         // Tier 2 matching / post-match turns.
         // -----------------------------------------------------------------------
         if (!serverBypassServed && !useTier2) {
+          // Pre-fetch real DB country costs in case the intake state machine
+          // decides to serve the D1 international education message - the
+          // builder substitutes them in.
+          const d1IntakeCosts = await getD1CountryCosts(userRecord?.parentAccountId ?? null);
           const intakeQuestion = getNextIntakeQuestion({
             profile,
             chatHistory,
@@ -4418,6 +4597,7 @@ ${phase0Section}`;
             chatMentionsCarrier,
             phase1Complete,
             curationAlreadySent,
+            d1Costs: d1IntakeCosts,
           });
 
           if (intakeQuestion) {

@@ -17,6 +17,7 @@ import { formatMoneyCents } from "@/lib/format-money";
 import { getCountryFlag } from "@/lib/country-flag";
 import { formatLocationDisplay } from "@/lib/format-location";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { MessageStatus } from "@/components/ui/message-status";

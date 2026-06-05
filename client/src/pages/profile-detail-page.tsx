@@ -10,14 +10,21 @@ import { ClinicCostProgramsSection } from "@/components/clinic-cost-programs-sec
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { useAppDispatch, useAppSelector } from "@/store";
+import { toggleFavoriteDonor, passDonor } from "@/store/uiSlice";
+import { recordProfileView } from "@/lib/profile-views";
 import {
   ArrowLeft,
+  ArrowDown,
   Loader2,
   User,
   ExternalLink,
   ChevronLeft,
   ChevronRight,
   X,
+  Heart,
+  Send,
   Play,
   Pencil,
   Check,
@@ -268,6 +275,14 @@ const HIDDEN_PROFILE_KEYS = new Set([
   "photoCount", "photo count", "hasVideo", "has video", "additionalPhotos",
   // lowercase "photos" key stored by some scrapers - same data as the DB photos[] column
   "photos",
+  // Internal sync/dedupe fingerprints - never user-facing
+  "cardHash", "Card Hash", "card_hash", "cardhash",
+  // Internal IDs and audit timestamps that occasionally leak from scraped payloads
+  "id", "providerId", "parentAccountId", "createdAt", "updatedAt", "deletedAt",
+  "lastSyncedAt", "lastScrapedAt", "lastViewedAt", "isDeleted",
+  // Donation Types is surfaced in the Summary card (right column, above "Available for")
+  // for sperm donors; hide here so it doesn't duplicate in Additional Details.
+  "donationTypes", "Donation Types", "Donation Type", "Type of Donation",
 ]);
 
 const AGENCY_COMMENT_PATTERN = /^(agency\s*(comment|recommendation|note)s?|recommendation\s*points?|additional\s*information)$/i;
@@ -314,8 +329,8 @@ const TYPE_ENDPOINTS: Record<string, string> = {
 
 function SectionHeader({ title }: { title: string }) {
   return (
-    <div className="bg-primary px-4 py-2 rounded-t-[var(--radius)]">
-      <h3 className="text-sm font-heading text-primary-foreground" data-testid={`section-header-${title.toLowerCase().replace(/\s+/g, "-")}`}>
+    <div className="px-6 pt-5" data-testid={`section-header-${title.toLowerCase().replace(/\s+/g, "-")}`}>
+      <h3 className="font-heading text-xl text-foreground">
         {title}
       </h3>
     </div>
@@ -409,6 +424,7 @@ function getMandatoryFields(donor: any, type: string): { label: string; value: s
       { label: "Location", value: V(r.location) },
       { label: "Height", value: V(r.height) },
       { label: "Weight", value: V(r.weight) },
+      { label: "Donation Types", value: V(r.donationTypes) },
       ...(vialCostItems.length > 0
         ? [{ label: "Available for", value: r.vialTypes.length > 0 ? r.vialTypes.join(", ") : "-" }, ...vialCostItems]
         : [{ label: "Available for", value: r.vialTypes.length > 0 ? r.vialTypes.join(", ") : "-" }]),
@@ -416,17 +432,211 @@ function getMandatoryFields(donor: any, type: string): { label: string; value: s
   }
 }
 
+function MobilePhotoViewer({ photos, videoUrl }: { photos: string[]; videoUrl?: string | null }) {
+  const slides = useMemo(() => {
+    const out: { kind: "photo" | "video"; url: string }[] = [];
+    if (videoUrl) out.push({ kind: "video", url: videoUrl });
+    photos.forEach((p) => out.push({ kind: "photo", url: p }));
+    return out;
+  }, [photos, videoUrl]);
+  const total = slides.length;
+  const [idx, setIdx] = useState(0);
+  const [showVideo, setShowVideo] = useState(false);
+  const [lightbox, setLightbox] = useState(false);
+
+  const goLeft = useCallback(() => setIdx((p) => (p <= 0 ? total - 1 : p - 1)), [total]);
+  const goRight = useCallback(() => setIdx((p) => (p >= total - 1 ? 0 : p + 1)), [total]);
+
+  if (total === 0) return null;
+  const current = slides[idx];
+
+  return (
+    <>
+      <div
+        className="relative bg-muted overflow-hidden"
+        style={{
+          width: "100vw",
+          marginLeft: "calc(50% - 50vw)",
+          marginRight: "calc(50% - 50vw)",
+          marginTop: "4px",
+          height: "min(75vh, 640px)",
+        }}
+        data-testid="mobile-photo-viewer"
+      >
+        {current.kind === "photo" ? (
+          <img
+            src={current.url}
+            alt={`Photo ${idx + 1}`}
+            className="w-full h-full object-cover"
+            loading="eager"
+            decoding="async"
+            draggable={false}
+            data-testid={`mobile-photo-${idx}`}
+          />
+        ) : (
+          <>
+            {photos[0] ? (
+              <img src={photos[0]} alt="Video thumbnail" className="w-full h-full object-cover brightness-75" />
+            ) : (
+              <div className="w-full h-full bg-foreground/90" />
+            )}
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none">
+              <div className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
+                <Play className="w-8 h-8 text-primary ml-0.5" fill="currentColor" />
+              </div>
+              <span className="text-white text-sm font-ui drop-shadow-lg">Play Video</span>
+            </div>
+          </>
+        )}
+
+        <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/50 via-black/20 to-transparent h-20 z-[15] pointer-events-none" />
+
+        <div className="absolute top-0 left-0 right-0 flex gap-1 px-3 pt-3 z-20 pointer-events-none" data-testid="mobile-photo-progress">
+          {Array.from({ length: total }).map((_, i) => (
+            <div
+              key={i}
+              className={`h-[3px] flex-1 rounded-full transition-all duration-200 ${i === idx ? "bg-white" : "bg-white/40"}`}
+            />
+          ))}
+        </div>
+
+        <div
+          className="absolute top-0 left-0 w-1/2 h-full z-30"
+          onClick={() => { if (current.kind === "photo") goLeft(); else goLeft(); }}
+          data-testid="mobile-photo-tap-left"
+        />
+        <div
+          className="absolute top-0 right-0 w-1/2 h-full z-30"
+          onClick={() => {
+            if (current.kind === "video") setShowVideo(true);
+            else goRight();
+          }}
+          data-testid="mobile-photo-tap-right"
+        />
+        {current.kind === "photo" && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setLightbox(true); }}
+            className="absolute bottom-3 right-3 z-40 w-10 h-10 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white"
+            aria-label="Expand photo"
+            data-testid="mobile-photo-expand"
+          >
+            <ChevronRight className="w-4 h-4 rotate-45" />
+          </button>
+        )}
+        {current.kind === "video" && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowVideo(true); }}
+            className="absolute inset-0 z-40 pointer-events-none"
+            aria-hidden
+            data-testid="mobile-video-trigger"
+          />
+        )}
+      </div>
+
+      {showVideo && videoUrl && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+          onClick={() => setShowVideo(false)}
+          data-testid="mobile-video-overlay"
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowVideo(false); }}
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white z-10"
+            data-testid="mobile-video-close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <div className="w-[92vw] max-w-[900px] aspect-video" onClick={(e) => e.stopPropagation()}>
+            {isEmbedVideo(videoUrl) ? (
+              <iframe src={getEmbedUrl(videoUrl)} className="w-full h-full rounded-[var(--radius)] shadow-2xl" allow="autoplay; fullscreen; picture-in-picture" allowFullScreen />
+            ) : isIframeVideo(videoUrl) ? (
+              <iframe src={videoUrl} className="w-full h-full rounded-[var(--radius)] shadow-2xl" allow="autoplay; fullscreen; picture-in-picture" allowFullScreen />
+            ) : (
+              <video src={isDirectVideo(videoUrl) ? videoUrl : `/api/uploads/proxy?url=${encodeURIComponent(videoUrl)}`} controls autoPlay className="w-full h-full rounded-[var(--radius)] shadow-2xl bg-black" />
+            )}
+          </div>
+        </div>
+      )}
+
+      {lightbox && current.kind === "photo" && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm"
+          onClick={() => setLightbox(false)}
+          data-testid="mobile-lightbox"
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); setLightbox(false); }}
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white z-10"
+            data-testid="mobile-lightbox-close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <img
+            src={current.url}
+            alt={`Photo ${idx + 1}`}
+            className="max-h-[90vh] max-w-[95vw] object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function DonorProfilePage() {
   const { providerId, type: paramType, donorId } = useParams<{ providerId: string; type?: string; donorId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+  const isMobile = useIsMobile();
+  const dispatch = useAppDispatch();
+  const favoritedIds = useAppSelector((s) => s.ui.favoritedDonorIds);
   const type = deriveTypeFromPath(location.pathname, paramType);
 
   const chatState = location.state as { fromChat?: boolean; matchReasons?: string[]; chatPath?: string } | null;
   const fromChat = chatState?.fromChat === true;
   const matchReasons = chatState?.matchReasons || [];
   const chatPath = chatState?.chatPath || "/concierge";
+
+  const syncPref = useCallback((prefType: "favorite" | "skip", id: string, action: "add" | "remove") => {
+    const method = action === "add" ? "POST" : "DELETE";
+    fetch(`/api/donor-preferences/${prefType}/${id}`, { method, credentials: "include" }).catch(() => {});
+  }, []);
+
+  const handleBack = useCallback(() => {
+    if (fromChat) {
+      navigate(chatPath);
+    } else {
+      const isAdmin = window.location.pathname.startsWith("/admin/");
+      if (!isAdmin) {
+        navigate(-1);
+      } else {
+        navigate(`/admin/providers/${providerId}?tab=${TYPE_ENDPOINTS[type || "egg-donor"]}`);
+      }
+    }
+  }, [fromChat, chatPath, navigate, providerId, type]);
+
+  const handleMobilePass = useCallback(() => {
+    if (!donorId || !type) return;
+    recordProfileView(donorId, type);
+    dispatch(passDonor(donorId));
+    syncPref("skip", donorId, "add");
+    handleBack();
+  }, [donorId, type, dispatch, syncPref, handleBack]);
+
+  const handleMobileSave = useCallback(() => {
+    if (!donorId || !type) return;
+    recordProfileView(donorId, type);
+    const wasFav = favoritedIds.includes(donorId);
+    dispatch(toggleFavoriteDonor(donorId));
+    syncPref("favorite", donorId, wasFav ? "remove" : "add");
+  }, [donorId, type, dispatch, favoritedIds, syncPref]);
+
+  const handleMobileMessage = useCallback(() => {
+    if (!donorId || !type || !providerId) return;
+    recordProfileView(donorId, type);
+    navigate(`/concierge?donorId=${donorId}&donorType=${type}&providerId=${providerId}`);
+  }, [donorId, type, providerId, navigate]);
 
   const endpoint = TYPE_ENDPOINTS[type || ""] || "egg-donors";
 
@@ -599,21 +809,86 @@ export default function DonorProfilePage() {
   }
   if (donor.donationTypes) headerMeta.push(`Types of Donation: ${donor.donationTypes}`);
 
+  const isSaved = donorId ? favoritedIds.includes(donorId) : false;
+
   return (
-    <div className="space-y-6 w-full">
-      <div className="flex items-center justify-between">
-        <Button variant="ghost" onClick={() => {
-          if (fromChat) {
-            navigate(chatPath);
-          } else {
-            const isAdmin = window.location.pathname.startsWith("/admin/");
-            if (!isAdmin) {
-              navigate(-1);
-            } else {
-              navigate(`/admin/providers/${providerId}?tab=${TYPE_ENDPOINTS[type || "egg-donor"]}`);
-            }
-          }
-        }} data-testid="link-back-provider">
+    <div className="space-y-6 w-full pb-32 md:pb-0">
+      {isMobile && (
+        <>
+          <div
+            className="sticky top-0 z-40 bg-background border-b border-border/40 flex items-center justify-between gap-3 py-3"
+            style={{
+              marginLeft: "calc(50% - 50vw)",
+              marginRight: "calc(50% - 50vw)",
+              paddingLeft: "calc(50vw - 50% + 1rem)",
+              paddingRight: "calc(50vw - 50% + 1rem)",
+            }}
+            data-testid="mobile-detail-header"
+          >
+            <div className="flex-1 min-w-0">
+              <h1 className="font-display text-2xl font-heading text-foreground leading-tight" data-testid="text-donor-title-mobile">
+                {typeLabel} #{displayId}
+              </h1>
+              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                <StatusBadge status={donor.status} />
+                {donor.donorType && (
+                  <Badge variant="outline" className="text-xs" data-testid="badge-donor-type-mobile">{donor.donorType}</Badge>
+                )}
+                {donor.isExperienced && (
+                  <Badge variant="outline" className="text-xs bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning)/0.3)]" data-testid="badge-experienced-mobile">
+                    Experienced
+                  </Badge>
+                )}
+                {type === "sperm-donor" && Array.isArray(donor.vialTypes) && donor.vialTypes.length > 0 && (
+                  <Badge variant="outline" className="text-xs" data-testid="badge-vial-types-mobile">Available for: {donor.vialTypes.join(", ")}</Badge>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={handleBack}
+              className="shrink-0 w-10 h-10 rounded-full bg-[hsl(var(--brand-success))] hover:brightness-110 shadow-lg flex items-center justify-center transition-all"
+              data-testid="button-mobile-back-down"
+              aria-label="Back to marketplace"
+            >
+              <ArrowDown className="w-5 h-5 text-white" strokeWidth={2.5} />
+            </button>
+          </div>
+          <div
+            className="fixed bottom-6 left-0 right-0 z-50 flex items-center justify-center gap-3 px-4 pointer-events-none"
+            data-testid="mobile-detail-actions"
+          >
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleMobilePass}
+              className="h-16 w-16 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] active:scale-95 active:translate-y-0.5 transition-all duration-200 flex items-center justify-center pointer-events-auto"
+              data-testid="button-mobile-pass"
+            >
+              <X className="!w-9 !h-9 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-pass)" }} strokeWidth={3} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleMobileSave}
+              className="h-16 w-16 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] active:scale-95 active:translate-y-0.5 transition-all duration-200 flex items-center justify-center pointer-events-auto"
+              data-testid="button-mobile-save"
+            >
+              <Heart className="!w-9 !h-9 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-save)" }} strokeWidth={3} fill={isSaved ? "currentColor" : "none"} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleMobileMessage}
+              className="h-16 w-16 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] active:scale-95 active:translate-y-0.5 transition-all duration-200 flex items-center justify-center pointer-events-auto"
+              data-testid="button-mobile-message"
+            >
+              <Send className="!w-8 !h-8 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-chat)" }} strokeWidth={3} />
+            </Button>
+          </div>
+        </>
+      )}
+      <div className={`flex items-center justify-between ${isMobile ? "hidden" : ""}`}>
+        <Button variant="ghost" onClick={handleBack} data-testid="link-back-provider">
           <ArrowLeft className="w-4 h-4 mr-2" /> {fromChat ? "Back to Chat" : !window.location.pathname.startsWith("/admin/") ? "Back to Marketplace" : `Back to ${provider?.name || "Provider"}`}
         </Button>
         {user && !user.roles?.includes("PARENT") && (
@@ -626,9 +901,13 @@ export default function DonorProfilePage() {
         )}
       </div>
 
-      {(allPhotos.length > 0 || donorVideoUrl) && <PhotoGalleryBar photos={allPhotos} videoUrl={donorVideoUrl} />}
+      {(allPhotos.length > 0 || donorVideoUrl) && (
+        isMobile
+          ? <MobilePhotoViewer photos={allPhotos} videoUrl={donorVideoUrl} />
+          : <PhotoGalleryBar photos={allPhotos} videoUrl={donorVideoUrl} />
+      )}
 
-      <div>
+      <div className={isMobile ? "hidden" : ""}>
         <h1 className="font-display text-2xl font-heading text-foreground" data-testid="text-donor-title">
           {typeLabel} #{displayId}
         </h1>
@@ -639,9 +918,6 @@ export default function DonorProfilePage() {
               Experienced
             </Badge>
           )}
-          <span className="text-sm text-muted-foreground">
-            {headerMeta.slice(1).join(" | ")}
-          </span>
           {donor.donorType && (
             <Badge variant="outline" className="text-xs">{donor.donorType}</Badge>
           )}
@@ -679,7 +955,7 @@ export default function DonorProfilePage() {
         </Card>
       )}
 
-      <Card className="overflow-hidden" data-testid="section-summary">
+      <Card className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid="section-summary">
         <SectionHeader title="Summary" />
         <div className="p-6">
           <div className="grid grid-cols-2 gap-x-12 gap-y-3">
@@ -883,7 +1159,7 @@ export default function DonorProfilePage() {
         return sectionNames.filter((n) => !consumed.has(n)).map((sectionName) => {
           if (sectionName === "__LETTER__" && letterContent) {
             return (
-              <Card key="letter-to-intended-parents" className="overflow-hidden" data-testid="section-letter-to-intended-parents">
+              <Card key="letter-to-intended-parents" className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid="section-letter-to-intended-parents">
                 <SectionHeader title="Letter to Intended Parents" />
                 <div className="p-6">
                   {letterTitle && <p className="text-sm font-semibold text-foreground mb-2">{letterTitle}</p>}
@@ -894,7 +1170,7 @@ export default function DonorProfilePage() {
           }
           if (sectionName === "__AGENCY_COMMENTS__" && agencyCommentContent) {
             return (
-              <Card key="agency-comments" className="overflow-hidden" data-testid="section-agency-comments">
+              <Card key="agency-comments" className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid="section-agency-comments">
                 <SectionHeader title="Agency Comments" />
                 <div className="p-6">
                   <p className="text-sm leading-body text-foreground whitespace-pre-line">{agencyCommentContent}</p>
@@ -910,28 +1186,58 @@ export default function DonorProfilePage() {
             sectionData.forEach((row: Record<string, any>) => Object.keys(row).forEach((k) => colSet.add(k)));
             const columns = Array.from(colSet);
             const arrDisplayName = sectionName.endsWith(":") ? sectionName.slice(0, -1) : sectionName;
+            const ROW_HEADER_PATTERN_ARR = /^(relation|name|label|role|title|child|member)/i;
+            const useMobileCards = columns.length >= 4;
             return (
-              <Card key={sectionName} className="overflow-hidden" data-testid={`section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}>
+              <Card key={sectionName} className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid={`section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}>
                 <SectionHeader title={arrDisplayName} />
                 <div className="p-6">
-                  <table className="w-full text-sm table-fixed">
-                    <thead>
-                      <tr className="border-b border-border">
-                        {columns.map((col) => (
-                          <th key={col} className="text-left py-2 pr-3 text-xs font-ui text-foreground">{col}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sectionData.map((row: Record<string, any>, ri: number) => (
-                        <tr key={ri} className="border-b border-border/50 last:border-0">
+                  {useMobileCards && (
+                    <div className="md:hidden space-y-3" data-testid={`array-mobile-cards-${arrDisplayName}`}>
+                      {sectionData.map((row: Record<string, any>, ri: number) => {
+                        const headerCol = columns.find((c) => ROW_HEADER_PATTERN_ARR.test(c)) || columns[0];
+                        const headerValue = String(row[headerCol] ?? "").trim() || `#${ri + 1}`;
+                        const otherCols = columns.filter((c) => c !== headerCol);
+                        return (
+                          <div key={ri} className="rounded-[var(--radius)] border border-border/60 bg-secondary/30 p-3">
+                            <p className="text-sm font-ui font-heading text-foreground mb-2">{headerValue}</p>
+                            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                              {otherCols.map((col) => {
+                                const val = String(row[col] ?? "").trim();
+                                if (!val || val === "-") return null;
+                                return (
+                                  <div key={col} className="min-w-0">
+                                    <p className="text-[11px] font-ui text-foreground">{col}</p>
+                                    <p className="text-xs text-muted-foreground break-words">{val}</p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className={useMobileCards ? "hidden md:block" : ""}>
+                    <table className="w-full text-sm table-fixed">
+                      <thead>
+                        <tr className="border-b border-border">
                           {columns.map((col) => (
-                            <td key={col} className="py-2 pr-3 text-muted-foreground break-words">{String(row[col] ?? "")}</td>
+                            <th key={col} className="text-left py-2 pr-3 text-xs font-ui text-foreground">{col}</th>
                           ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {sectionData.map((row: Record<string, any>, ri: number) => (
+                          <tr key={ri} className="border-b border-border/50 last:border-0">
+                            {columns.map((col) => (
+                              <td key={col} className="py-2 pr-3 text-muted-foreground break-words">{String(row[col] ?? "")}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </Card>
             );
@@ -939,7 +1245,7 @@ export default function DonorProfilePage() {
           if (typeof sectionData === "string" && sectionData.trim()) {
             const displayName = sectionName.endsWith(":") ? sectionName.slice(0, -1) : sectionName;
             return (
-              <Card key={sectionName} className="overflow-hidden" data-testid={`section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}>
+              <Card key={sectionName} className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid={`section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}>
                 <SectionHeader title={displayName} />
                 <div className="p-6">
                   <p className="text-sm leading-body text-foreground whitespace-pre-line">{sectionData}</p>
@@ -959,7 +1265,7 @@ export default function DonorProfilePage() {
               for (const k of rowKeys) row[k] = kvData[k];
               const displayName = sectionName.endsWith(":") ? sectionName.slice(0, -1) : sectionName;
               return (
-                <Card key={sectionName} className="overflow-hidden" data-testid={`section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}>
+                <Card key={sectionName} className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid={`section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}>
                   <SectionHeader title={displayName} />
                   <div className="p-6 space-y-3">
                     {metaKeys.length > 0 && (
@@ -1227,10 +1533,39 @@ export default function DonorProfilePage() {
               );
             }
 
+            const ROW_HEADER_PATTERN = /^(relation|name|label|role|title|child|member)/i;
+            const renderMobileCards = cols.length >= 4;
+
             return (
               <div key={label || "table"} className="mt-4">
                 {label && <p className="text-xs font-ui text-foreground mb-2">{label}</p>}
-                <div className="overflow-x-auto -mx-6 px-6">
+                {renderMobileCards && (
+                  <div className="md:hidden space-y-3" data-testid={`table-mobile-cards-${label || ""}`}>
+                    {rows.map((row: Record<string, any>, ri: number) => {
+                      const headerCol = cols.find((c) => ROW_HEADER_PATTERN.test(c)) || cols[0];
+                      const headerValue = String(row[headerCol] ?? "").trim() || `#${ri + 1}`;
+                      const otherCols = cols.filter((c) => c !== headerCol);
+                      return (
+                        <div key={ri} className="rounded-[var(--radius)] border border-border/60 bg-secondary/30 p-3">
+                          <p className="text-sm font-ui font-heading text-foreground mb-2">{headerValue}</p>
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                            {otherCols.map((col) => {
+                              const val = String(row[col] ?? "").trim();
+                              if (!val || val === "-") return null;
+                              return (
+                                <div key={col} className="min-w-0">
+                                  <p className="text-[11px] font-ui text-foreground">{renameCol(col)}</p>
+                                  <p className="text-xs text-muted-foreground break-words">{val}</p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className={`${renderMobileCards ? "hidden md:block" : ""} overflow-x-auto -mx-6 px-6`}>
                   <table className={`w-full text-sm table-auto`}>
                     <thead>
                       <tr className="border-b border-border">
@@ -1256,7 +1591,7 @@ export default function DonorProfilePage() {
 
           const displaySectionName = sectionName.endsWith(":") ? sectionName.slice(0, -1) : sectionName;
           return (
-            <Card key={sectionName} className="overflow-hidden" data-testid={`section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}>
+            <Card key={sectionName} className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid={`section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}>
               <SectionHeader title={displaySectionName} />
               <div className="p-6 space-y-3">
                 {sectionLetterText && (
@@ -1339,7 +1674,7 @@ export default function DonorProfilePage() {
       })()}
 
       {longTextEntries.length > 0 && longTextEntries.map(([key, value]) => (
-        <Card key={key} className="overflow-hidden" data-testid={`section-${key.toLowerCase().replace(/\s+/g, "-")}`}>
+        <Card key={key} className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid={`section-${key.toLowerCase().replace(/\s+/g, "-")}`}>
           <SectionHeader title={formatFieldLabel(key)} />
           <div className="p-6">
             <p className="text-sm leading-body text-foreground whitespace-pre-line">{String(value)}</p>
@@ -1348,7 +1683,7 @@ export default function DonorProfilePage() {
       ))}
 
       {fieldEntries.length > 0 && (
-        <Card className="overflow-hidden" data-testid="section-additional-details">
+        <Card className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid="section-additional-details">
           <SectionHeader title="Additional Details" />
           <div className="p-6">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-12 gap-y-3">
@@ -1370,7 +1705,7 @@ export default function DonorProfilePage() {
       )}
 
       {documentImageEntries.map(([key, value]) => (
-        <Card key={key} className="overflow-hidden" data-testid={`section-${key.toLowerCase().replace(/\s+/g, "-")}`}>
+        <Card key={key} className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid={`section-${key.toLowerCase().replace(/\s+/g, "-")}`}>
           <SectionHeader title={formatFieldLabel(key)} />
           <div className="p-6">
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">

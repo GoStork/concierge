@@ -752,17 +752,22 @@ MANDATORY QUESTIONS - collect ALL in order, one per message:
       REQUIRED: Every D1 message MUST end with: "With all of that in mind, which countries are you open to for your surrogacy?" [[MULTI_SELECT:USA|Mexico|Colombia]]
       The education is not optional context - it is the primary content of D1. The [[MULTI_SELECT]] question is mandatory and must immediately follow the education in the same response.
 
-      BEFORE BUILDING THE EDUCATION MESSAGE: Call search_surrogacy_agencies twice - once with agencyLocation "Colombia" and once with agencyLocation "Mexico" - to retrieve real program costs from our database. Use the minimum totalCost (or totalCostMin) from those results when quoting prices for each country. If a country returns no results or no cost data, fall back to the estimate values below. For the USA, use the get_cost_ranges tool with serviceType "surrogacy" to get the current min cost from our database.
+      BEFORE BUILDING THE EDUCATION MESSAGE - REAL DB COSTS ARE MANDATORY:
+      You MUST call BOTH of these tools (in any order, can be parallel) BEFORE composing the education message. NEVER quote a country cost from memory or from a hardcoded estimate.
+      1) search_surrogacy_agencies(agencyLocation: "Colombia") - the response is augmented by the server with estimatedCombinedMinTotal per agency (the role-aware COMBINED program cost matched to THIS parent's exact coverage: IVF + egg donor + surrogate, or whichever services they need). Use MIN(estimatedCombinedMinTotal) across the Colombia agencies as the "Colombia: starting from $X" figure. If multiple agencies return, the minimum is the headline number.
+      2) search_surrogacy_agencies(agencyLocation: "Mexico") - same treatment. Use MIN(estimatedCombinedMinTotal) for "Mexico: starting from $X".
+      3) For the USA line, use get_cost_ranges(serviceType: "surrogacy") to get the current US surrogacy minimum from our database.
+      ABSOLUTE RULE: The only valid source of a country cost number is the value returned by these tools for THIS parent. If a tool returns no agencies or no estimatedCombinedMinTotal for a country (rare - means we have no priced program matching this parent's coverage there), OMIT the dollar amount for that country and say "programs available - I'll show you exact pricing in a moment" instead of fabricating a fallback. Hardcoded estimates are FORBIDDEN. The numbers you quote MUST match what the [[MATCH_CARD:CountryProgram]] card will show later.
 
-      Before asking which countries the parent is open to, deliver the international education message below. Tailor based on embryo status, and substitute real DB costs where available:
+      Before asking which countries the parent is open to, deliver the international education message below. Tailor based on embryo status. Substitute the REAL DB cost figures from the tool calls above into every "$..." placeholder:
 
       IF PARENT ALREADY HAS EMBRYOS (hasEmbryos = true):
       "One thing many families don't realize: since you already have frozen embryos, you can ship them internationally and do your surrogacy in Colombia or Mexico at a significant cost savings - without giving up the embryos you've worked so hard to create.
 
       Here's a quick breakdown:
-      - United States: $150,000 and up (surrogate compensation, agency fee, legal, insurance)
-      - Mexico: around $100,000 all-in [replace with real DB minimum if available]
-      - Colombia: starting from $[real DB minimum if available, else 65,000] all-in - our most popular option by far
+      - United States: $[US surrogacy min from get_cost_ranges]+ for surrogacy alone (IVF and embryo transfer are separate additional costs)
+      - Mexico: starting from $[MIN(estimatedCombinedMinTotal) across Mexico agencies] all-in
+      - Colombia: starting from $[MIN(estimatedCombinedMinTotal) across Colombia agencies] all-in - our most popular option by far
 
       Colombia has become the go-to for many of our families. The legal process is straightforward, you only need to stay a few weeks after the baby is born, and we have agencies there we trust completely. Some families even do two babies with two surrogates in Colombia simultaneously - still cheaper than one in the US.
 
@@ -772,9 +777,9 @@ MANDATORY QUESTIONS - collect ALL in order, one per message:
       "Something worth knowing before we dive in: international surrogacy programs can include everything - IVF, egg donor, AND surrogate - all in one package, at a fraction of what you'd pay in the US.
 
       Here's a quick comparison:
-      - United States: $150,000+ for surrogacy alone (IVF and egg donor are separate additional costs)
-      - Mexico: around $100,000 for a complete program including IVF, egg donor, and surrogate [replace with real DB minimum if available]
-      - Colombia: starting from $[real DB minimum if available, else 65,000] for a complete program - our most popular option
+      - United States: $[US surrogacy min from get_cost_ranges]+ for surrogacy alone (IVF and egg donor are separate additional costs)
+      - Mexico: starting from $[MIN(estimatedCombinedMinTotal) across Mexico agencies] for a complete program including IVF, egg donor, and surrogate
+      - Colombia: starting from $[MIN(estimatedCombinedMinTotal) across Colombia agencies] for a complete program - our most popular option
 
       Colombia's program is particularly well-regarded. The agencies we work with there have delivered hundreds of healthy babies, the legal process is clean, and you only need to stay a few weeks after birth. The main thing to know: egg donors in Colombia are anonymous and primarily Latin. If you want a Caucasian, Asian, or other specific background donor, you'd want to use a US egg donor - we can create embryos in the US and ship them to Colombia, giving you the best of both.
 

@@ -52,6 +52,12 @@ export interface IntakeContext {
   // phase state
   phase1Complete: boolean;
   curationAlreadySent: boolean;
+  // D1 country starting costs, pre-fetched by ai-router from the live cost
+  // sheets so the bypass message quotes real DB numbers matched to THIS
+  // parent's coverage (IVF + egg donor + surrogate, has embryos, etc.) -
+  // never hardcoded fallbacks. May be omitted (callers that don't run D1
+  // can leave it undefined).
+  d1Costs?: D1Costs;
 }
 
 export interface IntakeQuestion {
@@ -89,30 +95,55 @@ function isConversationalQuestion(userMessage: string): boolean {
     || /^(hi|hello|hey|thanks|thank you|ok|okay|sure|great|sounds good|got it|makes sense)/i.test(userMessage.trim());
 }
 
-// D1 text constants - reused by carrier bypass and D-cycle bypass
-const D1_HAS_EMBRYOS = `One thing many families don't realize: since you already have frozen embryos, you can ship them internationally and do your surrogacy in Colombia or Mexico at a significant cost savings - without giving up the embryos you've worked so hard to create.
+// D1 text builders - reused by carrier bypass, D-cycle bypass and intake-question
+// bypass. Country costs are substituted from the live DB by the caller (which
+// has parentAccountId in scope and can call CostsService.getCombinedCountryProgramCost
+// to get the role-aware combined cost matched to THIS parent's coverage). If a
+// country has no priced program matching this parent, the caller passes null
+// and the builder emits a "programs available" line instead of a fabricated
+// hardcoded number - aligned with the project's no-paper-over rule.
+export interface D1Costs {
+  /** Min total for US surrogacy alone. */
+  us?: number | null;
+  /** Min combined country-program total for Mexico, matched to this parent. */
+  mexico?: number | null;
+  /** Min combined country-program total for Colombia, matched to this parent. */
+  colombia?: number | null;
+}
+
+const formatUsd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+
+function priceLine(prefix: string, n: number | null | undefined, suffix: string, fallbackSuffix: string): string {
+  if (typeof n === "number" && n > 0) return `${prefix} ${formatUsd(n)}${suffix}`;
+  // No DB price for this country / coverage - say so honestly, don't fabricate.
+  return `${prefix} ${fallbackSuffix}`;
+}
+
+export function buildD1HasEmbryos(costs: D1Costs = {}): string {
+  return `One thing many families don't realize: since you already have frozen embryos, you can ship them internationally and do your surrogacy in Colombia or Mexico at a significant cost savings - without giving up the embryos you've worked so hard to create.
 
 Here's a quick breakdown:
-- United States: $150,000 and up (surrogate compensation, agency fee, legal, insurance)
-- Mexico: around $100,000 all-in
-- Colombia: starting from $65,000 all-in - our most popular option
+${priceLine("- United States:", costs.us, " and up (surrogate compensation, agency fee, legal, insurance)", "programs available - I'll show exact pricing in a moment (surrogate compensation, agency fee, legal, insurance)")}
+${priceLine("- Mexico: starting from", costs.mexico, " all-in", "programs available - I'll show exact pricing in a moment")}
+${priceLine("- Colombia: starting from", costs.colombia, " all-in - our most popular option", "programs available - our most popular option")}
 
 Colombia has become the go-to for many of our families. The legal process is straightforward, you only need to stay a few weeks after the baby is born, and we have agencies there we trust completely.
 
 With all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`;
+}
 
-const D1_NO_EMBRYOS = `Something worth knowing before we dive in: international surrogacy programs can include everything - IVF, egg donor, AND surrogate - all in one package, at a fraction of what you'd pay in the US.
+export function buildD1NoEmbryos(costs: D1Costs = {}): string {
+  return `Something worth knowing before we dive in: international surrogacy programs can include everything - IVF, egg donor, AND surrogate - all in one package, at a fraction of what you'd pay in the US.
 
 Here's a quick comparison:
-- United States: $150,000+ for surrogacy alone (IVF and egg donor are separate additional costs)
-- Mexico: around $100,000 for a complete program including IVF, egg donor, and surrogate
-- Colombia: starting from $65,000 for a complete program - our most popular option
+${priceLine("- United States:", costs.us, "+ for surrogacy alone (IVF and egg donor are separate additional costs)", "programs available - I'll show exact pricing in a moment for US surrogacy (IVF and egg donor are separate additional costs)")}
+${priceLine("- Mexico: starting from", costs.mexico, " for a complete program including IVF, egg donor, and surrogate", "programs available - I'll show exact pricing in a moment")}
+${priceLine("- Colombia: starting from", costs.colombia, " for a complete program - our most popular option", "programs available - our most popular option")}
 
 Colombia's program is particularly well-regarded. The agencies we work with there have delivered hundreds of healthy babies, the legal process is clean, and you only need to stay a few weeks after birth.
 
 With all of that in mind, which countries are you open to for your surrogacy? [[MULTI_SELECT:USA|Mexico|Colombia]]`;
-
-export { D1_HAS_EMBRYOS, D1_NO_EMBRYOS };
+}
 
 // ---------------------------------------------------------------------------
 // Main function
@@ -698,7 +729,9 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
     const aCurationSent = aiAsked(chatHistory, /shall i find your perfect clinic matches|perfect clinic matches/i);
     const clinicCycleDone = !needsHelpFindingClinic || skipClinicCycleForD1 || aCurationSent;
     if (clinicCycleDone && !d1AlreadyAsked) {
-      const d1Text = hasEmbryos ? D1_HAS_EMBRYOS : D1_NO_EMBRYOS;
+      const d1Text = hasEmbryos
+        ? buildD1HasEmbryos(ctx.d1Costs)
+        : buildD1NoEmbryos(ctx.d1Costs);
       return { step: "d1_countries", text: d1Text };
     }
 
@@ -753,7 +786,7 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
         : userSaid(allUserMessages, /singleton/) ? "singleton preferred"
         : null;
 
-      const alreadySentDCuration = aiAsked(chatHistory, /shall i find your perfect.*surrogate.*matches|perfect surrogate matches/i);
+      const alreadySentDCuration = aiAsked(chatHistory, /shall i find your perfect.*surrogate.*matches|perfect surrogate matches|find you the right international (?:program|agency)|find your perfect program match/i);
       if (!alreadySentDCuration) {
         let summary = `Here's what I have: `;
         const parts: string[] = [];
@@ -761,7 +794,22 @@ export function getNextIntakeQuestion(ctx: IntakeContext): IntakeQuestion | null
         if (countries) parts.push(`open to surrogacy in ${countries}`);
         if (termPref) parts.push(`termination preference: ${termPref}`);
         if (twinsPref) parts.push(twinsPref);
-        summary += (parts.length ? parts.join(", ") : "your surrogacy preferences") + ". Shall I find your perfect surrogate matches now? [[CURATION]]";
+        // Closing question is PATH-aware. International-only (Mexico/Colombia,
+        // no USA) means we're about to call search_surrogacy_agencies and
+        // present a [[MATCH_CARD:CountryProgram]] - the parent matches with an
+        // agency / program, NOT an individual surrogate (these countries don't
+        // expose individual surrogate profiles). USA-only matches with
+        // individual US surrogates via search_surrogates. USA+international is
+        // a hybrid; we lead with the US surrogate flow so the original
+        // phrasing is correct there.
+        const countriesLower = (countries || "").toLowerCase();
+        const hasUSA = /\busa\b|\bunited states\b/.test(countriesLower);
+        const hasInternational = /\bmexico\b|\bcolombia\b/.test(countriesLower);
+        const internationalOnly = hasInternational && !hasUSA;
+        const closing = internationalOnly
+          ? "Shall I find you the right international program?"
+          : "Shall I find your perfect surrogate matches now?";
+        summary += (parts.length ? parts.join(", ") : "your surrogacy preferences") + ". " + closing + " [[CURATION]]";
         return { step: "d_curation", text: summary };
       }
     }

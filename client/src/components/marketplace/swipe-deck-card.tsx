@@ -3,7 +3,7 @@ import { motion, useAnimation, useMotionValue, useTransform, PanInfo } from "fra
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  ChevronUp, Undo2, X, Heart, Send,
+  ArrowUp, Undo2, X, Heart, Send,
   Check, Flower2, Crown, Award,
 } from "lucide-react";
 import type { TabSection } from "./swipe-mappers";
@@ -76,10 +76,26 @@ export function SwipeDeckCard({
   const [isDragging, setIsDragging] = useState(false);
   const controls = useAnimation();
   const x = useMotionValue(0);
+  const y = useMotionValue(0);
 
-  const rotate = useTransform(x, [-SWIPE_EXIT_DISTANCE, 0, SWIPE_EXIT_DISTANCE], [-15, 0, 15]);
-  const passOverlayOpacity = useTransform(x, [-SWIPE_THRESHOLD, 0], [0.6, 0]);
-  const saveOverlayOpacity = useTransform(x, [0, SWIPE_THRESHOLD], [0, 0.6]);
+  const rotate = useTransform(x, [-SWIPE_EXIT_DISTANCE, 0, SWIPE_EXIT_DISTANCE], [-28, 0, 28]);
+  const passOverlayOpacity = useTransform(x, [-SWIPE_THRESHOLD, 0], [0.45, 0]);
+  const saveOverlayOpacity = useTransform(x, [0, SWIPE_THRESHOLD], [0, 0.45]);
+
+  // Big X / Heart icon overlay on the card while dragging (Tinder-style)
+  const passIconOpacity = useTransform(x, [-SWIPE_THRESHOLD * 1.2, -25, 0], [1, 0, 0]);
+  const saveIconOpacity = useTransform(x, [0, 25, SWIPE_THRESHOLD * 1.2], [0, 0, 1]);
+  const passIconScale = useTransform(x, [-SWIPE_THRESHOLD * 1.2, 0], [1.15, 0.6]);
+  const saveIconScale = useTransform(x, [0, SWIPE_THRESHOLD * 1.2], [0.6, 1.15]);
+
+  // Bottom-row buttons: focus the relevant button, fade the others as drag grows
+  const FADE_START = 25;
+  const FADE_END = 90;
+  const passBtnOpacity = useTransform(x, [-FADE_END, -FADE_START, 0, FADE_START, FADE_END], [1, 1, 1, 0.55, 0]);
+  const passBtnScale = useTransform(x, [-SWIPE_THRESHOLD, -FADE_START, 0], [1.35, 1.1, 1]);
+  const saveBtnOpacity = useTransform(x, [-FADE_END, -FADE_START, 0, FADE_START, FADE_END], [0, 0.55, 1, 1, 1]);
+  const saveBtnScale = useTransform(x, [0, FADE_START, SWIPE_THRESHOLD], [1, 1.1, 1.35]);
+  const otherBtnOpacity = useTransform(x, [-FADE_END, -FADE_START, 0, FADE_START, FADE_END], [0, 0.8, 1, 0.8, 0]);
 
   const totalSlides = Math.max(photos.length, tabs.length, 1);
   const currentTab = tabs.length > 0 && slideIndex < tabs.length ? tabs[slideIndex] : null;
@@ -89,8 +105,9 @@ export function SwipeDeckCard({
     setSlideIndex(0);
     setIsDragging(false);
     x.set(0);
-    controls.set({ x: 0, rotate: 0, opacity: 1 });
-  }, [id, x, controls]);
+    y.set(0);
+    controls.set({ x: 0, y: 0, rotate: 0, opacity: 1 });
+  }, [id, x, y, controls]);
 
   const handleTapLeft = useCallback(() => {
     if (isDragging) return;
@@ -104,15 +121,17 @@ export function SwipeDeckCard({
 
   const animateSwipe = useCallback(async (direction: "left" | "right") => {
     const xTarget = direction === "left" ? -SWIPE_EXIT_DISTANCE : SWIPE_EXIT_DISTANCE;
+    const yTarget = y.get();
     await controls.start({
       x: xTarget,
-      rotate: direction === "left" ? -15 : 15,
+      y: yTarget,
+      rotate: direction === "left" ? -32 : 32,
       opacity: 0,
       transition: { duration: 0.35, ease: "easeOut" },
     });
     if (direction === "left") onPass();
     else onSave();
-  }, [controls, onPass, onSave]);
+  }, [controls, onPass, onSave, y]);
 
   const handleDragEnd = useCallback((_: any, info: PanInfo) => {
     setIsDragging(false);
@@ -124,7 +143,7 @@ export function SwipeDeckCard({
     } else if (swipeX > SWIPE_THRESHOLD || velocity > 500) {
       animateSwipe("right");
     } else {
-      controls.start({ x: 0, rotate: 0, opacity: 1, transition: { type: "spring", stiffness: 300, damping: 25 } });
+      controls.start({ x: 0, y: 0, rotate: 0, opacity: 1, transition: { type: "spring", stiffness: 300, damping: 25 } });
     }
   }, [animateSwipe, controls]);
 
@@ -134,9 +153,9 @@ export function SwipeDeckCard({
     <div className="w-full h-full p-[3px]" data-testid={`swipe-card-${id}`}>
       <motion.div
         className={`relative w-full h-full overflow-hidden bg-card select-none rounded-[var(--container-radius)] shadow-lg ${disableSwipe ? "" : "cursor-grab active:cursor-grabbing"} ${isPassed ? "opacity-50 grayscale" : ""}`}
-        style={disableSwipe ? undefined : { x, rotate }}
-        drag={disableSwipe ? false : "x"}
-        dragConstraints={disableSwipe ? undefined : { left: 0, right: 0 }}
+        style={disableSwipe ? undefined : { x, y, rotate }}
+        drag={disableSwipe ? false : true}
+        dragConstraints={disableSwipe ? undefined : { left: 0, right: 0, top: 0, bottom: 0 }}
         dragElastic={disableSwipe ? undefined : 0.9}
         onDragStart={disableSwipe ? undefined : () => setIsDragging(true)}
         onDragEnd={disableSwipe ? undefined : handleDragEnd}
@@ -205,6 +224,22 @@ export function SwipeDeckCard({
                 className="absolute inset-0 bg-success/30 pointer-events-none z-[5]"
                 style={{ opacity: saveOverlayOpacity }}
               />
+              <motion.div
+                className="absolute inset-0 flex items-center justify-center pointer-events-none z-[40]"
+                style={{ opacity: passIconOpacity }}
+              >
+                <motion.div style={{ scale: passIconScale }}>
+                  <X className="w-48 h-48 text-white drop-shadow-[0_4px_12px_rgba(0,0,0,0.7)]" strokeWidth={4} />
+                </motion.div>
+              </motion.div>
+              <motion.div
+                className="absolute inset-0 flex items-center justify-center pointer-events-none z-[40]"
+                style={{ opacity: saveIconOpacity }}
+              >
+                <motion.div style={{ scale: saveIconScale }}>
+                  <Heart className="w-48 h-48 text-white drop-shadow-[0_4px_12px_rgba(0,0,0,0.7)]" strokeWidth={3} fill="currentColor" />
+                </motion.div>
+              </motion.div>
             </>
           )}
 
@@ -310,10 +345,10 @@ export function SwipeDeckCard({
               </div>
               <button
                 onClick={(e) => { e.stopPropagation(); onViewFullProfile(); }}
-                className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors pointer-events-auto"
+                className="w-9 h-9 rounded-full bg-white/90 hover:bg-white shadow-md flex items-center justify-center transition-colors pointer-events-auto"
                 data-testid={`button-view-profile-${id}`}
               >
-                <ChevronUp className="w-5 h-5 text-white" />
+                <ArrowUp className="w-5 h-5 text-foreground" strokeWidth={2.5} />
               </button>
             </div>
 
@@ -402,52 +437,57 @@ export function SwipeDeckCard({
 
           <div className={`absolute bottom-6 left-0 right-0 px-4 z-[35] flex items-center justify-center gap-3 ${readOnly ? "hidden" : ""}`} data-testid={`action-row-${id}`}>
             {!chatMode && !disableSwipe && (
+              <motion.div style={{ opacity: otherBtnOpacity }} className="pointer-events-auto">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => { e.stopPropagation(); onUndo?.(); }}
+                  disabled={!onUndo}
+                  className="h-12 w-12 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] [@media(hover:hover)]:hover:scale-110 [@media(hover:hover)]:hover:brightness-110 active:scale-95 active:translate-y-0.5 active:shadow-[0_4px_8px_rgba(0,0,0,0.5),inset_0_4px_8px_rgba(0,0,0,0.6)] transition-all duration-200 flex items-center justify-center disabled:opacity-100 disabled:pointer-events-auto"
+                  data-testid={`button-undo-${id}`}
+                >
+                  <Undo2 className="!w-7 !h-7 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-undo)" }} strokeWidth={3} />
+                </Button>
+              </motion.div>
+            )}
+
+            <motion.div style={disableSwipe ? undefined : { opacity: passBtnOpacity, scale: passBtnScale }} className="pointer-events-auto">
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={(e) => { e.stopPropagation(); onUndo?.(); }}
-                disabled={!onUndo}
-                className="h-12 w-12 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] [@media(hover:hover)]:hover:scale-110 [@media(hover:hover)]:hover:brightness-110 active:scale-95 active:translate-y-0.5 active:shadow-[0_4px_8px_rgba(0,0,0,0.5),inset_0_4px_8px_rgba(0,0,0,0.6)] transition-all duration-200 flex items-center justify-center pointer-events-auto disabled:opacity-100 disabled:pointer-events-auto"
-                data-testid={`button-undo-${id}`}
+                onClick={(e) => { e.stopPropagation(); isPassed ? onUndo?.() : (disableSwipe ? onPass() : animateSwipe("left")); }}
+                className={`${chatMode ? "h-14 w-14" : "h-16 w-16"} rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] [@media(hover:hover)]:hover:scale-110 [@media(hover:hover)]:hover:brightness-110 active:scale-95 active:translate-y-0.5 active:shadow-[0_4px_8px_rgba(0,0,0,0.5),inset_0_4px_8px_rgba(0,0,0,0.6)] transition-all duration-200 flex items-center justify-center`}
+                data-testid={`button-pass-${id}`}
               >
-                <Undo2 className="!w-7 !h-7 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-undo)" }} strokeWidth={3} />
+                <X className="!w-9 !h-9 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: isPassed ? "var(--swipe-undo)" : "var(--swipe-pass)" }} strokeWidth={3} />
               </Button>
-            )}
+            </motion.div>
 
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={(e) => { e.stopPropagation(); isPassed ? onUndo?.() : (disableSwipe ? onPass() : animateSwipe("left")); }}
-              className={`${chatMode ? "h-14 w-14" : "h-16 w-16"} rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] [@media(hover:hover)]:hover:scale-110 [@media(hover:hover)]:hover:brightness-110 active:scale-95 active:translate-y-0.5 active:shadow-[0_4px_8px_rgba(0,0,0,0.5),inset_0_4px_8px_rgba(0,0,0,0.6)] transition-all duration-200 flex items-center justify-center pointer-events-auto`}
-              data-testid={`button-pass-${id}`}
-            >
-              <X className="!w-9 !h-9 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: isPassed ? "var(--swipe-undo)" : "var(--swipe-pass)" }} strokeWidth={3} />
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={(e) => { e.stopPropagation(); disableSwipe ? onSave() : animateSwipe("right"); }}
-              className={`${chatMode ? "h-14 w-14" : "h-16 w-16"} rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] [@media(hover:hover)]:hover:scale-110 [@media(hover:hover)]:hover:brightness-110 active:scale-95 active:translate-y-0.5 active:shadow-[0_4px_8px_rgba(0,0,0,0.5),inset_0_4px_8px_rgba(0,0,0,0.6)] transition-all duration-200 flex items-center justify-center pointer-events-auto`}
-              data-testid={`button-save-${id}`}
-            >
-              <Heart className="!w-9 !h-9 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-save)" }} strokeWidth={3} fill={isSaved ? "currentColor" : "none"} />
-            </Button>
+            <motion.div style={disableSwipe ? undefined : { opacity: saveBtnOpacity, scale: saveBtnScale }} className="pointer-events-auto">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => { e.stopPropagation(); disableSwipe ? onSave() : animateSwipe("right"); }}
+                className={`${chatMode ? "h-14 w-14" : "h-16 w-16"} rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] [@media(hover:hover)]:hover:scale-110 [@media(hover:hover)]:hover:brightness-110 active:scale-95 active:translate-y-0.5 active:shadow-[0_4px_8px_rgba(0,0,0,0.5),inset_0_4px_8px_rgba(0,0,0,0.6)] transition-all duration-200 flex items-center justify-center`}
+                data-testid={`button-save-${id}`}
+              >
+                <Heart className="!w-9 !h-9 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-save)" }} strokeWidth={3} fill={isSaved ? "currentColor" : "none"} />
+              </Button>
+            </motion.div>
 
             {!chatMode && (
-              <>
+              <motion.div style={disableSwipe ? undefined : { opacity: otherBtnOpacity }} className="pointer-events-auto">
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={(e) => { e.stopPropagation(); onMessage?.(); }}
                   disabled={!onMessage}
-                  className="h-16 w-16 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] [@media(hover:hover)]:hover:scale-110 [@media(hover:hover)]:hover:brightness-110 active:scale-95 active:translate-y-0.5 active:shadow-[0_4px_8px_rgba(0,0,0,0.5),inset_0_4px_8px_rgba(0,0,0,0.6)] transition-all duration-200 flex items-center justify-center pointer-events-auto disabled:opacity-100 disabled:pointer-events-auto"
+                  className="h-16 w-16 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] [@media(hover:hover)]:hover:scale-110 [@media(hover:hover)]:hover:brightness-110 active:scale-95 active:translate-y-0.5 active:shadow-[0_4px_8px_rgba(0,0,0,0.5),inset_0_4px_8px_rgba(0,0,0,0.6)] transition-all duration-200 flex items-center justify-center disabled:opacity-100 disabled:pointer-events-auto"
                   data-testid={`button-chat-${id}`}
                 >
                   <Send className="!w-8 !h-8 sm:!w-9 sm:!h-9 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-chat)" }} strokeWidth={3} />
                 </Button>
-
-              </>
+              </motion.div>
             )}
           </div>
         </div>

@@ -105,26 +105,22 @@ export function ClinicCostProgramsSection({
   const showTailorForm = !showAll && !hasDecided && (data?.isPartialProfile || programs.length === 0);
 
   return (
-    <section className="space-y-3" data-testid="clinic-cost-programs">
-      <div className="flex items-center gap-2">
-        <DollarSign className="w-5 h-5 text-primary" />
-        <h2 className="font-heading text-xl text-foreground">Cost programs for your journey</h2>
+    <Card className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid="clinic-cost-programs">
+      <div className="px-6 pt-5">
+        <h3 className="font-heading text-xl text-foreground flex items-center gap-2">
+          <DollarSign className="w-5 h-5 text-primary" />
+          Costs
+        </h3>
       </div>
-
-      {showTailorForm ? (
-        <CostProgramTailorForm
-          parentAccountId={parentAccountId as string}
-          // onSaved: the mutation already invalidated the cost-programs
-          // query, so the next render after the form collapses will pull
-          // the freshly-tailored list. Nothing extra to do here.
-          onSaved={() => { /* query invalidated by the form */ }}
-          onSkip={() => setShowAll(true)}
-        />
-      ) : programs.length === 0 ? (
-        // showAll mode came back empty too - the provider genuinely has
-        // zero published programs. Offer the custom-quote CTA as before.
-        <Card>
-          <CardContent className="py-10 text-center space-y-3">
+      <div className="p-6 pt-4">
+        {showTailorForm ? (
+          <CostProgramTailorForm
+            parentAccountId={parentAccountId as string}
+            onSaved={() => { /* query invalidated by the form */ }}
+            onSkip={() => setShowAll(true)}
+          />
+        ) : programs.length === 0 ? (
+          <div className="py-10 text-center space-y-3">
             <DollarSign className="w-10 h-10 mx-auto text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground max-w-md mx-auto">
               This provider hasn't published a cost program yet. Ask our concierge to request a custom quote on your behalf.
@@ -137,15 +133,15 @@ export function ClinicCostProgramsSection({
             >
               <MessageCircle className="w-4 h-4 mr-1" /> Request a custom quote
             </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {programs.map((program, idx) => (
-            <CostSheetProgramCard key={program.programId} program={program} index={idx} />
-          ))}
-        </div>
-      )}
-    </section>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {programs.map((program, idx) => (
+              <CostSheetProgramCard key={program.programId} program={program} index={idx} />
+            ))}
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }

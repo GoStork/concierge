@@ -97,6 +97,26 @@ export function log(message: string, source = "nestjs") {
   app.use("/api/ai-concierge", aiRouter);
   app.use(chatRouter);
 
+  // Tiny client-side crash sink. The root ErrorBoundary POSTs here when a
+  // React render crash happens so we have the message + component stack in
+  // /tmp/gostork-server.log even when the user never opens DevTools. Never
+  // sensitive: it logs JSON the client already had in its own scope. Keep
+  // the body small (5 KB) so a runaway client can't fill the log.
+  app.post("/api/client-errors", express.json({ limit: "5kb" }), (req, res) => {
+    try {
+      const { message, stack, componentStack, url, userAgent, at } = req.body || {};
+      console.error("[CLIENT ERROR]", JSON.stringify({
+        at: at || new Date().toISOString(),
+        url, userAgent, message,
+        stack: typeof stack === "string" ? stack.slice(0, 4000) : null,
+        componentStack: typeof componentStack === "string" ? componentStack.slice(0, 2000) : null,
+      }));
+    } catch (e: any) {
+      console.error("[CLIENT ERROR] sink failed:", e?.message);
+    }
+    res.status(204).end();
+  });
+
   app.use((req, res, next) => {
     const start = Date.now();
     const path = req.path;
