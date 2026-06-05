@@ -2946,6 +2946,22 @@ function ProgramsView({
   const [isSaving, setIsSaving] = useState(false);
   const hasPending = Object.keys(pendingByProgram).length > 0;
 
+  // NOTE: programsQuery must be declared before any hook below references
+  // programsQuery.data. The validation useMemo accesses it synchronously
+  // during render, and a TDZ ReferenceError there whites out the whole
+  // costs tab.
+  const programsQueryKey = ["/api/costs/programs", providerId, providerTypeId || "all", subType || "none"];
+  const programsQuery = useQuery<CostProgram[]>({
+    queryKey: programsQueryKey,
+    queryFn: () => {
+      const params = new URLSearchParams({ providerId });
+      if (providerTypeId) params.set("providerTypeId", providerTypeId);
+      if (subType) params.set("subType", subType);
+      return fetch(`/api/costs/programs?${params.toString()}`, { credentials: "include" }).then((r) => r.json());
+    },
+    enabled: !!providerId,
+  });
+
   // Server-state lookup used by the no-op cleanup in updateProgramPending.
   // Ref so the callback identity stays stable across refetches.
   const programsDataRef = useRef<CostProgram[]>([]);
@@ -3028,18 +3044,6 @@ function ProgramsView({
   const discardAllPending = useCallback(() => {
     setPendingByProgram({});
   }, []);
-
-  const programsQueryKey = ["/api/costs/programs", providerId, providerTypeId || "all", subType || "none"];
-  const programsQuery = useQuery<CostProgram[]>({
-    queryKey: programsQueryKey,
-    queryFn: () => {
-      const params = new URLSearchParams({ providerId });
-      if (providerTypeId) params.set("providerTypeId", providerTypeId);
-      if (subType) params.set("subType", subType);
-      return fetch(`/api/costs/programs?${params.toString()}`, { credentials: "include" }).then((r) => r.json());
-    },
-    enabled: !!providerId,
-  });
 
   const allPrograms = Array.isArray(programsQuery.data) ? programsQuery.data : [];
   // When `tabFilter` is provided (IVF clinic 4-tab wrapper), only show
