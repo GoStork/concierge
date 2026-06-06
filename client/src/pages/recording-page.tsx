@@ -19,23 +19,14 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { hasProviderRole } from "../../../shared/roles";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { useConfirm } from "@/components/ui/confirm-bar";
 
 export default function RecordingPage() {
   const { bookingId } = useParams<{ bookingId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
+  const confirm = useConfirm();
 
   const isAdmin = user?.roles?.includes("GOSTORK_ADMIN");
   const isProvider = hasProviderRole(user?.roles || []);
@@ -452,38 +443,24 @@ export default function RecordingPage() {
                 )}
 
                 {canDelete && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-1 text-destructive"
-                        disabled={deleteMutation.isPending}
-                        data-testid="button-delete-recording"
-                      >
-                        <Trash2 className="w-4 h-4" /> Delete
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Delete Recording</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This will permanently delete the recording and its
-                          transcript. This action cannot be undone.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={() => deleteMutation.mutate(recording.id)}
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          data-testid="button-confirm-delete"
-                        >
-                          Delete
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1 text-destructive"
+                    disabled={deleteMutation.isPending}
+                    data-testid="button-delete-recording"
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: "Delete recording",
+                        message: "This will permanently delete the recording and its transcript. This action cannot be undone.",
+                        confirmLabel: "Delete",
+                        tone: "destructive",
+                      });
+                      if (ok) deleteMutation.mutate(recording.id);
+                    }}
+                  >
+                    <Trash2 className="w-4 h-4" /> Delete
+                  </Button>
                 )}
               </div>
             </div>

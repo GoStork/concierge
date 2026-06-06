@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { formatMoneyDollars } from "@/lib/format-money";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { SaveBar } from "@/components/ui/save-bar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -20,17 +21,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Tabs as ServiceTabs, TabsContent as ServiceTabsContent, TabsList as ServiceTabsList, TabsTrigger as ServiceTabsTrigger } from "@/components/ui/tabs";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { useConfirm } from "@/components/ui/confirm-bar";
 import {
   Dialog,
   DialogContent,
@@ -491,6 +482,27 @@ type ProgramPending = {
   // flushes these via /api/costs/save-draft per program.
   items?: CostItemData[];
 };
+
+// Deep-equal check for the items array, comparing only the user-visible
+// fields. Used by updateProgramPending to strip pending.items entries
+// that match the server's latest master items - prevents a phantom
+// "1 unsaved program" from the SingleCostsTab data-load bubble when
+// nothing was actually edited. sortOrder / templateFieldId / _isVariant
+// are ignored: those are server-derived and reorder freely without the
+// user touching anything.
+function itemsEqualForPending(a: CostItemData[], b: CostItemData[]): boolean {
+  if (a.length !== b.length) return false;
+  const norm = (it: CostItemData) =>
+    `${it.category}::${it.key}::${it.minValue ?? ""}::${it.maxValue ?? ""}::${
+      it.comment ?? ""
+    }::${it.isIncluded ? 1 : 0}::${it.isCustom ? 1 : 0}::${it.isTier ? 1 : 0}`;
+  const sa = a.map(norm).sort();
+  const sb = b.map(norm).sort();
+  for (let i = 0; i < sa.length; i++) {
+    if (sa[i] !== sb[i]) return false;
+  }
+  return true;
+}
 
 // Consolidated classification controls rendered inline inside each cost
 // program's top bar. Encapsulates: Coverage toggle row (Surrogacy / Egg
@@ -1015,6 +1027,7 @@ function SingleCostsTab({
   pendingItems,
 }: SingleCostsTabProps) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingFileRef = useRef<File | null>(null);
   const [editItems, setEditItems] = useState<CostItemData[]>(pendingItems ?? []);
@@ -1980,30 +1993,23 @@ function SingleCostsTab({
                           Download
                         </a>
                       </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="outline" size="sm" className="text-destructive" data-testid="btn-delete-file">
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Reset cost sheet?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This will remove all saved cost data and reset to the default template.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() => deleteMutation.mutate(displaySheet.id)}
-                              data-testid="btn-confirm-delete-file"
-                            >
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive"
+                        data-testid="btn-delete-file"
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: "Reset cost sheet?",
+                            message: "This will remove all saved cost data and reset to the default template.",
+                            confirmLabel: "Delete",
+                            tone: "destructive",
+                          });
+                          if (ok) deleteMutation.mutate(displaySheet.id);
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </>
                   )}
                 </div>
@@ -2737,94 +2743,83 @@ function SingleCostsTab({
       )}
 
       {/* Internal admin Save/Cancel bar - hidden when the parent
-          (ProgramsView) owns the save flow. The bottom-of-tab Save bar
-          flushes everything in one shot instead. */}
-      {!parentOwnsSave && isAdminView && effectiveEditing && editItems.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t flex gap-2 justify-end items-center" data-testid="admin-edit-actions">
-          {autoSaveStatus === "saving" && (
-            <span className="text-xs text-muted-foreground flex items-center gap-1 mr-auto" data-testid="text-auto-save-status">
+          (ProgramsView) owns the save flow. */}
+      <SaveBar
+        visible={!parentOwnsSave && isAdminView && effectiveEditing && editItems.length > 0}
+        position="fixed"
+        testId="admin-edit-actions"
+        discardLabel="Cancel"
+        saveLabel="Save"
+        saving={updateMutation.isPending || submitMutation.isPending}
+        message={
+          autoSaveStatus === "saving" ? (
+            <span className="text-xs text-muted-foreground flex items-center gap-1" data-testid="text-auto-save-status">
               <Loader2 className="w-3 h-3 animate-spin" />
               Saving draft...
             </span>
-          )}
-          {autoSaveStatus === "saved" && (
-            <span className="text-xs text-[hsl(var(--brand-success))] flex items-center gap-1 mr-auto" data-testid="text-auto-save-status">
+          ) : autoSaveStatus === "saved" ? (
+            <span className="text-xs text-[hsl(var(--brand-success))] flex items-center gap-1" data-testid="text-auto-save-status">
               <Check className="w-3 h-3" />
               Draft saved
             </span>
-          )}
-          <Button
-            variant="outline"
-            onClick={() => {
-              setIsEditing(false);
-              setEditItems([]);
-            }}
-            data-testid="btn-cancel-edit"
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={() => {
-              if (autoSavePendingTimerRef.current) { clearTimeout(autoSavePendingTimerRef.current); autoSavePendingTimerRef.current = null; }
-              if (isAdminView) {
-                const existingSheetId = displaySheet && displaySheet.status !== "APPROVED" ? displaySheet.id : undefined;
-                submitMutation.mutate({ items: editItems, sheetId: existingSheetId });
-              } else if (displaySheet && displaySheet.status !== "APPROVED") {
-                updateMutation.mutate({ sheetId: displaySheet.id, items: editItems });
-              } else {
-                submitMutation.mutate({ items: editItems, sheetId: undefined });
-              }
-            }}
-            disabled={updateMutation.isPending || submitMutation.isPending}
-            data-testid="btn-admin-save"
-          >
-            {(updateMutation.isPending || submitMutation.isPending) ? (
-              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-            ) : null}
-            Save
-          </Button>
-        </div>
-      )}
+          ) : ""
+        }
+        onDiscard={() => {
+          setIsEditing(false);
+          setEditItems([]);
+        }}
+        onSave={() => {
+          if (autoSavePendingTimerRef.current) { clearTimeout(autoSavePendingTimerRef.current); autoSavePendingTimerRef.current = null; }
+          if (isAdminView) {
+            const existingSheetId = displaySheet && displaySheet.status !== "APPROVED" ? displaySheet.id : undefined;
+            submitMutation.mutate({ items: editItems, sheetId: existingSheetId });
+          } else if (displaySheet && displaySheet.status !== "APPROVED") {
+            updateMutation.mutate({ sheetId: displaySheet.id, items: editItems });
+          } else {
+            submitMutation.mutate({ items: editItems, sheetId: undefined });
+          }
+        }}
+      />
 
       {/* Provider's internal Submit for Approval bar - same gating: only
           when the parent isn't already handling the save flow. */}
-      {!parentOwnsSave && !isAdminView && editItems.length > 0 && (isDirty || !displaySheet || displaySheet.status === "DRAFT" || displaySheet.status === "REJECTED") && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t flex gap-2 justify-end items-center" data-testid="edit-actions">
-          {autoSaveStatus === "saving" && (
-            <span className="text-xs text-muted-foreground flex items-center gap-1 mr-auto" data-testid="text-auto-save-status">
+      <SaveBar
+        visible={!parentOwnsSave && !isAdminView && editItems.length > 0 && (isDirty || !displaySheet || displaySheet.status === "DRAFT" || displaySheet.status === "REJECTED")}
+        position="fixed"
+        testId="edit-actions"
+        discardLabel="Cancel"
+        saveLabel="Submit for Approval"
+        saving={submitMutation.isPending}
+        saveDisabled={missingMandatory.length > 0 || isParsing}
+        message={
+          autoSaveStatus === "saving" ? (
+            <span className="text-xs text-muted-foreground flex items-center gap-1" data-testid="text-auto-save-status">
               <Loader2 className="w-3 h-3 animate-spin" />
               Saving draft...
             </span>
-          )}
-          {autoSaveStatus === "saved" && (
-            <span className="text-xs text-[hsl(var(--brand-success))] flex items-center gap-1 mr-auto" data-testid="text-auto-save-status">
+          ) : autoSaveStatus === "saved" ? (
+            <span className="text-xs text-[hsl(var(--brand-success))] flex items-center gap-1" data-testid="text-auto-save-status">
               <Check className="w-3 h-3" />
               Draft saved
             </span>
-          )}
-          {missingMandatory.length > 0 && (
-            <p className="text-xs text-destructive self-center mr-2" data-testid="text-missing-mandatory">
+          ) : missingMandatory.length > 0 ? (
+            <span className="text-xs text-destructive" data-testid="text-missing-mandatory">
               Missing: {missingMandatory.join(", ")}
-            </p>
-          )}
-          <Button
-            onClick={() => {
-              if (autoSavePendingTimerRef.current) { clearTimeout(autoSavePendingTimerRef.current); autoSavePendingTimerRef.current = null; }
-              submitMutation.mutate({
-                items: editItems,
-                sheetId: displaySheet?.status === "APPROVED" ? undefined : displaySheet?.id,
-              });
-            }}
-            disabled={submitMutation.isPending || missingMandatory.length > 0 || isParsing}
-            data-testid="btn-submit-for-approval"
-          >
-            {submitMutation.isPending ? (
-              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-            ) : null}
-            Submit for Approval
-          </Button>
-        </div>
-      )}
+            </span>
+          ) : ""
+        }
+        onDiscard={() => {
+          setIsEditing(false);
+          setEditItems([]);
+        }}
+        onSave={() => {
+          if (autoSavePendingTimerRef.current) { clearTimeout(autoSavePendingTimerRef.current); autoSavePendingTimerRef.current = null; }
+          submitMutation.mutate({
+            items: editItems,
+            sheetId: displaySheet?.status === "APPROVED" ? undefined : displaySheet?.id,
+          });
+        }}
+      />
 
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
         <DialogContent>
@@ -2930,6 +2925,7 @@ function ProgramsView({
   providerServices?: ServiceInfo[];
 }) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [expandedProgramId, setExpandedProgramId] = useState<string | null>(null);
   const autoExpandedRef = useRef(false);
   const pendingAutoEditProgramIdRef = useRef<string | null>(null);
@@ -2991,6 +2987,18 @@ function ProgramsView({
           const server = program.latestSheet?.isFixedCost ?? null;
           if (merged.isFixedCost === server) delete merged.isFixedCost;
         }
+        if (merged.items !== undefined) {
+          // Items get bubbled into pending on every data-load setEditItems
+          // (despite the skip ref) because templateItems re-memoizes when
+          // templates load, re-runs the data-load effect, and React batches
+          // re-renders in ways that occasionally let the bubble fire. Strip
+          // when the bubbled list matches the server's latest master items
+          // so the Save bar doesn't show "1 unsaved program" for nothing.
+          const server = program.latestSheetItems ?? [];
+          if (itemsEqualForPending(merged.items, server)) {
+            delete merged.items;
+          }
+        }
       }
       if (Object.keys(merged).length === 0) {
         const { [id]: _drop, ...rest } = prev;
@@ -3021,12 +3029,17 @@ function ProgramsView({
 
   // Per-program missing-field map, recomputed whenever pending or server
   // data changes. Used both to render inline error styling on the row and
-  // to gate the Save button.
+  // to gate the Save button. Programs whose sheet is still PARSING are
+  // skipped - the AI is in the middle of filling in name / country /
+  // subTypes / Fixed-Cost, so surfacing "missing required fields" while
+  // the user is watching the progress bar is just noise. Validation kicks
+  // back in the moment status flips away from PARSING.
   const pendingValidation = useMemo(() => {
     const result: Record<string, string[]> = {};
     for (const [id, pending] of Object.entries(pendingByProgram)) {
       const program = (programsQuery.data || []).find(p => p.id === id);
       if (!program) continue;
+      if (program.latestSheetStatus === "PARSING") continue;
       const missing = validateProgramForSave(program, pending);
       if (missing.length > 0) result[id] = missing;
     }
@@ -3115,13 +3128,31 @@ function ProgramsView({
     // (pendingValidation map -> destructive borders) already highlights the
     // offending controls; the toast adds a single click-to-fix summary.
     const invalid: { name: string; missing: string[] }[] = [];
+    const stillParsing: string[] = [];
     for (const [id, patch] of Object.entries(pendingByProgram)) {
       const program = (programsQuery.data || []).find(p => p.id === id);
       if (!program) continue;
+      // Don't surface missing-field errors while the sheet is still being
+      // parsed by AI - the classifier hasn't had a chance to fill in
+      // subTypes / Fixed-Cost yet, so listing them as "missing" is just
+      // noise. Tell the user to wait for parse to finish instead.
+      if (program.latestSheetStatus === "PARSING") {
+        stillParsing.push((patch.name ?? program.name) || "Untitled program");
+        continue;
+      }
       const missing = validateProgramForSave(program, patch);
       if (missing.length > 0) {
         invalid.push({ name: (patch.name ?? program.name) || "Untitled program", missing });
       }
+    }
+    if (stillParsing.length > 0) {
+      toast({
+        title: stillParsing.length === 1
+          ? "AI is still reading this document"
+          : `AI is still reading ${stillParsing.length} documents`,
+        description: "Wait for parsing to finish, then click Save again.",
+      });
+      return;
     }
     if (invalid.length > 0) {
       toast({
@@ -3543,34 +3574,26 @@ function ProgramsView({
         // bottom Save bar.
         const renderActions = (_testidSuffix: string) =>
           (isAdminView || canManagePrograms) ? (
-            <AlertDialog>
-              <AlertDialogTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <Button size="sm" variant="ghost" className="h-7 w-7 p-0 flex-shrink-0">
-                  <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete Program</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This will permanently delete "{program.name}" and all its cost data. This cannot be undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    onClick={() => {
-                      if (expandedProgramId === program.id) setExpandedProgramId(null);
-                      discardProgramPending(program.id);
-                      deleteMutation.mutate(program.id);
-                    }}
-                  >
-                    Delete
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0 flex-shrink-0"
+              onClick={async (e) => {
+                e.stopPropagation();
+                const ok = await confirm({
+                  title: "Delete program",
+                  message: `This will permanently delete "${program.name}" and all its cost data. This cannot be undone.`,
+                  confirmLabel: "Delete",
+                  tone: "destructive",
+                });
+                if (!ok) return;
+                if (expandedProgramId === program.id) setExpandedProgramId(null);
+                discardProgramPending(program.id);
+                deleteMutation.mutate(program.id);
+              }}
+            >
+              <Trash2 className="w-3.5 h-3.5 text-destructive" />
+            </Button>
           ) : null;
 
         const renderClassification = () => (
@@ -3811,65 +3834,42 @@ function ProgramsView({
         </div>
       )}
 
-      {/* Sticky Save bar - the single flush point for every program-row
-          edit (name, country, coverage pills, IVF/egg-donor subtype,
-          Fixed-Cost). Visible only when at least one row is dirty.
-          sticky bottom-0 keeps it on screen as the admin scrolls the
-          program list; the parent tab content provides bottom padding
-          (pb-28 on the SingleCostsTab containers) so this bar doesn't
-          cover the last row's actions. */}
-      {hasPending && (
-        <div
-          className="sticky bottom-0 z-20 -mx-4 px-4 py-3 bg-background/95 backdrop-blur border-t shadow-[0_-4px_12px_-4px_rgba(0,0,0,0.06)] flex flex-col gap-2"
-          data-testid="costs-save-bar"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-sm text-foreground">
-              <span className="font-medium">{Object.keys(pendingByProgram).length}</span>{" "}
-              unsaved {Object.keys(pendingByProgram).length === 1 ? "program" : "programs"}
-              {invalidProgramCount > 0 && (
-                <span className="ml-2 text-destructive font-medium">
-                  · {invalidProgramCount} {invalidProgramCount === 1 ? "row needs" : "rows need"} required fields
-                </span>
-              )}
-            </span>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={discardAllPending}
-                disabled={isSaving}
-                data-testid="btn-costs-discard"
-              >
-                Discard
-              </Button>
-              <Button
-                size="sm"
-                onClick={saveAll}
-                disabled={isSaving}
-                data-testid="btn-costs-save"
-              >
-                {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                Save
-              </Button>
-            </div>
-          </div>
-          {invalidProgramCount > 0 && (
-            <ul className="text-xs text-destructive space-y-0.5 list-disc list-inside" data-testid="costs-save-bar-errors">
-              {Object.entries(pendingValidation).map(([id, missing]) => {
-                const program = (programsQuery.data || []).find(p => p.id === id);
-                const pending = pendingByProgram[id];
-                const name = (pending?.name ?? program?.name) || "Untitled program";
-                return (
-                  <li key={id}>
-                    <span className="font-medium">{name}</span> - missing: {missing.join(", ")}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      )}
+      {/* Shared SaveBar - the single flush point for every program-row edit
+          (name, country, coverage pills, IVF/egg-donor subtype, Fixed-Cost).
+          Visible only when at least one row is dirty. */}
+      <SaveBar
+        visible={hasPending}
+        testId="costs-save-bar"
+        onSave={saveAll}
+        onDiscard={discardAllPending}
+        saving={isSaving}
+        message={
+          <>
+            <span className="font-medium">{Object.keys(pendingByProgram).length}</span>{" "}
+            unsaved {Object.keys(pendingByProgram).length === 1 ? "program" : "programs"}
+            {invalidProgramCount > 0 && (
+              <span className="ml-2 text-destructive font-medium">
+                · {invalidProgramCount} {invalidProgramCount === 1 ? "row needs" : "rows need"} required fields
+              </span>
+            )}
+          </>
+        }
+      >
+        {invalidProgramCount > 0 && (
+          <ul className="text-xs text-destructive space-y-0.5 list-disc list-inside" data-testid="costs-save-bar-errors">
+            {Object.entries(pendingValidation).map(([id, missing]) => {
+              const program = (programsQuery.data || []).find(p => p.id === id);
+              const pending = pendingByProgram[id];
+              const name = (pending?.name ?? program?.name) || "Untitled program";
+              return (
+                <li key={id}>
+                  <span className="font-medium">{name}</span> - missing: {missing.join(", ")}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </SaveBar>
     </div>
   );
 }

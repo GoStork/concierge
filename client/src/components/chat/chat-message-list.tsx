@@ -20,6 +20,13 @@ interface ChatMessageListProps {
   nameLabel: (msg: SessionMessage) => string | null;
   /** Return the avatar URL for a left-side message, or null for initials fallback */
   msgAvatarUrl?: (msg: SessionMessage) => string | null;
+  /** Return the initials (1-2 chars) used in the avatar bubble when no photo is
+   *  available. Lets callers provide initials independent of the visible name
+   *  label - e.g. the admin monitor hides the parent name above the bubble
+   *  (already shown in the right panel) but still wants "EA" in the avatar
+   *  instead of a generic "?". When omitted, initials are derived from the
+   *  name label, falling back to "?". */
+  msgAvatarInitial?: (msg: SessionMessage) => string | null;
   /** Avatar URL for the AI/matchmaker, shown next to booking cards so they read as
    *  "the AI delivered this" - matches the parent /chat page layout. */
   aiAvatarUrl?: string | null;
@@ -44,6 +51,18 @@ interface ChatMessageListProps {
   onCancelCostSheet?: (initial: { quoteId: string }) => void;
   /** Disables the per-card cost-sheet action buttons while a mutation runs. */
   costSheetActionPendingId?: string | null;
+}
+
+/** Up to 2-letter initials from a name ("Eran Amir" -> "EA"). Returns null when
+ *  no usable letters are present so callers can fall back further. */
+function deriveInitials(name: string | null | undefined): string | null {
+  if (!name) return null;
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return null;
+  const first = parts[0].charAt(0);
+  const last = parts.length > 1 ? parts[parts.length - 1].charAt(0) : "";
+  const initials = (first + last).toUpperCase();
+  return initials || null;
 }
 
 /** Renders a chat message with **bold** and line break support. */
@@ -82,6 +101,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
     msgAvatarUrl,
     aiAvatarUrl,
     aiName,
+    msgAvatarInitial,
     onOpenInlineVideo,
     onBookingUpdate,
     msgTestIdPrefix = "provider-msg",
@@ -155,7 +175,9 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
         const own = isOwnMessage(msg);
         const label = nameLabel(msg);
         const avatarUrl = !own && msgAvatarUrl ? msgAvatarUrl(msg) : null;
-        const avatarInitial = !own ? (label?.charAt(0) || "?") : null;
+        const avatarInitial = !own
+          ? (msgAvatarInitial?.(msg) || deriveInitials(label) || "?")
+          : null;
 
         // For attachment messages, strip auto-generated placeholder text so only the card shows
         const isAttachmentMsg = msg.uiCardType === "attachment";
@@ -223,11 +245,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                   <div className={`flex w-full ${own ? "justify-end" : "justify-start"}`}>
                     <div className={`flex flex-col ${own ? "items-end" : "items-start"}`} style={{ maxWidth: "var(--chat-bubble-max-width, 85%)" }}>
                       <div
-                        className={`overflow-hidden font-ui ${
-                          own
-                            ? "text-primary-foreground"
-                            : "text-foreground"
-                        }`}
+                        className="overflow-hidden font-ui"
                         style={{
                           borderRadius: resolvedRadius,
                           paddingLeft: "var(--chat-bubble-px, 16px)",
@@ -237,16 +255,16 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                           fontSize: "var(--chat-bubble-font-size, 21px)",
                           lineHeight: "var(--chat-bubble-line-height, 1.35)",
                           ...(own
-                            ? { backgroundColor: brandColor }
+                            ? { backgroundColor: "var(--chat-bubble-own-bg)", color: "var(--chat-bubble-own-fg)", border: "1px solid var(--chat-bubble-own-border)" }
                             : msg.role === "user"
-                            ? { backgroundColor: chatPalette.partnerBg, border: `1px solid ${chatPalette.partnerBorder}` }
+                            ? { backgroundColor: "var(--chat-bubble-parent-bg)", color: "var(--chat-bubble-parent-fg)", border: "1px solid var(--chat-bubble-parent-border)" }
                             : msg.senderType === "provider"
-                            ? { backgroundColor: chatPalette.expertBg, border: `1px solid ${chatPalette.expertBorder}` }
+                            ? { backgroundColor: "var(--chat-bubble-provider-bg)", color: "var(--chat-bubble-provider-fg)", border: "1px solid var(--chat-bubble-provider-border)" }
                             : msg.senderType === "human"
-                            ? { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }
+                            ? { backgroundColor: `${brandColor}14`, color: "hsl(var(--foreground))", border: `1px solid ${brandColor}33` }
                             : msg.senderType === "system"
-                            ? { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }
-                            : { backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }),
+                            ? { backgroundColor: "var(--chat-bubble-ai-bg)", color: "var(--chat-bubble-ai-fg)", border: "1px solid var(--chat-bubble-ai-border)" }
+                            : { backgroundColor: "var(--chat-bubble-ai-bg)", color: "var(--chat-bubble-ai-fg)", border: "1px solid var(--chat-bubble-ai-border)" }),
                         }}
                         data-testid={`${msgTestIdPrefix}-${i}`}
                       >

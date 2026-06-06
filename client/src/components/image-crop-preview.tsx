@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import Cropper, { Area } from "react-easy-crop";
-import { ZoomIn, ZoomOut, RotateCw, X, Check } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ZoomIn, ZoomOut, RotateCw, X } from "lucide-react";
+import { SaveBar } from "@/components/ui/save-bar";
 
 interface ImageCropPreviewProps {
   imageSrc: string;
@@ -88,27 +88,18 @@ export default function ImageCropPreview({
 
   return (
     <div className="fixed inset-0 bg-background z-50 flex flex-col" data-testid="image-crop-preview">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <Button
-          variant="ghost"
-          size="sm"
+      {/* Header - title only; Save + Cancel moved to bottom SaveBar */}
+      <div className="flex items-center justify-center px-4 py-3 border-b border-border relative">
+        <button
+          type="button"
           onClick={onCancel}
-          data-testid="btn-crop-cancel"
+          className="absolute left-3 p-1.5 rounded-full hover:bg-muted transition-colors"
+          aria-label="Close"
+          data-testid="btn-crop-close"
         >
-          <X className="w-5 h-5 mr-1" />
-          Cancel
-        </Button>
+          <X className="w-5 h-5 text-muted-foreground" />
+        </button>
         <span className="text-sm font-medium text-foreground">Adjust Photo</span>
-        <Button
-          size="sm"
-          onClick={handleSave}
-          disabled={saving}
-          data-testid="btn-crop-save"
-        >
-          <Check className="w-4 h-4 mr-1" />
-          {saving ? "Saving..." : "Save"}
-        </Button>
       </div>
 
       {/* Crop area */}
@@ -128,7 +119,7 @@ export default function ImageCropPreview({
         />
       </div>
 
-      {/* Controls */}
+      {/* Zoom / rotation controls - sits above the SaveBar */}
       <div className="px-6 py-4 border-t border-border bg-background">
         <div className="flex items-center justify-center gap-6 max-w-sm mx-auto">
           <button
@@ -170,6 +161,19 @@ export default function ImageCropPreview({
           </button>
         </div>
       </div>
+
+      {/* Bottom SaveBar - same component used everywhere else for dirty-state save */}
+      <SaveBar
+        visible
+        testId="crop-save-bar"
+        message="Adjust crop, zoom, and rotation"
+        discardLabel="Cancel"
+        saveLabel="Save"
+        saving={saving}
+        saveDisabled={!croppedAreaPixels}
+        onDiscard={onCancel}
+        onSave={handleSave}
+      />
     </div>
   );
 }

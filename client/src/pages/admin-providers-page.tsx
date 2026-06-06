@@ -1,7 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAppSelector, useAppDispatch } from "@/store";
-import { setAdminProvidersFilter } from "@/store/uiSlice";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { api } from "@shared/routes";
@@ -47,16 +45,27 @@ export default function AdminProvidersPage() {
   const [deleteProvider, setDeleteProvider] = useState<ProviderData | null>(null);
   const [manageServicesProvider, setManageServicesProvider] = useState<ProviderData | null>(null);
 
-  const dispatch = useAppDispatch();
-  const { searchQuery, locationSearch, providerType, statusFilter, sortBy } = useAppSelector(
-    (state) => state.ui.adminProvidersFilters
-  );
+  const [searchParams, setSearchParams] = useSearchParams();
+  const searchQuery = searchParams.get("q") || "";
+  const locationSearch = searchParams.get("loc") || "";
+  const providerType = searchParams.get("type") || "All";
+  const statusFilter = searchParams.get("status") || "All";
+  const sortBy = searchParams.get("sort") || "newest";
 
-  const setSearchQuery = useCallback((v: string) => dispatch(setAdminProvidersFilter({ searchQuery: v })), [dispatch]);
-  const setLocationSearch = useCallback((v: string) => dispatch(setAdminProvidersFilter({ locationSearch: v })), [dispatch]);
-  const setProviderType = useCallback((v: string) => dispatch(setAdminProvidersFilter({ providerType: v })), [dispatch]);
-  const setStatusFilter = useCallback((v: string) => dispatch(setAdminProvidersFilter({ statusFilter: v })), [dispatch]);
-  const setSortBy = useCallback((v: string) => dispatch(setAdminProvidersFilter({ sortBy: v })), [dispatch]);
+  const updateParam = useCallback((key: string, value: string, defaultValue: string) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (!value || value === defaultValue) next.delete(key);
+      else next.set(key, value);
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  const setSearchQuery = useCallback((v: string) => updateParam("q", v, ""), [updateParam]);
+  const setLocationSearch = useCallback((v: string) => updateParam("loc", v, ""), [updateParam]);
+  const setProviderType = useCallback((v: string) => updateParam("type", v, "All"), [updateParam]);
+  const setStatusFilter = useCallback((v: string) => updateParam("status", v, "All"), [updateParam]);
+  const setSortBy = useCallback((v: string) => updateParam("sort", v, "newest"), [updateParam]);
 
   const debouncedSearch = useDebounce(searchQuery, 300);
   const debouncedLocation = useDebounce(locationSearch, 300);

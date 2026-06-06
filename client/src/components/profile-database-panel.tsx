@@ -31,19 +31,10 @@ import {
   X,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-bar";
 import { useAuth } from "@/hooks/use-auth";
 import { SyncReportFetcher } from "@/components/sync-report-content";
 import { ProfileCard } from "@/components/profile-card";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { typeToUrlSlug } from "@/lib/profile-utils";
 import type { ProfileType } from "@/lib/profile-utils";
 import { MarketplaceFilterBar } from "@/components/marketplace/MarketplaceFilterBar";
@@ -110,6 +101,7 @@ export default function ProfileDatabasePanel({
   type,
 }: ProfileDatabasePanelProps) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const dispatch = useAppDispatch();
@@ -311,7 +303,13 @@ export default function ProfileDatabasePanel({
   };
 
   const handleDeleteAll = async () => {
-    if (!confirm(`Are you sure you want to delete ALL ${label} profiles for this provider? This cannot be undone.`)) return;
+    const ok = await confirm({
+      title: `Delete all ${label.toLowerCase()} profiles`,
+      message: `Delete ALL ${label} profiles for this provider? This cannot be undone.`,
+      confirmLabel: "Delete all",
+      tone: "destructive",
+    });
+    if (!ok) return;
     setIsDeleting(true);
     try {
       const res = await apiRequest("DELETE", `/api/scrapers/donors/${providerId}/${type}`);
@@ -356,7 +354,13 @@ export default function ProfileDatabasePanel({
   };
 
   const handleDeletePdfProfiles = async () => {
-    if (!confirm("Delete ALL surrogate profiles that were imported from PDFs? This cannot be undone.")) return;
+    const ok = await confirm({
+      title: "Delete PDF-imported profiles",
+      message: "Delete ALL surrogate profiles that were imported from PDFs? This cannot be undone.",
+      confirmLabel: "Delete",
+      tone: "destructive",
+    });
+    if (!ok) return;
     setIsDeletingPdfs(true);
     try {
       const res = await apiRequest("DELETE", `/api/providers/${providerId}/surrogates/pdfs`);
@@ -1316,7 +1320,6 @@ function ProfileCardGrid({ profiles, providerId, type }: { profiles: any[]; prov
   const isProvider = !!((user as any)?.providerId);
   const canManageProfiles = isAdmin || isProvider;
   const endpoint = TYPE_ENDPOINTS[type];
-  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   const toggleVisibilityMutation = useMutation({
     mutationFn: async ({ profileId, hidden }: { profileId: string; hidden: boolean }) => {
@@ -1390,38 +1393,23 @@ function ProfileCardGrid({ profiles, providerId, type }: { profiles: any[]; prov
             isHidden: !!d.hiddenFromSearch,
             isPremium: !!d.isPremium,
             onEdit: isAdmin ? (profileId) => navigate(`/admin/providers/${providerId}/${typeToUrlSlug(type)}/${profileId}/edit`) : undefined,
-            onDelete: d.externalId?.startsWith("pdf-") ? (profileId) => setDeleteTargetId(profileId) : undefined,
+            onDelete: d.externalId?.startsWith("pdf-")
+              ? async (profileId) => {
+                  const ok = await confirm({
+                    title: "Delete this profile?",
+                    message: "This action cannot be undone. The profile will be permanently removed from your database.",
+                    confirmLabel: "Delete",
+                    tone: "destructive",
+                  });
+                  if (ok) deleteProfileMutation.mutate(profileId);
+                }
+              : undefined,
             onToggleVisibility: (profileId, hidden) => toggleVisibilityMutation.mutate({ profileId, hidden }),
             onTogglePremium: (profileId, premium) => togglePremiumMutation.mutate({ profileId, premium }),
           } : undefined}
         />
       ))}
 
-      <AlertDialog open={!!deleteTargetId} onOpenChange={(open) => { if (!open) setDeleteTargetId(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this profile?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. The profile will be permanently removed from your database.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="btn-cancel-delete">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              data-testid="btn-confirm-delete"
-              onClick={() => {
-                if (deleteTargetId) {
-                  deleteProfileMutation.mutate(deleteTargetId);
-                  setDeleteTargetId(null);
-                }
-              }}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

@@ -211,8 +211,18 @@ export class CostsController {
       });
       const providerType = activeServiceCount > 1 ? "multi-service" : providerTypeFromClient;
 
+      // Admin uploads should auto-approve once parsing+classification
+      // finishes. Without this the sheet sits in DRAFT after parse - the
+      // bottom Save bar only fires when there are pending diffs, and a
+      // clean upload has none (the AI's parsed items match the server's
+      // items). Auto-approving for admins matches the existing /submit
+      // path's behavior (controller line 348: isAdmin → approveSheet) so
+      // the two upload entry points stay consistent.
+      const user = this.getUserFromRequest(req);
+      const isAdminUpload = user?.roles?.includes("GOSTORK_ADMIN") ?? false;
+
       if (providerType) {
-        this.costsService.runBackgroundParse(sheet.id, buffer, contentType, providerType, parsed.filename, subType);
+        this.costsService.runBackgroundParse(sheet.id, buffer, contentType, providerType, parsed.filename, subType, isAdminUpload);
       }
 
       // Return the programId (whether pre-existing or auto-created in the

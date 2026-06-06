@@ -23,10 +23,7 @@ import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { formatMoneyCents } from "@/lib/format-money";
 import { formatDateTime } from "@/lib/format-date";
@@ -335,8 +332,8 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
 // Per-row Refund control shown only in admin view. Full refund by default
 // (matches the existing "remaining refundable" amount); admin can type a
 // smaller number for a partial refund. Reason maps to Stripe's enum so the
-// refund object on Stripe carries it. AlertDialog (the one allowed dialog
-// type per CLAUDE.md, since this is destructive).
+// refund object on Stripe carries it. Form is rendered in the GoStork bottom
+// drawer pattern (matches save bar / confirm bar visual).
 //
 // On confirm:
 //   POST /api/admin/invoices/:id/refund -> Stripe refunds.create -> Stripe
@@ -420,17 +417,30 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
         <Undo2 className="w-3.5 h-3.5 mr-1.5" />
         Refund
       </Button>
-      <AlertDialog open={open} onOpenChange={setOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Refund this invoice?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The parent will be refunded via Stripe (5-10 business days back to their card). The provider's
-              share will be reversed proportionally from their payout. This cannot be undone from here -
-              additional refunds against the same invoice are allowed up to the original amount.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {invoice.bankPayoutCompletedAt && (
+      {open && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-foreground/20 backdrop-blur-[1px]"
+            onClick={() => !mutation.isPending && setOpen(false)}
+          />
+          <div
+            className={cn(
+              "fixed bottom-0 left-0 right-0 z-50 px-4 py-4 bg-background/95 backdrop-blur border-t shadow-[0_-8px_24px_-8px_rgba(0,0,0,0.12)]",
+              "max-h-[85vh] overflow-y-auto",
+            )}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="max-w-3xl mx-auto space-y-3">
+              <div>
+                <div className="font-display text-lg font-semibold text-foreground">Refund this invoice?</div>
+                <p className="text-sm text-muted-foreground">
+                  The parent will be refunded via Stripe (5-10 business days back to their card). The provider's
+                  share will be reversed proportionally from their payout. This cannot be undone from here -
+                  additional refunds against the same invoice are allowed up to the original amount.
+                </p>
+              </div>
+              {invoice.bankPayoutCompletedAt && (
             <div className="rounded-md border p-3 flex items-start gap-2" style={{ borderColor: "hsl(var(--brand-warning) / 0.5)", background: "hsl(var(--brand-warning) / 0.08)" }}>
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-warning))" }} />
               <div className="text-xs space-y-1">
@@ -532,19 +542,29 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
               </div>
             )}
           </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={mutation.isPending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); mutation.mutate(); }}
-              disabled={mutation.isPending}
-              style={{ background: "hsl(var(--brand-error))", color: "white" }}
-            >
-              {mutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-              Refund
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              <div className="flex items-center justify-end gap-2 pt-2 border-t">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setOpen(false)}
+                  disabled={mutation.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => mutation.mutate()}
+                  disabled={mutation.isPending}
+                >
+                  {mutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                  Refund
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }

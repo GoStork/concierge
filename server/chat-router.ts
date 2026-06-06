@@ -158,6 +158,36 @@ function getAppBaseUrl(): string {
   return getAppBaseUrlShared();
 }
 
+/**
+ * Resolve the parent-chosen matchmaker name for the given session, used as the
+ * `senderName` on system messages relayed by the AI concierge. NEVER returns a
+ * hardcoded persona name like "Eva" / "Ariel" - if no matchmaker has been
+ * selected on the session we fall back to a generic "AI Concierge" label so the
+ * UI doesn't impersonate a specific persona the parent didn't pick.
+ *
+ * Accepts either a session id or a session-like object that already has
+ * `matchmakerId` loaded. Cheap (single point lookup, errors swallowed) so it's
+ * safe to inline at message-creation sites.
+ */
+export async function resolveSessionSenderName(
+  sessionOrId: string | { matchmakerId?: string | null } | null | undefined,
+): Promise<string> {
+  let matchmakerId: string | null | undefined;
+  if (typeof sessionOrId === "string") {
+    const s = await prisma.aiChatSession
+      .findUnique({ where: { id: sessionOrId }, select: { matchmakerId: true } })
+      .catch(() => null);
+    matchmakerId = s?.matchmakerId;
+  } else {
+    matchmakerId = sessionOrId?.matchmakerId;
+  }
+  if (!matchmakerId) return "AI Concierge";
+  const mm = await prisma.matchmaker
+    .findUnique({ where: { id: matchmakerId }, select: { name: true } })
+    .catch(() => null);
+  return mm?.name || "AI Concierge";
+}
+
 export const chatRouter = Router();
 
 // Returns online status for a list of user IDs (or provider IDs).
@@ -450,6 +480,15 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
     const unreadMap: Record<string, number> = {};
     for (const uc of unreadCounts) unreadMap[uc.sessionId] = uc._count;
 
+    // Resolve the parent-selected matchmaker (avatar + name + title) for each
+    // session so the admin sidebar / header can show the actual persona the
+    // parent picked instead of a generic "AI Concierge" + sparkle icon.
+    const adminMatchmakerIds = sessions.map(s => s.matchmakerId).filter(Boolean) as string[];
+    const adminMatchmakers = adminMatchmakerIds.length > 0
+      ? await prisma.matchmaker.findMany({ where: { id: { in: adminMatchmakerIds } } })
+      : [];
+    const adminMatchmakerMap = Object.fromEntries(adminMatchmakers.map(m => [m.id, m]));
+
     const result = sessions.map(s => ({
       id: s.id,
       userId: s.userId,
@@ -458,6 +497,10 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       userAvatar: (s.user as any).photoUrl,
       status: s.status,
       sessionType: (s as any).sessionType || "PARENT",
+      matchmakerId: s.matchmakerId,
+      matchmakerName: s.matchmakerId ? adminMatchmakerMap[s.matchmakerId]?.name || null : null,
+      matchmakerAvatar: s.matchmakerId ? adminMatchmakerMap[s.matchmakerId]?.avatarUrl || null : null,
+      matchmakerTitle: s.matchmakerId ? adminMatchmakerMap[s.matchmakerId]?.title || null : null,
       humanRequested: s.humanRequested,
       humanJoinedAt: s.humanJoinedAt,
       humanConcludedAt: (s as any).humanConcludedAt || null,
@@ -579,10 +622,16 @@ chatRouter.get("/api/admin/concierge-sessions/:id", requireAuth, async (req, res
     if (!session) return res.status(404).json({ message: "Session not found" });
     const adminDetailAvail = await computeProfileAvailability([session as any]);
     const adminDetailEntry = (session as any).subjectProfileId ? adminDetailAvail.get((session as any).subjectProfileId) : null;
+    const adminDetailMatchmaker = session.matchmakerId
+      ? await prisma.matchmaker.findUnique({ where: { id: session.matchmakerId }, select: { name: true, avatarUrl: true, title: true } }).catch(() => null)
+      : null;
     res.json({
       ...session,
       profileAvailable: adminDetailEntry ? adminDetailEntry.available : null,
       profileStatus: adminDetailEntry ? adminDetailEntry.status : null,
+      matchmakerName: adminDetailMatchmaker?.name || null,
+      matchmakerAvatar: adminDetailMatchmaker?.avatarUrl || null,
+      matchmakerTitle: adminDetailMatchmaker?.title || null,
     });
   } catch (e: any) {
     console.error("Admin concierge session detail error:", e);
@@ -978,6 +1027,15 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
     const unreadMap: Record<string, number> = {};
     for (const uc of unreadCounts) unreadMap[uc.sessionId] = uc._count;
 
+    // Resolve the parent-selected matchmaker (avatar + name + title) per
+    // session - provider list rows should show the persona the parent picked,
+    // not a generic sparkle icon.
+    const providerMatchmakerIds = sessions.map(s => s.matchmakerId).filter(Boolean) as string[];
+    const providerMatchmakers = providerMatchmakerIds.length > 0
+      ? await prisma.matchmaker.findMany({ where: { id: { in: providerMatchmakerIds } } })
+      : [];
+    const providerMatchmakerMap = Object.fromEntries(providerMatchmakers.map(m => [m.id, m]));
+
     const result = sessions.map(s => {
       const isJoined = s.status === "PROVIDER_CONNECTED";
       const isConsultationBooked = s.status === "CONSULTATION_BOOKED";
@@ -989,6 +1047,10 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
         userAvatar: isJoined || isConsultationBooked ? (s.user as any).photoUrl : null,
         status: s.status,
         sessionType: (s as any).sessionType || "PARENT",
+        matchmakerId: s.matchmakerId,
+        matchmakerName: s.matchmakerId ? providerMatchmakerMap[s.matchmakerId]?.name || null : null,
+        matchmakerAvatar: s.matchmakerId ? providerMatchmakerMap[s.matchmakerId]?.avatarUrl || null : null,
+        matchmakerTitle: s.matchmakerId ? providerMatchmakerMap[s.matchmakerId]?.title || null : null,
         providerJoinedAt: s.providerJoinedAt,
         providerName: (s as any).providerName,
         title: cleanSessionTitle(s.title) || null,
@@ -1425,12 +1487,10 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
         },
       });
 
-      // Look up the matchmaker name for Eva's relay message
-      let matchmakerName = "Eva";
-      if ((session as any).matchmakerId) {
-        const mm = await prisma.matchmaker.findUnique({ where: { id: (session as any).matchmakerId }, select: { name: true } }).catch(() => null);
-        if (mm?.name) matchmakerName = mm.name;
-      }
+      // Look up the matchmaker name for the AI concierge's relay message -
+      // never fall back to a hardcoded persona name; if no matchmaker is
+      // selected we'll surface a generic "AI Concierge" label.
+      const matchmakerName = await resolveSessionSenderName(session as any);
 
       // Proactively relay the answer to the parent - inject an AI message directly so the parent
       // gets the answer immediately without needing to send another message
@@ -1702,7 +1762,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/consultation-status", requ
           role: "assistant",
           content: `Great news! ${session.provider?.name || "The provider"} has confirmed the consultation was successful and you're ready to move forward. Your journey stage has been updated to Match Eligibility.`,
           senderType: "system",
-          senderName: "Eva",
+          senderName: await resolveSessionSenderName(session as any),
         },
       });
 
@@ -1736,7 +1796,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/consultation-status", requ
           role: "assistant",
           content: `Thank you for completing the consultation with ${session.provider?.name || "the provider"}. Based on the discussion, this may not be the ideal match. Don't worry - I can help you explore other providers that might be a better fit for your needs.`,
           senderType: "system",
-          senderName: "Eva",
+          senderName: await resolveSessionSenderName(session.id),
         },
       });
     }
@@ -2008,7 +2068,7 @@ chatRouter.post("/api/agreements/generate", requireAuth, async (req, res) => {
         role: "assistant",
         content: "The provider has generated the official agreement. Please review and sign it using the button below. You'll also receive it via email.",
         senderType: "system",
-        senderName: "Eva",
+        senderName: await resolveSessionSenderName(session.id),
         uiCardType: "agreement",
         uiCardData: {
           agreementCard: {
@@ -2412,7 +2472,7 @@ chatRouter.post("/api/agreements/generate", requireAuth, async (req, res) => {
         role: "assistant",
         content: "The provider has generated the official agreement. It is being prepared for your signature. You'll receive it shortly via email.",
         senderType: "system",
-        senderName: "Eva",
+        senderName: await resolveSessionSenderName(session.id),
       },
     });
 
@@ -2595,7 +2655,7 @@ chatRouter.post("/api/agreements/generate-from-template", requireAuth, async (re
         role: "assistant",
         content: "The provider has generated the official agreement. Please review and sign it using the button below. You'll also receive it via email.",
         senderType: "system",
-        senderName: "Eva",
+        senderName: await resolveSessionSenderName(session.id),
         uiCardType: "agreement",
         uiCardData: {
           agreementCard: {
@@ -3384,7 +3444,7 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
                 role: "assistant",
                 content: `${signer.name || signer.email} has signed the agreement.`,
                 senderType: "system",
-                senderName: "Eva",
+                senderName: await resolveSessionSenderName(agreement.sessionId),
                 uiCardType: "signer_signed",
                 uiCardData: { signerName: signer.name || signer.email, agreementId: agreement.id },
               },
@@ -3516,7 +3576,7 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
                   role: "assistant",
                   content: `${signer.name || signer.email} has signed the agreement.`,
                   senderType: "system",
-                  senderName: "Eva",
+                  senderName: await resolveSessionSenderName(agreement.sessionId),
                   uiCardType: "signer_signed",
                   uiCardData: { signerName: signer.name || signer.email, agreementId: agreement.id },
                 },
@@ -3529,7 +3589,7 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
                 role: "assistant",
                 content: "All sides have signed the agreement. It is now ready to view and download.",
                 senderType: "system",
-                senderName: "Eva",
+                senderName: await resolveSessionSenderName(agreement.sessionId),
                 uiCardType: "agreement_signed",
                 uiCardData: { agreementId: agreement.id },
               },

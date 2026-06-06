@@ -6,6 +6,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { api } from "@shared/routes";
 import { hasProviderRole } from "@shared/roles";
 import { Button } from "@/components/ui/button";
+import { SaveBar } from "@/components/ui/save-bar";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Textarea } from "@/components/ui/textarea";
@@ -175,6 +176,7 @@ export default function CompanyTab() {
   const [surrogacyBirthCertificateListing, setSurrogacyBirthCertificateListing] = useState<string[]>([]);
   const [surrogacySurrogateRemovableFromCert, setSurrogacySurrogateRemovableFromCert] = useState(false);
   const isInitializingRef = useRef(false);
+  const companyFormRef = useRef<HTMLFormElement | null>(null);
   const [manageServicesOpen, setManageServicesOpen] = useState(false);
 
   const services = provider?.services as any[] | undefined;
@@ -447,7 +449,7 @@ export default function CompanyTab() {
         cropShape="round"
       />
     )}
-    <form onSubmit={handleSave} className="space-y-8" data-testid="company-form">
+    <form ref={companyFormRef} onSubmit={handleSave} className="space-y-8" data-testid="company-form">
       <Card className="p-6 space-y-5">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-heading flex items-center gap-2" data-testid="text-company-heading">
@@ -1205,18 +1207,16 @@ export default function CompanyTab() {
         </DndContext>
       </Card>
 
-      {!readOnly && isDirty && (
-        <div className="flex gap-2 justify-end fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t">
-          <Button type="button" variant="outline" disabled={saving} onClick={() => setInitialized(false)}>Cancel</Button>
-          <Button type="submit" disabled={saving} data-testid="btn-save-company">
-            {saving ? (
-              <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...</>
-            ) : (
-              <>Save</>
-            )}
-          </Button>
-        </div>
-      )}
+      <SaveBar
+        visible={!readOnly && isDirty}
+        position="fixed"
+        testId="company-save-bar"
+        discardLabel="Cancel"
+        saveLabel="Save"
+        saving={saving}
+        onDiscard={() => setInitialized(false)}
+        onSave={() => companyFormRef.current?.requestSubmit()}
+      />
     </form>
     <ManageServicesDialog
       provider={provider ? { id: provider.id, name: provider.name, services: provider.services } : null}

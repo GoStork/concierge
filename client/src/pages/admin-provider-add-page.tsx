@@ -4,6 +4,7 @@ import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { api } from "@shared/routes";
 import { Button } from "@/components/ui/button";
+import { SaveBar } from "@/components/ui/save-bar";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Textarea } from "@/components/ui/textarea";
@@ -631,11 +632,15 @@ export default function AdminProviderAddPage() {
           )}
         </div>
 
-        <div className="flex gap-2 justify-end fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t">
-          <Button variant="outline" onClick={() => setAddStep("manual")} data-testid="button-merge-cancel">
-            Cancel
-          </Button>
-          <Button onClick={() => {
+        <SaveBar
+          visible
+          position="fixed"
+          testId="merge-save-bar"
+          discardLabel="Cancel"
+          saveLabel="Apply Selections"
+          message="Review scraped fields"
+          onDiscard={() => setAddStep("manual")}
+          onSave={() => {
             const scrapedVals: Record<string, string> = {
               name: scrapedData.name || "",
               about: scrapedData.about || "",
@@ -693,11 +698,8 @@ export default function AdminProviderAddPage() {
             setScrapedData(null);
             setAddStep("manual");
             toast({ title: "Scraped data merged", variant: "success" });
-          }} data-testid="button-merge-apply">
-            <Check className="w-4 h-4 mr-2" />
-            Apply Selections
-          </Button>
-        </div>
+          }}
+        />
       </div>
     );
   }
@@ -1421,21 +1423,23 @@ export default function AdminProviderAddPage() {
         <p className="text-xs text-muted-foreground">Fill in email and password to auto-create a PROVIDER_ADMIN account. They will complete their profile on first login.</p>
       </div>
 
-      <div className="flex gap-2 justify-end fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t">
-        <Button variant="outline" onClick={() => { setAddStep("url"); }} data-testid="button-back-to-url">
-          Back
-        </Button>
-        {addStep === "preview" && (
-          <Button variant="outline" onClick={() => scrapeMutation.mutate(previewWebsiteUrl || addUrl)} disabled={scrapeMutation.isPending} data-testid="button-rescrape">
+      <SaveBar
+        visible
+        position="fixed"
+        testId="provider-add-save-bar"
+        discardLabel="Back"
+        saveLabel="Approve & Create"
+        message={addStep === "preview" ? "Review provider details" : "Provider details"}
+        saveDisabled={!previewName.trim()}
+        onDiscard={() => { setAddStep("url"); }}
+        onSave={handleApproveProvider}
+        extraActions={addStep === "preview" ? (
+          <Button variant="outline" size="sm" onClick={() => scrapeMutation.mutate(previewWebsiteUrl || addUrl)} disabled={scrapeMutation.isPending} data-testid="button-rescrape">
             {scrapeMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
             Re-scrape
           </Button>
-        )}
-        <Button onClick={handleApproveProvider} disabled={!previewName.trim()} data-testid="button-approve-provider">
-          <Check className="w-4 h-4 mr-2" />
-          Approve &amp; Create
-        </Button>
-      </div>
+        ) : undefined}
+      />
     </div>
     </>
   );

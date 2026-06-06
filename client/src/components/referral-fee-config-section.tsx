@@ -18,6 +18,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Loader2, Save, DollarSign, Percent } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SaveBar } from "@/components/ui/save-bar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumberInput } from "@/components/ui/number-input";
@@ -99,16 +100,42 @@ export function ReferralFeeConfigSection({
   const [depositMilestone, setDepositMilestone] = useState<"AT_MATCH" | "AT_CLEARANCE">(initialDepositMilestone);
   const [averageClearanceDays, setAverageClearanceDays] = useState(String(initialAverageClearanceDays ?? 21));
 
-  // Re-seed when serviceType changes (admin switches tabs to a different service).
-  useEffect(() => {
+  // Snapshot of last-saved values used to compute the dirty flag for the SaveBar.
+  const buildSnapshot = () => JSON.stringify({
+    feeType: initialConfig?.feeType ?? "PERCENTAGE",
+    flatAmount: initialConfig?.flatAmount ? String(initialConfig.flatAmount / 100) : "",
+    percentage: initialConfig?.percentage != null ? String(initialConfig.percentage) : "",
+    defaultServiceAmount: initialConfig?.defaultServiceAmount ? String(initialConfig.defaultServiceAmount / 100) : "",
+    parentPaysBasis: initialConfig?.parentPaysBasis === "TOTAL_COST" ? "TOTAL_COST" : "DEFAULT_FIRST_PAYMENT",
+    sampleTotalCost: initialConfig?.sampleTotalCostCents ? String(initialConfig.sampleTotalCostCents / 100) : "",
+    depositMilestone: initialDepositMilestone,
+    averageClearanceDays: String(initialAverageClearanceDays ?? 21),
+  });
+  const [snapshot, setSnapshot] = useState<string>(buildSnapshot);
+
+  const discard = () => {
     setFeeType(initialConfig?.feeType ?? "PERCENTAGE");
     setFlatAmount(initialConfig?.flatAmount ? String(initialConfig.flatAmount / 100) : "");
     setPercentage(initialConfig?.percentage != null ? String(initialConfig.percentage) : "");
     setDefaultServiceAmount(initialConfig?.defaultServiceAmount ? String(initialConfig.defaultServiceAmount / 100) : "");
     setParentPaysBasis(initialConfig?.parentPaysBasis === "TOTAL_COST" ? "TOTAL_COST" : "DEFAULT_FIRST_PAYMENT");
     setSampleTotalCost(initialConfig?.sampleTotalCostCents ? String(initialConfig.sampleTotalCostCents / 100) : "");
+    setDepositMilestone(initialDepositMilestone);
+    setAverageClearanceDays(String(initialAverageClearanceDays ?? 21));
+  };
+
+  // Re-seed when serviceType changes (admin switches tabs to a different service).
+  useEffect(() => {
+    discard();
+    setSnapshot(buildSnapshot());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceType, initialConfig?.id]);
+
+  const currentSerialized = JSON.stringify({
+    feeType, flatAmount, percentage, defaultServiceAmount, parentPaysBasis,
+    sampleTotalCost, depositMilestone, averageClearanceDays,
+  });
+  const isDirty = currentSerialized !== snapshot;
 
   // Live split preview (mirrors server math in BillingService.computeFee).
   const previewBasisCents = Math.round((parseFloat(sampleTotalCost) || 0) * 100);
@@ -156,6 +183,7 @@ export function ReferralFeeConfigSection({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [listKey] });
+      setSnapshot(currentSerialized);
       onSaved?.();
     },
   });
@@ -400,14 +428,17 @@ export function ReferralFeeConfigSection({
         </p>
       )}
 
-      <Button
-        disabled={saveMutation.isPending || defaultFirstPaymentMissing}
-        onClick={() => saveMutation.mutate()}
-        style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}
-      >
-        {saveMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-        Save {LINE_SERVICE_LABELS[serviceType]} Configuration
-      </Button>
+      <SaveBar
+        visible={isDirty}
+        position="fixed"
+        testId={`referral-fee-save-bar-${serviceType.toLowerCase()}`}
+        discardLabel="Discard"
+        saveLabel={`Save ${LINE_SERVICE_LABELS[serviceType]} Configuration`}
+        saving={saveMutation.isPending}
+        saveDisabled={defaultFirstPaymentMissing}
+        onDiscard={discard}
+        onSave={() => saveMutation.mutate()}
+      />
     </section>
   );
 }

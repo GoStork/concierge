@@ -7,17 +7,7 @@ import { Button } from "@/components/ui/button";
 import { AdminReportLayout } from "@/components/admin-report-layout";
 import { SyncReportContent, type SyncReport } from "@/components/sync-report-content";
 import { useToast } from "@/hooks/use-toast";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { useConfirm } from "@/components/ui/confirm-bar";
 
 const TYPE_LABELS: Record<string, string> = {
   "egg-donor": "Egg Donor",
@@ -80,6 +70,7 @@ export default function ScraperReportPage() {
   const providerName = searchParams.get("name") || "Provider";
   const typeLabel = TYPE_LABELS[type || ""] || type || "Scraper";
   const { toast } = useToast();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [isRestarting, setIsRestarting] = useState(false);
   const [isTestSyncing, setIsTestSyncing] = useState(false);
@@ -236,42 +227,29 @@ export default function ScraperReportPage() {
           Stop
         </Button>
 
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10"
-              disabled={isDeleting || isSyncing}
-              data-testid="button-delete-donors"
-            >
-              {isDeleting ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="w-3.5 h-3.5" />
-              )}
-              Delete
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete all {typeLabel.toLowerCase()} profiles?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will permanently delete all {typeLabel.toLowerCase()} profiles for {providerName} from the database. This action cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleDelete}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                data-testid="button-confirm-delete"
-              >
-                Delete All
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10"
+          disabled={isDeleting || isSyncing}
+          data-testid="button-delete-donors"
+          onClick={async () => {
+            const ok = await confirm({
+              title: `Delete all ${typeLabel.toLowerCase()} profiles?`,
+              message: `This will permanently delete all ${typeLabel.toLowerCase()} profiles for ${providerName} from the database. This action cannot be undone.`,
+              confirmLabel: "Delete all",
+              tone: "destructive",
+            });
+            if (ok) handleDelete();
+          }}
+        >
+          {isDeleting ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <Trash2 className="w-3.5 h-3.5" />
+          )}
+          Delete
+        </Button>
       </div>
 
       {isSyncing && syncProgress && (

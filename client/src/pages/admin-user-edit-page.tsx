@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { api } from "@shared/routes";
 import { Button } from "@/components/ui/button";
+import { SaveBar } from "@/components/ui/save-bar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
@@ -123,6 +124,7 @@ export default function AdminUserEditPage() {
   const { user: currentUser } = useAuth();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editFormRef = useRef<HTMLFormElement | null>(null);
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
 
   const currentUserRoles: string[] = (currentUser as any)?.roles || [];
@@ -408,7 +410,7 @@ export default function AdminUserEditPage() {
           <h2 className="text-lg font-heading">Personal Information</h2>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        <form ref={editFormRef} onSubmit={handleSubmit}>
           <div className="flex flex-col md:flex-row gap-8">
             <div className="shrink-0 flex flex-col items-center gap-2">
               <div className="relative group">
@@ -720,15 +722,17 @@ export default function AdminUserEditPage() {
             <CalendarLinkSection slug={userData.scheduleConfig.bookingPageSlug} />
           )}
 
-          {isDirty && (
-            <div className="flex gap-2 justify-end fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t">
-              <Button type="button" variant="outline" onClick={() => navigate(-1)} data-testid="button-cancel">Cancel</Button>
-              <Button type="submit" disabled={updateMutation.isPending || !name.trim()} data-testid="button-save-edit">
-                {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
-                Save
-              </Button>
-            </div>
-          )}
+          <SaveBar
+            visible={isDirty}
+            position="fixed"
+            testId="user-edit-save-bar"
+            discardLabel="Cancel"
+            saveLabel="Save"
+            saving={updateMutation.isPending}
+            saveDisabled={!name.trim()}
+            onDiscard={() => navigate(-1)}
+            onSave={() => editFormRef.current?.requestSubmit()}
+          />
         </form>
       </Card>
     </div>

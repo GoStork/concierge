@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { motion } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { typeToUrlSlug, deriveTypeFromPath, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields, getPhotoSrc } from "@/lib/profile-utils";
 import { formatMoneyDollars } from "@/lib/format-money";
@@ -815,7 +816,10 @@ export default function DonorProfilePage() {
     <div className="space-y-6 w-full pb-32 md:pb-0">
       {isMobile && (
         <>
-          <div
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.22, delay: 0.22, ease: "easeOut" }}
             className="sticky top-0 z-40 bg-background border-b border-border/40 flex items-center justify-between gap-3 py-3"
             style={{
               marginLeft: "calc(50% - 50vw)",
@@ -852,8 +856,11 @@ export default function DonorProfilePage() {
             >
               <ArrowDown className="w-5 h-5 text-white" strokeWidth={2.5} />
             </button>
-          </div>
-          <div
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25, delay: 0.28, ease: "easeOut" }}
             className="fixed bottom-6 left-0 right-0 z-50 flex items-center justify-center gap-3 px-4 pointer-events-none"
             data-testid="mobile-detail-actions"
           >
@@ -884,7 +891,7 @@ export default function DonorProfilePage() {
             >
               <Send className="!w-8 !h-8 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-chat)" }} strokeWidth={3} />
             </Button>
-          </div>
+          </motion.div>
         </>
       )}
       <div className={`flex items-center justify-between ${isMobile ? "hidden" : ""}`}>
@@ -903,7 +910,15 @@ export default function DonorProfilePage() {
 
       {(allPhotos.length > 0 || donorVideoUrl) && (
         isMobile
-          ? <MobilePhotoViewer photos={allPhotos} videoUrl={donorVideoUrl} />
+          ? (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.18, delay: 0.18, ease: "easeOut" }}
+            >
+              <MobilePhotoViewer photos={allPhotos} videoUrl={donorVideoUrl} />
+            </motion.div>
+          )
           : <PhotoGalleryBar photos={allPhotos} videoUrl={donorVideoUrl} />
       )}
 

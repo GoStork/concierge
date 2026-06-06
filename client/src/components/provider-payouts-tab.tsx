@@ -26,12 +26,10 @@ import {
 import { derivePayoutStatus } from "@/lib/payout-status";
 import { formatDateTime } from "@/lib/format-date";
 import { Button } from "@/components/ui/button";
+import { SaveBar } from "@/components/ui/save-bar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { useConfirm } from "@/components/ui/confirm-bar";
 import { useToast } from "@/hooks/use-toast";
 
 interface PayoutsState {
@@ -332,8 +330,8 @@ function StatusBanner({ state }: { state: PayoutsState }) {
 function PayoutsReadyCard({ state }: { state: PayoutsState }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [isChangingBank, setIsChangingBank] = useState(false);
-  const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [disconnectBlockedReason, setDisconnectBlockedReason] = useState<string | null>(null);
 
   const expressLoginMutation = useMutation({
@@ -366,15 +364,12 @@ function PayoutsReadyCard({ state }: { state: PayoutsState }) {
     onSuccess: (data) => {
       if (data.status === "blocked") {
         setDisconnectBlockedReason(data.reason);
-        setDisconnectOpen(false);
         return;
       }
-      setDisconnectOpen(false);
       toast({ title: "Payout account disconnected" });
       queryClient.invalidateQueries({ queryKey: ["/api/provider/payouts"] });
     },
     onError: (e: any) => {
-      setDisconnectOpen(false);
       toast({ title: "Disconnect failed", description: e?.message, variant: "destructive" });
     },
   });
@@ -448,7 +443,16 @@ function PayoutsReadyCard({ state }: { state: PayoutsState }) {
         </div>
         <Button
           variant="outline"
-          onClick={() => { setDisconnectBlockedReason(null); setDisconnectOpen(true); }}
+          onClick={async () => {
+            setDisconnectBlockedReason(null);
+            const ok = await confirm({
+              title: "Disconnect your payout account?",
+              message: "GoStork will stop sending payouts to your bank. You'll need to set up payouts again to receive future payments from parents. This will not affect invoices that have already been paid out.",
+              confirmLabel: "Disconnect",
+              tone: "destructive",
+            });
+            if (ok) disconnectMutation.mutate();
+          }}
           className="shrink-0"
           style={{ borderColor: "hsl(var(--brand-error) / 0.5)", color: "hsl(var(--brand-error))" }}
         >
@@ -463,28 +467,6 @@ function PayoutsReadyCard({ state }: { state: PayoutsState }) {
         </div>
       )}
 
-      <AlertDialog open={disconnectOpen} onOpenChange={setDisconnectOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Disconnect your payout account?</AlertDialogTitle>
-            <AlertDialogDescription>
-              GoStork will stop sending payouts to your bank. You'll need to set up payouts again to receive
-              future payments from parents. This will not affect invoices that have already been paid out.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={disconnectMutation.isPending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); disconnectMutation.mutate(); }}
-              disabled={disconnectMutation.isPending}
-              style={{ background: "hsl(var(--brand-error))", color: "white" }}
-            >
-              {disconnectMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-              Disconnect
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </section>
   );
 }
@@ -562,14 +544,19 @@ function BankReplaceForm({ onSaved }: { onSaved: () => void }) {
           <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{error}</p>
         </div>
       )}
-      <Button
-        onClick={() => saveMutation.mutate()}
-        disabled={saveMutation.isPending || !routing || !account || !accountConfirm}
-        style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}
-      >
-        {saveMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-        Update bank account
-      </Button>
+      <SaveBar
+        visible={!!(routing || account || accountConfirm || holderName)}
+        position="fixed"
+        testId="bank-replace-save-bar"
+        discardLabel="Discard"
+        saveLabel="Update bank account"
+        saving={saveMutation.isPending}
+        saveDisabled={!routing || !account || !accountConfirm}
+        onDiscard={() => {
+          setRouting(""); setAccount(""); setAccountConfirm(""); setHolderName(""); setAccountType("checking"); setError(null);
+        }}
+        onSave={() => saveMutation.mutate()}
+      />
     </div>
   );
 }
@@ -848,17 +835,33 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
         </div>
       )}
 
-      <Button
-        onClick={() => saveMutation.mutate()}
-        disabled={saveMutation.isPending}
-        style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}
-      >
-        {saveMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-        {state?.stripeConnectAccountId ? "Update payout info" : "Save and verify with Stripe"}
-      </Button>
       {saveMutation.isSuccess && (
         <p className="text-xs" style={{ color: "hsl(var(--brand-success))" }}>Saved. Stripe is verifying your details.</p>
       )}
+
+      <SaveBar
+        visible={!!(
+          repFirst || repLast || repEmail || repPhone ||
+          repDobMonth || repDobDay || repDobYear || repSsn ||
+          repAddrLine1 || repAddrCity || repAddrState || repAddrPostal ||
+          bankRouting || bankAccount || bankAccountConfirm || bankHolderName
+        )}
+        position="fixed"
+        testId="payouts-custom-save-bar"
+        discardLabel="Discard"
+        saveLabel={state?.stripeConnectAccountId ? "Update payout info" : "Save and verify with Stripe"}
+        saving={saveMutation.isPending}
+        onDiscard={() => {
+          setRepFirst(""); setRepLast(""); setRepEmail(""); setRepPhone("");
+          setRepDobMonth(""); setRepDobDay(""); setRepDobYear(""); setRepSsn("");
+          setRepAddrSameAsBusiness(true);
+          setRepAddrLine1(""); setRepAddrCity(""); setRepAddrState(""); setRepAddrPostal("");
+          setBankRouting(""); setBankAccount(""); setBankAccountConfirm(""); setBankHolderName("");
+          setBankAccountType("checking");
+          setError(null);
+        }}
+        onSave={() => saveMutation.mutate()}
+      />
     </section>
   );
 }

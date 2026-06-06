@@ -80,16 +80,41 @@ export default function AdminConciergeMonitor() {
   const setSelectedSessionId = (id: string | null) => {
     if (id) {
       if (lastChatKey) localStorage.setItem(lastChatKey, id);
-      // Push a new history entry so the browser back button returns to the list
-      setSearchParams({ sessionId: id });
+      // Push a new history entry so the browser back button returns to the list,
+      // preserving any active filters in the URL.
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.set("sessionId", id);
+        return next;
+      });
     } else {
-      setSearchParams({}, { replace: true });
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.delete("sessionId");
+        return next;
+      }, { replace: true });
     }
   };
   const [uploading, setUploading] = useState(false);
   const [inlineVideoBookingId, setInlineVideoBookingId] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
-  const [searchQuery, setSearchQuery] = useState("");
+  const activeFilter = ((searchParams.get("filter") as FilterTab) === "unread" ? "unread" : "all") as FilterTab;
+  const searchQuery = searchParams.get("q") || "";
+  const setActiveFilter = (v: FilterTab) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (v === "all") next.delete("filter");
+      else next.set("filter", v);
+      return next;
+    }, { replace: true });
+  };
+  const setSearchQuery = (v: string) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (!v) next.delete("q");
+      else next.set("q", v);
+      return next;
+    }, { replace: true });
+  };
   type AdminInlinePanel = null | "costSheet" | "invoice" | "agreement";
   const [adminInlinePanel, setAdminInlinePanel] = useState<AdminInlinePanel>(null);
   const [adminHeaderPanelOpen, setAdminHeaderPanelOpen] = useState(false);
@@ -490,8 +515,14 @@ export default function AdminConciergeMonitor() {
               const badgeCount = needsJoin ? Math.max(1, sUnread) : sUnread;
               const isProviderThread = !!s.providerId || !!s.providerName;
               const photoSrc = getPhotoSrc(s.profilePhotoUrl);
+              // For AI-only threads the parent picked a specific matchmaker
+              // persona (e.g. "Ariel", "Adam"). Show that name+photo instead of
+              // a generic "AI Concierge" + sparkle icon. Provider threads
+              // continue to identify by provider name.
+              const matchmakerAvatarSrc = (s as any).matchmakerAvatar ? getPhotoSrc((s as any).matchmakerAvatar) : null;
+              const matchmakerName = (s as any).matchmakerName as string | null | undefined;
               const rowTitle = s.title
-                || (isProviderThread ? (s.providerName || "Provider chat") : "AI Concierge");
+                || (isProviderThread ? (s.providerName || "Provider chat") : (matchmakerName || "AI Concierge"));
               return (
                 <button
                   key={s.id}
@@ -521,6 +552,19 @@ export default function AdminConciergeMonitor() {
                           style={{ backgroundColor: brandColor }}
                         >
                           {(s.providerName || rowTitle).charAt(0).toUpperCase()}
+                        </div>
+                      ) : matchmakerAvatarSrc ? (
+                        <img
+                          src={matchmakerAvatarSrc}
+                          alt={matchmakerName || rowTitle}
+                          className="w-12 h-12 rounded-full object-cover"
+                        />
+                      ) : matchmakerName ? (
+                        <div
+                          className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold"
+                          style={{ backgroundColor: brandColor }}
+                        >
+                          {matchmakerName.charAt(0).toUpperCase()}
                         </div>
                       ) : (
                         <div className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary/60">
@@ -619,26 +663,49 @@ export default function AdminConciergeMonitor() {
                 <span className="w-2 h-2 rounded-full bg-[hsl(var(--brand-success))] flex-shrink-0" aria-label="Parent online" />
               )}
             </div>
-            {(detail.title || selectedSummary?.title || selectedSummary?.providerName) ? (
-              <div className="flex items-center gap-1 mt-0.5 min-w-0">
-                <span className="text-[11px] text-muted-foreground flex-shrink-0">re:</span>
-                {selectedSummary?.profilePhotoUrl ? (
-                  <img src={getPhotoSrc(selectedSummary.profilePhotoUrl) || undefined} alt="" className="w-3.5 h-3.5 rounded-full object-cover flex-shrink-0" />
-                ) : selectedSummary?.providerLogo ? (
-                  <img src={getPhotoSrc(selectedSummary.providerLogo) || undefined} alt="" className="w-3.5 h-3.5 rounded-full object-cover flex-shrink-0 bg-background border" />
-                ) : (
-                  <div className="w-3.5 h-3.5 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-                    <Sparkles className="w-2 h-2" style={{ color: brandColor }} />
-                  </div>
-                )}
-                <span className="text-[11px] text-muted-foreground truncate" data-testid="admin-subject-label">
-                  {detail.title || selectedSummary?.title || selectedSummary?.providerName || "AI Concierge"}
-                </span>
-                {selectedSummary?.subjectProfileId && <DonorStatusPill status={selectedSummary.profileStatus} />}
-              </div>
-            ) : (
-              <p className="text-[11px] text-muted-foreground truncate">{detail.user.email}</p>
-            )}
+            {(() => {
+              // "re:" line identifies what the chat is about. Priority:
+              //   1. specific subject (donor/surrogate profile) → its photo + name
+              //   2. provider thread → provider logo + name
+              //   3. AI-only thread → the matchmaker persona the parent picked
+              const headerMatchmakerAvatar = detail.matchmakerAvatar
+                ? getPhotoSrc(detail.matchmakerAvatar) || detail.matchmakerAvatar
+                : null;
+              const headerMatchmakerName = detailAiName;
+              const subjectAvatar = selectedSummary?.profilePhotoUrl
+                ? (getPhotoSrc(selectedSummary.profilePhotoUrl) || undefined)
+                : selectedSummary?.providerLogo
+                ? (getPhotoSrc(selectedSummary.providerLogo) || undefined)
+                : headerMatchmakerAvatar || undefined;
+              const subjectLabel = detail.title
+                || selectedSummary?.title
+                || selectedSummary?.providerName
+                || headerMatchmakerName
+                || null;
+              if (!subjectLabel) {
+                return <p className="text-[11px] text-muted-foreground truncate">{detail.user.email}</p>;
+              }
+              return (
+                <div className="flex items-center gap-1 mt-0.5 min-w-0">
+                  <span className="text-[11px] text-muted-foreground flex-shrink-0">re:</span>
+                  {subjectAvatar ? (
+                    <img src={subjectAvatar} alt="" className="w-3.5 h-3.5 rounded-full object-cover flex-shrink-0 bg-background border" />
+                  ) : headerMatchmakerName ? (
+                    <div className="w-3.5 h-3.5 rounded-full flex items-center justify-center text-primary-foreground flex-shrink-0" style={{ backgroundColor: brandColor, fontSize: "8px", fontWeight: 700 }}>
+                      {headerMatchmakerName.charAt(0).toUpperCase()}
+                    </div>
+                  ) : (
+                    <div className="w-3.5 h-3.5 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                      <Sparkles className="w-2 h-2" style={{ color: brandColor }} />
+                    </div>
+                  )}
+                  <span className="text-[11px] text-muted-foreground truncate" data-testid="admin-subject-label">
+                    {subjectLabel}
+                  </span>
+                  {selectedSummary?.subjectProfileId && <DonorStatusPill status={selectedSummary.profileStatus} />}
+                </div>
+              );
+            })()}
           </div>
           <ChevronRight
             className="w-4 h-4 text-muted-foreground flex-shrink-0 lg:hidden"
@@ -782,9 +849,30 @@ export default function AdminConciergeMonitor() {
               msgAvatarUrl={(msg) => {
                 if (msg.role === "assistant" || (msg.role !== "user" && msg.senderType !== "human")) {
                   const mm = brand?.matchmakers?.find((m: any) => m.id === detail.matchmakerId);
-                  if (mm?.avatarUrl) return getPhotoSrc(mm.avatarUrl) || mm.avatarUrl;
+                  const avatar = mm?.avatarUrl || detail.matchmakerAvatar;
+                  if (avatar) return getPhotoSrc(avatar) || avatar;
                 }
                 if (msg.role === "user") return getPhotoSrc((detail.user as any)?.photoUrl) || null;
+                return null;
+              }}
+              aiAvatarUrl={(() => {
+                const mm = brand?.matchmakers?.find((m: any) => m.id === detail.matchmakerId);
+                const avatar = mm?.avatarUrl || detail.matchmakerAvatar;
+                return avatar ? (getPhotoSrc(avatar) || avatar) : null;
+              })()}
+              aiName={detailAiName || undefined}
+              msgAvatarInitial={(msg) => {
+                // Parent name is hidden above the bubble in admin view (already
+                // shown in the right panel), but we still want real initials in
+                // the avatar instead of a generic "?".
+                if (msg.role === "user") {
+                  const name = msg.senderName || detail.user?.name || detail.user?.email || "";
+                  const parts = name.trim().split(/\s+/).filter(Boolean);
+                  if (!parts.length) return null;
+                  const first = parts[0].charAt(0);
+                  const last = parts.length > 1 ? parts[parts.length - 1].charAt(0) : "";
+                  return (first + last).toUpperCase() || null;
+                }
                 return null;
               }}
               onBookingUpdate={() => sessionBookingsQuery.refetch()}

@@ -108,8 +108,9 @@ export function ReadinessPromptCard({ data, messageId, sessionId, messageContent
     paddingTop: "var(--chat-bubble-py, 11px)",
     paddingBottom: "var(--chat-bubble-py, 11px)",
     maxWidth: "var(--chat-bubble-max-width, 85%)",
-    backgroundColor: brandColor ? `${brandColor}14` : "hsl(var(--background))",
-    border: brandColor ? `1px solid ${brandColor}33` : "1px solid hsl(var(--border))",
+    backgroundColor: "var(--chat-bubble-ai-bg)",
+    color: "var(--chat-bubble-ai-fg)",
+    border: "1px solid var(--chat-bubble-ai-border)",
   };
 
   // Answered state: show question text only, buttons gone, AI reply comes as a chat message

@@ -1,4 +1,5 @@
 import { aiRouter } from "./ai-router";
+import { resolveSessionSenderName } from "./chat-router";
 import type { Express } from "express";
 import { type Server } from "http";
 import passport from "passport";
@@ -661,7 +662,7 @@ export async function registerRoutes(
           sessionId: session.id,
           role: "assistant",
           content: `Exciting news! ${providerName} has joined our conversation. They can now answer your questions directly here.`,
-          senderName: "Eva",
+          senderName: await resolveSessionSenderName(session.id),
         },
       });
 
@@ -767,7 +768,7 @@ export async function registerRoutes(
             role: "assistant",
             content: `Great news! ${session.provider?.name || "The provider"} has confirmed the consultation was successful and you're ready to move forward. Your journey stage has been updated to Match Eligibility.`,
             senderType: "system",
-            senderName: "Eva",
+            senderName: await resolveSessionSenderName(session.id),
           },
         });
 
@@ -801,7 +802,7 @@ export async function registerRoutes(
             role: "assistant",
             content: `Thank you for completing the consultation with ${session.provider?.name || "the provider"}. Based on the discussion, this may not be the ideal match. Don't worry - I can help you explore other providers that might be a better fit for your needs.`,
             senderType: "system",
-            senderName: "Eva",
+            senderName: await resolveSessionSenderName(session.id),
           },
         });
       }
@@ -842,7 +843,7 @@ export async function registerRoutes(
           role: "assistant",
           content: "The provider has generated the official agreement. It is being prepared for your signature. You'll receive it shortly via email.",
           senderType: "system",
-          senderName: "Eva",
+          senderName: await resolveSessionSenderName(session.id),
         },
       });
 
@@ -983,7 +984,7 @@ export async function registerRoutes(
           role: "assistant",
           content: "The provider has generated the official agreement. Please review and sign it using the button in your chat.",
           senderType: "system",
-          senderName: "Eva",
+          senderName: await resolveSessionSenderName(session.id),
         },
       });
 

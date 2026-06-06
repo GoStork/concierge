@@ -3,11 +3,13 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { BrandSettings, BRAND_DEFAULTS, applyBrandPreview, applyBrandToDocument } from "@/hooks/use-brand-settings";
+import { BrandSettings, BRAND_DEFAULTS, applyBrandPreview, applyBrandToDocument, pickReadableFg } from "@/hooks/use-brand-settings";
 import { deriveChatPalette, hslString } from "@/lib/chat-palette";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { Navigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { SaveBar } from "@/components/ui/save-bar";
+import { useConfirm } from "@/components/ui/confirm-bar";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
@@ -1016,6 +1018,7 @@ function TemplateManager({
   onSelectedChange?: (id: string) => void;
 }) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [selectedId, setSelectedId] = useState<string>("");
   const [newName, setNewName] = useState("");
   const [showNameInput, setShowNameInput] = useState(false);
@@ -1203,10 +1206,14 @@ function TemplateManager({
           variant="outline"
           size="sm"
           className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10"
-          onClick={() => {
-            if (confirm(`Delete template "${selected?.name}"?`)) {
-              deleteMutation.mutate();
-            }
+          onClick={async () => {
+            const ok = await confirm({
+              title: "Delete template",
+              message: `Delete template "${selected?.name}"? This cannot be undone.`,
+              confirmLabel: "Delete",
+              tone: "destructive",
+            });
+            if (ok) deleteMutation.mutate();
           }}
           disabled={!selectedId || !!selected?.isActive || anyPending}
           data-testid="button-delete-template"
@@ -1300,6 +1307,18 @@ const NAV_PREVIEW_TABS: Array<{ icon: any; label: string }> = [
 
 function ChatBubblePreview({ form }: { form: BrandSettings }) {
   const primary = form.primaryColor ?? "#004D4D";
+  const ownBg = form.chatBubbleOwnColor || (form.primaryColor ?? "#004D4D");
+  const aiBg = form.chatBubbleAiColor || (form.accentColor ?? "#C3A6C0");
+  const providerBg = form.chatBubbleProviderColor || (form.secondaryColor ?? "#F3EBE1");
+  const parentBg = form.chatBubbleParentColor || (form.accentColor ?? "#C3A6C0");
+  const ownFg = form.chatBubbleOwnTextColor || pickReadableFg(ownBg);
+  const aiFg = form.chatBubbleAiTextColor || pickReadableFg(aiBg);
+  const providerFg = form.chatBubbleProviderTextColor || pickReadableFg(providerBg);
+  const parentFg = form.chatBubbleParentTextColor || pickReadableFg(parentBg);
+  const ownBorder = form.chatBubbleOwnBorderColor || "transparent";
+  const aiBorder = form.chatBubbleAiBorderColor || "transparent";
+  const providerBorder = form.chatBubbleProviderBorderColor || "transparent";
+  const parentBorder = form.chatBubbleParentBorderColor || "transparent";
   const radius = `${form.chatBubbleRadius ?? 20}px`;
   const px = `${form.chatBubblePaddingX ?? 16}px`;
   const py = `${form.chatBubblePaddingY ?? 11}px`;
@@ -1346,8 +1365,10 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
     fontFamily: bodyFont,
     overflowWrap: "break-word" as const, wordBreak: "break-word" as const,
   };
-  const outgoing: CSSProperties = { ...bubbleBase, backgroundColor: primary, color: "#ffffff" };
-  const incoming: CSSProperties = { ...bubbleBase, backgroundColor: "hsl(var(--muted))", color: "hsl(var(--foreground))", border: "1px solid hsl(var(--border))" };
+  const outgoing: CSSProperties = { ...bubbleBase, backgroundColor: ownBg, color: ownFg, border: `1px solid ${ownBorder}` };
+  const incoming: CSSProperties = { ...bubbleBase, backgroundColor: aiBg, color: aiFg, border: `1px solid ${aiBorder}` };
+  const providerBubble: CSSProperties = { ...bubbleBase, backgroundColor: providerBg, color: providerFg, border: `1px solid ${providerBorder}` };
+  const parentBubble: CSSProperties = { ...bubbleBase, backgroundColor: parentBg, color: parentFg, border: `1px solid ${parentBorder}` };
   const tsStyle: CSSProperties = { fontSize: tsFontSize, opacity: tsOpacity, marginTop: "3px", paddingLeft: "4px", paddingRight: "4px" };
 
   const chipBase: CSSProperties = {
@@ -1488,6 +1509,20 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
                   )}
                 </div>
                 <span style={tsStyle}>1:40 PM</span>
+              </div>
+              <div className="flex flex-col items-start">
+                <span className="text-[10px] font-medium text-muted-foreground mb-0.5 ml-1">Provider</span>
+                <div style={providerBubble}>
+                  Happy to walk you through our program whenever you're ready.
+                </div>
+                <span style={tsStyle}>1:41 PM</span>
+              </div>
+              <div className="flex flex-col items-start">
+                <span className="text-[10px] font-medium text-muted-foreground mb-0.5 ml-1">Parent</span>
+                <div style={parentBubble}>
+                  Thanks - I'd love that. When are you free this week?
+                </div>
+                <span style={tsStyle}>1:42 PM</span>
               </div>
             </>
           )}
@@ -1813,6 +1848,7 @@ export function BrandSettingsForm({
   showTemplates?: boolean;
 }) {
   const { toast } = useToast();
+  const confirm = useConfirm();
 
   const settingsQuery = useQuery<BrandSettings>({
     queryKey: [getEndpoint],
@@ -1930,29 +1966,20 @@ export function BrandSettingsForm({
           <Button
             variant="outline"
             className="flex-1 sm:flex-none"
-            onClick={() => {
-              if (confirm("Reset all brand settings to defaults?")) {
-                resetMutation.mutate();
-              }
+            onClick={async () => {
+              const ok = await confirm({
+                title: "Reset brand settings",
+                message: "Reset all brand settings to defaults? Any unsaved changes will also be lost.",
+                confirmLabel: "Reset",
+                tone: "warning",
+              });
+              if (ok) resetMutation.mutate();
             }}
             disabled={formDisabled || resetMutation.isPending}
             data-testid="button-reset-brand"
           >
             <RotateCcw className="w-4 h-4 mr-2" />
             Reset
-          </Button>
-          <Button
-            className="flex-1 sm:flex-none"
-            onClick={() => saveMutation.mutate()}
-            disabled={formDisabled || !dirty || saveMutation.isPending}
-            data-testid="button-save-brand"
-          >
-            {saveMutation.isPending ? (
-              <Loader2 className="w-4 h-4 animate-spin mr-2" />
-            ) : (
-              <Save className="w-4 h-4 mr-2" />
-            )}
-            Save Changes
           </Button>
         </div>
       </div>
@@ -2319,6 +2346,115 @@ export function BrandSettingsForm({
                   <span className="text-sm text-muted-foreground">{form.chatInputHeight ?? 36}px</span>
                 </div>
                 <Slider min={28} max={56} step={2} value={[form.chatInputHeight ?? 36]} onValueChange={([v]) => updateField("chatInputHeight", v)} disabled={formDisabled} />
+              </div>
+            </div>
+
+            {/* Bubble Colors subsection */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <MessageCircle className="w-4 h-4 text-muted-foreground" />
+                <Label className="text-sm font-medium">Bubble Colors</Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Bubble colors are role-based: every message is colored by who sent it, regardless of who's viewing. Your own messages always render on the right with the "You" color; everyone else's render on the left with the color for their role. The AI keeps the same color in every conversation. The Provider color is used wherever a provider's message appears (parent's view, staff view, etc.); the Parent color is used wherever a parent's message appears (provider's view, staff view, co-parent view). Defaults follow the brand palette: Primary for you, Accent for AI and Parent, Secondary for Provider. Text and outline are optional - text auto-picks from background luminance when unset, outline is invisible when unset.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                <div className="space-y-3 rounded-[var(--radius)] border border-border/60 p-3">
+                  <div className="text-xs font-semibold text-foreground/70">You (your own messages, right side)</div>
+                  <ColorInput
+                    label="Background"
+                    value={form.chatBubbleOwnColor || form.primaryColor}
+                    onChange={(v) => updateField("chatBubbleOwnColor", v)}
+                    testId="color-chat-bubble-own"
+                    disabled={formDisabled}
+                  />
+                  <ColorInput
+                    label="Text"
+                    value={form.chatBubbleOwnTextColor || pickReadableFg(form.chatBubbleOwnColor || form.primaryColor)}
+                    onChange={(v) => updateField("chatBubbleOwnTextColor", v)}
+                    testId="color-chat-bubble-own-text"
+                    disabled={formDisabled}
+                  />
+                  <OptionalColorInput
+                    label="Outline (none if unset)"
+                    value={form.chatBubbleOwnBorderColor}
+                    onChange={(v) => updateField("chatBubbleOwnBorderColor", v)}
+                    testId="color-chat-bubble-own-border"
+                    disabled={formDisabled}
+                  />
+                </div>
+                <div className="space-y-3 rounded-[var(--radius)] border border-border/60 p-3">
+                  <div className="text-xs font-semibold text-foreground/70">AI concierge (always, every viewer)</div>
+                  <ColorInput
+                    label="Background"
+                    value={form.chatBubbleAiColor || form.accentColor}
+                    onChange={(v) => updateField("chatBubbleAiColor", v)}
+                    testId="color-chat-bubble-ai"
+                    disabled={formDisabled}
+                  />
+                  <ColorInput
+                    label="Text"
+                    value={form.chatBubbleAiTextColor || pickReadableFg(form.chatBubbleAiColor || form.accentColor)}
+                    onChange={(v) => updateField("chatBubbleAiTextColor", v)}
+                    testId="color-chat-bubble-ai-text"
+                    disabled={formDisabled}
+                  />
+                  <OptionalColorInput
+                    label="Outline (none if unset)"
+                    value={form.chatBubbleAiBorderColor}
+                    onChange={(v) => updateField("chatBubbleAiBorderColor", v)}
+                    testId="color-chat-bubble-ai-border"
+                    disabled={formDisabled}
+                  />
+                </div>
+                <div className="space-y-3 rounded-[var(--radius)] border border-border/60 p-3">
+                  <div className="text-xs font-semibold text-foreground/70">Provider (their messages, every viewer)</div>
+                  <ColorInput
+                    label="Background"
+                    value={form.chatBubbleProviderColor || form.secondaryColor}
+                    onChange={(v) => updateField("chatBubbleProviderColor", v)}
+                    testId="color-chat-bubble-provider"
+                    disabled={formDisabled}
+                  />
+                  <ColorInput
+                    label="Text"
+                    value={form.chatBubbleProviderTextColor || pickReadableFg(form.chatBubbleProviderColor || form.secondaryColor)}
+                    onChange={(v) => updateField("chatBubbleProviderTextColor", v)}
+                    testId="color-chat-bubble-provider-text"
+                    disabled={formDisabled}
+                  />
+                  <OptionalColorInput
+                    label="Outline (none if unset)"
+                    value={form.chatBubbleProviderBorderColor}
+                    onChange={(v) => updateField("chatBubbleProviderBorderColor", v)}
+                    testId="color-chat-bubble-provider-border"
+                    disabled={formDisabled}
+                  />
+                </div>
+                <div className="space-y-3 rounded-[var(--radius)] border border-border/60 p-3">
+                  <div className="text-xs font-semibold text-foreground/70">Parent (their messages, every viewer)</div>
+                  <ColorInput
+                    label="Background"
+                    value={form.chatBubbleParentColor || form.accentColor}
+                    onChange={(v) => updateField("chatBubbleParentColor", v)}
+                    testId="color-chat-bubble-parent"
+                    disabled={formDisabled}
+                  />
+                  <ColorInput
+                    label="Text"
+                    value={form.chatBubbleParentTextColor || pickReadableFg(form.chatBubbleParentColor || form.accentColor)}
+                    onChange={(v) => updateField("chatBubbleParentTextColor", v)}
+                    testId="color-chat-bubble-parent-text"
+                    disabled={formDisabled}
+                  />
+                  <OptionalColorInput
+                    label="Outline (none if unset)"
+                    value={form.chatBubbleParentBorderColor}
+                    onChange={(v) => updateField("chatBubbleParentBorderColor", v)}
+                    testId="color-chat-bubble-parent-border"
+                    disabled={formDisabled}
+                  />
+                </div>
               </div>
             </div>
 
@@ -3749,6 +3885,22 @@ export function BrandSettingsForm({
           </Card>
         </div>
       </div>
+
+      <SaveBar
+        visible={dirty && !formDisabled}
+        testId="brand-save-bar"
+        onSave={() => saveMutation.mutate()}
+        onDiscard={() => {
+          const original = settingsQuery.data ?? BRAND_DEFAULTS;
+          setForm(original);
+          setDirty(false);
+          if (!disableLivePreview) {
+            applyBrandPreview(original);
+          }
+        }}
+        saving={saveMutation.isPending}
+        saveLabel="Save Changes"
+      />
     </div>
   );
 }

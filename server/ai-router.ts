@@ -664,6 +664,14 @@ async function getD1CountryCosts(parentAccountId: string | null | undefined): Pr
     // US the journey isn't a single bundled program - parents pay an agency
     // for surrogacy plus a separate clinic for IVF. The US line in the
     // education message is "surrogacy alone" so the aggregate min is correct.
+    //
+    // Provider-role filter: only providers that ACTUALLY offer a "Surrogacy
+    // Agency" service (APPROVED) contribute. This mirrors the international
+    // findAgenciesForCountry filter and protects against data hygiene
+    // issues - an IVF clinic whose program is over-tagged with "surrogacy"
+    // (e.g. Pacific Fertility Center, CNY, Inser) won't have its IVF cycle
+    // fee mistaken for a "surrogacy alone" price. The role filter is the
+    // authoritative signal; the serviceTypes tag is helpful but not enough.
     const computeUsMin = async (): Promise<number | null> => {
       try {
         const rows: { min: number | null }[] = await prisma.$queryRaw`
@@ -671,6 +679,9 @@ async function getD1CountryCosts(parentAccountId: string | null | undefined): Pr
           FROM (
             SELECT COALESCE(SUM(COALESCE(ci."minValue", 0)), 0) AS program_total
             FROM "CostProgram" cp
+            JOIN "Provider" p ON p.id = cp."providerId"
+            JOIN "ProviderService" psv ON psv."providerId" = p.id AND psv.status = 'APPROVED'
+            JOIN "ProviderType" pt ON pt.id = psv."providerTypeId" AND pt.name ILIKE '%surrogacy%agency%'
             JOIN "ProviderCostSheet" pcs ON pcs."programId" = cp.id AND pcs.status = 'APPROVED'
             JOIN "CostItem" ci ON ci."providerCostSheetId" = pcs.id
               AND COALESCE(ci."isIncluded", true) = true

@@ -111,6 +111,20 @@ const DEFAULTS = {
   quickReplyDeclineStyle: "secondary",
   quickReplyMultiStyle: "outline",
   quickReplyShowBorder: true,
+  // Chat bubble background colors. null means "fall back to brand defaults":
+  // own = primaryColor, ai = accentColor, provider = secondaryColor.
+  chatBubbleOwnColor: null,
+  chatBubbleAiColor: null,
+  chatBubbleProviderColor: null,
+  chatBubbleOwnTextColor: null,
+  chatBubbleAiTextColor: null,
+  chatBubbleProviderTextColor: null,
+  chatBubbleOwnBorderColor: null,
+  chatBubbleAiBorderColor: null,
+  chatBubbleProviderBorderColor: null,
+  chatBubbleParentColor: null,
+  chatBubbleParentTextColor: null,
+  chatBubbleParentBorderColor: null,
 };
 
 const ADVANCED_COLOR_FIELDS = [
@@ -143,6 +157,9 @@ const ALLOWED_FIELDS = [
   "chatTimestampFontSize", "chatTimestampOpacity", "chatInputFontSize", "chatInputFontSizeDesktop", "chatInputHeight",
   "quickReplyFontSize", "quickReplyRadius", "quickReplyPaddingX", "quickReplyPaddingY",
   "quickReplyColorStyle", "quickReplyDeclineStyle", "quickReplyMultiStyle", "quickReplyShowBorder",
+  "chatBubbleOwnColor", "chatBubbleAiColor", "chatBubbleProviderColor", "chatBubbleParentColor",
+  "chatBubbleOwnTextColor", "chatBubbleAiTextColor", "chatBubbleProviderTextColor", "chatBubbleParentTextColor",
+  "chatBubbleOwnBorderColor", "chatBubbleAiBorderColor", "chatBubbleProviderBorderColor", "chatBubbleParentBorderColor",
   // Billing identity (legalName + taxId) moved to ProviderLegalIdentity.
   // See /api/provider/legal-identity and /api/admin/providers/:id/legal-identity.
   ...ADVANCED_COLOR_FIELDS,
@@ -159,7 +176,12 @@ function validateBrandBody(body: any) {
 
   const NAV_COLOR_FIELDS = ["bottomNavBgColor", "bottomNavSafeAreaColor", "bottomNavFgColor", "bottomNavActiveFgColor", "tabColor", "tabHoverColor", "tabActiveColor"];
   const SWIPE_COLOR_FIELDS = ["swipePassColor", "swipeSaveColor", "swipeUndoColor", "swipeChatColor", "swipeCompareColor"];
-  for (const field of [...ADVANCED_COLOR_FIELDS, ...SWIPE_COLOR_FIELDS, ...NAV_COLOR_FIELDS]) {
+  const CHAT_BUBBLE_COLOR_FIELDS = [
+    "chatBubbleOwnColor", "chatBubbleAiColor", "chatBubbleProviderColor", "chatBubbleParentColor",
+    "chatBubbleOwnTextColor", "chatBubbleAiTextColor", "chatBubbleProviderTextColor", "chatBubbleParentTextColor",
+    "chatBubbleOwnBorderColor", "chatBubbleAiBorderColor", "chatBubbleProviderBorderColor", "chatBubbleParentBorderColor",
+  ];
+  for (const field of [...ADVANCED_COLOR_FIELDS, ...SWIPE_COLOR_FIELDS, ...NAV_COLOR_FIELDS, ...CHAT_BUBBLE_COLOR_FIELDS]) {
     if (body[field] !== undefined && body[field] !== null && body[field] !== "") {
       const trimmed = typeof body[field] === "string" ? body[field].trim() : body[field];
       if (!hexRegex.test(trimmed)) {

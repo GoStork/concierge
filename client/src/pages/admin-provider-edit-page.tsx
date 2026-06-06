@@ -5,6 +5,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@shared/routes";
 import { Button } from "@/components/ui/button";
+import { SaveBar } from "@/components/ui/save-bar";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Textarea } from "@/components/ui/textarea";
@@ -203,6 +204,7 @@ export default function AdminProviderEditPage() {
   const [initialized, setInitialized] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const isInitializingRef = useRef(false);
+  const editFormRef = useRef<HTMLFormElement | null>(null);
   // IVF matching requirements
   const [isTestData, setIsTestData] = useState(false);
   const [ivfTwinsAllowed, setIvfTwinsAllowed] = useState(false);
@@ -568,7 +570,7 @@ export default function AdminProviderEditPage() {
   if (!provider) {
     return (
       <div className="space-y-4 p-6">
-        <Button variant="ghost" onClick={() => navigate("/admin/providers")} data-testid="link-back-providers">
+        <Button variant="ghost" onClick={() => navigate(-1)} data-testid="link-back-providers">
           <ArrowLeft className="w-4 h-4 mr-2" /> Back to Providers
         </Button>
         <p className="text-muted-foreground text-center py-8" data-testid="text-not-found">Provider not found.</p>
@@ -663,15 +665,16 @@ export default function AdminProviderEditPage() {
             </div>
           )}
         </div>
-        <div className="flex gap-2 justify-end fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t">
-          <Button variant="outline" onClick={() => { setEditScrapedData(null); setEditMergeSelections({}); }} data-testid="btn-edit-merge-dismiss">
-            Cancel
-          </Button>
-          <Button onClick={handleApplyMerge} data-testid="btn-edit-merge-apply">
-            <Check className="w-4 h-4 mr-2" />
-            Apply Selections
-          </Button>
-        </div>
+        <SaveBar
+          visible
+          position="fixed"
+          testId="edit-merge-save-bar"
+          discardLabel="Cancel"
+          saveLabel="Apply Selections"
+          message="Review scraped fields"
+          onDiscard={() => { setEditScrapedData(null); setEditMergeSelections({}); }}
+          onSave={handleApplyMerge}
+        />
       </div>
     );
   }
@@ -688,7 +691,7 @@ export default function AdminProviderEditPage() {
 
   return (
     <div className="space-y-6 w-full">
-      <Button variant="ghost" onClick={() => navigate("/admin/providers")} data-testid="link-back-providers">
+      <Button variant="ghost" onClick={() => navigate(-1)} data-testid="link-back-providers">
         <ArrowLeft className="w-4 h-4 mr-2" /> Back to Providers
       </Button>
 
@@ -730,7 +733,7 @@ export default function AdminProviderEditPage() {
         </div>
 
         <TabsContent value="profile">
-          <form onSubmit={handleEdit} className="space-y-6">
+          <form ref={editFormRef} onSubmit={handleEdit} className="space-y-6">
             <Card className="p-6 space-y-5">
               <h3 className="text-lg font-heading flex items-center gap-2">
                 <Building2 className="w-5 h-5 text-primary" /> Company Profile
@@ -1508,12 +1511,15 @@ export default function AdminProviderEditPage() {
               <ProviderAutoFeaturesCard providerId={provider.id} initial={provider.autoFeaturesEnabled} />
             )}
 
-            {isDirty && (
-              <div className="flex gap-2 justify-end fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t">
-                <Button type="button" variant="outline" onClick={() => navigate("/admin/providers")} data-testid="button-cancel-edit">Cancel</Button>
-                <Button type="submit" data-testid="button-save-edit">Save</Button>
-              </div>
-            )}
+            <SaveBar
+              visible={isDirty}
+              position="fixed"
+              testId="provider-edit-save-bar"
+              discardLabel="Cancel"
+              saveLabel="Save"
+              onDiscard={() => navigate(-1)}
+              onSave={() => editFormRef.current?.requestSubmit()}
+            />
           </form>
         </TabsContent>
 

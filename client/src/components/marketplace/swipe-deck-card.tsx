@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, Fragment } from "react";
+import { useState, useCallback, useEffect, useRef, Fragment } from "react";
 import { motion, useAnimation, useMotionValue, useTransform, PanInfo } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { TabSection } from "./swipe-mappers";
 import { getDonorStatusStyle } from "@/lib/donor-status";
+import { useProfilePhotoTransition } from "@/components/transition/profile-photo-transition";
 
 export type { TabSection } from "./swipe-mappers";
 
@@ -74,9 +75,33 @@ export function SwipeDeckCard({
 }: SwipeDeckCardProps) {
   const [slideIndex, setSlideIndex] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [isExpanding, setIsExpanding] = useState(false);
   const controls = useAnimation();
   const x = useMotionValue(0);
   const y = useMotionValue(0);
+  const photoContainerRef = useRef<HTMLDivElement | null>(null);
+  const { startTransition } = useProfilePhotoTransition();
+
+  const triggerExpand = useCallback(() => {
+    if (isExpanding) return;
+    const el = photoContainerRef.current;
+    const photo = photos[slideIndex % Math.max(photos.length, 1)] || photos[0] || null;
+    if (el && photo) {
+      const rect = el.getBoundingClientRect();
+      startTransition(photo, {
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+        radius: 24,
+      });
+    }
+    setIsExpanding(true);
+    // Let the overlay grow before navigating so the route swap is hidden.
+    window.setTimeout(() => {
+      onViewFullProfile();
+    }, 280);
+  }, [isExpanding, photos, slideIndex, startTransition, onViewFullProfile]);
 
   const rotate = useTransform(x, [-SWIPE_EXIT_DISTANCE, 0, SWIPE_EXIT_DISTANCE], [-28, 0, 28]);
   const passOverlayOpacity = useTransform(x, [-SWIPE_THRESHOLD, 0], [0.45, 0]);
@@ -163,6 +188,7 @@ export function SwipeDeckCard({
         data-testid={`swipe-card-draggable-${id}`}
       >
         <div
+          ref={photoContainerRef}
           className="relative w-full h-full overflow-hidden bg-muted"
           style={currentPhoto ? { backgroundImage: `url(${currentPhoto})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
         >
@@ -183,9 +209,9 @@ export function SwipeDeckCard({
             </div>
           )}
 
-          <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/50 via-black/20 to-transparent h-28 z-[15] pointer-events-none" />
+          <div className={`absolute top-0 left-0 right-0 bg-gradient-to-b from-black/50 via-black/20 to-transparent h-28 z-[15] pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`} />
 
-          <div className="absolute top-0 left-0 right-0 flex gap-1 px-3 pt-3 z-20 pointer-events-none" data-testid={`progress-bars-${id}`}>
+          <div className={`absolute top-0 left-0 right-0 flex gap-1 px-3 pt-3 z-20 pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`} data-testid={`progress-bars-${id}`}>
             {Array.from({ length: totalSlides }).map((_, i) => (
               <div
                 key={i}
@@ -243,7 +269,7 @@ export function SwipeDeckCard({
             </>
           )}
 
-          <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-24 ${readOnly ? "pb-6" : "pb-24"} px-4 z-[35] pointer-events-none`}>
+          <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-24 ${readOnly ? "pb-6" : "pb-24"} px-4 z-[35] pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`}>
             <div className="flex items-center gap-1.5 mb-2">
               {isPremium && (
                 <Badge
@@ -344,7 +370,7 @@ export function SwipeDeckCard({
                 </h3>
               </div>
               <button
-                onClick={(e) => { e.stopPropagation(); onViewFullProfile(); }}
+                onClick={(e) => { e.stopPropagation(); triggerExpand(); }}
                 className="w-9 h-9 rounded-full bg-white/90 hover:bg-white shadow-md flex items-center justify-center transition-colors pointer-events-auto"
                 data-testid={`button-view-profile-${id}`}
               >
@@ -435,7 +461,7 @@ export function SwipeDeckCard({
             </div>
           </div>
 
-          <div className={`absolute bottom-6 left-0 right-0 px-4 z-[35] flex items-center justify-center gap-3 ${readOnly ? "hidden" : ""}`} data-testid={`action-row-${id}`}>
+          <div className={`absolute bottom-6 left-0 right-0 px-4 z-[35] flex items-center justify-center gap-3 ${readOnly ? "hidden" : ""} transition-opacity duration-200 ${isExpanding ? "opacity-0 pointer-events-none" : "opacity-100"}`} data-testid={`action-row-${id}`}>
             {!chatMode && !disableSwipe && (
               <motion.div style={{ opacity: otherBtnOpacity }} className="pointer-events-auto">
                 <Button

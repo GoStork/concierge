@@ -14,10 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { useConfirm } from "@/components/ui/confirm-bar";
 import { W9TemplateConfig } from "./w9-template-config";
 
 interface W9Status {
@@ -40,8 +37,8 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const isProviderMode = mode === "provider";
+  const confirm = useConfirm();
   const [showW9Setup, setShowW9Setup] = useState(false);
-  const [resendConfirmOpen, setResendConfirmOpen] = useState(false);
 
   const w9GetUrl = isProviderMode ? "/api/provider/w9" : `/api/admin/providers/${providerId}/w9`;
   const { data: w9, isLoading: w9Loading } = useQuery<W9Status>({
@@ -149,7 +146,15 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
                 variant="outline"
                 size="sm"
                 disabled={w9SendMutation.isPending}
-                onClick={() => setResendConfirmOpen(true)}
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: "Request a new W-9 from this provider?",
+                    message: "The current signed W-9 will no longer be the active version. It stays in PandaDoc's archive for record-keeping.",
+                    confirmLabel: "Request new W-9",
+                    tone: "warning",
+                  });
+                  if (ok) w9SendMutation.mutate(true);
+                }}
                 title="Ask the provider to fill out a new W-9"
               >
                 {w9SendMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
@@ -237,23 +242,6 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
         </div>
       )}
 
-      <AlertDialog open={resendConfirmOpen} onOpenChange={setResendConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Request a new W-9 from this provider?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The current signed W-9 will no longer be the active version. It stays in PandaDoc's
-              archive for record-keeping.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => w9SendMutation.mutate(true)}>
-              Request new W-9
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

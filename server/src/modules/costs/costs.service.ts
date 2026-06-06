@@ -162,6 +162,7 @@ export class CostsService {
     providerType: string,
     filename: string,
     subType?: string,
+    autoApproveAfterParse: boolean = false,
   ): void {
     (async () => {
       try {
@@ -188,6 +189,20 @@ export class CostsService {
 
         await this.updateParseProgress(sheetId, "Mapping to GoStork template", 95, items.length);
         await this.saveParseResults(sheetId, items);
+
+        // Admin uploads skip the review queue: once parsing succeeds the
+        // sheet flips straight to APPROVED. Mirrors the /submit endpoint's
+        // admin auto-approve so both upload paths converge on the same
+        // terminal state, and prevents admin-uploaded sheets from sitting
+        // in DRAFT with no Save bar visible to advance them.
+        if (autoApproveAfterParse) {
+          try {
+            await this.approveSheet(sheetId);
+            this.logger.log(`Background parse: auto-approved sheet ${sheetId} (admin upload)`);
+          } catch (err: any) {
+            this.logger.warn(`Background parse: auto-approve failed for sheet ${sheetId}: ${err.message}`);
+          }
+        }
       } catch (err: any) {
         this.logger.error(`Background AI parse failed for sheet ${sheetId}: ${err.message}`);
         await this.markParseError(sheetId);
@@ -1526,11 +1541,28 @@ export class CostsService {
         where: { providerCostSheetId: useSheetId },
       });
     } else {
+      // Creating a fresh sheet because the prior one is APPROVED/ARCHIVED.
+      // Carry over the classification (isFixedCost, tab, subType, subTypes)
+      // from the most recent prior sheet so a re-submit (e.g. admin clicks
+      // Save twice in a row) doesn't wipe a manually-set Fixed-Cost / tag.
+      // Without this, /submit on an APPROVED sheet creates a phantom row
+      // with all defaults (isFixedCost=null), and approveSheet then stamps
+      // that phantom APPROVED - the user's previously-saved classification
+      // disappears from the UI.
+      const prior = programId
+        ? await this.prisma.providerCostSheet.findFirst({
+            where: { providerId, programId, parentClientId: null },
+            orderBy: { version: "desc" },
+          })
+        : null;
       sheet = await this.prisma.providerCostSheet.create({
         data: {
           providerId,
-          providerTypeId: providerTypeId || null,
-          subType: subType || null,
+          providerTypeId: providerTypeId || prior?.providerTypeId || null,
+          subType: subType || prior?.subType || null,
+          tab: prior?.tab || null,
+          subTypes: prior?.subTypes || [],
+          isFixedCost: prior?.isFixedCost ?? null,
           programId: programId || null,
           status: "PENDING",
           version: nextVersion,

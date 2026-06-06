@@ -985,6 +985,24 @@ model SiteSettings {
   chatInputFontSizeDesktop  Int?
   chatInputHeight           Int?
 
+  // Chat bubble background + text + outline colors (hex), one set per role
+  // (own/ai/provider/parent). The viewer's own messages render with the
+  // "own" set; everyone else's render by the SPEAKER's role so colors stay
+  // consistent no matter who's logged in. Text null = auto-picked from
+  // luminance. Outline null = no border.
+  chatBubbleOwnColor            String?
+  chatBubbleAiColor             String?
+  chatBubbleProviderColor       String?
+  chatBubbleParentColor         String?
+  chatBubbleOwnTextColor        String?
+  chatBubbleAiTextColor         String?
+  chatBubbleProviderTextColor   String?
+  chatBubbleParentTextColor     String?
+  chatBubbleOwnBorderColor      String?
+  chatBubbleAiBorderColor       String?
+  chatBubbleProviderBorderColor String?
+  chatBubbleParentBorderColor   String?
+
   // Quick reply chip styling
   quickReplyFontSize     Int?
   quickReplyRadius       Int?
@@ -1126,6 +1144,24 @@ model ProviderBrandSettings {
   chatInputFontSize         Int?
   chatInputFontSizeDesktop  Int?
   chatInputHeight           Int?
+
+  // Chat bubble background + text + outline colors (hex), one set per role
+  // (own/ai/provider/parent). The viewer's own messages render with the
+  // "own" set; everyone else's render by the SPEAKER's role so colors stay
+  // consistent no matter who's logged in. Text null = auto-picked from
+  // luminance. Outline null = no border.
+  chatBubbleOwnColor            String?
+  chatBubbleAiColor             String?
+  chatBubbleProviderColor       String?
+  chatBubbleParentColor         String?
+  chatBubbleOwnTextColor        String?
+  chatBubbleAiTextColor         String?
+  chatBubbleProviderTextColor   String?
+  chatBubbleParentTextColor     String?
+  chatBubbleOwnBorderColor      String?
+  chatBubbleAiBorderColor       String?
+  chatBubbleProviderBorderColor String?
+  chatBubbleParentBorderColor   String?
 
   // Quick reply chip styling
   quickReplyFontSize     Int?

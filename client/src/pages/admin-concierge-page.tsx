@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-bar";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -807,6 +808,7 @@ function KnowledgeBaseCard() {
 
 export default function AdminConciergePage() {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Matchmaker>>({});
@@ -1060,7 +1062,7 @@ export default function AdminConciergePage() {
                     <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => { setEditingId(m.id); setEditForm(m); setShowAddForm(false); setExpandedId(null); }} data-testid={`btn-edit-matchmaker-${m.id}`}>
                       <Pencil className="w-3.5 h-3.5" />
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-destructive hover:text-destructive" onClick={() => { if (confirm(`Delete matchmaker "${m.name}"?`)) deleteMutation.mutate(m.id); }} disabled={deleteMutation.isPending} data-testid={`btn-delete-matchmaker-${m.id}`}>
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-destructive hover:text-destructive" onClick={async () => { const ok = await confirm({ title: "Delete matchmaker", message: `Delete matchmaker "${m.name}"? This cannot be undone.`, confirmLabel: "Delete", tone: "destructive" }); if (ok) deleteMutation.mutate(m.id); }} disabled={deleteMutation.isPending} data-testid={`btn-delete-matchmaker-${m.id}`}>
                       <Trash2 className="w-3.5 h-3.5" />
                     </Button>
                   </div>

@@ -6,6 +6,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { typeToUrlSlug, deriveTypeFromPath, getPhotoSrc } from "@/lib/profile-utils";
 import { Button } from "@/components/ui/button";
+import { SaveBar } from "@/components/ui/save-bar";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
@@ -724,25 +725,16 @@ export default function DonorEditPage() {
             </p>
           )}
 
-          {isDirty && (
-            <div className="flex gap-2 justify-end fixed bottom-0 left-0 right-0 z-50 bg-background px-6 py-4 border-t">
-              <Button
-                variant="outline"
-                onClick={() => navigate(`/admin/providers/${providerId}/${typeToUrlSlug(type || "egg-donor")}/${donorId}`)}
-                data-testid="button-cancel"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => saveMutation.mutate()}
-                disabled={saveMutation.isPending}
-                data-testid="button-save-donor-bottom"
-              >
-                {saveMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                Save Changes
-              </Button>
-            </div>
-          )}
+          <SaveBar
+            visible={isDirty}
+            position="fixed"
+            testId="profile-edit-save-bar"
+            discardLabel="Cancel"
+            saveLabel="Save Changes"
+            saving={saveMutation.isPending}
+            onDiscard={() => navigate(`/admin/providers/${providerId}/${typeToUrlSlug(type || "egg-donor")}/${donorId}`)}
+            onSave={() => saveMutation.mutate()}
+          />
         </>
       )}
     </div>

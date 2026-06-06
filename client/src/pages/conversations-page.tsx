@@ -8,10 +8,7 @@ import { formatLocationDisplay } from "@/lib/format-location";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { useConfirm } from "@/components/ui/confirm-bar";
 import { MessageStatus } from "@/components/ui/message-status";
 import { OnlineIndicator } from "@/components/ui/online-indicator";
 import { useOnlineStatus } from "@/hooks/use-online-status";
@@ -665,7 +662,7 @@ export default function ConversationsPage() {
   const { data: brand } = useBrandSettings();
   const navigate = useNavigate();
   const { entityId: urlEntityId, subjectId: urlSubjectId } = useParams<{ entityId?: string; subjectId?: string }>();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isConciergeUrl = window.location.pathname === "/chat/concierge" || window.location.pathname === "/concierge";
   const queryClient = useQueryClient();
   const dispatch = useAppDispatch();
@@ -679,6 +676,7 @@ export default function ConversationsPage() {
   const showConcierge = brand?.enableAiConcierge !== false;
   const isAdmin = roles.includes("GOSTORK_ADMIN");
   const { toast } = useToast();
+  const confirm = useConfirm();
 
   const resetAllChatsMutation = useMutation({
     mutationFn: async () => {
@@ -732,14 +730,42 @@ export default function ConversationsPage() {
   const [selectedSessionId, _setSelectedSessionId] = useState<string | null>(null);
   const setSelectedSessionId = (id: string | null, session?: ChatSession | ProviderSession | null) => {
     _setSelectedSessionId(id);
-    const url = session ? buildChatUrl(session) : "/chat";
+    let url = session ? buildChatUrl(session) : "/chat";
     if (lastChatKey && url !== "/chat") localStorage.setItem(lastChatKey, url);
+    // Preserve list filter params (filter, q) across path changes so back nav restores them.
+    const preserved = new URLSearchParams();
+    const curFilter = searchParams.get("filter");
+    const curQ = searchParams.get("q");
+    if (curFilter) preserved.set("filter", curFilter);
+    if (curQ) preserved.set("q", curQ);
+    if (preserved.toString()) {
+      const [base, existing] = url.split("?");
+      const merged = new URLSearchParams(existing || "");
+      preserved.forEach((v, k) => merged.set(k, v));
+      url = `${base}?${merged.toString()}`;
+    }
     // Push when selecting a session so the browser back button returns to the list.
     // Replace only when clearing the selection (navigating back to /chat).
     navigate(url, { replace: !session });
   };
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
+  const searchQuery = searchParams.get("q") || "";
+  const activeFilter = ((searchParams.get("filter") as FilterTab) === "unread" ? "unread" : "all") as FilterTab;
+  const setSearchQuery = (v: string) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (!v) next.delete("q");
+      else next.set("q", v);
+      return next;
+    }, { replace: true });
+  };
+  const setActiveFilter = (v: FilterTab) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (v === "all") next.delete("filter");
+      else next.set("filter", v);
+      return next;
+    }, { replace: true });
+  };
   const [replyText, setReplyText] = useState("");
 
 
@@ -1088,15 +1114,6 @@ const sendMessageMutation = useMutation({
   const [invoiceActionPendingId, setInvoiceActionPendingId] = useState<string | null>(null);
   // Same idea for the cost-sheet Cancel button.
   const [costSheetActionPendingId, setCostSheetActionPendingId] = useState<string | null>(null);
-  // Pending confirmation for a destructive cancel action. Set when the user
-  // clicks Cancel on either an invoice or a cost-sheet card; cleared after
-  // Cancel/Confirm in the AlertDialog (the only allowed dialog per project
-  // rules - destructive-action confirms only, never for forms).
-  const [pendingCancel, setPendingCancel] = useState<
-    | { kind: "invoice"; invoiceId: string }
-    | { kind: "costSheet"; quoteId: string }
-    | null
-  >(null);
   const [providerHeaderPanelOpen, setProviderHeaderPanelOpen] = useState(false);
   const [parentHeaderPanelOpen, setParentHeaderPanelOpen] = useState(false);
 
@@ -1117,14 +1134,20 @@ const sendMessageMutation = useMutation({
   };
 
   // Provider clicks "Cancel Invoice" on an in-chat invoice card. Opens the
-  // brand AlertDialog (defined at the bottom of this component); confirming
-  // there calls confirmPendingCancel, which POSTs to the cancel endpoint.
-  // The server updates the chat card's uiCardData.status to CANCELLED and
-  // posts a system note, so a session refetch is enough to reflect both.
-  const cancelInvoiceFromCard = useCallback(({ invoiceId }: { invoiceId: string }) => {
+  // brand confirm bar; on confirm, POSTs to the cancel endpoint. The server
+  // updates the chat card's uiCardData.status to CANCELLED and posts a system
+  // note, so a session refetch is enough to reflect both.
+  const cancelInvoiceFromCard = useCallback(async ({ invoiceId }: { invoiceId: string }) => {
     if (!selectedSessionId) return;
-    setPendingCancel({ kind: "invoice", invoiceId });
-  }, [selectedSessionId]);
+    const ok = await confirm({
+      title: "Cancel this invoice?",
+      message: "The parent will no longer be able to pay this invoice. You can send a revised invoice afterward.",
+      confirmLabel: "Cancel invoice",
+      cancelLabel: "Keep it",
+      tone: "destructive",
+    });
+    if (ok) await runCancelInvoice(invoiceId);
+  }, [selectedSessionId, confirm]);
 
   const runCancelInvoice = useCallback(async (invoiceId: string) => {
     if (!selectedSessionId) return;
@@ -1182,11 +1205,18 @@ const sendMessageMutation = useMutation({
   }, [selectedSessionId]);
 
   // Provider clicks "Cancel" on an in-chat cost-sheet card. Opens the brand
-  // AlertDialog; confirmation runs the cancel POST below.
-  const cancelCostSheetFromCard = useCallback(({ quoteId }: { quoteId: string }) => {
+  // confirm bar; confirmation runs the cancel POST below.
+  const cancelCostSheetFromCard = useCallback(async ({ quoteId }: { quoteId: string }) => {
     if (!selectedSessionId) return;
-    setPendingCancel({ kind: "costSheet", quoteId });
-  }, [selectedSessionId]);
+    const ok = await confirm({
+      title: "Cancel this cost sheet?",
+      message: "The parent will see this cost sheet as cancelled, and a new invoice will require a fresh cost sheet first.",
+      confirmLabel: "Cancel cost sheet",
+      cancelLabel: "Keep it",
+      tone: "destructive",
+    });
+    if (ok) await runCancelCostSheet(quoteId);
+  }, [selectedSessionId, confirm]);
 
   const runCancelCostSheet = useCallback(async (quoteId: string) => {
     if (!selectedSessionId) return;
@@ -1208,17 +1238,6 @@ const sendMessageMutation = useMutation({
       setCostSheetActionPendingId(null);
     }
   }, [selectedSessionId, queryClient]);
-
-  const confirmPendingCancel = useCallback(async () => {
-    const target = pendingCancel;
-    if (!target) return;
-    setPendingCancel(null);
-    if (target.kind === "invoice") {
-      await runCancelInvoice(target.invoiceId);
-    } else {
-      await runCancelCostSheet(target.quoteId);
-    }
-  }, [pendingCancel, runCancelInvoice, runCancelCostSheet]);
 
   const handleProviderMeeting = async () => {
     if (!selectedSessionId) return;
@@ -1625,7 +1644,7 @@ const sendMessageMutation = useMutation({
     };
     const filteredEva = evaConversations.filter(s =>
       matchesTab(s) && (
-        !searchQuery || (s.matchmakerName || "Eva").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        !searchQuery || (s.matchmakerName || "AI Concierge").toLowerCase().includes(searchQuery.toLowerCase()) ||
         (s.lastMessage || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
         (s.title || "").toLowerCase().includes(searchQuery.toLowerCase())
       )
@@ -1697,12 +1716,12 @@ const sendMessageMutation = useMutation({
                     className="w-11 h-11 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold"
                     style={{ backgroundColor: brandColor }}
                   >
-                    {(session.matchmakerName || "E").charAt(0)}
+                    {(session.matchmakerName || "AI").charAt(0)}
                   </div>
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-ui truncate" style={{ fontWeight: 600 }}>{session.matchmakerName || "Eva"}</span>
+                    <span className="text-sm font-ui truncate" style={{ fontWeight: 600 }}>{session.matchmakerName || "AI Concierge"}</span>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       <span className={`text-[11px] ${session.unreadCount > 0 ? "font-semibold" : "text-muted-foreground"}`} style={session.unreadCount > 0 ? { color: brandColor } : undefined}>{timeAgo(session.lastMessageAt)}</span>
                       {session.unreadCount > 0 && (
@@ -2777,32 +2796,6 @@ const sendMessageMutation = useMutation({
             onClose={() => setInlineVideoBookingId(null)}
           />
         )}
-        <AlertDialog
-          open={!!pendingCancel}
-          onOpenChange={(open) => { if (!open) setPendingCancel(null); }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                {pendingCancel?.kind === "invoice" ? "Cancel this invoice?" : "Cancel this cost sheet?"}
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                {pendingCancel?.kind === "invoice"
-                  ? "The parent will no longer be able to pay this invoice. You can send a revised invoice afterward."
-                  : "The parent will see this cost sheet as cancelled, and a new invoice will require a fresh cost sheet first."}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Keep it</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={confirmPendingCancel}
-                data-testid="confirm-cancel-action"
-              >
-                {pendingCancel?.kind === "invoice" ? "Cancel invoice" : "Cancel cost sheet"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </>
     );
   }

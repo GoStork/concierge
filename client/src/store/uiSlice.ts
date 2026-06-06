@@ -25,28 +25,84 @@ interface UiState {
 
 const VALID_TABS = ["egg-donors", "surrogates", "ivf-clinics", "surrogacy-agencies", "sperm-donors"];
 
-function getPersistedTab(): string {
+const MARKETPLACE_STORAGE_KEY = "marketplaceFilters:v1";
+
+type PersistedMarketplace = {
+  marketplaceSearchQuery: string;
+  marketplaceTab: string;
+  activeFilters: Record<string, string[]>;
+  marketplaceSortBy: string;
+  showFavoritesOnly: boolean;
+  showSkippedOnly: boolean;
+  showExperiencedOnly: boolean;
+};
+
+function loadMarketplaceFilters(): PersistedMarketplace {
+  const fallback: PersistedMarketplace = {
+    marketplaceSearchQuery: "",
+    marketplaceTab: "egg-donors",
+    activeFilters: {},
+    marketplaceSortBy: "newest",
+    showFavoritesOnly: false,
+    showSkippedOnly: false,
+    showExperiencedOnly: false,
+  };
   try {
-    const stored = sessionStorage.getItem("marketplaceTab");
-    if (stored && VALID_TABS.includes(stored)) return stored;
-    const local = localStorage.getItem("marketplaceTab");
-    if (local && VALID_TABS.includes(local)) return local;
+    const raw = sessionStorage.getItem(MARKETPLACE_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        const tab = typeof parsed.marketplaceTab === "string" && VALID_TABS.includes(parsed.marketplaceTab) ? parsed.marketplaceTab : fallback.marketplaceTab;
+        return {
+          marketplaceSearchQuery: typeof parsed.marketplaceSearchQuery === "string" ? parsed.marketplaceSearchQuery : fallback.marketplaceSearchQuery,
+          marketplaceTab: tab,
+          activeFilters: parsed.activeFilters && typeof parsed.activeFilters === "object" ? parsed.activeFilters : fallback.activeFilters,
+          marketplaceSortBy: typeof parsed.marketplaceSortBy === "string" ? parsed.marketplaceSortBy : fallback.marketplaceSortBy,
+          showFavoritesOnly: !!parsed.showFavoritesOnly,
+          showSkippedOnly: !!parsed.showSkippedOnly,
+          showExperiencedOnly: !!parsed.showExperiencedOnly,
+        };
+      }
+    }
+    const legacySession = sessionStorage.getItem("marketplaceTab");
+    if (legacySession && VALID_TABS.includes(legacySession)) fallback.marketplaceTab = legacySession;
+    else {
+      const legacyLocal = localStorage.getItem("marketplaceTab");
+      if (legacyLocal && VALID_TABS.includes(legacyLocal)) fallback.marketplaceTab = legacyLocal;
+    }
   } catch {}
-  return "egg-donors";
+  return fallback;
 }
+
+function persistMarketplaceFilters(state: UiState) {
+  try {
+    const snapshot: PersistedMarketplace = {
+      marketplaceSearchQuery: state.marketplaceSearchQuery,
+      marketplaceTab: state.marketplaceTab,
+      activeFilters: state.activeFilters,
+      marketplaceSortBy: state.marketplaceSortBy,
+      showFavoritesOnly: state.showFavoritesOnly,
+      showSkippedOnly: state.showSkippedOnly,
+      showExperiencedOnly: state.showExperiencedOnly,
+    };
+    sessionStorage.setItem(MARKETPLACE_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch {}
+}
+
+const persistedMarketplace = loadMarketplaceFilters();
 
 const initialState: UiState = {
   sidebarOpen: false,
   hideBottomNav: false,
-  marketplaceSearchQuery: "",
-  marketplaceTab: getPersistedTab(),
-  activeFilters: {},
-  marketplaceSortBy: "newest",
+  marketplaceSearchQuery: persistedMarketplace.marketplaceSearchQuery,
+  marketplaceTab: persistedMarketplace.marketplaceTab,
+  activeFilters: persistedMarketplace.activeFilters,
+  marketplaceSortBy: persistedMarketplace.marketplaceSortBy,
   favoritedDonorIds: [],
   passedDonorIds: [],
-  showFavoritesOnly: false,
-  showSkippedOnly: false,
-  showExperiencedOnly: false,
+  showFavoritesOnly: persistedMarketplace.showFavoritesOnly,
+  showSkippedOnly: persistedMarketplace.showSkippedOnly,
+  showExperiencedOnly: persistedMarketplace.showExperiencedOnly,
   adminProvidersFilters: {
     searchQuery: "",
     locationSearch: "",
@@ -68,6 +124,7 @@ const uiSlice = createSlice({
     },
     setMarketplaceSearchQuery(state, action: PayloadAction<string>) {
       state.marketplaceSearchQuery = action.payload;
+      persistMarketplaceFilters(state);
     },
     setMarketplaceTab(state, action: PayloadAction<string>) {
       state.marketplaceTab = action.payload;
@@ -79,15 +136,19 @@ const uiSlice = createSlice({
         sessionStorage.setItem("marketplaceTab", action.payload);
         localStorage.setItem("marketplaceTab", action.payload);
       } catch {}
+      persistMarketplaceFilters(state);
     },
     setFilter(state, action: PayloadAction<{ key: string; values: string[] }>) {
       state.activeFilters[action.payload.key] = action.payload.values;
+      persistMarketplaceFilters(state);
     },
     clearFilters(state) {
       state.activeFilters = {};
+      persistMarketplaceFilters(state);
     },
     setMarketplaceSortBy(state, action: PayloadAction<string>) {
       state.marketplaceSortBy = action.payload;
+      persistMarketplaceFilters(state);
     },
     loadDonorPreferences(state, action: PayloadAction<{ favorited: string[]; skipped: string[] }>) {
       state.favoritedDonorIds = action.payload.favorited;
@@ -105,6 +166,7 @@ const uiSlice = createSlice({
     setShowFavoritesOnly(state, action: PayloadAction<boolean>) {
       state.showFavoritesOnly = action.payload;
       if (action.payload) state.showSkippedOnly = false;
+      persistMarketplaceFilters(state);
     },
     passDonor(state, action: PayloadAction<string>) {
       if (!state.passedDonorIds.includes(action.payload)) {
@@ -117,9 +179,11 @@ const uiSlice = createSlice({
     setShowSkippedOnly(state, action: PayloadAction<boolean>) {
       state.showSkippedOnly = action.payload;
       if (action.payload) state.showFavoritesOnly = false;
+      persistMarketplaceFilters(state);
     },
     setShowExperiencedOnly(state, action: PayloadAction<boolean>) {
       state.showExperiencedOnly = action.payload;
+      persistMarketplaceFilters(state);
     },
     setAdminProvidersFilter(state, action: PayloadAction<Partial<AdminProvidersFilters>>) {
       Object.assign(state.adminProvidersFilters, action.payload);

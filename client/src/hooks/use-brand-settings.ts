@@ -108,6 +108,18 @@ export interface BrandSettings {
   quickReplyDeclineStyle: string;
   quickReplyMultiStyle: string;
   quickReplyShowBorder: boolean;
+  chatBubbleOwnColor: string | null;
+  chatBubbleAiColor: string | null;
+  chatBubbleProviderColor: string | null;
+  chatBubbleOwnTextColor: string | null;
+  chatBubbleAiTextColor: string | null;
+  chatBubbleProviderTextColor: string | null;
+  chatBubbleOwnBorderColor: string | null;
+  chatBubbleAiBorderColor: string | null;
+  chatBubbleProviderBorderColor: string | null;
+  chatBubbleParentColor: string | null;
+  chatBubbleParentTextColor: string | null;
+  chatBubbleParentBorderColor: string | null;
   onboardingClinicImageUrl: string | null;
   onboardingEggDonorImageUrl: string | null;
   onboardingSurrogateImageUrl: string | null;
@@ -214,6 +226,18 @@ export const BRAND_DEFAULTS: BrandSettings = {
   quickReplyDeclineStyle: "secondary",
   quickReplyMultiStyle: "outline",
   quickReplyShowBorder: true,
+  chatBubbleOwnColor: null,
+  chatBubbleAiColor: null,
+  chatBubbleProviderColor: null,
+  chatBubbleOwnTextColor: null,
+  chatBubbleAiTextColor: null,
+  chatBubbleProviderTextColor: null,
+  chatBubbleOwnBorderColor: null,
+  chatBubbleAiBorderColor: null,
+  chatBubbleProviderBorderColor: null,
+  chatBubbleParentColor: null,
+  chatBubbleParentTextColor: null,
+  chatBubbleParentBorderColor: null,
   onboardingClinicImageUrl: null,
   onboardingEggDonorImageUrl: null,
   onboardingSurrogateImageUrl: null,
@@ -223,6 +247,18 @@ export const BRAND_DEFAULTS: BrandSettings = {
 };
 
 export const SYSTEM_FONT_STACK = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif';
+
+// Pick black or white text for a given background hex via WCAG luminance.
+// Returns "#ffffff" for dark backgrounds and a deep neutral for light ones.
+export function pickReadableFg(hex: string): string {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return "#1f2937";
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  return L > 0.55 ? "#1f2937" : "#ffffff";
+}
 
 export function hexToHsl(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -425,6 +461,38 @@ export function applyBrandToDocument(settings: BrandSettings) {
   root.style.setProperty("--quick-reply-decline-style", settings.quickReplyDeclineStyle ?? "secondary");
   root.style.setProperty("--quick-reply-multi-style", settings.quickReplyMultiStyle ?? "outline");
   root.style.setProperty("--quick-reply-border-width", (settings.quickReplyShowBorder ?? true) ? "1px" : "0px");
+
+  // Chat bubble background + text colors. Background defaults: own = primary,
+  // ai = accent, provider = secondary. Text color defaults to auto-pick from
+  // luminance when the admin hasn't set an explicit override.
+  const hex = (v: string | null | undefined) => (v && /^#[0-9a-fA-F]{6}$/.test(v) ? v : null);
+  const bubbleOwnBg = hex(settings.chatBubbleOwnColor) ?? settings.primaryColor;
+  const bubbleAiBg = hex(settings.chatBubbleAiColor) ?? settings.accentColor;
+  const bubbleProviderBg = hex(settings.chatBubbleProviderColor) ?? settings.secondaryColor;
+  const bubbleParentBg = hex(settings.chatBubbleParentColor) ?? settings.accentColor;
+  const bubbleOwnFg = hex(settings.chatBubbleOwnTextColor) ?? pickReadableFg(bubbleOwnBg);
+  const bubbleAiFg = hex(settings.chatBubbleAiTextColor) ?? pickReadableFg(bubbleAiBg);
+  const bubbleProviderFg = hex(settings.chatBubbleProviderTextColor) ?? pickReadableFg(bubbleProviderBg);
+  const bubbleParentFg = hex(settings.chatBubbleParentTextColor) ?? pickReadableFg(bubbleParentBg);
+  // Outline (border) color. null = no visible outline. We emit "transparent"
+  // in that case so the consuming `border: 1px solid var(--...)` stays valid
+  // CSS - it just renders invisibly.
+  const bubbleOwnBorder = hex(settings.chatBubbleOwnBorderColor) ?? "transparent";
+  const bubbleAiBorder = hex(settings.chatBubbleAiBorderColor) ?? "transparent";
+  const bubbleProviderBorder = hex(settings.chatBubbleProviderBorderColor) ?? "transparent";
+  const bubbleParentBorder = hex(settings.chatBubbleParentBorderColor) ?? "transparent";
+  root.style.setProperty("--chat-bubble-own-bg", bubbleOwnBg);
+  root.style.setProperty("--chat-bubble-own-fg", bubbleOwnFg);
+  root.style.setProperty("--chat-bubble-own-border", bubbleOwnBorder);
+  root.style.setProperty("--chat-bubble-ai-bg", bubbleAiBg);
+  root.style.setProperty("--chat-bubble-ai-fg", bubbleAiFg);
+  root.style.setProperty("--chat-bubble-ai-border", bubbleAiBorder);
+  root.style.setProperty("--chat-bubble-provider-bg", bubbleProviderBg);
+  root.style.setProperty("--chat-bubble-provider-fg", bubbleProviderFg);
+  root.style.setProperty("--chat-bubble-provider-border", bubbleProviderBorder);
+  root.style.setProperty("--chat-bubble-parent-bg", bubbleParentBg);
+  root.style.setProperty("--chat-bubble-parent-fg", bubbleParentFg);
+  root.style.setProperty("--chat-bubble-parent-border", bubbleParentBorder);
 
   // Remove any previously injected media query style (no longer needed).
   document.getElementById("brand-chat-responsive")?.remove();

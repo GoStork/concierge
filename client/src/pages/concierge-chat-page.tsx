@@ -4377,7 +4377,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   {providerInChat && providerChatName ? providerChatName : (aiName || "AI Concierge")}
                 </h2>
                 <p className="text-[13px] font-ui text-muted-foreground truncate" data-testid="chat-subject-label">
-                  {providerInChat && sessionTitle ? sessionTitle : "AI Concierge Chat"}
+                  {providerInChat && sessionTitle
+                    ? sessionTitle
+                    : (selectedMatchmaker?.title || "Your AI Matchmaker")}
                 </p>
               </div>
             </>
@@ -4617,15 +4619,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   {/* Text bubble */}
                   {!cardReplacesbubble && showBubble && (
                     <div
-                      className={`overflow-hidden ${
-                        isOwnMessage
-                          ? "text-primary-foreground chat-bubble-dark"
-                          : isOtherParent
-                          ? "text-foreground"
-                          : msg.role === "user"
-                          ? "text-primary-foreground chat-bubble-dark"
-                          : "text-foreground"
-                      }`}
+                      className="overflow-hidden"
                       style={{
                         fontSize: "var(--chat-bubble-font-size, 21px)",
                         lineHeight: "var(--chat-bubble-line-height, 1.35)",
@@ -4636,27 +4630,39 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                         paddingBottom: "var(--chat-bubble-py, 11px)",
                         maxWidth: "var(--chat-bubble-max-width, 85%)",
                         ...(isOwnMessage
-                          ? { backgroundColor: brandColor }
+                          ? {
+                              backgroundColor: "var(--chat-bubble-own-bg)",
+                              color: "var(--chat-bubble-own-fg)",
+                              border: "1px solid var(--chat-bubble-own-border)",
+                            }
                           : isOtherParent
                           ? {
-                              backgroundColor: chatPalette.partnerBg,
-                              border: `1px solid ${chatPalette.partnerBorder}`,
+                              backgroundColor: "var(--chat-bubble-parent-bg)",
+                              color: "var(--chat-bubble-parent-fg)",
+                              border: "1px solid var(--chat-bubble-parent-border)",
                             }
                           : msg.role === "user"
-                          ? { backgroundColor: brandColor }
+                          ? {
+                              backgroundColor: "var(--chat-bubble-own-bg)",
+                              color: "var(--chat-bubble-own-fg)",
+                              border: "1px solid var(--chat-bubble-own-border)",
+                            }
                           : msg.senderType === "human"
                           ? {
                               backgroundColor: `${brandColor}14`,
+                              color: "hsl(var(--foreground))",
                               border: `1px solid ${brandColor}33`,
                             }
                           : msg.senderType === "provider"
                           ? {
-                              backgroundColor: chatPalette.expertBg,
-                              border: `1px solid ${chatPalette.expertBorder}`,
+                              backgroundColor: "var(--chat-bubble-provider-bg)",
+                              color: "var(--chat-bubble-provider-fg)",
+                              border: "1px solid var(--chat-bubble-provider-border)",
                             }
                           : {
-                              backgroundColor: `${brandColor}14`,
-                              border: `1px solid ${brandColor}33`,
+                              backgroundColor: "var(--chat-bubble-ai-bg)",
+                              color: "var(--chat-bubble-ai-fg)",
+                              border: "1px solid var(--chat-bubble-ai-border)",
                             }),
                       }}
                       data-testid={`chat-message-${msg.role}-${i}`}

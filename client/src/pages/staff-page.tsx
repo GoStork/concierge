@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -81,9 +81,21 @@ function GostorkAdminUsersView() {
   const [deleteMember, setDeleteMember] = useState<StaffMember | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const searchQuery = searchParams.get("q") || "";
+  const dateFrom = searchParams.get("from") || "";
+  const dateTo = searchParams.get("to") || "";
+  const updateUsersParam = useCallback((key: string, value: string) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (!value) next.delete(key);
+      else next.set(key, value);
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+  const setSearchQuery = (v: string) => updateUsersParam("q", v);
+  const setDateFrom = (v: string) => updateUsersParam("from", v);
+  const setDateTo = (v: string) => updateUsersParam("to", v);
 
   const { sortConfig, handleSort, sortData } = useTableSort("created", "desc");
 
@@ -389,7 +401,16 @@ function GostorkAdminUsersView() {
 }
 
 function ProviderParentContactsView({ providerId }: { providerId: string }) {
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const searchQuery = searchParams.get("q") || "";
+  const setSearchQuery = (v: string) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (!v) next.delete("q");
+      else next.set("q", v);
+      return next;
+    }, { replace: true });
+  };
   const navigate = useNavigate();
 
   const { data: parents, isLoading } = useQuery<any[]>({
