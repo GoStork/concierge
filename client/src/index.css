@@ -87,6 +87,12 @@
   --swipe-undo: #FFB300;
   --swipe-chat: #9B51E0;
   --swipe-compare: #2D9CDB;
+
+  /* Deck (Tinder-style swipe screen) chrome - applied to marketplace deck bg and bottom bar when on Discover/Saved */
+  --deck-bg: 228 8% 10%;          /* #17181C - neutral near-black */
+  --deck-bg-elevated: 228 8% 15%; /* #23252A - one notch up, for the bottom bar so it separates from the page */
+  --deck-fg: 0 0% 100%;
+  --deck-fg-muted: 0 0% 60%;
 }
 
 @layer base {

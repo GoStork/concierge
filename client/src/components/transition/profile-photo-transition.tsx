@@ -6,11 +6,12 @@ type Rect = { top: number; left: number; width: number; height: number; radius?:
 type TransitionState = {
   src: string;
   fromRect: Rect;
+  toRect: Rect;
   id: string;
 };
 
 type Ctx = {
-  startTransition: (src: string, fromRect: Rect) => void;
+  startTransition: (src: string, fromRect: Rect, toRect: Rect) => void;
   endTransition: () => void;
   active: TransitionState | null;
 };
@@ -25,14 +26,16 @@ export function useProfilePhotoTransition() {
   return ctx;
 }
 
-const GROW_MS = 320;
-const HOLD_MS = 280;
+const GROW_MS = 350;
+const HOLD_MS = 400;
+const FADE_MS = 140;
+const EASE_OUT: [number, number, number, number] = [0.25, 0.46, 0.45, 0.94];
 
 export function ProfilePhotoTransitionProvider({ children }: { children: React.ReactNode }) {
   const [active, setActive] = useState<TransitionState | null>(null);
 
-  const startTransition = useCallback((src: string, fromRect: Rect) => {
-    setActive({ src, fromRect, id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}` });
+  const startTransition = useCallback((src: string, fromRect: Rect, toRect: Rect) => {
+    setActive({ src, fromRect, toRect, id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}` });
   }, []);
 
   const endTransition = useCallback(() => {
@@ -53,11 +56,12 @@ export function ProfilePhotoTransitionProvider({ children }: { children: React.R
         {active && (
           <motion.div
             key={active.id}
-            initial={{ opacity: 1 }}
+            initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.18 }}
+            transition={{ duration: FADE_MS / 1000, ease: EASE_OUT }}
             className="fixed inset-0 z-[100] pointer-events-none"
+            style={{ backgroundColor: "hsl(var(--deck-bg))" }}
             data-testid="profile-photo-transition"
           >
             <motion.div
@@ -69,15 +73,15 @@ export function ProfilePhotoTransitionProvider({ children }: { children: React.R
                 borderRadius: active.fromRect.radius ?? 24,
               }}
               animate={{
-                top: 0,
-                left: 0,
-                width: "100vw",
-                height: "100vh",
-                borderRadius: 0,
+                top: active.toRect.top,
+                left: active.toRect.left,
+                width: active.toRect.width,
+                height: active.toRect.height,
+                borderRadius: active.toRect.radius ?? 0,
               }}
-              transition={{ duration: GROW_MS / 1000, ease: [0.32, 0.72, 0.2, 1] }}
-              className="fixed overflow-hidden bg-black"
-              style={{ willChange: "top,left,width,height,border-radius" }}
+              transition={{ duration: GROW_MS / 1000, ease: EASE_OUT }}
+              className="fixed overflow-hidden"
+              style={{ willChange: "top,left,width,height,border-radius", backgroundColor: "hsl(var(--deck-bg))" }}
             >
               <img
                 src={active.src}

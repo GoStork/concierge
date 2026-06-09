@@ -8,7 +8,6 @@ import {
 } from "lucide-react";
 import type { TabSection } from "./swipe-mappers";
 import { getDonorStatusStyle } from "@/lib/donor-status";
-import { useProfilePhotoTransition } from "@/components/transition/profile-photo-transition";
 
 export type { TabSection } from "./swipe-mappers";
 
@@ -80,28 +79,12 @@ export function SwipeDeckCard({
   const x = useMotionValue(0);
   const y = useMotionValue(0);
   const photoContainerRef = useRef<HTMLDivElement | null>(null);
-  const { startTransition } = useProfilePhotoTransition();
 
   const triggerExpand = useCallback(() => {
     if (isExpanding) return;
-    const el = photoContainerRef.current;
-    const photo = photos[slideIndex % Math.max(photos.length, 1)] || photos[0] || null;
-    if (el && photo) {
-      const rect = el.getBoundingClientRect();
-      startTransition(photo, {
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height,
-        radius: 24,
-      });
-    }
     setIsExpanding(true);
-    // Let the overlay grow before navigating so the route swap is hidden.
-    window.setTimeout(() => {
-      onViewFullProfile();
-    }, 280);
-  }, [isExpanding, photos, slideIndex, startTransition, onViewFullProfile]);
+    onViewFullProfile();
+  }, [isExpanding, onViewFullProfile]);
 
   const rotate = useTransform(x, [-SWIPE_EXIT_DISTANCE, 0, SWIPE_EXIT_DISTANCE], [-28, 0, 28]);
   const passOverlayOpacity = useTransform(x, [-SWIPE_THRESHOLD, 0], [0.45, 0]);
@@ -187,8 +170,10 @@ export function SwipeDeckCard({
         animate={disableSwipe ? undefined : controls}
         data-testid={`swipe-card-draggable-${id}`}
       >
-        <div
+        <motion.div
           ref={photoContainerRef}
+          layoutId={disableSwipe ? undefined : `card-hero-${id}`}
+          transition={{ duration: 0.32, ease: [0.25, 0.46, 0.45, 0.94] }}
           className="relative w-full h-full overflow-hidden bg-muted"
           style={currentPhoto ? { backgroundImage: `url(${currentPhoto})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
         >
@@ -516,7 +501,7 @@ export function SwipeDeckCard({
               </motion.div>
             )}
           </div>
-        </div>
+        </motion.div>
       </motion.div>
     </div>
   );

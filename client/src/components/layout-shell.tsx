@@ -24,6 +24,8 @@ import {
   FlaskConical,
   AlertTriangle,
   X,
+  Heart,
+  Flame,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -675,6 +677,32 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     if (isMs) setBannerMicrosoftReconnecting(false); else setBannerGoogleReconnecting(false);
   }
 
+  useEffect(() => {
+    const onDeck = location.pathname === '/marketplace';
+    const body = document.body;
+    const html = document.documentElement;
+    const themeMeta = document.querySelector('meta[name="theme-color"]');
+    const prevBody = body.style.backgroundColor;
+    const prevHtml = html.style.backgroundColor;
+    const prevTheme = themeMeta?.getAttribute('content') ?? null;
+
+    if (onDeck) {
+      const deckBg = `hsl(${getComputedStyle(html).getPropertyValue('--deck-bg').trim()})`;
+      body.style.backgroundColor = deckBg;
+      html.style.backgroundColor = deckBg;
+      themeMeta?.setAttribute('content', deckBg);
+    } else {
+      body.style.backgroundColor = '';
+      html.style.backgroundColor = '';
+    }
+
+    return () => {
+      body.style.backgroundColor = prevBody;
+      html.style.backgroundColor = prevHtml;
+      if (prevTheme !== null) themeMeta?.setAttribute('content', prevTheme);
+    };
+  }, [location.pathname]);
+
   if (!user) return <>{children}</>;
 
   const reminderPopup = <MeetingReminderPopup />;
@@ -689,28 +717,25 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     { id: "sperm-donors", label: "Sperm Donors", mobileLabel: "Sperm", icon: SpermIcon },
   ];
 
-  const navigation: { show: boolean; to: string; icon: any; label: string; mobileLabel: string; tabId?: string; mobileOnly?: boolean; submenuItems?: typeof MARKETPLACE_TABS; badge?: number }[] = [
+  const navigation: { show: boolean; to: string; icon: any; label: string; mobileLabel: string; tabId?: string; mobileOnly?: boolean; submenuItems?: typeof MARKETPLACE_TABS; badge?: number; fillOnActive?: boolean }[] = [
     { show: false /* hidden for now */, to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', mobileLabel: 'Dashboard' },
     { show: isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS },
     { show: isProvider && !isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS },
-    { show: isParentOnly, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats', badge: totalUnread },
     ...(isParentOnly && !(brandSettings?.enableAiConcierge && brandSettings?.parentExperienceMode !== 'MARKETPLACE_ONLY')
-      ? MARKETPLACE_TABS.map((tab) => ({
-          show: true,
-          to: '/marketplace',
-          icon: tab.icon,
-          label: tab.label,
-          mobileLabel: tab.mobileLabel,
-          tabId: tab.id,
-        })) : []),
+      ? [
+          { show: true, to: '/marketplace', icon: Flame, label: 'Discover', mobileLabel: 'Discover', fillOnActive: true },
+          { show: true, to: '/marketplace?view=saved', icon: Heart, label: 'Saved', mobileLabel: 'Saved', fillOnActive: true },
+        ]
+      : []),
+    { show: isParentOnly, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats', badge: totalUnread, fillOnActive: false },
     { show: !isParentOnly && !isAdmin, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats', badge: totalUnread },
     { show: isAdmin, to: '/admin/providers', icon: Building2, label: 'Providers', mobileLabel: 'Providers' },
     { show: isAdmin, to: '/admin/billing', icon: DollarSign, label: 'Billing', mobileLabel: 'Billing' },
     { show: isAdmin, to: '/admin/concierge-monitor', icon: Headphones, label: 'Concierge', mobileLabel: 'Concierge', badge: conciergeUnread },
     { show: isAdmin, to: '/admin/test-runner', icon: FlaskConical, label: 'Test Runner', mobileLabel: 'Tests' },
     { show: isAdmin || isProvider, to: '/users', icon: Users, label: 'Parents', mobileLabel: 'Parents' },
-    { show: !((user as any).parentAccountRole === 'VIEWER'), to: '/calendar', icon: Calendar, label: 'Meetings', mobileLabel: 'Meetings', badge: isProvider ? pendingMeetings : undefined },
-    { show: true, to: '/account', icon: User, label: 'Profile', mobileLabel: 'Profile', mobileOnly: true },
+    { show: !((user as any).parentAccountRole === 'VIEWER'), to: '/calendar', icon: Calendar, label: 'Calendar', mobileLabel: 'Calendar', badge: isProvider ? pendingMeetings : undefined, fillOnActive: false },
+    { show: true, to: '/account', icon: User, label: 'Profile', mobileLabel: 'Profile', mobileOnly: true, fillOnActive: true },
   ];
 
   const visibleNav = navigation.filter(item => item.show);
@@ -728,8 +753,15 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     if (onUserRoute && params.get('team') === 'gostork') {
       return false;
     }
+    if (location.pathname === '/marketplace') {
+      const savedView = params.get('view') === 'saved';
+      if (to === '/marketplace?view=saved') return savedView;
+      if (to === '/marketplace') return !savedView;
+    }
     return location.pathname === to || location.pathname.startsWith(to + '/');
   };
+
+  const onMarketplaceDeck = location.pathname === '/marketplace';
 
   const displayName = user.name || user.email || 'User';
   const userPhoto = (user as any).photoUrl as string | null;
@@ -846,12 +878,21 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       </header>
 
       <div
-        className={`fixed bottom-0 left-0 right-0 z-50 md:hidden safe-area-bottom px-3 pb-2 ${hideBottomNav || /^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname) || location.pathname === "/concierge" || location.pathname.startsWith("/agreements/") ? "hidden" : ""}`}
-        style={{ backgroundColor: 'var(--bottom-nav-safe-area-bg, transparent)' }}
+        className={`fixed bottom-0 left-0 right-0 z-50 md:hidden safe-area-bottom px-3 ${onMarketplaceDeck ? 'pt-5 pb-0' : 'pb-2'} ${hideBottomNav || /^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname) || location.pathname === "/concierge" || location.pathname.startsWith("/agreements/") ? "hidden" : ""}`}
+        style={{
+          backgroundColor: onMarketplaceDeck ? 'hsl(var(--deck-bg))' : 'var(--bottom-nav-safe-area-bg, transparent)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+        }}
       >
       <nav
         className="transition-all duration-300"
-        style={navGlassStyle}
+        style={onMarketplaceDeck
+          ? {
+              ...navGlassStyle,
+              backgroundColor: 'hsl(var(--deck-bg-elevated))',
+              border: '1px solid rgba(255,255,255,0.08)',
+            }
+          : navGlassStyle}
         data-testid="nav-bottom-tabs"
       >
         <div className="flex items-stretch justify-around h-[68px] px-2">
@@ -862,6 +903,12 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
               : isActive(item.to);
             const navStyle = brandSettings?.bottomNavStyle || 'icon-label';
             const iconOnly = navStyle === 'icon-only';
+            const activeColor = onMarketplaceDeck
+              ? 'hsl(var(--deck-fg))'
+              : 'var(--bottom-nav-active-fg, hsl(var(--primary)))';
+            const inactiveColor = onMarketplaceDeck
+              ? 'hsl(var(--deck-fg-muted))'
+              : 'var(--bottom-nav-fg, hsl(var(--muted-foreground)))';
 
             if (item.submenuItems && item.submenuItems.length > 0) {
               const submenuActive = isActive(item.to);
@@ -871,17 +918,14 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                     <button
                       data-testid={`tab-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
                       className={`flex flex-col items-center justify-center flex-1 gap-0.5 font-medium font-ui transition-colors duration-200 focus:outline-none ${iconOnly ? 'text-[0px]' : 'text-[13px]'}`}
-                      style={{
-                        color: submenuActive
-                          ? 'var(--bottom-nav-active-fg, hsl(var(--primary)))'
-                          : 'var(--bottom-nav-fg, hsl(var(--primary)))',
-                      }}
+                      style={{ color: submenuActive ? activeColor : inactiveColor }}
                     >
-                      <div
-                        className="p-1.5 rounded-[var(--radius)] transition-colors duration-200 flex items-center justify-center"
-                        style={submenuActive ? { backgroundColor: `color-mix(in srgb, var(--bottom-nav-active-fg, hsl(var(--primary))) 10%, transparent)` } : undefined}
-                      >
-                        <Icon className={iconOnly ? "w-7 h-7 shrink-0" : "w-6 h-6 shrink-0"} />
+                      <div className="p-1.5 transition-colors duration-200 flex items-center justify-center">
+                        <Icon
+                          className={iconOnly ? "w-7 h-7 shrink-0" : "w-6 h-6 shrink-0"}
+                          fill={submenuActive && (item.fillOnActive ?? true) ? 'currentColor' : 'none'}
+                          strokeWidth={submenuActive && !(item.fillOnActive ?? true) ? 2.5 : 2}
+                        />
                       </div>
                       {!iconOnly && <span>{item.mobileLabel}</span>}
                     </button>
@@ -925,17 +969,14 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                 aria-current={active ? 'page' : undefined}
                 data-testid={`tab-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
                 className={`flex flex-col items-center justify-center flex-1 gap-0.5 font-medium font-ui transition-colors duration-200 ${iconOnly ? 'text-[0px]' : 'text-[13px]'}`}
-                style={{
-                  color: active
-                    ? 'var(--bottom-nav-active-fg, hsl(var(--primary)))'
-                    : 'var(--bottom-nav-fg, hsl(var(--primary)))',
-                }}
+                style={{ color: active ? activeColor : inactiveColor }}
               >
-                <div
-                  className="p-1.5 rounded-[var(--radius)] transition-colors duration-200 flex items-center justify-center relative"
-                  style={active ? { backgroundColor: `color-mix(in srgb, var(--bottom-nav-active-fg, hsl(var(--primary))) 10%, transparent)` } : undefined}
-                >
-                  <Icon className={iconOnly ? "w-7 h-7 shrink-0" : "w-6 h-6 shrink-0"} />
+                <div className="p-1.5 transition-colors duration-200 flex items-center justify-center relative">
+                  <Icon
+                    className={iconOnly ? "w-7 h-7 shrink-0" : "w-6 h-6 shrink-0"}
+                    fill={active && (item.fillOnActive ?? true) ? 'currentColor' : 'none'}
+                    strokeWidth={active && !(item.fillOnActive ?? true) ? 2.5 : 2}
+                  />
                   {!!item.badge && item.badge > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-bold text-primary-foreground px-0.5" style={{ backgroundColor: 'hsl(var(--primary))' }}>
                       {item.badge > 99 ? "99+" : item.badge}
@@ -955,14 +996,11 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                   className="flex flex-col items-center justify-center flex-1 gap-0.5 text-[11px] font-ui transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-[var(--radius)]"
                   style={{
                     color: overflowTabs.some(item => isActive(item.to))
-                      ? 'var(--bottom-nav-active-fg, hsl(var(--primary)))'
-                      : 'var(--bottom-nav-fg, hsl(var(--primary)))',
+                      ? (onMarketplaceDeck ? 'hsl(var(--deck-fg))' : 'var(--bottom-nav-active-fg, hsl(var(--primary)))')
+                      : (onMarketplaceDeck ? 'hsl(var(--deck-fg-muted))' : 'var(--bottom-nav-fg, hsl(var(--muted-foreground)))'),
                   }}
                 >
-                  <div
-                    className="p-1.5 rounded-[var(--radius)] transition-colors duration-200"
-                    style={overflowTabs.some(item => isActive(item.to)) ? { backgroundColor: `color-mix(in srgb, var(--bottom-nav-active-fg, hsl(var(--primary))) 10%, transparent)` } : undefined}
-                  >
+                  <div className="p-1.5 transition-colors duration-200">
                     <MoreHorizontal className="w-5 h-5" />
                   </div>
                   <span>More</span>

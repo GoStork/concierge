@@ -817,9 +817,9 @@ export default function DonorProfilePage() {
       {isMobile && (
         <>
           <motion.div
-            initial={{ opacity: 0, y: -8 }}
+            initial={{ opacity: 0, y: -12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.22, delay: 0.22, ease: "easeOut" }}
+            transition={{ duration: 0.24, delay: 0.08, ease: [0.25, 0.46, 0.45, 0.94] }}
             className="sticky top-0 z-40 bg-background border-b border-border/40 flex items-center justify-between gap-3 py-3"
             style={{
               marginLeft: "calc(50% - 50vw)",
@@ -858,9 +858,9 @@ export default function DonorProfilePage() {
             </button>
           </motion.div>
           <motion.div
-            initial={{ opacity: 0, y: 12 }}
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25, delay: 0.28, ease: "easeOut" }}
+            transition={{ duration: 0.24, delay: 0.12, ease: [0.25, 0.46, 0.45, 0.94] }}
             className="fixed bottom-6 left-0 right-0 z-50 flex items-center justify-center gap-3 px-4 pointer-events-none"
             data-testid="mobile-detail-actions"
           >
@@ -912,9 +912,8 @@ export default function DonorProfilePage() {
         isMobile
           ? (
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.18, delay: 0.18, ease: "easeOut" }}
+              layoutId={`card-hero-${donorId}`}
+              transition={{ duration: 0.32, ease: [0.25, 0.46, 0.45, 0.94] }}
             >
               <MobilePhotoViewer photos={allPhotos} videoUrl={donorVideoUrl} />
             </motion.div>

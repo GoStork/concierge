@@ -628,7 +628,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
 
     return (
       <div className="h-full" data-testid="swipe-deck-mobile">
-        <div className={`relative h-full w-full px-1.5 pb-1 ${showSkippedOnly ? "grayscale opacity-60" : ""}`}>
+        <div className={`relative h-full w-full ${showSkippedOnly ? "grayscale opacity-60" : ""}`}>
           {nextDonor && nextProfile && (
             <div className="absolute inset-0 z-0" data-testid={`card-next-${nextDonor.id}`}>
               <SwipeDeckCard
@@ -721,6 +721,51 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
 }
 
 
+const PARENT_TYPE_MAP: Record<string, { id: string; label: string }> = {
+  "Egg Donor": { id: "egg-donors", label: "Eggs" },
+  "Sperm Donor": { id: "sperm-donors", label: "Sperm" },
+  "Surrogate": { id: "surrogates", label: "Surrogates" },
+  "Fertility Clinic": { id: "ivf-clinics", label: "Clinics" },
+};
+const PARENT_TYPE_ORDER = ["egg-donors", "sperm-donors", "surrogates", "ivf-clinics"];
+
+function MobileDeckTypeSwitcher({ types, activeTab, onSelect, theme }: {
+  types: { id: string; label: string }[];
+  activeTab: string;
+  onSelect: (id: string) => void;
+  theme: "dark" | "light";
+}) {
+  if (types.length < 2) return null;
+  const isDark = theme === "dark";
+  return (
+    <div
+      className={`${isDark ? 'absolute left-0 right-0 z-[71] px-3' : 'w-full px-3 pt-3'}`}
+      style={isDark ? { top: 'calc(env(safe-area-inset-top, 0px) + 8px)' } : undefined}
+      data-testid="deck-type-switcher"
+    >
+      <div className="flex justify-center gap-1.5 overflow-x-auto scrollbar-hide">
+        {types.map(t => {
+          const active = activeTab === t.id;
+          const base = "shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium font-ui transition-colors duration-150";
+          const cls = isDark
+            ? (active ? "bg-white text-[hsl(var(--deck-bg))]" : "bg-white/12 text-white/85 hover:bg-white/20")
+            : (active ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:bg-secondary");
+          return (
+            <button
+              key={t.id}
+              onClick={() => onSelect(t.id)}
+              className={`${base} ${cls}`}
+              data-testid={`deck-type-${t.id}`}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function MobileFilterOverlay({ providerType, activeFilters, hasResults = true }: {
   providerType: "egg-donor" | "surrogate" | "sperm-donor" | "ivf-clinic";
   activeFilters: Record<string, string[]>;
@@ -757,7 +802,7 @@ function MobileFilterOverlay({ providerType, activeFilters, hasResults = true }:
   const clearColor = hasResults ? 'text-white/60' : 'text-muted-foreground';
 
   return (
-    <div className="absolute top-8 left-0 right-0 z-[70] px-3" data-testid="mobile-filter-overlay">
+    <div className="absolute left-0 right-0 z-[70] px-3" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 52px)' }} data-testid="mobile-filter-overlay">
       <div className="flex items-center gap-2">
         <button
           onClick={handleSearchToggle}
@@ -886,6 +931,43 @@ export default function MarketplacePage() {
   }, [dispatch]);
 
   const [searchParams, setSearchParams] = useSearchParams();
+
+  const viewParam = searchParams.get("view");
+  useEffect(() => {
+    dispatch(setShowFavoritesOnly(viewParam === "saved"));
+  }, [viewParam, dispatch]);
+
+  const parentProfileQuery = useQuery<{ interestedServices?: string[] }>({
+    queryKey: ["/api/parent-profile"],
+    queryFn: async () => {
+      const res = await fetch("/api/parent-profile", { credentials: "include" });
+      if (!res.ok) return {};
+      return res.json();
+    },
+    enabled: !!user && isParentOnly,
+    staleTime: 60_000,
+  });
+
+  const parentAvailableTypes = useMemo(() => {
+    if (!isParentOnly) return [] as { id: string; label: string }[];
+    const services = parentProfileQuery.data?.interestedServices ?? [];
+    const mapped = services
+      .map(s => PARENT_TYPE_MAP[s])
+      .filter(Boolean);
+    const fallback = Object.values(PARENT_TYPE_MAP);
+    const types = mapped.length > 0 ? mapped : fallback;
+    return PARENT_TYPE_ORDER
+      .map(id => types.find(t => t.id === id))
+      .filter(Boolean) as { id: string; label: string }[];
+  }, [isParentOnly, parentProfileQuery.data?.interestedServices]);
+
+  useEffect(() => {
+    if (!isParentOnly || parentAvailableTypes.length === 0) return;
+    if (!parentAvailableTypes.find(t => t.id === activeTab)) {
+      dispatch(setMarketplaceTab(parentAvailableTypes[0].id));
+    }
+  }, [isParentOnly, parentAvailableTypes, activeTab, dispatch]);
+
   const ivfLocation = searchParams.get("location") || "";
   const ivfSearch = searchParams.get("search") || "";
   const eggSource = searchParams.get("eggSource") || "own_eggs";
@@ -1048,7 +1130,15 @@ export default function MarketplacePage() {
 
   if (isMobile && isDonorTab) {
     return (
-      <div className="fixed inset-x-0 top-0 bottom-[calc(78px+env(safe-area-inset-bottom))] z-[60] bg-background flex flex-col" data-testid="marketplace-mobile-immersive">
+      <div className="fixed inset-x-0 top-0 bottom-[calc(88px+env(safe-area-inset-bottom))] z-[60] flex flex-col" style={{ backgroundColor: 'hsl(var(--deck-bg))' }} data-testid="marketplace-mobile-immersive">
+        {isParentOnly && (
+          <MobileDeckTypeSwitcher
+            types={parentAvailableTypes}
+            activeTab={activeTab}
+            onSelect={(id) => dispatch(setMarketplaceTab(id))}
+            theme="dark"
+          />
+        )}
         <MobileFilterOverlay
           providerType={currentProviderType}
           activeFilters={activeFilters}
@@ -1100,6 +1190,15 @@ export default function MarketplacePage() {
             ))}
           </UnderlineTabsList>
         </UnderlineTabs>
+      )}
+
+      {isParentOnly && isMobile && (
+        <MobileDeckTypeSwitcher
+          types={parentAvailableTypes}
+          activeTab={activeTab}
+          onSelect={(id) => dispatch(setMarketplaceTab(id))}
+          theme="light"
+        />
       )}
 
 
