@@ -818,7 +818,9 @@ function MarketplaceFiltersPage({ providerType, onClose }: {
 
         <div>
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Preferences</h2>
-          <MarketplaceFilterBar providerType={providerType} hideFavorites noResults />
+          <div className="filter-list-mode">
+            <MarketplaceFilterBar providerType={providerType} hideFavorites noResults />
+          </div>
         </div>
       </div>
 

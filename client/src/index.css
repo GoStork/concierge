@@ -95,6 +95,47 @@
   --deck-fg-muted: 0 0% 60%;
 }
 
+/* Filters page: restyle the inline MarketplaceFilterBar into Tinder-style vertical rows */
+.filter-list-mode [data-testid="filter-bar-mobile"] {
+  display: none;
+}
+.filter-list-mode [data-testid="filter-buttons-mobile"] {
+  flex-direction: column;
+  align-items: stretch;
+  overflow: visible;
+  gap: 0;
+  padding: 0;
+  margin: 0;
+}
+.filter-list-mode [data-testid^="filter-btn-"] {
+  width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  padding: 0.875rem 0 !important;
+  margin: 0 !important;
+  border-bottom: 1px solid hsl(var(--border)) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  text-align: left !important;
+  height: auto !important;
+  color: hsl(var(--foreground)) !important;
+  font-size: 1rem !important;
+  position: relative;
+}
+.filter-list-mode [data-testid^="filter-btn-"]::after {
+  content: '\203A';
+  margin-left: auto;
+  color: hsl(var(--muted-foreground));
+  font-size: 1.5rem;
+  line-height: 1;
+  font-weight: 300;
+}
+.filter-list-mode [data-testid="active-filter-pills-mobile"] {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid hsl(var(--border));
+}
+
 @layer base {
   ::selection {
     background: rgba(0, 120, 215, 0.3);
