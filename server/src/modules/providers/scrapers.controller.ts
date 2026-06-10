@@ -189,7 +189,9 @@ export class ScrapersController {
     if (status.isRunning) {
       return { message: "Nightly sync is already running", isRunning: true };
     }
-    runNightlySync(this.prisma, this.storageService);
+    // Admin manual trigger bypasses the 20h dedup so the button always works
+    // even if a successful nightly ran recently.
+    runNightlySync(this.prisma, this.storageService, { force: true });
     return { message: "Nightly sync started", isRunning: true };
   }
 

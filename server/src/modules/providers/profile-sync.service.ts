@@ -287,11 +287,33 @@ function extractSetCookies(response: Response): string[] {
   return cookies;
 }
 
+type AuthResult =
+  | { ok: true; cookies: string }
+  | { ok: false; reason: string };
+
+function detectCaptcha(html: string): string | null {
+  const lower = html.toLowerCase();
+  if (lower.includes("g-recaptcha") || lower.includes("recaptcha/api.js")) return "reCAPTCHA";
+  if (lower.includes("hcaptcha") || lower.includes("h-captcha")) return "hCaptcha";
+  if (lower.includes("cloudflare") && lower.includes("challenge")) return "Cloudflare challenge";
+  if (lower.includes("are you a human") || lower.includes("verify you are human")) return "human verification";
+  return null;
+}
+
+function snippetAround(html: string, keyword: string, span = 160): string | null {
+  const lower = html.toLowerCase();
+  const idx = lower.indexOf(keyword.toLowerCase());
+  if (idx < 0) return null;
+  const start = Math.max(0, idx - span / 4);
+  const end = Math.min(html.length, idx + keyword.length + (span * 3) / 4);
+  return html.slice(start, end).replace(/\s+/g, " ").trim();
+}
+
 async function authenticateAndGetCookies(
   loginPageUrl: string,
   username: string,
   password: string,
-): Promise<string | null> {
+): Promise<AuthResult> {
   try {
     console.log(`[donor-sync] Attempting login at ${loginPageUrl}`);
 
@@ -397,8 +419,9 @@ async function authenticateAndGetCookies(
     if (authResp.status >= 300 && authResp.status < 400) {
       const location = authResp.headers.get("location") || "";
       if (location.toLowerCase().includes("login")) {
-        console.error(`[donor-sync] Login failed - redirected back to login page`);
-        return null;
+        const reason = `redirected back to login page (location="${location}", status=${authResp.status})`;
+        console.error(`[donor-sync] Login failed - ${reason}`);
+        return { ok: false, reason };
       }
       console.log(`[donor-sync] Login successful (redirect to ${location})`);
 
@@ -415,14 +438,46 @@ async function authenticateAndGetCookies(
       allCookies.push(...safeFollowCookies);
     } else if (authResp.status === 200) {
       const responseText = await authResp.text();
-      if (responseText.toLowerCase().includes("sign in") && responseText.toLowerCase().includes("password")) {
-        console.error(`[donor-sync] Login failed - still on login page`);
-        return null;
+      const lower = responseText.toLowerCase();
+      const captcha = detectCaptcha(responseText);
+      if (captcha) {
+        const reason = `${captcha} required on POST response (status=200)`;
+        console.error(`[donor-sync] Login failed - ${reason}`);
+        return { ok: false, reason };
+      }
+      // Look for explicit error hints first, then fall back to the generic "sign in + password" detector
+      const errorPhrases = [
+        "invalid", "incorrect", "wrong password", "wrong username",
+        "locked", "lockout", "too many", "rate", "blocked",
+        "suspended", "disabled", "expired", "not authorized",
+      ];
+      for (const phrase of errorPhrases) {
+        if (lower.includes(phrase)) {
+          const snippet = snippetAround(responseText, phrase) || phrase;
+          const reason = `200 OK with error phrase "${phrase}": ...${snippet}...`;
+          console.error(`[donor-sync] Login failed - ${reason}`);
+          return { ok: false, reason };
+        }
+      }
+      if (lower.includes("sign in") && lower.includes("password")) {
+        const reason = `still on login page (status=200, no specific error phrase found, body length=${responseText.length})`;
+        console.error(`[donor-sync] Login failed - ${reason}`);
+        return { ok: false, reason };
       }
       console.log(`[donor-sync] Login successful (200 OK)`);
     } else {
-      console.error(`[donor-sync] Login returned unexpected status ${authResp.status}`);
-      return null;
+      // Capture rate-limit and other HTTP errors with as much detail as possible
+      const retryAfter = authResp.headers.get("retry-after");
+      let bodySnippet = "";
+      try {
+        const body = await authResp.text();
+        const captcha = detectCaptcha(body);
+        if (captcha) bodySnippet = ` (${captcha} page)`;
+        else bodySnippet = ` (body: ${body.slice(0, 200).replace(/\s+/g, " ").trim()}...)`;
+      } catch { /* ignore */ }
+      const reason = `unexpected HTTP status ${authResp.status}${retryAfter ? ` (Retry-After: ${retryAfter})` : ""}${bodySnippet}`;
+      console.error(`[donor-sync] Login failed - ${reason}`);
+      return { ok: false, reason };
     }
 
     const cookieMap = new Map<string, string>();
@@ -432,10 +487,11 @@ async function authenticateAndGetCookies(
     }
     const dedupedCookies = Array.from(cookieMap.values()).join("; ");
     console.log(`[donor-sync] Authenticated with ${cookieMap.size} cookies`);
-    return dedupedCookies;
+    return { ok: true, cookies: dedupedCookies };
   } catch (err: any) {
+    const reason = `exception during auth: ${err.message}`;
     console.error(`[donor-sync] Authentication error: ${err.message}`);
-    return null;
+    return { ok: false, reason };
   }
 }
 
@@ -4062,24 +4118,32 @@ async function runSyncJob(
       }
 
       let authenticated = false;
+      const authFailures: { candidate: string; reason: string }[] = [];
       for (const candidate of loginCandidates) {
         console.log(`[donor-sync] Trying login at ${candidate}`);
-        const cookies = await authenticateAndGetCookies(
+        const result = await authenticateAndGetCookies(
           candidate,
           credentials.username,
           credentials.password,
         );
-        if (cookies) {
-          sessionCookies = cookies;
+        if (result.ok) {
+          sessionCookies = result.cookies;
           authenticated = true;
           break;
         }
+        authFailures.push({ candidate, reason: result.reason });
       }
       if (!authenticated) {
         job.status = "failed";
-        job.errors.push("Login failed. Please verify your username and password are correct.");
+        // Surface the actual reason(s) into the SyncLog so the admin UI shows
+        // WHY it failed, not just "verify your password". Lets us distinguish
+        // bad credentials from rate-limit, captcha, IP block, etc.
+        const detail = authFailures
+          .map(f => `[${new URL(f.candidate).pathname}] ${f.reason}`)
+          .join(" | ");
+        job.errors.push(`Login failed: ${detail}`);
         job.completedAt = new Date();
-        console.error(`[donor-sync] Login failed for ${credentials.username} - aborting sync`);
+        console.error(`[donor-sync] Login failed for ${credentials.username} - aborting sync. Details: ${detail}`);
 
         const syncConfigUpdate = {
           lastSyncAt: new Date(),
@@ -5239,11 +5303,40 @@ export function getNightlySyncStatus() {
   };
 }
 
-export async function runNightlySync(prisma: PrismaService, storageService?: StorageService | null) {
+export async function runNightlySync(
+  prisma: PrismaService,
+  storageService?: StorageService | null,
+  opts?: { force?: boolean },
+) {
   if (nightlySyncRunning) {
     console.log("[nightly-sync] Already running, skipping");
     return;
   }
+
+  // DB-level dedup. In-memory `nightlySyncRunning` is per-process and Replit
+  // Autoscale can spin up multiple containers, so concurrent triggers
+  // (in-process cron + GitHub Actions pinger + startup catch-up) each see
+  // their own fresh flag. Without this check, every scheduled hit re-runs the
+  // scrapers and burns each provider's "logins per hour" budget — some sites
+  // (e.g. Eggceptional) rate-limit / lock the account after the first one.
+  // Skip if a completed/partial nightly ran within the last 20h. Manual admin
+  // triggers pass {force:true} to override.
+  if (!opts?.force) {
+    const recent = await prisma.syncLog.findFirst({
+      where: {
+        source: "nightly",
+        status: { in: ["completed", "partial"] },
+        startedAt: { gt: new Date(Date.now() - 20 * 60 * 60 * 1000) },
+      },
+      orderBy: { startedAt: "desc" },
+      select: { startedAt: true, status: true },
+    });
+    if (recent) {
+      console.log(`[nightly-sync] Skip - last successful nightly was ${recent.startedAt.toISOString()} (${recent.status})`);
+      return;
+    }
+  }
+
   nightlySyncRunning = true;
   nightlySyncResults.length = 0;
   lastNightlySyncAt = new Date();
