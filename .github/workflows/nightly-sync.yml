@@ -1,0 +1,45 @@
+name: Nightly Sync Pinger
+
+# Wakes the Replit Autoscale container and triggers the nightly scraper sync.
+# The in-process node-cron schedule cannot fire when the container is asleep,
+# so we ping it from GitHub Actions instead. The endpoint itself is idempotent
+# (returns 200 "already running" on duplicate calls) so DST overlap is safe.
+#
+# GitHub Actions cron is UTC-only, so we fire twice to cover both DST states:
+#   - 06:05 UTC = 02:05 EDT (Mar-Nov, UTC-4)
+#   - 07:05 UTC = 02:05 EST (Nov-Mar, UTC-5)
+# Whichever of the two matches local 02:05 ET starts the sync; the other call
+# hits "already running" and is a no-op.
+#
+# Requires repo secret NIGHTLY_SYNC_SECRET (same value set in Replit Secrets).
+
+on:
+  schedule:
+    - cron: "5 6 * * *"
+    - cron: "5 7 * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger nightly sync on Replit
+        env:
+          SECRET: ${{ secrets.NIGHTLY_SYNC_SECRET }}
+        run: |
+          if [ -z "$SECRET" ]; then
+            echo "::error::NIGHTLY_SYNC_SECRET repo secret is not set"
+            exit 1
+          fi
+          response=$(curl -sS --max-time 30 -w "\n%{http_code}" -X POST \
+            -H "x-cron-secret: $SECRET" \
+            https://go-stork.replit.app/api/cron/run-nightly-sync)
+          body=$(echo "$response" | sed '$d')
+          code=$(echo "$response" | tail -n 1)
+          echo "Status: $code"
+          echo "Body:   $body"
+          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+            echo "::error::Pinger failed with HTTP $code"
+            exit 1
+          fi

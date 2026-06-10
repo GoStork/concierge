@@ -10,7 +10,9 @@ import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { AppModule } from "./src/app.module";
 import { SpaFallbackFilter } from "./src/filters/spa-fallback.filter";
 import { PrismaService } from "./src/modules/prisma/prisma.service";
-import { startNightlySyncScheduler } from "./src/modules/providers/nightly-sync.scheduler";
+import { startNightlySyncScheduler, runCatchUpIfStale } from "./src/modules/providers/nightly-sync.scheduler";
+import { runNightlySync, getNightlySyncStatus } from "./src/modules/providers/profile-sync.service";
+import { StorageService } from "./src/modules/storage/storage.service";
 import { startCalendarHealthScheduler } from "./src/modules/calendar/calendar-health.scheduler";
 import { startCostSheetReminderScheduler } from "./src/modules/billing/cost-sheet-reminder.scheduler";
 import { startReversalRecoupScheduler } from "./src/modules/billing/reversal-recoup.scheduler";
@@ -102,6 +104,37 @@ export function log(message: string, source = "nestjs") {
   // /tmp/gostork-server.log even when the user never opens DevTools. Never
   // sensitive: it logs JSON the client already had in its own scope. Keep
   // the body small (5 KB) so a runaway client can't fill the log.
+  // External cron pinger entrypoint. Replit Autoscale spins the container down
+  // when idle so the in-process node-cron at 2 AM ET cannot fire. Point an
+  // external scheduler (GitHub Actions cron, cron-job.org, UptimeRobot, etc.)
+  // at this URL with the shared secret to guarantee the daily run. Token auth
+  // bypasses session/JWT because the caller is a machine, not a logged-in user.
+  // Registered BEFORE nestApp.init() so Express handles it ahead of Nest's
+  // catch-all 404 for unknown /api/* routes. Service refs are late-bound.
+  let nightlySyncPrismaRef: PrismaService | null = null;
+  let nightlySyncStorageRef: StorageService | null = null;
+  app.post("/api/cron/run-nightly-sync", (req: Request, res: Response) => {
+    const secret = process.env.NIGHTLY_SYNC_SECRET;
+    if (!secret) {
+      return res.status(503).json({ message: "NIGHTLY_SYNC_SECRET not configured" });
+    }
+    const provided = req.headers["x-cron-secret"];
+    if (typeof provided !== "string" || provided !== secret) {
+      return res.status(401).json({ message: "Invalid cron secret" });
+    }
+    if (!nightlySyncPrismaRef) {
+      return res.status(503).json({ message: "Server still starting" });
+    }
+    const status = getNightlySyncStatus();
+    if (status.isRunning) {
+      return res.status(200).json({ message: "Nightly sync already running", isRunning: true });
+    }
+    runNightlySync(nightlySyncPrismaRef, nightlySyncStorageRef).catch((err: any) => {
+      console.error("[nightly-sync] Cron pinger run failed:", err.message);
+    });
+    return res.status(202).json({ message: "Nightly sync started", isRunning: true });
+  });
+
   app.post("/api/client-errors", express.json({ limit: "5kb" }), (req, res) => {
     try {
       const { message, stack, componentStack, url, userAgent, at } = req.body || {};
@@ -171,7 +204,11 @@ export function log(message: string, source = "nestjs") {
 
   const prismaService = nestApp.get(PrismaService);
   const notificationService = nestApp.get(NotificationService);
-  startNightlySyncScheduler(prismaService);
+  const storageService = nestApp.get(StorageService);
+  nightlySyncPrismaRef = prismaService;
+  nightlySyncStorageRef = storageService;
+  startNightlySyncScheduler(prismaService, storageService);
+  runCatchUpIfStale(prismaService, storageService);
   startCalendarHealthScheduler(prismaService, notificationService);
   startCostSheetReminderScheduler(prismaService, notificationService);
   startReversalRecoupScheduler(prismaService);
