@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Search, Loader2, Calendar, User, MapPin, Award, Heart, Clock, Info, X, Baby, FlaskRound } from "lucide-react";
+import { Search, Loader2, Calendar, User, MapPin, Award, Heart, Clock, Info, X, Baby, FlaskRound, SlidersHorizontal, ArrowLeft } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { matchesFilter, matchesSameSexCoupleRequirement, matchesInternationalRequirement, omniSearch, sortDonors } from "@/lib/marketplace-filters";
 import { useAppSelector, useAppDispatch } from "@/store";
@@ -729,7 +729,7 @@ const PARENT_TYPE_MAP: Record<string, { id: string; label: string }> = {
 };
 const PARENT_TYPE_ORDER = ["egg-donors", "sperm-donors", "surrogates", "ivf-clinics"];
 
-function MobileDeckTypeSwitcher({ types, activeTab, onSelect, theme }: {
+function DeckTypeSwitcher({ types, activeTab, onSelect, theme }: {
   types: { id: string; label: string }[];
   activeTab: string;
   onSelect: (id: string) => void;
@@ -739,43 +739,108 @@ function MobileDeckTypeSwitcher({ types, activeTab, onSelect, theme }: {
   const isDark = theme === "dark";
   return (
     <div
-      className={`${isDark ? 'absolute left-0 right-0 z-[71] px-3' : 'w-full px-3 pt-3'}`}
-      style={isDark ? { top: 'calc(env(safe-area-inset-top, 0px) + 8px)' } : undefined}
+      className="flex justify-center gap-1.5 overflow-x-auto scrollbar-hide"
       data-testid="deck-type-switcher"
     >
-      <div className="flex justify-center gap-1.5 overflow-x-auto scrollbar-hide">
-        {types.map(t => {
-          const active = activeTab === t.id;
-          const base = "shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium font-ui transition-colors duration-150";
-          const cls = isDark
-            ? (active ? "bg-white text-[hsl(var(--deck-bg))]" : "bg-white/12 text-white/85 hover:bg-white/20")
-            : (active ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:bg-secondary");
-          return (
-            <button
-              key={t.id}
-              onClick={() => onSelect(t.id)}
-              className={`${base} ${cls}`}
-              data-testid={`deck-type-${t.id}`}
-            >
-              {t.label}
-            </button>
-          );
-        })}
+      {types.map(t => {
+        const active = activeTab === t.id;
+        const base = "shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium font-ui transition-colors duration-150";
+        const cls = isDark
+          ? (active ? "bg-white text-[hsl(var(--deck-bg))]" : "bg-white/12 text-white/85 hover:bg-white/20")
+          : (active ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:bg-secondary");
+        return (
+          <button
+            key={t.id}
+            onClick={() => onSelect(t.id)}
+            className={`${base} ${cls}`}
+            data-testid={`deck-type-${t.id}`}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function MarketplaceFiltersPage({ providerType, onClose }: {
+  providerType: "egg-donor" | "surrogate" | "sperm-donor" | "ivf-clinic";
+  onClose: () => void;
+}) {
+  const dispatch = useAppDispatch();
+  const showSkippedOnly = useAppSelector((state) => state.ui.showSkippedOnly);
+  const showExperiencedOnly = useAppSelector((state) => state.ui.showExperiencedOnly);
+
+  return (
+    <div className="fixed inset-x-0 top-0 bottom-0 z-[80] flex flex-col bg-background" data-testid="marketplace-filters-page">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-border/60" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}>
+        <button
+          onClick={onClose}
+          className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
+          aria-label="Close filters"
+          data-testid="button-close-filters"
+        >
+          <ArrowLeft className="w-5 h-5 text-foreground" />
+        </button>
+        <h1 className="font-display text-xl font-heading text-foreground">Filters</h1>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
+        {providerType !== "ivf-clinic" && (
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Quick filters</h2>
+            <div className="space-y-2">
+              <button
+                onClick={() => dispatch(setShowExperiencedOnly(!showExperiencedOnly))}
+                className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-[var(--radius)] border transition-colors ${showExperiencedOnly ? 'border-primary bg-primary/5' : 'border-border bg-card hover:bg-muted'}`}
+                data-testid="toggle-experienced"
+              >
+                <div className="flex items-center gap-3">
+                  <Award className={`w-5 h-5 ${showExperiencedOnly ? 'text-primary' : 'text-muted-foreground'}`} fill={showExperiencedOnly ? "currentColor" : "none"} />
+                  <span className="font-ui text-sm text-foreground">Experienced only</span>
+                </div>
+                <span className={`text-xs font-medium ${showExperiencedOnly ? 'text-primary' : 'text-muted-foreground'}`}>{showExperiencedOnly ? 'On' : 'Off'}</span>
+              </button>
+              <button
+                onClick={() => dispatch(setShowSkippedOnly(!showSkippedOnly))}
+                className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-[var(--radius)] border transition-colors ${showSkippedOnly ? 'border-primary bg-primary/5' : 'border-border bg-card hover:bg-muted'}`}
+                data-testid="toggle-skipped"
+              >
+                <div className="flex items-center gap-3">
+                  <X className={`w-5 h-5 ${showSkippedOnly ? 'text-primary' : 'text-muted-foreground'}`} />
+                  <span className="font-ui text-sm text-foreground">Show passed profiles</span>
+                </div>
+                <span className={`text-xs font-medium ${showSkippedOnly ? 'text-primary' : 'text-muted-foreground'}`}>{showSkippedOnly ? 'On' : 'Off'}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Preferences</h2>
+          <MarketplaceFilterBar providerType={providerType} hideFavorites noResults />
+        </div>
+      </div>
+
+      <div className="border-t border-border/60 px-4 py-3 flex justify-end" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}>
+        <Button onClick={onClose} className="font-ui" data-testid="button-apply-filters">
+          Show results
+        </Button>
       </div>
     </div>
   );
 }
 
-function MobileFilterOverlay({ providerType, activeFilters, hasResults = true }: {
+function MobileFilterOverlay({ providerType, hasResults = true, types, activeTab, onSelectType, onOpenFilters }: {
   providerType: "egg-donor" | "surrogate" | "sperm-donor" | "ivf-clinic";
-  activeFilters: Record<string, string[]>;
   hasResults?: boolean;
+  types: { id: string; label: string }[];
+  activeTab: string;
+  onSelectType: (id: string) => void;
+  onOpenFilters: () => void;
 }) {
   const dispatch = useAppDispatch();
   const searchQuery = useAppSelector((state) => state.ui.marketplaceSearchQuery);
-  const showFavoritesOnly = useAppSelector((state) => state.ui.showFavoritesOnly);
-  const showSkippedOnly = useAppSelector((state) => state.ui.showSkippedOnly);
-  const showExperiencedOnly = useAppSelector((state) => state.ui.showExperiencedOnly);
   const [searchExpanded, setSearchExpanded] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -795,32 +860,25 @@ function MobileFilterOverlay({ providerType, activeFilters, hasResults = true }:
   }, [searchQuery]);
 
   const iconColor = hasResults ? 'text-white' : 'text-foreground';
-  const iconColorMuted = hasResults ? 'text-white/80' : 'text-foreground/60';
   const searchInputBg = hasResults
     ? 'bg-black/40 backdrop-blur-md text-white placeholder:text-white/50 border-white/15 focus:border-white/30'
     : 'bg-muted text-foreground placeholder:text-muted-foreground border-border focus:border-foreground/30';
   const clearColor = hasResults ? 'text-white/60' : 'text-muted-foreground';
 
   return (
-    <div className="absolute left-0 right-0 z-[70] px-3" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 52px)' }} data-testid="mobile-filter-overlay">
+    <div className="shrink-0 w-full px-3 pb-2" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)' }} data-testid="mobile-filter-overlay">
       <div className="flex items-center gap-2">
         <button
-          onClick={handleSearchToggle}
-          className="relative shrink-0 w-7 h-7 flex items-center justify-center"
-          data-testid="button-search-toggle"
+          onClick={onOpenFilters}
+          className="relative shrink-0 w-8 h-8 flex items-center justify-center"
+          aria-label="Open filters"
+          data-testid="button-open-filters"
         >
-          {searchExpanded ? (
-            <X className={`w-5 h-5 ${iconColor}`} />
-          ) : (
-            <Search className={`w-5 h-5 ${iconColor}`} />
-          )}
+          <SlidersHorizontal className={`w-5 h-5 ${iconColor}`} />
         </button>
 
-        <div
-          className="overflow-hidden transition-all duration-300 ease-in-out"
-          style={{ width: searchExpanded ? '100%' : '0px', opacity: searchExpanded ? 1 : 0 }}
-        >
-          <div className="relative min-w-[160px]">
+        {searchExpanded ? (
+          <div className="flex-1 relative">
             <input
               ref={searchInputRef}
               type="text"
@@ -841,44 +899,29 @@ function MobileFilterOverlay({ providerType, activeFilters, hasResults = true }:
               </button>
             )}
           </div>
-        </div>
-
-        {!searchExpanded && (
-          <div className="flex-1 overflow-x-auto scrollbar-hide">
-            <div className="flex items-center gap-1.5" data-testid="filter-chips-overlay">
-              <button
-                onClick={() => dispatch(setShowFavoritesOnly(!showFavoritesOnly))}
-                className="shrink-0 w-7 h-7 flex items-center justify-center"
-                data-testid="chip-favorites"
-              >
-                <Heart className={`w-5 h-5 transition-colors ${showFavoritesOnly ? iconColor : iconColorMuted}`} fill={showFavoritesOnly ? "currentColor" : "none"} />
-              </button>
-              <button
-                onClick={() => dispatch(setShowSkippedOnly(!showSkippedOnly))}
-                className="shrink-0 w-7 h-7 flex items-center justify-center"
-                data-testid="chip-skipped"
-              >
-                <X className={`w-5 h-5 transition-colors ${showSkippedOnly ? iconColor : iconColorMuted}`} />
-              </button>
-              {providerType !== "ivf-clinic" && (
-                <button
-                  onClick={() => dispatch(setShowExperiencedOnly(!showExperiencedOnly))}
-                  className="shrink-0 w-7 h-7 flex items-center justify-center"
-                  data-testid="chip-experienced"
-                >
-                  <Award className={`w-5 h-5 transition-colors ${showExperiencedOnly ? iconColor : iconColorMuted}`} fill={showExperiencedOnly ? "currentColor" : "none"} />
-                </button>
-              )}
-              <MarketplaceFilterBar
-                providerType={providerType}
-                hideFavorites
-                inlineMode
-                overlayStyle
-                noResults={!hasResults}
-              />
-            </div>
+        ) : (
+          <div className="flex-1 flex justify-center">
+            <DeckTypeSwitcher
+              types={types}
+              activeTab={activeTab}
+              onSelect={onSelectType}
+              theme="dark"
+            />
           </div>
         )}
+
+        <button
+          onClick={handleSearchToggle}
+          className="relative shrink-0 w-8 h-8 flex items-center justify-center"
+          aria-label={searchExpanded ? "Close search" : "Search"}
+          data-testid="button-search-toggle"
+        >
+          {searchExpanded ? (
+            <X className={`w-5 h-5 ${iconColor}`} />
+          ) : (
+            <Search className={`w-5 h-5 ${iconColor}`} />
+          )}
+        </button>
       </div>
     </div>
   );
@@ -936,6 +979,22 @@ export default function MarketplacePage() {
   useEffect(() => {
     dispatch(setShowFavoritesOnly(viewParam === "saved"));
   }, [viewParam, dispatch]);
+
+  const filtersOpen = searchParams.get("filters") === "1";
+  const openFiltersPage = useCallback(() => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set("filters", "1");
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+  const closeFiltersPage = useCallback(() => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete("filters");
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   const parentProfileQuery = useQuery<{ interestedServices?: string[] }>({
     queryKey: ["/api/parent-profile"],
@@ -1128,21 +1187,20 @@ export default function MarketplacePage() {
   const onFilteredCountChange = useCallback((count: number) => setFilteredCount(count), []);
   const hasResults = isLoading || (filteredCount === null ? true : filteredCount > 0);
 
+  if (isParentOnly && filtersOpen) {
+    return <MarketplaceFiltersPage providerType={currentProviderType} onClose={closeFiltersPage} />;
+  }
+
   if (isMobile && isDonorTab) {
     return (
       <div className="fixed inset-x-0 top-0 bottom-[calc(88px+env(safe-area-inset-bottom))] z-[60] flex flex-col" style={{ backgroundColor: 'hsl(var(--deck-bg))' }} data-testid="marketplace-mobile-immersive">
-        {isParentOnly && (
-          <MobileDeckTypeSwitcher
-            types={parentAvailableTypes}
-            activeTab={activeTab}
-            onSelect={(id) => dispatch(setMarketplaceTab(id))}
-            theme="dark"
-          />
-        )}
         <MobileFilterOverlay
           providerType={currentProviderType}
-          activeFilters={activeFilters}
           hasResults={hasResults}
+          types={parentAvailableTypes}
+          activeTab={activeTab}
+          onSelectType={(id) => dispatch(setMarketplaceTab(id))}
+          onOpenFilters={openFiltersPage}
         />
 
         <div className="flex-1 min-h-0">
@@ -1192,13 +1250,15 @@ export default function MarketplacePage() {
         </UnderlineTabs>
       )}
 
-      {isParentOnly && isMobile && (
-        <MobileDeckTypeSwitcher
-          types={parentAvailableTypes}
-          activeTab={activeTab}
-          onSelect={(id) => dispatch(setMarketplaceTab(id))}
-          theme="light"
-        />
+      {isParentOnly && (
+        <div className="w-full pt-2">
+          <DeckTypeSwitcher
+            types={parentAvailableTypes}
+            activeTab={activeTab}
+            onSelect={(id) => dispatch(setMarketplaceTab(id))}
+            theme="light"
+          />
+        </div>
       )}
 
 
