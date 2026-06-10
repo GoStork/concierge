@@ -15,7 +15,6 @@ import {
   Building2,
   Users,
   ChevronDown,
-  MoreHorizontal,
   Calendar,
   RefreshCw,
   MessageCircle,
@@ -26,6 +25,7 @@ import {
   X,
   Heart,
   Flame,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -665,6 +665,16 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   );
   const showCalendarBanner = !calendarBannerDismissed && expiredCalendarConnections.length > 0;
 
+  // Build the banner headline so the user always sees WHICH account was
+  // disconnected (matches the email notification's behavior). Apple CalDAV
+  // connections may not have an email - fall back to the user's label, then
+  // the provider name, so the parenthetical is never empty.
+  const providerDisplayName = (p: string) => p === "microsoft" ? "Microsoft" : p === "apple" ? "Apple" : "Google";
+  const connLabel = (c: any) => c.email || c.label || providerDisplayName(c.provider);
+  const calendarBannerHeadline = expiredCalendarConnections.length === 1
+    ? `Your ${providerDisplayName(expiredCalendarConnections[0].provider)} Calendar (${connLabel(expiredCalendarConnections[0])}) has been disconnected.`
+    : `${expiredCalendarConnections.length} calendar connections have expired (${expiredCalendarConnections.map(connLabel).join(", ")}).`;
+
   async function handleBannerReconnect(conn: any) {
     const isMs = conn.provider === "microsoft";
     if (isMs) setBannerMicrosoftReconnecting(true); else setBannerGoogleReconnecting(true);
@@ -753,13 +763,22 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   const visibleNav = navigation.filter(item => item.show);
 
   const maxBottomTabs = 7;
-  const bottomTabs = visibleNav.filter(item => !item.desktopOnly).slice(0, maxBottomTabs);
+  // Mobile bottom bar shows up to `maxBottomTabs` items, with Profile pinned
+  // to the last slot when present so admins / providers don't lose access to
+  // /account on mobile if their other tabs would otherwise fill the bar. No
+  // overflow "More" dropdown - if there are more items than slots, the lower-
+  // priority ones simply don't appear on mobile (they're still on desktop).
+  const mobileNav = visibleNav.filter(item => !item.desktopOnly);
+  const profileItem = mobileNav.find(item => item.to === '/account');
+  const nonProfileMobile = mobileNav.filter(item => item.to !== '/account');
+  const bottomTabs = profileItem
+    ? [...nonProfileMobile.slice(0, maxBottomTabs - 1), profileItem]
+    : nonProfileMobile.slice(0, maxBottomTabs);
 
   // When on /marketplace?view=saved, only the Saved item should be highlighted.
   // Type tabs (egg-donors / sperm-donors / etc.) should NOT show as active even
   // though Redux's activeTab matches one of them.
   const onSavedView = location.pathname === '/marketplace' && new URLSearchParams(location.search).get('view') === 'saved';
-  const overflowTabs = visibleNav.slice(maxBottomTabs);
 
   const isActive = (to: string) => {
     const params = new URLSearchParams(location.search);
@@ -1006,52 +1025,6 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
               </Link>
             );
           })}
-          {overflowTabs.length > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  data-testid="tab-more"
-                  aria-label="More navigation options"
-                  className="flex flex-col items-center justify-center flex-1 gap-0.5 text-[11px] font-ui transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-[var(--radius)]"
-                  style={{
-                    color: overflowTabs.some(item => isActive(item.to))
-                      ? (onMarketplaceDeck ? 'hsl(var(--deck-fg))' : 'var(--bottom-nav-active-fg, hsl(var(--primary)))')
-                      : (onMarketplaceDeck ? 'hsl(var(--deck-fg-muted))' : 'var(--bottom-nav-fg, hsl(var(--muted-foreground)))'),
-                  }}
-                >
-                  <div className="p-1.5 transition-colors duration-200">
-                    <MoreHorizontal className="w-5 h-5" />
-                  </div>
-                  <span>More</span>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" side="top" className="w-48 mb-2">
-                {overflowTabs.map((item) => {
-                  const Icon = item.icon;
-                  const active = item.tabId
-                    ? (!onSavedView && location.pathname === '/marketplace' && marketplaceTab === item.tabId)
-                    : isActive(item.to);
-                  return (
-                    <DropdownMenuItem key={item.tabId || item.to} asChild>
-                      <Link
-                        to={item.to}
-                        onClick={item.tabId ? (e: any) => {
-                          e.preventDefault();
-                          dispatch(setMarketplaceTab(item.tabId!));
-                          navigate('/marketplace');
-                        } : undefined}
-                        data-testid={`tab-more-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
-                        className={`flex items-center gap-2 cursor-pointer ${active ? 'text-primary font-ui' : ''}`}
-                      >
-                        <Icon className="w-5 h-5" />
-                        {item.label}
-                      </Link>
-                    </DropdownMenuItem>
-                  );
-                })}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
         </div>
       </nav>
       </div>
@@ -1062,9 +1035,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
             <div className="max-w-[1800px] mx-auto flex items-center gap-3 flex-wrap">
               <AlertTriangle className="w-4 h-4 text-[hsl(var(--brand-warning))] shrink-0" />
               <p className="text-sm font-ui text-foreground flex-1 min-w-0">
-                <span className="font-medium">
-                  {expiredCalendarConnections.length === 1 ? "A calendar connection has expired." : `${expiredCalendarConnections.length} calendar connections have expired.`}
-                </span>
+                <span className="font-medium">{calendarBannerHeadline}</span>
                 {" "}New bookings won't sync until you reconnect.
               </p>
               <div className="flex items-center gap-2 shrink-0">
@@ -1118,7 +1089,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
             <AlertTriangle className="w-4 h-4 text-[hsl(var(--brand-warning))] shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-ui font-medium text-foreground">
-                {expiredCalendarConnections.length === 1 ? "A calendar connection has expired." : `${expiredCalendarConnections.length} calendar connections have expired.`}
+                {calendarBannerHeadline}
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">New bookings won't sync until you reconnect.</p>
               <div className="flex flex-wrap gap-2 mt-2">

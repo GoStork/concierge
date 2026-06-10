@@ -45,6 +45,15 @@ import { matchesFilter, matchesSameSexCoupleRequirement, matchesInternationalReq
 interface ProfileDatabasePanelProps {
   providerId: string;
   type: ProfileType;
+  /**
+   * Which sections to render. Defaults to "full".
+   * - "full": everything (scraper overview + sync config + sync progress + last report + pdf upload + records)
+   * - "config": sync configuration card + live sync progress + last report + pdf upload (no scraper overview, no records)
+   * - "records": only the profile records grid + filter bar
+   * Used by the admin scraper report page to mount the sync config at the top and
+   * the records grid at the bottom while keeping the existing report between them.
+   */
+  mode?: "full" | "config" | "records";
 }
 
 interface MissingFieldSummary {
@@ -99,7 +108,11 @@ function setPersistentPdf(providerId: string, type: string, jobId: string | null
 export default function ProfileDatabasePanel({
   providerId,
   type,
+  mode = "full",
 }: ProfileDatabasePanelProps) {
+  const showOverview = mode === "full";
+  const showConfig = mode === "full" || mode === "config";
+  const showRecords = mode === "full" || mode === "records";
   const { toast } = useToast();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
@@ -509,7 +522,7 @@ export default function ProfileDatabasePanel({
       {!isAdminOrProvider && (
         <div className="text-center text-muted-foreground py-8">You don't have access to this section.</div>
       )}
-      {isAdminOrProvider && hasConfig && (
+      {showOverview && isAdminOrProvider && hasConfig && (
         <div className="space-y-3" data-testid={`scraper-stats-${type}`}>
           <div className="flex items-center justify-between">
             <div>
@@ -581,7 +594,7 @@ export default function ProfileDatabasePanel({
         </div>
       )}
 
-      {isAdminOrProvider && <div className={`border rounded-[var(--radius)] p-4 space-y-4 ${!isAdmin ? "opacity-60" : ""}`}>
+      {showConfig && isAdminOrProvider && <div className={`border rounded-[var(--radius)] p-4 space-y-4 ${!isAdmin ? "opacity-60" : ""}`}>
         <h4
           className="font-heading text-sm flex items-center gap-2"
           data-testid="sync-config-title"
@@ -748,7 +761,7 @@ export default function ProfileDatabasePanel({
         </div>
       </div>}
 
-      {isSyncRunning && jobProgress && (
+      {showConfig && isSyncRunning && jobProgress && (
         <div
           className="border rounded-[var(--radius)] p-4 space-y-3"
           data-testid={`sync-progress-${type}`}
@@ -798,7 +811,7 @@ export default function ProfileDatabasePanel({
         </div>
       )}
 
-      {lastReport && (
+      {showConfig && lastReport && (
         <div
           className={`border rounded-[var(--radius)] p-4 space-y-3 ${
             lastReport.status === "completed"
@@ -924,7 +937,7 @@ export default function ProfileDatabasePanel({
         </div>
       )}
 
-      {type === "surrogate" && (isAdmin || roles.includes("PROVIDER_ADMIN")) && (
+      {showConfig && type === "surrogate" && (isAdmin || roles.includes("PROVIDER_ADMIN")) && (
         <div className="border rounded-[var(--radius)] p-4 space-y-4" data-testid="pdf-upload-card">
           <h4 className="font-heading text-sm flex items-center gap-2">
             <FileUp className="w-4 h-4" />
@@ -1076,7 +1089,7 @@ export default function ProfileDatabasePanel({
         </div>
       )}
 
-      <div>
+      {showRecords && <div>
         <div className="flex items-center justify-between mb-3">
           <h4
             className="font-heading text-sm"
@@ -1135,7 +1148,7 @@ export default function ProfileDatabasePanel({
         ) : (
           <ProfileCardGrid profiles={filteredProfiles} providerId={providerId} type={type} />
         )}
-      </div>
+      </div>}
     </div>
   );
 }

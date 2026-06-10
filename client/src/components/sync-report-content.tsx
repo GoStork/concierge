@@ -208,11 +208,18 @@ export function SyncReportContent({
   liveProgress,
   providerId,
   type,
+  hideMissingFields = false,
 }: {
   data: SyncReport;
   liveProgress?: { total: number; processed: number; succeeded: number; failed: number } | null;
   providerId?: string;
   type?: string;
+  /**
+   * Hide the persistent "Missing Mandatory Fields" table.
+   * Used on the admin scraper report page where the same table is already
+   * shown inside the transient "Sync Complete" card rendered by ProfileDatabasePanel.
+   */
+  hideMissingFields?: boolean;
 }) {
   const duration = formatDuration(data.lastSyncStartedAt, data.lastSyncEndedAt);
   // Treat as running if DB says so OR if the summary has live progress for this provider
@@ -385,7 +392,7 @@ export function SyncReportContent({
         </div>
       )}
 
-      {data.missingFields.length > 0 ? (
+      {hideMissingFields ? null : data.missingFields.length > 0 ? (
         <div className="space-y-2" data-testid="missing-fields-section">
           <h4 className="text-sm font-ui text-warning flex items-center gap-1">
             <AlertTriangle className="w-4 h-4" />
