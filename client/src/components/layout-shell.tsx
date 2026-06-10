@@ -717,13 +717,25 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     { id: "sperm-donors", label: "Sperm Donors", mobileLabel: "Sperm", icon: SpermIcon },
   ];
 
-  const navigation: { show: boolean; to: string; icon: any; label: string; mobileLabel: string; tabId?: string; mobileOnly?: boolean; submenuItems?: typeof MARKETPLACE_TABS; badge?: number; fillOnActive?: boolean }[] = [
+  const navigation: { show: boolean; to: string; icon: any; label: string; mobileLabel: string; tabId?: string; mobileOnly?: boolean; desktopOnly?: boolean; submenuItems?: typeof MARKETPLACE_TABS; badge?: number; fillOnActive?: boolean }[] = [
     { show: false /* hidden for now */, to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', mobileLabel: 'Dashboard' },
     { show: isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS },
     { show: isProvider && !isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS },
     ...(isParentOnly && !(brandSettings?.enableAiConcierge && brandSettings?.parentExperienceMode !== 'MARKETPLACE_ONLY')
       ? [
-          { show: true, to: '/marketplace', icon: Flame, label: 'Discover', mobileLabel: 'Discover', fillOnActive: true },
+          // Mobile bottom nav: single Discover entry, type pills live inside the deck view
+          { show: true, to: '/marketplace', icon: Flame, label: 'Discover', mobileLabel: 'Discover', fillOnActive: true, mobileOnly: true },
+          // Desktop top nav: each marketplace type as its own primary tab (no secondary pill row)
+          ...MARKETPLACE_TABS.map((tab) => ({
+            show: true,
+            to: '/marketplace',
+            icon: tab.icon,
+            label: tab.label,
+            mobileLabel: tab.mobileLabel,
+            tabId: tab.id,
+            desktopOnly: true,
+          })),
+          // Saved is universal: mobile bottom and desktop top
           { show: true, to: '/marketplace?view=saved', icon: Heart, label: 'Saved', mobileLabel: 'Saved', fillOnActive: true },
         ]
       : []),
@@ -741,7 +753,12 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   const visibleNav = navigation.filter(item => item.show);
 
   const maxBottomTabs = 7;
-  const bottomTabs = visibleNav.slice(0, maxBottomTabs);
+  const bottomTabs = visibleNav.filter(item => !item.desktopOnly).slice(0, maxBottomTabs);
+
+  // When on /marketplace?view=saved, only the Saved item should be highlighted.
+  // Type tabs (egg-donors / sperm-donors / etc.) should NOT show as active even
+  // though Redux's activeTab matches one of them.
+  const onSavedView = location.pathname === '/marketplace' && new URLSearchParams(location.search).get('view') === 'saved';
   const overflowTabs = visibleNav.slice(maxBottomTabs);
 
   const isActive = (to: string) => {
@@ -799,13 +816,15 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
             {visibleNav.filter(item => !item.mobileOnly).map((item) => {
               const Icon = item.icon;
               const active = item.tabId
-                ? location.pathname === '/marketplace' && marketplaceTab === item.tabId
+                ? (!onSavedView && location.pathname === '/marketplace' && marketplaceTab === item.tabId)
                 : isActive(item.to);
               const handleClick = item.tabId
                 ? (e: React.MouseEvent) => {
                     e.preventDefault();
                     dispatch(setMarketplaceTab(item.tabId!));
-                    if (location.pathname !== '/marketplace') navigate('/marketplace');
+                    // Always navigate to a clean /marketplace so clicking a type
+                    // tab from Saved drops you back into Discover for that type.
+                    navigate('/marketplace');
                   }
                 : undefined;
               return (
@@ -899,7 +918,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
           {bottomTabs.map((item) => {
             const Icon = item.icon;
             const active = item.tabId
-              ? location.pathname === '/marketplace' && marketplaceTab === item.tabId
+              ? (!onSavedView && location.pathname === '/marketplace' && marketplaceTab === item.tabId)
               : isActive(item.to);
             const navStyle = brandSettings?.bottomNavStyle || 'icon-label';
             const iconOnly = navStyle === 'icon-only';
@@ -940,7 +959,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                           className={`flex items-center gap-2 cursor-pointer ${subActive ? 'text-primary font-ui' : ''}`}
                           onClick={() => {
                             dispatch(setMarketplaceTab(sub.id));
-                            if (location.pathname !== '/marketplace') navigate('/marketplace');
+                            navigate('/marketplace');
                           }}
                           data-testid={`tab-marketplace-${sub.id}`}
                         >
@@ -958,7 +977,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
               ? (e: React.MouseEvent) => {
                   e.preventDefault();
                   dispatch(setMarketplaceTab(item.tabId!));
-                  if (location.pathname !== '/marketplace') navigate('/marketplace');
+                  navigate('/marketplace');
                 }
               : undefined;
             return (
@@ -1010,7 +1029,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                 {overflowTabs.map((item) => {
                   const Icon = item.icon;
                   const active = item.tabId
-                    ? location.pathname === '/marketplace' && marketplaceTab === item.tabId
+                    ? (!onSavedView && location.pathname === '/marketplace' && marketplaceTab === item.tabId)
                     : isActive(item.to);
                   return (
                     <DropdownMenuItem key={item.tabId || item.to} asChild>
@@ -1019,7 +1038,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                         onClick={item.tabId ? (e: any) => {
                           e.preventDefault();
                           dispatch(setMarketplaceTab(item.tabId!));
-                          if (location.pathname !== '/marketplace') navigate('/marketplace');
+                          navigate('/marketplace');
                         } : undefined}
                         data-testid={`tab-more-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
                         className={`flex items-center gap-2 cursor-pointer ${active ? 'text-primary font-ui' : ''}`}

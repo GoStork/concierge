@@ -12,12 +12,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/componen
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Search, Loader2, Calendar, User, MapPin, Award, Heart, Clock, Info, X, Baby, FlaskRound, SlidersHorizontal, ArrowLeft } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { matchesFilter, matchesSameSexCoupleRequirement, matchesInternationalRequirement, omniSearch, sortDonors } from "@/lib/marketplace-filters";
 import { useAppSelector, useAppDispatch } from "@/store";
-import { setMarketplaceSearchQuery, setMarketplaceTab, toggleFavoriteDonor, passDonor, undoPassDonor, loadDonorPreferences, setShowFavoritesOnly, setShowSkippedOnly, setShowExperiencedOnly, setFilter } from "@/store/uiSlice";
+import { setMarketplaceSearchQuery, setMarketplaceTab, toggleFavoriteDonor, passDonor, undoPassDonor, loadDonorPreferences, setShowFavoritesOnly, setShowSkippedOnly, setShowExperiencedOnly, setFilter, clearFilters } from "@/store/uiSlice";
 import { MarketplaceFilterBar } from "@/components/marketplace/MarketplaceFilterBar";
 import { Tabs as UnderlineTabs, TabsList as UnderlineTabsList, TabsTrigger as UnderlineTabsTrigger } from "@/components/ui/underline-tabs";
+import { Drawer as FullDrawer, DrawerContent as FullDrawerContent } from "@/components/ui/drawer";
+import { Check as CheckIcon } from "lucide-react";
 import { SwipeDeckCard } from "@/components/marketplace/swipe-deck-card";
 import { useMarketplaceViewContext, recordProfileView, useScrollPastView } from "@/lib/profile-views";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -763,27 +766,377 @@ function DeckTypeSwitcher({ types, activeTab, onSelect, theme }: {
   );
 }
 
-function MarketplaceFiltersPage({ providerType, onClose }: {
-  providerType: "egg-donor" | "surrogate" | "sperm-donor" | "ivf-clinic";
-  onClose: () => void;
+function InlineRangeFilter({ filterKey, label, min, max, step = 1, unit = "", formatValue }: {
+  filterKey: string;
+  label: string;
+  min: number;
+  max: number;
+  step?: number;
+  unit?: string;
+  formatValue?: (v: number) => string;
 }) {
   const dispatch = useAppDispatch();
-  const showSkippedOnly = useAppSelector((state) => state.ui.showSkippedOnly);
-  const showExperiencedOnly = useAppSelector((state) => state.ui.showExperiencedOnly);
+  const activeFilters = useAppSelector((state) => state.ui.activeFilters);
+  const current = activeFilters[filterKey];
+  const hasValue = current && current.length === 2;
+  const currentMin = hasValue ? Number(current[0]) : min;
+  const currentMax = hasValue ? Number(current[1]) : max;
+  const fmt = (v: number) => formatValue ? formatValue(v) : `${v}${unit}`;
 
   return (
-    <div className="fixed inset-x-0 top-0 bottom-0 z-[80] flex flex-col bg-background" data-testid="marketplace-filters-page">
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border/60" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}>
-        <button
-          onClick={onClose}
-          className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center hover:bg-muted transition-colors"
-          aria-label="Close filters"
-          data-testid="button-close-filters"
-        >
-          <ArrowLeft className="w-5 h-5 text-foreground" />
-        </button>
-        <h1 className="font-display text-xl font-heading text-foreground">Filters</h1>
+    <div className="py-3 border-b border-border" data-testid={`inline-${filterKey}-filter`}>
+      <div className="flex items-center justify-between mb-3">
+        <span className="font-ui text-base text-foreground">{label}</span>
+        <div className="flex items-center gap-2">
+          <span className={`font-ui text-sm ${hasValue ? 'text-foreground' : 'text-muted-foreground'}`} data-testid={`${filterKey}-current-value`}>
+            {hasValue ? `${fmt(currentMin)}-${fmt(currentMax)}` : 'Any'}
+          </span>
+          {hasValue && (
+            <button
+              onClick={() => dispatch(setFilter({ key: filterKey, values: [] }))}
+              className="text-muted-foreground hover:text-foreground"
+              data-testid={`${filterKey}-reset`}
+              aria-label={`Reset ${label}`}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
+      <Slider
+        value={[currentMin, currentMax]}
+        min={min}
+        max={max}
+        step={step}
+        onValueChange={(vals) => {
+          dispatch(setFilter({ key: filterKey, values: [String(vals[0]), String(vals[1])] }));
+        }}
+        data-testid={`${filterKey}-slider`}
+      />
+      <div className="flex justify-between mt-2">
+        <span className="font-ui text-xs text-muted-foreground">{fmt(min)}</span>
+        <span className="font-ui text-xs text-muted-foreground">{fmt(max)}</span>
+      </div>
+    </div>
+  );
+}
+
+function formatHeightInches(v: number) {
+  const ft = Math.floor(v / 12);
+  const inches = v % 12;
+  return `${ft}'${inches}"`;
+}
+
+function MobileSavedGrid({ donors, type }: {
+  donors: any[];
+  type: "egg-donor" | "surrogate" | "sperm-donor";
+}) {
+  const navigate = useNavigate();
+  const dispatch = useAppDispatch();
+  const favoritedIds = useAppSelector((s) => s.ui.favoritedDonorIds);
+  const filtered = useMemo(
+    () => (donors || []).filter((d) => favoritedIds.includes(d.id)),
+    [donors, favoritedIds],
+  );
+
+  const mapProfile = useCallback((d: any) => {
+    if (type === "surrogate") return mapDatabaseSurrogateToSwipeProfile(d);
+    if (type === "sperm-donor") return mapDatabaseSpermDonorToSwipeProfile(d);
+    return mapDatabaseDonorToSwipeProfile(d);
+  }, [type]);
+
+  const slug = type === "surrogate" ? "surrogate" : type === "sperm-donor" ? "spermdonor" : "eggdonor";
+
+  if (filtered.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full px-6 text-center" data-testid="saved-empty">
+        <div>
+          <Heart className="w-12 h-12 mx-auto mb-3 text-white/40" />
+          <p className="font-ui text-base text-white/85">No saved profiles yet</p>
+          <p className="font-ui text-sm text-white/55 mt-1">Tap the heart on a profile while browsing to save it here.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-2 px-2 pt-2 pb-4 overflow-y-auto h-full content-start" data-testid="saved-grid">
+      {filtered.map((donor) => {
+        const profile = mapProfile(donor);
+        const photo = getPhotoList(profile)[0];
+        const title = buildTitle(profile);
+        const onOpen = () => navigate(`/${slug}/${donor.providerId}/${donor.id}`);
+        return (
+          // Padding-bottom hack for a reliable 3:4 aspect ratio across all browsers.
+          <div key={donor.id} className="relative w-full" style={{ paddingBottom: '133.333%' }} data-testid={`saved-card-${donor.id}`}>
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={onOpen}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onOpen(); }}
+              className="absolute inset-0 rounded-[var(--radius)] overflow-hidden bg-[hsl(var(--deck-bg-elevated))] shadow-md cursor-pointer"
+            >
+              {photo ? (
+                <img src={photo} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" decoding="async" />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center text-white/60 text-xs font-ui">No Photo</div>
+              )}
+              <div className="absolute inset-x-0 bottom-0 pt-12 pb-2 px-2 bg-gradient-to-t from-black/85 via-black/40 to-transparent">
+                <div className="font-ui text-sm font-medium text-white truncate">{title}</div>
+                {profile.age && <div className="font-ui text-xs text-white/80">Age {profile.age}</div>}
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  dispatch(toggleFavoriteDonor(donor.id));
+                }}
+                className="absolute top-2 right-2 w-9 h-9 rounded-full bg-black/55 backdrop-blur-sm flex items-center justify-center hover:bg-black/75 transition-colors"
+                data-testid={`saved-remove-${donor.id}`}
+                aria-label="Remove from saved"
+              >
+                <Heart className="w-4 h-4" style={{ color: 'var(--swipe-save)' }} fill="currentColor" />
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function InlineLocationFilter({ providerType }: { providerType: "egg-donor" | "surrogate" | "sperm-donor" | "ivf-clinic" }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const locationKey = providerType === 'ivf-clinic' ? 'location'
+    : providerType === 'surrogate' ? 'surrogateLocation'
+    : providerType === 'sperm-donor' ? 'spermLocation'
+    : 'eggLocation';
+  const urlValue = searchParams.get(locationKey) || '';
+  const selected = urlValue ? urlValue.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+  const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<{ label: string; commit: string }[]>([]);
+  const [loading, setLoading] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const writeLocations = useCallback((next: string[]) => {
+    const joined = next.join(',');
+    setSearchParams(prev => {
+      const params = new URLSearchParams(prev);
+      if (joined) params.set(locationKey, joined);
+      else params.delete(locationKey);
+      return params;
+    }, { replace: true });
+  }, [setSearchParams, locationKey]);
+
+  const runSearch = useCallback(async (q: string) => {
+    if (q.trim().length < 3) {
+      setSuggestions([]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        q,
+        format: 'json',
+        addressdetails: '1',
+        limit: '5',
+        'accept-language': 'en',
+      });
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
+        headers: { 'Accept-Language': 'en' },
+      });
+      const data = await res.json();
+      const mapped = (data || [])
+        .filter((item: any) => item.address)
+        .map((item: any) => {
+          const a = item.address;
+          const city = a.city || a.town || a.village || a.hamlet || a.county || '';
+          const state = a.state || a.region || '';
+          const country = a.country || '';
+          const rawLabel = [city, state, country].filter(Boolean).join(', ');
+          const commit = city || state || country || rawLabel;
+          return { label: rawLabel, commit };
+        })
+        .filter((s: { label: string }) => s.label);
+      // Nominatim returns multiple geographic entries (country, ISO entity,
+      // admin boundary) that collapse to the same display label after our
+      // city/state/country reduction - e.g. "Taiwan" shows up twice for a
+      // "Taiwan" query. Dedupe by label, keeping first occurrence.
+      const seen = new Set<string>();
+      const deduped = mapped.filter((s: { label: string }) => {
+        if (seen.has(s.label)) return false;
+        seen.add(s.label);
+        return true;
+      });
+      setSuggestions(deduped);
+    } catch {
+      setSuggestions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleQueryChange = (v: string) => {
+    setQuery(v);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => runSearch(v), 350);
+  };
+
+  const addLocation = (loc: string) => {
+    if (!loc) return;
+    if (selected.includes(loc)) return;
+    writeLocations([...selected, loc]);
+    setQuery('');
+    setSuggestions([]);
+  };
+
+  const removeLocation = (loc: string) => {
+    writeLocations(selected.filter(l => l !== loc));
+  };
+
+  return (
+    <div className="py-3 border-b border-border" data-testid="inline-location-filter">
+      <div className="flex items-center justify-between mb-2">
+        <span className="font-ui text-base text-foreground">Location</span>
+        {selected.length > 0 && (
+          <button
+            onClick={() => writeLocations([])}
+            className="text-muted-foreground hover:text-foreground"
+            data-testid="location-reset"
+            aria-label="Reset locations"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2" data-testid="selected-locations">
+          {selected.map(loc => (
+            <span
+              key={loc}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium font-ui"
+              data-testid={`location-chip-${loc}`}
+            >
+              {loc}
+              <button
+                onClick={() => removeLocation(loc)}
+                className="hover:text-primary/70"
+                aria-label={`Remove ${loc}`}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="relative">
+        <Input
+          value={query}
+          onChange={(e) => handleQueryChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && query.trim()) {
+              e.preventDefault();
+              if (suggestions[0]) {
+                addLocation(suggestions[0].commit);
+              } else {
+                addLocation(query.trim());
+              }
+            }
+          }}
+          placeholder={selected.length > 0 ? "Add another location" : "City, state, or country"}
+          className="bg-muted border-0 font-ui"
+          data-testid="input-location-inline"
+        />
+        {(suggestions.length > 0 || loading) && (
+          <div
+            className="absolute left-0 right-0 top-full mt-1 z-20 bg-card border border-border rounded-[var(--radius)] shadow-lg max-h-64 overflow-y-auto"
+            data-testid="location-suggestions"
+          >
+            {loading && suggestions.length === 0 && (
+              <div className="px-3 py-2 text-sm font-ui text-muted-foreground">Searching...</div>
+            )}
+            {suggestions.map((s, i) => (
+              <button
+                key={`${s.commit}-${i}`}
+                onClick={() => addLocation(s.commit)}
+                className="w-full px-3 py-2 text-left text-sm font-ui hover:bg-muted transition-colors flex items-center gap-2"
+                data-testid={`location-suggestion-${i}`}
+              >
+                <MapPin className="w-4 h-4 text-muted-foreground shrink-0" />
+                <span className="text-foreground">{s.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MarketplaceFiltersDrawer({ providerType, open, onOpenChange }: {
+  providerType: "egg-donor" | "surrogate" | "sperm-donor" | "ivf-clinic";
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const dispatch = useAppDispatch();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const showSkippedOnly = useAppSelector((state) => state.ui.showSkippedOnly);
+  const showExperiencedOnly = useAppSelector((state) => state.ui.showExperiencedOnly);
+  const activeFilters = useAppSelector((state) => state.ui.activeFilters);
+  const hasAnyFilter =
+    Object.values(activeFilters).some(v => Array.isArray(v) && v.length > 0)
+    || showSkippedOnly
+    || showExperiencedOnly
+    || !!searchParams.get('eggLocation')
+    || !!searchParams.get('surrogateLocation')
+    || !!searchParams.get('spermLocation')
+    || !!searchParams.get('location');
+
+  const handleClearAll = useCallback(() => {
+    dispatch(clearFilters());
+    if (showSkippedOnly) dispatch(setShowSkippedOnly(false));
+    if (showExperiencedOnly) dispatch(setShowExperiencedOnly(false));
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('eggLocation');
+      next.delete('surrogateLocation');
+      next.delete('spermLocation');
+      next.delete('location');
+      return next;
+    }, { replace: true });
+  }, [dispatch, setSearchParams, showSkippedOnly, showExperiencedOnly]);
+
+  return (
+    <FullDrawer open={open} onOpenChange={onOpenChange} snapPoints={[1]} handleOnly repositionInputs={false} shouldScaleBackground={false} noBodyStyles>
+      <FullDrawerContent
+        className="h-full mt-0 flex flex-col rounded-t-[var(--radius)]"
+        style={{ minHeight: 0 }}
+        data-testid="marketplace-filters-drawer"
+      >
+        <div className="shrink-0 flex items-center gap-3 px-4 pt-2 pb-3 border-b border-border/60">
+          {hasAnyFilter ? (
+            <button
+              onClick={handleClearAll}
+              className="shrink-0 h-9 px-3 -ml-3 rounded-full font-ui text-sm text-primary hover:bg-primary/10 transition-colors"
+              data-testid="button-clear-all-filters"
+            >
+              Clear all
+            </button>
+          ) : (
+            <div className="shrink-0 w-9 h-9" aria-hidden />
+          )}
+          <h1 className="flex-1 text-center font-display text-lg font-heading text-foreground">Filters</h1>
+          <button
+            onClick={() => onOpenChange(false)}
+            className="shrink-0 w-9 h-9 rounded-full bg-foreground hover:opacity-90 flex items-center justify-center transition-colors"
+            aria-label="Apply filters"
+            data-testid="button-apply-filters"
+          >
+            <CheckIcon className="w-4 h-4 text-background" strokeWidth={2.5} />
+          </button>
+        </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
         {providerType !== "ivf-clinic" && (
@@ -799,7 +1152,7 @@ function MarketplaceFiltersPage({ providerType, onClose }: {
                   <Award className={`w-5 h-5 ${showExperiencedOnly ? 'text-primary' : 'text-muted-foreground'}`} fill={showExperiencedOnly ? "currentColor" : "none"} />
                   <span className="font-ui text-sm text-foreground">Experienced only</span>
                 </div>
-                <span className={`text-xs font-medium ${showExperiencedOnly ? 'text-primary' : 'text-muted-foreground'}`}>{showExperiencedOnly ? 'On' : 'Off'}</span>
+                <span className={`text-xs font-medium ${showExperiencedOnly ? 'text-primary' : 'text-muted-foreground'}`}>{showExperiencedOnly ? 'Yes' : 'No'}</span>
               </button>
               <button
                 onClick={() => dispatch(setShowSkippedOnly(!showSkippedOnly))}
@@ -810,7 +1163,7 @@ function MarketplaceFiltersPage({ providerType, onClose }: {
                   <X className={`w-5 h-5 ${showSkippedOnly ? 'text-primary' : 'text-muted-foreground'}`} />
                   <span className="font-ui text-sm text-foreground">Show passed profiles</span>
                 </div>
-                <span className={`text-xs font-medium ${showSkippedOnly ? 'text-primary' : 'text-muted-foreground'}`}>{showSkippedOnly ? 'On' : 'Off'}</span>
+                <span className={`text-xs font-medium ${showSkippedOnly ? 'text-primary' : 'text-muted-foreground'}`}>{showSkippedOnly ? 'Yes' : 'No'}</span>
               </button>
             </div>
           </div>
@@ -818,18 +1171,23 @@ function MarketplaceFiltersPage({ providerType, onClose }: {
 
         <div>
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Preferences</h2>
+          <InlineLocationFilter providerType={providerType} />
+          {providerType !== "ivf-clinic" && (
+            <>
+              <InlineRangeFilter filterKey="age" label="Age" min={18} max={45} />
+              {providerType !== "surrogate" && (
+                <InlineRangeFilter filterKey="height" label="Height" min={48} max={84} formatValue={formatHeightInches} />
+              )}
+            </>
+          )}
           <div className="filter-list-mode">
-            <MarketplaceFilterBar providerType={providerType} hideFavorites noResults />
+            <MarketplaceFilterBar providerType={providerType} hideFavorites noResults listMode />
           </div>
         </div>
       </div>
 
-      <div className="border-t border-border/60 px-4 py-3 flex justify-end" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}>
-        <Button onClick={onClose} className="font-ui" data-testid="button-apply-filters">
-          Show results
-        </Button>
-      </div>
-    </div>
+      </FullDrawerContent>
+    </FullDrawer>
   );
 }
 
@@ -861,11 +1219,10 @@ function MobileFilterOverlay({ providerType, hasResults = true, types, activeTab
     }
   }, [searchQuery]);
 
-  const iconColor = hasResults ? 'text-white' : 'text-foreground';
-  const searchInputBg = hasResults
-    ? 'bg-black/40 backdrop-blur-md text-white placeholder:text-white/50 border-white/15 focus:border-white/30'
-    : 'bg-muted text-foreground placeholder:text-muted-foreground border-border focus:border-foreground/30';
-  const clearColor = hasResults ? 'text-white/60' : 'text-muted-foreground';
+  // Deck container is always dark (deck-bg) regardless of results - use white chrome on top of it
+  const iconColor = 'text-white';
+  const searchInputBg = 'bg-black/40 backdrop-blur-md text-white placeholder:text-white/50 border-white/15 focus:border-white/30';
+  const clearColor = 'text-white/60';
 
   return (
     <div className="shrink-0 w-full px-3 pb-2" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)' }} data-testid="mobile-filter-overlay">
@@ -936,6 +1293,7 @@ export default function MarketplacePage() {
   const searchQuery = useAppSelector((state) => state.ui.marketplaceSearchQuery);
   const activeTab = useAppSelector((state) => state.ui.marketplaceTab);
   const activeFilters = useAppSelector((state) => state.ui.activeFilters);
+  const showFavoritesOnly = useAppSelector((state) => state.ui.showFavoritesOnly);
   const userRoles = (user as any)?.roles || [];
   const isAdmin = userRoles.includes('GOSTORK_ADMIN');
   const isProviderUser = hasProviderRole(userRoles) && !isAdmin;
@@ -978,9 +1336,11 @@ export default function MarketplacePage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const viewParam = searchParams.get("view");
+  // Re-sync on every tab change too: setMarketplaceTab resets showFavoritesOnly,
+  // so if we're still on ?view=saved the Saved view would silently flip back to the deck.
   useEffect(() => {
     dispatch(setShowFavoritesOnly(viewParam === "saved"));
-  }, [viewParam, dispatch]);
+  }, [viewParam, activeTab, dispatch]);
 
   const filtersOpen = searchParams.get("filters") === "1";
   const openFiltersPage = useCallback(() => {
@@ -1061,7 +1421,10 @@ export default function MarketplacePage() {
     activeTab === "surrogates" ? surrogateLocation :
     activeTab === "sperm-donors" ? spermLocation : "";
   useEffect(() => {
-    dispatch(setFilter({ key: "location", values: donorLocation ? [donorLocation] : [] }));
+    const values = donorLocation
+      ? donorLocation.split(",").map(s => s.trim()).filter(Boolean)
+      : [];
+    dispatch(setFilter({ key: "location", values }));
   }, [donorLocation, dispatch]);
   // Debounce search input to avoid excessive URL updates and API calls
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -1189,21 +1552,36 @@ export default function MarketplacePage() {
   const onFilteredCountChange = useCallback((count: number) => setFilteredCount(count), []);
   const hasResults = isLoading || (filteredCount === null ? true : filteredCount > 0);
 
-  if (isParentOnly && filtersOpen) {
-    return <MarketplaceFiltersPage providerType={currentProviderType} onClose={closeFiltersPage} />;
-  }
+  const filtersDrawerEl = isParentOnly ? (
+    <MarketplaceFiltersDrawer
+      providerType={currentProviderType}
+      open={filtersOpen}
+      onOpenChange={(o) => { if (!o) closeFiltersPage(); else openFiltersPage(); }}
+    />
+  ) : null;
 
   if (isMobile && isDonorTab) {
     return (
       <div className="fixed inset-x-0 top-0 bottom-[calc(88px+env(safe-area-inset-bottom))] z-[60] flex flex-col" style={{ backgroundColor: 'hsl(var(--deck-bg))' }} data-testid="marketplace-mobile-immersive">
-        <MobileFilterOverlay
-          providerType={currentProviderType}
-          hasResults={hasResults}
-          types={parentAvailableTypes}
-          activeTab={activeTab}
-          onSelectType={(id) => dispatch(setMarketplaceTab(id))}
-          onOpenFilters={openFiltersPage}
-        />
+        {showFavoritesOnly ? (
+          <div className="shrink-0 w-full px-3 pb-2" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)' }} data-testid="saved-type-switcher-mobile">
+            <DeckTypeSwitcher
+              types={parentAvailableTypes}
+              activeTab={activeTab}
+              onSelect={(id) => dispatch(setMarketplaceTab(id))}
+              theme="dark"
+            />
+          </div>
+        ) : (
+          <MobileFilterOverlay
+            providerType={currentProviderType}
+            hasResults={hasResults}
+            types={parentAvailableTypes}
+            activeTab={activeTab}
+            onSelectType={(id) => dispatch(setMarketplaceTab(id))}
+            onOpenFilters={openFiltersPage}
+          />
+        )}
 
         <div className="flex-1 min-h-0">
           {isLoading ? (
@@ -1213,13 +1591,19 @@ export default function MarketplacePage() {
           ) : (
             <>
               {activeTab === "egg-donors" && (
-                <DonorGrid donors={eggDonors} searchQuery={searchQuery} type="egg-donor" onFilteredCountChange={onFilteredCountChange} fetchMore={fetchMoreEggDonors} hasNextPage={hasMoreEggDonors} isFetchingMore={isFetchingMoreEggDonors} />
+                showFavoritesOnly
+                  ? <MobileSavedGrid donors={eggDonors} type="egg-donor" />
+                  : <DonorGrid donors={eggDonors} searchQuery={searchQuery} type="egg-donor" onFilteredCountChange={onFilteredCountChange} fetchMore={fetchMoreEggDonors} hasNextPage={hasMoreEggDonors} isFetchingMore={isFetchingMoreEggDonors} />
               )}
               {activeTab === "surrogates" && (
-                <DonorGrid donors={surrogates} searchQuery={searchQuery} type="surrogate" onFilteredCountChange={onFilteredCountChange} fetchMore={fetchMoreSurrogates} hasNextPage={hasMoreSurrogates} isFetchingMore={isFetchingMoreSurrogates} />
+                showFavoritesOnly
+                  ? <MobileSavedGrid donors={surrogates} type="surrogate" />
+                  : <DonorGrid donors={surrogates} searchQuery={searchQuery} type="surrogate" onFilteredCountChange={onFilteredCountChange} fetchMore={fetchMoreSurrogates} hasNextPage={hasMoreSurrogates} isFetchingMore={isFetchingMoreSurrogates} />
               )}
               {activeTab === "sperm-donors" && (
-                <DonorGrid donors={spermDonors} searchQuery={searchQuery} type="sperm-donor" onFilteredCountChange={onFilteredCountChange} fetchMore={fetchMoreSpermDonors} hasNextPage={hasMoreSpermDonors} isFetchingMore={isFetchingMoreSpermDonors} />
+                showFavoritesOnly
+                  ? <MobileSavedGrid donors={spermDonors} type="sperm-donor" />
+                  : <DonorGrid donors={spermDonors} searchQuery={searchQuery} type="sperm-donor" onFilteredCountChange={onFilteredCountChange} fetchMore={fetchMoreSpermDonors} hasNextPage={hasMoreSpermDonors} isFetchingMore={isFetchingMoreSpermDonors} />
               )}
             </>
           )}
@@ -1233,6 +1617,7 @@ export default function MarketplacePage() {
             onClose={() => setScheduleProvider(null)}
           />
         )}
+        {filtersDrawerEl}
       </div>
     );
   }
@@ -1252,7 +1637,29 @@ export default function MarketplacePage() {
         </UnderlineTabs>
       )}
 
-      {isParentOnly && (
+      {/* Mobile + Discover: sliders icon left, type pills center, spacer right */}
+      {isParentOnly && isMobile && !showFavoritesOnly && (
+        <div className="w-full pt-2 grid grid-cols-[auto_1fr_auto] items-center gap-2">
+          <button
+            onClick={openFiltersPage}
+            className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full text-foreground hover:bg-muted transition-colors"
+            aria-label="Open filters"
+            data-testid="button-open-filters-grid"
+          >
+            <SlidersHorizontal className="w-5 h-5" />
+          </button>
+          <DeckTypeSwitcher
+            types={parentAvailableTypes}
+            activeTab={activeTab}
+            onSelect={(id) => dispatch(setMarketplaceTab(id))}
+            theme="light"
+          />
+          <div className="w-9 h-9" aria-hidden />
+        </div>
+      )}
+
+      {/* Saved view (mobile clinics/agencies or desktop): centered type pills only - no filters */}
+      {isParentOnly && showFavoritesOnly && (
         <div className="w-full pt-2">
           <DeckTypeSwitcher
             types={parentAvailableTypes}
@@ -1265,7 +1672,7 @@ export default function MarketplacePage() {
 
 
       <div className={isAdmin ? "pt-6" : ""}>
-        {activeTab !== "surrogacy-agencies" && (
+        {activeTab !== "surrogacy-agencies" && !showFavoritesOnly && (
           <div className="mb-4" data-testid="marketplace-filter-bar-wrapper">
             <MarketplaceFilterBar
               providerType={currentProviderType}
@@ -1295,7 +1702,7 @@ export default function MarketplacePage() {
           </div>
         )}
 
-        {isIvfTab && (
+        {isIvfTab && !showFavoritesOnly && (
           <div className="flex items-center gap-2 relative mb-4">
             <p className="text-sm font-ui text-foreground" data-testid="text-clinic-count">
               <span className="text-primary font-heading">{ivfClinicCount}</span> clinics found
@@ -1348,22 +1755,42 @@ export default function MarketplacePage() {
         ) : (
           <>
             {isIvfTab && (
-              <IvfClinicGrid
-                providers={providers}
-                eggSource={eggSource}
-                ageGroup={ageGroup}
-                isNewPatient={isNewPatient}
-                sortBy={sortBy}
-                onSchedule={setScheduleProvider}
-              />
+              showFavoritesOnly ? (
+                <div className="flex items-center justify-center py-20 px-6 text-center" data-testid="saved-empty-clinics">
+                  <div>
+                    <Heart className="w-12 h-12 mx-auto mb-3 text-muted-foreground/50" />
+                    <p className="font-ui text-base text-foreground">No saved clinics yet</p>
+                    <p className="font-ui text-sm text-muted-foreground mt-1">Saving clinics is coming soon. For now, browse them on the Discover tab.</p>
+                  </div>
+                </div>
+              ) : (
+                <IvfClinicGrid
+                  providers={providers}
+                  eggSource={eggSource}
+                  ageGroup={ageGroup}
+                  isNewPatient={isNewPatient}
+                  sortBy={sortBy}
+                  onSchedule={setScheduleProvider}
+                />
+              )
             )}
             {activeTab === "surrogacy-agencies" && (
-              <ProviderGrid
-                providers={providers}
-                searchQuery={searchQuery}
-                providerTypeName="Surrogacy Agency"
-                onSchedule={setScheduleProvider}
-              />
+              showFavoritesOnly ? (
+                <div className="flex items-center justify-center py-20 px-6 text-center" data-testid="saved-empty-agencies">
+                  <div>
+                    <Heart className="w-12 h-12 mx-auto mb-3 text-muted-foreground/50" />
+                    <p className="font-ui text-base text-foreground">No saved agencies yet</p>
+                    <p className="font-ui text-sm text-muted-foreground mt-1">Saving agencies is coming soon. For now, browse them on the Discover tab.</p>
+                  </div>
+                </div>
+              ) : (
+                <ProviderGrid
+                  providers={providers}
+                  searchQuery={searchQuery}
+                  providerTypeName="Surrogacy Agency"
+                  onSchedule={setScheduleProvider}
+                />
+              )
             )}
             {activeTab === "egg-donors" && (
               <DonorGrid donors={eggDonors} searchQuery={searchQuery} type="egg-donor" fetchMore={fetchMoreEggDonors} hasNextPage={hasMoreEggDonors} isFetchingMore={isFetchingMoreEggDonors} />
@@ -1386,6 +1813,7 @@ export default function MarketplacePage() {
           onClose={() => setScheduleProvider(null)}
         />
       )}
+      {filtersDrawerEl}
     </div>
   );
 }

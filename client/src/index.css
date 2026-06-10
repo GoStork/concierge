@@ -96,6 +96,10 @@
 }
 
 /* Filters page: restyle the inline MarketplaceFilterBar into Tinder-style vertical rows */
+.filter-list-mode {
+  display: flex;
+  flex-direction: column;
+}
 .filter-list-mode [data-testid="filter-bar-mobile"] {
   display: none;
 }
@@ -110,7 +114,9 @@
 .filter-list-mode [data-testid^="filter-btn-"] {
   width: 100% !important;
   display: flex !important;
+  flex-wrap: wrap !important;
   align-items: center !important;
+  gap: 0.5rem !important;
   padding: 0.875rem 0 !important;
   margin: 0 !important;
   border-bottom: 1px solid hsl(var(--border)) !important;
@@ -122,18 +128,44 @@
   font-size: 1rem !important;
   position: relative;
 }
+/* Hide Age + Location + Height triggers since we render them inline above the bar */
+.filter-list-mode [data-testid="filter-btn-age"],
+.filter-list-mode [data-testid="filter-btn-location"],
+.filter-list-mode [data-testid="filter-btn-ivf-location"],
+.filter-list-mode [data-testid="filter-btn-height"] {
+  display: none !important;
+}
+.filter-list-mode [data-testid^="filter-btn-"] .filter-row-label {
+  flex: 0 0 auto;
+}
+.filter-list-mode [data-testid^="filter-btn-"] .filter-row-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-left: auto;
+  max-width: 60%;
+  justify-content: flex-end;
+}
+.filter-list-mode [data-testid^="filter-btn-"] .filter-row-pill {
+  background: hsl(var(--primary) / 0.1);
+  color: hsl(var(--primary));
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
 .filter-list-mode [data-testid^="filter-btn-"]::after {
   content: '\203A';
-  margin-left: auto;
   color: hsl(var(--muted-foreground));
   font-size: 1.5rem;
   line-height: 1;
   font-weight: 300;
+  flex: 0 0 auto;
 }
+/* Hide the bottom "currently active pills" strip since each row now shows its own pills inline */
 .filter-list-mode [data-testid="active-filter-pills-mobile"] {
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid hsl(var(--border));
+  display: none;
 }
 
 @layer base {

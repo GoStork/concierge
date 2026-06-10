@@ -7,7 +7,7 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
-import { Search, ArrowUpDown, X, Heart, ChevronDown, Plus, MapPin, Award } from "lucide-react";
+import { Search, ArrowUpDown, X, Heart, ChevronDown, Plus, MapPin, Award, Check } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAppSelector, useAppDispatch } from "@/store";
 import { setMarketplaceSearchQuery, setMarketplaceSortBy, setFilter, clearFilters, setShowFavoritesOnly, setShowSkippedOnly, setShowExperiencedOnly } from "@/store/uiSlice";
@@ -17,6 +17,44 @@ import { formatMoneyDollars } from "@/lib/format-money";
 import { formatLocationDisplay } from "@/lib/format-location";
 
 type ProviderType = "egg-donor" | "surrogate" | "sperm-donor" | "ivf-clinic";
+
+function DrawerHeaderActions({ title, onClose }: { title: string; onClose: () => void }) {
+  return (
+    <DrawerHeader className="px-4 pt-4 pb-2 flex flex-row items-center justify-between gap-3">
+      <button
+        onClick={onClose}
+        className="shrink-0 w-9 h-9 rounded-full bg-muted hover:bg-secondary flex items-center justify-center transition-colors"
+        aria-label="Close"
+        data-testid="drawer-close"
+      >
+        <X className="w-4 h-4 text-foreground" strokeWidth={2.5} />
+      </button>
+      <DrawerTitle className="flex-1 text-center font-display text-lg font-heading">{title}</DrawerTitle>
+      <button
+        onClick={onClose}
+        className="shrink-0 w-9 h-9 rounded-full bg-foreground hover:opacity-90 flex items-center justify-center transition-colors"
+        aria-label="Apply"
+        data-testid="drawer-apply"
+      >
+        <Check className="w-4 h-4 text-background" strokeWidth={2.5} />
+      </button>
+    </DrawerHeader>
+  );
+}
+
+function SelectedPillsInTrigger({ values, max = 3 }: { values: string[]; max?: number }) {
+  if (values.length === 0) return null;
+  const shown = values.slice(0, max);
+  const extra = values.length - shown.length;
+  return (
+    <div className="filter-row-pills">
+      {shown.map(v => (
+        <span key={v} className="filter-row-pill">{v}</span>
+      ))}
+      {extra > 0 && <span className="filter-row-pill">+{extra}</span>}
+    </div>
+  );
+}
 
 interface MarketplaceFilterBarProps {
   providerType: ProviderType;
@@ -40,6 +78,7 @@ interface MarketplaceFilterBarProps {
   inlineMode?: boolean;
   overlayStyle?: boolean;
   noResults?: boolean;
+  listMode?: boolean;
 }
 
 const SORT_OPTIONS = [
@@ -545,7 +584,7 @@ function LocationDrawerInput({
   );
 }
 
-function MobileCustomTagDrawer({ label, filterKey, options, activeFilters, dispatch, testIdPrefix, btnStyle, dark }: {
+function MobileCustomTagDrawer({ label, filterKey, options, activeFilters, dispatch, testIdPrefix, btnStyle, dark, listMode }: {
   label: string;
   filterKey: string;
   options: string[];
@@ -554,6 +593,7 @@ function MobileCustomTagDrawer({ label, filterKey, options, activeFilters, dispa
   testIdPrefix: string;
   btnStyle?: React.CSSProperties;
   dark?: boolean;
+  listMode?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const { allTags, addTag, removeTag } = useCustomFilterTags();
@@ -591,23 +631,21 @@ function MobileCustomTagDrawer({ label, filterKey, options, activeFilters, dispa
           style={TINDER_LABEL_STYLE}
           data-testid={`filter-btn-${filterKey}`}
         >
-          {label}
+          <span className="filter-row-label">{label}</span>
+          {listMode && <SelectedPillsInTrigger values={selected} />}
         </button>
       </DrawerTrigger>
       <DrawerContent data-testid={`drawer-${filterKey}`}>
-        <DrawerHeader>
-          <DrawerTitle className="flex items-center justify-between">
-            {label}
-            {isActive && (
+        <DrawerHeaderActions title={label} onClose={() => setOpen(false)} />
+        <div className="px-6 pb-6 max-h-[70vh] overflow-y-auto space-y-4">
+          {isActive && (
+            <div className="flex justify-end">
               <Button variant="ghost" size="sm" className="h-auto py-0.5"
-                style={{ fontSize: 'calc(var(--drawer-body-size, 16px) * 0.75)' }}
                 onClick={() => dispatch(setFilter({ key: filterKey, values: [] }))}
                 data-testid={`clear-${filterKey}`}
               >Clear</Button>
-            )}
-          </DrawerTitle>
-        </DrawerHeader>
-        <div className="px-6 pb-6 max-h-[70vh] overflow-y-auto space-y-4">
+            </div>
+          )}
           <BubblesWithCustomTags
             options={options}
             customTags={customTags}
@@ -707,11 +745,12 @@ function EducationPopover({ activeFilters, dispatch }: {
   );
 }
 
-function MobileEducationDrawer({ activeFilters, dispatch, btnStyle, dark }: {
+function MobileEducationDrawer({ activeFilters, dispatch, btnStyle, dark, listMode }: {
   activeFilters: Record<string, string[]>;
   dispatch: any;
   btnStyle?: React.CSSProperties;
   dark?: boolean;
+  listMode?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const { allTags, addTag, removeTag } = useCustomFilterTags();
@@ -748,21 +787,20 @@ function MobileEducationDrawer({ activeFilters, dispatch, btnStyle, dark }: {
           className={tinderLabel(isActive, dark)}
           data-testid="filter-btn-education"
         >
-          Education
+          <span className="filter-row-label">Education</span>
+          {listMode && <SelectedPillsInTrigger values={selected} />}
         </button>
       </DrawerTrigger>
       <DrawerContent data-testid="drawer-education">
-        <DrawerHeader>
-          <DrawerTitle className="flex items-center justify-between">
-            Education
-            {isActive && (
-              <Button variant="ghost" size="sm" className="h-auto py-0.5" style={{ fontSize: 'calc(var(--drawer-body-size, 16px) * 0.75)' }}
-                onClick={() => dispatch(setFilter({ key: "education", values: [] }))}
-                data-testid="clear-education"
-              >Clear</Button>
-            )}
-          </DrawerTitle>
-        </DrawerHeader>
+        <DrawerHeaderActions title="Education" onClose={() => setOpen(false)} />
+        {isActive && (
+          <div className="px-6 -mt-2 mb-2 flex justify-end">
+            <Button variant="ghost" size="sm" className="h-auto py-0.5"
+              onClick={() => dispatch(setFilter({ key: "education", values: [] }))}
+              data-testid="clear-education"
+            >Clear</Button>
+          </div>
+        )}
         <div className="px-6 pb-6 max-h-[70vh] overflow-y-auto space-y-4">
           <div>
             <span className="font-ui text-muted-foreground mb-1.5 block" style={{ fontSize: 'var(--badge-text-size, 13px)' }}>Level</span>
@@ -1078,7 +1116,7 @@ function DrawerRangeSlider({ label, filterKey, min, max, step, unit, activeFilte
   );
 }
 
-function MobileRangeDrawer({ label, filterKey, min, max, step, unit, activeFilters, dispatch, btnStyle, dark, formatValue }: {
+function MobileRangeDrawer({ label, filterKey, min, max, step, unit, activeFilters, dispatch, btnStyle, dark, formatValue, listMode }: {
   label: string;
   filterKey: string;
   min: number;
@@ -1090,6 +1128,7 @@ function MobileRangeDrawer({ label, filterKey, min, max, step, unit, activeFilte
   btnStyle?: React.CSSProperties;
   dark?: boolean;
   formatValue?: (v: number) => string;
+  listMode?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const current = activeFilters[filterKey];
@@ -1097,6 +1136,8 @@ function MobileRangeDrawer({ label, filterKey, min, max, step, unit, activeFilte
   const currentMin = hasValue ? Number(current[0]) : min;
   const currentMax = hasValue ? Number(current[1]) : max;
   const isActive = hasValue && (currentMin !== min || currentMax !== max);
+  const fmt = (v: number) => formatValue ? formatValue(v) : `${v}${unit}`;
+  const rangeText = isActive ? `${fmt(currentMin)}-${fmt(currentMax)}` : '';
 
   return (
     <Drawer open={open} onOpenChange={setOpen}>
@@ -1106,13 +1147,12 @@ function MobileRangeDrawer({ label, filterKey, min, max, step, unit, activeFilte
           style={TINDER_LABEL_STYLE}
           data-testid={`filter-btn-${filterKey}`}
         >
-          {label}
+          <span className="filter-row-label">{label}</span>
+          {listMode && rangeText && <SelectedPillsInTrigger values={[rangeText]} />}
         </button>
       </DrawerTrigger>
       <DrawerContent data-testid={`drawer-${filterKey}`}>
-        <DrawerHeader>
-          <DrawerTitle>{label}</DrawerTitle>
-        </DrawerHeader>
+        <DrawerHeaderActions title={label} onClose={() => setOpen(false)} />
         <div className="px-6 pb-6 space-y-3 max-h-[70vh] overflow-y-auto">
           <ThumbAnchoredRange
             filterKey={filterKey}
@@ -1145,7 +1185,7 @@ function MobileRangeDrawer({ label, filterKey, min, max, step, unit, activeFilte
   );
 }
 
-function MobileMultiSelectDrawer({ label, filterKey, options, activeFilters, dispatch, testIdPrefix, btnStyle, dark, optionLabels }: {
+function MobileMultiSelectDrawer({ label, filterKey, options, activeFilters, dispatch, testIdPrefix, btnStyle, dark, optionLabels, listMode }: {
   label: string;
   filterKey: string;
   options: string[];
@@ -1156,10 +1196,12 @@ function MobileMultiSelectDrawer({ label, filterKey, options, activeFilters, dis
   dark?: boolean;
   /** Optional map from option value -> human-friendly display label. */
   optionLabels?: Record<string, string>;
+  listMode?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const selected = activeFilters[filterKey] || [];
   const isActive = selected.length > 0;
+  const displayValues = selected.map(v => optionLabels?.[v] || v);
 
   const toggleFilter = (val: string) => {
     const current = activeFilters[filterKey] || [];
@@ -1175,27 +1217,26 @@ function MobileMultiSelectDrawer({ label, filterKey, options, activeFilters, dis
           style={TINDER_LABEL_STYLE}
           data-testid={`filter-btn-${filterKey}`}
         >
-          {label}
+          <span className="filter-row-label">{label}</span>
+          {listMode && <SelectedPillsInTrigger values={displayValues} />}
         </button>
       </DrawerTrigger>
       <DrawerContent data-testid={`drawer-${filterKey}`}>
-        <DrawerHeader>
-          <DrawerTitle className="flex items-center justify-between">
-            {label}
-            {isActive && (
+        <DrawerHeaderActions title={label} onClose={() => setOpen(false)} />
+        <div className="px-6 pb-6 max-h-[70vh] overflow-y-auto">
+          {isActive && (
+            <div className="mb-3 flex justify-end">
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-auto py-0.5" style={{ fontSize: 'calc(var(--drawer-body-size, 16px) * 0.75)' }}
+                className="h-auto py-0.5"
                 onClick={() => dispatch(setFilter({ key: filterKey, values: [] }))}
                 data-testid={`clear-${filterKey}`}
               >
                 Clear
               </Button>
-            )}
-          </DrawerTitle>
-        </DrawerHeader>
-        <div className="px-6 pb-6 max-h-[70vh] overflow-y-auto">
+            </div>
+          )}
           <MultiSelectBubbles
             options={options}
             selected={selected}
@@ -1209,7 +1250,7 @@ function MobileMultiSelectDrawer({ label, filterKey, options, activeFilters, dis
   );
 }
 
-function MobileCostsDrawer({ isDonor, isSurrogate, isSperm, activeFilters, dispatch, activeCostCount, btnStyle, dark }: {
+function MobileCostsDrawer({ isDonor, isSurrogate, isSperm, activeFilters, dispatch, activeCostCount, btnStyle, dark, listMode }: {
   isDonor: boolean;
   isSurrogate: boolean;
   isSperm: boolean;
@@ -1218,6 +1259,7 @@ function MobileCostsDrawer({ isDonor, isSurrogate, isSperm, activeFilters, dispa
   activeCostCount: number;
   btnStyle?: React.CSSProperties;
   dark?: boolean;
+  listMode?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -1229,13 +1271,12 @@ function MobileCostsDrawer({ isDonor, isSurrogate, isSperm, activeFilters, dispa
           style={TINDER_LABEL_STYLE}
           data-testid="filter-btn-costs"
         >
-          Costs
+          <span className="filter-row-label">Costs</span>
+          {listMode && activeCostCount > 0 && <SelectedPillsInTrigger values={[`${activeCostCount} set`]} />}
         </button>
       </DrawerTrigger>
       <DrawerContent data-testid="drawer-costs">
-        <DrawerHeader>
-          <DrawerTitle>Costs</DrawerTitle>
-        </DrawerHeader>
+        <DrawerHeaderActions title="Costs" onClose={() => setOpen(false)} />
         <div className="px-6 pb-6 space-y-5 max-h-[70vh] overflow-y-auto">
           {isDonor && (
             <>
@@ -1348,7 +1389,7 @@ function BooleanToggle({ label, filterKey, activeFilters, dispatch }: {
   );
 }
 
-function MobileMedicalDrawer({ activeFilters, dispatch, btnStyle, dark }: { activeFilters: Record<string, string[]>; dispatch: any; btnStyle?: React.CSSProperties; dark?: boolean }) {
+function MobileMedicalDrawer({ activeFilters, dispatch, btnStyle, dark, listMode }: { activeFilters: Record<string, string[]>; dispatch: any; btnStyle?: React.CSSProperties; dark?: boolean; listMode?: boolean }) {
   const [open, setOpen] = useState(false);
   const medicalKeys = ["maxLiveBirths", "maxCSections", "maxMiscarriages", "maxAbortions", "lastDeliveryYear", "covidVaccinated"];
   const activeCount = medicalKeys.filter((k) => {
@@ -1362,11 +1403,12 @@ function MobileMedicalDrawer({ activeFilters, dispatch, btnStyle, dark }: { acti
     <Drawer open={open} onOpenChange={setOpen}>
       <DrawerTrigger asChild>
         <button className={tinderLabel(activeCount > 0, dark)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-medical">
-          Medical
+          <span className="filter-row-label">Medical</span>
+          {listMode && activeCount > 0 && <SelectedPillsInTrigger values={[`${activeCount} set`]} />}
         </button>
       </DrawerTrigger>
       <DrawerContent data-testid="drawer-medical">
-        <DrawerHeader><DrawerTitle>Medical</DrawerTitle></DrawerHeader>
+        <DrawerHeaderActions title="Medical" onClose={() => setOpen(false)} />
         <div className="px-6 pb-6 space-y-4 max-h-[70vh] overflow-y-auto">
           <DrawerRangeSlider label="Live Births" filterKey="maxLiveBirths" min={0} max={10} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} />
           <SingleValueSlider label="Max C-Sections" filterKey="maxCSections" min={0} max={5} step={1} activeFilters={activeFilters} dispatch={dispatch} />
@@ -1380,7 +1422,7 @@ function MobileMedicalDrawer({ activeFilters, dispatch, btnStyle, dark }: { acti
   );
 }
 
-function MobileAgreesToDrawer({ activeFilters, dispatch, btnStyle, dark }: { activeFilters: Record<string, string[]>; dispatch: any; btnStyle?: React.CSSProperties; dark?: boolean }) {
+function MobileAgreesToDrawer({ activeFilters, dispatch, btnStyle, dark, listMode }: { activeFilters: Record<string, string[]>; dispatch: any; btnStyle?: React.CSSProperties; dark?: boolean; listMode?: boolean }) {
   const [open, setOpen] = useState(false);
   const agreesKeys = ["agreesToTwins", "agreesToAbortion", "agreesToSelectiveReduction", "openToSameSexCouple", "agreesToInternationalParents"];
   const activeCount = agreesKeys.filter((k) => (activeFilters[k] || [])[0] === "true").length;
@@ -1389,11 +1431,12 @@ function MobileAgreesToDrawer({ activeFilters, dispatch, btnStyle, dark }: { act
     <Drawer open={open} onOpenChange={setOpen}>
       <DrawerTrigger asChild>
         <button className={tinderLabel(activeCount > 0, dark)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-agrees-to">
-          Agrees To
+          <span className="filter-row-label">Agrees To</span>
+          {listMode && activeCount > 0 && <SelectedPillsInTrigger values={[`${activeCount} set`]} />}
         </button>
       </DrawerTrigger>
       <DrawerContent data-testid="drawer-agrees-to">
-        <DrawerHeader><DrawerTitle>Agrees To</DrawerTitle></DrawerHeader>
+        <DrawerHeaderActions title="Agrees To" onClose={() => setOpen(false)} />
         <div className="px-6 pb-6 space-y-4 max-h-[70vh] overflow-y-auto">
           <BooleanToggle label="Twins" filterKey="agreesToTwins" activeFilters={activeFilters} dispatch={dispatch} />
           <BooleanToggle label="Abortion" filterKey="agreesToAbortion" activeFilters={activeFilters} dispatch={dispatch} />
@@ -1429,6 +1472,7 @@ export function MarketplaceFilterBar({
   inlineMode,
   overlayStyle,
   noResults,
+  listMode,
 }: MarketplaceFilterBarProps) {
   const dispatch = useAppDispatch();
   const isMobile = useIsMobile();
@@ -1484,7 +1528,7 @@ export function MarketplaceFilterBar({
 
   const ivfMobileFilterButtons = isIvf ? (
     <>
-      <Drawer open={locationDrawerOpen} onOpenChange={setLocationDrawerOpen} repositionInputs={false}>
+      <Drawer open={locationDrawerOpen} onOpenChange={setLocationDrawerOpen} handleOnly repositionInputs={false} snapPoints={[1]} shouldScaleBackground={false} noBodyStyles>
         <DrawerTrigger asChild>
           <button
             className={tinderLabel(!!ivfLocation, darkLabels)}
@@ -1494,9 +1538,12 @@ export function MarketplaceFilterBar({
             Location
           </button>
         </DrawerTrigger>
-        <DrawerContent>
+        <DrawerContent className="h-full mt-0">
           <DrawerHeader><DrawerTitle>Location</DrawerTitle></DrawerHeader>
-          <div className="p-4">
+          <div
+            className="flex-1 overflow-y-auto overscroll-contain p-4"
+            style={{ WebkitOverflowScrolling: "touch" }}
+          >
             <LocationDrawerInput
               initialValue={ivfLocation || ""}
               onCommit={(v) => onIvfLocationChange?.(v)}
@@ -1621,7 +1668,7 @@ export function MarketplaceFilterBar({
           dispatch={dispatch}
           testIdPrefix="filter-status"
           btnStyle={obs}
-          dark={darkLabels}
+          dark={darkLabels} listMode={listMode}
           optionLabels={{ AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched", SOLD_OUT: "Sold Out" }}
         />
       )}
@@ -1635,7 +1682,7 @@ export function MarketplaceFilterBar({
           dispatch={dispatch}
           testIdPrefix="filter-status"
           btnStyle={obs}
-          dark={darkLabels}
+          dark={darkLabels} listMode={listMode}
           optionLabels={{ AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched" }}
         />
       )}
@@ -1649,13 +1696,13 @@ export function MarketplaceFilterBar({
           dispatch={dispatch}
           testIdPrefix="filter-status"
           btnStyle={obs}
-          dark={darkLabels}
+          dark={darkLabels} listMode={listMode}
           optionLabels={{ AVAILABLE: "Available", SOLD_OUT: "Sold Out" }}
         />
       )}
 
       {!isIvf && (
-        <Drawer open={locationDrawerOpen} onOpenChange={setLocationDrawerOpen} repositionInputs={false}>
+        <Drawer open={locationDrawerOpen} onOpenChange={setLocationDrawerOpen} handleOnly repositionInputs={false} snapPoints={[1]} shouldScaleBackground={false} noBodyStyles>
           <DrawerTrigger asChild>
             <button
               className={tinderLabel(!!hasLocation, darkLabels)}
@@ -1665,9 +1712,12 @@ export function MarketplaceFilterBar({
               Location
             </button>
           </DrawerTrigger>
-          <DrawerContent>
+          <DrawerContent className="h-full mt-0">
             <DrawerHeader><DrawerTitle>Location</DrawerTitle></DrawerHeader>
-            <div className="p-4">
+            <div
+              className="flex-1 overflow-y-auto overscroll-contain p-4"
+              style={{ WebkitOverflowScrolling: "touch" }}
+            >
               <LocationDrawerInput
                 initialValue={location || ""}
                 onCommit={(v) => onLocationChange?.(v)}
@@ -1681,59 +1731,59 @@ export function MarketplaceFilterBar({
       )}
 
       {!isIvf && (
-        <MobileRangeDrawer label="Age" filterKey="age" min={18} max={45} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} />
+        <MobileRangeDrawer label="Age" filterKey="age" min={18} max={45} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} listMode={listMode} />
       )}
 
       {(isDonor || isSperm) && (
         <>
-          <MobileCustomTagDrawer label="Eye Color" filterKey="eyeColor" options={EYE_COLOR_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-eye" btnStyle={obs} dark={darkLabels} />
-          <MobileCustomTagDrawer label="Hair Color" filterKey="hairColor" options={HAIR_COLOR_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-hair" btnStyle={obs} dark={darkLabels} />
-          <MobileRangeDrawer label="Height" filterKey="height" min={48} max={84} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} formatValue={formatHeightInches} />
+          <MobileCustomTagDrawer label="Eye Color" filterKey="eyeColor" options={EYE_COLOR_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-eye" btnStyle={obs} dark={darkLabels} listMode={listMode} />
+          <MobileCustomTagDrawer label="Hair Color" filterKey="hairColor" options={HAIR_COLOR_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-hair" btnStyle={obs} dark={darkLabels} listMode={listMode} />
+          <MobileRangeDrawer label="Height" filterKey="height" min={48} max={84} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} listMode={listMode} formatValue={formatHeightInches} />
         </>
       )}
 
       {isSurrogate && (
-        <MobileRangeDrawer label="BMI" filterKey="bmi" min={16} max={40} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} />
+        <MobileRangeDrawer label="BMI" filterKey="bmi" min={16} max={40} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} listMode={listMode} />
       )}
 
       {!isIvf && (
         <>
-          <MobileCustomTagDrawer label="Race" filterKey="race" options={RACE_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-race" btnStyle={obs} dark={darkLabels} />
-          <MobileCustomTagDrawer label="Ethnicity" filterKey="ethnicity" options={ETHNICITY_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-eth" btnStyle={obs} dark={darkLabels} />
+          <MobileCustomTagDrawer label="Race" filterKey="race" options={RACE_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-race" btnStyle={obs} dark={darkLabels} listMode={listMode} />
+          <MobileCustomTagDrawer label="Ethnicity" filterKey="ethnicity" options={ETHNICITY_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-eth" btnStyle={obs} dark={darkLabels} listMode={listMode} />
         </>
       )}
 
       {(isDonor || isSperm) && (
-        <MobileEducationDrawer activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} />
+        <MobileEducationDrawer activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} listMode={listMode} />
       )}
 
       {isSurrogate && (
-        <MobileMultiSelectDrawer label="Relationship" filterKey="relationshipStatus" options={RELATIONSHIP_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-rel" btnStyle={obs} dark={darkLabels} />
+        <MobileMultiSelectDrawer label="Relationship" filterKey="relationshipStatus" options={RELATIONSHIP_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-rel" btnStyle={obs} dark={darkLabels} listMode={listMode} />
       )}
 
       {!isIvf && (
-        <MobileCostsDrawer isDonor={isDonor} isSurrogate={isSurrogate} isSperm={isSperm} activeFilters={activeFilters} dispatch={dispatch} activeCostCount={activeCostCount} btnStyle={obs} dark={darkLabels} />
+        <MobileCostsDrawer isDonor={isDonor} isSurrogate={isSurrogate} isSperm={isSperm} activeFilters={activeFilters} dispatch={dispatch} activeCostCount={activeCostCount} btnStyle={obs} dark={darkLabels} listMode={listMode} />
       )}
 
       {isDonor && (
         <>
-          <MobileMultiSelectDrawer label="Egg Type" filterKey="eggType" options={EGG_TYPE_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-egg-type" btnStyle={obs} dark={darkLabels} />
-          <MobileMultiSelectDrawer label="Donation Type" filterKey="donationType" options={DONATION_TYPE_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-donation" btnStyle={obs} dark={darkLabels} />
+          <MobileMultiSelectDrawer label="Egg Type" filterKey="eggType" options={EGG_TYPE_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-egg-type" btnStyle={obs} dark={darkLabels} listMode={listMode} />
+          <MobileMultiSelectDrawer label="Donation Type" filterKey="donationType" options={DONATION_TYPE_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-donation" btnStyle={obs} dark={darkLabels} listMode={listMode} />
         </>
       )}
 
       {isSurrogate && (
         <>
-          <MobileMedicalDrawer activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} />
-          <MobileAgreesToDrawer activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} />
+          <MobileMedicalDrawer activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} listMode={listMode} />
+          <MobileAgreesToDrawer activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} listMode={listMode} />
         </>
       )}
 
       {isSperm && (
-        <MobileMultiSelectDrawer label="Donor Type" filterKey="donorType" options={["Open", "Anonymous", "Exclusive"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-donor-type" btnStyle={obs} dark={darkLabels} />
+        <MobileMultiSelectDrawer label="Donor Type" filterKey="donorType" options={["Open", "Anonymous", "Exclusive"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-donor-type" btnStyle={obs} dark={darkLabels} listMode={listMode} />
       )}
       {isSperm && (
-        <MobileMultiSelectDrawer label="Vial Type" filterKey="vialTypes" options={["ICI", "IUI", "IVF"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-vial-type" btnStyle={obs} dark={darkLabels} />
+        <MobileMultiSelectDrawer label="Vial Type" filterKey="vialTypes" options={["ICI", "IUI", "IVF"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-vial-type" btnStyle={obs} dark={darkLabels} listMode={listMode} />
       )}
     </>
   );
