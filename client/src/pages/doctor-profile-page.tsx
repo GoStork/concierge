@@ -134,24 +134,71 @@ export default function DoctorProfilePage() {
         </div>
       </div>
 
-      {/* Specialties + languages quick facts */}
-      {(doctor.specialties?.length > 0 || doctor.languagesSpoken?.length > 0) && (
-        <ProfileSection title="Highlights" contentClassName="p-6 space-y-4" data-testid="section-highlights">
-            {doctor.specialties?.length > 0 && (
+      {/* About */}
+      {doctor.bio && (
+        <ProfileSection title="About" data-testid="section-about">
+            <p className="text-base text-foreground whitespace-pre-line leading-relaxed">{doctor.bio}</p>
+        </ProfileSection>
+      )}
+
+      {/* Specialties */}
+      {doctor.specialties?.length > 0 && (
+        <ProfileSection title="Specialties" contentClassName="p-6" data-testid="section-specialties">
+            <div className="flex flex-wrap gap-2">
+              {doctor.specialties.map((s: string) => (
+                <Badge key={s} variant="secondary">{s}</Badge>
+              ))}
+            </div>
+        </ProfileSection>
+      )}
+
+      {/* Education & background */}
+      {(doctor.boardCertifications?.length > 0 ||
+        doctor.education?.length > 0 ||
+        doctor.professionalMemberships?.length > 0 ||
+        doctor.languagesSpoken?.length > 0 ||
+        doctor.medicalSchool ||
+        doctor.npiNumber ||
+        doctor.providerGender ||
+        doctor.yearsExperience != null) && (
+        <ProfileSection title="Education & background" contentClassName="p-6 grid grid-cols-1 sm:grid-cols-2 gap-6" data-testid="section-education">
+            {doctor.boardCertifications?.length > 0 && (
               <div>
-                <p className="text-xs font-ui text-foreground mb-2 flex items-center gap-1.5">
-                  <Stethoscope className="w-3.5 h-3.5 text-primary" /> Specialties
+                <p className="text-base font-ui text-foreground mb-2 flex items-center gap-1.5">
+                  <Award className="w-3.5 h-3.5 text-primary" /> Board certifications
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  {doctor.specialties.map((s: string) => (
-                    <Badge key={s} variant="secondary">{s}</Badge>
+                <ul className="space-y-1">
+                  {doctor.boardCertifications.map((c: string) => (
+                    <li key={c} className="text-base text-foreground">{c}</li>
                   ))}
-                </div>
+                </ul>
+              </div>
+            )}
+            {doctor.education?.length > 0 && (
+              <div>
+                <p className="text-base font-ui text-foreground mb-2 flex items-center gap-1.5">
+                  <GraduationCap className="w-3.5 h-3.5 text-primary" /> Education & training
+                </p>
+                <ul className="space-y-1">
+                  {doctor.education.map((e: string) => (
+                    <li key={e} className="text-base text-foreground">{e}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {doctor.professionalMemberships?.length > 0 && (
+              <div>
+                <p className="text-base font-ui text-foreground mb-2">Professional memberships</p>
+                <ul className="space-y-1">
+                  {doctor.professionalMemberships.map((m: string) => (
+                    <li key={m} className="text-base text-foreground">{m}</li>
+                  ))}
+                </ul>
               </div>
             )}
             {doctor.languagesSpoken?.length > 0 && (
               <div>
-                <p className="text-xs font-ui text-foreground mb-2 flex items-center gap-1.5">
+                <p className="text-base font-ui text-foreground mb-2 flex items-center gap-1.5">
                   <Globe className="w-3.5 h-3.5 text-primary" /> Languages spoken
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -161,84 +208,31 @@ export default function DoctorProfilePage() {
                 </div>
               </div>
             )}
-        </ProfileSection>
-      )}
-
-      {/* About */}
-      {doctor.bio && (
-        <ProfileSection title="About" data-testid="section-about">
-            <p className="text-sm text-foreground whitespace-pre-line leading-relaxed">{doctor.bio}</p>
-        </ProfileSection>
-      )}
-
-      {/* Education & background */}
-      {(doctor.boardCertifications?.length > 0 ||
-        doctor.education?.length > 0 ||
-        doctor.professionalMemberships?.length > 0 ||
-        doctor.medicalSchool ||
-        doctor.npiNumber ||
-        doctor.providerGender ||
-        doctor.yearsExperience != null) && (
-        <ProfileSection title="Education & background" contentClassName="p-6 grid grid-cols-1 sm:grid-cols-2 gap-6" data-testid="section-education">
-            {doctor.boardCertifications?.length > 0 && (
-              <div>
-                <p className="text-xs font-ui text-foreground mb-2 flex items-center gap-1.5">
-                  <Award className="w-3.5 h-3.5 text-primary" /> Board certifications
-                </p>
-                <ul className="space-y-1">
-                  {doctor.boardCertifications.map((c: string) => (
-                    <li key={c} className="text-sm text-muted-foreground">{c}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {doctor.education?.length > 0 && (
-              <div>
-                <p className="text-xs font-ui text-foreground mb-2 flex items-center gap-1.5">
-                  <GraduationCap className="w-3.5 h-3.5 text-primary" /> Education & training
-                </p>
-                <ul className="space-y-1">
-                  {doctor.education.map((e: string) => (
-                    <li key={e} className="text-sm text-muted-foreground">{e}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {doctor.professionalMemberships?.length > 0 && (
-              <div>
-                <p className="text-xs font-ui text-foreground mb-2">Professional memberships</p>
-                <ul className="space-y-1">
-                  {doctor.professionalMemberships.map((m: string) => (
-                    <li key={m} className="text-sm text-muted-foreground">{m}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
             <div className="space-y-3">
               {doctor.medicalSchool && (
                 <div>
-                  <p className="text-xs font-ui text-foreground">Medical school</p>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-base font-ui text-foreground">Medical school</p>
+                  <p className="text-base text-foreground">
                     {doctor.medicalSchool}{doctor.graduationYear ? ` (${doctor.graduationYear})` : ""}
                   </p>
                 </div>
               )}
               {doctor.yearsExperience != null && (
                 <div>
-                  <p className="text-xs font-ui text-foreground">Years of experience</p>
-                  <p className="text-sm text-muted-foreground">{doctor.yearsExperience}</p>
+                  <p className="text-base font-ui text-foreground">Years of experience</p>
+                  <p className="text-base text-foreground">{doctor.yearsExperience}</p>
                 </div>
               )}
               {doctor.providerGender && (
                 <div>
-                  <p className="text-xs font-ui text-foreground">Provider's gender</p>
-                  <p className="text-sm text-muted-foreground">{doctor.providerGender}</p>
+                  <p className="text-base font-ui text-foreground">Provider's gender</p>
+                  <p className="text-base text-foreground">{doctor.providerGender}</p>
                 </div>
               )}
               {doctor.npiNumber && (
                 <div>
-                  <p className="text-xs font-ui text-foreground">NPI number</p>
-                  <p className="text-sm text-muted-foreground">{doctor.npiNumber}</p>
+                  <p className="text-base font-ui text-foreground">NPI number</p>
+                  <p className="text-base text-foreground">{doctor.npiNumber}</p>
                 </div>
               )}
             </div>
@@ -315,14 +309,14 @@ export default function DoctorProfilePage() {
                       <Badge key={d} variant="outline" className="text-[10px]">{d}</Badge>
                     ))}
                   </div>
-                  {r.bodyText && <p className="text-sm text-muted-foreground">{r.bodyText}</p>}
+                  {r.bodyText && <p className="text-base text-foreground">{r.bodyText}</p>}
                 </div>
               ))}
             </div>
           ) : (
             <div className="flex flex-col items-center text-center py-6 gap-2">
               <Star className="w-7 h-7 text-muted-foreground/30" />
-              <p className="text-sm text-muted-foreground">No verified reviews yet.</p>
+              <p className="text-base text-foreground">No verified reviews yet.</p>
               <p className="text-xs text-muted-foreground/70 max-w-sm">
                 GoStork reviews come from intended parents after a verified consultation, so every review is from someone who actually met with this doctor.
               </p>

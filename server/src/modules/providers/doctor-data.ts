@@ -166,6 +166,35 @@ export interface BioFields {
   providerGender: "Male" | "Female" | null;
 }
 
+// Controlled vocabulary for doctor specialties. Bio extraction is noisy and
+// pulls generic patient-population phrases ("Social Infertility", "Advanced
+// Maternal Age") that aren't useful specialties. Map what's extracted to a
+// curated set of meaningful fertility specialties and drop everything else.
+const SPECIALTY_RULES: { canonical: string; match: RegExp }[] = [
+  { canonical: "LGBTQ+ Family Building", match: /lgbtq|same[\s-]?sex|\bgay\b|lesbian/i },
+  { canonical: "Male Factor Infertility", match: /male (factor|fertility|infertility)|men'?s (health|sexual|reproductive)|andrology|azoospermia|vasectomy|sperm retrieval/i },
+  { canonical: "PCOS", match: /pcos|polycystic/i },
+  { canonical: "Recurrent Pregnancy Loss", match: /recurrent (pregnancy )?(loss|miscarriage)|recurrent implantation/i },
+  { canonical: "Endometriosis", match: /endometriosis/i },
+  { canonical: "Diminished Ovarian Reserve", match: /diminished ovarian reserve|low ovarian reserve|\bdor\b/i },
+  { canonical: "Egg Freezing", match: /egg freezing|oocyte (cryopreservation|freezing)/i },
+  { canonical: "Fertility Preservation", match: /fertility preservation|oncofertility/i },
+  { canonical: "Egg & Embryo Donation", match: /egg donation|donor egg|oocyte donation|embryo donation|third[\s-]?party reproduction/i },
+  { canonical: "Surrogacy & Gestational Carriers", match: /surrogacy|gestational carrier/i },
+  { canonical: "Reproductive Surgery", match: /reproductive surg|surgical procedure|hysteroscop|laparoscop|fibroid|myomectomy/i },
+  { canonical: "Genetic Testing (PGT)", match: /\bpgt\b|preimplantation|genetic (testing|screening|counseling)/i },
+  { canonical: "Tubal Factor", match: /tubal factor|tubal (disease|blockage|reanastomosis)/i },
+];
+
+export function curateSpecialties(raw: string[]): string[] {
+  const out: string[] = [];
+  for (const s of raw || []) {
+    const rule = SPECIALTY_RULES.find((r) => r.match.test(s));
+    if (rule && !out.includes(rule.canonical)) out.push(rule.canonical);
+  }
+  return out;
+}
+
 export async function extractDoctorFieldsFromBio(
   genAI: GoogleGenerativeAI,
   name: string,
@@ -206,7 +235,7 @@ Return ONLY the JSON object.`;
     const gender = o.providerGender === "Male" || o.providerGender === "Female" ? o.providerGender : null;
     const yrs = typeof o.yearsExperience === "number" && Number.isFinite(o.yearsExperience) ? Math.round(o.yearsExperience) : null;
     return {
-      specialties: arr(o.specialties),
+      specialties: curateSpecialties(arr(o.specialties)),
       languagesSpoken: arr(o.languagesSpoken),
       boardCertifications: arr(o.boardCertifications),
       education: arr(o.education),
