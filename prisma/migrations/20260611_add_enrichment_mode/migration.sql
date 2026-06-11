@@ -1,0 +1,1 @@
+ALTER TABLE "CdcSyncJob" ADD COLUMN IF NOT EXISTS "enrichmentMode" TEXT;

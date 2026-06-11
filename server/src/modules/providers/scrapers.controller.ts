@@ -829,6 +829,7 @@ export class ScrapersController {
       job: {
         year: job.year,
         enrichmentStatus: job.enrichmentStatus,
+        enrichmentMode: (job as any).enrichmentMode ?? null,
         enrichmentProcessed: job.enrichmentProcessed,
         enrichmentTotal: job.enrichmentTotal,
         enrichmentErrors: job.enrichmentErrors,

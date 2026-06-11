@@ -1250,6 +1250,7 @@ export class ClinicEnrichmentService {
         where: { id: jobId },
         data: {
           enrichmentStatus: "PROCESSING",
+          enrichmentMode: mode,
           enrichmentTotal: total,
           enrichmentProcessed: 0,
           enrichmentErrors: 0,
@@ -1261,7 +1262,7 @@ export class ClinicEnrichmentService {
       if (total === 0) {
         await this.prisma.cdcSyncJob.update({
           where: { id: jobId },
-          data: { enrichmentStatus: "COMPLETED", enrichmentProcessed: 0, enrichmentTotal: 0 },
+          data: { enrichmentStatus: "COMPLETED", enrichmentMode: null, enrichmentProcessed: 0, enrichmentTotal: 0 },
         });
         return;
       }
@@ -1322,7 +1323,7 @@ export class ClinicEnrichmentService {
 
       const finalUpdate = await this.prisma.cdcSyncJob.updateMany({
         where: { id: jobId, enrichmentStatus: "PROCESSING" },
-        data: { enrichmentStatus: "COMPLETED", enrichmentProcessed: processed, enrichmentErrors: errors, enrichmentSkipped: skipped },
+        data: { enrichmentStatus: "COMPLETED", enrichmentMode: null, enrichmentProcessed: processed, enrichmentErrors: errors, enrichmentSkipped: skipped },
       });
 
       if (finalUpdate.count > 0) {
@@ -1332,7 +1333,7 @@ export class ClinicEnrichmentService {
       console.error(`[clinic-enrichment] Fatal targeted enrichment error:`, err.message);
       await this.prisma.cdcSyncJob.update({
         where: { id: jobId },
-        data: { enrichmentStatus: "FAILED", enrichmentErrorMessage: err.message?.slice(0, 500) || "Unknown error" },
+        data: { enrichmentStatus: "FAILED", enrichmentMode: null, enrichmentErrorMessage: err.message?.slice(0, 500) || "Unknown error" },
       });
     }
   }
@@ -1407,6 +1408,7 @@ export class ClinicEnrichmentService {
         where: { id: jobId },
         data: {
           enrichmentStatus: "PROCESSING",
+          enrichmentMode: isResume ? undefined : "full",
           enrichmentTotal: total,
           enrichmentErrorMessage: null,
         },
@@ -1417,6 +1419,7 @@ export class ClinicEnrichmentService {
           where: { id: jobId },
           data: {
             enrichmentStatus: "COMPLETED",
+            enrichmentMode: null,
             enrichmentTotal: total,
             enrichmentProcessed: total,
           },
@@ -1482,6 +1485,7 @@ export class ClinicEnrichmentService {
         where: { id: jobId, enrichmentStatus: "PROCESSING" },
         data: {
           enrichmentStatus: "COMPLETED",
+          enrichmentMode: null,
           enrichmentProcessed: processed,
           enrichmentErrors: errors,
           enrichmentSkipped: skipped,
@@ -1499,6 +1503,7 @@ export class ClinicEnrichmentService {
         where: { id: jobId },
         data: {
           enrichmentStatus: "FAILED",
+          enrichmentMode: null,
           enrichmentErrorMessage: err.message?.slice(0, 500) || "Unknown error",
         },
       });

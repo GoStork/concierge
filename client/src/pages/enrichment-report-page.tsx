@@ -14,6 +14,7 @@ interface EnrichmentReportData {
   job: {
     year: number;
     enrichmentStatus: string | null;
+    enrichmentMode: string | null;
     enrichmentProcessed: number;
     enrichmentTotal: number;
     enrichmentErrors: number;
@@ -400,11 +401,25 @@ export default function EnrichmentReportPage() {
         </div>
       )}
 
-      {isLive && (
+      {isLive && (() => {
+        const MODE_LABELS: Record<string, string> = {
+          full: "Full Enrichment",
+          urls: "Website URL Re-discovery",
+          locations: "Locations Re-scrape",
+          skipped: "Skipped Clinics Re-try",
+          team: "Team Members Re-scrape",
+          logo: "Logo Re-discovery",
+          about: "About Re-scrape",
+          phone: "Phone Re-discovery",
+        };
+        const modeLabel = job.enrichmentMode ? (MODE_LABELS[job.enrichmentMode] || job.enrichmentMode) : null;
+        return (
         <div className="rounded-[var(--radius)] border border-primary/20 bg-primary/5 p-4 space-y-3" data-testid="enrichment-live-banner">
           <div className="flex items-center gap-2">
             <Activity className="w-4 h-4 text-primary animate-pulse" />
-            <span className="text-sm font-heading text-primary">Live - Enrichment in Progress</span>
+            <span className="text-sm font-heading text-primary">
+              Live - {modeLabel ? `${modeLabel} in Progress` : "Enrichment in Progress"}
+            </span>
             <span className="ml-auto text-xs text-muted-foreground">Auto-refreshing every 5s</span>
           </div>
           <div className="space-y-1.5">
@@ -427,7 +442,8 @@ export default function EnrichmentReportPage() {
             )}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       <div className="grid grid-cols-4 gap-2 md:gap-4" data-testid="enrichment-summary-stats">
         <Card>
