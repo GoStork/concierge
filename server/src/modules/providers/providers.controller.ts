@@ -398,12 +398,20 @@ export class ProvidersController {
     }
 
     if (query.search) {
-      const terms = query.search.trim().split(/[\s\-_]+/).filter(Boolean);
+      const raw = query.search.trim();
+      const terms = raw.split(/[\s\-_]+/).filter(Boolean);
+      // Match the doctor's name, a specialty, OR the doctor's clinic name - so
+      // searching a clinic ("Boston IVF - The Syracuse Center") in the Doctors
+      // tab returns every doctor at that clinic.
       const nameWhere =
         terms.length > 1
           ? { AND: terms.map((t: string) => ({ name: { contains: t, mode: "insensitive" } })) }
-          : { name: { contains: query.search.trim(), mode: "insensitive" } };
-      memberWhere.OR = [nameWhere, { specialties: { hasSome: [query.search.trim()] } }];
+          : { name: { contains: raw, mode: "insensitive" } };
+      const providerNameWhere =
+        terms.length > 1
+          ? { provider: { AND: terms.map((t: string) => ({ name: { contains: t, mode: "insensitive" } })) } }
+          : { provider: { name: { contains: raw, mode: "insensitive" } } };
+      memberWhere.OR = [nameWhere, { specialties: { hasSome: [raw] } }, providerNameWhere];
     }
 
     const members = await this.prisma.providerMember.findMany({
