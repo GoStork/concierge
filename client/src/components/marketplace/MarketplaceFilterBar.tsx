@@ -2132,8 +2132,8 @@ export function MarketplaceFilterBar({
   );
 
   const currentSearchValue = isIvf ? (ivfSearch || "") : searchQuery;
-  const currentSearchPlaceholder = isIvf ? "Clinic name..." : "Search by name, ID, location, education...";
-  const currentSearchPlaceholderMobile = isIvf ? "Clinic name..." : "Search...";
+  const currentSearchPlaceholder = isIvf ? "Clinic or doctor name..." : "Search by name, ID, location, education...";
+  const currentSearchPlaceholderMobile = isIvf ? "Clinic or doctor name..." : "Search...";
   const handleSearchChange = isIvf
     ? (val: string) => onIvfSearchChange?.(val)
     : (val: string) => dispatch(setMarketplaceSearchQuery(val));

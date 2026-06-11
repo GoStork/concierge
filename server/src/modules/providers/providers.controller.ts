@@ -469,15 +469,21 @@ export class ProvidersController {
     const where: any = {};
 
     if (query.search) {
-      // Normalize search: strip dashes/special chars so "Kindbody New York" matches "Kindbody-New York"
-      const searchTerms = query.search.trim().split(/[\s\-_]+/).filter(Boolean);
-      if (searchTerms.length > 1) {
-        where.AND = searchTerms.map((term: string) => ({
-          name: { contains: term, mode: "insensitive" },
-        }));
-      } else {
-        where.name = { contains: query.search.trim(), mode: "insensitive" };
-      }
+      // Normalize search: strip dashes/special chars so "Kindbody New York" matches "Kindbody-New York".
+      // Match the clinic name OR a doctor (member) at the clinic, so searching a
+      // doctor ("Dr. Vicken Sahakian") in the Clinics tab returns every clinic
+      // that doctor practices at.
+      const raw = query.search.trim();
+      const searchTerms = raw.split(/[\s\-_]+/).filter(Boolean);
+      const nameMatch =
+        searchTerms.length > 1
+          ? { AND: searchTerms.map((term: string) => ({ name: { contains: term, mode: "insensitive" } })) }
+          : { name: { contains: raw, mode: "insensitive" } };
+      const memberMatch =
+        searchTerms.length > 1
+          ? { members: { some: { AND: searchTerms.map((term: string) => ({ name: { contains: term, mode: "insensitive" } })) } } }
+          : { members: { some: { name: { contains: raw, mode: "insensitive" } } } };
+      where.OR = [nameMatch, memberMatch];
     }
 
     if (query.location) {
