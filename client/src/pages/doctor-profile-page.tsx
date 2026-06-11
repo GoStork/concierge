@@ -161,11 +161,11 @@ export default function DoctorProfilePage() {
         doctor.npiNumber ||
         doctor.providerGender ||
         doctor.yearsExperience != null) && (
-        <ProfileSection title="Education & background" contentClassName="p-6 grid grid-cols-1 sm:grid-cols-2 gap-6" data-testid="section-education">
+        <ProfileSection title="Education & Background" contentClassName="p-6 grid grid-cols-1 sm:grid-cols-2 gap-6" data-testid="section-education">
             {doctor.boardCertifications?.length > 0 && (
               <div>
                 <p className="text-base font-ui text-foreground mb-2 flex items-center gap-1.5">
-                  <Award className="w-3.5 h-3.5 text-primary" /> Board certifications
+                  <Award className="w-3.5 h-3.5 text-primary" /> Board Certifications
                 </p>
                 <ul className="space-y-1">
                   {doctor.boardCertifications.map((c: string) => (
@@ -177,7 +177,7 @@ export default function DoctorProfilePage() {
             {doctor.education?.length > 0 && (
               <div>
                 <p className="text-base font-ui text-foreground mb-2 flex items-center gap-1.5">
-                  <GraduationCap className="w-3.5 h-3.5 text-primary" /> Education & training
+                  <GraduationCap className="w-3.5 h-3.5 text-primary" /> Education & Training
                 </p>
                 <ul className="space-y-1">
                   {doctor.education.map((e: string) => (
@@ -188,7 +188,7 @@ export default function DoctorProfilePage() {
             )}
             {doctor.professionalMemberships?.length > 0 && (
               <div>
-                <p className="text-base font-ui text-foreground mb-2">Professional memberships</p>
+                <p className="text-base font-ui text-foreground mb-2">Professional Memberships</p>
                 <ul className="space-y-1">
                   {doctor.professionalMemberships.map((m: string) => (
                     <li key={m} className="text-base text-foreground">{m}</li>
@@ -199,7 +199,7 @@ export default function DoctorProfilePage() {
             {doctor.languagesSpoken?.length > 0 && (
               <div>
                 <p className="text-base font-ui text-foreground mb-2 flex items-center gap-1.5">
-                  <Globe className="w-3.5 h-3.5 text-primary" /> Languages spoken
+                  <Globe className="w-3.5 h-3.5 text-primary" /> Languages Spoken
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {doctor.languagesSpoken.map((l: string) => (
@@ -208,40 +208,38 @@ export default function DoctorProfilePage() {
                 </div>
               </div>
             )}
-            <div className="space-y-3">
-              {doctor.medicalSchool && (
-                <div>
-                  <p className="text-base font-ui text-foreground">Medical school</p>
-                  <p className="text-base text-foreground">
-                    {doctor.medicalSchool}{doctor.graduationYear ? ` (${doctor.graduationYear})` : ""}
-                  </p>
-                </div>
-              )}
-              {doctor.yearsExperience != null && (
-                <div>
-                  <p className="text-base font-ui text-foreground">Years of experience</p>
-                  <p className="text-base text-foreground">{doctor.yearsExperience}</p>
-                </div>
-              )}
-              {doctor.providerGender && (
-                <div>
-                  <p className="text-base font-ui text-foreground">Provider's gender</p>
-                  <p className="text-base text-foreground">{doctor.providerGender}</p>
-                </div>
-              )}
-              {doctor.npiNumber && (
-                <div>
-                  <p className="text-base font-ui text-foreground">NPI number</p>
-                  <p className="text-base text-foreground">{doctor.npiNumber}</p>
-                </div>
-              )}
-            </div>
+            {doctor.medicalSchool && (
+              <div>
+                <p className="text-base font-ui text-foreground">Medical School</p>
+                <p className="text-base text-foreground">
+                  {doctor.medicalSchool}{doctor.graduationYear ? ` (${doctor.graduationYear})` : ""}
+                </p>
+              </div>
+            )}
+            {doctor.yearsExperience != null && (
+              <div>
+                <p className="text-base font-ui text-foreground">Years of Experience</p>
+                <p className="text-base text-foreground">{doctor.yearsExperience}</p>
+              </div>
+            )}
+            {doctor.providerGender && (
+              <div>
+                <p className="text-base font-ui text-foreground">Provider's Gender</p>
+                <p className="text-base text-foreground">{doctor.providerGender}</p>
+              </div>
+            )}
+            {doctor.npiNumber && (
+              <div>
+                <p className="text-base font-ui text-foreground">NPI Number</p>
+                <p className="text-base text-foreground">{doctor.npiNumber}</p>
+              </div>
+            )}
         </ProfileSection>
       )}
 
       {/* Insurances accepted (clinic-level, unioned across affiliations) */}
       {acceptedInsurance.length > 0 && (
-        <ProfileSection title="In-network insurances" data-testid="section-insurance">
+        <ProfileSection title="In-Network Insurances" data-testid="section-insurance">
             <div className="flex flex-wrap gap-2">
               {acceptedInsurance.map((ins) => (
                 <Badge key={ins} variant="secondary" className="gap-1">
@@ -253,7 +251,7 @@ export default function DoctorProfilePage() {
       )}
 
       {/* Works at - clinic affiliations */}
-      <ProfileSection title={affiliations.length > 1 ? `Practices at ${affiliations.length} clinics` : "Practices at"} contentClassName="p-6 grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="section-affiliations">
+      <ProfileSection title={affiliations.length > 1 ? `Practices At ${affiliations.length} Clinics` : "Practices At"} contentClassName="p-6 grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="section-affiliations">
           {affiliations.map((a) => {
             const logo = getPhotoSrc(a.logoUrl);
             const rate = headlineRate(a.successRates);
@@ -297,7 +295,7 @@ export default function DoctorProfilePage() {
       </ProfileSection>
 
       {/* Reviews */}
-      <ProfileSection title="Patient reviews" data-testid="section-reviews">
+      <ProfileSection title="Patient Reviews" data-testid="section-reviews">
           {hasReviews ? (
             <div className="space-y-4">
               {reviews.map((r) => (
