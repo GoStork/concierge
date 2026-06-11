@@ -116,39 +116,44 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
     <div className="space-y-3" data-testid={rest["data-testid"]}>
       {!carrier ? (
         <>
-          {/* Popular carriers - big logo grid */}
-          <div className="space-y-2">
-            <p className="text-xs font-ui text-muted-foreground">Popular carriers</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-              {popularCarriers().map((c) => (
-                <button
-                  key={c.carrier}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => pick(c.carrier)}
-                  className="flex items-center gap-2.5 border border-border/50 rounded-[var(--radius)] p-2.5 text-left hover:border-primary hover:bg-secondary/30 transition-colors disabled:opacity-50"
-                  data-testid={`insurance-popular-${c.carrier}`}
-                >
-                  <CarrierLogo carrier={c} size={36} />
-                  <span className="text-sm leading-tight">{c.carrier}</span>
-                </button>
-              ))}
-            </div>
+          {/* Search at the top */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search for insurance..."
+              className="h-9 pl-8 text-sm"
+              disabled={disabled}
+              data-testid="insurance-search"
+            />
           </div>
 
-          {/* All carriers - searchable text list, no logos */}
-          <div className="space-y-1">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search all carriers..."
-                className="h-9 pl-8 text-sm"
-                disabled={disabled}
-                data-testid="insurance-search"
-              />
+          {/* Popular carriers - big logo grid (hidden while searching) */}
+          {!search.trim() && (
+            <div className="space-y-2">
+              <p className="text-xs font-ui text-muted-foreground">Popular carriers</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                {popularCarriers().map((c) => (
+                  <button
+                    key={c.carrier}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => pick(c.carrier)}
+                    className="flex items-center gap-2.5 border border-border/50 rounded-[var(--radius)] p-2.5 text-left hover:border-primary hover:bg-secondary/30 transition-colors disabled:opacity-50"
+                    data-testid={`insurance-popular-${c.carrier}`}
+                  >
+                    <CarrierLogo carrier={c} size={36} />
+                    <span className="text-sm leading-tight">{c.carrier}</span>
+                  </button>
+                ))}
+              </div>
             </div>
+          )}
+
+          {/* All carriers - text list, no logos */}
+          <div className="space-y-1">
+            {!search.trim() && <p className="text-xs font-ui text-muted-foreground">All carriers</p>}
             <div className="max-h-48 overflow-y-auto rounded-[var(--radius)] border border-border/40 divide-y divide-border/30">
               {filtered.map((c) => (
                 <button
