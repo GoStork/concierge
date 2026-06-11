@@ -202,6 +202,7 @@ interface SartResult {
 
 function normalizeName(name: string): string {
   return name
+    .replace(/^\s*(?:Dr|Doctor)\b\.?\s*/i, "") // strip leading "Dr."/"Doctor" so "Dr. X" and "X" match
     .replace(/,?\s*(LLC|Inc\.?|PC|PA|SC|LTD|LLP|Corporation|Corp\.?|PLLC|dba\b.*)/gi, "")
     .replace(/,?\s*(MD|DO|PhD|FACOG|FACS|MBA|MSc|RN|NP)\b/gi, "")
     .replace(/[.,'"]/g, "")
@@ -209,6 +210,56 @@ function normalizeName(name: string): string {
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
+}
+
+// Doctor profile identity: slug is the URL key, personKey links the same human
+// across clinics. Mirrors scripts/backfill-doctor-slugs.ts so re-enrichment
+// produces the same keys the backfill did.
+function slugifyName(name: string): string {
+  return normalizeName(name)
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function personKeyOf(name: string): string {
+  return createHash("sha1").update(normalizeName(name)).digest("hex").slice(0, 16);
+}
+
+// Create a ProviderMember with a globally-unique slug + personKey. Enrichment
+// deletes+recreates a clinic's members on every run, so without this the
+// backfilled slugs would be lost. Retries with a numeric suffix on slug
+// collision; falls back to no slug only for pathological (empty/colliding) names.
+async function createMemberWithSlug(
+  prisma: PrismaService,
+  data: {
+    providerId: string;
+    name: string;
+    title: string | null;
+    bio: string | null;
+    photoUrl: string | null;
+    isMedicalDirector: boolean;
+    sortOrder: number;
+  },
+): Promise<void> {
+  const base = slugifyName(data.name);
+  const personKey = personKeyOf(data.name);
+  if (!base) {
+    await prisma.providerMember.create({ data: { ...data, personKey } });
+    return;
+  }
+  for (let attempt = 1; attempt <= 100; attempt++) {
+    const slug = attempt === 1 ? base : `${base}-${attempt}`;
+    try {
+      await prisma.providerMember.create({ data: { ...data, slug, personKey } });
+      return;
+    } catch (e: any) {
+      if (e?.code === "P2002") continue; // slug already taken - try next suffix
+      throw e;
+    }
+  }
+  await prisma.providerMember.create({ data: { ...data, personKey } });
 }
 
 const STATE_ABBREV_TO_FULL: Record<string, string> = {
@@ -837,16 +888,14 @@ export class ClinicEnrichmentService {
       for (let i = 0; i < scopedTeam.length; i++) {
         const tm = scopedTeam[i];
         const persistedPhoto = await persistPhotoToGcs(tm.photoUrl, this.storageService);
-        await this.prisma.providerMember.create({
-          data: {
-            providerId,
-            name: tm.name,
-            title: tm.title,
-            bio: tm.bio,
-            photoUrl: persistedPhoto,
-            isMedicalDirector: tm.isMedicalDirector,
-            sortOrder: i,
-          },
+        await createMemberWithSlug(this.prisma, {
+          providerId,
+          name: tm.name,
+          title: tm.title,
+          bio: tm.bio,
+          photoUrl: persistedPhoto,
+          isMedicalDirector: tm.isMedicalDirector,
+          sortOrder: i,
         });
       }
       console.log(`[clinic-enrichment] Refreshed ${scopedTeam.length} team members for "${provider.name}"`);
@@ -1161,16 +1210,14 @@ export class ClinicEnrichmentService {
       for (let i = 0; i < scopedTeam.length; i++) {
         const tm = scopedTeam[i];
         const persistedPhoto = await persistPhotoToGcs(tm.photoUrl, this.storageService);
-        await this.prisma.providerMember.create({
-          data: {
-            providerId,
-            name: tm.name,
-            title: tm.title,
-            bio: tm.bio,
-            photoUrl: persistedPhoto,
-            isMedicalDirector: tm.isMedicalDirector,
-            sortOrder: i,
-          },
+        await createMemberWithSlug(this.prisma, {
+          providerId,
+          name: tm.name,
+          title: tm.title,
+          bio: tm.bio,
+          photoUrl: persistedPhoto,
+          isMedicalDirector: tm.isMedicalDirector,
+          sortOrder: i,
         });
       }
       console.log(`[clinic-enrichment] reSync: Refreshed ${scopedTeam.length} team members for "${provider.name}"`);

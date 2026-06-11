@@ -690,42 +690,62 @@ export class ProvidersController {
       },
     });
 
-    // Build clinic affiliations; parents only see clinics with an approved service.
-    const affiliations = memberRows
-      .map((m) => {
-        const p = m.provider;
-        if (isParent && (p.services?.length ?? 0) === 0) return null;
-        return {
-          memberId: m.id,
-          title: m.title,
-          isMedicalDirector: m.isMedicalDirector,
-          providerId: p.id,
-          providerName: p.name,
-          logoUrl: p.logoUrl,
-          lgbtqCare: p.lgbtqCare,
-          acceptedInsurance: p.acceptedInsurance,
-          offersVideoVisits: p.offersVideoVisits,
-          serviceTypes: (p.services || []).map((s: any) => s.providerType?.name).filter(Boolean),
-          memberLocations: m.locations.map((ml: any) => ({
-            city: ml.location?.city,
-            state: ml.location?.state,
-            address: ml.location?.address,
-            zip: ml.location?.zip,
-          })),
-          clinicLocations: p.locations.map((l) => ({
-            city: l.city,
-            state: l.state,
-            address: l.address,
-            zip: l.zip,
-          })),
-          successRates: p.ivfSuccessRates,
-        };
-      })
-      .filter(Boolean);
+    // The same human can appear as several rows (SART vs website scrape,
+    // "Dr. X" vs "X"). Score each row by how much profile data it carries so we
+    // surface the richest one for identity and collapse duplicate clinic cards.
+    const scoreRow = (m: any) =>
+      (m.bio ? 1000 : 0) +
+      (m.specialties?.length || 0) * 20 +
+      (m.boardCertifications?.length || 0) * 10 +
+      (m.education?.length || 0) * 10 +
+      (m.languagesSpoken?.length || 0) * 5 +
+      (m.photoUrl ? 50 : 0);
 
-    if (affiliations.length === 0) {
+    // Parents only see clinics with an approved service.
+    const eligibleRows = memberRows.filter(
+      (m) => !isParent || (m.provider.services?.length ?? 0) > 0,
+    );
+    if (eligibleRows.length === 0) {
       throw new NotFoundException("Doctor not found");
     }
+
+    // Identity fields come from the richest row across all of this person's clinics.
+    const identity = eligibleRows.slice().sort((a, b) => scoreRow(b) - scoreRow(a))[0];
+
+    // One affiliation per clinic: keep the richest member row for that clinic.
+    const bestByProvider = new Map<string, (typeof eligibleRows)[number]>();
+    for (const m of eligibleRows) {
+      const cur = bestByProvider.get(m.providerId);
+      if (!cur || scoreRow(m) > scoreRow(cur)) bestByProvider.set(m.providerId, m);
+    }
+    const affiliations = Array.from(bestByProvider.values()).map((m) => {
+      const p = m.provider;
+      return {
+        memberId: m.id,
+        title: m.title,
+        isMedicalDirector: m.isMedicalDirector,
+        providerId: p.id,
+        providerName: p.name,
+        logoUrl: p.logoUrl,
+        lgbtqCare: p.lgbtqCare,
+        acceptedInsurance: p.acceptedInsurance,
+        offersVideoVisits: p.offersVideoVisits,
+        serviceTypes: (p.services || []).map((s: any) => s.providerType?.name).filter(Boolean),
+        memberLocations: m.locations.map((ml: any) => ({
+          city: ml.location?.city,
+          state: ml.location?.state,
+          address: ml.location?.address,
+          zip: ml.location?.zip,
+        })),
+        clinicLocations: p.locations.map((l) => ({
+          city: l.city,
+          state: l.state,
+          address: l.address,
+          zip: l.zip,
+        })),
+        successRates: p.ivfSuccessRates,
+      };
+    });
 
     // Published, GoStork-verified reviews for any of this person's member rows (Phase 7 populates these).
     const memberIds = memberRows.map((m) => m.id);
@@ -735,26 +755,26 @@ export class ProvidersController {
     });
 
     return {
-      id: primary.id,
-      slug: primary.slug,
-      name: primary.name,
-      title: primary.title,
-      bio: primary.bio,
-      photoUrl: primary.photoUrl,
-      isMedicalDirector: primary.isMedicalDirector,
-      specialties: primary.specialties,
-      languagesSpoken: primary.languagesSpoken,
-      boardCertifications: primary.boardCertifications,
-      education: primary.education,
-      professionalMemberships: primary.professionalMemberships,
-      npiNumber: primary.npiNumber,
-      yearsExperience: primary.yearsExperience,
-      providerGender: primary.providerGender,
-      offersVideoVisits: primary.offersVideoVisits,
-      acceptingNewPatients: primary.acceptingNewPatients,
-      reviewCount: primary.reviewCount,
-      recommendPct: primary.recommendPct,
-      avgOverallScore: primary.avgOverallScore,
+      id: identity.id,
+      slug: primary.slug, // keep the slug the user navigated to
+      name: identity.name,
+      title: identity.title,
+      bio: identity.bio,
+      photoUrl: identity.photoUrl,
+      isMedicalDirector: eligibleRows.some((m) => m.isMedicalDirector),
+      specialties: identity.specialties,
+      languagesSpoken: identity.languagesSpoken,
+      boardCertifications: identity.boardCertifications,
+      education: identity.education,
+      professionalMemberships: identity.professionalMemberships,
+      npiNumber: identity.npiNumber,
+      yearsExperience: identity.yearsExperience,
+      providerGender: identity.providerGender,
+      offersVideoVisits: identity.offersVideoVisits,
+      acceptingNewPatients: identity.acceptingNewPatients,
+      reviewCount: identity.reviewCount,
+      recommendPct: identity.recommendPct,
+      avgOverallScore: identity.avgOverallScore,
       affiliations,
       reviews,
     };

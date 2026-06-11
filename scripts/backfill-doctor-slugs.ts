@@ -22,7 +22,9 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import crypto from "crypto";
 
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+// Session-mode (DIRECT_URL, 5432) connection: the pgbouncer transaction pooler
+// (DATABASE_URL, 6543) makes Prisma per-row writes unreliable in batch scripts.
+const pool = new pg.Pool({ connectionString: process.env.DIRECT_URL || process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
