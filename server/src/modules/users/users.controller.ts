@@ -542,6 +542,7 @@ export class UsersController {
           "eggDonorEggType", "eggDonorDonationType",
           "clinicAgeGroup", "clinicPriorityTags",
           "surrogateLiveBirthsRange",
+          "insurance",
         ];
         for (const field of stringProfileFields) {
           if (body[field] !== undefined) profileData[field] = body[field] || null;

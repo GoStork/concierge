@@ -32,6 +32,7 @@ import DocumentsTab from "@/components/documents-tab";
 import ScrapersSummaryPage from "@/pages/scrapers-summary-page";
 import { hasProviderRole, isParentAccountAdmin } from "@shared/roles";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { InsurancePicker } from "@/components/ui/insurance-picker";
 import { OptionPills } from "@/components/ui/option-pills";
 import { Slider } from "@/components/ui/slider";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -127,6 +128,7 @@ function AccountTab() {
   const [editNeedsClinic, setEditNeedsClinic] = useState("");
   const [editCurrentClinicName, setEditCurrentClinicName] = useState("");
   const [editClinicPriority, setEditClinicPriority] = useState("");
+  const [editInsurance, setEditInsurance] = useState<string[]>([]);
   // Surrogate preferences
   const [editSurrogateCountries, setEditSurrogateCountries] = useState("");
   const [editSurrogateTermination, setEditSurrogateTermination] = useState("");
@@ -264,6 +266,7 @@ function AccountTab() {
     setEditNeedsClinic(parentProfileQuery.data?.needsClinic != null ? String(parentProfileQuery.data.needsClinic) : "");
     setEditCurrentClinicName(parentProfileQuery.data?.currentClinicName || "");
     setEditClinicPriority(parentProfileQuery.data?.clinicPriority || "");
+    setEditInsurance(parentProfileQuery.data?.insurance ? [parentProfileQuery.data.insurance] : []);
     // Surrogate
     setEditSurrogateCountries(parentProfileQuery.data?.surrogateCountries || "");
     setEditSurrogateTermination(parentProfileQuery.data?.surrogateTermination || "");
@@ -348,6 +351,7 @@ function AccountTab() {
       setEditNeedsClinic(d?.needsClinic != null ? String(d.needsClinic) : "");
       setEditIsFirstIvf(d?.isFirstIvf != null ? String(d.isFirstIvf) : "");
       setEditClinicPriority(d?.clinicPriority || "");
+      setEditInsurance(d?.insurance ? [d.insurance] : []);
       setEditClinicAgeGroup(d?.clinicAgeGroup || "");
       setEditClinicPriorityTags(d?.clinicPriorityTags || "");
     } else if (section === "surrogate") {
@@ -461,6 +465,7 @@ function AccountTab() {
         clinicPriority: editClinicPriority || null,
         clinicAgeGroup: editClinicAgeGroup || null,
         clinicPriorityTags: editClinicPriorityTags || null,
+        insurance: editInsurance[0] || null,
       };
       await apiRequest("PUT", "/api/user/profile", payload);
       await parentProfileQuery.refetch();
@@ -781,7 +786,7 @@ function AccountTab() {
     if (isInitializingRef.current) { isInitializingRef.current = false; setIsDirty(false); return; }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, editName, editMobileE164, editMobileDisplay, editMobileIsoCode, editMobileIsValid, editPassword, confirmPassword, editLocation, editGender, editOrientation, editRelationship, editAge, editPartnerName, editPartnerAge, editPartnerGender, editServices, editJourneyStage, editIsFirstIvf, editEggSource, editSpermSource, editCarrier, editHasEmbryos, editEmbryoCount, editEmbryosTested, editNeedsClinic, editCurrentClinicName, editClinicPriority, editClinicPriorityTags, editSurrogateCountries, editSurrogateTermination, editSurrogateTwins, editSurrogateAgeRange, editSurrogateBudget, editSurrogateExperience, editSurrogateMedPrefs, editSameSexCouple, editSurrogateRace, editSurrogateEthnicity, editSurrogateRelationship, editSurrogateBmiRange, editSurrogateTotalCostRange, editSurrogateLiveBirthsRange, editSurrogateMaxCSections, editSurrogateMaxMiscarriages, editSurrogateMaxAbortions, editSurrogateLastDeliveryYear, editSurrogateCovidVaccinated, editSurrogateSelectiveReduction, editSurrogateInternationalParents, editDonorPreferences, editDonorEyeColor, editDonorHairColor, editDonorHeight, editDonorEducation, editDonorEthnicity, editSpermDonorType, editSpermDonorPreferences, editSpermDonorAgeRange, editSpermDonorEyeColor, editSpermDonorHairColor, editSpermDonorHeightRange, editSpermDonorRace, editSpermDonorEthnicity, editSpermDonorEducation, editSpermDonorMaxPrice, editSpermDonorVialType, editEggDonorAgeRange, editEggDonorCompensationRange, editEggDonorTotalCostRange, editEggDonorLotCostRange, editEggDonorEggType, editEggDonorDonationType, editClinicAgeGroup, editCurrentAgencyName, editCurrentAttorneyName]);
+  }, [editing, editName, editMobileE164, editMobileDisplay, editMobileIsoCode, editMobileIsValid, editPassword, confirmPassword, editLocation, editGender, editOrientation, editRelationship, editAge, editPartnerName, editPartnerAge, editPartnerGender, editServices, editJourneyStage, editIsFirstIvf, editEggSource, editSpermSource, editCarrier, editHasEmbryos, editEmbryoCount, editEmbryosTested, editNeedsClinic, editCurrentClinicName, editClinicPriority, editInsurance, editClinicPriorityTags, editSurrogateCountries, editSurrogateTermination, editSurrogateTwins, editSurrogateAgeRange, editSurrogateBudget, editSurrogateExperience, editSurrogateMedPrefs, editSameSexCouple, editSurrogateRace, editSurrogateEthnicity, editSurrogateRelationship, editSurrogateBmiRange, editSurrogateTotalCostRange, editSurrogateLiveBirthsRange, editSurrogateMaxCSections, editSurrogateMaxMiscarriages, editSurrogateMaxAbortions, editSurrogateLastDeliveryYear, editSurrogateCovidVaccinated, editSurrogateSelectiveReduction, editSurrogateInternationalParents, editDonorPreferences, editDonorEyeColor, editDonorHairColor, editDonorHeight, editDonorEducation, editDonorEthnicity, editSpermDonorType, editSpermDonorPreferences, editSpermDonorAgeRange, editSpermDonorEyeColor, editSpermDonorHairColor, editSpermDonorHeightRange, editSpermDonorRace, editSpermDonorEthnicity, editSpermDonorEducation, editSpermDonorMaxPrice, editSpermDonorVialType, editEggDonorAgeRange, editEggDonorCompensationRange, editEggDonorTotalCostRange, editEggDonorLotCostRange, editEggDonorEggType, editEggDonorDonationType, editClinicAgeGroup, editCurrentAgencyName, editCurrentAttorneyName]);
 
   // Derive gender-aware options for biological baseline fields
   // Gender is stored as "I'm a man" / "I'm a woman" / "I'm non-binary"
@@ -1293,6 +1298,7 @@ function AccountTab() {
               options: ["Under 35", "35-37", "38-40", "Over 40"] },
             { label: "What matters most to you in a clinic?", key: "clinicPriorityTags", value: editClinicPriorityTags, setter: setEditClinicPriorityTags, type: "multiselect",
               options: ["Success rates", "Location", "Cost", "Volume of cycles", "Physician gender", "LGBTQ+ friendly", "Donor egg program", "Gestational carrier program", "Language support", "Personalized care"] },
+            { label: "Your insurance", key: "insurance", value: editInsurance, setter: setEditInsurance, type: "insurance" },
             { label: "Additional notes", key: "clinicPriority", value: editClinicPriority, setter: setEditClinicPriority, type: "textarea" },
           ]}
         />}
@@ -1536,6 +1542,19 @@ function ProfileSection({ title, editing, data, fields, forceShow, onEdit, onSav
           // In view mode, skip fields with no value unless forceShow is set
           if (isDisabled && !forceShow && (effectiveValue === "" || effectiveValue == null)) return null;
 
+          if (f.type === "insurance") {
+            const arr: string[] = editing ? (f.value || []) : (raw ? [raw] : []);
+            return (
+              <div key={f.key} className="space-y-2 md:col-span-2">
+                <Label>{f.label}</Label>
+                {editing ? (
+                  <InsurancePicker value={arr} onChange={f.setter} mode="single" />
+                ) : (
+                  <p className="text-sm text-muted-foreground">{raw || "Not set"}</p>
+                )}
+              </div>
+            );
+          }
           if (f.type === "yesno") {
             return (
               <div key={f.key} className="space-y-2">

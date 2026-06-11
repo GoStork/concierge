@@ -1430,6 +1430,7 @@ model IntendedParentProfile {
   // Service-Specific Preferences
   clinicReason      String?
   clinicPriority    String?
+  insurance         String? // parent's own insurance, "Carrier" or "Carrier - Plan" (drives the marketplace insurance filter)
   donorEyeColor     String?
   donorHairColor    String?
   donorHeight       String?
