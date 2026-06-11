@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, CheckCircle2, XCircle, Globe, Phone, FileText, Image, Users, Activity, RefreshCw, RotateCcw, StopCircle, SearchX, UserSearch, ImageOff, FileQuestion, PhoneOff, MapPin, Link as LinkIcon } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Globe, Phone, FileText, Image, Users, Activity, RefreshCw, RotateCcw, StopCircle, SearchX, UserSearch, ImageOff, FileQuestion, PhoneOff, MapPin, Link as LinkIcon, Stethoscope, Award, Sparkles, BadgeCheck } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AdminReportLayout } from "@/components/admin-report-layout";
@@ -92,6 +92,7 @@ export default function EnrichmentReportPage() {
   const [isRestartingPhone, setIsRestartingPhone] = useState(false);
   const [isRestartingLocations, setIsRestartingLocations] = useState(false);
   const [isRestartingUrls, setIsRestartingUrls] = useState(false);
+  const [doctorBusy, setDoctorBusy] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery<EnrichmentReportData>({
     queryKey: ["/api/scrapers/cdc-syncs", id, "enrichment-report"],
@@ -265,6 +266,23 @@ export default function EnrichmentReportPage() {
     }
   };
 
+  const handleRestartDoctors = async (mode: string, title: string, description: string) => {
+    setDoctorBusy(mode);
+    try {
+      const res = await apiRequest("POST", `/api/scrapers/cdc-syncs/${id}/enrich?mode=${mode}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Unknown error" }));
+        throw new Error(err.message);
+      }
+      toast({ title, description, variant: "success" });
+      invalidate();
+    } catch (err: any) {
+      toast({ title: "Failed to start", description: err.message, variant: "destructive" });
+    } finally {
+      setDoctorBusy(null);
+    }
+  };
+
   const handleCancel = async () => {
     setIsCancelling(true);
     try {
@@ -330,7 +348,7 @@ export default function EnrichmentReportPage() {
       subtitle={`Status: ${job.enrichmentStatus || "Not started"}`}
     >
       {!isLive && (job.enrichmentStatus === "COMPLETED" || job.enrichmentStatus === "FAILED" || !job.enrichmentStatus) && (
-        <div className="flex flex-wrap items-center gap-2" data-testid="enrichment-actions">
+        <div className="space-y-3" data-testid="enrichment-actions">
           {job.enrichmentStatus === "FAILED" && job.enrichmentProcessed > 0 && (
             <Button
               variant="outline"
@@ -345,42 +363,75 @@ export default function EnrichmentReportPage() {
             </Button>
           )}
           {(() => {
-            const anyBusy = isResuming || isRestarting || isRestartingSkipped || isRestartingTeam || isRestartingLogo || isRestartingAbout || isRestartingPhone || isRestartingLocations || isRestartingUrls;
+            const anyBusy = isResuming || isRestarting || isRestartingSkipped || isRestartingTeam || isRestartingLogo || isRestartingAbout || isRestartingPhone || isRestartingLocations || isRestartingUrls || doctorBusy !== null;
+            const Label = ({ children }: { children: any }) => (
+              <span className="text-[11px] font-ui uppercase tracking-wide text-muted-foreground w-full sm:w-32 sm:shrink-0">{children}</span>
+            );
             return (
-              <>
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestart} disabled={anyBusy} data-testid="button-restart-enrichment">
-                  {isRestarting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                  Restart
-                </Button>
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartSkipped} disabled={anyBusy} data-testid="button-restart-skipped">
-                  {isRestartingSkipped ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <SearchX className="w-3.5 h-3.5" />}
-                  Restart Skipped
-                </Button>
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartUrls} disabled={anyBusy} data-testid="button-restart-urls">
-                  {isRestartingUrls ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LinkIcon className="w-3.5 h-3.5" />}
-                  Restart URLs
-                </Button>
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartLocations} disabled={anyBusy} data-testid="button-restart-locations">
-                  {isRestartingLocations ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />}
-                  Restart Locations
-                </Button>
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartTeam} disabled={anyBusy} data-testid="button-restart-team">
-                  {isRestartingTeam ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserSearch className="w-3.5 h-3.5" />}
-                  Restart Team Members
-                </Button>
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartLogo} disabled={anyBusy} data-testid="button-restart-logo">
-                  {isRestartingLogo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageOff className="w-3.5 h-3.5" />}
-                  Restart Logo
-                </Button>
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartAbout} disabled={anyBusy} data-testid="button-restart-about">
-                  {isRestartingAbout ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileQuestion className="w-3.5 h-3.5" />}
-                  Restart About
-                </Button>
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartPhone} disabled={anyBusy} data-testid="button-restart-phone">
-                  {isRestartingPhone ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PhoneOff className="w-3.5 h-3.5" />}
-                  Restart Phone
-                </Button>
-              </>
+              <div className="space-y-3">
+                {/* Full pipeline (re-scrapes clinic websites end to end) */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Label>Full pipeline</Label>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestart} disabled={anyBusy} data-testid="button-restart-enrichment">
+                    {isRestarting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                    Restart
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartSkipped} disabled={anyBusy} data-testid="button-restart-skipped">
+                    {isRestartingSkipped ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <SearchX className="w-3.5 h-3.5" />}
+                    Restart Skipped
+                  </Button>
+                </div>
+
+                {/* Clinic website + SART (per-clinic scrape) */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Label>Clinic website</Label>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartUrls} disabled={anyBusy} data-testid="button-restart-urls">
+                    {isRestartingUrls ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LinkIcon className="w-3.5 h-3.5" />}
+                    URLs
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartLocations} disabled={anyBusy} data-testid="button-restart-locations">
+                    {isRestartingLocations ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />}
+                    Locations
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartTeam} disabled={anyBusy} data-testid="button-restart-team">
+                    {isRestartingTeam ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserSearch className="w-3.5 h-3.5" />}
+                    Team Members
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartLogo} disabled={anyBusy} data-testid="button-restart-logo">
+                    {isRestartingLogo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageOff className="w-3.5 h-3.5" />}
+                    Logo
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartAbout} disabled={anyBusy} data-testid="button-restart-about">
+                    {isRestartingAbout ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileQuestion className="w-3.5 h-3.5" />}
+                    About
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartPhone} disabled={anyBusy} data-testid="button-restart-phone">
+                    {isRestartingPhone ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PhoneOff className="w-3.5 h-3.5" />}
+                    Phone
+                  </Button>
+                </div>
+
+                {/* Doctor data (NPI-anchored public sources) */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Label>Doctor sources</Label>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleRestartDoctors("doctors-nppes", "Resolving doctor NPIs", "NPPES: NPI, credential, specialty, gender")} disabled={anyBusy} data-testid="button-restart-doctors-nppes">
+                    {doctorBusy === "doctors-nppes" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Stethoscope className="w-3.5 h-3.5" />}
+                    NPI &amp; Specialty (NPPES)
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleRestartDoctors("doctors-abog", "Verifying board certifications", "ABOG: board certification + years")} disabled={anyBusy} data-testid="button-restart-doctors-abog">
+                    {doctorBusy === "doctors-abog" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Award className="w-3.5 h-3.5" />}
+                    Board Certs (ABOG)
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleRestartDoctors("doctors-bio", "Extracting focus areas", "AI from bios: specialties, languages")} disabled={anyBusy} data-testid="button-restart-doctors-bio">
+                    {doctorBusy === "doctors-bio" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    Focus Areas (AI)
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleRestartDoctors("doctors-all", "Enriching all doctor data", "NPPES + ABOG + AI for every doctor")} disabled={anyBusy} data-testid="button-restart-doctors-all">
+                    {doctorBusy === "doctors-all" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BadgeCheck className="w-3.5 h-3.5" />}
+                    All Doctor Data
+                  </Button>
+                </div>
+              </div>
             );
           })()}
         </div>

@@ -1321,6 +1321,44 @@ export class ClinicEnrichmentService {
     }
   }
 
+  // Enrich a clinic's EXISTING team members from the chosen doctor-data source(s)
+  // - NPPES / ABOG / bio - without re-scraping the clinic website. Backs the
+  // targeted "doctors-*" enrichment modes. Respects "self" provenance.
+  private async enrichClinicDoctorData(providerId: string, only?: ("nppes" | "abog" | "bio")[]): Promise<void> {
+    const loc = await this.prisma.providerLocation.findFirst({
+      where: { providerId },
+      orderBy: { sortOrder: "asc" },
+      select: { city: true, state: true },
+    });
+    const members = await this.prisma.providerMember.findMany({
+      where: { providerId },
+      select: { id: true, name: true, bio: true, fieldSources: true },
+    });
+    const CONCURRENCY = 4;
+    for (let i = 0; i < members.length; i += CONCURRENCY) {
+      await Promise.all(
+        members.slice(i, i + CONCURRENCY).map(async (m) => {
+          try {
+            const { data } = await buildDoctorEnrichment({
+              name: m.name,
+              bio: m.bio,
+              city: loc?.city ?? null,
+              state: loc?.state ?? null,
+              existingSources: (m.fieldSources as any) || null,
+              genAI,
+              only,
+            });
+            if (Object.keys(data).length > 0) {
+              await this.prisma.providerMember.updateMany({ where: { id: m.id }, data });
+            }
+          } catch (err: any) {
+            console.log(`[clinic-enrichment] doctor-data (${only?.join(",") ?? "all"}) failed for "${m.name}": ${err?.message}`);
+          }
+        }),
+      );
+    }
+  }
+
   private async enrichWithRetry(providerId: string, providerName: string, maxRetries = 3): Promise<boolean | null> {
     const BASE_DELAY = 5000;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -1339,7 +1377,7 @@ export class ClinicEnrichmentService {
     return null;
   }
 
-  async runTargetedEnrichment(jobId: string, mode: "skipped" | "team" | "logo" | "about" | "phone" | "locations" | "urls"): Promise<void> {
+  async runTargetedEnrichment(jobId: string, mode: "skipped" | "team" | "logo" | "about" | "phone" | "locations" | "urls" | "doctors-nppes" | "doctors-abog" | "doctors-bio" | "doctors-all"): Promise<void> {
     const runId = crypto.randomUUID();
     this.activeRunId = runId;
     const modeLabels: Record<string, string> = {
@@ -1350,7 +1388,18 @@ export class ClinicEnrichmentService {
       phone: "missing phone",
       locations: "re-scrape locations + team",
       urls: "re-discover website URLs",
+      "doctors-nppes": "doctor NPI + specialty (NPPES)",
+      "doctors-abog": "doctor board certifications (ABOG)",
+      "doctors-bio": "doctor focus areas (AI from bios)",
+      "doctors-all": "all doctor data (NPPES + ABOG + AI)",
     };
+    const doctorSourceFilter: Record<string, ("nppes" | "abog" | "bio")[] | undefined> = {
+      "doctors-nppes": ["nppes"],
+      "doctors-abog": ["abog"],
+      "doctors-bio": ["bio"],
+      "doctors-all": undefined, // all sources
+    };
+    const isDoctorMode = mode.startsWith("doctors-");
     const modeLabel = modeLabels[mode];
     console.log(`[clinic-enrichment] Starting targeted enrichment (${modeLabel}) run ${runId.slice(0, 8)} for job ${jobId}`);
 
@@ -1376,6 +1425,11 @@ export class ClinicEnrichmentService {
         providersToEnrich = allIvfClinics;
       } else if (mode === "locations") {
         providersToEnrich = allIvfClinics.filter(p => !!p.websiteUrl);
+      } else if (isDoctorMode) {
+        // Doctor-data modes enrich the existing team, so only clinics that have members.
+        const withTeam = await this.prisma.providerMember.groupBy({ by: ["providerId"], _count: true });
+        const providerIdsWithTeam = new Set(withTeam.map(t => t.providerId));
+        providersToEnrich = allIvfClinics.filter(p => providerIdsWithTeam.has(p.id));
       } else {
         const withTeam = await this.prisma.providerMember.groupBy({
           by: ["providerId"],
@@ -1458,7 +1512,9 @@ export class ClinicEnrichmentService {
         }
 
         try {
-          if (mode === "urls") {
+          if (isDoctorMode) {
+            await this.enrichClinicDoctorData(provider.id, doctorSourceFilter[mode]);
+          } else if (mode === "urls") {
             await this.prisma.provider.update({
               where: { id: provider.id },
               data: { websiteUrl: null },

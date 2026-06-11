@@ -231,7 +231,9 @@ export async function buildDoctorEnrichment(opts: {
   state: string | null;
   existingSources: Record<string, string> | null | undefined;
   genAI: GoogleGenerativeAI;
+  only?: ("nppes" | "abog" | "bio")[]; // restrict to specific sources; default = all
 }): Promise<{ data: Record<string, any>; sources: Record<string, string> }> {
+  const wants = (s: "nppes" | "abog" | "bio") => !opts.only || opts.only.includes(s);
   const sources: Record<string, string> = { ...(opts.existingSources || {}) };
   const data: Record<string, any> = {};
   const set = (field: string, value: any, src: FieldSource) => {
@@ -247,24 +249,28 @@ export async function buildDoctorEnrichment(opts: {
 
   if (parsed) {
     // NPPES (authoritative identity)
-    const npi = await resolveDoctorNpi(parsed.first, parsed.last, opts.state, opts.city);
-    if (npi) {
-      set("npiNumber", npi.npi, "nppes");
-      set("credential", npi.credential, "nppes");
-      set("npiTaxonomy", npi.taxonomy, "nppes");
-      set("providerGender", npi.gender, "nppes");
-      set("licenseState", npi.licenseState, "nppes");
+    if (wants("nppes")) {
+      const npi = await resolveDoctorNpi(parsed.first, parsed.last, opts.state, opts.city);
+      if (npi) {
+        set("npiNumber", npi.npi, "nppes");
+        set("credential", npi.credential, "nppes");
+        set("npiTaxonomy", npi.taxonomy, "nppes");
+        set("providerGender", npi.gender, "nppes");
+        set("licenseState", npi.licenseState, "nppes");
+      }
     }
     // ABOG (authoritative board certification)
-    const abog = await lookupAbog(parsed.last, opts.state, opts.city);
-    if (abog) {
-      set("boardCertifications", abog.boardCertifications, "abog");
-      certYear = abog.certStartYear;
+    if (wants("abog")) {
+      const abog = await lookupAbog(parsed.last, opts.state, opts.city);
+      if (abog) {
+        set("boardCertifications", abog.boardCertifications, "abog");
+        certYear = abog.certStartYear;
+      }
     }
   }
 
   // Bio (supplement: focus areas, languages, education, + fallbacks)
-  const bioFields = opts.bio ? await extractDoctorFieldsFromBio(opts.genAI, opts.name, opts.bio) : null;
+  const bioFields = wants("bio") && opts.bio ? await extractDoctorFieldsFromBio(opts.genAI, opts.name, opts.bio) : null;
   if (bioFields) {
     set("specialties", bioFields.specialties, "bio");
     set("languagesSpoken", bioFields.languagesSpoken, "bio");
