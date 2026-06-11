@@ -58,7 +58,7 @@ export const INSURANCE_CARRIERS: InsuranceCarrier[] = [
   // Fertility benefit managers (often the actual fertility coverage)
   { carrier: "Progyny", fertilityBenefit: true, popular: true, domain: "progyny.com", plans: ["Smart Cycle"] },
   { carrier: "Carrot Fertility", fertilityBenefit: true, popular: true, domain: "get-carrot.com", plans: ["Carrot Plan"] },
-  { carrier: "Maven", fertilityBenefit: true, domain: "mavenclinic.com", plans: ["Maven Wallet"] },
+  { carrier: "Maven Clinic", fertilityBenefit: true, popular: true, domain: "mavenclinic.com", plans: ["Maven Wallet"] },
   { carrier: "WINFertility", fertilityBenefit: true, domain: "winfertility.com", plans: ["WIN Managed Benefit"] },
   { carrier: "Kindbody", fertilityBenefit: true, domain: "kindbody.com", plans: ["Kind Benefit"] },
   { carrier: "Stork Club", fertilityBenefit: true, domain: "storkclub.com", plans: ["Stork Club Benefit"] },
