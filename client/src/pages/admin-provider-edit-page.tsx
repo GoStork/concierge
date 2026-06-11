@@ -59,7 +59,16 @@ type ScrapedTeamMember = {
   locationHints?: string[];
   locationIds?: string[];
   isMedicalDirector?: boolean;
+  // Doctor profile self-entry
+  specialties?: string[];
+  languagesSpoken?: string[];
+  acceptingNewPatients?: boolean;
+  offersVideoVisits?: boolean;
 };
+
+function csvToArr(s: string): string[] {
+  return s.split(",").map(x => x.trim()).filter(Boolean);
+}
 
 let _sortCounter = 0;
 function nextSortId() {
@@ -191,6 +200,9 @@ export default function AdminProviderEditPage() {
   const [editName, setEditName] = useState("");
   const [editAbout, setEditAbout] = useState("");
   const [editWebsite, setEditWebsite] = useState("");
+  const [acceptedInsurance, setAcceptedInsurance] = useState<string[]>([]);
+  const [lgbtqCare, setLgbtqCare] = useState(false);
+  const [clinicOffersVideo, setClinicOffersVideo] = useState(false);
   const [editEmail, setEditEmail] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editYearFounded, setEditYearFounded] = useState("");
@@ -243,6 +255,9 @@ export default function AdminProviderEditPage() {
       isInitializingRef.current = true;
       setEditName(provider.name);
       setEditAbout(provider.about || "");
+      setAcceptedInsurance(provider.acceptedInsurance || []);
+      setLgbtqCare(provider.lgbtqCare || false);
+      setClinicOffersVideo(provider.offersVideoVisits || false);
       setEditWebsite(provider.websiteUrl || "");
       setEditEmail(provider.email || "");
       setEditPhone(provider.phone || "");
@@ -258,6 +273,10 @@ export default function AdminProviderEditPage() {
         photoUrl: d.photoUrl || null,
         locationHints: d.locations?.map((l: any) => l.location?.city ? `${l.location.city}, ${l.location.state}` : "").filter(Boolean) || [],
         locationIds: d.locations?.map((l: any) => l.locationId) || [],
+        specialties: d.specialties || [],
+        languagesSpoken: d.languagesSpoken || [],
+        acceptingNewPatients: d.acceptingNewPatients ?? true,
+        offersVideoVisits: d.offersVideoVisits ?? false,
       })) || []);
       // IVF matching requirements
       setIsTestData(provider.isTestData ?? false);
@@ -321,7 +340,7 @@ export default function AdminProviderEditPage() {
     }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, editName, editAbout, editWebsite, editEmail, editPhone, editYearFounded, editLogoUrl, editLocations, editTeamMembers, ivfTwinsAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, partnerProviderIds, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
+  }, [initialized, editName, editAbout, editWebsite, editEmail, editPhone, editYearFounded, editLogoUrl, editLocations, editTeamMembers, acceptedInsurance, lgbtqCare, clinicOffersVideo, ivfTwinsAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, partnerProviderIds, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
 
   const editScrapeMutation = useMutation({
     mutationFn: async (url: string) => {
@@ -372,6 +391,9 @@ export default function AdminProviderEditPage() {
       name: editName,
       about: editAbout || null,
       websiteUrl: editWebsite || null,
+      acceptedInsurance,
+      lgbtqCare,
+      offersVideoVisits: clinicOffersVideo,
       email: editEmail || null,
       phone: editPhone || null,
       yearFounded: editYearFounded ? parseInt(editYearFounded) : null,
@@ -444,9 +466,9 @@ export default function AdminProviderEditPage() {
       for (let i = 0; i < editTeamMembers.length; i++) {
         const m = editTeamMembers[i] as any;
         if (m.id && existingMemberIds.has(m.id)) {
-          memberPromises.push(apiRequest("PUT", `/api/providers/${provider.id}/members/${m.id}`, { name: m.name, title: m.title || null, bio: m.bio || null, photoUrl: m.photoUrl || null, isMedicalDirector: m.isMedicalDirector || false, sortOrder: i, locationIds: m.locationIds || [] }).catch((e: any) => { errors.push(`Update member "${m.name}": ${e.message}`); }));
+          memberPromises.push(apiRequest("PUT", `/api/providers/${provider.id}/members/${m.id}`, { name: m.name, title: m.title || null, bio: m.bio || null, photoUrl: m.photoUrl || null, isMedicalDirector: m.isMedicalDirector || false, sortOrder: i, locationIds: m.locationIds || [], specialties: m.specialties || [], languagesSpoken: m.languagesSpoken || [], acceptingNewPatients: m.acceptingNewPatients ?? true, offersVideoVisits: m.offersVideoVisits ?? false }).catch((e: any) => { errors.push(`Update member "${m.name}": ${e.message}`); }));
         } else if (!m.id || !existingMemberIds.has(m.id)) {
-          memberPromises.push(apiRequest("POST", `/api/providers/${provider.id}/members`, { name: m.name, title: m.title || null, bio: m.bio || null, photoUrl: m.photoUrl || null, isMedicalDirector: m.isMedicalDirector || false, sortOrder: i, locationIds: m.locationIds || [] }).catch((e: any) => { errors.push(`Add member "${m.name}": ${e.message}`); }));
+          memberPromises.push(apiRequest("POST", `/api/providers/${provider.id}/members`, { name: m.name, title: m.title || null, bio: m.bio || null, photoUrl: m.photoUrl || null, isMedicalDirector: m.isMedicalDirector || false, sortOrder: i, locationIds: m.locationIds || [], specialties: m.specialties || [], languagesSpoken: m.languagesSpoken || [], acceptingNewPatients: m.acceptingNewPatients ?? true, offersVideoVisits: m.offersVideoVisits ?? false }).catch((e: any) => { errors.push(`Add member "${m.name}": ${e.message}`); }));
         }
       }
 
@@ -811,6 +833,20 @@ export default function AdminProviderEditPage() {
               <div className="space-y-2">
                 <Label>About</Label>
                 <Textarea value={editAbout} onChange={e => setEditAbout(e.target.value)} placeholder="Brief description of the provider..." rows={3} data-testid="input-edit-about" />
+              </div>
+              <div className="space-y-2">
+                <Label>Accepted insurance <span className="text-muted-foreground text-xs">(comma-separated)</span></Label>
+                <Input value={acceptedInsurance.join(", ")} onChange={e => setAcceptedInsurance(csvToArr(e.target.value))} placeholder="e.g. Aetna, BlueCross BlueShield, Cigna, UnitedHealthcare" data-testid="input-edit-insurance" />
+                <div className="flex items-center gap-6 pt-1">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <Checkbox checked={lgbtqCare} onCheckedChange={(v) => setLgbtqCare(!!v)} data-testid="checkbox-edit-lgbtq" />
+                    LGBTQ+ care
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <Checkbox checked={clinicOffersVideo} onCheckedChange={(v) => setClinicOffersVideo(!!v)} data-testid="checkbox-edit-video" />
+                    Offers video visits
+                  </label>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>Phone</Label>
@@ -1322,6 +1358,60 @@ export default function AdminProviderEditPage() {
                             className="text-sm"
                             data-testid={`input-edit-member-bio-${idx}`}
                           />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Specialties <span className="text-muted-foreground">(comma-separated)</span></Label>
+                          <Input
+                            value={(member.specialties || []).join(", ")}
+                            onChange={e => {
+                              const updated = [...editTeamMembers];
+                              updated[idx] = { ...updated[idx], specialties: csvToArr(e.target.value) };
+                              setEditTeamMembers(updated);
+                            }}
+                            placeholder="e.g. Male Factor Infertility, LGBTQ+ Family Building, PCOS"
+                            className="h-8 text-sm"
+                            data-testid={`input-edit-member-specialties-${idx}`}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Languages spoken <span className="text-muted-foreground">(comma-separated)</span></Label>
+                          <Input
+                            value={(member.languagesSpoken || []).join(", ")}
+                            onChange={e => {
+                              const updated = [...editTeamMembers];
+                              updated[idx] = { ...updated[idx], languagesSpoken: csvToArr(e.target.value) };
+                              setEditTeamMembers(updated);
+                            }}
+                            placeholder="e.g. English, Spanish"
+                            className="h-8 text-sm"
+                            data-testid={`input-edit-member-languages-${idx}`}
+                          />
+                        </div>
+                        <div className="flex items-center gap-6">
+                          <label className="flex items-center gap-2 text-xs cursor-pointer">
+                            <Checkbox
+                              checked={member.acceptingNewPatients ?? true}
+                              onCheckedChange={(v) => {
+                                const updated = [...editTeamMembers];
+                                updated[idx] = { ...updated[idx], acceptingNewPatients: !!v };
+                                setEditTeamMembers(updated);
+                              }}
+                              data-testid={`checkbox-edit-member-accepting-${idx}`}
+                            />
+                            Accepting new patients
+                          </label>
+                          <label className="flex items-center gap-2 text-xs cursor-pointer">
+                            <Checkbox
+                              checked={member.offersVideoVisits ?? false}
+                              onCheckedChange={(v) => {
+                                const updated = [...editTeamMembers];
+                                updated[idx] = { ...updated[idx], offersVideoVisits: !!v };
+                                setEditTeamMembers(updated);
+                              }}
+                              data-testid={`checkbox-edit-member-video-${idx}`}
+                            />
+                            Offers video visits
+                          </label>
                         </div>
                         <div className="space-y-1">
                           <Label className="text-xs">Photo</Label>
