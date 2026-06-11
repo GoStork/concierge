@@ -2,7 +2,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { ProfileSection } from "@/components/ui/profile-section";
 import {
   ArrowLeft, MapPin, Building2, User, Loader2, GraduationCap, Award, Globe,
   Stethoscope, Heart, Video, BadgeCheck, Star, ShieldCheck,
@@ -12,14 +12,6 @@ import { getPhotoSrc } from "@/lib/profile-utils";
 // CDC metric codes (mirrors ivf-success-rates-section.tsx) used to pick a headline rate.
 const OWN_METRIC = "pct_intended_retrievals_live_births";
 const OWN_NEW_METRIC = "pct_new_patients_live_birth_after_1_retrieval";
-
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div className="px-4 py-2.5 border-b bg-muted/50">
-      <h3 className="text-sm font-heading font-semibold text-foreground">{title}</h3>
-    </div>
-  );
-}
 
 // Pick a single "headline" success rate for a clinic affiliation: own-eggs, under-35 live birth.
 function headlineRate(rates: any[] | undefined): { value: number; label: string } | null {
@@ -144,9 +136,7 @@ export default function DoctorProfilePage() {
 
       {/* Specialties + languages quick facts */}
       {(doctor.specialties?.length > 0 || doctor.languagesSpoken?.length > 0) && (
-        <Card className="overflow-hidden" data-testid="section-highlights">
-          <SectionHeader title="Highlights" />
-          <div className="p-6 space-y-4">
+        <ProfileSection title="Highlights" contentClassName="p-6 space-y-4" data-testid="section-highlights">
             {doctor.specialties?.length > 0 && (
               <div>
                 <p className="text-xs font-ui text-foreground mb-2 flex items-center gap-1.5">
@@ -171,18 +161,14 @@ export default function DoctorProfilePage() {
                 </div>
               </div>
             )}
-          </div>
-        </Card>
+        </ProfileSection>
       )}
 
       {/* About */}
       {doctor.bio && (
-        <Card className="overflow-hidden" data-testid="section-about">
-          <SectionHeader title="About" />
-          <div className="p-6">
+        <ProfileSection title="About" data-testid="section-about">
             <p className="text-sm text-foreground whitespace-pre-line leading-relaxed">{doctor.bio}</p>
-          </div>
-        </Card>
+        </ProfileSection>
       )}
 
       {/* Education & background */}
@@ -193,9 +179,7 @@ export default function DoctorProfilePage() {
         doctor.npiNumber ||
         doctor.providerGender ||
         doctor.yearsExperience != null) && (
-        <Card className="overflow-hidden" data-testid="section-education">
-          <SectionHeader title="Education & background" />
-          <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <ProfileSection title="Education & background" contentClassName="p-6 grid grid-cols-1 sm:grid-cols-2 gap-6" data-testid="section-education">
             {doctor.boardCertifications?.length > 0 && (
               <div>
                 <p className="text-xs font-ui text-foreground mb-2 flex items-center gap-1.5">
@@ -258,15 +242,12 @@ export default function DoctorProfilePage() {
                 </div>
               )}
             </div>
-          </div>
-        </Card>
+        </ProfileSection>
       )}
 
       {/* Insurances accepted (clinic-level, unioned across affiliations) */}
       {acceptedInsurance.length > 0 && (
-        <Card className="overflow-hidden" data-testid="section-insurance">
-          <SectionHeader title="In-network insurances" />
-          <div className="p-6">
+        <ProfileSection title="In-network insurances" data-testid="section-insurance">
             <div className="flex flex-wrap gap-2">
               {acceptedInsurance.map((ins) => (
                 <Badge key={ins} variant="secondary" className="gap-1">
@@ -274,22 +255,20 @@ export default function DoctorProfilePage() {
                 </Badge>
               ))}
             </div>
-          </div>
-        </Card>
+        </ProfileSection>
       )}
 
       {/* Works at - clinic affiliations */}
-      <Card className="overflow-hidden" data-testid="section-affiliations">
-        <SectionHeader title={affiliations.length > 1 ? `Practices at ${affiliations.length} clinics` : "Practices at"} />
-        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+      <ProfileSection title={affiliations.length > 1 ? `Practices at ${affiliations.length} clinics` : "Practices at"} contentClassName="p-6 grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="section-affiliations">
           {affiliations.map((a) => {
             const logo = getPhotoSrc(a.logoUrl);
             const rate = headlineRate(a.successRates);
             const locs = (a.memberLocations?.length ? a.memberLocations : a.clinicLocations) || [];
             return (
-              <div
+              <Link
                 key={a.memberId}
-                className="border border-border/40 rounded-[var(--radius)] p-4 flex flex-col gap-3"
+                to={`/providers/${a.providerId}`}
+                className="group no-underline border border-border/40 rounded-[var(--radius)] p-4 flex flex-col gap-3 hover:border-primary hover:bg-secondary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
                 data-testid={`affiliation-${a.providerId}`}
               >
                 <div className="flex items-start gap-3">
@@ -301,7 +280,7 @@ export default function DoctorProfilePage() {
                     </div>
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="font-ui text-sm text-foreground">{a.providerName}</p>
+                    <p className="font-ui text-sm text-foreground group-hover:text-primary transition-colors">{a.providerName}</p>
                     {a.title && <p className="text-xs text-primary">{a.title}</p>}
                     {locs.length > 0 && (
                       <p className="text-xs text-muted-foreground mt-1 flex items-start gap-1">
@@ -318,20 +297,13 @@ export default function DoctorProfilePage() {
                     <p className="text-[11px] text-muted-foreground mt-1">{rate.label} (CDC)</p>
                   </div>
                 )}
-
-                <Button asChild variant="outline" size="sm" className="mt-auto w-full">
-                  <Link to={`/providers/${a.providerId}`} data-testid={`link-clinic-${a.providerId}`}>View clinic</Link>
-                </Button>
-              </div>
+              </Link>
             );
           })}
-        </div>
-      </Card>
+      </ProfileSection>
 
       {/* Reviews */}
-      <Card className="overflow-hidden" data-testid="section-reviews">
-        <SectionHeader title="Patient reviews" />
-        <div className="p-6">
+      <ProfileSection title="Patient reviews" data-testid="section-reviews">
           {hasReviews ? (
             <div className="space-y-4">
               {reviews.map((r) => (
@@ -356,8 +328,7 @@ export default function DoctorProfilePage() {
               </p>
             </div>
           )}
-        </div>
-      </Card>
+      </ProfileSection>
     </div>
   );
 }
