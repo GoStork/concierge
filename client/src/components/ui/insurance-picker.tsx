@@ -120,6 +120,38 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
 
   return (
     <div className="space-y-3" data-testid={rest["data-testid"]}>
+      {/* Selected insurances - compact bubbles at the top */}
+      {grouped.size > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {[...grouped.entries()].map(([c, planList]) => {
+            const cObj = INSURANCE_CARRIERS.find((x) => x.carrier === c);
+            const isAll = planList.includes(ALL_PLANS) || planList.length === 0;
+            const summaryShort = isAll ? "All plans" : planList.length === 1 ? planList[0] : `${planList.length} plans`;
+            const summaryFull = isAll ? "All plans" : planList.join(", ");
+            const editing = carrier === c;
+            return (
+              <div
+                key={c}
+                title={`${c} - ${summaryFull}`}
+                className={`inline-flex items-center gap-1.5 rounded-full border pl-1.5 pr-1 py-0.5 max-w-full ${editing ? "border-primary bg-secondary/40" : "border-border/50 bg-secondary/20"}`}
+                data-testid={`insurance-card-${c}`}
+              >
+                {cObj ? <CarrierLogo carrier={cObj} size={18} /> : <ShieldCheck className="w-4 h-4 text-[hsl(var(--brand-success))] shrink-0" />}
+                <button type="button" onClick={() => pick(c)} disabled={disabled} className="text-xs text-left truncate max-w-[220px]" title="Click to edit plans">
+                  <span className="font-ui">{c}</span>
+                  <span className="text-muted-foreground"> · {summaryShort}</span>
+                </button>
+                {!disabled && (
+                  <button type="button" onClick={() => removeCarrier(c)} className="text-muted-foreground hover:text-foreground shrink-0 p-0.5" aria-label={`Remove ${c}`}>
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {!carrier ? (
         <>
           {/* Search at the top */}
@@ -249,47 +281,6 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
         </div>
       )}
 
-      {grouped.size > 0 && (
-        <div className="space-y-1.5 pt-1">
-          {[...grouped.entries()].map(([c, planList]) => {
-            const cObj = INSURANCE_CARRIERS.find((x) => x.carrier === c);
-            const isAll = planList.includes(ALL_PLANS) || planList.length === 0;
-            const summary = isAll ? "All plans" : planList.join(", ");
-            const editing = carrier === c;
-            return (
-              <div
-                key={c}
-                className={`flex items-center gap-2 rounded-[var(--radius)] border p-2 ${editing ? "border-primary bg-secondary/30" : "border-border/50"}`}
-                data-testid={`insurance-card-${c}`}
-              >
-                <button
-                  type="button"
-                  onClick={() => pick(c)}
-                  disabled={disabled}
-                  className="flex items-center gap-2.5 flex-1 min-w-0 text-left"
-                  title="Click to edit plans"
-                >
-                  {cObj ? <CarrierLogo carrier={cObj} size={28} /> : <ShieldCheck className="w-5 h-5 text-[hsl(var(--brand-success))]" />}
-                  <span className="min-w-0">
-                    <span className="block text-sm font-ui truncate">{c}</span>
-                    <span className="block text-xs text-muted-foreground truncate">{summary}</span>
-                  </span>
-                </button>
-                {!disabled && (
-                  <>
-                    <button type="button" onClick={() => pick(c)} className="text-xs text-primary hover:underline px-1 shrink-0">
-                      Edit
-                    </button>
-                    <button type="button" onClick={() => removeCarrier(c)} className="text-muted-foreground hover:text-foreground p-0.5 shrink-0" aria-label={`Remove ${c}`}>
-                      <X className="w-4 h-4" />
-                    </button>
-                  </>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }
