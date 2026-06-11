@@ -291,14 +291,26 @@ const STATE_FULL_TO_ABBREV: Record<string, string> = Object.fromEntries(
  * Returns { city, stateAbbrev } where at most one is non-null.
  */
 export function parseLabRegionFromName(clinicName: string): { city: string | null; stateAbbrev: string | null } {
-  // Match patterns like "... - The NH Center", "..., The Albany Center", "... LLC The Maine Center"
+  // Strip legal suffixes BEFORE pattern matching, otherwise the
+  // "[-,]\s*(the)?\s*<region>\s*center" pattern greedily captures things
+  // like "LLC The Maine" as the region. Example before-fix:
+  //   "Boston IVF, LLC The Maine Center" -> region="LLC The Maine" (wrong)
+  // After stripping ", LLC" first:
+  //   "Boston IVF The Maine Center"     -> region="Maine"           (right)
+  const stripped = clinicName
+    .replace(/,?\s*(LLC|Inc\.?|PC|PA|SC|LTD|LLP|Corporation|Corp\.?|PLLC)\.?\b/gi, "")
+    .replace(/,?\s*(MD|DO|PhD|FACOG|FACS|MBA|MSc|RN|NP)\.?\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Match patterns like "... - The NH Center", "..., The Albany Center", "... The Maine Center"
   const patterns = [
     /[-–—,]\s*(?:the\s+)?([A-Za-z][A-Za-z .]{1,30}?)\s+(?:fertility\s+(?:center|centre|services)|center|centre|office|branch)\b/i,
-    /\b(?:LLC|Inc|PC|PA)\s+(?:the\s+)?([A-Za-z][A-Za-z .]{1,30}?)\s+(?:fertility\s+(?:center|centre|services)|center|centre)\b/i,
+    /\b(?:the\s+)([A-Za-z][A-Za-z .]{1,30}?)\s+(?:fertility\s+(?:center|centre|services)|center|centre|office|branch)\b/i,
   ];
   let region: string | null = null;
   for (const re of patterns) {
-    const m = clinicName.match(re);
+    const m = stripped.match(re);
     if (m) {
       region = m[1].trim();
       break;
@@ -1614,6 +1626,14 @@ export class ClinicEnrichmentService {
         });
         await this.prisma.providerMember.deleteMany({
           where: { providerId: { in: providerIds } },
+        });
+        // Drop ALL enriched satellite locations (sortOrder > 0). The CDC origin
+        // row at sortOrder=0 is preserved so success rates stay attached.
+        // Without this, stale satellites from previous (pre-scope-to-lab) runs
+        // hang around forever - sortOrders 14..21 we saw on Syracuse Center
+        // were leftovers from broken full runs that never got cleaned up.
+        await this.prisma.providerLocation.deleteMany({
+          where: { providerId: { in: providerIds }, sortOrder: { gt: 0 } },
         });
         await this.prisma.provider.updateMany({
           where: { id: { in: providerIds } },
