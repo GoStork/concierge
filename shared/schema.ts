@@ -266,6 +266,10 @@ export const insertProviderSchema = z.object({
   consultationIframeEnabled: z.boolean().optional(),
   agreementTemplateUrl: z.string().nullable().optional(),
   agreementTemplateOriginalName: z.string().nullable().optional(),
+  // Clinic marketplace self-entry (no reliable external source)
+  acceptedInsurance: z.array(z.string()).optional(),
+  lgbtqCare: z.boolean().optional(),
+  offersVideoVisits: z.boolean().optional(),
   // IVF Clinic matching requirements
   ivfTwinsAllowed: z.boolean().optional(),
   ivfTransferFromOtherClinics: z.boolean().optional(),
@@ -344,6 +348,19 @@ export const insertProviderMemberSchema = z.object({
   isMedicalDirector: z.boolean().default(false),
   sortOrder: z.number().int().optional(),
   locationIds: z.array(z.string()).optional(),
+  // Doctor profile self-entry (provider-corrected; stamped with "self" provenance)
+  specialties: z.array(z.string()).optional(),
+  languagesSpoken: z.array(z.string()).optional(),
+  boardCertifications: z.array(z.string()).optional(),
+  education: z.array(z.string()).optional(),
+  professionalMemberships: z.array(z.string()).optional(),
+  npiNumber: z.string().nullable().optional(),
+  medicalSchool: z.string().nullable().optional(),
+  graduationYear: z.number().int().nullable().optional(),
+  yearsExperience: z.number().int().nullable().optional(),
+  providerGender: z.string().nullable().optional(),
+  acceptingNewPatients: z.boolean().optional(),
+  offersVideoVisits: z.boolean().optional(),
 });
 
 export type InsertProvider = z.infer<typeof insertProviderSchema>;

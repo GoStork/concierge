@@ -64,7 +64,17 @@ type MemberData = {
   photoUrl: string | null;
   isMedicalDirector?: boolean;
   locationIds?: string[];
+  // Doctor profile self-entry
+  specialties?: string[];
+  languagesSpoken?: string[];
+  acceptingNewPatients?: boolean;
+  offersVideoVisits?: boolean;
 };
+
+// Comma-separated <-> string[] helpers for the tag-style inputs.
+function csvToArr(s: string): string[] {
+  return s.split(",").map(x => x.trim()).filter(Boolean);
+}
 
 let _sortCounter = 0;
 function nextSortId() {
@@ -137,6 +147,9 @@ export default function CompanyTab() {
   const [yearFounded, setYearFounded] = useState("");
   const [consultationBookingUrl, setConsultationBookingUrl] = useState("");
   const [consultationIframeEnabled, setConsultationIframeEnabled] = useState(false);
+  const [acceptedInsurance, setAcceptedInsurance] = useState<string[]>([]);
+  const [lgbtqCare, setLgbtqCare] = useState(false);
+  const [clinicOffersVideo, setClinicOffersVideo] = useState(false);
   const [locations, setLocations] = useState<LocationData[]>([]);
   const [teamMembers, setTeamMembers] = useState<MemberData[]>([]);
   const [editingMemberIdx, setEditingMemberIdx] = useState<number | null>(null);
@@ -217,6 +230,9 @@ export default function CompanyTab() {
       setYearFounded(provider.yearFounded ? String(provider.yearFounded) : "");
       setConsultationBookingUrl(provider.consultationBookingUrl || "");
       setConsultationIframeEnabled(provider.consultationIframeEnabled || false);
+      setAcceptedInsurance(provider.acceptedInsurance || []);
+      setLgbtqCare(provider.lgbtqCare || false);
+      setClinicOffersVideo(provider.offersVideoVisits || false);
       setLocations(
         (provider.locations || []).map((l: any) => ({
           id: l.id,
@@ -237,6 +253,10 @@ export default function CompanyTab() {
           photoUrl: m.photoUrl || null,
           isMedicalDirector: m.isMedicalDirector || false,
           locationIds: m.locations?.map((ml: any) => ml.locationId) || [],
+          specialties: m.specialties || [],
+          languagesSpoken: m.languagesSpoken || [],
+          acceptingNewPatients: m.acceptingNewPatients ?? true,
+          offersVideoVisits: m.offersVideoVisits ?? false,
         }))
       );
       // IVF Parents Matching Requirements
@@ -346,6 +366,10 @@ export default function CompanyTab() {
         logoUrl: logoUrl || null,
         consultationBookingUrl: consultationBookingUrl || null,
         consultationIframeEnabled,
+        // Clinic marketplace self-entry
+        acceptedInsurance,
+        lgbtqCare,
+        offersVideoVisits: clinicOffersVideo,
         // IVF Parents Matching Requirements
         ivfTwinsAllowed,
         ivfTransferFromOtherClinics,
@@ -410,9 +434,9 @@ export default function CompanyTab() {
       for (let i = 0; i < teamMembers.length; i++) {
         const member = teamMembers[i];
         if (member.id && existingMemberIds.has(member.id)) {
-          try { await apiRequest("PUT", `/api/providers/${provider.id}/members/${member.id}`, { name: member.name, title: member.title || null, bio: member.bio || null, photoUrl: member.photoUrl || null, isMedicalDirector: member.isMedicalDirector || false, sortOrder: i, locationIds: member.locationIds || [] }); } catch (e: any) { errors.push(`Update member "${member.name}": ${e.message}`); }
+          try { await apiRequest("PUT", `/api/providers/${provider.id}/members/${member.id}`, { name: member.name, title: member.title || null, bio: member.bio || null, photoUrl: member.photoUrl || null, isMedicalDirector: member.isMedicalDirector || false, sortOrder: i, locationIds: member.locationIds || [], specialties: member.specialties || [], languagesSpoken: member.languagesSpoken || [], acceptingNewPatients: member.acceptingNewPatients ?? true, offersVideoVisits: member.offersVideoVisits ?? false }); } catch (e: any) { errors.push(`Update member "${member.name}": ${e.message}`); }
         } else if (!member.id || !existingMemberIds.has(member.id)) {
-          try { await apiRequest("POST", `/api/providers/${provider.id}/members`, { name: member.name, title: member.title || null, bio: member.bio || null, photoUrl: member.photoUrl || null, isMedicalDirector: member.isMedicalDirector || false, sortOrder: i, locationIds: member.locationIds || [] }); } catch (e: any) { errors.push(`Add member "${member.name}": ${e.message}`); }
+          try { await apiRequest("POST", `/api/providers/${provider.id}/members`, { name: member.name, title: member.title || null, bio: member.bio || null, photoUrl: member.photoUrl || null, isMedicalDirector: member.isMedicalDirector || false, sortOrder: i, locationIds: member.locationIds || [], specialties: member.specialties || [], languagesSpoken: member.languagesSpoken || [], acceptingNewPatients: member.acceptingNewPatients ?? true, offersVideoVisits: member.offersVideoVisits ?? false }); } catch (e: any) { errors.push(`Add member "${member.name}": ${e.message}`); }
         }
       }
 
@@ -555,6 +579,27 @@ export default function CompanyTab() {
             disabled={readOnly}
             data-testid="input-company-about"
           />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Accepted insurance <span className="text-muted-foreground text-xs">(comma-separated)</span></Label>
+          <Input
+            value={acceptedInsurance.join(", ")}
+            onChange={e => setAcceptedInsurance(csvToArr(e.target.value))}
+            placeholder="e.g. Aetna, BlueCross BlueShield, Cigna, UnitedHealthcare"
+            disabled={readOnly}
+            data-testid="input-company-insurance"
+          />
+          <div className="flex items-center gap-6 pt-1">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <Checkbox checked={lgbtqCare} onCheckedChange={(v) => setLgbtqCare(!!v)} disabled={readOnly} data-testid="checkbox-company-lgbtq" />
+              LGBTQ+ care
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <Checkbox checked={clinicOffersVideo} onCheckedChange={(v) => setClinicOffersVideo(!!v)} disabled={readOnly} data-testid="checkbox-company-video" />
+              Offers video visits
+            </label>
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -1034,6 +1079,60 @@ export default function CompanyTab() {
                       className="text-sm"
                       data-testid={`input-member-bio-${idx}`}
                     />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Specialties <span className="text-muted-foreground">(comma-separated)</span></Label>
+                    <Input
+                      value={(member.specialties || []).join(", ")}
+                      onChange={e => {
+                        const updated = [...teamMembers];
+                        updated[idx] = { ...updated[idx], specialties: csvToArr(e.target.value) };
+                        setTeamMembers(updated);
+                      }}
+                      placeholder="e.g. Male Factor Infertility, LGBTQ+ Family Building, PCOS"
+                      className="h-8 text-sm"
+                      data-testid={`input-member-specialties-${idx}`}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Languages spoken <span className="text-muted-foreground">(comma-separated)</span></Label>
+                    <Input
+                      value={(member.languagesSpoken || []).join(", ")}
+                      onChange={e => {
+                        const updated = [...teamMembers];
+                        updated[idx] = { ...updated[idx], languagesSpoken: csvToArr(e.target.value) };
+                        setTeamMembers(updated);
+                      }}
+                      placeholder="e.g. English, Spanish"
+                      className="h-8 text-sm"
+                      data-testid={`input-member-languages-${idx}`}
+                    />
+                  </div>
+                  <div className="flex items-center gap-6">
+                    <label className="flex items-center gap-2 text-xs cursor-pointer">
+                      <Checkbox
+                        checked={member.acceptingNewPatients ?? true}
+                        onCheckedChange={(v) => {
+                          const updated = [...teamMembers];
+                          updated[idx] = { ...updated[idx], acceptingNewPatients: !!v };
+                          setTeamMembers(updated);
+                        }}
+                        data-testid={`checkbox-member-accepting-${idx}`}
+                      />
+                      Accepting new patients
+                    </label>
+                    <label className="flex items-center gap-2 text-xs cursor-pointer">
+                      <Checkbox
+                        checked={member.offersVideoVisits ?? false}
+                        onCheckedChange={(v) => {
+                          const updated = [...teamMembers];
+                          updated[idx] = { ...updated[idx], offersVideoVisits: !!v };
+                          setTeamMembers(updated);
+                        }}
+                        data-testid={`checkbox-member-video-${idx}`}
+                      />
+                      Offers video visits
+                    </label>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Photo</Label>
