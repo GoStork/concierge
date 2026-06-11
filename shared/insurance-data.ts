@@ -71,13 +71,15 @@ export function popularCarriers(): InsuranceCarrier[] {
   return INSURANCE_CARRIERS.filter((c) => c.popular);
 }
 
-export function logoUrl(domain?: string): string | null {
-  // Google's favicon service reliably returns each carrier's real brand mark as
-  // a PNG (no API key, unlike Clearbit which is dead and logo.dev which needs a
-  // token). The picker falls back to an initials tile only if this errors.
-  return domain
-    ? `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${domain}&size=128`
-    : null;
+export function logoUrl(domain?: string, logoDevToken?: string): string | null {
+  if (!domain) return null;
+  // With a logo.dev publishable token, use full wordmark logos (ZocDoc-style).
+  if (logoDevToken) {
+    return `https://img.logo.dev/${domain}?token=${logoDevToken}&size=128&format=png&retina=true`;
+  }
+  // Otherwise Google's favicon service - reliable real brand marks, no API key
+  // (Clearbit's free API is dead). The picker falls back to initials on error.
+  return `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${domain}&size=128`;
 }
 
 export function carrierNames(): string[] {

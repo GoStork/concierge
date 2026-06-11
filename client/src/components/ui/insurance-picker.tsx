@@ -20,9 +20,13 @@ interface InsurancePickerProps {
   "data-testid"?: string;
 }
 
+// Optional logo.dev publishable token (client-safe) for full wordmark logos;
+// falls back to the Google favicon marks in logoUrl() when unset.
+const LOGODEV_TOKEN = (import.meta as any).env?.VITE_LOGODEV_TOKEN as string | undefined;
+
 function CarrierLogo({ carrier, size = 32 }: { carrier: InsuranceCarrier; size?: number }) {
   const [errored, setErrored] = useState(false);
-  const url = logoUrl(carrier.domain);
+  const url = logoUrl(carrier.domain, LOGODEV_TOKEN);
   const initials = carrier.carrier.split(" ").map((w) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
   if (url && !errored) {
     return (
