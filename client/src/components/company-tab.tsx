@@ -12,6 +12,7 @@ import { NumberInput } from "@/components/ui/number-input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { InsurancePicker } from "@/components/ui/insurance-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
@@ -582,13 +583,13 @@ export default function CompanyTab() {
         </div>
 
         <div className="space-y-2">
-          <Label>Accepted insurance <span className="text-muted-foreground text-xs">(comma-separated)</span></Label>
-          <Input
-            value={acceptedInsurance.join(", ")}
-            onChange={e => setAcceptedInsurance(csvToArr(e.target.value))}
-            placeholder="e.g. Aetna, BlueCross BlueShield, Cigna, UnitedHealthcare"
+          <Label>Accepted insurance</Label>
+          <InsurancePicker
+            value={acceptedInsurance}
+            onChange={setAcceptedInsurance}
+            mode="multi"
             disabled={readOnly}
-            data-testid="input-company-insurance"
+            data-testid="picker-company-insurance"
           />
           <div className="flex items-center gap-6 pt-1">
             <label className="flex items-center gap-2 text-sm cursor-pointer">

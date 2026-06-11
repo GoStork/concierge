@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { InsurancePicker } from "@/components/ui/insurance-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Building2, Loader2, Pencil, Globe, Phone, Calendar, Sparkles, MapPin, Check, X, Upload, User, Plus, GripVertical, Eye, Palette, DollarSign } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -835,8 +836,8 @@ export default function AdminProviderEditPage() {
                 <Textarea value={editAbout} onChange={e => setEditAbout(e.target.value)} placeholder="Brief description of the provider..." rows={3} data-testid="input-edit-about" />
               </div>
               <div className="space-y-2">
-                <Label>Accepted insurance <span className="text-muted-foreground text-xs">(comma-separated)</span></Label>
-                <Input value={acceptedInsurance.join(", ")} onChange={e => setAcceptedInsurance(csvToArr(e.target.value))} placeholder="e.g. Aetna, BlueCross BlueShield, Cigna, UnitedHealthcare" data-testid="input-edit-insurance" />
+                <Label>Accepted insurance</Label>
+                <InsurancePicker value={acceptedInsurance} onChange={setAcceptedInsurance} mode="multi" data-testid="picker-edit-insurance" />
                 <div className="flex items-center gap-6 pt-1">
                   <label className="flex items-center gap-2 text-sm cursor-pointer">
                     <Checkbox checked={lgbtqCare} onCheckedChange={(v) => setLgbtqCare(!!v)} data-testid="checkbox-edit-lgbtq" />
