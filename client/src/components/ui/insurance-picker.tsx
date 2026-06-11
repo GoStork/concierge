@@ -4,11 +4,10 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { X, Plus, ShieldCheck, ChevronLeft, Search } from "lucide-react";
 import {
-  INSURANCE_CARRIERS, ALL_PLANS, PLAN_SEPARATOR, plansForCarrier, makeInsuranceValue,
+  INSURANCE_CARRIERS, ALL_PLANS, plansForCarrier, makeInsuranceValue,
   parseInsuranceValue, popularCarriers, logoUrl, type InsuranceCarrier,
 } from "@shared/insurance-data";
 
@@ -105,8 +104,15 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
     setCarrier("");
   }
 
-  function remove(v: string) {
-    onChange(value.filter((x) => x !== v));
+  function removeCarrier(c: string) {
+    onChange(value.filter((v) => parseInsuranceValue(v).carrier !== c));
+  }
+
+  // Group the selected values by carrier for the summary cards below.
+  const grouped = new Map<string, string[]>();
+  for (const v of value) {
+    const { carrier: c, plan: p } = parseInsuranceValue(v);
+    grouped.set(c, [...(grouped.get(c) || []), p ?? ALL_PLANS]);
   }
 
   const q = search.trim().toLowerCase();
@@ -243,20 +249,43 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
         </div>
       )}
 
-      {value.length > 0 && (
-        <div className="flex flex-wrap gap-2 pt-1">
-          {value.map((v) => {
-            const parsed = parseInsuranceValue(v);
+      {grouped.size > 0 && (
+        <div className="space-y-1.5 pt-1">
+          {[...grouped.entries()].map(([c, planList]) => {
+            const cObj = INSURANCE_CARRIERS.find((x) => x.carrier === c);
+            const isAll = planList.includes(ALL_PLANS) || planList.length === 0;
+            const summary = isAll ? "All plans" : planList.join(", ");
+            const editing = carrier === c;
             return (
-              <Badge key={v} variant="secondary" className="gap-1.5">
-                <ShieldCheck className="w-3 h-3 text-[hsl(var(--brand-success))] shrink-0" />
-                {parsed.plan ? `${parsed.carrier}${PLAN_SEPARATOR}${parsed.plan}` : parsed.carrier}
+              <div
+                key={c}
+                className={`flex items-center gap-2 rounded-[var(--radius)] border p-2 ${editing ? "border-primary bg-secondary/30" : "border-border/50"}`}
+                data-testid={`insurance-card-${c}`}
+              >
+                <button
+                  type="button"
+                  onClick={() => pick(c)}
+                  disabled={disabled}
+                  className="flex items-center gap-2.5 flex-1 min-w-0 text-left"
+                  title="Click to edit plans"
+                >
+                  {cObj ? <CarrierLogo carrier={cObj} size={28} /> : <ShieldCheck className="w-5 h-5 text-[hsl(var(--brand-success))]" />}
+                  <span className="min-w-0">
+                    <span className="block text-sm font-ui truncate">{c}</span>
+                    <span className="block text-xs text-muted-foreground truncate">{summary}</span>
+                  </span>
+                </button>
                 {!disabled && (
-                  <button type="button" onClick={() => remove(v)} className="ml-0.5 hover:text-foreground" aria-label={`Remove ${v}`}>
-                    <X className="w-3 h-3" />
-                  </button>
+                  <>
+                    <button type="button" onClick={() => pick(c)} className="text-xs text-primary hover:underline px-1 shrink-0">
+                      Edit
+                    </button>
+                    <button type="button" onClick={() => removeCarrier(c)} className="text-muted-foreground hover:text-foreground p-0.5 shrink-0" aria-label={`Remove ${c}`}>
+                      <X className="w-4 h-4" />
+                    </button>
+                  </>
                 )}
-              </Badge>
+              </div>
             );
           })}
         </div>
