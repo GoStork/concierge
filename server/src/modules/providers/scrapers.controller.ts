@@ -898,7 +898,7 @@ export class ScrapersController {
       throw new HttpException("Enrichment is already running.", HttpStatus.CONFLICT);
     }
 
-    const validModes = ["skipped", "team", "logo", "about", "phone"];
+    const validModes = ["skipped", "team", "logo", "about", "phone", "locations", "urls"];
     if (mode && !validModes.includes(mode)) {
       throw new BadRequestException(`Invalid mode "${mode}". Must be one of: ${validModes.join(", ")}.`);
     }
@@ -926,7 +926,7 @@ export class ScrapersController {
       }
 
       const updated = await this.prisma.cdcSyncJob.findUnique({ where: { id } });
-      this.clinicEnrichmentService.runTargetedEnrichment(id, mode as "skipped" | "team" | "logo" | "about" | "phone");
+      this.clinicEnrichmentService.runTargetedEnrichment(id, mode as "skipped" | "team" | "logo" | "about" | "phone" | "locations" | "urls");
       return updated;
     }
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, CheckCircle2, XCircle, Globe, Phone, FileText, Image, Users, Activity, RefreshCw, RotateCcw, StopCircle, SearchX, UserSearch, ImageOff, FileQuestion, PhoneOff } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Globe, Phone, FileText, Image, Users, Activity, RefreshCw, RotateCcw, StopCircle, SearchX, UserSearch, ImageOff, FileQuestion, PhoneOff, MapPin, Link as LinkIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AdminReportLayout } from "@/components/admin-report-layout";
@@ -88,6 +88,8 @@ export default function EnrichmentReportPage() {
   const [isRestartingLogo, setIsRestartingLogo] = useState(false);
   const [isRestartingAbout, setIsRestartingAbout] = useState(false);
   const [isRestartingPhone, setIsRestartingPhone] = useState(false);
+  const [isRestartingLocations, setIsRestartingLocations] = useState(false);
+  const [isRestartingUrls, setIsRestartingUrls] = useState(false);
 
   const { data, isLoading } = useQuery<EnrichmentReportData>({
     queryKey: ["/api/scrapers/cdc-syncs", id, "enrichment-report"],
@@ -227,6 +229,40 @@ export default function EnrichmentReportPage() {
     }
   };
 
+  const handleRestartLocations = async () => {
+    setIsRestartingLocations(true);
+    try {
+      const res = await apiRequest("POST", `/api/scrapers/cdc-syncs/${id}/enrich?mode=locations`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Unknown error" }));
+        throw new Error(err.message);
+      }
+      toast({ title: "Enrichment started for locations", description: "Re-discovering satellite offices for each lab", variant: "success" });
+      invalidate();
+    } catch (err: any) {
+      toast({ title: "Failed to start", description: err.message, variant: "destructive" });
+    } finally {
+      setIsRestartingLocations(false);
+    }
+  };
+
+  const handleRestartUrls = async () => {
+    setIsRestartingUrls(true);
+    try {
+      const res = await apiRequest("POST", `/api/scrapers/cdc-syncs/${id}/enrich?mode=urls`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Unknown error" }));
+        throw new Error(err.message);
+      }
+      toast({ title: "Enrichment started for website URLs", description: "Re-discovering website URLs (drops broken/404 URLs)", variant: "success" });
+      invalidate();
+    } catch (err: any) {
+      toast({ title: "Failed to start", description: err.message, variant: "destructive" });
+    } finally {
+      setIsRestartingUrls(false);
+    }
+  };
+
   const handleCancel = async () => {
     setIsCancelling(true);
     try {
@@ -307,7 +343,7 @@ export default function EnrichmentReportPage() {
             </Button>
           )}
           {(() => {
-            const anyBusy = isResuming || isRestarting || isRestartingSkipped || isRestartingTeam || isRestartingLogo || isRestartingAbout || isRestartingPhone;
+            const anyBusy = isResuming || isRestarting || isRestartingSkipped || isRestartingTeam || isRestartingLogo || isRestartingAbout || isRestartingPhone || isRestartingLocations || isRestartingUrls;
             return (
               <>
                 <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestart} disabled={anyBusy} data-testid="button-restart-enrichment">
@@ -317,6 +353,14 @@ export default function EnrichmentReportPage() {
                 <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartSkipped} disabled={anyBusy} data-testid="button-restart-skipped">
                   {isRestartingSkipped ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <SearchX className="w-3.5 h-3.5" />}
                   Restart Skipped
+                </Button>
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartUrls} disabled={anyBusy} data-testid="button-restart-urls">
+                  {isRestartingUrls ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LinkIcon className="w-3.5 h-3.5" />}
+                  Restart URLs
+                </Button>
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartLocations} disabled={anyBusy} data-testid="button-restart-locations">
+                  {isRestartingLocations ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />}
+                  Restart Locations
                 </Button>
                 <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartTeam} disabled={anyBusy} data-testid="button-restart-team">
                   {isRestartingTeam ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserSearch className="w-3.5 h-3.5" />}

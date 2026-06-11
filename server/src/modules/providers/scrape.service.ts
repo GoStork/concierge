@@ -267,11 +267,11 @@ function normalizeUrl(url: string): string {
   return normalized;
 }
 
-function normalizeHostname(hostname: string): string {
+export function normalizeHostname(hostname: string): string {
   return hostname.replace(/^www\./i, "").toLowerCase();
 }
 
-const getRootDomain = (hostname: string) => hostname.split('.').slice(-2).join('.');
+export const getRootDomain = (hostname: string) => hostname.split('.').slice(-2).join('.');
 
 async function fetchHtml(url: string, timeoutMs = 45000): Promise<{ html: string; finalUrl: string }> {
   const controller = new AbortController();
@@ -684,7 +684,17 @@ function extractStructuredAddress(html: string): { address: string | null; city:
   return null;
 }
 
-export async function scrapeProviderWebsite(websiteUrl: string): Promise<ScrapedProviderData> {
+export interface ScrapeOptions {
+  /**
+   * When true, restrict team members to MDs, DOs, and Reproductive Endocrinologists (RE/REI) only.
+   * Used by the IVF clinic enrichment pipeline so we don't pollute clinic records with embryologists,
+   * nurses, coordinators, social workers, etc. Other provider types (agencies, banks) need the full
+   * staff list and should leave this false.
+   */
+  doctorsOnly?: boolean;
+}
+
+export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeOptions = {}): Promise<ScrapedProviderData> {
   const normalizedUrl = normalizeUrl(websiteUrl);
 
   const mainFetch = await fetchHtml(normalizedUrl);
@@ -1246,10 +1256,21 @@ Important rules:
     return !doctorOverride.test(t) && !doctorOverride.test(name);
   };
 
+  // Strict allowlist: only MD / DO / Reproductive Endocrinologist (RE/REI).
+  // Used when doctorsOnly is set (IVF clinic enrichment).
+  const isDoctorOrRE = (title: string | null, name: string, bio: string | null): boolean => {
+    const combined = `${name || ""} ${title || ""} ${bio || ""}`;
+    if (/(?:^|[\s,(])(?:MD|DO|M\.D\.|D\.O\.|REI|R\.E\.I\.)(?:$|[\s,.)])/.test(combined)) return true;
+    if (/\b(?:reproductive\s+endocrinolog|endocrinolog|ob[\s-]?gyn|obstetric|gynecolog|physician|medical\s+director|chief\s+(?:medical|scientific)\s+officer|CMO)\b/i.test(combined)) return true;
+    if (/^\s*Dr\.?\s+/i.test(name || "")) return true;
+    return false;
+  };
+
   const rawTeam: ScrapedTeamMember[] = Array.isArray(parsed.teamMembers)
     ? parsed.teamMembers
         .filter((m: any) => !isDonorOrClient(m.name || ""))
         .filter((m: any) => !isNonDoctorStaff(m.title, m.name || ""))
+        .filter((m: any) => !options.doctorsOnly || isDoctorOrRE(m.title || null, m.name || "", m.bio || null))
         .map((m: any) => ({
           name: cleanDoctorName(m.name || "Unknown"),
           title: m.title || null,

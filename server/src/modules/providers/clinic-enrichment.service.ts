@@ -2,7 +2,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createHash } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
-import { scrapeProviderWebsite } from "./scrape.service";
+import { scrapeProviderWebsite, getRootDomain, normalizeHostname } from "./scrape.service";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -53,6 +53,37 @@ function domainContainsClinicNameWords(url: string, clinicName: string): boolean
   }
 }
 
+function rootDomainOf(url: string): string | null {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.hostname}/`;
+  } catch {
+    return null;
+  }
+}
+
+async function normalizeToRootIfPossible(url: string, clinicName: string): Promise<string> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  // Already at root (path is "/" or empty) - nothing to do.
+  if (parsed.pathname === "/" || parsed.pathname === "") return url;
+
+  const rootUrl = `${parsed.protocol}//${parsed.hostname}/`;
+  if (rootUrl === url) return url;
+
+  const rootVerify = await verifyClinicUrl(rootUrl, clinicName);
+  if (rootVerify.valid) {
+    console.log(`[clinic-enrichment] Normalized "${url}" -> root "${rootUrl}" (${rootVerify.reason})`);
+    return rootUrl;
+  }
+  console.log(`[clinic-enrichment] Kept deep link "${url}" - root rejected (${rootVerify.reason})`);
+  return url;
+}
+
 export async function verifyClinicUrl(url: string, clinicName: string): Promise<VerifyResult> {
   const domainRelevant = domainHasFertilityKeyword(url) || domainContainsClinicNameWords(url, clinicName);
 
@@ -83,6 +114,11 @@ export async function verifyClinicUrl(url: string, clinicName: string): Promise<
     clearTimeout(timeout);
 
     if (!response.ok) {
+      // 404/410 are HARD rejects regardless of domain - a dead page can't be scraped.
+      if (response.status === 404 || response.status === 410) {
+        console.log(`[clinic-enrichment] verifyClinicUrl: "${url}" HTTP ${response.status} - rejecting (dead page)`);
+        return { valid: false, reason: `HTTP ${response.status} (dead page)` };
+      }
       if (domainRelevant) {
         console.log(`[clinic-enrichment] verifyClinicUrl: "${url}" HTTP ${response.status} but domain is relevant - accepting`);
         return { valid: true, reason: "domain-relevant-despite-http-error" };
@@ -191,6 +227,45 @@ const STATE_ABBREV_TO_FULL: Record<string, string> = {
 const STATE_FULL_TO_ABBREV: Record<string, string> = Object.fromEntries(
   Object.entries(STATE_ABBREV_TO_FULL).map(([k, v]) => [v, k])
 );
+
+/**
+ * Parse the lab's geographic region from a CDC clinic name.
+ *
+ * CDC ships one row per lab; multi-lab networks like Boston IVF appear as
+ * separate rows ("Boston IVF - The NH Center", "Boston IVF, The Albany Center")
+ * with the lab's city or state embedded in the name. We extract it so we can
+ * scope satellite offices and doctors to the correct lab.
+ *
+ * Returns { city, stateAbbrev } where at most one is non-null.
+ */
+export function parseLabRegionFromName(clinicName: string): { city: string | null; stateAbbrev: string | null } {
+  // Match patterns like "... - The NH Center", "..., The Albany Center", "... LLC The Maine Center"
+  const patterns = [
+    /[-–—,]\s*(?:the\s+)?([A-Za-z][A-Za-z .]{1,30}?)\s+(?:fertility\s+(?:center|centre|services)|center|centre|office|branch)\b/i,
+    /\b(?:LLC|Inc|PC|PA)\s+(?:the\s+)?([A-Za-z][A-Za-z .]{1,30}?)\s+(?:fertility\s+(?:center|centre|services)|center|centre)\b/i,
+  ];
+  let region: string | null = null;
+  for (const re of patterns) {
+    const m = clinicName.match(re);
+    if (m) {
+      region = m[1].trim();
+      break;
+    }
+  }
+  if (!region) return { city: null, stateAbbrev: null };
+
+  // Two-letter state abbreviation (e.g. "NH")?
+  if (/^[A-Z]{2}$/.test(region)) {
+    return { city: null, stateAbbrev: region.toUpperCase() };
+  }
+  const lower = region.toLowerCase();
+  if (STATE_FULL_TO_ABBREV[lower]) {
+    return { city: null, stateAbbrev: STATE_FULL_TO_ABBREV[lower].toUpperCase() };
+  }
+  // Multi-word like "Long Island" or "New York City": treat as city only if
+  // the lowercased form isn't a state name (handled above).
+  return { city: region, stateAbbrev: null };
+}
 
 function statesMatch(a: string, b: string): boolean {
   const la = a.toLowerCase().trim();
@@ -463,7 +538,8 @@ Return ONLY the specific location page URL. Do not include any other words. NEVE
           return null;
         }
 
-        return url;
+        const normalizedUrl = await normalizeToRootIfPossible(url, clinicName);
+        return normalizedUrl;
       }
       return null;
     } catch (err: any) {
@@ -499,7 +575,7 @@ async function geminiWebsiteSearch(
   const locationPart = [city, state].filter(Boolean).join(", ");
 
   for (const searchName of searchNames) {
-    const prompt = `Find the official website URL for the fertility clinic: "${searchName}" ${locationPart ? `located in ${locationPart}` : ""}. \n\nINSTRUCTIONS FOR SEARCHING:\n1. The name is from a government database and is messy. You MUST clean it before searching.\n2. Remove legal suffixes: LLC, Inc, PC, PA, SC, LTD, LLP, Corporation.\n3. Remove doctor credentials: MD, DO, FACOG, FACS.\n4. Handle "dba": If the name contains "dba", search ONLY for the name AFTER "dba" (e.g., "X dba Y" -> search for "Y").\n5. Handle commas/acronyms: If there are multiple names (e.g., "F.I.R.S.T., Florida Institute..."), search the distinct parts.\n6. For hospital networks (e.g., AHN, Aurora Health, Brooke Army), find the specific sub-page for their Reproductive Medicine or Fertility department.\n7. For franchises (e.g., Boston IVF), find the specific location page.\n\nOUTPUT FORMAT:\nReturn ONLY the bare URL string starting with https:// or www. Do not include any other words. NEVER return aggregator sites (Yelp, Healthgrades, FertilityIQ, WebMD, Facebook, Vitals, Doximity). If you absolutely cannot find it, return exactly "null".`;
+    const prompt = `Find the official website ROOT URL for the fertility clinic: "${searchName}" ${locationPart ? `located in ${locationPart}` : ""}.\n\nINSTRUCTIONS FOR SEARCHING:\n1. The name is from a government database and is messy. You MUST clean it before searching.\n2. Remove legal suffixes: LLC, Inc, PC, PA, SC, LTD, LLP, Corporation.\n3. Remove doctor credentials: MD, DO, FACOG, FACS.\n4. Handle "dba": If the name contains "dba", search ONLY for the name AFTER "dba" (e.g., "X dba Y" -> search for "Y").\n5. Handle commas/acronyms: If there are multiple names (e.g., "F.I.R.S.T., Florida Institute..."), search the distinct parts.\n6. For hospital networks (e.g., AHN, Aurora Health, Brooke Army), return the ROOT DOMAIN of the hospital network's fertility/reproductive medicine sub-site (e.g., "ahn.org" or "ahnfertility.com"), NOT a deep sub-page.\n7. For multi-location networks/franchises (e.g., "Boston IVF - The NH Center" or "RMA Long Island"), return the NETWORK ROOT DOMAIN (e.g., "https://www.bostonivf.com" or "https://www.rmany.com"). DO NOT return a specific location sub-page like "/locations/new-hampshire/bedford-nh-fertility-center" - those URLs often 404 or change. Always prefer the root domain.\n8. Prefer the shortest valid URL: scheme + host only (e.g., "https://www.bostonivf.com/"). Avoid query strings, fragments, and deep paths.\n\nOUTPUT FORMAT:\nReturn ONLY the bare ROOT URL string starting with https:// or www. No paths, no query strings, no other words. NEVER return aggregator sites (Yelp, Healthgrades, FertilityIQ, WebMD, Facebook, Vitals, Doximity). If you absolutely cannot find it, return exactly "null".`;
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       let timeoutId: ReturnType<typeof setTimeout>;
@@ -537,10 +613,12 @@ async function geminiWebsiteSearch(
             throw new Error(`URL verification failed for ${url}: ${verifyResult.reason}`);
           }
 
+          const normalizedUrl = await normalizeToRootIfPossible(url, originalClinicName);
+
           if (searchName !== searchNames[0] || attempt > 1) {
             console.log(`[clinic-enrichment] findClinicWebsite succeeded for "${originalClinicName}" using search name "${searchName}" (attempt ${attempt}, verify: ${verifyResult.reason})`);
           }
-          return url;
+          return normalizedUrl;
         }
         throw new Error("No URL found in Gemini response");
       } catch (err: any) {
@@ -693,7 +771,7 @@ export class ClinicEnrichmentService {
     if (websiteUrl) {
       console.log(`[clinic-enrichment] Found website: ${websiteUrl} - scraping profile...`);
       try {
-        scraped = await scrapeProviderWebsite(websiteUrl);
+        scraped = await scrapeProviderWebsite(websiteUrl, { doctorsOnly: true });
       } catch (scrapeErr: any) {
         console.log(`[clinic-enrichment] Scrape failed for "${provider.name}" (${scrapeErr.message}) - saving SART data only`);
       }
@@ -719,11 +797,36 @@ export class ClinicEnrichmentService {
       console.log(`[clinic-enrichment] Updated provider "${provider.name}" with fields: ${Object.keys(updateData).join(", ")}`);
     }
 
-    await this.syncLocations(providerId, provider.name, provider.locations, scraped?.locations || []);
+    const { keptLocations, keptLocationKeys, hasSiblings } = await this.scopeToLab(
+      { id: providerId, name: provider.name, websiteUrl: websiteUrl || provider.websiteUrl },
+      city,
+      state,
+      scraped?.locations || [],
+    );
+
+    await this.syncLocations(providerId, provider.name, provider.locations, keptLocations, hasSiblings);
 
     const mergedTeam = mergeTeamMembers(sartMembers, scraped?.teamMembers || [], provider.name);
 
-    if (mergedTeam.length > 0) {
+    // Scope team to this lab's satellites when the network has multiple labs.
+    const scopedTeam = hasSiblings
+      ? mergedTeam.filter(m => {
+          if (m.locationHints.length === 0) return false; // can't tell which lab -> drop
+          return m.locationHints.some(hint => {
+            const h = hint.toLowerCase();
+            for (const key of keptLocationKeys) {
+              const [kCity] = key.split("|");
+              if (kCity && h.includes(kCity)) return true;
+            }
+            return false;
+          });
+        })
+      : mergedTeam;
+    if (hasSiblings) {
+      console.log(`[clinic-enrichment] Scoped team for "${provider.name}": ${scopedTeam.length}/${mergedTeam.length} kept`);
+    }
+
+    if (scopedTeam.length > 0) {
       await this.prisma.providerMemberLocation.deleteMany({
         where: { member: { providerId } },
       });
@@ -731,8 +834,8 @@ export class ClinicEnrichmentService {
         where: { providerId },
       });
 
-      for (let i = 0; i < mergedTeam.length; i++) {
-        const tm = mergedTeam[i];
+      for (let i = 0; i < scopedTeam.length; i++) {
+        const tm = scopedTeam[i];
         const persistedPhoto = await persistPhotoToGcs(tm.photoUrl, this.storageService);
         await this.prisma.providerMember.create({
           data: {
@@ -746,20 +849,143 @@ export class ClinicEnrichmentService {
           },
         });
       }
-      console.log(`[clinic-enrichment] Refreshed ${mergedTeam.length} team members for "${provider.name}"`);
+      console.log(`[clinic-enrichment] Refreshed ${scopedTeam.length} team members for "${provider.name}"`);
     }
 
     return true;
   }
 
 
+  /**
+   * Scope scraped locations + team to THIS lab (CDC row) when the website is a
+   * shared multi-lab network like bostonivf.com.
+   *
+   * Returns:
+   *   - keptLocations: scraped locations that belong to this lab. A location is kept if:
+   *       (a) its city matches this lab's parsed/CDC city, OR
+   *       (b) its state matches this lab's state AND no sibling lab has a stronger
+   *           city-match claim on it.
+   *   - keptLocationKeys: lowercased "city|state" keys for the kept set, used to
+   *       filter team members by their locationHints.
+   *   - hasSiblings: true if other IVF clinics share the same root domain. When
+   *       false the scope is a no-op (single-lab network).
+   */
+  private async scopeToLab(
+    provider: { id: string; name: string; websiteUrl: string | null },
+    cdcCity: string | null,
+    cdcState: string | null,
+    scrapedLocations: Array<{ address: string | null; city: string | null; state: string | null; zip: string | null }>,
+  ): Promise<{
+    keptLocations: typeof scrapedLocations;
+    keptLocationKeys: Set<string>;
+    hasSiblings: boolean;
+  }> {
+    const allKey = (city: string | null, state: string | null) =>
+      `${(city || "").trim().toLowerCase()}|${(state || "").trim().toLowerCase()}`;
+    const allKeys = new Set(scrapedLocations.map(l => allKey(l.city, l.state)));
+
+    if (!provider.websiteUrl) {
+      return { keptLocations: scrapedLocations, keptLocationKeys: allKeys, hasSiblings: false };
+    }
+
+    let rootDomain: string;
+    try {
+      rootDomain = getRootDomain(normalizeHostname(new URL(provider.websiteUrl).hostname));
+    } catch {
+      return { keptLocations: scrapedLocations, keptLocationKeys: allKeys, hasSiblings: false };
+    }
+    if (!rootDomain) {
+      return { keptLocations: scrapedLocations, keptLocationKeys: allKeys, hasSiblings: false };
+    }
+
+    // Find sibling IVF clinics that share this root domain.
+    const candidates = await this.prisma.provider.findMany({
+      where: {
+        id: { not: provider.id },
+        services: { some: { providerType: { name: "IVF Clinic" } } },
+        websiteUrl: { contains: rootDomain },
+      },
+      select: {
+        id: true,
+        name: true,
+        websiteUrl: true,
+        locations: {
+          take: 1,
+          orderBy: { sortOrder: "asc" },
+          select: { city: true, state: true },
+        },
+      },
+    });
+
+    const siblings = candidates
+      .filter(s => {
+        if (!s.websiteUrl) return false;
+        try {
+          return getRootDomain(normalizeHostname(new URL(s.websiteUrl).hostname)) === rootDomain;
+        } catch {
+          return false;
+        }
+      })
+      .map(s => {
+        const parsed = parseLabRegionFromName(s.name);
+        const cdcLoc = s.locations[0] || null;
+        return {
+          name: s.name,
+          labCity: (parsed.city || cdcLoc?.city || "").toLowerCase() || null,
+          labState: (parsed.stateAbbrev || cdcLoc?.state || "").toUpperCase() || null,
+        };
+      });
+
+    if (siblings.length === 0) {
+      return { keptLocations: scrapedLocations, keptLocationKeys: allKeys, hasSiblings: false };
+    }
+
+    const thisParsed = parseLabRegionFromName(provider.name);
+    const thisCity = (thisParsed.city || cdcCity || "").toLowerCase() || null;
+    const thisState = (thisParsed.stateAbbrev || cdcState || "").toUpperCase() || null;
+
+    console.log(
+      `[clinic-enrichment] scopeToLab: "${provider.name}" lab=${thisCity || "?"}/${thisState || "?"}; ` +
+      `${siblings.length} siblings on ${rootDomain}: ${siblings.map(s => `${s.labCity || "?"}/${s.labState || "?"}`).join(", ")}`,
+    );
+
+    const kept: typeof scrapedLocations = [];
+    for (const loc of scrapedLocations) {
+      const lCity = (loc.city || "").trim().toLowerCase();
+      const lState = (loc.state || "").trim().toUpperCase();
+
+      // Direct city match always wins.
+      if (thisCity && lCity && lCity === thisCity) {
+        kept.push(loc);
+        continue;
+      }
+
+      // Same state? Keep unless a different sibling lab claims this city.
+      if (thisState && lState && statesMatch(lState, thisState)) {
+        const claimedByOther = siblings.some(
+          s => s.labCity && lCity && s.labCity === lCity && s.labCity !== thisCity,
+        );
+        if (!claimedByOther) {
+          kept.push(loc);
+        }
+      }
+    }
+
+    const keptKeys = new Set(kept.map(l => allKey(l.city, l.state)));
+    console.log(
+      `[clinic-enrichment] scopeToLab: "${provider.name}" kept ${kept.length}/${scrapedLocations.length} scraped locations`,
+    );
+    return { keptLocations: kept, keptLocationKeys: keptKeys, hasSiblings: true };
+  }
+
   private async syncLocations(
     providerId: string,
     providerName: string,
     existingLocations: Array<{ id: string; address: string | null; city: string | null; state: string | null; zip: string | null; sortOrder: number }>,
     scrapedLocations: Array<{ address: string | null; city: string | null; state: string | null; zip: string | null }>,
+    cleanStaleEnriched = false,
   ): Promise<void> {
-    if (scrapedLocations.length === 0) return;
+    if (scrapedLocations.length === 0 && !cleanStaleEnriched) return;
 
     const normalize = (s: string | null) => (s || "").trim().toLowerCase();
     const locationKey = (city: string | null, state: string | null) => `${normalize(city)}|${normalize(state)}`;
@@ -842,6 +1068,117 @@ export class ClinicEnrichmentService {
     console.log(`[clinic-enrichment] Synced locations for "${providerName}": ${finalCount} total`);
   }
 
+  private async reSyncLocationsAndTeamWithRetry(providerId: string, providerName: string, maxRetries = 3): Promise<boolean | null> {
+    const BASE_DELAY = 5000;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await this.reSyncLocationsAndTeam(providerId);
+      } catch (err: any) {
+        if (isRetryableError(err) && attempt < maxRetries) {
+          const delay = BASE_DELAY * Math.pow(2, attempt - 1);
+          console.log(`[clinic-enrichment] Re-sync retry for "${providerName}" (attempt ${attempt}/${maxRetries}): ${err.message}, waiting ${delay}ms...`);
+          await sleep(delay);
+        } else {
+          throw err;
+        }
+      }
+    }
+    return null;
+  }
+
+  private async reSyncLocationsAndTeam(providerId: string): Promise<boolean> {
+    const provider = await this.prisma.provider.findUnique({
+      where: { id: providerId },
+      include: {
+        locations: { orderBy: { sortOrder: "asc" } },
+        members: true,
+      },
+    });
+
+    if (!provider) {
+      console.log(`[clinic-enrichment] reSync: Provider ${providerId} not found, skipping`);
+      return false;
+    }
+
+    if (!provider.websiteUrl) {
+      console.log(`[clinic-enrichment] reSync: "${provider.name}" has no website URL, skipping`);
+      return false;
+    }
+
+    console.log(`[clinic-enrichment] reSync: Re-scraping "${provider.name}" from ${provider.websiteUrl}...`);
+    let scraped: Awaited<ReturnType<typeof scrapeProviderWebsite>> | null = null;
+    try {
+      scraped = await scrapeProviderWebsite(provider.websiteUrl, { doctorsOnly: true });
+    } catch (scrapeErr: any) {
+      console.log(`[clinic-enrichment] reSync: Scrape failed for "${provider.name}" (${scrapeErr.message}), skipping`);
+      return false;
+    }
+
+    if (!scraped) return false;
+
+    const cdcCity = provider.locations[0]?.city || null;
+    const cdcState = provider.locations[0]?.state || null;
+
+    const { keptLocations, keptLocationKeys, hasSiblings } = await this.scopeToLab(
+      { id: providerId, name: provider.name, websiteUrl: provider.websiteUrl },
+      cdcCity,
+      cdcState,
+      scraped.locations || [],
+    );
+
+    await this.syncLocations(providerId, provider.name, provider.locations, keptLocations, hasSiblings);
+
+    const sartResult = await searchSartForClinic(provider.name, cdcCity, cdcState);
+    const sartMembers = sartResult?.members || [];
+
+    const mergedTeam = mergeTeamMembers(sartMembers, scraped.teamMembers || [], provider.name);
+
+    const scopedTeam = hasSiblings
+      ? mergedTeam.filter(m => {
+          if (m.locationHints.length === 0) return false;
+          return m.locationHints.some(hint => {
+            const h = hint.toLowerCase();
+            for (const key of keptLocationKeys) {
+              const [kCity] = key.split("|");
+              if (kCity && h.includes(kCity)) return true;
+            }
+            return false;
+          });
+        })
+      : mergedTeam;
+    if (hasSiblings) {
+      console.log(`[clinic-enrichment] reSync: Scoped team for "${provider.name}": ${scopedTeam.length}/${mergedTeam.length} kept`);
+    }
+
+    if (scopedTeam.length > 0) {
+      await this.prisma.providerMemberLocation.deleteMany({
+        where: { member: { providerId } },
+      });
+      await this.prisma.providerMember.deleteMany({
+        where: { providerId },
+      });
+
+      for (let i = 0; i < scopedTeam.length; i++) {
+        const tm = scopedTeam[i];
+        const persistedPhoto = await persistPhotoToGcs(tm.photoUrl, this.storageService);
+        await this.prisma.providerMember.create({
+          data: {
+            providerId,
+            name: tm.name,
+            title: tm.title,
+            bio: tm.bio,
+            photoUrl: persistedPhoto,
+            isMedicalDirector: tm.isMedicalDirector,
+            sortOrder: i,
+          },
+        });
+      }
+      console.log(`[clinic-enrichment] reSync: Refreshed ${scopedTeam.length} team members for "${provider.name}"`);
+    }
+
+    return true;
+  }
+
   private async enrichWithRetry(providerId: string, providerName: string, maxRetries = 3): Promise<boolean | null> {
     const BASE_DELAY = 5000;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -860,7 +1197,7 @@ export class ClinicEnrichmentService {
     return null;
   }
 
-  async runTargetedEnrichment(jobId: string, mode: "skipped" | "team" | "logo" | "about" | "phone"): Promise<void> {
+  async runTargetedEnrichment(jobId: string, mode: "skipped" | "team" | "logo" | "about" | "phone" | "locations" | "urls"): Promise<void> {
     const runId = crypto.randomUUID();
     this.activeRunId = runId;
     const modeLabels: Record<string, string> = {
@@ -869,6 +1206,8 @@ export class ClinicEnrichmentService {
       logo: "missing logo",
       about: "missing about",
       phone: "missing phone",
+      locations: "re-scrape locations + team",
+      urls: "re-discover website URLs",
     };
     const modeLabel = modeLabels[mode];
     console.log(`[clinic-enrichment] Starting targeted enrichment (${modeLabel}) run ${runId.slice(0, 8)} for job ${jobId}`);
@@ -891,6 +1230,10 @@ export class ClinicEnrichmentService {
         providersToEnrich = allIvfClinics.filter(p => !p.about);
       } else if (mode === "phone") {
         providersToEnrich = allIvfClinics.filter(p => !p.phone);
+      } else if (mode === "urls") {
+        providersToEnrich = allIvfClinics;
+      } else if (mode === "locations") {
+        providersToEnrich = allIvfClinics.filter(p => !!p.websiteUrl);
       } else {
         const withTeam = await this.prisma.providerMember.groupBy({
           by: ["providerId"],
@@ -943,8 +1286,20 @@ export class ClinicEnrichmentService {
         }
 
         try {
-          const enriched = await this.enrichWithRetry(provider.id, provider.name);
-          if (!enriched) skipped++;
+          if (mode === "urls") {
+            await this.prisma.provider.update({
+              where: { id: provider.id },
+              data: { websiteUrl: null },
+            });
+            const enriched = await this.enrichWithRetry(provider.id, provider.name);
+            if (!enriched) skipped++;
+          } else if (mode === "locations") {
+            const enriched = await this.reSyncLocationsAndTeamWithRetry(provider.id, provider.name);
+            if (!enriched) skipped++;
+          } else {
+            const enriched = await this.enrichWithRetry(provider.id, provider.name);
+            if (!enriched) skipped++;
+          }
         } catch (err: any) {
           errors++;
           console.error(`[clinic-enrichment] Error enriching "${provider.name}" (after retries):`, err.message);
