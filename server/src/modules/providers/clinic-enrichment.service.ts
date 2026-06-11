@@ -3,6 +3,7 @@ import { createHash } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { scrapeProviderWebsite, getRootDomain, normalizeHostname } from "./scrape.service";
+import { buildDoctorEnrichment } from "./doctor-data";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -498,10 +499,19 @@ async function findClinicWebsite(
 
   if (sartResult?.websiteUrl) {
     console.log(`[clinic-enrichment] SART provided website for "${clinicName}": ${sartResult.websiteUrl}`);
-    return { url: sartResult.websiteUrl, sartPhone: sartResult.phone, sartEmail: sartResult.email, sartMembers };
+    // SART's directory occasionally lists deep links or truncated URLs (e.g.
+    // bostonivf.com/locations/the-brookline-). Run them through the same
+    // verify + root-normalize chain we apply to Gemini URLs so admins get the
+    // root domain that the scraper can actually traverse.
+    const sartVerify = await verifyClinicUrl(sartResult.websiteUrl, clinicName);
+    if (sartVerify.valid) {
+      const normalizedSartUrl = await normalizeToRootIfPossible(sartResult.websiteUrl, clinicName);
+      return { url: normalizedSartUrl, sartPhone: sartResult.phone, sartEmail: sartResult.email, sartMembers };
+    }
+    console.log(`[clinic-enrichment] SART URL rejected for "${clinicName}" (${sartVerify.reason}), falling back to Gemini search...`);
+  } else {
+    console.log(`[clinic-enrichment] SART miss for "${clinicName}", falling back to Gemini search...`);
   }
-
-  console.log(`[clinic-enrichment] SART miss for "${clinicName}", falling back to Gemini search...`);
 
   const nameParts = clinicName.includes(",")
     ? clinicName.split(",").map(p => p.trim().replace(/\.+$/, "")).filter(p => p.length >= 3 && !/^(LLC|Inc|PC|PA|SC|LTD|LLP|Corp|Corporation|PLLC|MD|DO|PhD|FACOG|FACS|MBA|MSc|RN|NP)\.?$/i.test(p))
@@ -878,6 +888,7 @@ export class ClinicEnrichmentService {
     }
 
     if (scopedTeam.length > 0) {
+      const snapshot = await this.snapshotEnrichedTeam(providerId);
       await this.prisma.providerMemberLocation.deleteMany({
         where: { member: { providerId } },
       });
@@ -899,6 +910,7 @@ export class ClinicEnrichmentService {
         });
       }
       console.log(`[clinic-enrichment] Refreshed ${scopedTeam.length} team members for "${provider.name}"`);
+      await this.enrichTeamDoctorData(providerId, snapshot);
     }
 
     return true;
