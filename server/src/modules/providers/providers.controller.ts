@@ -656,6 +656,108 @@ export class ProvidersController {
     }
   }
 
+  @Get("doctors/:slug")
+  @ApiOperation({ summary: "Get a single doctor (provider member) by slug, with every clinic affiliation" })
+  @ApiParam({ name: "slug", description: "Doctor slug, e.g. vicken-sahakian" })
+  @ApiResponse({ status: 404, description: "Doctor not found", type: ErrorResponseDto })
+  async getDoctor(@Param("slug") slug: string, @Req() req: Request) {
+    const user = req.user as any;
+    const roles: string[] = user?.roles || [];
+    const isParent = roles.includes("PARENT") && roles.length === 1;
+
+    const primary = await this.prisma.providerMember.findUnique({
+      where: { slug },
+    });
+    if (!primary || primary.isPublicProfile === false) {
+      throw new NotFoundException("Doctor not found");
+    }
+
+    // Gather every member row for the same human across clinics (deduped by personKey).
+    const memberRows = await this.prisma.providerMember.findMany({
+      where: primary.personKey ? { personKey: primary.personKey } : { id: primary.id },
+      orderBy: [{ isMedicalDirector: "desc" }, { sortOrder: "asc" }],
+      include: {
+        locations: { include: { location: true } },
+        provider: {
+          include: {
+            services: isParent
+              ? { where: { status: "APPROVED" }, include: { providerType: true } }
+              : { include: { providerType: true } },
+            locations: { orderBy: { sortOrder: "asc" } },
+            ivfSuccessRates: true,
+          },
+        },
+      },
+    });
+
+    // Build clinic affiliations; parents only see clinics with an approved service.
+    const affiliations = memberRows
+      .map((m) => {
+        const p = m.provider;
+        if (isParent && (p.services?.length ?? 0) === 0) return null;
+        return {
+          memberId: m.id,
+          title: m.title,
+          isMedicalDirector: m.isMedicalDirector,
+          providerId: p.id,
+          providerName: p.name,
+          logoUrl: p.logoUrl,
+          lgbtqCare: p.lgbtqCare,
+          serviceTypes: (p.services || []).map((s: any) => s.providerType?.name).filter(Boolean),
+          memberLocations: m.locations.map((ml: any) => ({
+            city: ml.location?.city,
+            state: ml.location?.state,
+            address: ml.location?.address,
+            zip: ml.location?.zip,
+          })),
+          clinicLocations: p.locations.map((l) => ({
+            city: l.city,
+            state: l.state,
+            address: l.address,
+            zip: l.zip,
+          })),
+          successRates: p.ivfSuccessRates,
+        };
+      })
+      .filter(Boolean);
+
+    if (affiliations.length === 0) {
+      throw new NotFoundException("Doctor not found");
+    }
+
+    // Published, GoStork-verified reviews for any of this person's member rows (Phase 7 populates these).
+    const memberIds = memberRows.map((m) => m.id);
+    const reviews = await this.prisma.providerReview.findMany({
+      where: { memberId: { in: memberIds }, status: "PUBLISHED" },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return {
+      id: primary.id,
+      slug: primary.slug,
+      name: primary.name,
+      title: primary.title,
+      bio: primary.bio,
+      photoUrl: primary.photoUrl,
+      isMedicalDirector: primary.isMedicalDirector,
+      specialties: primary.specialties,
+      languagesSpoken: primary.languagesSpoken,
+      boardCertifications: primary.boardCertifications,
+      education: primary.education,
+      professionalMemberships: primary.professionalMemberships,
+      npiNumber: primary.npiNumber,
+      yearsExperience: primary.yearsExperience,
+      providerGender: primary.providerGender,
+      offersVideoVisits: primary.offersVideoVisits,
+      acceptingNewPatients: primary.acceptingNewPatients,
+      reviewCount: primary.reviewCount,
+      recommendPct: primary.recommendPct,
+      avgOverallScore: primary.avgOverallScore,
+      affiliations,
+      reviews,
+    };
+  }
+
   @Get(":id")
   @ApiOperation({ summary: "Get a single provider by ID" })
   @ApiParam({ name: "id", description: "Provider UUID" })

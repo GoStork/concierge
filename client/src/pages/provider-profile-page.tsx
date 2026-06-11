@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, useLocation, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
@@ -465,8 +465,8 @@ export default function ProviderProfilePage() {
                   })
                   .filter(Boolean);
 
-                return (
-                  <div key={member.id} className="flex gap-3" data-testid={`member-${member.id}`}>
+                const inner = (
+                  <>
                     {memberPhoto ? (
                       <img
                         src={memberPhoto}
@@ -479,7 +479,7 @@ export default function ProviderProfilePage() {
                       </div>
                     )}
                     <div className="min-w-0">
-                      <p className="font-ui text-sm text-foreground">{member.name}</p>
+                      <p className="font-ui text-sm text-foreground group-hover:text-primary group-hover:underline">{member.name}</p>
                       {member.title && (
                         <p className="text-xs text-primary font-ui">{member.title}</p>
                       )}
@@ -493,6 +493,21 @@ export default function ProviderProfilePage() {
                         </p>
                       )}
                     </div>
+                  </>
+                );
+
+                return member.slug ? (
+                  <Link
+                    key={member.id}
+                    to={`/doctors/${member.slug}`}
+                    className="group flex gap-3 -m-1 p-1 rounded-[var(--radius)] hover:bg-secondary/40 transition-colors"
+                    data-testid={`member-${member.id}`}
+                  >
+                    {inner}
+                  </Link>
+                ) : (
+                  <div key={member.id} className="flex gap-3" data-testid={`member-${member.id}`}>
+                    {inner}
                   </div>
                 );
               })}

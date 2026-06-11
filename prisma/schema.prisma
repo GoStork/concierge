@@ -18,6 +18,14 @@ model Provider {
   email                                 String?
   phone                                 String?
   yearFounded                           Int?
+  // Doctor/clinic marketplace enrichment (provider self-entry + concepts borrowed from FertilityIQ/ZocDoc)
+  acceptedInsurance                     String[]                    @default([]) // provider self-entry; powers the insurance filter
+  lgbtqCare                             Boolean                     @default(false)
+  offersVideoVisits                     Boolean                     @default(false)
+  // Review aggregates (computed from GoStork verified reviews; never external)
+  reviewCount                           Int                         @default(0)
+  recommendPct                          Int?
+  avgOverallScore                       Decimal?
   createdAt                             DateTime                    @default(now())
   updatedAt                             DateTime                    @updatedAt
   isTestData                            Boolean                     @default(false)
@@ -65,7 +73,7 @@ model Provider {
   ivfSurrogatePreeclampsia              Boolean?
   ivfSurrogateMentalHealthHistory       String?
   // Surrogacy Agency matching requirements
-  partnerProviderIds                    Json?   // Array of linked IVF clinic provider IDs (for international surrogacy programs)
+  partnerProviderIds                    Json? // Array of linked IVF clinic provider IDs (for international surrogacy programs)
   surrogacyCitizensNotAllowed           Json?
   surrogacyTwinsAllowed                 Boolean                     @default(false)
   surrogacyStayAfterBirthMonths         Int?
@@ -91,6 +99,7 @@ model Provider {
   surrogateSyncConfig                   SurrogateSyncConfig?
   users                                 User[]
   ivfSuccessRates                       IvfSuccessRate[]
+  reviews                               ProviderReview[]
   knowledgeChunks                       KnowledgeChunk[]
   silentQueries                         SilentQuery[]
   chatSessions                          AiChatSession[]
@@ -193,11 +202,11 @@ model RawCdcData {
 }
 
 model ParentAccount {
-  id                     String                 @id @default(uuid())
-  createdAt              DateTime               @default(now())
-  customEthnicities      String[]               @default([])
-  customFilterTags       Json                   @default("{}")
-  preferredAppExperience String?
+  id                            String                 @id @default(uuid())
+  createdAt                     DateTime               @default(now())
+  customEthnicities             String[]               @default([])
+  customFilterTags              Json                   @default("{}")
+  preferredAppExperience        String?
   // Marketplace "New" badge watermark. WatermarkAt is the timestamp used
   // as the cutoff: a profile is "New" iff createdAt > marketplaceWatermarkAt
   // AND not in the ParentProfileView set. WatermarkUpdatedAt is when the
@@ -208,10 +217,10 @@ model ParentAccount {
   // "New" badges throughout a browsing session.
   marketplaceWatermarkAt        DateTime?
   marketplaceWatermarkUpdatedAt DateTime?
-  members                User[]
-  intendedParentProfile  IntendedParentProfile?
-  journeyPreferences     JourneyPreferences?
-  profileViews           ParentProfileView[]
+  members                       User[]
+  intendedParentProfile         IntendedParentProfile?
+  journeyPreferences            JourneyPreferences?
+  profileViews                  ParentProfileView[]
 }
 
 // Tracks which donor/surrogate profiles a parent account has already "seen"
@@ -226,7 +235,7 @@ model ParentProfileView {
   parentAccountId String
   parentAccount   ParentAccount @relation(fields: [parentAccountId], references: [id], onDelete: Cascade)
   profileId       String
-  profileType     String        // "egg-donor" | "surrogate" | "sperm-donor"
+  profileType     String // "egg-donor" | "surrogate" | "sperm-donor"
   viewedAt        DateTime      @default(now())
 
   @@unique([parentAccountId, profileId, profileType])
@@ -354,16 +363,39 @@ model SurrogateScreening {
 }
 
 model ProviderMember {
-  id                String                   @id @default(uuid())
-  providerId        String
-  name              String
-  title             String?
-  bio               String?
-  photoUrl          String?
-  isMedicalDirector Boolean                  @default(false)
-  sortOrder         Int                      @default(0)
-  provider          Provider                 @relation(fields: [providerId], references: [id])
-  locations         ProviderMemberLocation[]
+  id                      String                   @id @default(uuid())
+  providerId              String
+  name                    String
+  title                   String?
+  bio                     String?
+  photoUrl                String?
+  isMedicalDirector       Boolean                  @default(false)
+  sortOrder               Int                      @default(0)
+  // Doctor profile: identity / addressability
+  slug                    String?                  @unique // e.g. "vicken-sahakian"
+  personKey               String? // normalized-name hash; links the same human across multiple clinics
+  isPublicProfile         Boolean                  @default(true) // false hides non-doctor staff from the public doctor page
+  // Doctor profile: credentials (from clinic-site enrichment + provider self-entry)
+  specialties             String[]                 @default([]) // e.g. "Male Factor","LGBTQ+ Family Building","PCOS","Recurrent Loss"
+  languagesSpoken         String[]                 @default([])
+  boardCertifications     String[]                 @default([])
+  education               String[]                 @default([]) // ["Med School - ...","Residency - ...","Fellowship - ..."]
+  professionalMemberships String[]                 @default([])
+  npiNumber               String?
+  yearsExperience         Int?
+  providerGender          String?
+  offersVideoVisits       Boolean                  @default(false)
+  acceptingNewPatients    Boolean                  @default(true)
+  // Doctor profile: review aggregates (computed from GoStork verified reviews; never external)
+  reviewCount             Int                      @default(0)
+  recommendPct            Int? // 0-100 "% would recommend"
+  avgOverallScore         Decimal? // 0-10 composite
+  provider                Provider                 @relation(fields: [providerId], references: [id])
+  locations               ProviderMemberLocation[]
+  reviews                 ProviderReview[]
+
+  @@index([personKey])
+  @@index([providerId])
 }
 
 model ProviderMemberLocation {
@@ -374,6 +406,43 @@ model ProviderMemberLocation {
   member     ProviderMember   @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   @@unique([memberId, locationId])
+}
+
+// GoStork-owned verified reviews for clinics and doctors. Data is captured from
+// our own post-consultation flow (only users who booked can review) - never
+// scraped from FertilityIQ/ZocDoc. Structure (recommend buckets, sub-dimension
+// scores, treatment metadata tags) is modeled after those sites; the data is ours.
+model ProviderReview {
+  id                 String          @id @default(uuid())
+  providerId         String // always set (clinic-level)
+  memberId           String? // set when the review is about a specific doctor
+  authorUserId       String // the IP who booked - verification anchor
+  source             String          @default("gostork_verified")
+  // recommend bucket: "STRONGLY_RECOMMEND" | "NEUTRAL" | "DONT_RECOMMEND"
+  recommendation     String
+  overallScore       Int? // 0-10
+  // entity-specific sub-dimensions as JSON:
+  //   clinic: { operations, scheduling, billing, nursing, lgbtqCare, attentionToDetail }
+  //   doctor: { humanity, communication, frequencySeen, lgbtqCare, responsiveness }
+  subScores          Json?
+  bodyText           String?
+  // structured metadata tags (FertilityIQ pattern)
+  treatmentYearStart Int?
+  treatmentYearEnd   Int?
+  outcome            String? // "SUCCESSFUL" | "UNSUCCESSFUL" | "UNKNOWN"
+  ageRangeLabel      String? // e.g. "32-33"
+  ivfCycles          Int?
+  iuiCycles          Int?
+  diagnoses          String[]        @default([]) // "Endometriosis","PCOS","Male Factor",...
+  isLgbtq            Boolean         @default(false)
+  status             String          @default("PENDING") // moderation: PENDING | PUBLISHED | REJECTED
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  provider           Provider        @relation(fields: [providerId], references: [id])
+  member             ProviderMember? @relation(fields: [memberId], references: [id])
+
+  @@index([providerId, status])
+  @@index([memberId, status])
 }
 
 model CostTemplate {
@@ -420,49 +489,49 @@ model CostProgram {
 }
 
 model ProviderCostSheet {
-  id                String        @id @default(uuid())
-  providerId        String
-  providerTypeId    String?
-  parentClientId    String?
+  id               String        @id @default(uuid())
+  providerId       String
+  providerTypeId   String?
+  parentClientId   String?
   // tab: "ivf_cycle" | "shipping_embryos" | "shipping_eggs_sperm" | "egg_freezing"
-  tab               String?
+  tab              String?
   // subType: legacy single-leaf value. Kept for backwards compat. New code
   // reads subTypes[] (plural). Save paths write subTypes[0] back into subType.
-  subType           String?
+  subType          String?
   // subTypes: canonical multi-leaf coverage. See CostProgram.subTypes above
   // for the leaf taxonomy. Auto-draft queries with hasSome.
-  subTypes          String[]      @default([])
-  programId         String?
-  fileUrl           String?
-  filePath          String?
-  originalFileName  String?
-  status            String        @default("PENDING")
-  adminFeedback     String?
-  version           Int           @default(1)
+  subTypes         String[]      @default([])
+  programId        String?
+  fileUrl          String?
+  filePath         String?
+  originalFileName String?
+  status           String        @default("PENDING")
+  adminFeedback    String?
+  version          Int           @default(1)
   // Phase 3 auto-invoice draft pre-fill template
-  category          String?
-  description       String?
-  lineItemTemplate  Json?
+  category         String?
+  description      String?
+  lineItemTemplate Json?
   // Fixed-vs-not-fixed classification. null = AI has not run yet (or the
   // admin hasn't picked). When true, the overlay's mandatoryFixed[] fields
   // become required on submit.
-  isFixedCost       Boolean?
+  isFixedCost      Boolean?
   // Live progress for the background Gemini parse. Updated by the
   // controller's backgroundParseAndSave as the AI streams items back.
   // parseStage is a short human label ("Reading document...",
   // "Extracting items (12 found)", "Mapping to template", ...).
   // parseProgress is 0-100. parseItemsCount lets the UI render a live
   // "X items extracted so far" counter while status is still PARSING.
-  parseStage        String?
-  parseProgress     Int?          @default(0)
-  parseItemsCount   Int?          @default(0)
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-  items             CostItem[]
-  provider          Provider      @relation(fields: [providerId], references: [id])
-  providerType      ProviderType? @relation(fields: [providerTypeId], references: [id])
-  parentClient      User?         @relation("CostSheetQuotes", fields: [parentClientId], references: [id])
-  program           CostProgram?  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  parseStage       String?
+  parseProgress    Int?          @default(0)
+  parseItemsCount  Int?          @default(0)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  items            CostItem[]
+  provider         Provider      @relation(fields: [providerId], references: [id])
+  providerType     ProviderType? @relation(fields: [providerTypeId], references: [id])
+  parentClient     User?         @relation("CostSheetQuotes", fields: [parentClientId], references: [id])
+  program          CostProgram?  @relation(fields: [programId], references: [id], onDelete: Cascade)
 }
 
 model CostItem {
@@ -1192,11 +1261,11 @@ model ProviderBrandSettings {
 // entered. UI uses this to show a "From W-9" badge next to auto-filled
 // fields.
 model ProviderLegalIdentity {
-  id         String   @id @default(uuid())
-  providerId String   @unique
+  id         String @id @default(uuid())
+  providerId String @unique
 
   // Line 1 of W-9: Name of entity / individual
-  legalName  String?
+  legalName String?
 
   // Line 2 of W-9: Business name / disregarded entity name (DBA), if
   // different from legalName. Optional.
@@ -1255,30 +1324,30 @@ model ProviderLegalIdentity {
 // ==========================================
 
 model AiChatSession {
-  id               String    @id @default(uuid())
-  userId           String
-  title            String?
-  status           String    @default("ACTIVE")
-  sessionType      String    @default("PARENT")
-  humanRequested   Boolean   @default(false)
-  humanJoinedAt    DateTime?
-  humanConcludedAt DateTime?
-  humanAgentId     String?
-  providerId       String?
-  providerJoinedAt DateTime?
-  providerName     String?
-  profilePhotoUrl  String?
-  subjectProfileId String?
-  subjectType      String?
-  matchmakerId     String?
-  tier2Active      Boolean   @default(false)
-  isTestData       Boolean   @default(false)
+  id                 String    @id @default(uuid())
+  userId             String
+  title              String?
+  status             String    @default("ACTIVE")
+  sessionType        String    @default("PARENT")
+  humanRequested     Boolean   @default(false)
+  humanJoinedAt      DateTime?
+  humanConcludedAt   DateTime?
+  humanAgentId       String?
+  providerId         String?
+  providerJoinedAt   DateTime?
+  providerName       String?
+  profilePhotoUrl    String?
+  subjectProfileId   String?
+  subjectType        String?
+  matchmakerId       String?
+  tier2Active        Boolean   @default(false)
+  isTestData         Boolean   @default(false)
   // Phase 1 Stage 13: stamped when the parent has paid the deposit AND
   // the agreement is fully signed, signalling GoStork's portion of the
   // workflow is complete and the provider has taken over.
   handoffCompletedAt DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   messages           AiChatMessage[]
   silentQueries      SilentQuery[]
@@ -1322,8 +1391,8 @@ model IntendedParentProfile {
   id              String @id @default(uuid())
   parentAccountId String @unique
 
-  interestedServices String[] @default([])
-  journeyStage       String?
+  interestedServices     String[] @default([])
+  journeyStage           String?
   // Parent's decision about the provider-profile cost-programs tailor form.
   // Values:
   //   null         - we haven't asked yet; the inline form is shown when the
@@ -1340,7 +1409,7 @@ model IntendedParentProfile {
   // the lawyer cost-sheet matching rules. Values come from a controlled
   // taxonomy (parentage_order, surrogacy_contract, donor_contract_drafting,
   // donor_contract_review, embryo_disposition, adoption, other).
-  detectedLegalNeeds String[] @default([])
+  detectedLegalNeeds     String[] @default([])
 
   // Biological Matrix - nullable so null means "not yet asked" vs false/0 meaning "answered: no"
   hasEmbryos    Boolean?
@@ -1499,18 +1568,18 @@ model ExpertGuidanceRule {
 }
 
 model SilentQuery {
-  id           String   @id @default(uuid())
-  parentUserId String
-  providerId   String
-  sessionId    String
-  questionText String
-  answerText   String?
-  status       String   @default("PENDING")
+  id               String    @id @default(uuid())
+  parentUserId     String
+  providerId       String
+  sessionId        String
+  questionText     String
+  answerText       String?
+  status           String    @default("PENDING")
   // Optional file the provider attached to their whisper answer. Persisted so
   // the parent-relay message and the audit trail stay in sync.
-  attachmentUrl  String?
-  attachmentName String?
-  attachmentMime String?
+  attachmentUrl    String?
+  attachmentName   String?
+  attachmentMime   String?
   // SLA tracking - the whisper-sla scheduler stamps these as it fires nudges
   // at the 2h / 24h / 48h-escalation marks. reminderCount is a convenience
   // counter so the inbox UI can show "Nudged 2x" without joining anything.
@@ -1518,8 +1587,8 @@ model SilentQuery {
   secondReminderAt DateTime?
   escalatedAt      DateTime?
   reminderCount    Int       @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   parentUser User          @relation("SilentQueryParent", fields: [parentUserId], references: [id], onDelete: Cascade)
   provider   Provider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
@@ -1661,9 +1730,9 @@ model Invoice {
   // push the provider's cut from GoStork's platform balance to their
   // connected account. The provider's Stripe Connect payout schedule then
   // moves it to their bank.
-  stripeTransferId      String?   @unique
-  payoutFailedAt        DateTime?
-  payoutFailureReason   String?
+  stripeTransferId    String?   @unique
+  payoutFailedAt      DateTime?
+  payoutFailureReason String?
 
   // Bank-side settlement: when Stripe sweeps the connected account's
   // balance to the provider's bank (a Stripe Payout, distinct from the
@@ -1698,14 +1767,14 @@ model Invoice {
   // proportional Transfer reversal so GoStork doesn't eat the loss. Stripe
   // reverses from the connected account's balance, or debits it negative if
   // the funds already swept to bank (Stripe recoups on the next payout).
-  refundedAt              DateTime?
-  refundedAmount          Int?      // cents; matches charge.amount_refunded
-  refundReason            String?   // Stripe enum: duplicate | fraudulent | requested_by_customer | other
-  refundNotes             String?   // free-text from admin, internal-only
-  stripeRefundId          String?   // re_xxx, the most recent refund
-  payoutReversalId        String?   // trr_xxx, the most recent transfer reversal
-  payoutReversedAt        DateTime?
-  payoutReversedAmount    Int?      // cents reversed back to platform; ≤ providerPayoutAmount
+  refundedAt           DateTime?
+  refundedAmount       Int? // cents; matches charge.amount_refunded
+  refundReason         String? // Stripe enum: duplicate | fraudulent | requested_by_customer | other
+  refundNotes          String? // free-text from admin, internal-only
+  stripeRefundId       String? // re_xxx, the most recent refund
+  payoutReversalId     String? // trr_xxx, the most recent transfer reversal
+  payoutReversedAt     DateTime?
+  payoutReversedAmount Int? // cents reversed back to platform; ≤ providerPayoutAmount
 
   // Recoupment tracking. When a Transfer Reversal hits an invoice whose
   // bank-side Payout has already completed (Received status), Stripe
@@ -1715,8 +1784,8 @@ model Invoice {
   // extending uncollateralized credit to the provider. We flag these
   // invoices and a periodic monitor stamps recouped when the provider's
   // Connect balance is no longer negative.
-  payoutReversalAtRisk      Boolean   @default(false)
-  payoutReversalRecoupedAt  DateTime?
+  payoutReversalAtRisk     Boolean   @default(false)
+  payoutReversalRecoupedAt DateTime?
 
   // Timestamps
   authorizedAt      DateTime?
@@ -1753,13 +1822,13 @@ model Invoice {
 // the rest of the codebase that hasn't been updated to read lineItems still
 // renders something sensible.
 model InvoiceLineItem {
-  id           String  @id @default(uuid())
+  id           String   @id @default(uuid())
   invoiceId    String
   // Fixed set: "SURROGACY" | "EGG_DONATION" | "SPERM_DONATION" | "IVF_CLINIC" | "OTHER"
   serviceType  String
   description  String?
   amountCents  Int
-  displayOrder Int     @default(0)
+  displayOrder Int      @default(0)
   createdAt    DateTime @default(now())
 
   invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
@@ -1768,17 +1837,17 @@ model InvoiceLineItem {
 }
 
 model ProviderQuote {
-  id                String    @id @default(uuid())
-  sessionId         String
-  providerId        String
-  parentUserId      String
-  totalCostCents    Int
-  costSheetFileUrl  String?
-  costSheetFileName String?
-  notes             String?
-  source            String    @default("PROVIDER") // "PROVIDER" | "ADMIN_OVERRIDE" | "AUTO_DRAFT_APPROVED"
-  createdByUserId   String?
-  supersededAt      DateTime?
+  id                   String    @id @default(uuid())
+  sessionId            String
+  providerId           String
+  parentUserId         String
+  totalCostCents       Int
+  costSheetFileUrl     String?
+  costSheetFileName    String?
+  notes                String?
+  source               String    @default("PROVIDER") // "PROVIDER" | "ADMIN_OVERRIDE" | "AUTO_DRAFT_APPROVED"
+  createdByUserId      String?
+  supersededAt         DateTime?
   // Phase 2 auto-draft additions:
   // - parentAcknowledgedAt: stamped when parent clicks "Acknowledge" on
   //   the cost-sheet card (Stage 5). Soft signal only - call proceeds
@@ -1798,7 +1867,7 @@ model ProviderQuote {
   // fees scale by this multiplier so a 2-vial quote also doubles GoStork's
   // flat fee. PERCENTAGE fees ignore it - they already scale with the total.
   quantity             Int       @default(1)
-  createdAt         DateTime  @default(now())
+  createdAt            DateTime  @default(now())
 
   session       AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   provider      Provider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
@@ -1857,45 +1926,45 @@ model InvoiceReminder {
 // account. Stripe then auto-pays out from the Connect account to the
 // provider's bank per their payout schedule.
 model ProviderBankAccount {
-  id                          String    @id @default(uuid())
-  providerId                  String    @unique
+  id                         String    @id @default(uuid())
+  providerId                 String    @unique
   // "STRIPE_CONNECT_EXPRESS" | "STRIPE_CONNECT_CUSTOM" | null (not yet picked)
-  payoutMethod                String?
+  payoutMethod               String?
   // Stripe Connect account ID (acct_...). Same column for both Express and
   // Custom - the Stripe account itself doesn't differ, only the controller
   // config we passed at creation time.
-  stripeConnectAccountId      String?   @unique
+  stripeConnectAccountId     String?   @unique
   // Mirrored from Stripe's accounts.retrieve response so the UI can render
   // status without an extra Stripe round-trip per page load:
   //   payoutsEnabled = capabilities.transfers.status === "active"
   //   chargesEnabled = charges_enabled (informational only - we don't
   //     accept charges on the connected account, but Stripe surfaces it)
-  payoutsEnabled              Boolean   @default(false)
-  chargesEnabled              Boolean   @default(false)
-  detailsSubmitted            Boolean   @default(false)
+  payoutsEnabled             Boolean   @default(false)
+  chargesEnabled             Boolean   @default(false)
+  detailsSubmitted           Boolean   @default(false)
   // requirements.currently_due[] - list of field IDs Stripe still needs from
   // the account (e.g. "individual.dob.day", "external_account",
   // "individual.verification.document"). For Custom path we render these
   // as inline fields in the GoStork form; for Express we just deep-link
   // back into Stripe-hosted onboarding.
-  requirementsCurrentlyDue    Json      @default("[]")
+  requirementsCurrentlyDue   Json      @default("[]")
   // requirements.eventually_due[] - fields not yet blocking but Stripe will
   // ask for them before a future deadline.
-  requirementsEventuallyDue   Json      @default("[]")
+  requirementsEventuallyDue  Json      @default("[]")
   // requirements.past_due[] - fields blocking AND past the deadline; payouts
   // get paused until these are submitted.
-  requirementsPastDue         Json      @default("[]")
+  requirementsPastDue        Json      @default("[]")
   // requirements.disabled_reason - non-null when the account is restricted.
-  requirementsDisabledReason  String?
+  requirementsDisabledReason String?
   // Snapshot of the linked bank for display ("Chase **** 1234"). Pulled
   // from external_accounts on account.updated. Never the source of truth.
-  bankName                    String?
-  accountLast4                String?
-  accountType                 String?   // "checking" | "savings"
-  onboardingStartedAt         DateTime?
-  onboardingCompletedAt       DateTime? // first time payoutsEnabled flipped to true
-  createdAt                   DateTime  @default(now())
-  updatedAt                   DateTime  @updatedAt
+  bankName                   String?
+  accountLast4               String?
+  accountType                String? // "checking" | "savings"
+  onboardingStartedAt        DateTime?
+  onboardingCompletedAt      DateTime? // first time payoutsEnabled flipped to true
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
 
   provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 }

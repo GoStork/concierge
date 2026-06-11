@@ -39,6 +39,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.providerMemberLocation;
   }
 
+  get providerReview() {
+    return prisma.providerReview;
+  }
+
   get eggDonor() {
     return prisma.eggDonor;
   }

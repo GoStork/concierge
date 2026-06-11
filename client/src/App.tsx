@@ -41,6 +41,7 @@ import EnrichmentReportPage from "@/pages/enrichment-report-page";
 import VideoRoomPage from "@/pages/video-room-page";
 import RecordingPage from "@/pages/recording-page";
 import ProviderProfilePage from "@/pages/provider-profile-page";
+import DoctorProfilePage from "@/pages/doctor-profile-page";
 import ParentNewAppointmentPage from "@/pages/parent-new-appointment-page";
 import CdcClinicSuccessRatesPage from "@/pages/cdc-clinic-success-rates-page";
 import ForgotPasswordPage from "@/pages/forgot-password-page";
@@ -131,6 +132,7 @@ function AppRoutes() {
         <Route path="/dashboard" element={<ProtectedRoute><DashboardRoute /></ProtectedRoute>} />
         <Route path="/marketplace" element={<ProtectedRoute><MarketplacePage /></ProtectedRoute>} />
         <Route path="/providers/:id" element={<ProtectedRoute><ProviderProfilePage /></ProtectedRoute>} />
+        <Route path="/doctors/:slug" element={<ProtectedRoute><DoctorProfilePage /></ProtectedRoute>} />
         <Route path="/admin/providers/new" element={<ProtectedRoute><AdminProviderAddPage /></ProtectedRoute>} />
         <Route path="/admin/providers/:id" element={<ProtectedRoute><AdminProviderEditPage /></ProtectedRoute>} />
         <Route path="/eggdonor/:providerId/:donorId" element={<ProtectedRoute><ProfileDetailPage /></ProtectedRoute>} />
