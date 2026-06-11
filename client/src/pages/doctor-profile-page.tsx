@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   ArrowLeft, MapPin, Building2, User, Loader2, GraduationCap, Award, Globe,
-  Stethoscope, Heart, Video, BadgeCheck, Star,
+  Stethoscope, Heart, Video, BadgeCheck, Star, ShieldCheck,
 } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
 
@@ -74,6 +74,9 @@ export default function DoctorProfilePage() {
 
   const photo = getPhotoSrc(doctor.photoUrl);
   const affiliations: any[] = doctor.affiliations || [];
+  const acceptedInsurance: string[] = Array.from(
+    new Set(affiliations.flatMap((a) => a.acceptedInsurance || [])),
+  ).sort();
   const reviews: any[] = doctor.reviews || [];
   const hasReviews = (doctor.reviewCount ?? 0) > 0 && reviews.length > 0;
 
@@ -242,6 +245,22 @@ export default function DoctorProfilePage() {
                   <p className="text-sm text-muted-foreground">{doctor.npiNumber}</p>
                 </div>
               )}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Insurances accepted (clinic-level, unioned across affiliations) */}
+      {acceptedInsurance.length > 0 && (
+        <Card className="overflow-hidden" data-testid="section-insurance">
+          <SectionHeader title="In-network insurances" />
+          <div className="p-6">
+            <div className="flex flex-wrap gap-2">
+              {acceptedInsurance.map((ins) => (
+                <Badge key={ins} variant="secondary" className="gap-1">
+                  <ShieldCheck className="w-3 h-3 text-[hsl(var(--brand-success))]" /> {ins}
+                </Badge>
+              ))}
             </div>
           </div>
         </Card>

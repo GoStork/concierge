@@ -703,6 +703,8 @@ export class ProvidersController {
           providerName: p.name,
           logoUrl: p.logoUrl,
           lgbtqCare: p.lgbtqCare,
+          acceptedInsurance: p.acceptedInsurance,
+          offersVideoVisits: p.offersVideoVisits,
           serviceTypes: (p.services || []).map((s: any) => s.providerType?.name).filter(Boolean),
           memberLocations: m.locations.map((ml: any) => ({
             city: ml.location?.city,
