@@ -5,6 +5,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { X, Plus, ShieldCheck, ChevronLeft, Search } from "lucide-react";
 import {
   INSURANCE_CARRIERS, ALL_PLANS, PLAN_SEPARATOR, plansForCarrier, makeInsuranceValue,
@@ -58,6 +59,7 @@ function CarrierLogo({ carrier, size = 32 }: { carrier: InsuranceCarrier; size?:
 export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...rest }: InsurancePickerProps) {
   const [carrier, setCarrier] = useState<string>("");
   const [plan, setPlan] = useState<string>(ALL_PLANS);
+  const [checked, setChecked] = useState<string[]>([]);
   const [search, setSearch] = useState("");
 
   const carrierObj = INSURANCE_CARRIERS.find((c) => c.carrier === carrier);
@@ -67,17 +69,42 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
     setCarrier(c);
     setPlan(ALL_PLANS);
     setSearch("");
+    // Pre-check the plans already accepted for this carrier (edit-in-place).
+    setChecked(
+      value
+        .filter((v) => parseInsuranceValue(v).carrier === c)
+        .map((v) => parseInsuranceValue(v).plan ?? ALL_PLANS),
+    );
   }
-  function add() {
+
+  function toggleChecked(p: string) {
+    setChecked((prev) => {
+      if (p === ALL_PLANS) return prev.includes(ALL_PLANS) ? [] : [ALL_PLANS];
+      return prev.includes(p)
+        ? prev.filter((x) => x !== p)
+        : [...prev.filter((x) => x !== ALL_PLANS), p];
+    });
+  }
+
+  // multi: replace this carrier's entries with all currently-checked plans.
+  function addSelected() {
     if (!carrier) return;
-    const v = makeInsuranceValue(carrier, plan);
-    if (mode === "single") {
-      onChange([v]);
-    } else if (!value.includes(v)) {
-      onChange([...value, v]);
-    }
-    setPlan(ALL_PLANS); // keep carrier so several plans can be added quickly
+    const newValues = checked.includes(ALL_PLANS)
+      ? [carrier]
+      : checked.map((p) => makeInsuranceValue(carrier, p));
+    const others = value.filter((v) => parseInsuranceValue(v).carrier !== carrier);
+    onChange([...others, ...newValues]);
+    setCarrier("");
+    setChecked([]);
   }
+
+  // single (parent): one carrier + plan.
+  function setSingle() {
+    if (!carrier) return;
+    onChange([makeInsuranceValue(carrier, plan)]);
+    setCarrier("");
+  }
+
   function remove(v: string) {
     onChange(value.filter((x) => x !== v));
   }
@@ -141,11 +168,11 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
           </div>
         </>
       ) : (
-        /* Carrier chosen - pick the plan */
-        <div className="flex flex-wrap items-end gap-2">
+        /* Carrier chosen */
+        <div className="space-y-2">
           <button
             type="button"
-            onClick={() => setCarrier("")}
+            onClick={() => { setCarrier(""); setChecked([]); }}
             disabled={disabled}
             className="flex items-center gap-2 border border-border/50 rounded-[var(--radius)] px-2.5 py-1.5 hover:bg-secondary/30 transition-colors"
             data-testid="insurance-change-carrier"
@@ -153,22 +180,61 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
             <ChevronLeft className="w-3.5 h-3.5 text-muted-foreground" />
             {carrierObj && <CarrierLogo carrier={carrierObj} size={24} />}
             <span className="text-sm">{carrier}</span>
+            <span className="text-xs text-muted-foreground">· change</span>
           </button>
-          {plans.length > 0 && (
-            <div className="space-y-1 flex-1 min-w-[160px]">
-              <label className="text-xs text-muted-foreground">Plan</label>
-              <Select value={plan} onValueChange={setPlan} disabled={disabled}>
-                <SelectTrigger className="h-9" data-testid="select-insurance-plan"><SelectValue placeholder={ALL_PLANS} /></SelectTrigger>
-                <SelectContent className="max-h-72">
-                  <SelectItem value={ALL_PLANS}>{ALL_PLANS}</SelectItem>
-                  {plans.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                </SelectContent>
-              </Select>
+
+          {plans.length === 0 ? (
+            <Button
+              type="button" size="sm" className="h-9 gap-1.5" disabled={disabled} data-testid="button-insurance-add"
+              onClick={() => {
+                const others = value.filter((v) => parseInsuranceValue(v).carrier !== carrier);
+                onChange(mode === "single" ? [carrier] : [...others, carrier]);
+                setCarrier(""); setChecked([]);
+              }}
+            >
+              <Plus className="w-3.5 h-3.5" /> {mode === "single" ? "Set" : "Add"}
+            </Button>
+          ) : mode === "single" ? (
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="space-y-1 flex-1 min-w-[160px]">
+                <label className="text-xs text-muted-foreground">Plan</label>
+                <Select value={plan} onValueChange={setPlan} disabled={disabled}>
+                  <SelectTrigger className="h-9" data-testid="select-insurance-plan"><SelectValue placeholder={ALL_PLANS} /></SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    <SelectItem value={ALL_PLANS}>{ALL_PLANS}</SelectItem>
+                    {plans.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="button" size="sm" className="h-9 gap-1.5" onClick={setSingle} disabled={disabled} data-testid="button-insurance-add">
+                <Plus className="w-3.5 h-3.5" /> Set
+              </Button>
             </div>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground">Select the plans you accept:</p>
+              <div className="max-h-52 overflow-y-auto rounded-[var(--radius)] border border-border/40 p-2.5 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <Checkbox checked={checked.includes(ALL_PLANS)} onCheckedChange={() => toggleChecked(ALL_PLANS)} disabled={disabled} data-testid="checkbox-plan-all" />
+                  <span className="font-ui">All plans</span>
+                </label>
+                {plans.map((p) => (
+                  <label key={p} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <Checkbox
+                      checked={checked.includes(p)}
+                      onCheckedChange={() => toggleChecked(p)}
+                      disabled={disabled || checked.includes(ALL_PLANS)}
+                      data-testid={`checkbox-plan-${p}`}
+                    />
+                    <span className={checked.includes(ALL_PLANS) ? "text-muted-foreground" : ""}>{p}</span>
+                  </label>
+                ))}
+              </div>
+              <Button type="button" size="sm" className="h-9 gap-1.5" onClick={addSelected} disabled={disabled} data-testid="button-insurance-add">
+                <Plus className="w-3.5 h-3.5" /> Add{checked.length > 0 ? ` (${checked.includes(ALL_PLANS) ? "all plans" : checked.length})` : ""}
+              </Button>
+            </>
           )}
-          <Button type="button" variant="default" size="sm" className="h-9 gap-1.5" onClick={add} disabled={disabled} data-testid="button-insurance-add">
-            <Plus className="w-3.5 h-3.5" /> {mode === "single" ? "Set" : "Add"}
-          </Button>
         </div>
       )}
 
