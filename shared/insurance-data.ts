@@ -72,7 +72,12 @@ export function popularCarriers(): InsuranceCarrier[] {
 }
 
 export function logoUrl(domain?: string): string | null {
-  return domain ? `https://logo.clearbit.com/${domain}` : null;
+  // Google's favicon service reliably returns each carrier's real brand mark as
+  // a PNG (no API key, unlike Clearbit which is dead and logo.dev which needs a
+  // token). The picker falls back to an initials tile only if this errors.
+  return domain
+    ? `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${domain}&size=128`
+    : null;
 }
 
 export function carrierNames(): string[] {
