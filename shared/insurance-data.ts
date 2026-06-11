@@ -17,6 +17,10 @@ export interface InsuranceCarrier {
   carrier: string;
   /** Fertility benefit managers are flagged so the UI can group them. */
   fertilityBenefit?: boolean;
+  /** Shown in the "Popular carriers" logo grid. */
+  popular?: boolean;
+  /** Domain used to fetch the carrier logo (Clearbit), with an initials fallback. */
+  domain?: string;
   plans: string[];
 }
 
@@ -25,43 +29,51 @@ export const PLAN_SEPARATOR = " - ";
 
 export const INSURANCE_CARRIERS: InsuranceCarrier[] = [
   // Major medical carriers
-  { carrier: "Aetna", plans: ["PPO", "Open Choice PPO", "Choice POS II", "Aetna Select", "Managed Choice POS", "Elect Choice EPO", "Open Access Elect Choice EPO", "HMO", "Premier"] },
-  { carrier: "Anthem Blue Cross Blue Shield", plans: ["PPO", "EPO", "HMO", "Blue Access", "Blue Priority", "Pathway"] },
-  { carrier: "Blue Cross Blue Shield", plans: ["PPO", "EPO", "HMO", "POS", "BlueCard PPO"] },
-  { carrier: "Empire Blue Cross Blue Shield", plans: ["PPO", "EPO", "HMO", "Pathway"] },
-  { carrier: "Horizon Blue Cross Blue Shield", plans: ["PPO", "EPO", "HMO", "OMNIA"] },
-  { carrier: "Cigna", plans: ["Open Access Plus", "PPO", "EPO", "HMO", "LocalPlus", "Cigna Connect"] },
-  { carrier: "UnitedHealthcare", plans: ["Choice Plus", "Options PPO", "Navigate", "Select Plus", "Charter", "Core"] },
-  { carrier: "UnitedHealthcare Oxford", plans: ["Freedom", "Liberty", "Metro", "Garden State"] },
-  { carrier: "EmblemHealth", plans: ["PPO", "EPO", "HMO", "GHI", "HIP"] },
-  { carrier: "Kaiser Permanente", plans: ["HMO", "PPO", "Added Choice"] },
-  { carrier: "Humana", plans: ["PPO", "HMO", "POS", "ChoiceCare"] },
-  { carrier: "Health Net", plans: ["PPO", "HMO", "EPO"] },
-  { carrier: "Oscar Health", plans: ["PPO", "EPO"] },
-  { carrier: "Independence Blue Cross", plans: ["PPO", "EPO", "HMO", "Keystone"] },
-  { carrier: "Highmark Blue Cross Blue Shield", plans: ["PPO", "EPO", "HMO"] },
-  { carrier: "Premera Blue Cross", plans: ["PPO", "HMO"] },
-  { carrier: "Florida Blue", plans: ["PPO", "HMO", "BlueOptions"] },
-  { carrier: "GEHA", plans: ["Elevate", "Elevate Plus", "Standard", "High"] },
-  { carrier: "MagnaCare", plans: ["PPO"] },
-  { carrier: "MultiPlan / PHCS", plans: ["PHCS PPO", "PPO"] },
-  { carrier: "Tricare", plans: ["Prime", "Select"] },
-  { carrier: "Medicare", plans: ["Original Medicare", "Medicare Advantage"] },
-  { carrier: "Medicaid", plans: ["Managed Care"] },
-  { carrier: "Fidelis Care", plans: ["Essential Plan", "Medicaid Managed Care", "Metal-Level Plans"] },
-  { carrier: "Healthfirst", plans: ["PPO", "HMO", "Leaf Plans"] },
-  { carrier: "MetroPlus Health", plans: ["HMO", "Essential Plan"] },
+  { carrier: "Aetna", popular: true, domain: "aetna.com", plans: ["PPO", "Open Choice PPO", "Choice POS II", "Aetna Select", "Managed Choice POS", "Elect Choice EPO", "Open Access Elect Choice EPO", "HMO", "Premier"] },
+  { carrier: "UnitedHealthcare", popular: true, domain: "uhc.com", plans: ["Choice Plus", "Options PPO", "Navigate", "Select Plus", "Charter", "Core"] },
+  { carrier: "Cigna", popular: true, domain: "cigna.com", plans: ["Open Access Plus", "PPO", "EPO", "HMO", "LocalPlus", "Cigna Connect"] },
+  { carrier: "Blue Cross Blue Shield", popular: true, domain: "bcbs.com", plans: ["PPO", "EPO", "HMO", "POS", "BlueCard PPO"] },
+  { carrier: "Anthem Blue Cross Blue Shield", popular: true, domain: "anthem.com", plans: ["PPO", "EPO", "HMO", "Blue Access", "Blue Priority", "Pathway"] },
+  { carrier: "Empire Blue Cross Blue Shield", domain: "empireblue.com", plans: ["PPO", "EPO", "HMO", "Pathway"] },
+  { carrier: "Horizon Blue Cross Blue Shield", domain: "horizonblue.com", plans: ["PPO", "EPO", "HMO", "OMNIA"] },
+  { carrier: "Kaiser Permanente", popular: true, domain: "kp.org", plans: ["HMO", "PPO", "Added Choice"] },
+  { carrier: "EmblemHealth", popular: true, domain: "emblemhealth.com", plans: ["PPO", "EPO", "HMO", "GHI", "HIP"] },
+  { carrier: "UnitedHealthcare Oxford", domain: "oxhp.com", plans: ["Freedom", "Liberty", "Metro", "Garden State"] },
+  { carrier: "Humana", domain: "humana.com", plans: ["PPO", "HMO", "POS", "ChoiceCare"] },
+  { carrier: "Health Net", domain: "healthnet.com", plans: ["PPO", "HMO", "EPO"] },
+  { carrier: "Oscar Health", domain: "hioscar.com", plans: ["PPO", "EPO"] },
+  { carrier: "Independence Blue Cross", domain: "ibx.com", plans: ["PPO", "EPO", "HMO", "Keystone"] },
+  { carrier: "Highmark Blue Cross Blue Shield", domain: "highmark.com", plans: ["PPO", "EPO", "HMO"] },
+  { carrier: "Premera Blue Cross", domain: "premera.com", plans: ["PPO", "HMO"] },
+  { carrier: "Florida Blue", domain: "floridablue.com", plans: ["PPO", "HMO", "BlueOptions"] },
+  { carrier: "GEHA", domain: "geha.com", plans: ["Elevate", "Elevate Plus", "Standard", "High"] },
+  { carrier: "MagnaCare", domain: "magnacare.com", plans: ["PPO"] },
+  { carrier: "MultiPlan / PHCS", domain: "multiplan.com", plans: ["PHCS PPO", "PPO"] },
+  { carrier: "Tricare", domain: "tricare.mil", plans: ["Prime", "Select"] },
+  { carrier: "Medicare", domain: "medicare.gov", plans: ["Original Medicare", "Medicare Advantage"] },
+  { carrier: "Medicaid", domain: "medicaid.gov", plans: ["Managed Care"] },
+  { carrier: "Fidelis Care", domain: "fideliscare.org", plans: ["Essential Plan", "Medicaid Managed Care", "Metal-Level Plans"] },
+  { carrier: "Healthfirst", domain: "healthfirst.org", plans: ["PPO", "HMO", "Leaf Plans"] },
+  { carrier: "MetroPlus Health", domain: "metroplus.org", plans: ["HMO", "Essential Plan"] },
   // Fertility benefit managers (often the actual fertility coverage)
-  { carrier: "Progyny", fertilityBenefit: true, plans: ["Smart Cycle"] },
-  { carrier: "Carrot Fertility", fertilityBenefit: true, plans: ["Carrot Plan"] },
-  { carrier: "Maven", fertilityBenefit: true, plans: ["Maven Wallet"] },
-  { carrier: "WINFertility", fertilityBenefit: true, plans: ["WIN Managed Benefit"] },
-  { carrier: "Kindbody", fertilityBenefit: true, plans: ["Kind Benefit"] },
-  { carrier: "Stork Club", fertilityBenefit: true, plans: ["Stork Club Benefit"] },
-  { carrier: "Gaia", fertilityBenefit: true, plans: ["Gaia Plan"] },
+  { carrier: "Progyny", fertilityBenefit: true, popular: true, domain: "progyny.com", plans: ["Smart Cycle"] },
+  { carrier: "Carrot Fertility", fertilityBenefit: true, popular: true, domain: "get-carrot.com", plans: ["Carrot Plan"] },
+  { carrier: "Maven", fertilityBenefit: true, domain: "mavenclinic.com", plans: ["Maven Wallet"] },
+  { carrier: "WINFertility", fertilityBenefit: true, domain: "winfertility.com", plans: ["WIN Managed Benefit"] },
+  { carrier: "Kindbody", fertilityBenefit: true, domain: "kindbody.com", plans: ["Kind Benefit"] },
+  { carrier: "Stork Club", fertilityBenefit: true, domain: "storkclub.com", plans: ["Stork Club Benefit"] },
+  { carrier: "Gaia", fertilityBenefit: true, domain: "gaiafamily.com", plans: ["Gaia Plan"] },
   // Catch-all
   { carrier: "Self-pay / No insurance", plans: [] },
 ];
+
+export function popularCarriers(): InsuranceCarrier[] {
+  return INSURANCE_CARRIERS.filter((c) => c.popular);
+}
+
+export function logoUrl(domain?: string): string | null {
+  return domain ? `https://logo.clearbit.com/${domain}` : null;
+}
 
 export function carrierNames(): string[] {
   return INSURANCE_CARRIERS.map((c) => c.carrier);
