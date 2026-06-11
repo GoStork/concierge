@@ -30,6 +30,7 @@ interface EnrichmentReportData {
     withAbout: number;
     withLogo: number;
     withTeam: number;
+    withLocations: number;
   };
   missingWebsite: {
     id: string;
@@ -514,6 +515,12 @@ export default function EnrichmentReportPage() {
             label="Team Members"
             icon={<Users className="w-4 h-4 text-primary" />}
             count={coverage.withTeam}
+            total={coverage.totalClinics}
+          />
+          <CoverageBar
+            label="Locations"
+            icon={<MapPin className="w-4 h-4 text-primary" />}
+            count={coverage.withLocations}
             total={coverage.totalClinics}
           />
         </div>

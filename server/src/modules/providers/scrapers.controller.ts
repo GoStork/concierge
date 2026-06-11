@@ -765,6 +765,19 @@ export class ScrapersController {
     });
     const withTeam = memberCounts.length;
 
+    // "withLocations" = clinics with at least one enriched satellite (sortOrder > 0).
+    // The CDC sync always creates a sortOrder=0 origin row, so we exclude it - the
+    // interesting metric is whether enrichment found any satellite offices.
+    const enrichedLocationCounts = await this.prisma.providerLocation.groupBy({
+      by: ["providerId"],
+      where: {
+        providerId: { in: ivfClinics.map((c) => c.id) },
+        sortOrder: { gt: 0 },
+      },
+      _count: { id: true },
+    });
+    const withLocations = enrichedLocationCounts.length;
+
     const isInProgress = job.enrichmentStatus === "PROCESSING" || job.enrichmentStatus === "PENDING";
 
     const processedClinics = isInProgress
@@ -845,6 +858,7 @@ export class ScrapersController {
         withAbout,
         withLogo,
         withTeam,
+        withLocations,
       },
       missingWebsite,
       recentResults: recentResults.length > 0 ? recentResults : undefined,
