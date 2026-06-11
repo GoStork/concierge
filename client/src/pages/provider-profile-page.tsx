@@ -479,7 +479,7 @@ export default function ProviderProfilePage() {
                       </div>
                     )}
                     <div className="min-w-0">
-                      <p className="font-ui text-sm text-foreground group-hover:text-primary group-hover:underline">{member.name}</p>
+                      <p className="font-ui text-sm text-foreground group-hover:text-primary transition-colors">{member.name}</p>
                       {member.title && (
                         <p className="text-xs text-primary font-ui">{member.title}</p>
                       )}
@@ -500,13 +500,13 @@ export default function ProviderProfilePage() {
                   <Link
                     key={member.id}
                     to={`/doctors/${member.slug}`}
-                    className="group flex gap-3 -m-1 p-1 rounded-[var(--radius)] hover:bg-secondary/40 transition-colors"
+                    className="group no-underline flex gap-3 p-3 rounded-[var(--radius)] border border-transparent hover:border-border/50 hover:bg-secondary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
                     data-testid={`member-${member.id}`}
                   >
                     {inner}
                   </Link>
                 ) : (
-                  <div key={member.id} className="flex gap-3" data-testid={`member-${member.id}`}>
+                  <div key={member.id} className="flex gap-3 p-3 rounded-[var(--radius)] border border-transparent" data-testid={`member-${member.id}`}>
                     {inner}
                   </div>
                 );
