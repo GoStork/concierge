@@ -233,7 +233,7 @@ export default function CompanyTab() {
       setConsultationIframeEnabled(provider.consultationIframeEnabled || false);
       setAcceptedInsurance(provider.acceptedInsurance || []);
       setLgbtqCare(provider.lgbtqCare || false);
-      setClinicOffersVideo(provider.offersVideoVisits || false);
+      setClinicOffersVideo(provider.offersVideoVisits ?? true);
       setLocations(
         (provider.locations || []).map((l: any) => ({
           id: l.id,

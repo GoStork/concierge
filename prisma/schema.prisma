@@ -21,7 +21,7 @@ model Provider {
   // Doctor/clinic marketplace enrichment (provider self-entry + concepts borrowed from FertilityIQ/ZocDoc)
   acceptedInsurance                     String[]                    @default([]) // provider self-entry; powers the insurance filter
   lgbtqCare                             Boolean                     @default(false)
-  offersVideoVisits                     Boolean                     @default(false)
+  offersVideoVisits                     Boolean                     @default(true)
   // Review aggregates (computed from GoStork verified reviews; never external)
   reviewCount                           Int                         @default(0)
   recommendPct                          Int?
