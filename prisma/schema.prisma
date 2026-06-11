@@ -382,6 +382,14 @@ model ProviderMember {
   education               String[]                 @default([]) // ["Med School - ...","Residency - ...","Fellowship - ..."]
   professionalMemberships String[]                 @default([])
   npiNumber               String?
+  npiTaxonomy             String? // authoritative specialty classification from NPPES, e.g. "Reproductive Endocrinology"
+  credential              String? // MD, DO (from NPPES)
+  licenseState            String? // primary license state (from NPPES)
+  medicalSchool           String? // from state boards / CMS when available
+  graduationYear          Int?
+  // Per-field provenance: { field: "nppes" | "cms" | "abog" | "bio" | "self" }.
+  // Higher-confidence sources never overwrite human (self) entries.
+  fieldSources            Json?
   yearsExperience         Int?
   providerGender          String?
   offersVideoVisits       Boolean                  @default(false)

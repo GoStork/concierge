@@ -116,9 +116,12 @@ export default function DoctorProfilePage() {
         )}
         <div className="min-w-0">
           <h1 className="font-display text-2xl font-heading text-foreground" data-testid="text-doctor-name">
-            {doctor.name}
+            {doctor.name}{doctor.credential ? `, ${doctor.credential}` : ""}
           </h1>
           {doctor.title && <p className="text-sm text-primary font-ui mt-0.5">{doctor.title}</p>}
+          {doctor.npiTaxonomy && (
+            <p className="text-xs text-muted-foreground mt-0.5">{doctor.npiTaxonomy}</p>
+          )}
 
           <div className="flex flex-wrap gap-2 mt-3">
             {doctor.isMedicalDirector && (
@@ -186,6 +189,7 @@ export default function DoctorProfilePage() {
       {(doctor.boardCertifications?.length > 0 ||
         doctor.education?.length > 0 ||
         doctor.professionalMemberships?.length > 0 ||
+        doctor.medicalSchool ||
         doctor.npiNumber ||
         doctor.providerGender ||
         doctor.yearsExperience != null) && (
@@ -227,6 +231,14 @@ export default function DoctorProfilePage() {
               </div>
             )}
             <div className="space-y-3">
+              {doctor.medicalSchool && (
+                <div>
+                  <p className="text-xs font-ui text-foreground">Medical school</p>
+                  <p className="text-sm text-muted-foreground">
+                    {doctor.medicalSchool}{doctor.graduationYear ? ` (${doctor.graduationYear})` : ""}
+                  </p>
+                </div>
+              )}
               {doctor.yearsExperience != null && (
                 <div>
                   <p className="text-xs font-ui text-foreground">Years of experience</p>
