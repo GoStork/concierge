@@ -748,16 +748,18 @@ ${subtypeTrailingNote}`;
 
     // Items branch - normalize to the same shape as parseFile returns.
     const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
-    const items = rawItems.map((item: any) => ({
-      category: String(item.category || "Other"),
-      key: String(item.key || "Unknown"),
-      minValue: item.minValue != null ? Number(item.minValue) : null,
-      maxValue: item.maxValue != null ? Number(item.maxValue) : null,
-      isCustom: Boolean(item.isCustom),
-      isIncluded: item.isIncluded !== false,
-      isTier: item.isTier === true,
-      comment: item.comment ? String(item.comment) : null,
-    }));
+    const items = this.enforceCycleTierGrouping(
+      rawItems.map((item: any) => ({
+        category: String(item.category || "Other"),
+        key: String(item.key || "Unknown"),
+        minValue: item.minValue != null ? Number(item.minValue) : null,
+        maxValue: item.maxValue != null ? Number(item.maxValue) : null,
+        isCustom: Boolean(item.isCustom),
+        isIncluded: item.isIncluded !== false,
+        isTier: item.isTier === true,
+        comment: item.comment ? String(item.comment) : null,
+      })),
+    );
 
     // Classification branch. Three paths depending on provider type:
     //   - IVF: tab + subType are required from the 14-subtype taxonomy.
@@ -1053,19 +1055,73 @@ ${rawTextSnippet ? `\nDocument excerpt (first 1500 chars):\n${rawTextSnippet.sli
       const parsed = JSON.parse(jsonMatch[0]);
       if (!Array.isArray(parsed)) throw new Error("Response is not an array");
 
-      return parsed.map((item: any) => ({
-        category: String(item.category || "Other"),
-        key: String(item.key || "Unknown"),
-        minValue: item.minValue != null ? Number(item.minValue) : null,
-        maxValue: item.maxValue != null ? Number(item.maxValue) : null,
-        isCustom: Boolean(item.isCustom),
-        isIncluded: item.isIncluded !== false,
-        isTier: item.isTier === true,
-        comment: item.comment ? String(item.comment) : null,
-      }));
+      return this.enforceCycleTierGrouping(
+        parsed.map((item: any) => ({
+          category: String(item.category || "Other"),
+          key: String(item.key || "Unknown"),
+          minValue: item.minValue != null ? Number(item.minValue) : null,
+          maxValue: item.maxValue != null ? Number(item.maxValue) : null,
+          isCustom: Boolean(item.isCustom),
+          isIncluded: item.isIncluded !== false,
+          isTier: item.isTier === true,
+          comment: item.comment ? String(item.comment) : null,
+        })),
+      );
     } catch (e) {
       this.logger.error(`Failed to parse AI JSON: ${e}`);
       throw new Error("Failed to parse AI response as JSON");
     }
+  }
+
+  /**
+   * Deterministic guard for mutually-exclusive package tiers.
+   *
+   * A document that prices the same service at several quantities the parent
+   * picks ONE of ("One Cycle" / "Two Cycles" / "Three Cycles" / "Unlimited ...
+   * Until Live Birth") is a PRICING TIER menu, not a list of additive line
+   * items. The AI is instructed to flag these isTier=true (see the TIERED
+   * PACKAGE PRICING prompt rule) but occasionally emits them as plain
+   * included line items - which then DOUBLE-COUNT into one inflated total
+   * (e.g. 6,500 + 10,500 + 13,500 + 20,000 = 50,500 for a sheet whose real
+   * options are 6,500 OR 10,500 OR 13,500 OR 20,000). This normalizes that
+   * structurally: within a category, when 2+ items carry a cycle-count or
+   * unlimited-package qualifier, force them to tiers. It corrects the flag on
+   * data that already exists in the parse - it never fabricates an item.
+   */
+  private enforceCycleTierGrouping<
+    T extends { category: string; key: string; isTier: boolean; isIncluded: boolean },
+  >(items: T[]): T[] {
+    // A key denotes a tier option when it carries a count-of-cycles token
+    // ("One Cycle", "2 Cycles", "Single Cycle") or an unlimited-package token
+    // tied to transfers / cycles / live birth. "IVF Cycle" (no count word)
+    // and plain "Embryo Transfer" do NOT match, so required baseline items
+    // are left alone.
+    const countCycleRe = /\b(single|one|two|three|four|five|six|\d+)\s+cycles?\b/i;
+    const unlimitedRe = /\bunlimited\b[\s\S]*\b(transfer|cycle|package|live\s*birth)/i;
+    const isTierCandidate = (key: string) => countCycleRe.test(key) || unlimitedRe.test(key);
+
+    // Tiers compete within the same service grouping (category), not across
+    // unrelated categories.
+    const byCategory = new Map<string, T[]>();
+    for (const item of items) {
+      if (!isTierCandidate(item.key)) continue;
+      const cat = item.category || "Other";
+      const group = byCategory.get(cat);
+      if (group) group.push(item);
+      else byCategory.set(cat, [item]);
+    }
+
+    for (const group of byCategory.values()) {
+      // A lone "One Cycle" line is a genuine required cost, not a menu. Only
+      // flip to tiers when there are 2+ mutually-exclusive alternatives.
+      if (group.length < 2) continue;
+      for (const item of group) {
+        if (!item.isTier) {
+          item.isTier = true;
+          item.isIncluded = true; // tiers are real prices, never optional add-ons
+        }
+      }
+    }
+    return items;
   }
 }
