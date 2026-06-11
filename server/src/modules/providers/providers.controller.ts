@@ -727,7 +727,9 @@ export class ProvidersController {
         providerId: p.id,
         providerName: p.name,
         logoUrl: p.logoUrl,
-        lgbtqCare: p.lgbtqCare,
+        // LGBTQ+ care is derived from the clinic's matching requirements (accepts
+        // gay couples) - single source of truth, not a separate self-entry field.
+        lgbtqCare: Array.isArray(p.ivfAcceptingPatients) && (p.ivfAcceptingPatients as string[]).includes("gay_couple"),
         acceptedInsurance: p.acceptedInsurance,
         offersVideoVisits: p.offersVideoVisits,
         serviceTypes: (p.services || []).map((s: any) => s.providerType?.name).filter(Boolean),

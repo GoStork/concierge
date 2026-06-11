@@ -393,7 +393,6 @@ export default function AdminProviderEditPage() {
       about: editAbout || null,
       websiteUrl: editWebsite || null,
       acceptedInsurance,
-      lgbtqCare,
       offersVideoVisits: clinicOffersVideo,
       email: editEmail || null,
       phone: editPhone || null,
@@ -835,6 +834,10 @@ export default function AdminProviderEditPage() {
                 <Label>About</Label>
                 <Textarea value={editAbout} onChange={e => setEditAbout(e.target.value)} placeholder="Brief description of the provider..." rows={3} data-testid="input-edit-about" />
               </div>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <Checkbox checked={clinicOffersVideo} onCheckedChange={(v) => setClinicOffersVideo(!!v)} data-testid="checkbox-edit-video" />
+                Offers video visits
+              </label>
               <div className="space-y-2">
                 <Label>Phone</Label>
                 <div className="relative">
@@ -866,16 +869,6 @@ export default function AdminProviderEditPage() {
                 <ShieldCheck className="w-5 h-5 text-primary" /> Accepted Insurance
               </h3>
               <InsurancePicker value={acceptedInsurance} onChange={setAcceptedInsurance} mode="multi" data-testid="picker-edit-insurance" />
-              <div className="flex items-center gap-6 pt-1">
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <Checkbox checked={lgbtqCare} onCheckedChange={(v) => setLgbtqCare(!!v)} data-testid="checkbox-edit-lgbtq" />
-                  LGBTQ+ care
-                </label>
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <Checkbox checked={clinicOffersVideo} onCheckedChange={(v) => setClinicOffersVideo(!!v)} data-testid="checkbox-edit-video" />
-                  Offers video visits
-                </label>
-              </div>
             </Card>
 
             <Card className="p-6 space-y-4">

@@ -369,7 +369,6 @@ export default function CompanyTab() {
         consultationIframeEnabled,
         // Clinic marketplace self-entry
         acceptedInsurance,
-        lgbtqCare,
         offersVideoVisits: clinicOffersVideo,
         // IVF Parents Matching Requirements
         ivfTwinsAllowed,
@@ -591,17 +590,12 @@ export default function CompanyTab() {
             disabled={readOnly}
             data-testid="picker-company-insurance"
           />
-          <div className="flex items-center gap-6 pt-1">
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <Checkbox checked={lgbtqCare} onCheckedChange={(v) => setLgbtqCare(!!v)} disabled={readOnly} data-testid="checkbox-company-lgbtq" />
-              LGBTQ+ care
-            </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <Checkbox checked={clinicOffersVideo} onCheckedChange={(v) => setClinicOffersVideo(!!v)} disabled={readOnly} data-testid="checkbox-company-video" />
-              Offers video visits
-            </label>
-          </div>
         </div>
+
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <Checkbox checked={clinicOffersVideo} onCheckedChange={(v) => setClinicOffersVideo(!!v)} disabled={readOnly} data-testid="checkbox-company-video" />
+          Offers video visits
+        </label>
 
         <div className="space-y-2">
           <Label>Phone</Label>
