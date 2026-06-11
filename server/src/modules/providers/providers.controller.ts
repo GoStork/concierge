@@ -381,6 +381,75 @@ export class ProvidersController {
     return result;
   }
 
+  @Get("marketplace/doctors")
+  @ApiOperation({ summary: "Search doctors (provider members) across approved IVF clinics" })
+  @Header("Cache-Control", "public, max-age=30")
+  async marketplaceDoctors(@Query() query: any) {
+    const memberWhere: any = {
+      isPublicProfile: true,
+      slug: { not: null },
+      provider: {
+        services: { some: { status: "APPROVED", providerType: { name: "IVF Clinic" } } },
+      },
+    };
+
+    if (query.location) {
+      memberWhere.provider.locations = { some: { OR: buildLocationFilter(query.location.trim()) } };
+    }
+
+    if (query.search) {
+      const terms = query.search.trim().split(/[\s\-_]+/).filter(Boolean);
+      const nameWhere =
+        terms.length > 1
+          ? { AND: terms.map((t: string) => ({ name: { contains: t, mode: "insensitive" } })) }
+          : { name: { contains: query.search.trim(), mode: "insensitive" } };
+      memberWhere.OR = [nameWhere, { specialties: { hasSome: [query.search.trim()] } }];
+    }
+
+    const members = await this.prisma.providerMember.findMany({
+      where: memberWhere,
+      take: 600,
+      orderBy: [{ isMedicalDirector: "desc" }, { name: "asc" }],
+      select: {
+        id: true, slug: true, name: true, title: true, photoUrl: true,
+        credential: true, npiTaxonomy: true, specialties: true, personKey: true,
+        provider: {
+          select: {
+            id: true, name: true, logoUrl: true,
+            locations: { orderBy: { sortOrder: "asc" }, take: 1, select: { city: true, state: true } },
+          },
+        },
+      },
+    });
+
+    // One card per human (deduped by personKey), keep the richest row, count clinics.
+    const byPerson = new Map<string, any>();
+    const clinicsByPerson = new Map<string, Set<string>>();
+    const score = (m: any) => (m.photoUrl ? 100 : 0) + (m.specialties?.length || 0) * 10 + (m.credential ? 5 : 0);
+    for (const m of members) {
+      const key = m.personKey || m.id;
+      if (!clinicsByPerson.has(key)) clinicsByPerson.set(key, new Set());
+      clinicsByPerson.get(key)!.add(m.provider.id);
+      const cur = byPerson.get(key);
+      if (!cur || score(m) > score(cur)) byPerson.set(key, m);
+    }
+
+    return [...byPerson.values()].slice(0, 250).map((m) => ({
+      slug: m.slug,
+      name: m.name,
+      title: m.title,
+      photoUrl: m.photoUrl,
+      credential: m.credential,
+      npiTaxonomy: m.npiTaxonomy,
+      specialties: m.specialties,
+      providerId: m.provider.id,
+      providerName: m.provider.name,
+      providerLogoUrl: m.provider.logoUrl,
+      location: m.provider.locations[0] || null,
+      clinicCount: clinicsByPerson.get(m.personKey || m.id)?.size || 1,
+    }));
+  }
+
   @Get()
   @ApiOperation({ summary: "List all providers with services and locations" })
   @ApiResponse({ status: 200, description: "List of providers", type: [ProviderResponseDto] })

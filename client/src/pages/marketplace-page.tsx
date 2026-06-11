@@ -312,6 +312,86 @@ function IvfClinicGrid({ providers, eggSource, ageGroup, isNewPatient, sortBy, o
   );
 }
 
+function DoctorCard({ doctor }: { doctor: any }) {
+  const navigate = useNavigate();
+  const photo = getPhotoSrc(doctor.photoUrl);
+  const clinicLogo = getPhotoSrc(doctor.providerLogoUrl);
+  const initials = (doctor.name || "").split(" ").map((p: string) => p[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
+  return (
+    <Card
+      className="group hover:shadow-xl transition-all duration-300 border-border/50 flex flex-col cursor-pointer hover:border-primary/30"
+      onClick={() => navigate(`/doctors/${doctor.slug}`)}
+      data-testid={`card-doctor-${doctor.slug}`}
+    >
+      <CardHeader className="pb-2">
+        <div className="flex items-start gap-3">
+          {photo ? (
+            <img src={photo} alt="" className="w-12 h-12 rounded-full object-cover border border-border/30 shrink-0" />
+          ) : (
+            <div className="w-12 h-12 rounded-full bg-secondary/40 flex items-center justify-center border border-border/30 shrink-0 text-sm font-heading text-muted-foreground">
+              {initials || <User className="w-5 h-5" />}
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <CardTitle className="text-base font-display font-heading text-foreground leading-heading">
+              {doctor.name}{doctor.credential ? `, ${doctor.credential}` : ""}
+            </CardTitle>
+            {(doctor.title || doctor.npiTaxonomy) && (
+              <p className="text-xs text-primary truncate">{doctor.title || doctor.npiTaxonomy}</p>
+            )}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="flex-1 pt-0">
+        {doctor.specialties?.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {doctor.specialties.slice(0, 3).map((s: string) => (
+              <Badge key={s} variant="secondary" className="text-xs">{s}</Badge>
+            ))}
+          </div>
+        )}
+      </CardContent>
+      <CardFooter className="pt-3 border-t border-border/50 flex items-center gap-2">
+        {clinicLogo && (
+          <img src={clinicLogo} alt="" className="w-6 h-6 rounded object-contain border border-border/30 bg-background p-0.5 shrink-0" />
+        )}
+        <div className="min-w-0">
+          <p className="text-xs text-foreground truncate">{doctor.providerName}</p>
+          <p className="text-[11px] text-muted-foreground truncate flex items-center gap-1">
+            {doctor.location && (
+              <><MapPin className="w-3 h-3 shrink-0" />{doctor.location.city}{doctor.location.state ? `, ${doctor.location.state}` : ""}</>
+            )}
+            {doctor.clinicCount > 1 ? ` · ${doctor.clinicCount} clinics` : ""}
+          </p>
+        </div>
+      </CardFooter>
+    </Card>
+  );
+}
+
+function DoctorGrid({ doctors, loading }: { doctors: any[] | undefined; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="py-16 text-center text-muted-foreground">
+        <Loader2 className="w-6 h-6 animate-spin mx-auto" />
+      </div>
+    );
+  }
+  if (!doctors || doctors.length === 0) {
+    return (
+      <div className="py-16 text-center text-muted-foreground" data-testid="text-no-doctors">
+        <p className="text-lg font-ui">No doctors found</p>
+        <p className="text-sm">Try a different name, specialty, or location.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-[1200px] mx-auto px-6">
+      {doctors.map((d) => <DoctorCard key={d.slug} doctor={d} />)}
+    </div>
+  );
+}
+
 function ProviderGrid({ providers, searchQuery, providerTypeName, onSchedule }: {
   providers: ProviderWithRelations[] | undefined;
   searchQuery: string;
@@ -1472,6 +1552,26 @@ export default function MarketplacePage() {
     enabled: isProviderTab,
   });
 
+  // Clinics | Doctors view toggle (IVF tab only), stored in the URL.
+  const clinicView: "clinics" | "doctors" = isIvfTab && searchParams.get("clinicView") === "doctors" ? "doctors" : "clinics";
+  const setClinicView = (v: "clinics" | "doctors") => {
+    const next = new URLSearchParams(searchParams);
+    if (v === "doctors") next.set("clinicView", "doctors"); else next.delete("clinicView");
+    setSearchParams(next, { replace: true });
+  };
+  const doctorQueryParams = new URLSearchParams(
+    Object.entries({ search: ivfSearch, location: ivfLocation }).filter(([, v]) => v) as [string, string][],
+  ).toString();
+  const { data: doctors, isLoading: doctorsLoading } = useQuery<any[]>({
+    queryKey: ["/api/providers/marketplace/doctors", ivfSearch, ivfLocation],
+    queryFn: async () => {
+      const res = await fetch(`/api/providers/marketplace/doctors${doctorQueryParams ? `?${doctorQueryParams}` : ""}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch doctors");
+      return res.json();
+    },
+    enabled: isIvfTab && clinicView === "doctors",
+  });
+
   const ivfClinicCount = useMemo(() => {
     if (!providers || !isIvfTab) return 0;
     return providers.filter((p) =>
@@ -1754,6 +1854,23 @@ export default function MarketplacePage() {
           </div>
         ) : (
           <>
+            {isIvfTab && !showFavoritesOnly && (
+              <div className="flex justify-center mb-5">
+                <div className="inline-flex rounded-full border border-border/60 p-0.5 bg-background" data-testid="toggle-clinic-view">
+                  {(["clinics", "doctors"] as const).map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setClinicView(v)}
+                      className={`px-4 py-1.5 text-sm rounded-full transition-colors capitalize ${clinicView === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                      data-testid={`toggle-view-${v}`}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {isIvfTab && (
               showFavoritesOnly ? (
                 <div className="flex items-center justify-center py-20 px-6 text-center" data-testid="saved-empty-clinics">
@@ -1763,6 +1880,8 @@ export default function MarketplacePage() {
                     <p className="font-ui text-sm text-muted-foreground mt-1">Saving clinics is coming soon. For now, browse them on the Discover tab.</p>
                   </div>
                 </div>
+              ) : clinicView === "doctors" ? (
+                <DoctorGrid doctors={doctors} loading={doctorsLoading} />
               ) : (
                 <IvfClinicGrid
                   providers={providers}
