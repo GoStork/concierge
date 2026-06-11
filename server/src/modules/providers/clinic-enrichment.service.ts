@@ -1212,6 +1212,7 @@ export class ClinicEnrichmentService {
     }
 
     if (scopedTeam.length > 0) {
+      const snapshot = await this.snapshotEnrichedTeam(providerId);
       await this.prisma.providerMemberLocation.deleteMany({
         where: { member: { providerId } },
       });
@@ -1233,9 +1234,91 @@ export class ClinicEnrichmentService {
         });
       }
       console.log(`[clinic-enrichment] reSync: Refreshed ${scopedTeam.length} team members for "${provider.name}"`);
+      await this.enrichTeamDoctorData(providerId, snapshot);
     }
 
     return true;
+  }
+
+  // Snapshot the doctor-profile fields (NPPES/ABOG/bio/self-sourced) of a
+  // clinic's current members, keyed by personKey, BEFORE the delete+recreate
+  // team refresh. Lets enrichTeamDoctorData carry the data forward so a routine
+  // re-enrichment never wipes resolved doctor data.
+  private async snapshotEnrichedTeam(providerId: string): Promise<Map<string, Record<string, any>>> {
+    const prev = await this.prisma.providerMember.findMany({
+      where: { providerId },
+      select: {
+        personKey: true,
+        npiNumber: true, npiTaxonomy: true, credential: true, licenseState: true,
+        medicalSchool: true, graduationYear: true, providerGender: true, yearsExperience: true,
+        specialties: true, languagesSpoken: true, boardCertifications: true,
+        education: true, professionalMemberships: true, fieldSources: true,
+      },
+    });
+    const snap = new Map<string, Record<string, any>>();
+    for (const m of prev) {
+      if (!m.personKey) continue;
+      // Keep the row that actually carries resolved data (npi or specialties).
+      const hasData = m.npiNumber || (m.specialties && m.specialties.length > 0);
+      if (!hasData && snap.has(m.personKey)) continue;
+      const { personKey, ...data } = m;
+      snap.set(m.personKey, data);
+    }
+    return snap;
+  }
+
+  // After a team refresh, restore carried-forward doctor data for known people
+  // and resolve fresh authoritative data (NPPES + ABOG + bio) for new doctors.
+  private async enrichTeamDoctorData(providerId: string, snapshot: Map<string, Record<string, any>>): Promise<void> {
+    const loc = await this.prisma.providerLocation.findFirst({
+      where: { providerId },
+      orderBy: { sortOrder: "asc" },
+      select: { city: true, state: true },
+    });
+    const members = await this.prisma.providerMember.findMany({
+      where: { providerId },
+      select: { id: true, name: true, bio: true, personKey: true, fieldSources: true },
+    });
+
+    // Pass 1: carry forward prior enrichment for known people (cheap, no lookups).
+    const newDoctors: typeof members = [];
+    for (const m of members) {
+      const carried = m.personKey ? snapshot.get(m.personKey) : undefined;
+      if (carried && (carried.npiNumber || (carried.specialties?.length ?? 0) > 0)) {
+        const { fieldSources, ...rest } = carried;
+        await this.prisma.providerMember.updateMany({
+          where: { id: m.id },
+          data: { ...rest, fieldSources: fieldSources ?? undefined },
+        });
+      } else {
+        newDoctors.push(m);
+      }
+    }
+
+    // Pass 2: resolve authoritative data for new doctors (NPPES + ABOG + bio),
+    // bounded-concurrent so a large team doesn't serialize into many slow calls.
+    const CONCURRENCY = 4;
+    for (let i = 0; i < newDoctors.length; i += CONCURRENCY) {
+      await Promise.all(
+        newDoctors.slice(i, i + CONCURRENCY).map(async (m) => {
+          try {
+            const { data } = await buildDoctorEnrichment({
+              name: m.name,
+              bio: m.bio,
+              city: loc?.city ?? null,
+              state: loc?.state ?? null,
+              existingSources: (m.fieldSources as any) || null,
+              genAI,
+            });
+            if (Object.keys(data).length > 0) {
+              await this.prisma.providerMember.updateMany({ where: { id: m.id }, data });
+            }
+          } catch (err: any) {
+            console.log(`[clinic-enrichment] doctor-data enrichment failed for "${m.name}": ${err?.message}`);
+          }
+        }),
+      );
+    }
   }
 
   private async enrichWithRetry(providerId: string, providerName: string, maxRetries = 3): Promise<boolean | null> {
