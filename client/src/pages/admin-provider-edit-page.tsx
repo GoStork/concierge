@@ -475,6 +475,24 @@ export default function AdminProviderEditPage() {
       await Promise.all([...locPromises, ...memberPromises]);
 
       await queryClient.refetchQueries({ queryKey: ["/api/providers", id] });
+      // The pooled read can briefly lag behind the write, which would otherwise
+      // revert just-saved self-entry fields when the form re-initializes below.
+      // Keep the values we just saved (clinic scalars + existing members' fields).
+      const localMemberById = new Map(editTeamMembers.filter((m: any) => m.id).map((m: any) => [m.id, m]));
+      queryClient.setQueryData(["/api/providers", id], (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          acceptedInsurance,
+          offersVideoVisits: clinicOffersVideo,
+          members: (old.members || []).map((m: any) => {
+            const local = localMemberById.get(m.id) as any;
+            return local
+              ? { ...m, specialties: local.specialties || [], languagesSpoken: local.languagesSpoken || [], acceptingNewPatients: local.acceptingNewPatients ?? true, offersVideoVisits: local.offersVideoVisits ?? false }
+              : m;
+          }),
+        };
+      });
       queryClient.invalidateQueries({ queryKey: [api.providers.list.path] });
       setInitialized(false);
       if (errors.length > 0) {
