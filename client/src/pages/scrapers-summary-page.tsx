@@ -362,10 +362,16 @@ function CdcEnrichmentCell({ job, onTrigger, onRestart, onCancel, compact }: { j
       : 0;
     if (compact) {
       return (
-        <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => navigate(`/admin/scrapers/cdc-sync/${job.id}/enrichment-report`)}
+          className="flex items-center gap-1 cursor-pointer hover:underline"
+          data-testid={`link-live-report-compact-${job.id}`}
+        >
           <Loader2 className="w-3 h-3 animate-spin text-primary" />
           <span className="text-[11px] text-primary font-ui">{pct}%</span>
-        </div>
+          <span className="text-[11px] text-primary font-ui">→</span>
+        </button>
       );
     }
     return (
