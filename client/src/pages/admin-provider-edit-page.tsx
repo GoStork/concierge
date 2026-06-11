@@ -15,7 +15,7 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { InsurancePicker } from "@/components/ui/insurance-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Building2, Loader2, Pencil, Globe, Phone, Calendar, Sparkles, MapPin, Check, X, Upload, User, Plus, GripVertical, Eye, Palette, DollarSign } from "lucide-react";
+import { ArrowLeft, Building2, Loader2, Pencil, Globe, Phone, Calendar, Sparkles, MapPin, Check, X, Upload, User, Plus, GripVertical, Eye, Palette, DollarSign, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import LocationAutocomplete from "@/components/location-autocomplete";
 import { ProviderAutoFeaturesCard } from "@/components/provider-auto-features-card";
@@ -836,20 +836,6 @@ export default function AdminProviderEditPage() {
                 <Textarea value={editAbout} onChange={e => setEditAbout(e.target.value)} placeholder="Brief description of the provider..." rows={3} data-testid="input-edit-about" />
               </div>
               <div className="space-y-2">
-                <Label>Accepted insurance</Label>
-                <InsurancePicker value={acceptedInsurance} onChange={setAcceptedInsurance} mode="multi" data-testid="picker-edit-insurance" />
-                <div className="flex items-center gap-6 pt-1">
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <Checkbox checked={lgbtqCare} onCheckedChange={(v) => setLgbtqCare(!!v)} data-testid="checkbox-edit-lgbtq" />
-                    LGBTQ+ care
-                  </label>
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <Checkbox checked={clinicOffersVideo} onCheckedChange={(v) => setClinicOffersVideo(!!v)} data-testid="checkbox-edit-video" />
-                    Offers video visits
-                  </label>
-                </div>
-              </div>
-              <div className="space-y-2">
                 <Label>Phone</Label>
                 <div className="relative">
                   <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -872,6 +858,23 @@ export default function AdminProviderEditPage() {
                     data-testid="input-edit-year"
                   />
                 </div>
+              </div>
+            </Card>
+
+            <Card className="p-6 space-y-4">
+              <h3 className="text-lg font-heading flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-primary" /> Accepted Insurance
+              </h3>
+              <InsurancePicker value={acceptedInsurance} onChange={setAcceptedInsurance} mode="multi" data-testid="picker-edit-insurance" />
+              <div className="flex items-center gap-6 pt-1">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <Checkbox checked={lgbtqCare} onCheckedChange={(v) => setLgbtqCare(!!v)} data-testid="checkbox-edit-lgbtq" />
+                  LGBTQ+ care
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <Checkbox checked={clinicOffersVideo} onCheckedChange={(v) => setClinicOffersVideo(!!v)} data-testid="checkbox-edit-video" />
+                  Offers video visits
+                </label>
               </div>
             </Card>
 
