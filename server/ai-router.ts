@@ -2277,6 +2277,31 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       if (profile?.surrogateMedPrefs) surrogatePrefs.push(`other: ${profile.surrogateMedPrefs}`);
       if (surrogatePrefs.length > 0) parts.push(`Saved surrogate preferences (do NOT re-ask D1/D2/D3): ${surrogatePrefs.join(", ")}.`);
 
+      // MATCH CHECKLIST (egg donor / sperm donor / surrogate): same principle as
+      // the CLINIC MATCH GATE above - whenever the parent asks for a service
+      // (even "out of nowhere", after a different journey), the AI must collect
+      // that cycle's questions it does not already have answers to BEFORE it
+      // matches. Compute what is still unanswered per cycle from the saved
+      // profile and require it. Each gate is conditional on the parent actually
+      // requesting that service, and the AI may skip an item it already asked
+      // earlier in this same conversation.
+      {
+        const has = (...vals: any[]) => vals.some((v) => v != null && v !== "");
+        if (!has(profile?.donorEyeColor, profile?.donorHairColor, profile?.donorEthnicity, profile?.donorHeight, profile?.donorEducation, profile?.eggDonorAgeRange, profile?.eggDonorEggType, profile?.donorPreferences)) {
+          parts.push(`MATCH CHECKLIST - EGG DONOR (CRITICAL): If the parent asks to find, match, or recommend an egg donor, you have NO saved egg-donor preferences yet. You MUST ask the egg-donor preference questions (STEP 5-DONOR / B1: what matters most - e.g. ethnicity, education, physical traits, age range, and fresh vs frozen eggs) and SAVE the answers BEFORE calling search_egg_donors or showing an egg-donor MATCH_CARD. Skip an item only if it is already saved above or you already asked it earlier in this conversation. Never carry it over or assume it from a prior journey.`);
+        }
+        if (!has(profile?.spermDonorType, profile?.spermDonorVialType, profile?.spermDonorPreferences, profile?.spermDonorEthnicity)) {
+          parts.push(`MATCH CHECKLIST - SPERM DONOR (CRITICAL): If the parent asks to find, match, or recommend a sperm donor, you have NO saved sperm-donor preferences yet. You MUST ask the sperm-donor questions (STEP 5-DONOR / C1-C2: donor type - open / anonymous / exclusive - and what matters most) and SAVE the answers BEFORE calling search_sperm_donors or showing a sperm-donor MATCH_CARD. Skip an item only if it is already saved above or you already asked it earlier in this conversation.`);
+        }
+        const surrMissing: string[] = [];
+        if (profile?.surrogateTwins == null) surrMissing.push("whether they want a surrogate willing to carry twins (D1)");
+        if (!has(profile?.surrogateTermination)) surrMissing.push("their views on termination / selective reduction (D2)");
+        if (!has(profile?.surrogateAgeRange, profile?.surrogateCountries, profile?.surrogateExperience)) surrMissing.push("their surrogate preferences - preferred age range / country / experience (D3)");
+        if (surrMissing.length > 0) {
+          parts.push(`MATCH CHECKLIST - SURROGATE (CRITICAL): If the parent asks to find, match, or recommend a surrogate, these are still UNANSWERED: ${surrMissing.join("; ")}. You MUST ask each unanswered item (STEP 5-SURROGATE, one question per message) and SAVE it BEFORE calling search_surrogates or showing a surrogate MATCH_CARD. Skip an item only if it is already saved above or you already asked it earlier in this conversation. Never carry it over or assume it from a prior journey.`);
+        }
+      }
+
       userContextBlock = parts.join("\n");
     }
 
