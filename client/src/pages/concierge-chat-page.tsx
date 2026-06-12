@@ -13,7 +13,7 @@ import { deriveChatPalette } from "@/lib/chat-palette";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { DonorStatusPill, getDonorStatusStyle } from "@/lib/donor-status";
 import { useMarketplaceViewContext, recordProfileView } from "@/lib/profile-views";
-import { formatMoneyCents } from "@/lib/format-money";
+import { formatMoneyCents, formatMoneyDollars } from "@/lib/format-money";
 import { getCountryFlag } from "@/lib/country-flag";
 import { formatLocationDisplay } from "@/lib/format-location";
 import { Button } from "@/components/ui/button";
@@ -1674,7 +1674,10 @@ function buildMatchTabs(profile: any, cardType: string, reasons: string[]): TabS
 
 function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: MatchCard; brandColor: string; onAction: (text: string) => void; onViewProfile: (card: MatchCard) => void }) {
   const [provider, setProvider] = useState<any>(null);
+  const [costItems, setCostItems] = useState<{ label: string }[]>([]);
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const parentAccountId = (user as any)?.parentAccountId as string | undefined;
 
   useEffect(() => {
     (async () => {
@@ -1684,6 +1687,28 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
       } catch {}
     })();
   }, [card.providerId]);
+
+  // Pull the parent-matched published cost programs for this clinic (same data
+  // the marketplace profile shows) so the card's Costs tab shows real pricing.
+  useEffect(() => {
+    if (!parentAccountId) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/costs/provider/${card.providerId}/parent-programs?parentAccountId=${parentAccountId}`, { credentials: "include" });
+        if (!res.ok) return;
+        const data = await res.json();
+        const programs: any[] = data?.programs || [];
+        const items = programs.slice(0, 4).map((p: any) => {
+          const label = p.subTypeLabel || p.tabLabel || p.programName || "Program";
+          const total = p.minTotal === p.maxTotal
+            ? formatMoneyDollars(p.minTotal)
+            : `${formatMoneyDollars(p.minTotal)} - ${formatMoneyDollars(p.maxTotal)}`;
+          return { label: `${label}: ${total}` };
+        });
+        setCostItems(items);
+      } catch { /* non-critical */ }
+    })();
+  }, [card.providerId, parentAccountId]);
 
   // Build provider URL with filter context from match card data (must be before early return)
   const providerUrl = useMemo(() => {
@@ -1748,6 +1773,7 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
     reasons: card.reasons || [],
     locations: provider.locations || [],
     doctors: clinicDoctors,
+    costs: costItems,
   });
   // Drop the redundant percentage (it already shows in the success bars); keep
   // only the Top-10% signal as the always-visible badge.
