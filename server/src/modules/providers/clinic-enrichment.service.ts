@@ -1494,34 +1494,18 @@ export class ClinicEnrichmentService {
         return;
       }
 
-      // Bulk-clear the field this mode is responsible for, BEFORE the loop starts.
-      // Without this, the Field Coverage counter sits at the previous run's value
-      // (e.g. 448/459) and barely moves as each clinic re-populates, so admins
-      // can't see the run progressing. Clearing upfront lets the counter drop to
-      // ~0 and visibly climb as each clinic finishes.
-      const targetIds = providersToEnrich.map(p => p.id);
-      if (mode === "urls") {
-        await this.prisma.provider.updateMany({ where: { id: { in: targetIds } }, data: { websiteUrl: null } });
-      } else if (mode === "logo") {
-        await this.prisma.provider.updateMany({ where: { id: { in: targetIds } }, data: { logoUrl: null } });
-      } else if (mode === "about") {
-        await this.prisma.provider.updateMany({ where: { id: { in: targetIds } }, data: { about: null } });
-      } else if (mode === "phone") {
-        await this.prisma.provider.updateMany({ where: { id: { in: targetIds } }, data: { phone: null } });
-      } else if (mode === "team") {
-        await this.prisma.providerMemberLocation.deleteMany({ where: { member: { providerId: { in: targetIds } } } });
-        await this.prisma.providerMember.deleteMany({ where: { providerId: { in: targetIds } } });
-      } else if (mode === "locations") {
-        // Only clear enriched satellites (sortOrder > 0); keep the CDC origin row.
-        await this.prisma.providerMemberLocation.deleteMany({
-          where: { location: { providerId: { in: targetIds }, sortOrder: { gt: 0 } } },
-        });
-        await this.prisma.providerLocation.deleteMany({
-          where: { providerId: { in: targetIds }, sortOrder: { gt: 0 } },
-        });
-      }
-      // "skipped" mode: no clear - by definition these clinics have no URL.
-      console.log(`[clinic-enrichment] Targeted ${mode}: cleared ${targetIds.length} clinics' ${mode} field before run`);
+      // NOTE: We deliberately do NOT bulk-clear the target field before the loop.
+      // An earlier version wiped every target clinic's data upfront (so the live
+      // Field Coverage counter would drop to ~0 and visibly climb). That was
+      // CATASTROPHIC on failure: when a run died at clinic 16/455, the other 439
+      // clinics had already been wiped and never restored, leaving the data far
+      // worse than before the run. Each mode already clears its own field
+      // per-clinic AS it is processed (urls nulls the websiteUrl inside the loop;
+      // locations/team clear-and-replace inside reSyncLocationsAndTeam via
+      // syncLocations). So a mid-run failure now only affects clinics actually
+      // re-processed - untouched clinics keep their existing data. The live
+      // counter no longer animates from zero, which is an acceptable trade for
+      // not destroying data on a transient infra hiccup.
 
       let processed = 0;
       let errors = 0;
