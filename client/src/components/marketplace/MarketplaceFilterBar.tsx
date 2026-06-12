@@ -1549,6 +1549,10 @@ export function MarketplaceFilterBar({
 
   const darkLabels = !!noResults;
   const [locationDrawerOpen, setLocationDrawerOpen] = useState(false);
+  const [ivfPatientDrawerOpen, setIvfPatientDrawerOpen] = useState(false);
+  const [ivfInsuranceDrawerOpen, setIvfInsuranceDrawerOpen] = useState(false);
+  const [ivfLgbtqDrawerOpen, setIvfLgbtqDrawerOpen] = useState(false);
+  const [ivfSpecialtyDrawerOpen, setIvfSpecialtyDrawerOpen] = useState(false);
   const ivfInsuranceCarrier = ivfInsurance ? parseInsuranceValue(ivfInsurance).carrier : "";
   const ivfMyInsuranceCarrier = ivfMyInsurance ? parseInsuranceValue(ivfMyInsurance).carrier : "";
   const ivfPatientCount = [ivfEggSource, ivfAgeGroup, ivfIsNewPatient].filter(Boolean).length;
@@ -1587,16 +1591,16 @@ export function MarketplaceFilterBar({
         </DrawerContent>
       </Drawer>
 
-      <Drawer>
+      <Drawer open={ivfPatientDrawerOpen} onOpenChange={setIvfPatientDrawerOpen}>
         <DrawerTrigger asChild>
           <button className={tinderLabel(ivfPatientCount > 0, darkLabels)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-ivf-patient">
             <span className="filter-row-label">Your IVF</span>
             {listMode && <SelectedPillsInTrigger values={ivfPatientPills} />}
           </button>
         </DrawerTrigger>
-        <DrawerContent>
-          <DrawerHeader><DrawerTitle>Your IVF</DrawerTitle></DrawerHeader>
-          <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
+        <DrawerContent data-testid="drawer-ivf-patient">
+          <DrawerHeaderActions title="Your IVF" onClose={() => setIvfPatientDrawerOpen(false)} />
+          <div className="px-6 pb-6 space-y-4 max-h-[70vh] overflow-y-auto">
             <div className="space-y-2">
               <p className="text-xs font-ui text-muted-foreground">Egg source</p>
               {EGG_SOURCE_OPTIONS.map((opt) => (
@@ -1625,25 +1629,25 @@ export function MarketplaceFilterBar({
         </DrawerContent>
       </Drawer>
 
-      <Drawer handleOnly repositionInputs={false} snapPoints={[1]} shouldScaleBackground={false} noBodyStyles>
+      <Drawer open={ivfInsuranceDrawerOpen} onOpenChange={setIvfInsuranceDrawerOpen} handleOnly repositionInputs={false} snapPoints={[1]} shouldScaleBackground={false} noBodyStyles>
         <DrawerTrigger asChild>
           <button className={tinderLabel(!!ivfInsurance, darkLabels)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-ivf-insurance">
             <span className="filter-row-label">Insurance</span>
             {listMode && <SelectedPillsInTrigger values={ivfInsuranceCarrier ? [ivfInsuranceCarrier] : []} />}
           </button>
         </DrawerTrigger>
-        <DrawerContent className="h-full mt-0">
-          <DrawerHeader><DrawerTitle>Insurance</DrawerTitle></DrawerHeader>
-          <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-2" style={{ WebkitOverflowScrolling: "touch" }}>
+        <DrawerContent className="h-full mt-0" data-testid="drawer-ivf-insurance">
+          <DrawerHeaderActions title="Insurance" onClose={() => setIvfInsuranceDrawerOpen(false)} />
+          <div className="flex-1 overflow-y-auto overscroll-contain px-6 pb-6 space-y-2" style={{ WebkitOverflowScrolling: "touch" }}>
             {ivfMyInsurance && ivfInsurance !== ivfMyInsurance && (
-              <Button variant="outline" className="w-full justify-start" onClick={() => onIvfInsuranceChange?.(ivfMyInsurance)} data-testid="filter-insurance-mine-mobile">
+              <Button variant="outline" className="w-full justify-start" onClick={() => { onIvfInsuranceChange?.(ivfMyInsurance); setIvfInsuranceDrawerOpen(false); }} data-testid="filter-insurance-mine-mobile">
                 Accepts my insurance ({ivfMyInsuranceCarrier})
               </Button>
             )}
             <InsurancePicker
               value={ivfInsurance ? [ivfInsurance] : []}
               mode="single"
-              onChange={(v) => onIvfInsuranceChange?.(v[0] || "")}
+              onChange={(v) => { onIvfInsuranceChange?.(v[0] || ""); setIvfInsuranceDrawerOpen(false); }}
             />
             {ivfInsurance && (
               <Button variant="ghost" className="w-full justify-start" onClick={() => onIvfInsuranceChange?.("")} data-testid="clear-ivf-insurance-mobile">
@@ -1654,20 +1658,20 @@ export function MarketplaceFilterBar({
         </DrawerContent>
       </Drawer>
 
-      <Drawer>
+      <Drawer open={ivfLgbtqDrawerOpen} onOpenChange={setIvfLgbtqDrawerOpen}>
         <DrawerTrigger asChild>
           <button className={tinderLabel(!!ivfLgbtqCare, darkLabels)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-ivf-lgbtq">
             <span className="filter-row-label">LGBTQ+ care</span>
             {listMode && <SelectedPillsInTrigger values={ivfLgbtqCare ? ["On"] : []} />}
           </button>
         </DrawerTrigger>
-        <DrawerContent>
-          <DrawerHeader><DrawerTitle>LGBTQ+ care</DrawerTitle></DrawerHeader>
-          <div className="p-4 space-y-2">
-            <Button variant={ivfLgbtqCare ? "default" : "outline"} className="w-full justify-start" onClick={() => onIvfLgbtqCareChange?.(true)} data-testid="ivf-lgbtq-yes">
+        <DrawerContent data-testid="drawer-ivf-lgbtq">
+          <DrawerHeaderActions title="LGBTQ+ care" onClose={() => setIvfLgbtqDrawerOpen(false)} />
+          <div className="px-6 pb-6 space-y-2">
+            <Button variant={ivfLgbtqCare ? "default" : "outline"} className="w-full justify-start" onClick={() => { onIvfLgbtqCareChange?.(true); setIvfLgbtqDrawerOpen(false); }} data-testid="ivf-lgbtq-yes">
               LGBTQ-friendly only
             </Button>
-            <Button variant={!ivfLgbtqCare ? "default" : "outline"} className="w-full justify-start" onClick={() => onIvfLgbtqCareChange?.(false)} data-testid="ivf-lgbtq-any">
+            <Button variant={!ivfLgbtqCare ? "default" : "outline"} className="w-full justify-start" onClick={() => { onIvfLgbtqCareChange?.(false); setIvfLgbtqDrawerOpen(false); }} data-testid="ivf-lgbtq-any">
               Any
             </Button>
           </div>
@@ -1675,21 +1679,21 @@ export function MarketplaceFilterBar({
       </Drawer>
 
       {ivfShowSpecialty && (
-        <Drawer handleOnly repositionInputs={false} snapPoints={[1]} shouldScaleBackground={false} noBodyStyles>
+        <Drawer open={ivfSpecialtyDrawerOpen} onOpenChange={setIvfSpecialtyDrawerOpen} handleOnly repositionInputs={false} snapPoints={[1]} shouldScaleBackground={false} noBodyStyles>
           <DrawerTrigger asChild>
             <button className={tinderLabel(!!ivfSpecialty, darkLabels)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-ivf-specialty">
               <span className="filter-row-label">Specialty</span>
               {listMode && <SelectedPillsInTrigger values={ivfSpecialty ? [ivfSpecialty] : []} />}
             </button>
           </DrawerTrigger>
-          <DrawerContent className="h-full mt-0">
-            <DrawerHeader><DrawerTitle>Specialty</DrawerTitle></DrawerHeader>
-            <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-2" style={{ WebkitOverflowScrolling: "touch" }}>
-              <Button variant={!ivfSpecialty ? "default" : "outline"} className="w-full justify-start" onClick={() => onIvfSpecialtyChange?.("")} data-testid="ivf-specialty-all-mobile">
+          <DrawerContent className="h-full mt-0" data-testid="drawer-ivf-specialty">
+            <DrawerHeaderActions title="Specialty" onClose={() => setIvfSpecialtyDrawerOpen(false)} />
+            <div className="flex-1 overflow-y-auto overscroll-contain px-6 pb-6 space-y-2" style={{ WebkitOverflowScrolling: "touch" }}>
+              <Button variant={!ivfSpecialty ? "default" : "outline"} className="w-full justify-start" onClick={() => { onIvfSpecialtyChange?.(""); setIvfSpecialtyDrawerOpen(false); }} data-testid="ivf-specialty-all-mobile">
                 All specialties
               </Button>
               {(ivfSpecialtyOptions || []).map((opt) => (
-                <Button key={opt} variant={ivfSpecialty === opt ? "default" : "outline"} className="w-full justify-start" onClick={() => onIvfSpecialtyChange?.(opt)} data-testid={`ivf-specialty-${opt}-mobile`}>
+                <Button key={opt} variant={ivfSpecialty === opt ? "default" : "outline"} className="w-full justify-start" onClick={() => { onIvfSpecialtyChange?.(opt); setIvfSpecialtyDrawerOpen(false); }} data-testid={`ivf-specialty-${opt}-mobile`}>
                   {opt}
                 </Button>
               ))}
@@ -1959,7 +1963,7 @@ export function MarketplaceFilterBar({
             <ChevronDown className="w-3.5 h-3.5" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[30rem] max-w-[calc(100vw-2rem)] p-3 max-h-[70vh] overflow-y-auto" align="start">
+        <PopoverContent className="w-[36rem] max-w-[calc(100vw-2rem)] p-3 max-h-[70vh] overflow-y-auto" align="start">
           <div className="space-y-2">
             {ivfMyInsurance && ivfInsurance !== ivfMyInsurance && (
               <Button variant="outline" size="sm" className="w-full justify-start rounded-full text-xs" onClick={() => { onIvfInsuranceChange?.(ivfMyInsurance); setInsurancePopoverOpen(false); }} data-testid="filter-insurance-mine">

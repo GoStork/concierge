@@ -1,7 +1,4 @@
 import { useState } from "react";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -188,7 +185,7 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
                     data-testid={`insurance-popular-${c.carrier}`}
                   >
                     <CarrierLogo carrier={c} size={36} />
-                    <span className="text-sm leading-tight">{c.carrier}</span>
+                    <span className="text-sm leading-tight line-clamp-2">{c.carrier}</span>
                   </button>
                 ))}
               </div>
@@ -244,15 +241,18 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
               <Plus className="w-3.5 h-3.5" /> {mode === "single" ? "Set" : "Add"}
             </Button>
           ) : mode === "single" ? (
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Choose your plan</label>
-              <Select value="" onValueChange={commitSinglePlan} disabled={disabled}>
-                <SelectTrigger className="h-9" data-testid="select-insurance-plan"><SelectValue placeholder="Select your plan" /></SelectTrigger>
-                <SelectContent className="max-h-72">
-                  <SelectItem value={ALL_PLANS}>{ALL_PLANS}</SelectItem>
-                  {plans.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                </SelectContent>
-              </Select>
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground">Choose your plan</p>
+              <div className="space-y-1.5 max-h-[55vh] overflow-y-auto">
+                <Button type="button" variant="outline" className="w-full justify-start" disabled={disabled} onClick={() => commitSinglePlan(ALL_PLANS)} data-testid="plan-option-all">
+                  {ALL_PLANS}
+                </Button>
+                {plans.map((p) => (
+                  <Button key={p} type="button" variant="outline" className="w-full justify-start" disabled={disabled} onClick={() => commitSinglePlan(p)} data-testid={`plan-option-${p}`}>
+                    {p}
+                  </Button>
+                ))}
+              </div>
             </div>
           ) : (
             <>
