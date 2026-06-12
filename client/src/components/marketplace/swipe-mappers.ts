@@ -2,6 +2,7 @@ import {
   MapPin, DollarSign, Wallet, GraduationCap, Briefcase,
   Snowflake, HeartHandshake, Baby, Scissors, Users, Award,
   Ruler, Scale, Hash, Globe, Heart, Syringe,
+  Video, Stethoscope, UserCheck, ThumbsUp, Star,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { getPhotoSrc, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields } from "@/lib/profile-utils";
@@ -799,6 +800,180 @@ export function getClinicTabs(opts: {
   }
 
   return tabs;
+}
+
+// One clinic a doctor practices at, with that clinic's success rate computed
+// for the parent's profile (eggSource/ageGroup/isNewPatient). Mirrors the
+// server's canonical enriched doctor shape (marketplaceDoctors / resolve_doctor_card).
+export interface DoctorClinicData {
+  providerId: string;
+  providerName: string;
+  providerLogoUrl?: string | null;
+  location?: string | null;
+  lgbtqCare?: boolean;
+  successRate?: string | null; // "55%"
+  successRateLabel?: string | null;
+  nationalAverage?: string | null; // "48%"
+  top10pct?: boolean;
+  cycleCount?: number | null;
+  successPct?: number | null; // 55
+}
+
+// Canonical enriched doctor shape consumed by the doctor SwipeDeckCard - the
+// SAME object the server returns from marketplaceDoctors and resolve_doctor_card.
+export interface DoctorCardData {
+  slug: string;
+  name: string;
+  credential?: string | null;
+  title?: string | null;
+  photoUrl?: string | null;
+  specialties?: string[];
+  matchedSpecialties?: string[];
+  languagesSpoken?: string[];
+  boardCertifications?: string[];
+  education?: string | string[] | null;
+  yearsExperience?: number | null;
+  providerGender?: string | null;
+  npiTaxonomy?: string | null;
+  offersVideoVisits?: boolean;
+  acceptingNewPatients?: boolean;
+  reviewCount?: number;
+  recommendPct?: number | null;
+  avgOverallScore?: number | null;
+  clinics?: DoctorClinicData[];
+  matchedReasons?: string[];
+}
+
+// Parse a "55%" string to the number 55 (null if absent / unparseable).
+function pctNum(v: string | number | null | undefined): number | null {
+  if (v == null) return null;
+  if (typeof v === "number") return v;
+  const n = parseInt(String(v).replace(/[^0-9]/g, ""), 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Tabs for a doctor SwipeDeckCard. SAME card shell + design as the clinic card's
+// doctor-face tabs (face hero, name + clinic logo/location/badge pinned header);
+// only the CONTENT differs. First tab "Matched to you" is the default, then the
+// doctor's clinic + that clinic's success rate, specialties, credentials,
+// languages & visits, and (when present) verified reviews.
+export function getDoctorTabs(
+  doctor: DoctorCardData,
+  opts: { reasons?: string[]; contextLabel?: string | null; compact?: boolean } = {},
+): TabSection[] {
+  const tabs: TabSection[] = [];
+
+  // 1) Matched to you - ONE tab combining the success-rate bars (this clinic vs
+  // national) with the short "why this doctor" reasons, using the IDENTICAL
+  // success_bars layout + colors + position as the clinic card's first tab.
+  const clinics = doctor.clinics || [];
+  const primary = clinics[0] || null;
+  // Keep reasons SHORT so the chips sit in the bottom strip and never cover the
+  // doctor's face. Cap to 3; fall back to matched specialties when none given.
+  const reasons = (opts.reasons || []).filter((r) => r && r.trim() !== "");
+  // Hard safety cap on chip length: a chip is a tag, not a sentence. Prevents a
+  // verbose AI reason from ballooning into a multi-line block over the face.
+  const asChip = (s: string) => (s.length > 42 ? s.slice(0, 40).trimEnd() + "…" : s);
+  let reasonLabels = reasons.slice(0, 3).map(asChip);
+  if (reasonLabels.length === 0) {
+    reasonLabels = ((doctor.matchedSpecialties && doctor.matchedSpecialties.length > 0)
+      ? doctor.matchedSpecialties
+      : (doctor.specialties || [])).slice(0, 3).map(asChip);
+  }
+  const bars: SuccessBar[] = [];
+  if (primary) {
+    const pct = primary.successPct ?? pctNum(primary.successRate);
+    const nat = pctNum(primary.nationalAverage);
+    if (pct != null) bars.push({ label: "This clinic", value: pct, isClinic: true });
+    if (nat != null && nat > 0) bars.push({ label: "National average", value: nat, isClinic: false });
+  }
+  tabs.push({
+    layoutType: "success_bars",
+    title: "Matched to you",
+    subtitle: opts.contextLabel || primary?.successRateLabel || undefined,
+    items: reasonLabels.map((label) => ({ label, value: "" })),
+    bars,
+  });
+
+  // 3) Specialties - the doctor's full focus areas (key differentiator).
+  const specialties = (doctor.specialties || []).filter(Boolean);
+  if (specialties.length > 0) {
+    const SPEC_CAP = opts.compact ? 6 : 10;
+    const items: TabItem[] = specialties.slice(0, SPEC_CAP).map((s) => ({ label: s, value: "" }));
+    if (specialties.length > SPEC_CAP) items.push({ label: `+${specialties.length - SPEC_CAP} more`, value: "" });
+    tabs.push({ layoutType: "standard_bubbles", title: "Specialties", items });
+  }
+
+  // 4) Credentials - board certs, role, experience, education, NPI classification.
+  const cred: TabItem[] = [];
+  for (const bc of (doctor.boardCertifications || []).filter(Boolean).slice(0, 3)) {
+    cred.push({ label: `Board Certified: ${String(bc)}`, value: "", icon: Award });
+  }
+  if (doctor.title) cred.push({ label: String(doctor.title), value: "", icon: Briefcase });
+  if (doctor.yearsExperience) cred.push({ label: `${doctor.yearsExperience} years experience`, value: "", icon: Briefcase });
+  // education can be a string OR an array (ProviderMember.education is String[]).
+  const eduStr = Array.isArray(doctor.education)
+    ? doctor.education.filter(Boolean).join(", ")
+    : doctor.education;
+  if (eduStr) cred.push({ label: String(eduStr), value: "", icon: GraduationCap });
+  if (doctor.npiTaxonomy) cred.push({ label: String(doctor.npiTaxonomy), value: "", icon: Stethoscope });
+  if (cred.length > 0) tabs.push({ layoutType: "icon_list", title: "Credentials", items: cred });
+
+  // 5) Languages & visits.
+  const lv: TabItem[] = [];
+  const langs = (doctor.languagesSpoken || []).filter(Boolean);
+  if (langs.length > 0) lv.push({ label: `Speaks ${langs.join(", ")}`, value: "", icon: Globe });
+  if (doctor.offersVideoVisits) lv.push({ label: "Video visits available", value: "", icon: Video });
+  if (doctor.acceptingNewPatients) lv.push({ label: "Accepting new patients", value: "", icon: UserCheck });
+  if (lv.length > 0) tabs.push({ layoutType: "icon_list", title: "Languages & visits", items: lv });
+
+  // 6) Reviews - only when this doctor has verified reviews.
+  if ((doctor.reviewCount || 0) > 0) {
+    const rev: TabItem[] = [];
+    if (doctor.recommendPct != null) rev.push({ label: `${doctor.recommendPct}% would recommend`, value: "", icon: ThumbsUp });
+    if (doctor.avgOverallScore != null) rev.push({ label: `${Number(doctor.avgOverallScore).toFixed(1)}/10 overall`, value: "", icon: Star });
+    rev.push({ label: `${doctor.reviewCount} verified review${doctor.reviewCount !== 1 ? "s" : ""}`, value: "", icon: Award });
+    tabs.push({ layoutType: "icon_list", title: "Reviews", items: rev });
+  }
+
+  return tabs;
+}
+
+// Build the shared SwipeDeckCard inputs for a doctor, so the AI matcher
+// (DoctorMatchCard) and the marketplace Doctors deck/grid render IDENTICALLY
+// without duplicating the prop assembly. The doctor's face is the hero on every
+// slide; photoLabels maps it to the doctor's name so the pinned header shows the
+// name at 18px (same look as the clinic card's doctor-face tabs).
+export function buildDoctorCardProps(
+  doctor: DoctorCardData,
+  opts: { contextLabel?: string | null; compact?: boolean; reasons?: string[] } = {},
+): {
+  photos: string[];
+  photoLabels: Record<string, string>;
+  logoSrc: string | null;
+  primary: DoctorClinicData | null;
+  successBadge: string | null;
+  tabs: TabSection[];
+  // The pinned-header sub-line: the doctor's primary clinic NAME + city, so the
+  // clinic is identified on every tab (the logo alone is not recognizable).
+  headerLocation: string | null;
+  // When the doctor has NO photo, render the clinic-style cream COVER as the
+  // first slide (dark text, centered) instead of a face hero - identical to the
+  // clinic card's first tab.
+  firstSlidePlain: boolean;
+} {
+  const primary = doctor.clinics?.[0] || null;
+  const photoSrc = doctor.photoUrl ? getPhotoSrc(doctor.photoUrl) : null;
+  const photos = photoSrc ? [photoSrc] : [];
+  const photoLabels: Record<string, string> = {};
+  if (photoSrc) photoLabels[photoSrc] = doctor.name;
+  const logoSrc = primary?.providerLogoUrl ? getPhotoSrc(primary.providerLogoUrl) : null;
+  const successBadge = primary?.top10pct ? "Top 10%" : null;
+  const tabs = getDoctorTabs(doctor, { reasons: opts.reasons, contextLabel: opts.contextLabel, compact: opts.compact });
+  const headerLocation = primary
+    ? [primary.providerName, primary.location].filter(Boolean).join(" · ") || null
+    : null;
+  return { photos, photoLabels, logoSrc, primary, successBadge, tabs, headerLocation, firstSlidePlain: photos.length === 0 };
 }
 
 export interface SidebarRow {

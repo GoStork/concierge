@@ -231,6 +231,10 @@ export function SwipeDeckCard({
               onError={() => { if (currentPhoto) setErroredPhotos((p) => ({ ...p, [currentPhoto]: true })); }}
               data-testid={`img-swipe-photo-${id}`}
             />
+          ) : pinnedHeader ? (
+            // Clinic / doctor with no photo: solid cream, IDENTICAL to the clinic
+            // cover, so a photo-less doctor card matches the clinic's first tab.
+            <div className="w-full h-full bg-secondary" data-testid={`hero-branded-${id}`} />
           ) : (
             <div
               className="w-full h-full bg-gradient-to-br from-[hsl(var(--secondary))] via-[hsl(var(--secondary))] to-[hsl(var(--muted))]"
@@ -286,6 +290,21 @@ export function SwipeDeckCard({
                             <div className="h-full rounded-full" style={{ width: `${Math.min(bar.value, 100)}%`, backgroundColor: bar.isClinic ? 'hsl(var(--primary))' : 'hsl(var(--accent))' }} />
                           </div>
                         </div>
+                      ))}
+                    </div>
+                  )}
+                  {currentTab.items.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2.5">
+                      {currentTab.items.map((item, i) => (
+                        <Badge
+                          key={`${item.label}-${i}`}
+                          className="bg-primary/10 text-foreground font-ui px-3 py-1 inline-flex items-start gap-1.5 border border-primary/20 max-w-full whitespace-normal break-words text-left leading-snug"
+                          style={{ fontSize: '13px' }}
+                          data-testid={`badge-matched-${String(item.label).replace(/\s+/g, "-").toLowerCase()}`}
+                        >
+                          <span className="min-w-0">{item.label}</span>
+                          <Check className="w-3 h-3 text-[hsl(var(--accent))] shrink-0 mt-0.5" />
+                        </Badge>
                       ))}
                     </div>
                   )}
@@ -536,12 +555,12 @@ export function SwipeDeckCard({
                     {currentTab.items.map((item, i) => (
                       <Badge
                         key={`${item.label}-${i}`}
-                        className="bg-primary/25 text-white font-ui px-4 py-2 backdrop-blur-sm flex items-center gap-1.5 border border-primary/30"
+                        className="bg-primary/25 text-white font-ui px-4 py-2 backdrop-blur-sm inline-flex items-start gap-1.5 border border-primary/30 max-w-full whitespace-normal break-words text-left leading-snug"
                         style={{ fontSize: 'var(--card-overlay-size, 16px)' }}
-                        data-testid={`badge-matched-${item.label.replace(/\s+/g, "-").toLowerCase()}`}
+                        data-testid={`badge-matched-${String(item.label).replace(/\s+/g, "-").toLowerCase()}`}
                       >
-                        {item.label}
-                        <Check className="w-3 h-3 text-accent" />
+                        <span className="min-w-0">{item.label}</span>
+                        <Check className="w-3 h-3 text-accent shrink-0 mt-1" />
                       </Badge>
                     ))}
                   </div>
@@ -563,7 +582,7 @@ export function SwipeDeckCard({
                       <div
                         key={`${item.label}-${i}`}
                         className="flex items-center gap-2.5"
-                        data-testid={`icon-row-${item.label.replace(/\s+/g, "-").toLowerCase()}`}
+                        data-testid={`icon-row-${String(item.label).replace(/\s+/g, "-").toLowerCase()}`}
                       >
                         {Icon && <Icon className="w-4 h-4 text-accent/80 shrink-0" />}
                         <span className="text-white font-body" style={{ fontSize: 'var(--card-overlay-size, 16px)' }}>{item.label}</span>
@@ -596,7 +615,7 @@ export function SwipeDeckCard({
                           <div className="h-2 rounded-full bg-white/20 overflow-hidden">
                             <div
                               className="h-full rounded-full transition-all"
-                              style={{ width: `${Math.min(bar.value, 100)}%`, backgroundColor: bar.isClinic ? 'hsl(var(--brand-success))' : 'hsl(var(--accent))' }}
+                              style={{ width: `${Math.min(bar.value, 100)}%`, backgroundColor: bar.isClinic ? 'hsl(var(--primary))' : 'hsl(var(--accent))' }}
                             />
                           </div>
                         </div>
@@ -608,12 +627,12 @@ export function SwipeDeckCard({
                       {currentTab.items.map((item, i) => (
                         <Badge
                           key={`${item.label}-${i}`}
-                          className="bg-primary/25 text-white font-ui px-3 py-1.5 backdrop-blur-sm flex items-center gap-1.5 border border-primary/30"
+                          className="bg-primary/25 text-white font-ui px-3 py-1.5 backdrop-blur-sm inline-flex items-start gap-1.5 border border-primary/30 max-w-full whitespace-normal break-words text-left leading-snug"
                           style={{ fontSize: 'var(--card-overlay-size, 16px)' }}
-                          data-testid={`badge-matched-${item.label.replace(/\s+/g, "-").toLowerCase()}`}
+                          data-testid={`badge-matched-${String(item.label).replace(/\s+/g, "-").toLowerCase()}`}
                         >
-                          {item.label}
-                          <Check className="w-3 h-3 text-accent" />
+                          <span className="min-w-0">{item.label}</span>
+                          <Check className="w-3 h-3 text-accent shrink-0 mt-1" />
                         </Badge>
                       ))}
                     </div>
@@ -639,7 +658,7 @@ export function SwipeDeckCard({
                             variant="secondary"
                             className="bg-white/12 text-white border border-white/10 font-ui px-4 py-2 backdrop-blur-sm flex items-center"
                             style={{ fontSize: 'var(--card-overlay-size, 16px)' }}
-                            data-testid={`badge-attr-${item.label.replace(/\s+/g, "-").toLowerCase()}`}
+                            data-testid={`badge-attr-${String(item.label).replace(/\s+/g, "-").toLowerCase()}`}
                           >
                             {BubbleIcon && <BubbleIcon className="w-3 h-3 mr-1.5 text-accent/70" />}
                             {item.label}

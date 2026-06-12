@@ -8,6 +8,8 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { computeClinicSuccessRate, type EggSource, type AgeGroup } from "./lib/ivf-success-rate.js";
+import { DOCTOR_MEMBER_SELECT, enrichDoctorRows } from "./lib/doctor-enrichment.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -811,6 +813,49 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             entityName: { type: "string", description: "Display name for fallback name-based provider lookup" },
           },
           required: ["entityId", "entityType"],
+        },
+      },
+      {
+        name: "search_doctors",
+        description:
+          "Search for individual FERTILITY DOCTORS (reproductive endocrinologists / REIs) across approved IVF clinics. Use this - NOT search_clinics - when the parent's need maps to a doctor attribute: a specialty (male factor, PCOS, recurrent pregnancy loss, LGBTQ family building, endometriosis, etc.), a spoken language, doctor gender preference, video visits, or an explicit 'find me a doctor'. Returns enriched doctor profiles (specialties, languages, video visits, the clinic(s) they practice at WITH that clinic's success rate for this parent's profile, and reviews). Use the returned 'slug' in a [[DOCTOR_CARD]] tag - NEVER recommend a doctor in plain text.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: "Free-text need, e.g. 'male factor specialist', 'Spanish-speaking REI', 'recurrent miscarriage expert'. Matched against the doctor's name, specialties, and clinic name.",
+            },
+            specialty: { type: "string", description: "Filter to doctors with this specialty (e.g. 'Male Factor Infertility', 'PCOS', 'Recurrent Pregnancy Loss', 'LGBTQ Family Building')." },
+            language: { type: "string", description: "Filter to doctors who speak this language (e.g. 'Spanish', 'Mandarin')." },
+            location: { type: "string", description: "State abbreviation/name or city (e.g. 'CA', 'California', 'Los Angeles')." },
+            state: { type: "string", description: "US state abbreviation or name." },
+            city: { type: "string", description: "City name." },
+            offersVideoVisits: { type: "boolean", description: "Only doctors who offer video / telehealth visits." },
+            acceptingNewPatients: { type: "boolean", description: "Only doctors accepting new patients." },
+            lgbtqFriendly: { type: "boolean", description: "Only doctors at clinics that serve LGBTQ family-building." },
+            providerGender: { type: "string", description: "Preferred doctor gender ('female' / 'male'), when the parent expressed a preference." },
+            ageGroup: { type: "string", enum: ["under_35", "35_37", "38_40", "over_40"], description: "Parent's age group - used to compute each clinic's success rate. Default under_35." },
+            eggSource: { type: "string", enum: ["own_eggs", "donor"], description: "Own eggs vs donor eggs - affects the success-rate metric. Default own_eggs." },
+            isNewPatient: { type: "boolean", description: "First-time IVF (true) vs prior cycles (false)." },
+            limit: { type: "number", description: "Number of results (default 3, max 5)." },
+            excludeIds: { type: "array", items: { type: "string" }, description: "Doctor slugs already presented, to exclude." },
+          },
+        },
+      },
+      {
+        name: "resolve_doctor_card",
+        description:
+          "Internal tool: Re-resolve a single doctor's enriched card data (DB-truth) by slug, given the parent's success-rate context. Returns the canonical doctor shape (name, photo, specialties, matched specialties, languages, video visits, clinics[] with success rates, reviews). Used to verify an AI-emitted [[DOCTOR_CARD]] slug before rendering.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            slug: { type: "string", description: "The doctor's slug (from search_doctors)." },
+            ageGroup: { type: "string", enum: ["under_35", "35_37", "38_40", "over_40"], description: "Parent's age group for success-rate computation. Default under_35." },
+            eggSource: { type: "string", enum: ["own_eggs", "donor"], description: "own_eggs or donor. Default own_eggs." },
+            isNewPatient: { type: "boolean", description: "First-time IVF patient." },
+          },
+          required: ["slug"],
         },
       },
       {
@@ -1665,43 +1710,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           isMedicalDirector: m.isMedicalDirector,
         }));
 
-        // Pick the primary success rate based on parent's age group and egg source
-        const rates = c.ivfSuccessRates || [];
-        let primaryRate: any = null;
-        if (targetEggSource === "donor") {
-          // Donor egg rates are not age-specific
-          primaryRate = rates.find((r: any) => r.profileType === "donor" && r.metricCode === "pct_transfers_live_births_donor");
-        } else {
-          // Own eggs: prefer new patient metric if isNewPatient, then fall back to general
-          if (isNewPatient) {
-            primaryRate = rates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === targetAgeGroup && r.metricCode === "pct_new_patients_live_birth_after_1_retrieval");
-          }
-          if (!primaryRate) {
-            primaryRate = rates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === targetAgeGroup && r.metricCode === "pct_intended_retrievals_live_births");
-          }
-          // Fallback to under_35 if target age group not found
-          if (!primaryRate) {
-            primaryRate = rates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === "under_35" && r.metricCode === "pct_new_patients_live_birth_after_1_retrieval")
-              || rates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === "under_35" && r.metricCode === "pct_intended_retrievals_live_births");
-          }
-        }
-        const successPct = primaryRate ? Number(primaryRate.successRate) * 100 : null;
-        const nationalAvgPct = primaryRate ? Number(primaryRate.nationalAverage) * 100 : null;
-
-        // Build age-group breakdown (own eggs only)
-        const ratesByAge: Record<string, number> = {};
-        for (const r of rates) {
-          if (r.profileType === "own_eggs" && (r.metricCode === "pct_new_patients_live_birth_after_1_retrieval" || r.metricCode === "pct_intended_retrievals_live_births")) {
-            const label = r.ageGroup === "under_35" ? "Under 35" : r.ageGroup === "35_37" ? "35-37" : r.ageGroup === "38_40" ? "38-40" : r.ageGroup === "over_40" ? "Over 40" : r.ageGroup;
-            if (!ratesByAge[label]) ratesByAge[label] = Math.round(Number(r.successRate) * 100);
-          }
-        }
-        // Add donor egg rate if available
-        const donorRate = rates.find((r: any) => r.profileType === "donor" && r.metricCode === "pct_transfers_live_births_donor");
-        if (donorRate) ratesByAge["Donor eggs"] = Math.round(Number(donorRate.successRate) * 100);
-
-        const ageLabel = targetAgeGroup === "under_35" ? "Under 35" : targetAgeGroup === "35_37" ? "35-37" : targetAgeGroup === "38_40" ? "38-40" : "Over 40";
-        const rateLabel = targetEggSource === "donor" ? "Donor eggs" : `Own eggs, ${ageLabel}`;
+        // Pick the primary success rate based on parent's age group and egg source.
+        // Uses the shared helper so doctor cards surface the identical rate.
+        const sr = computeClinicSuccessRate(c.ivfSuccessRates, {
+          eggSource: targetEggSource as EggSource,
+          ageGroup: targetAgeGroup as AgeGroup,
+          isNewPatient,
+        });
 
         return {
           id: c.id,
@@ -1710,12 +1725,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           about: c.about ? c.about.slice(0, 200) : null,
           locations,
           doctors: doctors.slice(0, 5),
-          successRate: successPct !== null ? `${Math.round(successPct)}%` : null,
-          successRateLabel: rateLabel,
-          nationalAverage: nationalAvgPct !== null ? `${Math.round(nationalAvgPct)}%` : null,
-          top10pct: primaryRate?.top10pct || false,
-          cycleCount: primaryRate?.cycleCount || null,
-          successRatesByAge: Object.keys(ratesByAge).length > 0 ? ratesByAge : null,
+          successRate: sr.successRate,
+          successRateLabel: sr.successRateLabel,
+          nationalAverage: sr.nationalAverage,
+          top10pct: sr.top10pct,
+          cycleCount: sr.cycleCount,
+          successRatesByAge: sr.successRatesByAge,
         };
       });
 
@@ -1749,6 +1764,115 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return {
         content: [{ type: "text", text: `Found ${results.length} IVF clinics (success rates shown for: ${targetEggSource === "donor" ? "donor eggs" : `own eggs, age group ${ageLabel}`}${isNewPatient ? ", first-time IVF" : ""}):\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Clinic" in your MATCH_CARDs. Present ONE clinic at a time. Use the "successRateLabel" to tell the parent which metric the rate represents (e.g., "For patients in your age group (${ageLabel}) using ${targetEggSource === "donor" ? "donor eggs" : "their own eggs"}, this clinic has a X% live birth rate"). Use the locations, doctors, and successRatesByAge to write a personalized blurb.${minRateNote}${excludedNote}` }],
       };
+    }
+
+    if (name === "search_doctors") {
+      const a = args as any;
+      const eggSource: EggSource = a.eggSource === "donor" ? "donor" : "own_eggs";
+      const ageGroup: AgeGroup = (a.ageGroup as AgeGroup) || "under_35";
+      const isNewPatient = a.isNewPatient === false ? false : true;
+      const limit = Math.min(Math.max(Number(a.limit) || 3, 1), 5);
+      const excludeSlugs: string[] = Array.isArray(a.excludeIds) ? a.excludeIds : [];
+
+      // Public doctors with a slug, at APPROVED IVF clinics.
+      const memberWhere: any = {
+        isPublicProfile: true,
+        slug: { not: null },
+        provider: {
+          services: { some: { status: "APPROVED", providerType: { name: "IVF Clinic" } } },
+        },
+      };
+      const locationStr = a.location || a.state || a.city;
+      if (locationStr) memberWhere.provider.locations = buildClinicLocationWhere(locationStr);
+      if (a.specialty) memberWhere.specialties = { has: a.specialty };
+      if (a.language) memberWhere.languagesSpoken = { has: a.language };
+      if (a.offersVideoVisits === true) memberWhere.offersVideoVisits = true;
+      if (a.acceptingNewPatients === true) memberWhere.acceptingNewPatients = true;
+      if (a.providerGender) memberWhere.providerGender = { equals: a.providerGender, mode: "insensitive" };
+      if (a.lgbtqFriendly === true) {
+        memberWhere.provider.ivfAcceptingPatients = { has: "gay_couple" };
+      }
+
+      const memberRows = await prisma.providerMember.findMany({
+        where: memberWhere,
+        take: 600,
+        orderBy: [{ isMedicalDirector: "desc" }, { name: "asc" }],
+        select: DOCTOR_MEMBER_SELECT as any,
+      });
+
+      const searchTerms = (a.query || "").trim().toLowerCase().split(/[\s\-_]+/).filter(Boolean);
+      let doctors = enrichDoctorRows(memberRows, {
+        eggSource,
+        ageGroup,
+        isNewPatient,
+        specialtyFilter: a.specialty,
+        searchTerms,
+      });
+
+      // Free-text query: rank doctors whose name / specialties / clinic match the
+      // query terms; keep all but sort matches first. (DB already hard-filtered
+      // specialty/language/location; this orders the remaining set.)
+      if (searchTerms.length) {
+        const scoreDoctor = (d: any) => {
+          const hay = [d.name, ...(d.specialties || []), ...(d.clinics || []).map((c: any) => c.providerName)].join(" ").toLowerCase();
+          return searchTerms.reduce((acc: number, t: string) => acc + (hay.includes(t) ? 1 : 0), 0);
+        };
+        doctors = doctors
+          .map((d) => ({ d, s: scoreDoctor(d) }))
+          .sort((x, y) => y.s - x.s)
+          .map((x) => x.d);
+      }
+
+      // Prefer doctors who actually have a photo (the card leads with the face),
+      // then those with a known success rate, without dropping the rest.
+      doctors = doctors
+        .filter((d) => !excludeSlugs.includes(d.slug))
+        .sort((a2, b2) => {
+          const photoDelta = (b2.photoUrl ? 1 : 0) - (a2.photoUrl ? 1 : 0);
+          if (photoDelta !== 0) return photoDelta;
+          const rateA = a2.successRate ? parseInt(a2.successRate) : -1;
+          const rateB = b2.successRate ? parseInt(b2.successRate) : -1;
+          return rateB - rateA;
+        });
+
+      const results = doctors.slice(0, limit);
+      const ageLbl = ageGroup === "under_35" ? "Under 35" : ageGroup === "35_37" ? "35-37" : ageGroup === "38_40" ? "38-40" : "Over 40";
+      return {
+        content: [{ type: "text", text: `Found ${results.length} doctor(s) (clinic success rates shown for: ${eggSource === "donor" ? "donor eggs" : `own eggs, ${ageLbl}`}${isNewPatient ? ", first-time IVF" : ""}):\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: To recommend a doctor, emit a [[DOCTOR_CARD:{"slug":"<slug>","reasons":["..."]}]] tag using the "slug" field - NEVER describe a doctor in plain text without the card. Lead with the doctor (the human/face); the clinic + its success rate appear inside the card. Use "matchedSpecialties", "languagesSpoken", and the primary clinic's "successRate" to write a short, positive blurb tied to what the parent asked for.` }],
+      };
+    }
+
+    if (name === "resolve_doctor_card") {
+      const a = args as any;
+      const eggSource: EggSource = a.eggSource === "donor" ? "donor" : "own_eggs";
+      const ageGroup: AgeGroup = (a.ageGroup as AgeGroup) || "under_35";
+      const isNewPatient = a.isNewPatient === false ? false : true;
+      if (!a.slug) {
+        return { content: [{ type: "text", text: JSON.stringify({ error: "slug required" }) }] };
+      }
+
+      // Fetch the identity row by slug, then ALL rows for the same person (across
+      // clinics) so enrichDoctorRows can build every affiliation with its rate.
+      const identity = await prisma.providerMember.findFirst({
+        where: { slug: a.slug, isPublicProfile: true },
+        select: { id: true, personKey: true },
+      });
+      if (!identity) {
+        return { content: [{ type: "text", text: JSON.stringify({ error: "not found" }) }] };
+      }
+      const personRows = await prisma.providerMember.findMany({
+        where: identity.personKey
+          ? { personKey: identity.personKey }
+          : { id: identity.id },
+        select: DOCTOR_MEMBER_SELECT as any,
+      });
+      const enriched = enrichDoctorRows(personRows, { eggSource, ageGroup, isNewPatient });
+      // enrichDoctorRows dedupes by personKey -> exactly one doctor here.
+      const doctor = enriched.find((d) => d.slug === a.slug) || enriched[0] || null;
+      if (!doctor) {
+        return { content: [{ type: "text", text: JSON.stringify({ error: "not found" }) }] };
+      }
+      return { content: [{ type: "text", text: JSON.stringify(doctor) }] };
     }
 
     if (name === "resolve_match_card") {

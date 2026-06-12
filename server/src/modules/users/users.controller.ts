@@ -1667,6 +1667,74 @@ export class UsersController {
     return { success: true };
   }
 
+  // --- Phase 6: saved/passed preferences for doctors (slug) + clinics (providerId) ---
+  @Get("profile-preferences")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Get user's saved and skipped doctor slugs and clinic IDs" })
+  async getProfilePreferences(@Req() req: Request) {
+    const user = req.user as any;
+    const prefs = await this.prisma.userProfilePreference.findMany({
+      where: { userId: user.id },
+      select: { entityType: true, entityId: true, type: true },
+    });
+    const favoritedDoctors: string[] = [];
+    const passedDoctors: string[] = [];
+    const favoritedClinics: string[] = [];
+    const passedClinics: string[] = [];
+    for (const p of prefs) {
+      if (p.entityType === "doctor") {
+        if (p.type === "favorite") favoritedDoctors.push(p.entityId);
+        else if (p.type === "skip") passedDoctors.push(p.entityId);
+      } else if (p.entityType === "clinic") {
+        if (p.type === "favorite") favoritedClinics.push(p.entityId);
+        else if (p.type === "skip") passedClinics.push(p.entityId);
+      }
+    }
+    return { favoritedDoctors, passedDoctors, favoritedClinics, passedClinics };
+  }
+
+  @Post("profile-preferences/:entityType/:type/:entityId")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Save a doctor/clinic preference (favorite or skip)" })
+  async addProfilePreference(
+    @Param("entityType") entityType: string,
+    @Param("type") type: string,
+    @Param("entityId") entityId: string,
+    @Req() req: Request,
+  ) {
+    const user = req.user as any;
+    if (!["doctor", "clinic"].includes(entityType)) throw new BadRequestException("Invalid entityType");
+    if (!["favorite", "skip"].includes(type)) throw new BadRequestException("Invalid type");
+    await this.prisma.userProfilePreference.upsert({
+      where: { userId_entityType_entityId_type: { userId: user.id, entityType, entityId, type } },
+      create: { userId: user.id, entityType, entityId, type },
+      update: {},
+    });
+    return { success: true };
+  }
+
+  @Delete("profile-preferences/:entityType/:type/:entityId")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Remove a doctor/clinic preference" })
+  async removeProfilePreference(
+    @Param("entityType") entityType: string,
+    @Param("type") type: string,
+    @Param("entityId") entityId: string,
+    @Req() req: Request,
+  ) {
+    const user = req.user as any;
+    if (!["doctor", "clinic"].includes(entityType)) throw new BadRequestException("Invalid entityType");
+    if (!["favorite", "skip"].includes(type)) throw new BadRequestException("Invalid type");
+    await this.prisma.userProfilePreference.deleteMany({
+      where: { userId: user.id, entityType, entityId, type },
+    });
+    return { success: true };
+  }
+
   private readonly ALLOWED_FILTER_KEYS = ["ethnicity", "eyeColor", "hairColor", "race", "education"];
 
   @Get("parent-account/custom-filter-tags")

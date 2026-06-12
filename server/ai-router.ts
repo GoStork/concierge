@@ -6205,6 +6205,28 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     }
     finalContent = finalContent.replace(/\[\[MATCH_CARD:[\s\S]*?\]\]/g, "").trim();
 
+    // DOCTOR_CARD: parse the doctor-recommendation tags (just {slug, reasons}) and
+    // strip them here, same as MATCH_CARD. The cards are RESOLVED below (after the
+    // clinic-card block) via resolve_doctor_card so the displayed data is DB-truth.
+    const doctorCardTags: { slug: string; reasons?: string[] }[] = [];
+    const doctorCardRegex = /\[\[DOCTOR_CARD:([\s\S]*?)\]\]/g;
+    let docMatch;
+    while ((docMatch = doctorCardRegex.exec(finalContent)) !== null) {
+      try {
+        const parsed = JSON.parse(docMatch[1]);
+        const slug = parsed && (parsed.slug || parsed.id);
+        if (slug && typeof slug === "string") {
+          doctorCardTags.push({ slug, reasons: Array.isArray(parsed.reasons) ? parsed.reasons : [] });
+        } else {
+          console.warn("[ai-router] DOCTOR_CARD missing slug, skipping:", parsed);
+        }
+      } catch (e) {
+        console.error("Failed to parse DOCTOR_CARD:", e);
+      }
+    }
+    finalContent = finalContent.replace(/\[\[DOCTOR_CARD:[\s\S]*?\]\]/g, "").trim();
+    let doctorCards: any[] = [];
+
     // CLINIC CARD GUARD: a clinic MATCH_CARD's providerId MUST belong to a clinic
     // search_clinics actually returned this turn. The model sometimes emits the
     // id of a clinic the parent mentioned earlier (e.g. their CURRENT clinic)
@@ -6247,7 +6269,9 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }
     }
 
-    if (matchCards.length === 0 && lastSearchToolResults.length > 0) {
+    // Skip the MATCH_CARD fallback entirely when the AI emitted DOCTOR_CARD tags -
+    // a doctor recommendation is its own card type, not a missing MATCH_CARD.
+    if (matchCards.length === 0 && doctorCardTags.length === 0 && lastSearchToolResults.length > 0) {
       const matchIntroPattern = /(?:meet|introducing|found|here(?:'s| is)|check (?:out|her|his|their)|i(?:'ve| have) (?:got|a)|first up|special to show|great (?:fit|match|option|choice|pick)|perfect (?:fit|match|option|choice)|top (?:option|pick|choice)|premier|recommend|someone.*really|stands?\s*out|option for you|show you)/i;
       // Most robust signal: the AI named one of the just-searched providers in its
       // prose (e.g. "Reproductive Medicine Associates ... is a premier option").
@@ -6278,6 +6302,8 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         const plainContent = finalContent.replace(/\*\*/g, "").toLowerCase();
 
         for (const searchResult of lastSearchToolResults) {
+          // Doctor results are not MATCH_CARD material - they render as DOCTOR_CARDs.
+          if (searchResult.toolName === "search_doctors") continue;
           try {
             const resultBody = searchResult.resultText;
             const jsonStart = resultBody.indexOf("[");
@@ -6988,8 +7014,57 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       return;
     }
 
+    // Resolve DOCTOR_CARD tags into full enriched cards (DB-truth) via
+    // resolve_doctor_card. Mirrors the MATCH_CARD resolve pipeline: the AI emits
+    // only {slug, reasons}; the server re-resolves the slug so the rendered card
+    // is real data, not model output. Success-rate context comes from the same
+    // values the AI passed to search_doctors (consistent with what it returned),
+    // falling back to the parent's saved profile.
+    if (doctorCardTags.length > 0 && mcpClient) {
+      const docSearchArgs: any = lastSearchToolResults.find((r) => r.toolName === "search_doctors")?.toolArgs || {};
+      const profileEgg = (profile?.eggSource || "").toLowerCase();
+      const docEggSource =
+        docSearchArgs.eggSource === "donor" || profileEgg.includes("donor") || profile?.needsEggDonor === true
+          ? "donor"
+          : "own_eggs";
+      const docAgeGroup = docSearchArgs.ageGroup || profile?.clinicAgeGroup || "under_35";
+      const docIsNew =
+        typeof docSearchArgs.isNewPatient === "boolean"
+          ? docSearchArgs.isNewPatient
+          : profile?.isFirstIvf == null
+            ? true
+            : !!profile.isFirstIvf;
+      // Only the FIRST doctor card per turn (one-at-a-time, like MATCH_CARD).
+      const tag = doctorCardTags[0];
+      try {
+        const resolveResult: any = await mcpClient.callTool({
+          name: "resolve_doctor_card",
+          arguments: { slug: tag.slug, eggSource: docEggSource, ageGroup: docAgeGroup, isNewPatient: docIsNew },
+        });
+        const text = Array.isArray(resolveResult?.content) ? resolveResult.content[0]?.text : null;
+        const doctor = text ? JSON.parse(text) : null;
+        if (doctor && !doctor.error) {
+          doctorCards = [{
+            ...doctor,
+            reasons: tag.reasons && tag.reasons.length > 0 ? tag.reasons : doctor.matchedReasons || [],
+            eggSource: docEggSource,
+            ageGroup: docAgeGroup,
+            isNewPatient: docIsNew,
+          }];
+        } else {
+          console.warn(`[ai-router] DOCTOR_CARD slug "${tag.slug}" did not resolve - dropping card`);
+        }
+      } catch (e) {
+        console.error("[ai-router] resolve_doctor_card failed:", e);
+      }
+      if (doctorCardTags.length > 1) {
+        console.warn(`[ai-router] AI returned ${doctorCardTags.length} doctor cards - enforcing one-at-a-time, kept first only`);
+      }
+    }
+
     const uiExtras: Record<string, any> = {};
     if (matchCards.length > 0) uiExtras.matchCards = matchCards;
+    if (doctorCards.length > 0) uiExtras.doctorCards = doctorCards;
     if (consultationCard) uiExtras.consultationCard = consultationCard;
     if (sendPrepDoc) uiExtras.prepDoc = true;
     if (quickReplies.length > 0) uiExtras.quickReplies = quickReplies;
@@ -7029,6 +7104,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       multiSelect: multiSelect || undefined,
       showCuration: showCuration || undefined,
       matchCards: matchCards.length > 0 ? matchCards : undefined,
+      doctorCards: doctorCards.length > 0 ? doctorCards : undefined,
       prepDoc: sendPrepDoc || undefined,
       humanNeeded: humanNeeded || undefined,
       consultationCard: consultationCard || undefined,

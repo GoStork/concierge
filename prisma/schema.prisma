@@ -296,6 +296,7 @@ model User {
   assignedLocations      UserLocation[]
   passwordResetTokens    PasswordResetToken[]
   donorPreferences       UserDonorPreference[]
+  profilePreferences     UserProfilePreference[]
   costSheetQuotes        ProviderCostSheet[]    @relation("CostSheetQuotes")
   inAppNotifications     InAppNotification[]
   aiChatSessions         AiChatSession[]
@@ -317,6 +318,22 @@ model UserDonorPreference {
 
   @@unique([userId, donorId, type])
   @@index([userId, type])
+}
+
+// Phase 6: saved/passed preferences for providers (doctors keyed by slug,
+// clinics keyed by providerId). Generic entityType so future entity kinds can
+// reuse it. Mirrors UserDonorPreference; kept separate so donor logic is untouched.
+model UserProfilePreference {
+  id         String   @id @default(uuid())
+  userId     String
+  entityType String // "doctor" | "clinic"
+  entityId   String // doctor slug | clinic providerId
+  type       String // "favorite" | "skip"
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, entityType, entityId, type])
+  @@index([userId, entityType, type])
 }
 
 model PasswordResetToken {
@@ -369,6 +386,7 @@ model ProviderMember {
   title                   String?
   bio                     String?
   photoUrl                String?
+  highResPhotoUrl         String? // AI-upscaled crisp variant of photoUrl (GCS). Preferred when present; original kept for lineage.
   isMedicalDirector       Boolean                  @default(false)
   sortOrder               Int                      @default(0)
   // Doctor profile: identity / addressability

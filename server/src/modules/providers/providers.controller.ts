@@ -60,6 +60,8 @@ import { ErrorResponseDto } from "../../dto/auth.dto";
 import { scrapeProviderWebsite } from "./scrape.service";
 import { searchSartForClinic, mergeTeamMembers, verifyClinicUrl } from "./clinic-enrichment.service";
 import { Prisma } from "@prisma/client";
+import { type EggSource, type AgeGroup } from "../../lib/ivf-success-rate";
+import { DOCTOR_MEMBER_SELECT, enrichDoctorRows } from "../../lib/doctor-enrichment";
 
 const JSON_NULLABLE_FIELDS = ["ivfAcceptingPatients", "surrogacyCitizensNotAllowed", "surrogacyBirthCertificateListing", "partnerProviderIds"] as const;
 
@@ -432,16 +434,7 @@ export class ProvidersController {
       where: memberWhere,
       take: 600,
       orderBy: [{ isMedicalDirector: "desc" }, { name: "asc" }],
-      select: {
-        id: true, slug: true, name: true, title: true, photoUrl: true,
-        credential: true, npiTaxonomy: true, specialties: true, personKey: true,
-        provider: {
-          select: {
-            id: true, name: true, logoUrl: true, acceptedInsurance: true, ivfAcceptingPatients: true,
-            locations: { orderBy: { sortOrder: "asc" }, take: 1, select: { city: true, state: true } },
-          },
-        },
-      },
+      select: DOCTOR_MEMBER_SELECT,
     });
 
     // Carrier-level insurance + LGBTQ+ care filters (the doctor's clinic).
@@ -453,32 +446,23 @@ export class ProvidersController {
       return true;
     });
 
-    // One card per human (deduped by personKey), keep the richest row, count clinics.
-    const byPerson = new Map<string, any>();
-    const clinicsByPerson = new Map<string, Set<string>>();
-    const score = (m: any) => (m.photoUrl ? 100 : 0) + (m.specialties?.length || 0) * 10 + (m.credential ? 5 : 0);
-    for (const m of filtered) {
-      const key = m.personKey || m.id;
-      if (!clinicsByPerson.has(key)) clinicsByPerson.set(key, new Set());
-      clinicsByPerson.get(key)!.add(m.provider.id);
-      const cur = byPerson.get(key);
-      if (!cur || score(m) > score(cur)) byPerson.set(key, m);
-    }
+    // Success-rate context for each clinic the doctor practices at - mirrors the
+    // marketplace clinic list. Anything that isn't "own_eggs" resolves to donor.
+    const eggSource: EggSource = query.eggSource && query.eggSource !== "own_eggs" ? "donor" : "own_eggs";
+    const ageGroup: AgeGroup = (query.ageGroup as AgeGroup) || "under_35";
+    const isNewPatient = query.ivfHistory === "false" ? false : true;
+    const searchTerms = (query.search || "").trim().toLowerCase().split(/[\s\-_]+/).filter(Boolean);
 
-    return [...byPerson.values()].slice(0, 250).map((m) => ({
-      slug: m.slug,
-      name: m.name,
-      title: m.title,
-      photoUrl: m.photoUrl,
-      credential: m.credential,
-      npiTaxonomy: m.npiTaxonomy,
-      specialties: m.specialties,
-      providerId: m.provider.id,
-      providerName: m.provider.name,
-      providerLogoUrl: m.provider.logoUrl,
-      location: m.provider.locations[0] || null,
-      clinicCount: clinicsByPerson.get(m.personKey || m.id)?.size || 1,
-    }));
+    // Dedup + enrich (clinics[] with success rates, matchedSpecialties) via the
+    // shared helper - the SAME shaping the search_doctors / resolve_doctor_card
+    // MCP tools use, so the card renders identically here and in the AI matcher.
+    return enrichDoctorRows(filtered, {
+      eggSource,
+      ageGroup,
+      isNewPatient,
+      specialtyFilter: query.specialty,
+      searchTerms,
+    }).slice(0, 250);
   }
 
   @Get()
@@ -879,7 +863,8 @@ export class ProvidersController {
       name: identity.name,
       title: identity.title,
       bio: identity.bio,
-      photoUrl: identity.photoUrl,
+      // Prefer the AI-upscaled crisp variant; fall back to the original.
+      photoUrl: (identity as any).highResPhotoUrl || identity.photoUrl,
       isMedicalDirector: eligibleRows.some((m) => m.isMedicalDirector),
       specialties: identity.specialties,
       languagesSpoken: identity.languagesSpoken,

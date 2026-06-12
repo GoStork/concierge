@@ -17,7 +17,7 @@ import { Slider } from "@/components/ui/slider";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { matchesFilter, matchesSameSexCoupleRequirement, matchesInternationalRequirement, omniSearch, sortDonors } from "@/lib/marketplace-filters";
 import { useAppSelector, useAppDispatch } from "@/store";
-import { setMarketplaceSearchQuery, setMarketplaceTab, toggleFavoriteDonor, passDonor, undoPassDonor, loadDonorPreferences, setShowFavoritesOnly, setShowSkippedOnly, setShowExperiencedOnly, setFilter, clearFilters } from "@/store/uiSlice";
+import { setMarketplaceSearchQuery, setMarketplaceTab, toggleFavoriteDonor, passDonor, undoPassDonor, loadDonorPreferences, loadProviderPreferences, toggleFavoriteDoctor, passDoctor, undoPassDoctor, setShowFavoritesOnly, setShowSkippedOnly, setShowExperiencedOnly, setFilter, clearFilters } from "@/store/uiSlice";
 import { MarketplaceFilterBar } from "@/components/marketplace/MarketplaceFilterBar";
 import { LocationSearchInput } from "@/components/location-search-input";
 import { Tabs as UnderlineTabs, TabsList as UnderlineTabsList, TabsTrigger as UnderlineTabsTrigger } from "@/components/ui/underline-tabs";
@@ -28,8 +28,9 @@ import { useMarketplaceViewContext, recordProfileView, useScrollPastView } from 
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
   getPhotoList, getMatchedPreferences, buildTitle, buildStatusLabel,
-  getDonorTabs, getSurrogateTabs,
+  getDonorTabs, getSurrogateTabs, buildDoctorCardProps,
   mapDatabaseDonorToSwipeProfile, mapDatabaseSurrogateToSwipeProfile, mapDatabaseSpermDonorToSwipeProfile,
+  type DoctorCardData,
 } from "@/components/marketplace/swipe-mappers";
 
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, AgencyIcon, SpermIcon } from "@/components/icons/marketplace-icons";
@@ -324,64 +325,81 @@ function IvfClinicGrid({ providers, eggSource, ageGroup, isNewPatient, sortBy, o
   );
 }
 
-function DoctorCard({ doctor }: { doctor: any }) {
+// Doctors view: the SAME SwipeDeckCard used by donors/surrogates and the AI
+// matcher's doctor card - photo-forward, swipe-to-pass/save on mobile, static
+// grid on desktop. Tabs (Matched to you / Clinic & success rate / Specialties /
+// Credentials / Languages & visits / Reviews) come from buildDoctorCardProps,
+// so the marketplace and the chat render identically. Save/pass persist via
+// /api/profile-preferences (doctor, keyed by slug).
+function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }: {
+  doctors: any[] | undefined;
+  loading: boolean;
+  eggSource: string;
+  ageGroup: string;
+  isNewPatient: string;
+}) {
   const navigate = useNavigate();
-  const photo = getPhotoSrc(doctor.photoUrl);
-  const clinicLogo = getPhotoSrc(doctor.providerLogoUrl);
-  const initials = (doctor.name || "").split(" ").map((p: string) => p[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
-  return (
-    <Card
-      className="group hover:shadow-xl transition-all duration-300 border-border/50 flex flex-col cursor-pointer hover:border-primary/30"
-      onClick={() => navigate(`/doctors/${doctor.slug}`)}
-      data-testid={`card-doctor-${doctor.slug}`}
-    >
-      <CardHeader className="pb-2">
-        <div className="flex items-start gap-3">
-          {photo ? (
-            <img src={photo} alt="" className="w-12 h-12 rounded-full object-cover border border-border/30 shrink-0" />
-          ) : (
-            <div className="w-12 h-12 rounded-full bg-secondary/40 flex items-center justify-center border border-border/30 shrink-0 text-sm font-heading text-muted-foreground">
-              {initials || <User className="w-5 h-5" />}
-            </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <CardTitle className="text-base font-display font-heading text-foreground leading-heading">
-              {doctor.name}{doctor.credential ? `, ${doctor.credential}` : ""}
-            </CardTitle>
-            {(doctor.title || doctor.npiTaxonomy) && (
-              <p className="text-xs text-primary truncate">{doctor.title || doctor.npiTaxonomy}</p>
-            )}
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="flex-1 pt-0">
-        {doctor.specialties?.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {doctor.specialties.slice(0, 3).map((s: string) => (
-              <Badge key={s} variant="secondary" className="text-xs">{s}</Badge>
-            ))}
-          </div>
-        )}
-      </CardContent>
-      <CardFooter className="pt-3 border-t border-border/50 flex items-center gap-2">
-        {clinicLogo && (
-          <img src={clinicLogo} alt="" className="w-6 h-6 rounded object-contain border border-border/30 bg-background p-0.5 shrink-0" />
-        )}
-        <div className="min-w-0">
-          <p className="text-xs text-foreground truncate">{doctor.providerName}</p>
-          <p className="text-[11px] text-muted-foreground truncate flex items-center gap-1">
-            {doctor.location && (
-              <><MapPin className="w-3 h-3 shrink-0" />{doctor.location.city}{doctor.location.state ? `, ${doctor.location.state}` : ""}</>
-            )}
-            {doctor.clinicCount > 1 ? ` · ${doctor.clinicCount} clinics` : ""}
-          </p>
-        </div>
-      </CardFooter>
-    </Card>
-  );
-}
+  const dispatch = useAppDispatch();
+  const isMobile = useIsMobile();
+  const favoritedSlugs = useAppSelector((s) => s.ui.favoritedDoctorSlugs);
+  const passedSlugs = useAppSelector((s) => s.ui.passedDoctorSlugs);
+  const showFavoritesOnly = useAppSelector((s) => s.ui.showFavoritesOnly);
+  const showSkippedOnly = useAppSelector((s) => s.ui.showSkippedOnly);
+  const [currentIndex, setCurrentIndex] = useState(0);
 
-function DoctorGrid({ doctors, loading }: { doctors: any[] | undefined; loading: boolean }) {
+  const ageLabel = ageGroup === "under_35" ? "Under 35" : ageGroup === "35_37" ? "35-37" : ageGroup === "38_40" ? "38-40" : "Over 40";
+  const contextLabel = eggSource === "donor" ? "Donor eggs" : ["Own eggs", ageLabel, isNewPatient === "true" ? "First-time IVF" : "Prior cycles"].join(" · ");
+
+  const syncPref = (prefType: "favorite" | "skip", slug: string, action: "add" | "remove") => {
+    const method = action === "add" ? "POST" : "DELETE";
+    fetch(`/api/profile-preferences/doctor/${prefType}/${slug}`, { method, credentials: "include" }).catch(() => {});
+  };
+
+  const filtered = useMemo(() => {
+    return (doctors || []).filter((d) => {
+      if (showFavoritesOnly && !favoritedSlugs.includes(d.slug)) return false;
+      if (showSkippedOnly && !passedSlugs.includes(d.slug)) return false;
+      if (!showSkippedOnly && passedSlugs.includes(d.slug)) return false;
+      return true;
+    });
+  }, [doctors, showFavoritesOnly, favoritedSlugs, showSkippedOnly, passedSlugs]);
+
+  useEffect(() => { setCurrentIndex(0); }, [showFavoritesOnly, showSkippedOnly, doctors]);
+
+  const handleSave = (slug: string) => {
+    const isFav = favoritedSlugs.includes(slug);
+    dispatch(toggleFavoriteDoctor(slug));
+    syncPref("favorite", slug, isFav ? "remove" : "add");
+    if (isMobile) setCurrentIndex((p) => p + 1);
+  };
+  const handlePass = (slug: string) => {
+    dispatch(passDoctor(slug));
+    syncPref("skip", slug, "add");
+    if (isMobile) setCurrentIndex((p) => p + 1);
+  };
+
+  const renderCard = (doctor: DoctorCardData & { slug: string }, swipe: boolean) => {
+    const { photos, photoLabels, logoSrc, successBadge, tabs, headerLocation, firstSlidePlain } = buildDoctorCardProps(doctor, { contextLabel, compact: isMobile });
+    return (
+      <SwipeDeckCard
+        id={doctor.slug}
+        photos={photos}
+        photoLabels={photoLabels}
+        title={doctor.name}
+        pinnedHeader={{ logoUrl: logoSrc, title: doctor.name, location: headerLocation, badge: successBadge }}
+        firstSlidePlain={firstSlidePlain}
+        tabs={tabs}
+        disableSwipe={!swipe}
+        isSaved={favoritedSlugs.includes(doctor.slug)}
+        isPassed={passedSlugs.includes(doctor.slug)}
+        onSave={() => handleSave(doctor.slug)}
+        onPass={() => handlePass(doctor.slug)}
+        onUndo={passedSlugs.includes(doctor.slug) ? () => { dispatch(undoPassDoctor(doctor.slug)); syncPref("skip", doctor.slug, "remove"); } : undefined}
+        onViewFullProfile={() => navigate(`/doctors/${doctor.slug}`)}
+      />
+    );
+  };
+
   if (loading) {
     return (
       <div className="py-16 text-center text-muted-foreground">
@@ -389,7 +407,7 @@ function DoctorGrid({ doctors, loading }: { doctors: any[] | undefined; loading:
       </div>
     );
   }
-  if (!doctors || doctors.length === 0) {
+  if (!filtered || filtered.length === 0) {
     return (
       <div className="py-16 text-center text-muted-foreground" data-testid="text-no-doctors">
         <p className="text-lg font-ui">No doctors found</p>
@@ -397,9 +415,44 @@ function DoctorGrid({ doctors, loading }: { doctors: any[] | undefined; loading:
       </div>
     );
   }
+
+  if (isMobile) {
+    if (currentIndex >= filtered.length) {
+      return (
+        <div className="py-16 text-center text-muted-foreground" data-testid="text-no-more-doctors">
+          <p className="text-lg font-ui">You've seen all doctors!</p>
+          <p className="text-sm mt-2">Adjust your filters or check back later.</p>
+          <Button variant="outline" className="mt-4" onClick={() => setCurrentIndex(0)} data-testid="button-restart-doctor-swipe">
+            Start Over
+          </Button>
+        </div>
+      );
+    }
+    const current = filtered[currentIndex];
+    const next = currentIndex + 1 < filtered.length ? filtered[currentIndex + 1] : null;
+    return (
+      <div className="h-[600px] max-w-[420px] mx-auto px-3" data-testid="doctor-swipe-deck-mobile">
+        <div className="relative h-full w-full">
+          {next && (
+            <div className="absolute inset-0 z-0" data-testid={`doctor-card-next-${next.slug}`}>
+              {renderCard(next, false)}
+            </div>
+          )}
+          <div className="absolute inset-0 z-10" data-testid={`doctor-card-container-${current.slug}`}>
+            {renderCard(current, true)}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-[1200px] mx-auto px-6">
-      {doctors.map((d) => <DoctorCard key={d.slug} doctor={d} />)}
+      {filtered.map((d) => (
+        <div key={d.slug} className={`h-[600px] ${showSkippedOnly ? "grayscale opacity-60" : ""}`} data-testid={`doctor-card-container-${d.slug}`}>
+          {renderCard(d, false)}
+        </div>
+      ))}
     </div>
   );
 }
@@ -1338,6 +1391,21 @@ export default function MarketplacePage() {
       .catch(() => {});
   }, [dispatch]);
 
+  // Phase 6: load saved/passed doctors + clinics (mirrors donor preferences).
+  useEffect(() => {
+    fetch("/api/profile-preferences", { credentials: "include" })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) dispatch(loadProviderPreferences({
+          favoritedDoctors: data.favoritedDoctors || [],
+          passedDoctors: data.passedDoctors || [],
+          favoritedClinics: data.favoritedClinics || [],
+          passedClinics: data.passedClinics || [],
+        }));
+      })
+      .catch(() => {});
+  }, [dispatch]);
+
   const [searchParams, setSearchParams] = useSearchParams();
 
   const viewParam = searchParams.get("view");
@@ -1496,10 +1564,14 @@ export default function MarketplacePage() {
       insurance: insuranceFilter,
       specialty: specialtyFilter,
       lgbtq: lgbtqFilter ? "true" : "",
+      // Success-rate context so each doctor's clinic rate is personalized.
+      eggSource,
+      ageGroup,
+      ivfHistory: isNewPatient === "false" ? "false" : "",
     }).filter(([, v]) => v) as [string, string][],
   ).toString();
   const { data: doctors, isLoading: doctorsLoading } = useQuery<any[]>({
-    queryKey: ["/api/providers/marketplace/doctors", ivfSearch, ivfLocation, insuranceFilter, specialtyFilter, lgbtqFilter],
+    queryKey: ["/api/providers/marketplace/doctors", ivfSearch, ivfLocation, insuranceFilter, specialtyFilter, lgbtqFilter, eggSource, ageGroup, isNewPatient],
     queryFn: async () => {
       const res = await fetch(`/api/providers/marketplace/doctors${doctorQueryParams ? `?${doctorQueryParams}` : ""}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch doctors");
@@ -1850,7 +1922,7 @@ export default function MarketplacePage() {
                   </div>
                 </div>
               ) : clinicView === "doctors" ? (
-                <DoctorGrid doctors={doctors} loading={doctorsLoading} />
+                <DoctorDeckGrid doctors={doctors} loading={doctorsLoading} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} />
               ) : (
                 <IvfClinicGrid
                   providers={providers}

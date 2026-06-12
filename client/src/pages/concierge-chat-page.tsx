@@ -32,11 +32,13 @@ import {
   getDonorTabs,
   getSurrogateTabs,
   getClinicTabs,
+  buildDoctorCardProps,
   buildTitle,
   buildStatusLabel,
   getPhotoList,
   buildSidebarSections,
   type SidebarSection,
+  type DoctorCardData,
 } from "@/components/marketplace/swipe-mappers";
 import { SubjectProfileCard, ProviderProfileCard } from "@/components/profile-cards";
 import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2, ThumbsUp, Image as ImageIcon, Camera } from "lucide-react";
@@ -57,6 +59,16 @@ interface MatchCard {
   ageGroup?: string;
   isNewPatient?: boolean;
   country?: string;
+}
+
+// A doctor recommendation card. Carries the full canonical enriched doctor
+// shape resolved server-side (DB-truth), plus the AI's match reasons and the
+// success-rate context so the card renders the right clinic rate.
+export interface DoctorCard extends DoctorCardData {
+  reasons?: string[];
+  eggSource?: string;
+  ageGroup?: string;
+  isNewPatient?: boolean;
 }
 
 export interface ConsultationCardData {
@@ -84,6 +96,7 @@ interface ChatMessage {
   quickReplies?: string[];
   multiSelect?: boolean;
   matchCards?: MatchCard[];
+  doctorCards?: DoctorCard[];
   prepDoc?: boolean;
   consultationCard?: ConsultationCardData;
   agreementCard?: { agreementId: string; status: string; viewUrl: string | null };
@@ -1825,6 +1838,64 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
   );
 }
 
+// Doctor recommendation card. Reuses the SAME SwipeDeckCard shell + design as
+// the clinic card's doctor-face tabs (face hero, name + clinic logo/location/
+// badge pinned at top); only the tab CONTENT differs (built by getDoctorTabs).
+// The full enriched doctor is resolved server-side and arrives on `card`, so no
+// extra fetch is needed (unlike ClinicMatchCard, which hydrates from the
+// provider endpoint). Whisper/booking route through the doctor's clinic.
+function DoctorMatchCard({ card, brandColor, onAction }: { card: DoctorCard; brandColor: string; onAction: (text: string) => void }) {
+  const navigate = useNavigate();
+  const isMobile = useIsMobile();
+
+  // Success-rate context (drives which clinic rate the tab shows), matching the
+  // clinic card. Falls back to marketplace defaults.
+  const eggSource = card.eggSource || "own_eggs";
+  const ageGroup = card.ageGroup || "under_35";
+  const isNew = card.isNewPatient !== undefined ? card.isNewPatient : true;
+  const ageLabel = ageGroup === "under_35" ? "Under 35" : ageGroup === "35_37" ? "35-37" : ageGroup === "38_40" ? "38-40" : "Over 40";
+  const contextLabel = eggSource === "donor" ? "Donor eggs" : ["Own eggs", ageLabel, isNew ? "First-time IVF" : "Prior cycles"].join(" · ");
+
+  // Shared card-prop assembly so the marketplace deck and this chat card match.
+  const { photos, photoLabels, logoSrc, primary, successBadge, tabs, headerLocation, firstSlidePlain } = buildDoctorCardProps(card, {
+    reasons: card.reasons || card.matchedReasons || [],
+    contextLabel,
+    compact: isMobile,
+  });
+
+  const goToProfile = () => navigate(`/doctors/${card.slug}`, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } });
+  const clinicName = primary?.providerName || "their clinic";
+
+  return (
+    <div className="w-full" data-testid={`doctor-card-${card.slug}`}>
+      <div className="w-full aspect-[3/4] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
+        <SwipeDeckCard
+          id={card.slug}
+          photos={photos}
+          photoLabels={photoLabels}
+          title={card.name}
+          pinnedHeader={{ logoUrl: logoSrc, title: card.name, location: headerLocation, badge: successBadge }}
+          firstSlidePlain={firstSlidePlain}
+          tabs={tabs}
+          disableSwipe
+          chatMode
+          onPass={() => onAction(`I'm not interested in ${card.name}. Show me another doctor.`)}
+          onSave={() => onAction(`I like ${card.name}! Save as favorite. ❤️`)}
+          onViewFullProfile={goToProfile}
+        />
+      </div>
+      <div className="mt-2 flex gap-2">
+        <Button variant="outline" className="flex-1 text-xs font-ui h-8" onClick={goToProfile}>
+          View Profile
+        </Button>
+        <Button className="flex-1 text-xs font-ui h-8 text-primary-foreground" style={{ backgroundColor: brandColor }} onClick={() => onAction(`I'd like to schedule a consultation with ${card.name} at ${clinicName}`)}>
+          Schedule Consultation
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // Part 4: international program card. One card per country (e.g. Mexico,
 // Colombia) showing the COMBINED cost of the surrogacy agency + its partner
 // IVF clinic(s) for this parent - apples-to-apples across countries. Cost is
@@ -2923,6 +2994,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               id: aiMsgId,
               quickReplies: aiData.quickReplies,
               matchCards: aiData.matchCards,
+              doctorCards: aiData.doctorCards,
               senderType: aiData.message.senderType,
               senderName: aiData.message.senderName,
             };
@@ -3111,6 +3183,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             senderType: m.senderType,
             senderName: m.senderName,
             matchCards: extras.matchCards,
+            doctorCards: extras.doctorCards,
             prepDoc: extras.prepDoc,
             consultationCard: extras.consultationCard,
             agreementCard: extras.agreementCard,
@@ -3189,6 +3262,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   senderType: m.senderType,
                   senderName: m.senderName,
                   matchCards: extras.matchCards,
+                  doctorCards: extras.doctorCards,
                   prepDoc: extras.prepDoc,
                   consultationCard: extras.consultationCard,
                   quickReplies: idx === msgs.length - 1 ? extras.quickReplies : undefined,
@@ -3453,6 +3527,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 senderType: m.senderType as string | undefined,
                 senderName: m.senderName || (m.senderType === "human" ? "GoStork Expert" : m.senderType === "provider" ? m.senderName : undefined),
                 matchCards: extras.matchCards,
+                doctorCards: extras.doctorCards,
                 prepDoc: extras.prepDoc,
                 consultationCard: extras.consultationCard,
                 agreementCard: extras.agreementCard,
@@ -3845,6 +3920,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               quickReplies: data.quickReplies,
               multiSelect: data.multiSelect,
               matchCards: data.matchCards,
+              doctorCards: data.doctorCards,
               prepDoc: data.prepDoc,
               consultationCard: data.consultationCard,
               agreementCard: data.agreementCard,
@@ -4248,6 +4324,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 quickReplies: data.quickReplies,
                 multiSelect: data.multiSelect,
                 matchCards: data.matchCards,
+                doctorCards: data.doctorCards,
                 prepDoc: data.prepDoc,
                 consultationCard: data.consultationCard,
                 agreementCard: data.agreementCard,
@@ -4628,6 +4705,21 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                           brandColor={brandColor}
                           onAction={handleQuickReply}
                           onViewProfile={handleViewProfile}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Doctor cards - same SwipeDeckCard shell as the clinic card's
+                      doctor-face tabs, just doctor-specific content. */}
+                  {!alignRight && msg.doctorCards && msg.doctorCards.length > 0 && (
+                    <div className="mb-2 space-y-3 w-[320px] sm:w-[380px]">
+                      {msg.doctorCards.map((card, ci) => (
+                        <DoctorMatchCard
+                          key={`doc-${ci}`}
+                          card={card}
+                          brandColor={brandColor}
+                          onAction={handleQuickReply}
                         />
                       ))}
                     </div>
