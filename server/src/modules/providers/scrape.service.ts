@@ -338,8 +338,14 @@ async function fetchHtmlWithBrowser(url: string, timeoutMs = 45000): Promise<{ h
       locale: "en-US",
     });
     const page = await context.newPage();
-    await page.goto(url, { waitUntil: "networkidle", timeout: timeoutMs });
-    await page.waitForTimeout(800).catch(() => {}); // let late client-render settle
+    // Wait on DOM, NOT networkidle: many SPAs (analytics/polling/websockets) never
+    // reach network idle, so `waitUntil: "networkidle"` would time out at 45s and
+    // we'd fall back to the empty static shell. Load the DOM, then best-effort wait
+    // for idle on a short leash (caught if it never settles) + a fixed settle so
+    // client-rendered content has time to paint.
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    await page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {});
+    await page.waitForTimeout(1200).catch(() => {});
     const html = await page.content();
     const finalUrl = page.url() || url;
     console.log(`[scraper] Browser-rendered ${url} -> ${visibleTextLength(html)} chars of text`);
@@ -795,7 +801,31 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
   if (effectiveUrl !== normalizedUrl) {
     console.log(`[scraper] Redirect detected: ${normalizedUrl} → ${effectiveUrl}`);
   }
-  const subpageUrls = findSubpageUrls(mainHtml, effectiveUrl);
+  let subpageUrls = findSubpageUrls(mainHtml, effectiveUrl);
+
+  // SPA fallback: many clinic sites render their nav via JS, so the doctors/team
+  // page link isn't a plain <a> in the (even rendered) DOM - link discovery finds
+  // nothing. When no doctor/team-looking subpage was found, probe a set of
+  // standard paths directly. They're fetched through fetchHtml (which renders
+  // JS shells), 404s are cheap and dropped, and the one that resolves (e.g.
+  // /our-physicians on ivf-mi.com -> 10 doctors) flows into the team extractor.
+  const hasDoctorLink = subpageUrls.some(u =>
+    /\/(physicians?|doctors?|providers?|our-team|team|staff|specialists?|meet|faculty|people|our-doctors|our-providers)\b/i.test(u),
+  );
+  if (!hasDoctorLink) {
+    try {
+      const origin = new URL(effectiveUrl).origin;
+      const COMMON_DOCTOR_PATHS = [
+        "/our-physicians", "/physicians", "/doctors", "/our-doctors", "/providers",
+        "/our-providers", "/our-team", "/team", "/meet-the-team", "/meet-our-team",
+        "/staff", "/our-staff", "/specialists", "/fertility-specialists",
+        "/about-us/our-team", "/about/our-team", "/our-physicians-and-staff",
+      ];
+      const guessed = COMMON_DOCTOR_PATHS.map(p => `${origin}${p}`);
+      subpageUrls = [...new Set([...subpageUrls, ...guessed])];
+      console.log(`[scraper] No doctor link found - probing ${guessed.length} common doctor-page paths`);
+    } catch { /* bad URL - skip */ }
+  }
 
   const jsonLdData = extractJsonLd(mainHtml);
   const allTelPhones: string[] = [...extractTelLinks(mainHtml)];

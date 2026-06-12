@@ -25,6 +25,7 @@ import { MessageStatus } from "@/components/ui/message-status";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-deck-card";
+import { ClinicSwipeCard } from "@/components/marketplace/clinic-swipe-card";
 import {
   mapDatabaseDonorToSwipeProfile,
   mapDatabaseSurrogateToSwipeProfile,
@@ -1687,49 +1688,9 @@ function buildMatchTabs(profile: any, cardType: string, reasons: string[]): TabS
 }
 
 function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: MatchCard; brandColor: string; onAction: (text: string) => void; onViewProfile: (card: MatchCard) => void }) {
-  const [provider, setProvider] = useState<any>(null);
-  const [costItems, setCostItems] = useState<{ label: string }[]>([]);
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const isMobile = useIsMobile();
-  const parentAccountId = (user as any)?.parentAccountId as string | undefined;
+  const clinicName = card.name || "this clinic";
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`/api/providers/${card.providerId}`, { credentials: "include" });
-        if (res.ok) setProvider(await res.json());
-      } catch {}
-    })();
-  }, [card.providerId]);
-
-  // Pull the parent-matched published cost programs for this clinic (same data
-  // the marketplace profile shows) so the card's Costs tab shows real pricing.
-  useEffect(() => {
-    if (!parentAccountId) return;
-    (async () => {
-      try {
-        const res = await fetch(`/api/costs/provider/${card.providerId}/parent-programs?parentAccountId=${parentAccountId}`, { credentials: "include" });
-        if (!res.ok) return;
-        const data = await res.json();
-        const programs: any[] = data?.programs || [];
-        // The full program list (long names, many rows) overwhelms the small card,
-        // so collapse it to a single "Starting at $X" headline (cheapest program).
-        const totals = programs.map((p: any) => Number(p.minTotal)).filter((n: number) => Number.isFinite(n) && n > 0);
-        const startingAt = totals.length ? Math.min(...totals) : null;
-        setCostItems(
-          startingAt != null
-            ? [
-                { label: `Starting at ${formatMoneyDollars(startingAt)}` },
-                ...(programs.length > 1 ? [{ label: `${programs.length} programs available` }] : []),
-              ]
-            : [],
-        );
-      } catch { /* non-critical */ }
-    })();
-  }, [card.providerId, parentAccountId]);
-
-  // Build provider URL with filter context from match card data (must be before early return)
   const providerUrl = useMemo(() => {
     const params = new URLSearchParams();
     if (card.eggSource) params.set("eggSource", card.eggSource);
@@ -1739,98 +1700,31 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
     return `/providers/${card.providerId}${qs ? `?${qs}` : ""}`;
   }, [card.providerId, card.eggSource, card.ageGroup, card.isNewPatient]);
 
-  if (!provider) {
-    return (
-      <div className="min-w-[320px] max-w-[420px] w-full rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  // Use parent context from AI match card data, fall back to marketplace defaults
-  const cardEggSource = card.eggSource || "own_eggs";
-  const cardAgeGroup = card.ageGroup || "under_35";
-  const cardIsNew = card.isNewPatient !== undefined ? card.isNewPatient : true; // marketplace defaults to new patient
-  const allRates = provider.ivfSuccessRates || [];
-
-  // Select rate using same logic as providers.controller.ts
-  let rates: any = null;
-  if (cardEggSource === "donor") {
-    rates = allRates.find((r: any) => r.profileType === "donor" && r.metricCode === "pct_transfers_live_births_donor");
-  } else if (cardIsNew) {
-    rates = allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === cardAgeGroup && r.isNewPatient === true && r.metricCode === "pct_new_patients_live_birth_after_1_retrieval")
-      || allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === cardAgeGroup && r.metricCode === "pct_intended_retrievals_live_births");
-  } else {
-    rates = allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === cardAgeGroup && !r.isNewPatient && r.metricCode === "pct_intended_retrievals_live_births");
-  }
-  // Fallback to marketplace default
-  if (!rates) {
-    rates = allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === "under_35" && r.isNewPatient === true && r.metricCode === "pct_new_patients_live_birth_after_1_retrieval") || null;
-  }
-  const pct = rates ? Math.round(Number(rates.successRate) * 100) : null;
-  const natAvg = rates ? Math.round(Number(rates.nationalAverage) * 100) : null;
-  const isTop10 = rates?.top10pct === true;
-
-  const ageLabel = cardAgeGroup === "under_35" ? "Under 35" : cardAgeGroup === "35_37" ? "35-37" : cardAgeGroup === "38_40" ? "38-40" : "Over 40";
-  const contextLabel = cardEggSource === "donor" ? "Donor eggs" : ["Own eggs", ageLabel, cardIsNew ? "First-time IVF" : "Prior cycles"].join(" · ");
-  const members: any[] = Array.isArray(provider.members) ? provider.members.filter((m: any) => m?.isPublicProfile !== false) : [];
-  // Use the clinic's doctors' faces as the card background (like donor cards);
-  // fall back to a branded background when no doctor has a photo.
-  // Pool ALL doctors that have a photo (not just the first few) so a missing or
-  // 404'd photo falls back to another doctor's face rather than a blank slide.
-  const photoMembers = members.filter((m: any) => !!getPhotoSrc(m?.photoUrl)).slice(0, 10);
-  const doctorPhotos: string[] = photoMembers.map((m: any) => getPhotoSrc(m.photoUrl) as string);
-  // Map each photo URL -> that doctor's name so the face tabs can label the
-  // person in the photo instead of repeating the clinic name.
-  const photoLabels: Record<string, string> = {};
-  photoMembers.forEach((m: any) => {
-    const src = getPhotoSrc(m.photoUrl);
-    if (src && m.name) photoLabels[src] = m.name;
-  });
-  const clinicDoctors = members.filter((m: any) => m?.name).map((m: any) => ({ name: m.name }));
-  const primaryLocation = provider.locations?.[0];
-  const primaryLocationLabel = primaryLocation
-    ? [primaryLocation.city, primaryLocation.state].filter(Boolean).join(", ")
-    : null;
-  const tabs = getClinicTabs({
-    pct,
-    natAvg,
-    contextLabel,
-    reasons: card.reasons || [],
-    locations: provider.locations || [],
-    doctors: clinicDoctors,
-    costs: costItems,
-    compact: isMobile,
-  });
-  // Drop the redundant percentage (it already shows in the success bars); keep
-  // only the Top-10% signal as the always-visible badge.
-  const successBadge = isTop10 ? "Top 10%" : null;
-  const logoSrc = getPhotoSrc(provider.logoUrl) || null;
   const goToProfile = () => navigate(providerUrl, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } });
 
+  // The card itself is the SHARED ClinicSwipeCard (same component the marketplace
+  // IVF Clinics deck uses); the matcher just adds chat actions + footer buttons.
   return (
     <div className="w-full" data-testid={`match-card-${card.providerId}`}>
       <div className="w-full aspect-[3/4] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
-        <SwipeDeckCard
-          id={card.providerId}
-          photos={doctorPhotos}
-          photoLabels={photoLabels}
-          title={provider.name}
-          pinnedHeader={{ logoUrl: logoSrc, title: provider.name, location: primaryLocationLabel, badge: successBadge }}
-          firstSlidePlain
-          tabs={tabs}
+        <ClinicSwipeCard
+          providerId={card.providerId}
+          eggSource={card.eggSource}
+          ageGroup={card.ageGroup}
+          isNewPatient={card.isNewPatient}
+          reasons={card.reasons || []}
           disableSwipe
           chatMode
-          onPass={() => onAction(`I'm not interested in ${provider.name}. Show me another option.`)}
-          onSave={() => onAction(`I like ${provider.name}! Save as favorite. ❤️`)}
-          onViewFullProfile={goToProfile}
+          onPass={() => onAction(`I'm not interested in ${clinicName}. Show me another option.`)}
+          onSave={() => onAction(`I like ${clinicName}! Save as favorite. ❤️`)}
+          onViewProfile={goToProfile}
         />
       </div>
       <div className="mt-2 flex gap-2">
         <Button variant="outline" className="flex-1 text-xs font-ui h-8" onClick={goToProfile}>
           View Details
         </Button>
-        <Button className="flex-1 text-xs font-ui h-8 text-primary-foreground" style={{ backgroundColor: brandColor }} onClick={() => onAction(`I'd like to schedule a consultation with ${provider.name}`)}>
+        <Button className="flex-1 text-xs font-ui h-8 text-primary-foreground" style={{ backgroundColor: brandColor }} onClick={() => onAction(`I'd like to schedule a consultation with ${clinicName}`)}>
           Schedule Consultation
         </Button>
       </div>

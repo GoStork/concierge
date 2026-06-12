@@ -17,13 +17,14 @@ import { Slider } from "@/components/ui/slider";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { matchesFilter, matchesSameSexCoupleRequirement, matchesInternationalRequirement, omniSearch, sortDonors } from "@/lib/marketplace-filters";
 import { useAppSelector, useAppDispatch } from "@/store";
-import { setMarketplaceSearchQuery, setMarketplaceTab, toggleFavoriteDonor, passDonor, undoPassDonor, loadDonorPreferences, loadProviderPreferences, toggleFavoriteDoctor, passDoctor, undoPassDoctor, setShowFavoritesOnly, setShowSkippedOnly, setShowExperiencedOnly, setFilter, clearFilters } from "@/store/uiSlice";
+import { setMarketplaceSearchQuery, setMarketplaceTab, toggleFavoriteDonor, passDonor, undoPassDonor, loadDonorPreferences, loadProviderPreferences, toggleFavoriteDoctor, passDoctor, undoPassDoctor, toggleFavoriteClinic, passClinic, undoPassClinic, setShowFavoritesOnly, setShowSkippedOnly, setShowExperiencedOnly, setFilter, clearFilters } from "@/store/uiSlice";
 import { MarketplaceFilterBar } from "@/components/marketplace/MarketplaceFilterBar";
 import { LocationSearchInput } from "@/components/location-search-input";
 import { Tabs as UnderlineTabs, TabsList as UnderlineTabsList, TabsTrigger as UnderlineTabsTrigger } from "@/components/ui/underline-tabs";
 import { Drawer as FullDrawer, DrawerContent as FullDrawerContent } from "@/components/ui/drawer";
 import { Check as CheckIcon } from "lucide-react";
 import { SwipeDeckCard } from "@/components/marketplace/swipe-deck-card";
+import { ClinicSwipeCard } from "@/components/marketplace/clinic-swipe-card";
 import { useMarketplaceViewContext, recordProfileView, useScrollPastView } from "@/lib/profile-views";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -320,6 +321,138 @@ function IvfClinicGrid({ providers, eggSource, ageGroup, isNewPatient, sortBy, o
             navigate(`/providers/${provider.id}${qs ? `?${qs}` : ""}`);
           }}
         />
+      ))}
+    </div>
+  );
+}
+
+// IVF Clinics view: the SAME ClinicSwipeCard the AI matcher uses (cream cover +
+// doctor-face tabs + success bars), as a mobile swipe stack / desktop grid, with
+// persistent save/pass via /api/profile-preferences (clinic, keyed by providerId).
+function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortBy }: {
+  providers: ProviderWithRelations[] | undefined;
+  eggSource: string;
+  ageGroup: string;
+  isNewPatient: string;
+  sortBy: string;
+}) {
+  const navigate = useNavigate();
+  const dispatch = useAppDispatch();
+  const isMobile = useIsMobile();
+  const favoritedClinics = useAppSelector((s) => s.ui.favoritedClinicIds);
+  const passedClinics = useAppSelector((s) => s.ui.passedClinicIds);
+  const showFavoritesOnly = useAppSelector((s) => s.ui.showFavoritesOnly);
+  const showSkippedOnly = useAppSelector((s) => s.ui.showSkippedOnly);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const isNew = isNewPatient !== "false";
+
+  const syncPref = (prefType: "favorite" | "skip", id: string, action: "add" | "remove") => {
+    fetch(`/api/profile-preferences/clinic/${prefType}/${id}`, { method: action === "add" ? "POST" : "DELETE", credentials: "include" }).catch(() => {});
+  };
+
+  const sorted = useMemo(() => {
+    const ivf = (providers || []).filter((p) =>
+      (p.services || []).some((s: any) => s.status === "APPROVED" && s.providerType?.name === "IVF Clinic"),
+    );
+    const visible = ivf.filter((p) => {
+      if (showFavoritesOnly && !favoritedClinics.includes(p.id)) return false;
+      if (showSkippedOnly && !passedClinics.includes(p.id)) return false;
+      if (!showSkippedOnly && passedClinics.includes(p.id)) return false;
+      return true;
+    });
+    const withRates = visible.map((p) => ({ provider: p, rate: pickMatchedRate((p as any).ivfSuccessRates, eggSource) }));
+    withRates.sort((a, b) => {
+      const aRate = a.rate ? Number(a.rate.successRate) : -1;
+      const bRate = b.rate ? Number(b.rate.successRate) : -1;
+      const aCycles = a.rate?.cycleCount || 0;
+      const bCycles = b.rate?.cycleCount || 0;
+      switch (sortBy) {
+        case "highest_success": return bRate - aRate;
+        case "lowest_success": return aRate - bRate;
+        case "highest_cycles": return bCycles - aCycles;
+        case "lowest_cycles": return aCycles - bCycles;
+        case "alphabetical": return a.provider.name.localeCompare(b.provider.name);
+        default: return bRate - aRate;
+      }
+    });
+    return withRates.map((x) => x.provider);
+  }, [providers, eggSource, sortBy, showFavoritesOnly, favoritedClinics, showSkippedOnly, passedClinics]);
+
+  useEffect(() => { setCurrentIndex(0); }, [showFavoritesOnly, showSkippedOnly, providers]);
+
+  const goToProfile = (id: string) => {
+    const params = new URLSearchParams();
+    if (eggSource) params.set("eggSource", eggSource);
+    if (ageGroup) params.set("ageGroup", ageGroup);
+    if (isNewPatient) params.set("isNewPatient", isNewPatient);
+    const qs = params.toString();
+    navigate(`/providers/${id}${qs ? `?${qs}` : ""}`);
+  };
+  const handleSave = (id: string) => {
+    const fav = favoritedClinics.includes(id);
+    dispatch(toggleFavoriteClinic(id));
+    syncPref("favorite", id, fav ? "remove" : "add");
+    if (isMobile) setCurrentIndex((p) => p + 1);
+  };
+  const handlePass = (id: string) => {
+    dispatch(passClinic(id));
+    syncPref("skip", id, "add");
+    if (isMobile) setCurrentIndex((p) => p + 1);
+  };
+
+  const renderCard = (p: ProviderWithRelations, swipe: boolean) => (
+    <ClinicSwipeCard
+      providerId={p.id}
+      eggSource={eggSource}
+      ageGroup={ageGroup}
+      isNewPatient={isNew}
+      disableSwipe={!swipe}
+      isSaved={favoritedClinics.includes(p.id)}
+      isPassed={passedClinics.includes(p.id)}
+      onSave={() => handleSave(p.id)}
+      onPass={() => handlePass(p.id)}
+      onUndo={passedClinics.includes(p.id) ? () => { dispatch(undoPassClinic(p.id)); syncPref("skip", p.id, "remove"); } : undefined}
+      onViewProfile={() => goToProfile(p.id)}
+    />
+  );
+
+  if (sorted.length === 0) {
+    return (
+      <div className="py-16 text-center text-muted-foreground" data-testid="text-no-clinics">
+        <p className="text-lg font-ui">No clinics found</p>
+        <p className="text-sm">Try adjusting your filters or search criteria.</p>
+      </div>
+    );
+  }
+
+  if (isMobile) {
+    if (currentIndex >= sorted.length) {
+      return (
+        <div className="py-16 text-center text-muted-foreground" data-testid="text-no-more-clinics">
+          <p className="text-lg font-ui">You've seen all clinics!</p>
+          <p className="text-sm mt-2">Adjust your filters or check back later.</p>
+          <Button variant="outline" className="mt-4" onClick={() => setCurrentIndex(0)} data-testid="button-restart-clinic-swipe">Start Over</Button>
+        </div>
+      );
+    }
+    const current = sorted[currentIndex];
+    const next = currentIndex + 1 < sorted.length ? sorted[currentIndex + 1] : null;
+    return (
+      <div className="h-[600px] max-w-[420px] mx-auto px-3" data-testid="clinic-swipe-deck-mobile">
+        <div className="relative h-full w-full">
+          {next && <div className="absolute inset-0 z-0" data-testid={`clinic-card-next-${next.id}`}>{renderCard(next, false)}</div>}
+          <div className="absolute inset-0 z-10" data-testid={`clinic-card-container-${current.id}`}>{renderCard(current, true)}</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-[1200px] mx-auto px-6">
+      {sorted.map((p) => (
+        <div key={p.id} className={`h-[600px] ${showSkippedOnly ? "grayscale opacity-60" : ""}`} data-testid={`clinic-card-container-${p.id}`}>
+          {renderCard(p, false)}
+        </div>
       ))}
     </div>
   );
@@ -1924,13 +2057,12 @@ export default function MarketplacePage() {
               ) : clinicView === "doctors" ? (
                 <DoctorDeckGrid doctors={doctors} loading={doctorsLoading} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} />
               ) : (
-                <IvfClinicGrid
+                <IvfClinicDeckGrid
                   providers={providers}
                   eggSource={eggSource}
                   ageGroup={ageGroup}
                   isNewPatient={isNewPatient}
                   sortBy={sortBy}
-                  onSchedule={setScheduleProvider}
                 />
               )
             )}
