@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { deriveChatPalette } from "@/lib/chat-palette";
 import { getPhotoSrc } from "@/lib/profile-utils";
@@ -1677,6 +1678,7 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
   const [costItems, setCostItems] = useState<{ label: string }[]>([]);
   const navigate = useNavigate();
   const { user } = useAuth();
+  const isMobile = useIsMobile();
   const parentAccountId = (user as any)?.parentAccountId as string | undefined;
 
   useEffect(() => {
@@ -1763,10 +1765,15 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
   // fall back to a branded background when no doctor has a photo.
   // Pool ALL doctors that have a photo (not just the first few) so a missing or
   // 404'd photo falls back to another doctor's face rather than a blank slide.
-  const doctorPhotos: string[] = members
-    .map((m: any) => getPhotoSrc(m?.photoUrl))
-    .filter((src: any): src is string => !!src)
-    .slice(0, 10);
+  const photoMembers = members.filter((m: any) => !!getPhotoSrc(m?.photoUrl)).slice(0, 10);
+  const doctorPhotos: string[] = photoMembers.map((m: any) => getPhotoSrc(m.photoUrl) as string);
+  // Map each photo URL -> that doctor's name so the face tabs can label the
+  // person in the photo instead of repeating the clinic name.
+  const photoLabels: Record<string, string> = {};
+  photoMembers.forEach((m: any) => {
+    const src = getPhotoSrc(m.photoUrl);
+    if (src && m.name) photoLabels[src] = m.name;
+  });
   const clinicDoctors = members.filter((m: any) => m?.name).map((m: any) => ({ name: m.name }));
   const primaryLocation = provider.locations?.[0];
   const primaryLocationLabel = primaryLocation
@@ -1780,6 +1787,7 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
     locations: provider.locations || [],
     doctors: clinicDoctors,
     costs: costItems,
+    compact: isMobile,
   });
   // Drop the redundant percentage (it already shows in the success bars); keep
   // only the Top-10% signal as the always-visible badge.
@@ -1793,6 +1801,7 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
         <SwipeDeckCard
           id={card.providerId}
           photos={doctorPhotos}
+          photoLabels={photoLabels}
           title={provider.name}
           pinnedHeader={{ logoUrl: logoSrc, title: provider.name, location: primaryLocationLabel, badge: successBadge }}
           firstSlidePlain

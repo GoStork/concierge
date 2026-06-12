@@ -736,6 +736,9 @@ export function getClinicTabs(opts: {
   // Published cost items, when available. Always renders a Costs tab; falls back
   // to a "shared on consultation" note when the clinic has no published pricing.
   costs?: { label: string }[];
+  // Mobile cards are shorter - cap the Locations/Doctors lists tighter so the
+  // bubbles don't overflow up into the header.
+  compact?: boolean;
 }): TabSection[] {
   const tabs: TabSection[] = [];
 
@@ -770,7 +773,7 @@ export function getClinicTabs(opts: {
     .filter((i) => i.label !== "");
   if (allLocItems.length > 0) {
     // Cap to keep the tab from overflowing; surface the overflow as a "+N more".
-    const LOC_CAP = 5;
+    const LOC_CAP = opts.compact ? 3 : 5;
     const locItems = allLocItems.slice(0, LOC_CAP);
     if (allLocItems.length > LOC_CAP) locItems.push({ label: `+${allLocItems.length - LOC_CAP} more`, value: "" });
     tabs.push({ layoutType: "standard_bubbles", title: "Locations", items: locItems });
@@ -789,7 +792,7 @@ export function getClinicTabs(opts: {
       return true;
     });
   if (dedupedDoctors.length > 0) {
-    const DOC_CAP = 6;
+    const DOC_CAP = opts.compact ? 4 : 6;
     const docItems: TabItem[] = dedupedDoctors.slice(0, DOC_CAP).map((name) => ({ label: name, value: "" }));
     if (dedupedDoctors.length > DOC_CAP) docItems.push({ label: `+${dedupedDoctors.length - DOC_CAP} more`, value: "" });
     tabs.push({ layoutType: "standard_bubbles", title: "Doctors at this clinic", items: docItems });

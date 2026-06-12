@@ -50,6 +50,9 @@ interface SwipeDeckCardProps {
   // Clinics: keep the first slide photo-free (clean branded background) so the
   // header + success rate read clearly; doctor-face photos start on slide 1.
   firstSlidePlain?: boolean;
+  // Map of photo URL -> a label (e.g. the doctor's name). On the photo slides the
+  // pinned header shows this label instead of the title, so each face is named.
+  photoLabels?: Record<string, string>;
   tabs: TabSection[];
   disableSwipe?: boolean;
   chatMode?: boolean;
@@ -81,6 +84,7 @@ export function SwipeDeckCard({
   titleLogoUrl = null,
   pinnedHeader = null,
   firstSlidePlain = false,
+  photoLabels,
   tabs,
   disableSwipe = false,
   chatMode = false,
@@ -292,11 +296,16 @@ export function SwipeDeckCard({
 
           {pinnedHeader && !isCover && (
             <div className={`absolute top-0 left-0 right-0 z-[37] pt-7 px-4 pb-5 bg-gradient-to-b from-black/75 via-black/45 to-transparent pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`} data-testid={`pinned-header-${id}`}>
-              {/* Name gets the full top line; logo + location + expand button sit on
-                  the row below so the name has maximum width. */}
-              <h3 className="text-white font-heading leading-tight line-clamp-2" style={{ fontSize: 'var(--card-title-size, 24px)' }} data-testid={`text-name-${id}`}>
-                {pinnedHeader.title}
-              </h3>
+              {/* On the photo slides, label the face with that doctor's name (smaller,
+                  fits one line); the clinic name lives on the first/cover slide. */}
+              {(() => {
+                const faceLabel = currentPhoto ? photoLabels?.[currentPhoto] : undefined;
+                return (
+                  <h3 className="text-white font-heading leading-tight line-clamp-2" style={{ fontSize: faceLabel ? '18px' : 'var(--card-title-size, 24px)' }} data-testid={`text-name-${id}`}>
+                    {faceLabel || pinnedHeader.title}
+                  </h3>
+                );
+              })()}
               <div className="flex items-center gap-2 mt-2">
                 {pinnedHeader.logoUrl && (
                   <img src={pinnedHeader.logoUrl} alt="" className="w-7 h-7 rounded-md object-contain bg-white p-0.5 shrink-0 shadow-sm" draggable={false} data-testid={`pinned-logo-${id}`} />
