@@ -1294,6 +1294,13 @@ export class ClinicEnrichmentService {
     try {
       scraped = await scrapeProviderWebsite(provider.websiteUrl, { doctorsOnly: true });
     } catch (scrapeErr: any) {
+      // Transient failures (429 rate-limit, connection resets, timeouts) get
+      // re-thrown so reSyncLocationsAndTeamWithRetry retries them with backoff -
+      // these are often self-inflicted by high concurrency and recover on retry.
+      // Persistent failures (403 bot-block, 404) are NOT retryable; skip them.
+      if (isRetryableError(scrapeErr)) {
+        throw scrapeErr;
+      }
       console.log(`[clinic-enrichment] reSync: Scrape failed for "${provider.name}" (${scrapeErr.message}), skipping`);
       return false;
     }

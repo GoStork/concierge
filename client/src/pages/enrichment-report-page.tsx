@@ -485,7 +485,13 @@ export default function EnrichmentReportPage() {
             {(job.enrichmentErrors > 0 || job.enrichmentSkipped > 0) && (
               <div className="text-xs text-muted-foreground space-x-3">
                 {job.enrichmentSkipped > 0 && (
-                  <span className="text-warning">{job.enrichmentSkipped} skipped (no website found)</span>
+                  <span className="text-warning">
+                    {job.enrichmentSkipped} skipped (
+                    {job.enrichmentMode && ["locations", "team", "logo", "about", "phone"].includes(job.enrichmentMode)
+                      ? "site unreachable or blocked"
+                      : "no website found"}
+                    )
+                  </span>
                 )}
                 {job.enrichmentErrors > 0 && (
                   <span className="text-error">{job.enrichmentErrors} error{job.enrichmentErrors !== 1 ? "s" : ""}</span>
