@@ -1194,7 +1194,13 @@ export class ClinicEnrichmentService {
     if (team.length <= THRESHOLD) return team;
 
     const sartKeys = new Set(sartMembers.map(m => normalizeMemberKey(m.name)).filter(k => k.length >= 4));
-    const REPRO = /\b(reproductive|fertility|infertil|ivf|in[\s-]?vitro|REI|ob[\s-]?gyn|obstetric|gynecolog|androlog|embryolog)\b/i;
+    // Fertility-SPECIFIC keywords only. We deliberately do NOT match bare
+    // "ob-gyn / obstetric / gynecology" - on a hospital domain that matches the
+    // entire women's-health department (80+ general OB-GYNs, MFMs, midwives),
+    // which is the over-pull we're trimming. A real fertility doctor's title
+    // says "Reproductive Endocrinology / Infertility" (-> "reproductive" /
+    // "infertil"), so the REIs are still kept while the general OB dept is dropped.
+    const REPRO = /\b(reproductive|fertility|infertil|ivf|in[\s-]?vitro|REI|androlog|embryolog)\b/i;
 
     const trimmed = team.filter(m => {
       if (sartKeys.has(normalizeMemberKey(m.name))) return true;
