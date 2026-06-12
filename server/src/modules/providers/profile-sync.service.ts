@@ -314,10 +314,25 @@ async function authenticateAndGetCookies(
   username: string,
   password: string,
 ): Promise<AuthResult> {
+  // 30s per fetch is plenty for any legit login page; on Replit's egress we
+  // were seeing the GET hang indefinitely against some sites (genesis o-jms,
+  // app.spermbankcalifornia), holding the SyncLog "running" until a container
+  // restart killed it. Without timeout, "site slow / silently dropping our
+  // packets" is indistinguishable from "sync in progress."
+  const AUTH_FETCH_TIMEOUT_MS = 30_000;
+  const timeoutFetch = async (url: string, init: RequestInit) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), AUTH_FETCH_TIMEOUT_MS);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   try {
     console.log(`[donor-sync] Attempting login at ${loginPageUrl}`);
 
-    const loginResp = await fetch(loginPageUrl, {
+    const loginResp = await timeoutFetch(loginPageUrl, {
       headers: DEFAULT_HEADERS,
       redirect: "follow",
     });
@@ -400,7 +415,7 @@ async function authenticateAndGetCookies(
 
     const cookieHeader = initialCookies.join("; ");
 
-    const authResp = await fetch(postUrl, {
+    const authResp = await timeoutFetch(postUrl, {
       method: "POST",
       headers: {
         ...DEFAULT_HEADERS,
@@ -425,7 +440,7 @@ async function authenticateAndGetCookies(
       }
       console.log(`[donor-sync] Login successful (redirect to ${location})`);
 
-      const followResp = await fetch(new URL(location, loginUrl).href, {
+      const followResp = await timeoutFetch(new URL(location, loginUrl).href, {
         headers: {
           ...DEFAULT_HEADERS,
           Cookie: allCookies.join("; "),
@@ -489,6 +504,14 @@ async function authenticateAndGetCookies(
     console.log(`[donor-sync] Authenticated with ${cookieMap.size} cookies`);
     return { ok: true, cookies: dedupedCookies };
   } catch (err: any) {
+    // AbortError = our own 30s timeout fired. Distinguish this from other
+    // exceptions so the failure message clearly says "timeout" and we don't
+    // confuse a hung TLS handshake with a DNS or credential issue.
+    if (err?.name === "AbortError" || /aborted/i.test(err?.message || "")) {
+      const reason = `auth timed out after 30s (likely Replit egress hung against this site)`;
+      console.error(`[donor-sync] Authentication timeout: ${err.message}`);
+      return { ok: false, reason };
+    }
     // Node's undici wraps low-level errors (DNS, TCP, TLS) as a generic
     // "fetch failed" message; the actual cause (ENOTFOUND, ECONNRESET,
     // ECONNREFUSED, UND_ERR_SOCKET, certificate errors) is on err.cause.
