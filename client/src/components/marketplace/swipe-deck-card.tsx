@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   ArrowUp, Undo2, X, Heart, Send,
-  Check, Flower2, Crown, Award, TrendingUp,
+  Check, Flower2, Crown, Award, TrendingUp, MapPin,
 } from "lucide-react";
 import type { TabSection } from "./swipe-mappers";
 import { getDonorStatusStyle } from "@/lib/donor-status";
@@ -38,6 +38,15 @@ interface SwipeDeckCardProps {
   // face photo of their own. When there are no `photos` the hero falls back to a
   // clean branded background (not a giant logo watermark).
   titleLogoUrl?: string | null;
+  // Clinic cards pin a fixed header at the TOP (logo + name + location + badge),
+  // visible across all tabs, instead of the donor-style title at the bottom. When
+  // set, the bottom title/badge row is suppressed and only the tabs show there.
+  pinnedHeader?: {
+    logoUrl?: string | null;
+    title: string;
+    location?: string | null;
+    badge?: string | null;
+  } | null;
   tabs: TabSection[];
   disableSwipe?: boolean;
   chatMode?: boolean;
@@ -67,6 +76,7 @@ export function SwipeDeckCard({
   isPremium = false,
   successBadge = null,
   titleLogoUrl = null,
+  pinnedHeader = null,
   tabs,
   disableSwipe = false,
   chatMode = false,
@@ -206,6 +216,42 @@ export function SwipeDeckCard({
 
           <div className={`absolute top-0 left-0 right-0 bg-gradient-to-b from-black/50 via-black/20 to-transparent h-28 z-[15] pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`} />
 
+          {pinnedHeader && (
+            <>
+              <div className={`absolute top-0 left-0 right-0 z-[16] pt-7 px-4 pb-5 bg-gradient-to-b from-black/75 via-black/45 to-transparent pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`} data-testid={`pinned-header-${id}`}>
+                <div className="flex items-start gap-2.5 pr-11">
+                  {pinnedHeader.logoUrl && (
+                    <img src={pinnedHeader.logoUrl} alt="" className="w-11 h-11 rounded-md object-contain bg-white p-1 shrink-0 shadow-sm" draggable={false} data-testid={`pinned-logo-${id}`} />
+                  )}
+                  <div className="min-w-0">
+                    <h3 className="text-white font-heading leading-tight line-clamp-2" style={{ fontSize: 'var(--card-title-size, 24px)' }} data-testid={`text-name-${id}`}>
+                      {pinnedHeader.title}
+                    </h3>
+                    {pinnedHeader.location && (
+                      <p className="text-white/80 font-ui flex items-center gap-1 mt-0.5" style={{ fontSize: '13px' }}>
+                        <MapPin className="w-3.5 h-3.5 shrink-0" />
+                        {pinnedHeader.location}
+                      </p>
+                    )}
+                    {pinnedHeader.badge && (
+                      <Badge className="bg-[hsl(var(--brand-success))]/90 text-white font-ui px-2.5 py-1 gap-1 mt-1.5" style={{ fontSize: 'var(--badge-text-size, 13px)' }} data-testid={`badge-success-${id}`}>
+                        <TrendingUp className="w-3 h-3" />
+                        {pinnedHeader.badge}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); triggerExpand(); }}
+                className={`absolute top-7 right-4 z-[37] shrink-0 w-9 h-9 rounded-full bg-white/90 hover:bg-white shadow-md flex items-center justify-center transition-colors pointer-events-auto ${isExpanding ? "opacity-0 pointer-events-none" : "opacity-100"}`}
+                data-testid={`button-view-profile-${id}`}
+              >
+                <ArrowUp className="w-5 h-5 text-foreground" strokeWidth={2.5} />
+              </button>
+            </>
+          )}
+
           <div className={`absolute top-0 left-0 right-0 flex gap-1 px-3 pt-3 z-20 pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`} data-testid={`progress-bars-${id}`}>
             {Array.from({ length: totalSlides }).map((_, i) => (
               <div
@@ -265,6 +311,7 @@ export function SwipeDeckCard({
           )}
 
           <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-24 ${readOnly ? "pb-6" : "pb-24"} px-4 z-[35] pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`}>
+            {!pinnedHeader && (
             <div className="flex items-center gap-1.5 mb-2 flex-wrap">
               {successBadge && (
                 <Badge
@@ -367,7 +414,9 @@ export function SwipeDeckCard({
                 </Badge>
               )}
             </div>
+            )}
 
+            {!pinnedHeader && (
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 {titleLogoUrl && (
@@ -379,18 +428,19 @@ export function SwipeDeckCard({
                     data-testid={`title-logo-${id}`}
                   />
                 )}
-                <h3 className="text-white font-heading leading-tight truncate" style={{ fontSize: 'var(--card-title-size, 24px)' }} data-testid={`text-name-${id}`}>
+                <h3 className="text-white font-heading leading-tight line-clamp-2" style={{ fontSize: 'var(--card-title-size, 24px)' }} data-testid={`text-name-${id}`}>
                   {title}
                 </h3>
               </div>
               <button
                 onClick={(e) => { e.stopPropagation(); triggerExpand(); }}
-                className="w-9 h-9 rounded-full bg-white/90 hover:bg-white shadow-md flex items-center justify-center transition-colors pointer-events-auto"
+                className="shrink-0 w-9 h-9 rounded-full bg-white/90 hover:bg-white shadow-md flex items-center justify-center transition-colors pointer-events-auto"
                 data-testid={`button-view-profile-${id}`}
               >
                 <ArrowUp className="w-5 h-5 text-foreground" strokeWidth={2.5} />
               </button>
             </div>
+            )}
 
             <div className="mt-3" data-testid={`tab-data-${id}`}>
               {currentTab && currentTab.items.length > 0 && currentTab.layoutType === "matched_bubbles" && (

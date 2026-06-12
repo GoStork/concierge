@@ -742,14 +742,13 @@ export function getClinicTabs(opts: {
   const bars: SuccessBar[] = [];
   if (opts.pct != null) bars.push({ label: "This clinic", value: opts.pct, isClinic: true });
   if (opts.natAvg != null && opts.natAvg > 0) bars.push({ label: "National average", value: opts.natAvg, isClinic: false });
-  const matchedItems: TabItem[] = [];
-  if (opts.primaryLocationLabel) matchedItems.push({ label: opts.primaryLocationLabel, value: "", icon: MapPin });
-  matchedItems.push(
-    ...(opts.reasons || [])
-      .filter((r) => r && r.trim() !== "")
-      .slice(0, 5)
-      .map((r) => ({ label: r, value: "" })),
-  );
+  // Note: the clinic's location lives in the pinned header, not here. A location
+  // bubble on the "Matched to you" tab would only be appropriate if it actually
+  // matched a location the parent asked for - which the reasons already capture.
+  const matchedItems: TabItem[] = (opts.reasons || [])
+    .filter((r) => r && r.trim() !== "")
+    .slice(0, 5)
+    .map((r) => ({ label: r, value: "" }));
   tabs.push({
     layoutType: "success_bars",
     title: "Matched to you",
@@ -764,10 +763,16 @@ export function getClinicTabs(opts: {
     : [{ label: "Pricing shared on your free consultation", value: "", icon: DollarSign }];
   tabs.push({ layoutType: "icon_list", title: "Costs", items: costItems });
 
-  const locItems: TabItem[] = (opts.locations || [])
+  const allLocItems: TabItem[] = (opts.locations || [])
     .map((l) => ({ label: [l.city, l.state].filter(Boolean).join(", "), value: "", icon: MapPin }))
     .filter((i) => i.label !== "");
-  if (locItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Locations", items: locItems });
+  if (allLocItems.length > 0) {
+    // Cap to keep the tab from overflowing; surface the overflow as a "+N more".
+    const LOC_CAP = 5;
+    const locItems = allLocItems.slice(0, LOC_CAP);
+    if (allLocItems.length > LOC_CAP) locItems.push({ label: `+${allLocItems.length - LOC_CAP} more`, value: "" });
+    tabs.push({ layoutType: "standard_bubbles", title: "Locations", items: locItems });
+  }
 
   const docItems: TabItem[] = (opts.doctors || [])
     .map((d) => ({ label: d.name, value: "" }))

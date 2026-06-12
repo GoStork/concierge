@@ -1748,7 +1748,6 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
     reasons: card.reasons || [],
     locations: provider.locations || [],
     doctors: clinicDoctors,
-    primaryLocationLabel,
   });
   // Drop the redundant percentage (it already shows in the success bars); keep
   // only the Top-10% signal as the always-visible badge.
@@ -1762,9 +1761,8 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
         <SwipeDeckCard
           id={card.providerId}
           photos={doctorPhotos}
-          titleLogoUrl={logoSrc}
           title={provider.name}
-          successBadge={successBadge}
+          pinnedHeader={{ logoUrl: logoSrc, title: provider.name, location: primaryLocationLabel, badge: successBadge }}
           tabs={tabs}
           disableSwipe
           chatMode
