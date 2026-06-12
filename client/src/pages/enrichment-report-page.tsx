@@ -69,7 +69,7 @@ function CoverageBar({ label, icon, count, total }: { label: string; icon: React
             className="h-2 rounded-full transition-all duration-500 ease-out"
             style={{
               width: `${pct}%`,
-              backgroundColor: pct >= 80 ? "hsl(var(--success))" : pct >= 50 ? "hsl(var(--warning))" : "hsl(var(--error))",
+              backgroundColor: pct >= 80 ? "hsl(var(--brand-success))" : pct >= 50 ? "hsl(var(--brand-warning))" : "hsl(var(--destructive))",
             }}
             data-testid={`coverage-bar-${label.toLowerCase().replace(/\s/g, "-")}`}
           />

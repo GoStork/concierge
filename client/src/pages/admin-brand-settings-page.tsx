@@ -2098,6 +2098,7 @@ export function BrandSettingsForm({
                   accept="image/svg+xml,image/png,image/jpeg,image/webp"
                   testId="upload-dark-icon-logo"
                   disabled={formDisabled}
+                  darkPreview
                 />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
