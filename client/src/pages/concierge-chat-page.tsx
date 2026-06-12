@@ -1757,10 +1757,12 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
   const members: any[] = Array.isArray(provider.members) ? provider.members.filter((m: any) => m?.isPublicProfile !== false) : [];
   // Use the clinic's doctors' faces as the card background (like donor cards);
   // fall back to a branded background when no doctor has a photo.
+  // Pool ALL doctors that have a photo (not just the first few) so a missing or
+  // 404'd photo falls back to another doctor's face rather than a blank slide.
   const doctorPhotos: string[] = members
     .map((m: any) => getPhotoSrc(m?.photoUrl))
     .filter((src: any): src is string => !!src)
-    .slice(0, 5);
+    .slice(0, 10);
   const clinicDoctors = members.filter((m: any) => m?.name).map((m: any) => ({ name: m.name }));
   const primaryLocation = provider.locations?.[0];
   const primaryLocationLabel = primaryLocation

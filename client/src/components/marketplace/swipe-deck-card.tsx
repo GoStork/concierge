@@ -143,6 +143,9 @@ export function SwipeDeckCard({
   const currentTab = tabs.length > 0 && slideIndex < tabs.length ? tabs[slideIndex] : null;
   const photoSlide = firstSlidePlain ? slideIndex - 1 : slideIndex;
   const currentPhotoIndex = usablePhotos.length > 0 && photoSlide >= 0 ? photoSlide % usablePhotos.length : -1;
+  // Clinic "cover" = the first slide: a clean cream panel with the logo + name
+  // centered and the success rate in dark text (the doctor-face tabs follow).
+  const isCover = firstSlidePlain && slideIndex === 0 && !!pinnedHeader;
 
   useEffect(() => {
     setSlideIndex(0);
@@ -233,7 +236,61 @@ export function SwipeDeckCard({
 
           <div className={`absolute top-0 left-0 right-0 bg-gradient-to-b from-black/50 via-black/20 to-transparent h-28 z-[15] pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`} />
 
-          {pinnedHeader && (
+          {isCover && pinnedHeader && (
+            <div className={`absolute inset-0 z-[38] bg-secondary flex flex-col px-5 pt-9 ${readOnly ? "pb-5" : "pb-24"} transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`} data-testid={`cover-${id}`}>
+              <button
+                onClick={(e) => { e.stopPropagation(); triggerExpand(); }}
+                className="absolute top-4 right-4 z-[39] shrink-0 w-9 h-9 rounded-full bg-white hover:bg-white shadow-md border border-border/40 flex items-center justify-center transition-colors pointer-events-auto"
+                data-testid={`button-view-profile-${id}`}
+              >
+                <ArrowUp className="w-5 h-5 text-foreground" strokeWidth={2.5} />
+              </button>
+
+              <div className="flex-1 flex flex-col items-center justify-center text-center gap-2.5 min-h-0 pt-2">
+                {pinnedHeader.logoUrl && (
+                  <img src={pinnedHeader.logoUrl} alt="" className="w-20 h-20 rounded-xl object-contain bg-white p-1.5 shrink-0 shadow-sm border border-border/30" draggable={false} data-testid={`pinned-logo-${id}`} />
+                )}
+                <h3 className="text-foreground font-heading leading-tight line-clamp-2 px-2" style={{ fontSize: 'var(--card-title-size, 24px)' }} data-testid={`text-name-${id}`}>
+                  {pinnedHeader.title}
+                </h3>
+                {pinnedHeader.location && (
+                  <p className="text-muted-foreground font-ui flex items-center gap-1" style={{ fontSize: '13px' }}>
+                    <MapPin className="w-3.5 h-3.5 shrink-0" />
+                    {pinnedHeader.location}
+                  </p>
+                )}
+              </div>
+
+              {currentTab && currentTab.layoutType === "success_bars" && (
+                <div className="shrink-0">
+                  <p className="text-[hsl(var(--brand-success))] font-heading mb-0.5 flex items-center gap-1.5" style={{ fontSize: 'var(--card-overlay-size, 16px)' }}>
+                    <Check className="w-4 h-4" />
+                    {currentTab.title}
+                  </p>
+                  {currentTab.subtitle && (
+                    <p className="text-muted-foreground font-ui mb-2" style={{ fontSize: '12px' }}>{currentTab.subtitle}</p>
+                  )}
+                  {currentTab.bars && currentTab.bars.length > 0 && (
+                    <div className="space-y-1.5">
+                      {currentTab.bars.map((bar, i) => (
+                        <div key={`${bar.label}-${i}`}>
+                          <div className="flex items-center justify-between text-foreground mb-0.5" style={{ fontSize: '13px' }}>
+                            <span>{bar.label}</span>
+                            <span className="font-ui">{bar.value}%</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-muted overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${Math.min(bar.value, 100)}%`, backgroundColor: bar.isClinic ? 'hsl(var(--brand-success))' : 'hsl(var(--accent))' }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {pinnedHeader && !isCover && (
             <div className={`absolute top-0 left-0 right-0 z-[37] pt-7 px-4 pb-5 bg-gradient-to-b from-black/75 via-black/45 to-transparent pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`} data-testid={`pinned-header-${id}`}>
               {/* Name gets the full top line; logo + location + expand button sit on
                   the row below so the name has maximum width. */}
@@ -271,7 +328,7 @@ export function SwipeDeckCard({
             {Array.from({ length: totalSlides }).map((_, i) => (
               <div
                 key={i}
-                className={`h-[3px] flex-1 rounded-full transition-all duration-200 ${i === slideIndex ? "bg-white" : "bg-white/40"}`}
+                className={`h-[3px] flex-1 rounded-full transition-all duration-200 ${i === slideIndex ? (isCover ? "bg-foreground/70" : "bg-white") : (isCover ? "bg-foreground/20" : "bg-white/40")}`}
                 data-testid={`progress-segment-${i}`}
               />
             ))}
@@ -587,7 +644,7 @@ export function SwipeDeckCard({
             </div>
           </div>
 
-          <div className={`absolute bottom-6 left-0 right-0 px-4 z-[35] flex items-center justify-center gap-3 ${readOnly ? "hidden" : ""} transition-opacity duration-200 ${isExpanding ? "opacity-0 pointer-events-none" : "opacity-100"}`} data-testid={`action-row-${id}`}>
+          <div className={`absolute bottom-6 left-0 right-0 px-4 z-[39] flex items-center justify-center gap-3 ${readOnly ? "hidden" : ""} transition-opacity duration-200 ${isExpanding ? "opacity-0 pointer-events-none" : "opacity-100"}`} data-testid={`action-row-${id}`}>
             {!chatMode && !disableSwipe && (
               <motion.div style={{ opacity: otherBtnOpacity }} className="pointer-events-auto">
                 <Button
