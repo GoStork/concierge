@@ -987,6 +987,12 @@ export class ClinicEnrichmentService {
       }
       console.log(`[clinic-enrichment] Refreshed ${scopedTeam.length} team members for "${provider.name}"`);
       await this.enrichTeamDoctorData(providerId, snapshot);
+    } else if (mergedTeam.length > 0) {
+      // Scrape found a team but scoping attributed none to this lab (network
+      // over-keep). Clear the stale roster rather than leaving a wrong one.
+      await this.prisma.providerMemberLocation.deleteMany({ where: { member: { providerId } } });
+      await this.prisma.providerMember.deleteMany({ where: { providerId } });
+      console.log(`[clinic-enrichment] Cleared stale ${mergedTeam.length}-member roster for "${provider.name}" - none attributable to this lab`);
     }
 
     return true;
@@ -1353,6 +1359,16 @@ export class ClinicEnrichmentService {
       }
       console.log(`[clinic-enrichment] reSync: Refreshed ${scopedTeam.length} team members for "${provider.name}"`);
       await this.enrichTeamDoctorData(providerId, snapshot);
+    } else if (mergedTeam.length > 0) {
+      // The scrape DID find a team, but scoping attributed NONE of them to this
+      // lab (network over-keep: e.g. CCRM Dallas, whose whole-network roster has
+      // no per-lab signal and no SART entry). Clear the stale roster instead of
+      // leaving a wrong over-kept one from a prior run. (mergedTeam === 0 falls
+      // through and keeps the existing team - that's a scraper miss, not a
+      // genuine "no doctors here".)
+      await this.prisma.providerMemberLocation.deleteMany({ where: { member: { providerId } } });
+      await this.prisma.providerMember.deleteMany({ where: { providerId } });
+      console.log(`[clinic-enrichment] reSync: Cleared stale ${mergedTeam.length}-member roster for "${provider.name}" - none attributable to this lab`);
     }
 
     return true;
