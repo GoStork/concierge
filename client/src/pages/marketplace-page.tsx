@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { InsurancePicker } from "@/components/ui/insurance-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Search, Loader2, Calendar, User, MapPin, Award, Heart, Clock, Info, X, Baby, FlaskRound, SlidersHorizontal, ArrowLeft } from "lucide-react";
@@ -34,14 +33,15 @@ import {
 
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, AgencyIcon, SpermIcon } from "@/components/icons/marketplace-icons";
 
+// "LGBTQ+ Family Building" intentionally omitted - the dedicated "LGBTQ+ care"
+// toggle is the single control for that, so it is not duplicated here.
 const SPECIALTY_OPTIONS = [
-  "LGBTQ+ Family Building", "Male Factor Infertility", "PCOS", "Recurrent Pregnancy Loss",
+  "Male Factor Infertility", "PCOS", "Recurrent Pregnancy Loss",
   "Endometriosis", "Diminished Ovarian Reserve", "Egg Freezing", "Fertility Preservation",
   "Egg & Embryo Donation", "Surrogacy & Gestational Carriers", "Reproductive Surgery",
   "Genetic Testing (PGT)", "Tubal Factor",
 ];
 
-const carrierOf = (v: string) => (v.includes(" - ") ? v.slice(0, v.indexOf(" - ")) : v);
 
 const TABS = [
   { id: "egg-donors", label: "Egg Donors", Icon: EggDonorIcon },
@@ -1609,7 +1609,6 @@ export default function MarketplacePage() {
     },
   });
   const myInsurance: string | null = parentProfileForFilter?.insurance || null;
-  const [insurancePickerOpen, setInsurancePickerOpen] = useState(false);
 
   const ivfClinicCount = useMemo(() => {
     if (!providers || !isIvfTab) return 0;
@@ -1829,6 +1828,15 @@ export default function MarketplacePage() {
                 ivfSortBy: sortBy,
                 onIvfSortByChange: setSortBy,
                 hasIvfLocation: !!ivfLocation,
+                ivfInsurance: insuranceFilter,
+                onIvfInsuranceChange: (v: string) => setFilterParam("insurance", v || null),
+                ivfMyInsurance: myInsurance,
+                ivfLgbtqCare: lgbtqFilter,
+                onIvfLgbtqCareChange: (v: boolean) => setFilterParam("lgbtq", v ? "true" : null),
+                ivfSpecialty: specialtyFilter,
+                onIvfSpecialtyChange: (v: string) => setFilterParam("specialty", v || null),
+                ivfShowSpecialty: clinicView === "doctors",
+                ivfSpecialtyOptions: SPECIALTY_OPTIONS,
               } : {
                 location: donorLocation,
                 onLocationChange:
@@ -1908,52 +1916,6 @@ export default function MarketplacePage() {
                     </button>
                   ))}
                 </div>
-              </div>
-            )}
-            {isIvfTab && !showFavoritesOnly && (
-              <div className="max-w-[1200px] mx-auto px-6 mb-5">
-                <div className="flex flex-wrap justify-center items-center gap-2">
-                  {/* Insurance */}
-                  {insuranceFilter ? (
-                    <button type="button" onClick={() => setFilterParam("insurance", null)} className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 text-primary px-3 py-1.5 text-sm" data-testid="filter-insurance-active">
-                      Insurance: {carrierOf(insuranceFilter)} <X className="w-3.5 h-3.5" />
-                    </button>
-                  ) : (
-                    <>
-                      {myInsurance && (
-                        <button type="button" onClick={() => setFilterParam("insurance", myInsurance)} className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1.5 text-sm hover:border-primary hover:text-primary transition-colors" data-testid="filter-insurance-mine">
-                          Accepts my insurance ({carrierOf(myInsurance)})
-                        </button>
-                      )}
-                      <button type="button" onClick={() => setInsurancePickerOpen((o) => !o)} className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1.5 text-sm hover:border-primary hover:text-primary transition-colors" data-testid="filter-insurance-open">
-                        Insurance
-                      </button>
-                    </>
-                  )}
-                  {/* LGBTQ+ care */}
-                  <button type="button" onClick={() => setFilterParam("lgbtq", lgbtqFilter ? null : "true")} className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${lgbtqFilter ? "border-primary/40 bg-primary/10 text-primary" : "border-border/60 hover:border-primary hover:text-primary"}`} data-testid="filter-lgbtq">
-                    LGBTQ+ care
-                  </button>
-                  {/* Specialty (doctor view) */}
-                  {clinicView === "doctors" && (
-                    <Select value={specialtyFilter || "__all__"} onValueChange={(v) => setFilterParam("specialty", v === "__all__" ? null : v)}>
-                      <SelectTrigger className="h-auto rounded-full border-border/60 px-3 py-1.5 text-sm w-auto gap-1.5" data-testid="filter-specialty"><SelectValue placeholder="Specialty" /></SelectTrigger>
-                      <SelectContent className="max-h-72">
-                        <SelectItem value="__all__">All specialties</SelectItem>
-                        {SPECIALTY_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
-                {insurancePickerOpen && !insuranceFilter && (
-                  <div className="max-w-md mx-auto mt-3 border border-border/40 rounded-[var(--radius)] p-3 bg-background">
-                    <InsurancePicker
-                      value={myInsurance ? [myInsurance] : []}
-                      mode="single"
-                      onChange={(v) => { setFilterParam("insurance", v[0] || null); setInsurancePickerOpen(false); }}
-                    />
-                  </div>
-                )}
               </div>
             )}
             {isIvfTab && (

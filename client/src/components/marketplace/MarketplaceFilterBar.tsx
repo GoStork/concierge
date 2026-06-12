@@ -15,6 +15,8 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { formatMoneyDollars } from "@/lib/format-money";
 import { formatLocationDisplay } from "@/lib/format-location";
+import { InsurancePicker } from "@/components/ui/insurance-picker";
+import { parseInsuranceValue } from "@shared/insurance-data";
 
 type ProviderType = "egg-donor" | "surrogate" | "sperm-donor" | "ivf-clinic";
 
@@ -71,6 +73,15 @@ interface MarketplaceFilterBarProps {
   ivfSortBy?: string;
   onIvfSortByChange?: (value: string) => void;
   hasIvfLocation?: boolean;
+  ivfInsurance?: string;
+  onIvfInsuranceChange?: (value: string) => void;
+  ivfMyInsurance?: string | null;
+  ivfLgbtqCare?: boolean;
+  onIvfLgbtqCareChange?: (value: boolean) => void;
+  ivfSpecialty?: string;
+  onIvfSpecialtyChange?: (value: string) => void;
+  ivfShowSpecialty?: boolean;
+  ivfSpecialtyOptions?: string[];
   location?: string;
   onLocationChange?: (value: string) => void;
   hasLocation?: boolean;
@@ -1465,6 +1476,15 @@ export function MarketplaceFilterBar({
   ivfSortBy,
   onIvfSortByChange,
   hasIvfLocation,
+  ivfInsurance,
+  onIvfInsuranceChange,
+  ivfMyInsurance,
+  ivfLgbtqCare,
+  onIvfLgbtqCareChange,
+  ivfSpecialty,
+  onIvfSpecialtyChange,
+  ivfShowSpecialty,
+  ivfSpecialtyOptions,
   location,
   onLocationChange,
   hasLocation,
@@ -1525,6 +1545,8 @@ export function MarketplaceFilterBar({
 
   const darkLabels = !!noResults;
   const [locationDrawerOpen, setLocationDrawerOpen] = useState(false);
+  const ivfInsuranceCarrier = ivfInsurance ? parseInsuranceValue(ivfInsurance).carrier : "";
+  const ivfMyInsuranceCarrier = ivfMyInsurance ? parseInsuranceValue(ivfMyInsurance).carrier : "";
 
   const ivfMobileFilterButtons = isIvf ? (
     <>
@@ -1608,6 +1630,66 @@ export function MarketplaceFilterBar({
           </div>
         </DrawerContent>
       </Drawer>
+
+      <Drawer>
+        <DrawerTrigger asChild>
+          <button className={tinderLabel(!!ivfInsurance, darkLabels)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-ivf-insurance">
+            {ivfInsuranceCarrier || "Insurance"}
+          </button>
+        </DrawerTrigger>
+        <DrawerContent>
+          <DrawerHeader><DrawerTitle>Insurance</DrawerTitle></DrawerHeader>
+          <div className="p-4 space-y-2">
+            {ivfMyInsurance && ivfInsurance !== ivfMyInsurance && (
+              <Button variant="outline" className="w-full justify-start" onClick={() => onIvfInsuranceChange?.(ivfMyInsurance)} data-testid="filter-insurance-mine-mobile">
+                Accepts my insurance ({ivfMyInsuranceCarrier})
+              </Button>
+            )}
+            <InsurancePicker
+              value={ivfInsurance ? [ivfInsurance] : []}
+              mode="single"
+              onChange={(v) => onIvfInsuranceChange?.(v[0] || "")}
+            />
+            {ivfInsurance && (
+              <Button variant="ghost" className="w-full justify-start" onClick={() => onIvfInsuranceChange?.("")} data-testid="clear-ivf-insurance-mobile">
+                Clear insurance
+              </Button>
+            )}
+          </div>
+        </DrawerContent>
+      </Drawer>
+
+      <button
+        className={tinderLabel(!!ivfLgbtqCare, darkLabels)}
+        style={TINDER_LABEL_STYLE}
+        onClick={() => onIvfLgbtqCareChange?.(!ivfLgbtqCare)}
+        data-testid="filter-btn-ivf-lgbtq"
+      >
+        LGBTQ+ care
+      </button>
+
+      {ivfShowSpecialty && (
+        <Drawer>
+          <DrawerTrigger asChild>
+            <button className={tinderLabel(!!ivfSpecialty, darkLabels)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-ivf-specialty">
+              {ivfSpecialty || "Specialty"}
+            </button>
+          </DrawerTrigger>
+          <DrawerContent>
+            <DrawerHeader><DrawerTitle>Specialty</DrawerTitle></DrawerHeader>
+            <div className="p-4 space-y-2 max-h-[60vh] overflow-y-auto">
+              <Button variant={!ivfSpecialty ? "default" : "outline"} className="w-full justify-start" onClick={() => onIvfSpecialtyChange?.("")} data-testid="ivf-specialty-all-mobile">
+                All specialties
+              </Button>
+              {(ivfSpecialtyOptions || []).map((opt) => (
+                <Button key={opt} variant={ivfSpecialty === opt ? "default" : "outline"} className="w-full justify-start" onClick={() => onIvfSpecialtyChange?.(opt)} data-testid={`ivf-specialty-${opt}-mobile`}>
+                  {opt}
+                </Button>
+              ))}
+            </div>
+          </DrawerContent>
+        </Drawer>
+      )}
     </>
   ) : null;
 
@@ -1789,6 +1871,7 @@ export function MarketplaceFilterBar({
   );
 
   const [locationPopoverOpen, setLocationPopoverOpen] = useState(false);
+  const [insurancePopoverOpen, setInsurancePopoverOpen] = useState(false);
 
   const ivfDesktopFilterButtons = isIvf ? (
     <>
@@ -1876,6 +1959,68 @@ export function MarketplaceFilterBar({
           </div>
         </PopoverContent>
       </Popover>
+
+      <Popover open={insurancePopoverOpen} onOpenChange={setInsurancePopoverOpen}>
+        <PopoverTrigger asChild>
+          <Button variant={ivfInsurance ? "default" : "outline"} size="sm" className="shrink-0 h-9 font-ui rounded-full gap-1 px-3.5" style={{ fontSize: 'var(--badge-text-size, 13px)' }} data-testid="filter-btn-ivf-insurance">
+            {ivfInsuranceCarrier || "Insurance"}
+            <ChevronDown className="w-3.5 h-3.5" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-80 p-3" align="start">
+          <div className="space-y-2">
+            {ivfMyInsurance && ivfInsurance !== ivfMyInsurance && (
+              <Button variant="outline" size="sm" className="w-full justify-start rounded-full text-xs" onClick={() => { onIvfInsuranceChange?.(ivfMyInsurance); setInsurancePopoverOpen(false); }} data-testid="filter-insurance-mine">
+                Accepts my insurance ({ivfMyInsuranceCarrier})
+              </Button>
+            )}
+            <InsurancePicker
+              value={ivfInsurance ? [ivfInsurance] : []}
+              mode="single"
+              onChange={(v) => { onIvfInsuranceChange?.(v[0] || ""); setInsurancePopoverOpen(false); }}
+            />
+            {ivfInsurance && (
+              <Button variant="ghost" size="sm" className="h-auto py-0.5 text-xs" onClick={() => { onIvfInsuranceChange?.(""); setInsurancePopoverOpen(false); }} data-testid="clear-ivf-insurance">
+                Clear insurance
+              </Button>
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      <Button
+        variant={ivfLgbtqCare ? "default" : "outline"}
+        size="sm"
+        className="shrink-0 h-9 font-ui rounded-full gap-1 px-3.5"
+        style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+        onClick={() => onIvfLgbtqCareChange?.(!ivfLgbtqCare)}
+        data-testid="filter-btn-ivf-lgbtq"
+      >
+        LGBTQ+ care
+      </Button>
+
+      {ivfShowSpecialty && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant={ivfSpecialty ? "default" : "outline"} size="sm" className="shrink-0 h-9 font-ui rounded-full gap-1 px-3.5" style={{ fontSize: 'var(--badge-text-size, 13px)' }} data-testid="filter-btn-ivf-specialty">
+              {ivfSpecialty || "Specialty"}
+              <ChevronDown className="w-3.5 h-3.5" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-60 p-2 max-h-80 overflow-y-auto" align="start">
+            <div className="space-y-1">
+              <Button variant={!ivfSpecialty ? "default" : "ghost"} size="sm" className="w-full justify-start text-xs" onClick={() => onIvfSpecialtyChange?.("")} data-testid="ivf-specialty-all">
+                All specialties
+              </Button>
+              {(ivfSpecialtyOptions || []).map((opt) => (
+                <Button key={opt} variant={ivfSpecialty === opt ? "default" : "ghost"} size="sm" className="w-full justify-start text-xs" onClick={() => onIvfSpecialtyChange?.(opt)} data-testid={`ivf-specialty-${opt}`}>
+                  {opt}
+                </Button>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+      )}
     </>
   ) : null;
 
@@ -2132,8 +2277,8 @@ export function MarketplaceFilterBar({
   );
 
   const currentSearchValue = isIvf ? (ivfSearch || "") : searchQuery;
-  const currentSearchPlaceholder = isIvf ? "Clinic or doctor name..." : "Search by name, ID, location, education...";
-  const currentSearchPlaceholderMobile = isIvf ? "Clinic or doctor name..." : "Search...";
+  const currentSearchPlaceholder = isIvf ? "Search by doctor or clinic" : "Search by name, ID, location, education...";
+  const currentSearchPlaceholderMobile = isIvf ? "Search by doctor or clinic" : "Search...";
   const handleSearchChange = isIvf
     ? (val: string) => onIvfSearchChange?.(val)
     : (val: string) => dispatch(setMarketplaceSearchQuery(val));
