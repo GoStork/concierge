@@ -774,10 +774,24 @@ export function getClinicTabs(opts: {
     tabs.push({ layoutType: "standard_bubbles", title: "Locations", items: locItems });
   }
 
-  const docItems: TabItem[] = (opts.doctors || [])
-    .map((d) => ({ label: d.name, value: "" }))
-    .filter((i) => i.label && i.label.trim() !== "");
-  if (docItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Doctors at this clinic", items: docItems });
+  // Dedupe doctors by normalized name (the same person can appear as "Dr. X"
+  // and "X"), then cap with a "+N more" so the tab does not flood the card.
+  const seenDoctors = new Set<string>();
+  const dedupedDoctors = (opts.doctors || [])
+    .map((d) => (d.name || "").trim())
+    .filter(Boolean)
+    .filter((name) => {
+      const key = name.toLowerCase().replace(/^(dr\.?|prof\.?)\s+/i, "").replace(/[.,]/g, "").trim();
+      if (seenDoctors.has(key)) return false;
+      seenDoctors.add(key);
+      return true;
+    });
+  if (dedupedDoctors.length > 0) {
+    const DOC_CAP = 6;
+    const docItems: TabItem[] = dedupedDoctors.slice(0, DOC_CAP).map((name) => ({ label: name, value: "" }));
+    if (dedupedDoctors.length > DOC_CAP) docItems.push({ label: `+${dedupedDoctors.length - DOC_CAP} more`, value: "" });
+    tabs.push({ layoutType: "standard_bubbles", title: "Doctors at this clinic", items: docItems });
+  }
 
   return tabs;
 }
