@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CostSheetProgramCard, ProgramCardData } from "@/components/cost-sheet-program-card";
 import { CostProgramTailorForm } from "@/components/cost-program-tailor-form";
-import { Card, CardContent } from "@/components/ui/card";
+import { ProfileSection } from "@/components/ui/profile-section";
 import { Button } from "@/components/ui/button";
 import { DollarSign, MessageCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -84,11 +84,11 @@ export function ClinicCostProgramsSection({
 
   if (isLoading) {
     return (
-      <Card>
-        <CardContent className="py-8 text-center text-muted-foreground text-sm">
+      <ProfileSection title="Costs" data-testid="clinic-cost-programs">
+        <p className="py-2 text-center text-base text-muted-foreground">
           Loading cost programs...
-        </CardContent>
-      </Card>
+        </p>
+      </ProfileSection>
     );
   }
 
@@ -105,14 +105,7 @@ export function ClinicCostProgramsSection({
   const showTailorForm = !showAll && !hasDecided && (data?.isPartialProfile || programs.length === 0);
 
   return (
-    <Card className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid="clinic-cost-programs">
-      <div className="px-6 pt-5">
-        <h3 className="font-heading text-xl text-foreground flex items-center gap-2">
-          <DollarSign className="w-5 h-5 text-primary" />
-          Costs
-        </h3>
-      </div>
-      <div className="p-6 pt-4">
+    <ProfileSection title="Costs" data-testid="clinic-cost-programs">
         {showTailorForm ? (
           <CostProgramTailorForm
             parentAccountId={parentAccountId as string}
@@ -141,7 +134,6 @@ export function ClinicCostProgramsSection({
             ))}
           </div>
         )}
-      </div>
-    </Card>
+    </ProfileSection>
   );
 }
