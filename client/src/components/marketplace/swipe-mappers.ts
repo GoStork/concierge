@@ -758,8 +758,10 @@ export function getClinicTabs(opts: {
   });
 
   // Costs tab always present so the structure is consistent across clinics.
+  // Only the first line (the "Starting at $X" headline) carries the $ icon; any
+  // follow-up note (e.g. "N programs available") stays plain.
   const costItems: TabItem[] = (opts.costs && opts.costs.length > 0)
-    ? opts.costs.map((c) => ({ label: c.label, value: "", icon: DollarSign }))
+    ? opts.costs.map((c, i) => ({ label: c.label, value: "", icon: i === 0 ? DollarSign : undefined }))
     : [{ label: "Pricing shared on your free consultation", value: "", icon: DollarSign }];
   tabs.push({ layoutType: "icon_list", title: "Costs", items: costItems });
 

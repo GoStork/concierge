@@ -1698,14 +1698,18 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
         if (!res.ok) return;
         const data = await res.json();
         const programs: any[] = data?.programs || [];
-        const items = programs.slice(0, 4).map((p: any) => {
-          const label = p.subTypeLabel || p.tabLabel || p.programName || "Program";
-          const total = p.minTotal === p.maxTotal
-            ? formatMoneyDollars(p.minTotal)
-            : `${formatMoneyDollars(p.minTotal)} - ${formatMoneyDollars(p.maxTotal)}`;
-          return { label: `${label}: ${total}` };
-        });
-        setCostItems(items);
+        // The full program list (long names, many rows) overwhelms the small card,
+        // so collapse it to a single "Starting at $X" headline (cheapest program).
+        const totals = programs.map((p: any) => Number(p.minTotal)).filter((n: number) => Number.isFinite(n) && n > 0);
+        const startingAt = totals.length ? Math.min(...totals) : null;
+        setCostItems(
+          startingAt != null
+            ? [
+                { label: `Starting at ${formatMoneyDollars(startingAt)}` },
+                ...(programs.length > 1 ? [{ label: `${programs.length} programs available` }] : []),
+              ]
+            : [],
+        );
       } catch { /* non-critical */ }
     })();
   }, [card.providerId, parentAccountId]);
