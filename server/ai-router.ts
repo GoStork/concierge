@@ -6248,10 +6248,28 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     }
 
     if (matchCards.length === 0 && lastSearchToolResults.length > 0) {
-      const matchIntroPattern = /(?:meet|introducing|found|here(?:'s| is)|check (?:out|her|his|their)|i(?:'ve| have) (?:got|a)|first up|special to show|great (?:fit|match|option|choice|pick)|perfect (?:fit|match|option|choice)|top (?:option|pick|choice)|someone.*really|stands?\s*out|option for you|recommend|show you)/i;
-      // Trigger the fallback if the AI either (a) tried to emit a tag but malformed it, or
-      // (b) introduced a match in prose without any tag at all.
-      const shouldRepair = aiAttemptedTags > 0 || matchIntroPattern.test(finalContent);
+      const matchIntroPattern = /(?:meet|introducing|found|here(?:'s| is)|check (?:out|her|his|their)|i(?:'ve| have) (?:got|a)|first up|special to show|great (?:fit|match|option|choice|pick)|perfect (?:fit|match|option|choice)|top (?:option|pick|choice)|premier|recommend|someone.*really|stands?\s*out|option for you|show you)/i;
+      // Most robust signal: the AI named one of the just-searched providers in its
+      // prose (e.g. "Reproductive Medicine Associates ... is a premier option").
+      // If a search result's name appears in the text, the AI is recommending that
+      // provider and a card MUST be created even if the intro phrasing did not match.
+      const plainForName = finalContent.replace(/\*\*/g, "").toLowerCase();
+      let resultNameInProse = false;
+      for (const sr of lastSearchToolResults) {
+        try {
+          const body: string = sr.resultText || "";
+          const s = body.indexOf("[");
+          const e = body.lastIndexOf("]");
+          const arr = s !== -1 && e !== -1 ? JSON.parse(body.substring(s, e + 1)) : [];
+          if (Array.isArray(arr) && arr.some((r: any) => {
+            const n = String(r?.name || r?.displayName || "").toLowerCase();
+            return n.length > 4 && plainForName.includes(n);
+          })) { resultNameInProse = true; break; }
+        } catch { /* ignore */ }
+      }
+      // Trigger the fallback if the AI (a) tried to emit a tag but malformed it,
+      // (b) introduced a match in prose, or (c) named a searched provider.
+      const shouldRepair = aiAttemptedTags > 0 || matchIntroPattern.test(finalContent) || resultNameInProse;
       if (shouldRepair) {
         console.log(`[MATCH_CARD FALLBACK] AI introduced a match but forgot/malformed [[MATCH_CARD:...]] tag (attemptedTags=${aiAttemptedTags}) - attempting auto-creation from tool results`);
         const mentionedNameMatch = finalContent.match(/(?:Surrogate|Donor|Clinic)\s*#?(\d+)/i);
