@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, CheckCircle2, XCircle, Globe, Phone, FileText, Image, Users, Activity, RefreshCw, RotateCcw, StopCircle, SearchX, UserSearch, ImageOff, FileQuestion, PhoneOff, MapPin, Link as LinkIcon, Stethoscope, Award, Sparkles, BadgeCheck } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Globe, Phone, FileText, Image, Users, Activity, RefreshCw, RotateCcw, StopCircle, SearchX, UserSearch, ImageOff, FileQuestion, PhoneOff, MapPin, Link as LinkIcon, Stethoscope, Award, Sparkles, BadgeCheck, Camera } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AdminReportLayout } from "@/components/admin-report-layout";
@@ -31,6 +31,8 @@ interface EnrichmentReportData {
     withLogo: number;
     withTeam: number;
     withLocations: number;
+    totalDoctors: number;
+    doctorsWithPhoto: number;
   };
   missingWebsite: {
     id: string;
@@ -92,6 +94,7 @@ export default function EnrichmentReportPage() {
   const [isRestartingPhone, setIsRestartingPhone] = useState(false);
   const [isRestartingLocations, setIsRestartingLocations] = useState(false);
   const [isRestartingUrls, setIsRestartingUrls] = useState(false);
+  const [isRestartingPhotos, setIsRestartingPhotos] = useState(false);
   const [doctorBusy, setDoctorBusy] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery<EnrichmentReportData>({
@@ -232,6 +235,23 @@ export default function EnrichmentReportPage() {
     }
   };
 
+  const handleRestartPhotos = async () => {
+    setIsRestartingPhotos(true);
+    try {
+      const res = await apiRequest("POST", `/api/scrapers/cdc-syncs/${id}/enrich?mode=photos`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Unknown error" }));
+        throw new Error(err.message);
+      }
+      toast({ title: "Enrichment started for doctor photos", description: "Re-scraping rosters to fill missing headshots", variant: "success" });
+      invalidate();
+    } catch (err: any) {
+      toast({ title: "Failed to start", description: err.message, variant: "destructive" });
+    } finally {
+      setIsRestartingPhotos(false);
+    }
+  };
+
   const handleRestartLocations = async () => {
     setIsRestartingLocations(true);
     try {
@@ -363,7 +383,7 @@ export default function EnrichmentReportPage() {
             </Button>
           )}
           {(() => {
-            const anyBusy = isResuming || isRestarting || isRestartingSkipped || isRestartingTeam || isRestartingLogo || isRestartingAbout || isRestartingPhone || isRestartingLocations || isRestartingUrls || doctorBusy !== null;
+            const anyBusy = isResuming || isRestarting || isRestartingSkipped || isRestartingTeam || isRestartingLogo || isRestartingAbout || isRestartingPhone || isRestartingLocations || isRestartingUrls || isRestartingPhotos || doctorBusy !== null;
             const Label = ({ children }: { children: any }) => (
               <span className="text-[11px] font-ui uppercase tracking-wide text-muted-foreground w-full sm:w-32 sm:shrink-0">{children}</span>
             );
@@ -396,6 +416,10 @@ export default function EnrichmentReportPage() {
                   <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartTeam} disabled={anyBusy} data-testid="button-restart-team">
                     {isRestartingTeam ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserSearch className="w-3.5 h-3.5" />}
                     Team Members
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartPhotos} disabled={anyBusy} data-testid="button-restart-photos">
+                    {isRestartingPhotos ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                    Doctor Photos
                   </Button>
                   <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRestartLogo} disabled={anyBusy} data-testid="button-restart-logo">
                     {isRestartingLogo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageOff className="w-3.5 h-3.5" />}
@@ -463,6 +487,7 @@ export default function EnrichmentReportPage() {
           logo: "Logo Re-discovery",
           about: "About Re-scrape",
           phone: "Phone Re-discovery",
+          photos: "Doctor Photos Re-scrape",
         };
         const modeLabel = job.enrichmentMode ? (MODE_LABELS[job.enrichmentMode] || job.enrichmentMode) : null;
         return (
@@ -487,7 +512,7 @@ export default function EnrichmentReportPage() {
                 {job.enrichmentSkipped > 0 && (
                   <span className="text-warning">
                     {job.enrichmentSkipped} skipped (
-                    {job.enrichmentMode && ["locations", "team", "logo", "about", "phone"].includes(job.enrichmentMode)
+                    {job.enrichmentMode && ["locations", "team", "logo", "about", "phone", "photos"].includes(job.enrichmentMode)
                       ? "site unreachable or blocked"
                       : "no website found"}
                     )
@@ -573,6 +598,12 @@ export default function EnrichmentReportPage() {
             icon={<Users className="w-4 h-4 text-primary" />}
             count={coverage.withTeam}
             total={coverage.totalClinics}
+          />
+          <CoverageBar
+            label="Doctor Photos"
+            icon={<Camera className="w-4 h-4 text-primary" />}
+            count={coverage.doctorsWithPhoto}
+            total={coverage.totalDoctors}
           />
           <CoverageBar
             label="Locations"

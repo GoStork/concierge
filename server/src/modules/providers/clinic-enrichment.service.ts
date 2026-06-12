@@ -1313,6 +1313,72 @@ export class ClinicEnrichmentService {
     console.log(`[clinic-enrichment] Synced locations for "${providerName}": ${finalCount} total`);
   }
 
+  // Fill in MISSING doctor headshots without touching anything else. Re-scrapes
+  // the roster (now with the Playwright fallback, so JS-rendered team pages
+  // yield photos they didn't before), matches scraped people to existing
+  // members by name, and updates photoUrl only where it's currently empty.
+  // Surgical: never deletes/recreates members (preserves enriched doctor data)
+  // and never touches locations (so it won't re-mess hand-curated data).
+  private async refreshTeamPhotos(providerId: string): Promise<boolean> {
+    const provider = await this.prisma.provider.findUnique({
+      where: { id: providerId },
+      select: { id: true, name: true, websiteUrl: true, members: { select: { id: true, name: true, photoUrl: true } } },
+    });
+    if (!provider?.websiteUrl) return false;
+
+    const missing = provider.members.filter(m => !m.photoUrl || m.photoUrl.trim() === "");
+    if (missing.length === 0) return true; // already fully photographed
+
+    let scraped: Awaited<ReturnType<typeof scrapeProviderWebsite>> | null = null;
+    try {
+      scraped = await scrapeProviderWebsite(provider.websiteUrl, { doctorsOnly: true });
+    } catch (err: any) {
+      if (isRetryableError(err)) throw err;
+      console.log(`[clinic-enrichment] photo refresh: scrape failed for "${provider.name}" (${err.message}), skipping`);
+      return false;
+    }
+    if (!scraped) return false;
+
+    const scrapedPhotoByKey = new Map<string, string>();
+    for (const tm of scraped.teamMembers || []) {
+      if (!tm.photoUrl) continue;
+      const key = normalizeMemberKey(tm.name);
+      if (key.length >= 4 && !scrapedPhotoByKey.has(key)) scrapedPhotoByKey.set(key, tm.photoUrl);
+    }
+
+    let filled = 0;
+    for (const m of missing) {
+      const candidate = scrapedPhotoByKey.get(normalizeMemberKey(m.name));
+      if (!candidate) continue;
+      const persisted = await persistPhotoToGcs(candidate, this.storageService);
+      if (persisted) {
+        await this.prisma.providerMember.update({ where: { id: m.id }, data: { photoUrl: persisted } });
+        filled++;
+      }
+    }
+    console.log(`[clinic-enrichment] Photo refresh for "${provider.name}": filled ${filled}/${missing.length} missing headshots`);
+    return true;
+  }
+
+  private async refreshTeamPhotosWithRetry(providerId: string, providerName: string, maxRetries = 3): Promise<boolean | null> {
+    const BASE_DELAY = 5000;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await this.refreshTeamPhotos(providerId);
+      } catch (err: any) {
+        if (isRetryableError(err) && attempt < maxRetries) {
+          await sleep(BASE_DELAY * Math.pow(2, attempt - 1));
+        } else if (isRetryableError(err)) {
+          console.log(`[clinic-enrichment] Photo refresh for "${providerName}" still failing after ${maxRetries} attempts - skipping`);
+          return false;
+        } else {
+          throw err;
+        }
+      }
+    }
+    return null;
+  }
+
   private async reSyncLocationsAndTeamWithRetry(providerId: string, providerName: string, maxRetries = 3): Promise<boolean | null> {
     const BASE_DELAY = 5000;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -1652,7 +1718,7 @@ export class ClinicEnrichmentService {
     return { processed, errors, skipped, stopped };
   }
 
-  async runTargetedEnrichment(jobId: string, mode: "skipped" | "team" | "logo" | "about" | "phone" | "locations" | "urls" | "doctors-nppes" | "doctors-abog" | "doctors-bio" | "doctors-all"): Promise<void> {
+  async runTargetedEnrichment(jobId: string, mode: "skipped" | "team" | "logo" | "about" | "phone" | "locations" | "urls" | "photos" | "doctors-nppes" | "doctors-abog" | "doctors-bio" | "doctors-all"): Promise<void> {
     const runId = crypto.randomUUID();
     this.activeRunId = runId;
     const modeLabels: Record<string, string> = {
@@ -1663,6 +1729,7 @@ export class ClinicEnrichmentService {
       phone: "missing phone",
       locations: "re-scrape locations + team",
       urls: "re-discover website URLs",
+      photos: "fill missing doctor photos",
       "doctors-nppes": "doctor NPI + specialty (NPPES)",
       "doctors-abog": "doctor board certifications (ABOG)",
       "doctors-bio": "doctor focus areas (AI from bios)",
@@ -1700,6 +1767,18 @@ export class ClinicEnrichmentService {
         providersToEnrich = allIvfClinics;
       } else if (mode === "locations") {
         providersToEnrich = allIvfClinics.filter(p => !!p.websiteUrl);
+      } else if (mode === "photos") {
+        // Clinics that have a website AND at least one doctor with no headshot.
+        const photoless = await this.prisma.providerMember.findMany({
+          where: {
+            providerId: { in: allIvfClinics.map(p => p.id) },
+            OR: [{ photoUrl: null }, { photoUrl: "" }],
+          },
+          select: { providerId: true },
+          distinct: ["providerId"],
+        });
+        const needPhotos = new Set(photoless.map(m => m.providerId));
+        providersToEnrich = allIvfClinics.filter(p => !!p.websiteUrl && needPhotos.has(p.id));
       } else if (isDoctorMode) {
         // Doctor-data modes enrich the existing team, so only clinics that have members.
         const withTeam = await this.prisma.providerMember.groupBy({ by: ["providerId"], _count: true });
@@ -1762,6 +1841,9 @@ export class ClinicEnrichmentService {
         }
         if (mode === "locations") {
           return await this.reSyncLocationsAndTeamWithRetry(provider.id, provider.name);
+        }
+        if (mode === "photos") {
+          return await this.refreshTeamPhotosWithRetry(provider.id, provider.name);
         }
         return await this.enrichWithRetry(provider.id, provider.name);
       };

@@ -106,7 +106,7 @@ export class ScrapersController {
       });
 
       const TARGETED_MODES = new Set([
-        "skipped", "team", "logo", "about", "phone", "locations", "urls",
+        "skipped", "team", "logo", "about", "phone", "locations", "urls", "photos",
         "doctors-nppes", "doctors-abog", "doctors-bio", "doctors-all",
       ]);
 
@@ -781,6 +781,19 @@ export class ScrapersController {
     });
     const withTeam = memberCounts.length;
 
+    // Doctor-photo coverage: % of individual doctors (not clinics) that have a
+    // headshot. SART-sourced doctors have no photo, and some website photos
+    // aren't extracted, so this runs well below the team-coverage number.
+    const totalDoctors = await this.prisma.providerMember.count({
+      where: { providerId: { in: ivfClinics.map((c) => c.id) } },
+    });
+    const doctorsWithPhoto = await this.prisma.providerMember.count({
+      where: {
+        providerId: { in: ivfClinics.map((c) => c.id) },
+        AND: [{ photoUrl: { not: null } }, { photoUrl: { not: "" } }],
+      },
+    });
+
     // "withLocations" = clinics with at least one location that has a real street
     // address. A single-location clinic IS complete - it has its one office - so
     // it must count here. (An earlier version counted only enriched satellites
@@ -878,6 +891,8 @@ export class ScrapersController {
         withLogo,
         withTeam,
         withLocations,
+        totalDoctors,
+        doctorsWithPhoto,
       },
       missingWebsite,
       recentResults: recentResults.length > 0 ? recentResults : undefined,
@@ -932,7 +947,7 @@ export class ScrapersController {
       throw new HttpException("Enrichment is already running.", HttpStatus.CONFLICT);
     }
 
-    const validModes = ["skipped", "team", "logo", "about", "phone", "locations", "urls", "doctors-nppes", "doctors-abog", "doctors-bio", "doctors-all"];
+    const validModes = ["skipped", "team", "logo", "about", "phone", "locations", "urls", "photos", "doctors-nppes", "doctors-abog", "doctors-bio", "doctors-all"];
     if (mode && !validModes.includes(mode)) {
       throw new BadRequestException(`Invalid mode "${mode}". Must be one of: ${validModes.join(", ")}.`);
     }
@@ -960,7 +975,7 @@ export class ScrapersController {
       }
 
       const updated = await this.prisma.cdcSyncJob.findUnique({ where: { id } });
-      this.clinicEnrichmentService.runTargetedEnrichment(id, mode as "skipped" | "team" | "logo" | "about" | "phone" | "locations" | "urls" | "doctors-nppes" | "doctors-abog" | "doctors-bio" | "doctors-all");
+      this.clinicEnrichmentService.runTargetedEnrichment(id, mode as "skipped" | "team" | "logo" | "about" | "phone" | "locations" | "urls" | "photos" | "doctors-nppes" | "doctors-abog" | "doctors-bio" | "doctors-all");
       return updated;
     }
 
