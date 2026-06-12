@@ -8,28 +8,18 @@ import {
   ArrowLeft, Globe, Phone, MapPin, Calendar, Building2, User, CheckCircle2, XCircle,
   Loader2, Check,
 } from "lucide-react";
-import { Card } from "@/components/ui/card";
+import { ProfileSection } from "@/components/ui/profile-section";
 import { IvfSuccessRatesSection } from "@/components/ivf-success-rates-section";
 import { ClinicCostProgramsSection } from "@/components/clinic-cost-programs-section";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { getCountryFlag } from "@/lib/country-flag";
 
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div className="px-4 py-2.5 border-b bg-muted/50">
-      <h3 className="text-sm font-heading font-semibold text-foreground" data-testid={`section-header-${title.toLowerCase().replace(/\s+/g, "-")}`}>
-        {title}
-      </h3>
-    </div>
-  );
-}
-
 function FieldItem({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null;
   return (
     <div data-testid={`field-${label.toLowerCase().replace(/\s+/g, "-")}`}>
-      <p className="text-xs font-ui text-foreground">{label}</p>
-      <p className="text-sm text-muted-foreground">{value}</p>
+      <p className="text-base font-ui text-foreground">{label}</p>
+      <p className="text-base text-foreground">{value}</p>
     </div>
   );
 }
@@ -141,9 +131,7 @@ export default function ProviderProfilePage() {
         </div>
       </div>
 
-      <Card className="overflow-hidden" data-testid="section-company-info">
-        <SectionHeader title="Company Information" />
-        <div className="p-6">
+      <ProfileSection title="Company Information" data-testid="section-company-info">
           <div className="grid grid-cols-2 gap-x-12 gap-y-3">
             <FieldItem label="Provider Name" value={provider.name} />
             <FieldItem label="Year Founded" value={provider.yearFounded ? String(provider.yearFounded) : null} />
@@ -153,12 +141,11 @@ export default function ProviderProfilePage() {
           </div>
           {provider.about && (
             <div className="mt-4" data-testid="field-about">
-              <p className="text-xs font-ui text-foreground">About</p>
-              <p className="text-sm text-muted-foreground whitespace-pre-line leading-body mt-1">{provider.about}</p>
+              <p className="text-base font-ui text-foreground">About</p>
+              <p className="text-base text-foreground whitespace-pre-line leading-body mt-1">{provider.about}</p>
             </div>
           )}
-        </div>
-      </Card>
+      </ProfileSection>
 
       {provider.ivfSuccessRates && provider.ivfSuccessRates.length > 0 && (
         <IvfSuccessRatesSection rates={provider.ivfSuccessRates} filterContext={filterContext} />
@@ -237,9 +224,7 @@ export default function ProviderProfilePage() {
         if (!hasIvfData && !hasSurrogacyData) return null;
 
         return (
-          <Card className="overflow-hidden" data-testid="section-matching-requirements">
-            <SectionHeader title="Parents Matching Requirements" />
-            <div className="p-6 space-y-6">
+          <ProfileSection title="Parents Matching Requirements" contentClassName="p-6 space-y-6" data-testid="section-matching-requirements">
               {hasIvfData && (
                 <div className="space-y-4">
                   <div className="space-y-2">
@@ -253,7 +238,7 @@ export default function ProviderProfilePage() {
                         ) : (
                           <XCircle className="w-4 h-4 text-muted-foreground/40 shrink-0" />
                         )}
-                        <span className="text-sm text-foreground">{label}</span>
+                        <span className="text-base text-foreground">{label}</span>
                       </div>
                     ))}
                   </div>
@@ -261,32 +246,32 @@ export default function ProviderProfilePage() {
                     <div className="flex gap-8">
                       {provider.ivfMaxAgeIp1 != null && (
                         <div>
-                          <p className="text-xs font-ui text-foreground">Max Age of IP 1</p>
-                          <p className="text-sm text-muted-foreground">{provider.ivfMaxAgeIp1}</p>
+                          <p className="text-base font-ui text-foreground">Max Age of IP 1</p>
+                          <p className="text-base text-foreground">{provider.ivfMaxAgeIp1}</p>
                         </div>
                       )}
                       {provider.ivfMaxAgeIp2 != null && (
                         <div>
-                          <p className="text-xs font-ui text-foreground">Max Age of IP 2</p>
-                          <p className="text-sm text-muted-foreground">{provider.ivfMaxAgeIp2}</p>
+                          <p className="text-base font-ui text-foreground">Max Age of IP 2</p>
+                          <p className="text-base text-foreground">{provider.ivfMaxAgeIp2}</p>
                         </div>
                       )}
                     </div>
                   )}
                   {provider.ivfBiologicalConnection && (
                     <div>
-                      <p className="text-xs font-ui text-foreground">Biological connection to embryos</p>
-                      <p className="text-sm text-muted-foreground">{bioConnectionLabel[provider.ivfBiologicalConnection] || provider.ivfBiologicalConnection}</p>
+                      <p className="text-base font-ui text-foreground">Biological connection to embryos</p>
+                      <p className="text-base text-foreground">{bioConnectionLabel[provider.ivfBiologicalConnection] || provider.ivfBiologicalConnection}</p>
                     </div>
                   )}
                   {provider.ivfAcceptingPatients && provider.ivfAcceptingPatients.length > 0 && (
                     <div>
-                      <p className="text-xs font-ui text-foreground mb-2">Accepting patients that are</p>
+                      <p className="text-base font-ui text-foreground mb-2">Accepting patients that are</p>
                       <div className="flex flex-col gap-2">
                         {provider.ivfAcceptingPatients.map((p: string) => (
                           <div key={p} className="flex items-center gap-2">
                             <CheckCircle2 className="w-4 h-4 text-[hsl(var(--brand-success))] shrink-0" />
-                            <span className="text-sm text-foreground">{patientLabels[p] || p}</span>
+                            <span className="text-base text-foreground">{patientLabels[p] || p}</span>
                           </div>
                         ))}
                       </div>
@@ -294,8 +279,8 @@ export default function ProviderProfilePage() {
                   )}
                   {ivfOffersEggDonors && provider.ivfEggDonorType && (
                     <div>
-                      <p className="text-xs font-ui text-foreground">Egg donor type</p>
-                      <p className="text-sm text-muted-foreground">{eggDonorTypeLabel[provider.ivfEggDonorType] || provider.ivfEggDonorType}</p>
+                      <p className="text-base font-ui text-foreground">Egg donor type</p>
+                      <p className="text-base text-foreground">{eggDonorTypeLabel[provider.ivfEggDonorType] || provider.ivfEggDonorType}</p>
                     </div>
                   )}
                 </div>
@@ -306,7 +291,7 @@ export default function ProviderProfilePage() {
                   {hasIvfData && <div className="border-t border-border" />}
                   {provider.surrogacyCitizensNotAllowed && provider.surrogacyCitizensNotAllowed.length > 0 && (
                     <div>
-                      <p className="text-xs font-ui text-foreground mb-2">Citizens not allowed</p>
+                      <p className="text-base font-ui text-foreground mb-2">Citizens not allowed</p>
                       <div className="flex flex-wrap gap-2">
                         {provider.surrogacyCitizensNotAllowed.map((c: string) => (
                           <Badge key={c} variant="outline" className="text-xs flex items-center gap-1">
@@ -323,30 +308,29 @@ export default function ProviderProfilePage() {
                     ) : (
                       <XCircle className="w-4 h-4 text-muted-foreground/40 shrink-0" />
                     )}
-                    <span className="text-sm text-foreground">Twins allowed</span>
+                    <span className="text-base text-foreground">Twins allowed</span>
                   </div>
                   {provider.surrogacyStayAfterBirthMonths != null && (
                     <div>
-                      <p className="text-xs font-ui text-foreground">IPs must stay after birth (months)</p>
-                      <p className="text-sm text-muted-foreground">{provider.surrogacyStayAfterBirthMonths}</p>
+                      <p className="text-base font-ui text-foreground">IPs must stay after birth (months)</p>
+                      <p className="text-base text-foreground">{provider.surrogacyStayAfterBirthMonths}</p>
                     </div>
                   )}
                   {Array.isArray(provider.surrogacyBirthCertificateListing) && provider.surrogacyBirthCertificateListing.length > 0 && (
                     <div>
-                      <p className="text-xs font-ui text-foreground">Listed on birth certificate</p>
-                      <p className="text-sm text-muted-foreground">{provider.surrogacyBirthCertificateListing.map((v: string) => birthCertLabel[v] || v).join(", ")}</p>
+                      <p className="text-base font-ui text-foreground">Listed on birth certificate</p>
+                      <p className="text-base text-foreground">{provider.surrogacyBirthCertificateListing.map((v: string) => birthCertLabel[v] || v).join(", ")}</p>
                     </div>
                   )}
                   {provider.surrogacySurrogateRemovableFromCert != null && (
                     <div>
-                      <p className="text-xs font-ui text-foreground">Surrogate removable from birth certificate</p>
-                      <p className="text-sm text-muted-foreground">{provider.surrogacySurrogateRemovableFromCert ? "Yes" : "No"}</p>
+                      <p className="text-base font-ui text-foreground">Surrogate removable from birth certificate</p>
+                      <p className="text-base text-foreground">{provider.surrogacySurrogateRemovableFromCert ? "Yes" : "No"}</p>
                     </div>
                   )}
                 </div>
               )}
-            </div>
-          </Card>
+          </ProfileSection>
         );
       })()}
 
@@ -377,19 +361,17 @@ export default function ProviderProfilePage() {
         if (!hasData) return null;
 
         return (
-          <Card className="overflow-hidden" data-testid="section-surrogate-matching-requirements">
-            <SectionHeader title="Surrogate Matching Requirements" />
-            <div className="p-6 space-y-4">
+          <ProfileSection title="Surrogate Matching Requirements" contentClassName="p-6 space-y-4" data-testid="section-surrogate-matching-requirements">
               {(provider.ivfSurrogateMinAge != null || provider.ivfSurrogateMaxAge != null) && (
                 <div>
-                  <p className="text-xs font-ui text-foreground">Age Range of Surrogate</p>
-                  <p className="text-sm text-muted-foreground">{provider.ivfSurrogateMinAge ?? 18} - {provider.ivfSurrogateMaxAge ?? 45} years</p>
+                  <p className="text-base font-ui text-foreground">Age Range of Surrogate</p>
+                  <p className="text-base text-foreground">{provider.ivfSurrogateMinAge ?? 18} - {provider.ivfSurrogateMaxAge ?? 45} years</p>
                 </div>
               )}
               {(provider.ivfSurrogateMinBmi != null || provider.ivfSurrogateMaxBmi != null) && (
                 <div>
-                  <p className="text-xs font-ui text-foreground">BMI Range of Surrogate</p>
-                  <p className="text-sm text-muted-foreground">{provider.ivfSurrogateMinBmi ?? 18} - {provider.ivfSurrogateMaxBmi ?? 35}</p>
+                  <p className="text-base font-ui text-foreground">BMI Range of Surrogate</p>
+                  <p className="text-base text-foreground">{provider.ivfSurrogateMinBmi ?? 18} - {provider.ivfSurrogateMaxBmi ?? 35}</p>
                 </div>
               )}
               {[
@@ -401,8 +383,8 @@ export default function ProviderProfilePage() {
                 { label: "Months Post Vaginal Delivery", value: provider.ivfSurrogateMonthsPostVaginal },
               ].filter(({ value }) => value != null).map(({ label, value }) => (
                 <div key={label}>
-                  <p className="text-xs font-ui text-foreground">{label}</p>
-                  <p className="text-sm text-muted-foreground">{value}</p>
+                  <p className="text-base font-ui text-foreground">{label}</p>
+                  <p className="text-base text-foreground">{value}</p>
                 </div>
               ))}
               {[
@@ -419,42 +401,36 @@ export default function ProviderProfilePage() {
                   ) : (
                     <XCircle className="w-4 h-4 text-muted-foreground/40 shrink-0" />
                   )}
-                  <span className="text-sm text-foreground">{label}</span>
+                  <span className="text-base text-foreground">{label}</span>
                 </div>
               ))}
               {provider.ivfSurrogateMentalHealthHistory && (
                 <div>
-                  <p className="text-xs font-ui text-foreground mb-1">Health History Notes</p>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{provider.ivfSurrogateMentalHealthHistory}</p>
+                  <p className="text-base font-ui text-foreground mb-1">Health History Notes</p>
+                  <p className="text-base text-foreground whitespace-pre-wrap">{provider.ivfSurrogateMentalHealthHistory}</p>
                 </div>
               )}
-            </div>
-          </Card>
+          </ProfileSection>
         );
       })()}
 
       {provider.locations && provider.locations.length > 0 && (
-        <Card className="overflow-hidden" data-testid="section-locations">
-          <SectionHeader title="Locations" />
-          <div className="p-6 space-y-3">
+        <ProfileSection title="Locations" contentClassName="p-6 space-y-3" data-testid="section-locations">
             {provider.locations.map((loc: any, idx: number) => {
               const parts = [loc.address, loc.city, loc.state, loc.zip].filter(Boolean);
               if (parts.length === 0) return null;
               return (
                 <div key={loc.id || idx} className="flex items-start gap-2" data-testid={`location-${idx}`}>
                   <MapPin className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                  <p className="text-sm text-foreground">{parts.join(", ")}</p>
+                  <p className="text-base text-foreground">{parts.join(", ")}</p>
                 </div>
               );
             })}
-          </div>
-        </Card>
+        </ProfileSection>
       )}
 
       {provider.members && provider.members.length > 0 && (
-        <Card className="overflow-hidden" data-testid="section-team">
-          <SectionHeader title="Team Members" />
-          <div className="p-6">
+        <ProfileSection title="Team Members" data-testid="section-team">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {provider.members.map((member: any) => {
                 const memberPhoto = getPhotoSrc(member.photoUrl);
@@ -512,14 +488,11 @@ export default function ProviderProfilePage() {
                 );
               })}
             </div>
-          </div>
-        </Card>
+        </ProfileSection>
       )}
 
       {surrogacyProfile && (
-        <Card className="overflow-hidden" data-testid="section-surrogacy-details">
-          <SectionHeader title="Surrogacy Agency Details" />
-          <div className="p-6">
+        <ProfileSection title="Surrogacy Agency Details" data-testid="section-surrogacy-details">
             <div className="grid grid-cols-2 gap-x-12 gap-y-3">
               <FieldItem
                 label="Number of Babies Born"
@@ -531,14 +504,11 @@ export default function ProviderProfilePage() {
                 value={surrogacyProfile.familiesPerCoordinator != null ? String(surrogacyProfile.familiesPerCoordinator) : null}
               />
             </div>
-          </div>
-        </Card>
+        </ProfileSection>
       )}
 
       {screening && (
-        <Card className="overflow-hidden" data-testid="section-screening">
-          <SectionHeader title="Surrogate Screening Process" />
-          <div className="p-6">
+        <ProfileSection title="Surrogate Screening Process" data-testid="section-screening">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
                 { label: "Criminal Background Check", value: screening.criminalBackgroundCheck },
@@ -555,12 +525,11 @@ export default function ProviderProfilePage() {
                   ) : (
                     <XCircle className="w-4 h-4 text-muted-foreground/40 shrink-0" />
                   )}
-                  <span className="text-sm text-foreground">{label}</span>
+                  <span className="text-base text-foreground">{label}</span>
                 </div>
               ))}
             </div>
-          </div>
-        </Card>
+        </ProfileSection>
       )}
     </div>
   );

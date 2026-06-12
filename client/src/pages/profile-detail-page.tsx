@@ -11,6 +11,7 @@ import { ClinicCostProgramsSection } from "@/components/clinic-cost-programs-sec
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { ProfileSection } from "@/components/ui/profile-section";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAppDispatch, useAppSelector } from "@/store";
 import { toggleFavoriteDonor, passDonor } from "@/store/uiSlice";
@@ -286,7 +287,7 @@ const HIDDEN_PROFILE_KEYS = new Set([
   "donationTypes", "Donation Types", "Donation Type", "Type of Donation",
 ]);
 
-const AGENCY_COMMENT_PATTERN = /^(agency\s*(comment|recommendation|note)s?|recommendation\s*points?|additional\s*information)$/i;
+const AGENCY_COMMENT_PATTERN = /^(agency\s*(comment|recommendation|note)s?|recommendation\s*points?)$/i;
 
 const IMAGE_KEYS = new Set([
   "All Photos", "Genetic Report Images",
@@ -327,17 +328,6 @@ const TYPE_ENDPOINTS: Record<string, string> = {
   surrogate: "surrogates",
   "sperm-donor": "sperm-donors",
 };
-
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div className="px-6 pt-5" data-testid={`section-header-${title.toLowerCase().replace(/\s+/g, "-")}`}>
-      <h3 className="font-heading text-xl text-foreground">
-        {title}
-      </h3>
-    </div>
-  );
-}
-
 
 function getMandatoryFields(donor: any, type: string): { label: string; value: string }[] {
   const V = (val: any) => (val != null && val !== "") ? String(val) : "-";
@@ -969,9 +959,7 @@ export default function DonorProfilePage() {
         </Card>
       )}
 
-      <Card className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid="section-summary">
-        <SectionHeader title="Summary" />
-        <div className="p-6">
+      <ProfileSection title="Summary" data-testid="section-summary">
           <div className="grid grid-cols-2 gap-x-12 gap-y-3">
             {(() => {
               // For sperm donors, fields are ordered [left-col items..., right-col items...].
@@ -985,13 +973,12 @@ export default function DonorProfilePage() {
               return mandatoryFields;
             })().map(({ label, value }) => (
               <div key={label} data-testid={`field-${label.toLowerCase().replace(/\s+/g, "-")}`}>
-                <p className="text-xs font-ui text-foreground">{label}</p>
-                <p className="text-sm text-muted-foreground">{value}</p>
+                <p className="text-base font-ui text-foreground">{label}</p>
+                <p className="text-base text-foreground">{value}</p>
               </div>
             ))}
           </div>
-        </div>
-      </Card>
+      </ProfileSection>
 
       {/* Parent-facing cost programs for this profile's parent agency / bank.
           Reuses the same component used on the provider profile page so the
@@ -1109,17 +1096,10 @@ export default function DonorProfilePage() {
               const joined = secData.filter((v: any) => typeof v === "string" && v.trim()).join("\n");
               if (joined) agencyCommentParts.push(joined);
               consumed.add(secName);
-            } else if (typeof secData === "object" && secData !== null) {
-              for (const [k, v] of Object.entries(secData)) {
-                if (typeof v === "string" && v.trim()) {
-                  agencyCommentParts.push(v.trim());
-                } else if (Array.isArray(v)) {
-                  const joined = v.filter((item: any) => typeof item === "string" && item.trim()).join("\n");
-                  if (joined) agencyCommentParts.push(joined);
-                }
-              }
-              consumed.add(secName);
             }
+            // Structured objects (key/value Q&A) are NOT treated as agency-comment
+            // prose - flattening them drops every field label. Leave them unconsumed
+            // so they render through the normal key/value section path with labels intact.
           }
         }
         const agencyCommentContent = agencyCommentParts.join("\n\n") || null;
@@ -1173,23 +1153,17 @@ export default function DonorProfilePage() {
         return sectionNames.filter((n) => !consumed.has(n)).map((sectionName) => {
           if (sectionName === "__LETTER__" && letterContent) {
             return (
-              <Card key="letter-to-intended-parents" className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid="section-letter-to-intended-parents">
-                <SectionHeader title="Letter to Intended Parents" />
-                <div className="p-6">
+              <ProfileSection key="letter-to-intended-parents" title="Letter to Intended Parents" data-testid="section-letter-to-intended-parents">
                   {letterTitle && <p className="text-sm font-semibold text-foreground mb-2">{letterTitle}</p>}
-                  <p className="text-sm leading-body text-foreground whitespace-pre-line">{letterContent}</p>
-                </div>
-              </Card>
+                  <p className="text-base leading-body text-foreground whitespace-pre-line">{letterContent}</p>
+              </ProfileSection>
             );
           }
           if (sectionName === "__AGENCY_COMMENTS__" && agencyCommentContent) {
             return (
-              <Card key="agency-comments" className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid="section-agency-comments">
-                <SectionHeader title="Agency Comments" />
-                <div className="p-6">
-                  <p className="text-sm leading-body text-foreground whitespace-pre-line">{agencyCommentContent}</p>
-                </div>
-              </Card>
+              <ProfileSection key="agency-comments" title="Agency Comments" data-testid="section-agency-comments">
+                  <p className="text-base leading-body text-foreground whitespace-pre-line">{agencyCommentContent}</p>
+              </ProfileSection>
             );
           }
           const sectionData = pd[sectionName];
@@ -1203,9 +1177,7 @@ export default function DonorProfilePage() {
             const ROW_HEADER_PATTERN_ARR = /^(relation|name|label|role|title|child|member)/i;
             const useMobileCards = columns.length >= 4;
             return (
-              <Card key={sectionName} className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid={`section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}>
-                <SectionHeader title={arrDisplayName} />
-                <div className="p-6">
+              <ProfileSection key={sectionName} title={arrDisplayName} data-testid={`section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}>
                   {useMobileCards && (
                     <div className="md:hidden space-y-3" data-testid={`array-mobile-cards-${arrDisplayName}`}>
                       {sectionData.map((row: Record<string, any>, ri: number) => {
@@ -1222,7 +1194,7 @@ export default function DonorProfilePage() {
                                 return (
                                   <div key={col} className="min-w-0">
                                     <p className="text-[11px] font-ui text-foreground">{col}</p>
-                                    <p className="text-xs text-muted-foreground break-words">{val}</p>
+                                    <p className="text-xs text-foreground break-words">{val}</p>
                                   </div>
                                 );
                               })}
@@ -1237,7 +1209,7 @@ export default function DonorProfilePage() {
                       <thead>
                         <tr className="border-b border-border">
                           {columns.map((col) => (
-                            <th key={col} className="text-left py-2 pr-3 text-xs font-ui text-foreground">{col}</th>
+                            <th key={col} className="text-left py-2 pr-3 text-sm font-ui text-foreground">{col}</th>
                           ))}
                         </tr>
                       </thead>
@@ -1245,26 +1217,22 @@ export default function DonorProfilePage() {
                         {sectionData.map((row: Record<string, any>, ri: number) => (
                           <tr key={ri} className="border-b border-border/50 last:border-0">
                             {columns.map((col) => (
-                              <td key={col} className="py-2 pr-3 text-muted-foreground break-words">{String(row[col] ?? "")}</td>
+                              <td key={col} className="py-2 pr-3 text-foreground break-words">{String(row[col] ?? "")}</td>
                             ))}
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                </div>
-              </Card>
+              </ProfileSection>
             );
           }
           if (typeof sectionData === "string" && sectionData.trim()) {
             const displayName = sectionName.endsWith(":") ? sectionName.slice(0, -1) : sectionName;
             return (
-              <Card key={sectionName} className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid={`section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}>
-                <SectionHeader title={displayName} />
-                <div className="p-6">
-                  <p className="text-sm leading-body text-foreground whitespace-pre-line">{sectionData}</p>
-                </div>
-              </Card>
+              <ProfileSection key={sectionName} title={displayName} data-testid={`section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}>
+                  <p className="text-base leading-body text-foreground whitespace-pre-line">{sectionData}</p>
+              </ProfileSection>
             );
           }
           if (typeof sectionData !== "object" || sectionData === null) return null;
@@ -1279,15 +1247,13 @@ export default function DonorProfilePage() {
               for (const k of rowKeys) row[k] = kvData[k];
               const displayName = sectionName.endsWith(":") ? sectionName.slice(0, -1) : sectionName;
               return (
-                <Card key={sectionName} className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid={`section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}>
-                  <SectionHeader title={displayName} />
-                  <div className="p-6 space-y-3">
+                <ProfileSection key={sectionName} title={displayName} contentClassName="p-6 space-y-3" data-testid={`section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}>
                     {metaKeys.length > 0 && (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-12 gap-y-3">
                         {metaKeys.map((k) => (
                           <div key={k}>
-                            <p className="text-xs font-ui text-foreground">{k}</p>
-                            <p className="text-sm text-muted-foreground">{String(kvData[k] ?? "")}</p>
+                            <p className="text-base font-ui text-foreground">{k}</p>
+                            <p className="text-base text-foreground">{String(kvData[k] ?? "")}</p>
                           </div>
                         ))}
                       </div>
@@ -1297,21 +1263,20 @@ export default function DonorProfilePage() {
                         <thead>
                           <tr className="border-b border-border">
                             {rowKeys.map((col) => (
-                              <th key={col} className="text-left py-2 pr-4 text-xs font-ui text-foreground whitespace-nowrap">{col}</th>
+                              <th key={col} className="text-left py-2 pr-4 text-sm font-ui text-foreground whitespace-nowrap">{col}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
                           <tr className="border-b border-border/50 last:border-0">
                             {rowKeys.map((col) => (
-                              <td key={col} className="py-2 pr-4 text-muted-foreground whitespace-nowrap">{String(row[col] ?? "")}</td>
+                              <td key={col} className="py-2 pr-4 text-foreground whitespace-nowrap">{String(row[col] ?? "")}</td>
                             ))}
                           </tr>
                         </tbody>
                       </table>
                     </div>
-                  </div>
-                </Card>
+                </ProfileSection>
               );
             }
           }
@@ -1500,23 +1465,23 @@ export default function DonorProfilePage() {
 
               return (
                 <div key={label || "table"} className="mt-4">
-                  {label && <p className="text-xs font-ui text-foreground mb-2">{label}</p>}
+                  {label && <p className="text-base font-ui text-foreground mb-2">{label}</p>}
                   <div className="md:hidden overflow-x-auto -mx-6 px-6">
                     <table className="w-full text-sm table-auto" style={{ minWidth: 0 }}>
                       <thead>
                         <tr className="border-b border-border">
-                          <th className="text-left py-2 pr-2 text-xs font-ui text-foreground" style={{ width: '25%', minWidth: 70 }}></th>
+                          <th className="text-left py-2 pr-2 text-sm font-ui text-foreground" style={{ width: '25%', minWidth: 70 }}></th>
                           {headerLabels.map((h, i) => (
-                            <th key={i} className="text-left py-2 px-1 text-xs font-ui text-foreground" style={{ minWidth: 50 }}>{h}</th>
+                            <th key={i} className="text-left py-2 px-1 text-sm font-ui text-foreground" style={{ minWidth: 50 }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
                         {attrCols.map((attr) => (
                           <tr key={attr} className="border-b border-border/50 last:border-0">
-                            <td className="py-2 pr-2 text-xs font-ui text-foreground">{renameCol(attr)}</td>
+                            <td className="py-2 pr-2 text-sm font-ui text-foreground">{renameCol(attr)}</td>
                             {rows.map((row, ri) => (
-                              <td key={ri} className="py-2 px-1 text-muted-foreground text-xs">{String(row[attr] ?? "-")}</td>
+                              <td key={ri} className="py-2 px-1 text-foreground text-xs">{String(row[attr] ?? "-")}</td>
                             ))}
                           </tr>
                         ))}
@@ -1528,7 +1493,7 @@ export default function DonorProfilePage() {
                       <thead>
                         <tr className="border-b border-border">
                           {cols.map((col) => (
-                            <th key={col} className="text-left py-2 pr-4 text-xs font-ui text-foreground whitespace-nowrap" style={getColStyle(col)}>{renameCol(col)}</th>
+                            <th key={col} className="text-left py-2 pr-4 text-sm font-ui text-foreground whitespace-nowrap" style={getColStyle(col)}>{renameCol(col)}</th>
                           ))}
                         </tr>
                       </thead>
@@ -1536,7 +1501,7 @@ export default function DonorProfilePage() {
                         {rows.map((row: Record<string, any>, ri: number) => (
                           <tr key={ri} className="border-b border-border/50 last:border-0">
                             {cols.map((col) => (
-                              <td key={col} className={`py-2 pr-4 text-muted-foreground ${LONG_COL_PATTERN.test(col) ? "break-words" : "whitespace-nowrap"}`}>{String(row[col] ?? "")}</td>
+                              <td key={col} className={`py-2 pr-4 text-foreground ${LONG_COL_PATTERN.test(col) ? "break-words" : "whitespace-nowrap"}`}>{String(row[col] ?? "")}</td>
                             ))}
                           </tr>
                         ))}
@@ -1552,7 +1517,7 @@ export default function DonorProfilePage() {
 
             return (
               <div key={label || "table"} className="mt-4">
-                {label && <p className="text-xs font-ui text-foreground mb-2">{label}</p>}
+                {label && <p className="text-base font-ui text-foreground mb-2">{label}</p>}
                 {renderMobileCards && (
                   <div className="md:hidden space-y-3" data-testid={`table-mobile-cards-${label || ""}`}>
                     {rows.map((row: Record<string, any>, ri: number) => {
@@ -1569,7 +1534,7 @@ export default function DonorProfilePage() {
                               return (
                                 <div key={col} className="min-w-0">
                                   <p className="text-[11px] font-ui text-foreground">{renameCol(col)}</p>
-                                  <p className="text-xs text-muted-foreground break-words">{val}</p>
+                                  <p className="text-xs text-foreground break-words">{val}</p>
                                 </div>
                               );
                             })}
@@ -1584,7 +1549,7 @@ export default function DonorProfilePage() {
                     <thead>
                       <tr className="border-b border-border">
                         {cols.map((col) => (
-                          <th key={col} className="text-left py-2 pr-4 text-xs font-ui text-foreground whitespace-nowrap" style={getColStyle(col)}>{renameCol(col)}</th>
+                          <th key={col} className="text-left py-2 pr-4 text-sm font-ui text-foreground whitespace-nowrap" style={getColStyle(col)}>{renameCol(col)}</th>
                         ))}
                       </tr>
                     </thead>
@@ -1592,7 +1557,7 @@ export default function DonorProfilePage() {
                       {rows.map((row: Record<string, any>, ri: number) => (
                         <tr key={ri} className="border-b border-border/50 last:border-0">
                           {cols.map((col) => (
-                            <td key={col} className={`py-2 pr-4 text-muted-foreground ${LONG_COL_PATTERN.test(col) ? "break-words" : "whitespace-nowrap"}`}>{String(row[col] ?? "")}</td>
+                            <td key={col} className={`py-2 pr-4 text-foreground ${LONG_COL_PATTERN.test(col) ? "break-words" : "whitespace-nowrap"}`}>{String(row[col] ?? "")}</td>
                           ))}
                         </tr>
                       ))}
@@ -1605,13 +1570,11 @@ export default function DonorProfilePage() {
 
           const displaySectionName = sectionName.endsWith(":") ? sectionName.slice(0, -1) : sectionName;
           return (
-            <Card key={sectionName} className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid={`section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}>
-              <SectionHeader title={displaySectionName} />
-              <div className="p-6 space-y-3">
+            <ProfileSection key={sectionName} title={displaySectionName} contentClassName="p-6 space-y-3" data-testid={`section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}>
                 {sectionLetterText && (
                   <div className="mb-4">
                     {sectionLetterTitle && <p className="text-sm font-semibold text-foreground mb-2">{sectionLetterTitle}</p>}
-                    <p className="text-sm leading-body text-foreground whitespace-pre-line">{sectionLetterText}</p>
+                    <p className="text-base leading-body text-foreground whitespace-pre-line">{sectionLetterText}</p>
                   </div>
                 )}
                 {fieldEntries2.length > 0 && (() => {
@@ -1634,8 +1597,8 @@ export default function DonorProfilePage() {
                     <>
                       {longEntries.map(([question, answer]) => (
                         <div key={question} className="mb-3">
-                          <p className="text-xs font-ui text-foreground mb-1">{question}</p>
-                          <p className="text-sm text-muted-foreground whitespace-pre-line">{renderFlat(answer)}</p>
+                          <p className="text-base font-ui text-foreground mb-1">{question}</p>
+                          <p className="text-base text-foreground whitespace-pre-line">{renderFlat(answer)}</p>
                         </div>
                       ))}
                       {shortEntries.length > 0 && (
@@ -1645,7 +1608,7 @@ export default function DonorProfilePage() {
                               const subEntries = Object.entries(answer);
                               return (
                                 <div key={question}>
-                                  <p className="text-xs font-ui text-foreground mb-1">{question}</p>
+                                  <p className="text-base font-ui text-foreground mb-1">{question}</p>
                                   <div className="grid grid-cols-2 gap-1 pl-2">
                                     {subEntries.map(([subKey, subVal]) => {
                                       const renderVal = (v: any): string => {
@@ -1668,8 +1631,8 @@ export default function DonorProfilePage() {
                             const answerStr = renderFlat(answer);
                             return (
                               <div key={question}>
-                                <p className="text-xs font-ui text-foreground">{question}</p>
-                                <p className="text-sm text-muted-foreground">{answerStr}</p>
+                                <p className="text-base font-ui text-foreground">{question}</p>
+                                <p className="text-base text-foreground">{answerStr}</p>
                               </div>
                             );
                           })}
@@ -1681,25 +1644,19 @@ export default function DonorProfilePage() {
                 {tableEntries.map(([tableName, rows]) =>
                   renderTable(rows, tableEntries.length > 1 ? tableName : undefined, sectionName)
                 )}
-              </div>
-            </Card>
+            </ProfileSection>
           );
         });
       })()}
 
       {longTextEntries.length > 0 && longTextEntries.map(([key, value]) => (
-        <Card key={key} className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid={`section-${key.toLowerCase().replace(/\s+/g, "-")}`}>
-          <SectionHeader title={formatFieldLabel(key)} />
-          <div className="p-6">
-            <p className="text-sm leading-body text-foreground whitespace-pre-line">{String(value)}</p>
-          </div>
-        </Card>
+        <ProfileSection key={key} title={formatFieldLabel(key)} data-testid={`section-${key.toLowerCase().replace(/\s+/g, "-")}`}>
+            <p className="text-base leading-body text-foreground whitespace-pre-line">{String(value)}</p>
+        </ProfileSection>
       ))}
 
       {fieldEntries.length > 0 && (
-        <Card className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid="section-additional-details">
-          <SectionHeader title="Additional Details" />
-          <div className="p-6">
+        <ProfileSection title="Additional Details" data-testid="section-additional-details">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-12 gap-y-3">
               {fieldEntries.map(([key, value]) => {
                 let display: string;
@@ -1708,20 +1665,17 @@ export default function DonorProfilePage() {
                 else display = String(value);
                 return (
                   <div key={key} data-testid={`field-extra-${key.toLowerCase().replace(/\s+/g, "-")}`}>
-                    <p className="text-xs font-ui text-foreground">{formatFieldLabel(key)}</p>
-                    <p className="text-sm text-muted-foreground">{display}</p>
+                    <p className="text-base font-ui text-foreground">{formatFieldLabel(key)}</p>
+                    <p className="text-base text-foreground">{display}</p>
                   </div>
                 );
               })}
             </div>
-          </div>
-        </Card>
+        </ProfileSection>
       )}
 
       {documentImageEntries.map(([key, value]) => (
-        <Card key={key} className="overflow-hidden border-[hsl(var(--brand-success))]/40" data-testid={`section-${key.toLowerCase().replace(/\s+/g, "-")}`}>
-          <SectionHeader title={formatFieldLabel(key)} />
-          <div className="p-6">
+        <ProfileSection key={key} title={formatFieldLabel(key)} data-testid={`section-${key.toLowerCase().replace(/\s+/g, "-")}`}>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
               {(value as string[]).map((url: string, idx: number) => (
                 <a key={idx} href={`/api/uploads/proxy?url=${encodeURIComponent(url)}`} target="_blank" rel="noopener noreferrer">
@@ -1735,8 +1689,7 @@ export default function DonorProfilePage() {
                 </a>
               ))}
             </div>
-          </div>
-        </Card>
+        </ProfileSection>
       ))}
     </div>
   );
