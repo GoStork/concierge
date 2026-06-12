@@ -6163,6 +6163,48 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     }
     finalContent = finalContent.replace(/\[\[MATCH_CARD:[\s\S]*?\]\]/g, "").trim();
 
+    // CLINIC CARD GUARD: a clinic MATCH_CARD's providerId MUST belong to a clinic
+    // search_clinics actually returned this turn. The model sometimes emits the
+    // id of a clinic the parent mentioned earlier (e.g. their CURRENT clinic)
+    // while the prose recommends a different, real search result - so the parent
+    // sees a card for the wrong (often far worse) clinic than the one described.
+    // Validate every clinic card against the search results and repair it to the
+    // clinic named in the prose (falling back to the top result).
+    if (matchCards.some((c) => String(c.type || "").toLowerCase() === "clinic")) {
+      let clinicResults: any[] = [];
+      for (const sr of lastSearchToolResults) {
+        if (sr.toolName !== "search_clinics") continue;
+        try {
+          const body: string = sr.resultText || "";
+          const s = body.indexOf("[");
+          const e = body.lastIndexOf("]");
+          const arr = s !== -1 && e !== -1 ? JSON.parse(body.substring(s, e + 1)) : [];
+          if (Array.isArray(arr) && arr.length > 0) { clinicResults = arr; break; }
+        } catch { /* ignore */ }
+      }
+      if (clinicResults.length > 0) {
+        const validIds = new Set(clinicResults.map((c: any) => String(c.id || c.providerId)));
+        const plain = finalContent.replace(/\*\*/g, "").toLowerCase();
+        for (const card of matchCards) {
+          if (String(card.type || "").toLowerCase() !== "clinic") continue;
+          if (validIds.has(String(card.providerId))) continue;
+          const repaired =
+            clinicResults.find((c: any) => {
+              const n = String(c.name || c.displayName || "").toLowerCase();
+              return n.length > 3 && plain.includes(n);
+            }) || clinicResults[0];
+          const newId = String(repaired.id || repaired.providerId || "");
+          if (!newId) continue;
+          console.warn(`[ai-router] CLINIC CARD GUARD: card providerId ${card.providerId} (${card.name}) is NOT in this turn's search_clinics results - repairing to ${repaired.name} (${newId})`);
+          card.providerId = newId;
+          card.ownerProviderId = newId;
+          card.name = repaired.name || repaired.displayName || card.name;
+          card.location = repaired.location || card.location || "";
+          card.photo = ""; // force re-resolve below
+        }
+      }
+    }
+
     if (matchCards.length === 0 && lastSearchToolResults.length > 0) {
       const matchIntroPattern = /(?:meet|introducing|found|here(?:'s| is)|check (?:out|her|his|their)|i(?:'ve| have) (?:got|a)|first up|special to show|great (?:fit|match|option|choice|pick)|perfect (?:fit|match|option|choice)|top (?:option|pick|choice)|someone.*really|stands?\s*out|option for you|recommend|show you)/i;
       // Trigger the fallback if the AI either (a) tried to emit a tag but malformed it, or
