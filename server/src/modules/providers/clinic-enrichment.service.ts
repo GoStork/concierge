@@ -882,19 +882,7 @@ export class ClinicEnrichmentService {
     const mergedTeam = mergeTeamMembers(sartMembers, scraped?.teamMembers || [], provider.name);
 
     // Scope team to this lab's satellites when the network has multiple labs.
-    const scopedTeam = hasSiblings
-      ? mergedTeam.filter(m => {
-          if (m.locationHints.length === 0) return false; // can't tell which lab -> drop
-          return m.locationHints.some(hint => {
-            const h = hint.toLowerCase();
-            for (const key of keptLocationKeys) {
-              const [kCity] = key.split("|");
-              if (kCity && h.includes(kCity)) return true;
-            }
-            return false;
-          });
-        })
-      : mergedTeam;
+    const scopedTeam = this.scopeTeamToLab(mergedTeam, keptLocationKeys, hasSiblings);
     if (hasSiblings) {
       console.log(`[clinic-enrichment] Scoped team for "${provider.name}": ${scopedTeam.length}/${mergedTeam.length} kept`);
     }
@@ -1049,6 +1037,49 @@ export class ClinicEnrichmentService {
       `[clinic-enrichment] scopeToLab: "${provider.name}" kept ${kept.length}/${scrapedLocations.length} scraped locations`,
     );
     return { keptLocations: kept, keptLocationKeys: keptKeys, hasSiblings: true };
+  }
+
+  /**
+   * Scope a merged team roster to a single lab when the website is a shared
+   * multi-lab network. Used by both the full and re-sync enrichment paths.
+   *
+   * The hard part: we can only scope a doctor to a lab when the SITE tells us
+   * where the doctor works (via locationHints, which the scraper derives from
+   * per-location team pages + bio city mentions). Many network sites list every
+   * physician on ONE global /our-team page with no per-location mapping - in
+   * that case NO doctor has a hint, and the previous "drop doctors with no hint"
+   * rule silently zeroed out the entire roster (this was 83 of 112 missing-team
+   * clinics: CCRM, Boston IVF, Aspire, Pinnacle, ...).
+   *
+   * New rule:
+   *  - No sibling labs           -> keep everyone (nothing to scope against).
+   *  - Siblings, but NO doctor has any location hint (site provides no mapping)
+   *                              -> keep everyone; we cannot prove who works where,
+   *                                 and showing the network's REIs beats showing none.
+   *  - Siblings AND the site maps at least some doctors -> trust the mapping:
+   *      * doctor mapped to one of THIS lab's kept locations -> keep
+   *      * doctor with no hint at all (e.g. network-wide medical director)
+   *        -> keep (cannot disprove they serve this lab)
+   *      * doctor mapped ONLY to other labs' locations -> drop
+   */
+  private scopeTeamToLab<T extends { locationHints: string[] }>(
+    mergedTeam: T[],
+    keptLocationKeys: Set<string>,
+    hasSiblings: boolean,
+  ): T[] {
+    if (!hasSiblings) return mergedTeam;
+
+    const anyHints = mergedTeam.some(m => m.locationHints.length > 0);
+    if (!anyHints) return mergedTeam; // site gives no location mapping -> keep all
+
+    const keptCities = [...keptLocationKeys].map(k => k.split("|")[0]).filter(Boolean);
+    return mergedTeam.filter(m => {
+      if (m.locationHints.length === 0) return true; // unmapped -> keep (network-wide)
+      return m.locationHints.some(hint => {
+        const h = hint.toLowerCase();
+        return keptCities.some(city => h.includes(city));
+      });
+    });
   }
 
   private async syncLocations(
@@ -1206,19 +1237,7 @@ export class ClinicEnrichmentService {
 
     const mergedTeam = mergeTeamMembers(sartMembers, scraped.teamMembers || [], provider.name);
 
-    const scopedTeam = hasSiblings
-      ? mergedTeam.filter(m => {
-          if (m.locationHints.length === 0) return false;
-          return m.locationHints.some(hint => {
-            const h = hint.toLowerCase();
-            for (const key of keptLocationKeys) {
-              const [kCity] = key.split("|");
-              if (kCity && h.includes(kCity)) return true;
-            }
-            return false;
-          });
-        })
-      : mergedTeam;
+    const scopedTeam = this.scopeTeamToLab(mergedTeam, keptLocationKeys, hasSiblings);
     if (hasSiblings) {
       console.log(`[clinic-enrichment] reSync: Scoped team for "${provider.name}": ${scopedTeam.length}/${mergedTeam.length} kept`);
     }
