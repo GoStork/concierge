@@ -2226,6 +2226,23 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       if (profile?.clinicAgeGroup) clinicPrefs.push(`age group: ${profile.clinicAgeGroup}`);
       if (clinicPrefs.length > 0) parts.push(`Saved clinic preferences (do NOT re-ask): ${clinicPrefs.join(", ")}.`);
 
+      // CLINIC MATCH GATE: a clinic's success rate is meaningless without the egg
+      // provider's age + IVF history, so the AI must collect every UNANSWERED
+      // STEP 5-CLINIC question before matching - regardless of what the parent
+      // said in a prior journey (e.g. they once said they had a clinic). Compute
+      // exactly what is still missing from the saved profile and forbid defaulting
+      // or matching until it is answered.
+      {
+        const usingDonorEggs = (profile?.eggSource || "").toLowerCase().includes("donor");
+        const missingClinic: string[] = [];
+        if (!profile?.eggSource) missingClinic.push("egg source (their own/partner's eggs vs donor eggs)");
+        if (!profile?.clinicAgeGroup && !usingDonorEggs) missingClinic.push("the egg provider's age - i.e. the age of the woman whose eggs are used (this sets the success-rate age band)");
+        if (profile?.isFirstIvf == null && !usingDonorEggs) missingClinic.push("whether this is their first IVF or they have done it before");
+        if (missingClinic.length > 0) {
+          parts.push(`CLINIC MATCH GATE (CRITICAL): If the parent asks to find, match, or recommend an IVF clinic, the following REQUIRED questions are still UNANSWERED: ${missingClinic.join("; ")}. You MUST run the STEP 5-CLINIC question sequence and ask EACH unanswered item (one question per message), saving the answer, BEFORE you call search_clinics or show ANY clinic MATCH_CARD. NEVER default, guess, assume "under 35", or carry over a value the parent did not explicitly give in this journey - even if they completed a different journey (e.g. sperm or egg-donor) before, and even if they previously said they already had a clinic. The success rate shown on the card is WRONG if any of these are defaulted, so do not recommend a clinic until they are answered.`);
+        }
+      }
+
       // --- EGG DONOR PREFERENCES (Match Cycle B) ---
       const donorPrefs: string[] = [];
       if (profile?.donorEyeColor) donorPrefs.push(`eye color: ${profile.donorEyeColor}`);
