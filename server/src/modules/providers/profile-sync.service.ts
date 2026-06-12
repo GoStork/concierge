@@ -5587,10 +5587,17 @@ export async function getScrapersSummary(prisma: PrismaService) {
     }
   }
 
+  // IVF clinics are synced via CDC (not the donor scrapers above), so count them
+  // separately for the per-type totals on the scrapers dashboard.
+  const totalClinics = await prisma.provider.count({
+    where: { services: { some: { providerType: { name: "IVF Clinic" } } } },
+  });
+
   return {
     summaries,
     lastNightlySyncAt,
     nightlySyncRunning,
+    totalClinics,
   };
 }
 

@@ -36,6 +36,7 @@ interface SummaryResponse {
   summaries: ScraperSummary[];
   lastNightlySyncAt: string | null;
   nightlySyncRunning: boolean;
+  totalClinics: number;
 }
 
 interface CdcSyncJob {
@@ -1253,7 +1254,10 @@ export default function ScrapersSummaryPage() {
   }
 
   const totalProviders = summaries.length;
-  const totalProfiles = summaries.reduce((a, b) => a + b.totalProfiles, 0);
+  const totalClinics = data?.totalClinics || 0;
+  const eggDonorTotal = summaries.filter(s => s.type === "egg-donor").reduce((a, b) => a + b.totalProfiles, 0);
+  const surrogateTotal = summaries.filter(s => s.type === "surrogate").reduce((a, b) => a + b.totalProfiles, 0);
+  const spermDonorTotal = summaries.filter(s => s.type === "sperm-donor").reduce((a, b) => a + b.totalProfiles, 0);
   const successCount = summaries.filter((s) => {
     if (s.syncStatus !== "SUCCESS") return false;
     if (s.lastSyncStartedAt && !s.lastSyncEndedAt) return false; // running
@@ -1282,7 +1286,7 @@ export default function ScrapersSummaryPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-4 mb-6">
         <Card>
           <CardContent className="pt-4 pb-3 px-4">
             <div className="text-2xl font-heading" data-testid="text-total-providers">{totalProviders}</div>
@@ -1291,8 +1295,26 @@ export default function ScrapersSummaryPage() {
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3 px-4">
-            <div className="text-2xl font-heading" data-testid="text-total-profiles">{totalProfiles.toLocaleString()}</div>
-            <div className="text-xs text-muted-foreground">Total Profiles</div>
+            <div className="text-2xl font-heading" data-testid="text-total-clinics">{totalClinics.toLocaleString()}</div>
+            <div className="text-xs text-muted-foreground">IVF Clinics</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="text-2xl font-heading" data-testid="text-total-egg-donors">{eggDonorTotal.toLocaleString()}</div>
+            <div className="text-xs text-muted-foreground">Egg Donors</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="text-2xl font-heading" data-testid="text-total-surrogates">{surrogateTotal.toLocaleString()}</div>
+            <div className="text-xs text-muted-foreground">Surrogates</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3 px-4">
+            <div className="text-2xl font-heading" data-testid="text-total-sperm-donors">{spermDonorTotal.toLocaleString()}</div>
+            <div className="text-xs text-muted-foreground">Sperm Donors</div>
           </CardContent>
         </Card>
         <Card>
