@@ -1308,8 +1308,15 @@ export class ClinicEnrichmentService {
           const delay = BASE_DELAY * Math.pow(2, attempt - 1);
           console.log(`[clinic-enrichment] Re-sync retry for "${providerName}" (attempt ${attempt}/${maxRetries}): ${err.message}, waiting ${delay}ms...`);
           await sleep(delay);
+        } else if (isRetryableError(err)) {
+          // Retries exhausted on a transient failure (site rate-limited us with
+          // 429 or stayed unreachable). This is a SKIP, not an error - the site
+          // blocked the scrape, the clinic keeps its existing data. Returning
+          // false (vs throwing) keeps it out of the scary "errors" count.
+          console.log(`[clinic-enrichment] Re-sync for "${providerName}" still failing after ${maxRetries} attempts (${err.message}) - skipping`);
+          return false;
         } else {
-          throw err;
+          throw err; // genuine unexpected error
         }
       }
     }
