@@ -1286,53 +1286,53 @@ export default function ScrapersSummaryPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 mb-6">
         <Card>
-          <CardContent className="pt-4 pb-3 px-4">
-            <div className="text-2xl font-heading" data-testid="text-total-providers">{totalProviders}</div>
-            <div className="text-xs text-muted-foreground">Scrapers Configured</div>
+          <CardContent className="p-3">
+            <div className="text-xl font-heading leading-none mb-1" data-testid="text-total-providers">{totalProviders}</div>
+            <div className="text-[11px] text-muted-foreground leading-tight">Scrapers Configured</div>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-4 pb-3 px-4">
-            <div className="text-2xl font-heading" data-testid="text-total-clinics">{totalClinics.toLocaleString()}</div>
-            <div className="text-xs text-muted-foreground">IVF Clinics</div>
+          <CardContent className="p-3">
+            <div className="text-xl font-heading leading-none mb-1" data-testid="text-total-clinics">{totalClinics.toLocaleString()}</div>
+            <div className="text-[11px] text-muted-foreground leading-tight">IVF Clinics</div>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-4 pb-3 px-4">
-            <div className="text-2xl font-heading" data-testid="text-total-egg-donors">{eggDonorTotal.toLocaleString()}</div>
-            <div className="text-xs text-muted-foreground">Egg Donors</div>
+          <CardContent className="p-3">
+            <div className="text-xl font-heading leading-none mb-1" data-testid="text-total-egg-donors">{eggDonorTotal.toLocaleString()}</div>
+            <div className="text-[11px] text-muted-foreground leading-tight">Egg Donors</div>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-4 pb-3 px-4">
-            <div className="text-2xl font-heading" data-testid="text-total-surrogates">{surrogateTotal.toLocaleString()}</div>
-            <div className="text-xs text-muted-foreground">Surrogates</div>
+          <CardContent className="p-3">
+            <div className="text-xl font-heading leading-none mb-1" data-testid="text-total-surrogates">{surrogateTotal.toLocaleString()}</div>
+            <div className="text-[11px] text-muted-foreground leading-tight">Surrogates</div>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-4 pb-3 px-4">
-            <div className="text-2xl font-heading" data-testid="text-total-sperm-donors">{spermDonorTotal.toLocaleString()}</div>
-            <div className="text-xs text-muted-foreground">Sperm Donors</div>
+          <CardContent className="p-3">
+            <div className="text-xl font-heading leading-none mb-1" data-testid="text-total-sperm-donors">{spermDonorTotal.toLocaleString()}</div>
+            <div className="text-[11px] text-muted-foreground leading-tight">Sperm Donors</div>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-4 pb-3 px-4">
-            <div className="text-2xl font-heading text-[hsl(var(--brand-success))]" data-testid="text-successful-count">{successCount}</div>
-            <div className="text-xs text-muted-foreground">Successful (last 25h)</div>
+          <CardContent className="p-3">
+            <div className="text-xl font-heading leading-none mb-1 text-[hsl(var(--brand-success))]" data-testid="text-successful-count">{successCount}</div>
+            <div className="text-[11px] text-muted-foreground leading-tight">Successful (25h)</div>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-4 pb-3 px-4">
-            <div className="text-2xl font-heading text-[hsl(var(--brand-warning))]" data-testid="text-overdue-count">{overdueCount}</div>
-            <div className="text-xs text-muted-foreground">Overdue</div>
+          <CardContent className="p-3">
+            <div className="text-xl font-heading leading-none mb-1 text-[hsl(var(--brand-warning))]" data-testid="text-overdue-count">{overdueCount}</div>
+            <div className="text-[11px] text-muted-foreground leading-tight">Overdue</div>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-4 pb-3 px-4">
-            <div className="text-2xl font-heading text-destructive" data-testid="text-failed-count">{failedCount}</div>
-            <div className="text-xs text-muted-foreground">Failed / Partial</div>
+          <CardContent className="p-3">
+            <div className="text-xl font-heading leading-none mb-1 text-destructive" data-testid="text-failed-count">{failedCount}</div>
+            <div className="text-[11px] text-muted-foreground leading-tight">Failed / Partial</div>
           </CardContent>
         </Card>
       </div>
