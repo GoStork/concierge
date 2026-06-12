@@ -291,11 +291,17 @@ async function getRenderBrowser(): Promise<any | null> {
   if (!_browserPromise) {
     _browserPromise = (async () => {
       const { chromium } = await import("playwright");
+      // On platforms where Playwright can't install its own browser (e.g. Replit,
+      // which blocks apt for system deps), point it at a system/Nix-provided
+      // Chromium via CHROMIUM_EXECUTABLE_PATH. Unset locally -> Playwright uses
+      // its own downloaded Chromium as normal.
+      const executablePath = process.env.CHROMIUM_EXECUTABLE_PATH || undefined;
       const browser = await chromium.launch({
         headless: true,
+        executablePath,
         args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"],
       });
-      console.log("[scraper] Headless Chromium launched for JS-render fallback");
+      console.log(`[scraper] Headless Chromium launched for JS-render fallback${executablePath ? ` (system: ${executablePath})` : ""}`);
       return browser;
     })().catch((err: any) => {
       console.warn(`[scraper] Headless browser unavailable - JS-render fallback disabled, static fetch only: ${err.message}`);
