@@ -273,6 +273,79 @@ export function normalizeHostname(hostname: string): string {
 
 export const getRootDomain = (hostname: string) => hostname.split('.').slice(-2).join('.');
 
+// --- Headless-browser fallback (Playwright) --------------------------------
+// Many clinic sites (and big hospital portals) are JavaScript-rendered SPAs:
+// the raw HTML a plain fetch downloads is a near-empty shell, and the real
+// content (addresses, doctors) is built by JS in the browser. Others block a
+// plain fetch with 403/429. For those cases we fall back to a real headless
+// Chromium that loads the page, runs its JS, and returns the fully-rendered
+// HTML. Used ONLY as a fallback (it's ~10x slower than fetch); ~95% of sites
+// never touch it. Degrades gracefully: if Chromium can't launch (not installed,
+// missing system deps, or ENRICHMENT_BROWSER_RENDER=false), we keep the static
+// result so behavior never gets worse than today.
+let _browserPromise: Promise<any | null> | null = null;
+let _browserDisabled = false;
+
+async function getRenderBrowser(): Promise<any | null> {
+  if (_browserDisabled || process.env.ENRICHMENT_BROWSER_RENDER === "false") return null;
+  if (!_browserPromise) {
+    _browserPromise = (async () => {
+      const { chromium } = await import("playwright");
+      const browser = await chromium.launch({
+        headless: true,
+        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"],
+      });
+      console.log("[scraper] Headless Chromium launched for JS-render fallback");
+      return browser;
+    })().catch((err: any) => {
+      console.warn(`[scraper] Headless browser unavailable - JS-render fallback disabled, static fetch only: ${err.message}`);
+      _browserDisabled = true;
+      return null;
+    });
+  }
+  return _browserPromise;
+}
+
+function visibleTextLength(html: string): number {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim().length;
+}
+
+// A page is a "JS shell" when it has almost no visible text but does load
+// scripts - i.e. the content is built client-side and the static fetch missed it.
+function looksLikeJsShell(html: string): boolean {
+  return visibleTextLength(html) < 500 && /<script/i.test(html);
+}
+
+async function fetchHtmlWithBrowser(url: string, timeoutMs = 45000): Promise<{ html: string; finalUrl: string } | null> {
+  const browser = await getRenderBrowser();
+  if (!browser) return null;
+  let context: any = null;
+  try {
+    context = await browser.newContext({
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      viewport: { width: 1366, height: 900 },
+      locale: "en-US",
+    });
+    const page = await context.newPage();
+    await page.goto(url, { waitUntil: "networkidle", timeout: timeoutMs });
+    await page.waitForTimeout(800).catch(() => {}); // let late client-render settle
+    const html = await page.content();
+    const finalUrl = page.url() || url;
+    console.log(`[scraper] Browser-rendered ${url} -> ${visibleTextLength(html)} chars of text`);
+    return { html: html.slice(0, 500000), finalUrl };
+  } catch (err: any) {
+    console.log(`[scraper] Browser render failed for ${url}: ${err.message}`);
+    return null;
+  } finally {
+    if (context) await context.close().catch(() => {});
+  }
+}
+
 async function fetchHtml(url: string, timeoutMs = 45000): Promise<{ html: string; finalUrl: string }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -295,10 +368,23 @@ async function fetchHtml(url: string, timeoutMs = 45000): Promise<{ html: string
     });
 
     if (!response.ok) {
+      // Blocked (403) or rate-limited (429) or server error: a real browser
+      // (proper fingerprint, runs JS) often gets through where a plain fetch can't.
+      if (response.status === 403 || response.status === 429 || response.status >= 500) {
+        const rendered = await fetchHtmlWithBrowser(url, timeoutMs);
+        if (rendered) return rendered;
+      }
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
     const html = await response.text();
+    // Empty JS shell? The real content is client-rendered - re-fetch with a browser.
+    if (looksLikeJsShell(html)) {
+      const rendered = await fetchHtmlWithBrowser(url, timeoutMs);
+      if (rendered && visibleTextLength(rendered.html) > visibleTextLength(html)) {
+        return rendered;
+      }
+    }
     return { html: html.slice(0, 500000), finalUrl: response.url || url };
   } finally {
     clearTimeout(timeout);
