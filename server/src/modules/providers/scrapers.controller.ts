@@ -765,18 +765,21 @@ export class ScrapersController {
     });
     const withTeam = memberCounts.length;
 
-    // "withLocations" = clinics with at least one enriched satellite (sortOrder > 0).
-    // The CDC sync always creates a sortOrder=0 origin row, so we exclude it - the
-    // interesting metric is whether enrichment found any satellite offices.
-    const enrichedLocationCounts = await this.prisma.providerLocation.groupBy({
+    // "withLocations" = clinics with at least one location that has a real street
+    // address. A single-location clinic IS complete - it has its one office - so
+    // it must count here. (An earlier version counted only enriched satellites
+    // (sortOrder > 0), which wrongly made every one-office clinic look like a gap
+    // and capped the metric at ~60%.) The real gap is a clinic whose only
+    // location is city/state with no usable street address.
+    const locatedCounts = await this.prisma.providerLocation.groupBy({
       by: ["providerId"],
       where: {
         providerId: { in: ivfClinics.map((c) => c.id) },
-        sortOrder: { gt: 0 },
+        AND: [{ address: { not: null } }, { address: { not: "" } }],
       },
       _count: { id: true },
     });
-    const withLocations = enrichedLocationCounts.length;
+    const withLocations = locatedCounts.length;
 
     const isInProgress = job.enrichmentStatus === "PROCESSING" || job.enrichmentStatus === "PENDING";
 
