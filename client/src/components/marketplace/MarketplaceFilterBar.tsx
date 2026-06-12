@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
+import { Drawer, DrawerNestedRoot, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
 import { Search, ArrowUpDown, X, Heart, ChevronDown, Plus, MapPin, Award, Check } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAppSelector, useAppDispatch } from "@/store";
@@ -1551,7 +1551,6 @@ export function MarketplaceFilterBar({
   const [locationDrawerOpen, setLocationDrawerOpen] = useState(false);
   const [ivfPatientDrawerOpen, setIvfPatientDrawerOpen] = useState(false);
   const [ivfInsuranceDrawerOpen, setIvfInsuranceDrawerOpen] = useState(false);
-  const [ivfLgbtqDrawerOpen, setIvfLgbtqDrawerOpen] = useState(false);
   const [ivfSpecialtyDrawerOpen, setIvfSpecialtyDrawerOpen] = useState(false);
   const ivfInsuranceCarrier = ivfInsurance ? parseInsuranceValue(ivfInsurance).carrier : "";
   const ivfMyInsuranceCarrier = ivfMyInsurance ? parseInsuranceValue(ivfMyInsurance).carrier : "";
@@ -1591,7 +1590,7 @@ export function MarketplaceFilterBar({
         </DrawerContent>
       </Drawer>
 
-      <Drawer open={ivfPatientDrawerOpen} onOpenChange={setIvfPatientDrawerOpen}>
+      <DrawerNestedRoot open={ivfPatientDrawerOpen} onOpenChange={setIvfPatientDrawerOpen}>
         <DrawerTrigger asChild>
           <button className={tinderLabel(ivfPatientCount > 0, darkLabels)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-ivf-patient">
             <span className="filter-row-label">Your IVF</span>
@@ -1627,9 +1626,9 @@ export function MarketplaceFilterBar({
             </div>
           </div>
         </DrawerContent>
-      </Drawer>
+      </DrawerNestedRoot>
 
-      <Drawer open={ivfInsuranceDrawerOpen} onOpenChange={setIvfInsuranceDrawerOpen} handleOnly repositionInputs={false} snapPoints={[1]} shouldScaleBackground={false} noBodyStyles>
+      <DrawerNestedRoot open={ivfInsuranceDrawerOpen} onOpenChange={setIvfInsuranceDrawerOpen} handleOnly repositionInputs={false} snapPoints={[1]} shouldScaleBackground={false} noBodyStyles>
         <DrawerTrigger asChild>
           <button className={tinderLabel(!!ivfInsurance, darkLabels)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-ivf-insurance">
             <span className="filter-row-label">Insurance</span>
@@ -1656,30 +1655,24 @@ export function MarketplaceFilterBar({
             )}
           </div>
         </DrawerContent>
-      </Drawer>
+      </DrawerNestedRoot>
 
-      <Drawer open={ivfLgbtqDrawerOpen} onOpenChange={setIvfLgbtqDrawerOpen}>
-        <DrawerTrigger asChild>
-          <button className={tinderLabel(!!ivfLgbtqCare, darkLabels)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-ivf-lgbtq">
-            <span className="filter-row-label">LGBTQ+ care</span>
-            {listMode && <SelectedPillsInTrigger values={ivfLgbtqCare ? ["On"] : []} />}
-          </button>
-        </DrawerTrigger>
-        <DrawerContent data-testid="drawer-ivf-lgbtq">
-          <DrawerHeaderActions title="LGBTQ+ care" onClose={() => setIvfLgbtqDrawerOpen(false)} />
-          <div className="px-6 pb-6 space-y-2">
-            <Button variant={ivfLgbtqCare ? "default" : "outline"} className="w-full justify-start" onClick={() => { onIvfLgbtqCareChange?.(true); setIvfLgbtqDrawerOpen(false); }} data-testid="ivf-lgbtq-yes">
-              LGBTQ-friendly only
-            </Button>
-            <Button variant={!ivfLgbtqCare ? "default" : "outline"} className="w-full justify-start" onClick={() => { onIvfLgbtqCareChange?.(false); setIvfLgbtqDrawerOpen(false); }} data-testid="ivf-lgbtq-any">
-              Any
-            </Button>
-          </div>
-        </DrawerContent>
-      </Drawer>
+      {/* LGBTQ+ care is a single toggle - no sub-drawer; tapping the row flips it. */}
+      <button
+        type="button"
+        className={tinderLabel(!!ivfLgbtqCare, darkLabels)}
+        style={TINDER_LABEL_STYLE}
+        onClick={() => onIvfLgbtqCareChange?.(!ivfLgbtqCare)}
+        data-testid="filter-btn-ivf-lgbtq"
+        role="switch"
+        aria-checked={!!ivfLgbtqCare}
+      >
+        <span className="filter-row-label">LGBTQ+ care</span>
+        {listMode && <SelectedPillsInTrigger values={ivfLgbtqCare ? ["On"] : []} />}
+      </button>
 
       {ivfShowSpecialty && (
-        <Drawer open={ivfSpecialtyDrawerOpen} onOpenChange={setIvfSpecialtyDrawerOpen} handleOnly repositionInputs={false} snapPoints={[1]} shouldScaleBackground={false} noBodyStyles>
+        <DrawerNestedRoot open={ivfSpecialtyDrawerOpen} onOpenChange={setIvfSpecialtyDrawerOpen} handleOnly repositionInputs={false} snapPoints={[1]} shouldScaleBackground={false} noBodyStyles>
           <DrawerTrigger asChild>
             <button className={tinderLabel(!!ivfSpecialty, darkLabels)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-ivf-specialty">
               <span className="filter-row-label">Specialty</span>
@@ -1699,7 +1692,7 @@ export function MarketplaceFilterBar({
               ))}
             </div>
           </DrawerContent>
-        </Drawer>
+        </DrawerNestedRoot>
       )}
     </>
   ) : null;

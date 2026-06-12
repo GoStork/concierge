@@ -16,6 +16,21 @@ const Drawer = ({
 )
 Drawer.displayName = "Drawer"
 
+// Nested-aware drawer: use this for a Drawer rendered INSIDE another open Drawer.
+// vaul's NestedRoot coordinates the body scroll-lock / pointer-events between the
+// two so the inner drawer's content stays interactive (a plain Root nested in a
+// Root leaves the inner buttons un-clickable).
+const DrawerNestedRoot = ({
+  shouldScaleBackground = true,
+  ...props
+}: React.ComponentProps<typeof DrawerPrimitive.NestedRoot>) => (
+  <DrawerPrimitive.NestedRoot
+    shouldScaleBackground={shouldScaleBackground}
+    {...props}
+  />
+)
+DrawerNestedRoot.displayName = "DrawerNestedRoot"
+
 const DrawerTrigger = DrawerPrimitive.Trigger
 
 const DrawerPortal = DrawerPrimitive.Portal
@@ -112,6 +127,7 @@ DrawerDescription.displayName = DrawerPrimitive.Description.displayName
 
 export {
   Drawer,
+  DrawerNestedRoot,
   DrawerPortal,
   DrawerOverlay,
   DrawerTrigger,

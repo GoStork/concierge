@@ -163,6 +163,10 @@
   font-weight: 300;
   flex: 0 0 auto;
 }
+/* LGBTQ+ care is a direct toggle, not a drill-in - no chevron. */
+.filter-list-mode [data-testid="filter-btn-ivf-lgbtq"]::after {
+  content: none;
+}
 /* Hide the bottom "currently active pills" strip since each row now shows its own pills inline */
 .filter-list-mode [data-testid="active-filter-pills-mobile"] {
   display: none;
