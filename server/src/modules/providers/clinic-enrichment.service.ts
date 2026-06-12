@@ -806,6 +806,68 @@ async function persistPhotoToGcs(
   }
 }
 
+/**
+ * Fetch a clinic logo from logo.dev by domain. Used ONLY as a fallback to fill
+ * the logo gap when our HTML scraper couldn't find one (inline SVG / CSS
+ * background-image / JS-rendered / CDN-hosted logos it can't see).
+ *
+ * Key param: fallback=404 - logo.dev returns a generated letter-monogram by
+ * default when it has no real logo; fallback=404 makes it return 404 instead,
+ * so we only ever persist REAL logos, never placeholder monograms.
+ *
+ * Returns a GCS URL (persisted) on success, or null if logo.dev has no logo /
+ * the request fails. Never throws.
+ */
+async function fetchLogoDevLogo(
+  websiteUrl: string | null | undefined,
+  storageService: StorageService | null,
+): Promise<string | null> {
+  if (!websiteUrl) return null;
+  const token = process.env.VITE_LOGODEV_TOKEN;
+  if (!token) {
+    console.warn("[clinic-enrichment] logo.dev: VITE_LOGODEV_TOKEN not set, skipping");
+    return null;
+  }
+
+  let domain: string;
+  try {
+    domain = new URL(websiteUrl).hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return null;
+  }
+  if (!domain) return null;
+
+  const apiUrl = `https://img.logo.dev/${encodeURIComponent(domain)}?token=${token}&format=png&size=256&fallback=404`;
+  try {
+    const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(15000) });
+    if (resp.status === 404) {
+      console.log(`[clinic-enrichment] logo.dev: no logo for ${domain}`);
+      return null;
+    }
+    if (!resp.ok) {
+      console.log(`[clinic-enrichment] logo.dev: HTTP ${resp.status} for ${domain}`);
+      return null;
+    }
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    if (buffer.length < 200) return null; // too small to be a real logo
+
+    if (!storageService?.isConfigured()) {
+      // No GCS configured - return the stable public logo.dev URL directly.
+      return apiUrl;
+    }
+    const ct = resp.headers.get("content-type") || "image/png";
+    const ext = ct.includes("png") ? ".png" : ct.includes("webp") ? ".webp" : ct.includes("svg") ? ".svg" : ct.includes("jpeg") || ct.includes("jpg") ? ".jpg" : ".png";
+    const hash = createHash("md5").update(buffer).digest("hex");
+    const gcsPath = `clinic-logos/${hash}${ext}`;
+    const persisted = await storageService.uploadBufferPublic(buffer, gcsPath, ct);
+    console.log(`[clinic-enrichment] logo.dev: filled logo for ${domain}`);
+    return persisted;
+  } catch (err: any) {
+    console.log(`[clinic-enrichment] logo.dev fetch error for ${domain}: ${err.message}`);
+    return null;
+  }
+}
+
 export class ClinicEnrichmentService {
   private activeRunId: string | null = null;
 
@@ -857,7 +919,15 @@ export class ClinicEnrichmentService {
     if (scraped?.about) updateData.about = scraped.about;
     if (scraped?.phone) updateData.phone = scraped.phone;
     else if (sartPhone) updateData.phone = sartPhone;
-    if (scraped?.logoUrl) updateData.logoUrl = await persistPhotoToGcs(scraped.logoUrl, this.storageService);
+    if (scraped?.logoUrl) {
+      updateData.logoUrl = await persistPhotoToGcs(scraped.logoUrl, this.storageService);
+    } else if (!provider.logoUrl) {
+      // Fallback-only: the scraper found no logo and the clinic currently has
+      // none. Try logo.dev by domain to fill the gap. Never overwrites an
+      // existing logo (guarded by !provider.logoUrl + the scraped-logo branch).
+      const logoDevUrl = await fetchLogoDevLogo(websiteUrl || provider.websiteUrl, this.storageService);
+      if (logoDevUrl) updateData.logoUrl = logoDevUrl;
+    }
     if (scraped?.yearFounded) updateData.yearFounded = scraped.yearFounded;
     if (scraped?.email) updateData.email = scraped.email;
     else if (sartEmail) updateData.email = sartEmail;
