@@ -1207,7 +1207,16 @@ export class ClinicEnrichmentService {
       return REPRO.test(`${m.name} ${m.title || ""} ${m.bio || ""}`);
     });
 
-    if (trimmed.length === 0) return team; // never make a clinic worse than before
+    if (trimmed.length === 0) {
+      // We only reach here for a LARGE roster (> THRESHOLD) in which NOT ONE
+      // person matches a fertility keyword and none are SART-listed. That is not
+      // a real fertility team - it's a hospital/university directory the scraper
+      // grabbed wholesale (e.g. UW Medicine's deans). Return empty so the caller
+      // clears it; showing 0 is more honest than 69 deans. (Small rosters never
+      // reach this - they short-circuit at the THRESHOLD guard above.)
+      console.log(`[clinic-enrichment] Over-pull with no reproductive match (${team.length}) - clearing as non-fertility directory`);
+      return [];
+    }
     if (trimmed.length < team.length) {
       console.log(`[clinic-enrichment] Trimmed hospital over-pull: ${team.length} -> ${trimmed.length} reproductive-relevant`);
     }
