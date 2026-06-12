@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { InsurancePicker } from "@/components/ui/insurance-picker";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Search, Loader2, Calendar, User, MapPin, Award, Heart, Clock, Info, X, Baby, FlaskRound, SlidersHorizontal, ArrowLeft } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
@@ -31,6 +33,15 @@ import {
 } from "@/components/marketplace/swipe-mappers";
 
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, AgencyIcon, SpermIcon } from "@/components/icons/marketplace-icons";
+
+const SPECIALTY_OPTIONS = [
+  "LGBTQ+ Family Building", "Male Factor Infertility", "PCOS", "Recurrent Pregnancy Loss",
+  "Endometriosis", "Diminished Ovarian Reserve", "Egg Freezing", "Fertility Preservation",
+  "Egg & Embryo Donation", "Surrogacy & Gestational Carriers", "Reproductive Surgery",
+  "Genetic Testing (PGT)", "Tubal Factor",
+];
+
+const carrierOf = (v: string) => (v.includes(" - ") ? v.slice(0, v.indexOf(" - ")) : v);
 
 const TABS = [
   { id: "egg-donors", label: "Egg Donors", Icon: EggDonorIcon },
@@ -1475,6 +1486,9 @@ export default function MarketplacePage() {
   const ageGroup = searchParams.get("ageGroup") || "under_35";
   const isNewPatient = searchParams.get("ivfHistory") || "true";
   const sortBy = searchParams.get("sortBy") || "highest_success";
+  const insuranceFilter = searchParams.get("insurance") || "";
+  const specialtyFilter = searchParams.get("specialty") || "";
+  const lgbtqFilter = searchParams.get("lgbtq") === "true";
   const [showCdcInfo, setShowCdcInfo] = useState(false);
 
   const updateParam = useCallback((key: string, value: string, defaultValue?: string) => {
@@ -1533,6 +1547,8 @@ export default function MarketplacePage() {
           eggSource,
           ageGroup,
           ivfHistory: isNewPatient,
+          insurance: insuranceFilter,
+          lgbtq: lgbtqFilter ? "true" : "",
         }).filter(([, v]) => v)
       ).toString()
     : "";
@@ -1542,7 +1558,7 @@ export default function MarketplacePage() {
     : api.providers.list.path;
 
   const { data: providers, isLoading: providersLoading } = useQuery<ProviderWithRelations[]>({
-    queryKey: [api.providers.list.path, ivfSearch, ivfLocation, eggSource, ageGroup, isNewPatient],
+    queryKey: [api.providers.list.path, ivfSearch, ivfLocation, eggSource, ageGroup, isNewPatient, insuranceFilter, lgbtqFilter],
     queryFn: async () => {
       const res = await fetch(providerUrl, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch providers");
@@ -1560,10 +1576,16 @@ export default function MarketplacePage() {
     setSearchParams(next, { replace: true });
   };
   const doctorQueryParams = new URLSearchParams(
-    Object.entries({ search: ivfSearch, location: ivfLocation }).filter(([, v]) => v) as [string, string][],
+    Object.entries({
+      search: ivfSearch,
+      location: ivfLocation,
+      insurance: insuranceFilter,
+      specialty: specialtyFilter,
+      lgbtq: lgbtqFilter ? "true" : "",
+    }).filter(([, v]) => v) as [string, string][],
   ).toString();
   const { data: doctors, isLoading: doctorsLoading } = useQuery<any[]>({
-    queryKey: ["/api/providers/marketplace/doctors", ivfSearch, ivfLocation],
+    queryKey: ["/api/providers/marketplace/doctors", ivfSearch, ivfLocation, insuranceFilter, specialtyFilter, lgbtqFilter],
     queryFn: async () => {
       const res = await fetch(`/api/providers/marketplace/doctors${doctorQueryParams ? `?${doctorQueryParams}` : ""}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch doctors");
@@ -1571,6 +1593,23 @@ export default function MarketplacePage() {
     },
     enabled: isIvfTab && clinicView === "doctors",
   });
+
+  const setFilterParam = (key: string, value: string | null) => {
+    const next = new URLSearchParams(searchParams);
+    if (value) next.set(key, value); else next.delete(key);
+    setSearchParams(next, { replace: true });
+  };
+  // Parent's own insurance (set in their account) pre-fills the insurance filter.
+  const { data: parentProfileForFilter } = useQuery<any>({
+    queryKey: ["/api/parent-profile"],
+    queryFn: async () => {
+      const res = await fetch("/api/parent-profile", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
+  const myInsurance: string | null = parentProfileForFilter?.insurance || null;
+  const [insurancePickerOpen, setInsurancePickerOpen] = useState(false);
 
   const ivfClinicCount = useMemo(() => {
     if (!providers || !isIvfTab) return 0;
@@ -1869,6 +1908,52 @@ export default function MarketplacePage() {
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+            {isIvfTab && !showFavoritesOnly && (
+              <div className="max-w-[1200px] mx-auto px-6 mb-5">
+                <div className="flex flex-wrap justify-center items-center gap-2">
+                  {/* Insurance */}
+                  {insuranceFilter ? (
+                    <button type="button" onClick={() => setFilterParam("insurance", null)} className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 text-primary px-3 py-1.5 text-sm" data-testid="filter-insurance-active">
+                      Insurance: {carrierOf(insuranceFilter)} <X className="w-3.5 h-3.5" />
+                    </button>
+                  ) : (
+                    <>
+                      {myInsurance && (
+                        <button type="button" onClick={() => setFilterParam("insurance", myInsurance)} className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1.5 text-sm hover:border-primary hover:text-primary transition-colors" data-testid="filter-insurance-mine">
+                          Accepts my insurance ({carrierOf(myInsurance)})
+                        </button>
+                      )}
+                      <button type="button" onClick={() => setInsurancePickerOpen((o) => !o)} className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1.5 text-sm hover:border-primary hover:text-primary transition-colors" data-testid="filter-insurance-open">
+                        Insurance
+                      </button>
+                    </>
+                  )}
+                  {/* LGBTQ+ care */}
+                  <button type="button" onClick={() => setFilterParam("lgbtq", lgbtqFilter ? null : "true")} className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${lgbtqFilter ? "border-primary/40 bg-primary/10 text-primary" : "border-border/60 hover:border-primary hover:text-primary"}`} data-testid="filter-lgbtq">
+                    LGBTQ+ care
+                  </button>
+                  {/* Specialty (doctor view) */}
+                  {clinicView === "doctors" && (
+                    <Select value={specialtyFilter || "__all__"} onValueChange={(v) => setFilterParam("specialty", v === "__all__" ? null : v)}>
+                      <SelectTrigger className="h-auto rounded-full border-border/60 px-3 py-1.5 text-sm w-auto gap-1.5" data-testid="filter-specialty"><SelectValue placeholder="Specialty" /></SelectTrigger>
+                      <SelectContent className="max-h-72">
+                        <SelectItem value="__all__">All specialties</SelectItem>
+                        {SPECIALTY_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                {insurancePickerOpen && !insuranceFilter && (
+                  <div className="max-w-md mx-auto mt-3 border border-border/40 rounded-[var(--radius)] p-3 bg-background">
+                    <InsurancePicker
+                      value={myInsurance ? [myInsurance] : []}
+                      mode="single"
+                      onChange={(v) => { setFilterParam("insurance", v[0] || null); setInsurancePickerOpen(false); }}
+                    />
+                  </div>
+                )}
               </div>
             )}
             {isIvfTab && (

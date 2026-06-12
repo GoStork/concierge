@@ -116,6 +116,16 @@ function buildLocationFilter(input: string): any[] {
   return conditions;
 }
 
+// Insurance values are stored as "Carrier" or "Carrier - Plan". Filtering is
+// carrier-level (a clinic that accepts a carrier accepts it regardless of plan).
+function insuranceCarrierOf(value: string): string {
+  const idx = value.indexOf(" - ");
+  return idx === -1 ? value : value.slice(0, idx);
+}
+function acceptsInsuranceCarrier(accepted: string[] | null | undefined, carrier: string): boolean {
+  return !!accepted && accepted.some((v) => insuranceCarrierOf(v) === carrier);
+}
+
 // Canonical donor/surrogate statuses surfaced to the marketplace UI.
 // INACTIVE is intentionally excluded - it's a soft-delete that must never
 // be shown anywhere (chat, marketplace, AI search, provider's own list).
@@ -414,6 +424,10 @@ export class ProvidersController {
       memberWhere.OR = [nameWhere, { specialties: { hasSome: [raw] } }, providerNameWhere];
     }
 
+    if (query.specialty) {
+      memberWhere.specialties = { has: query.specialty };
+    }
+
     const members = await this.prisma.providerMember.findMany({
       where: memberWhere,
       take: 600,
@@ -423,18 +437,27 @@ export class ProvidersController {
         credential: true, npiTaxonomy: true, specialties: true, personKey: true,
         provider: {
           select: {
-            id: true, name: true, logoUrl: true,
+            id: true, name: true, logoUrl: true, acceptedInsurance: true, ivfAcceptingPatients: true,
             locations: { orderBy: { sortOrder: "asc" }, take: 1, select: { city: true, state: true } },
           },
         },
       },
     });
 
+    // Carrier-level insurance + LGBTQ+ care filters (the doctor's clinic).
+    const insuranceCarrier = query.insurance ? insuranceCarrierOf(query.insurance) : null;
+    const wantsLgbtq = query.lgbtq === "true";
+    const filtered = members.filter((m) => {
+      if (insuranceCarrier && !acceptsInsuranceCarrier(m.provider.acceptedInsurance, insuranceCarrier)) return false;
+      if (wantsLgbtq && !(Array.isArray(m.provider.ivfAcceptingPatients) && (m.provider.ivfAcceptingPatients as string[]).includes("gay_couple"))) return false;
+      return true;
+    });
+
     // One card per human (deduped by personKey), keep the richest row, count clinics.
     const byPerson = new Map<string, any>();
     const clinicsByPerson = new Map<string, Set<string>>();
     const score = (m: any) => (m.photoUrl ? 100 : 0) + (m.specialties?.length || 0) * 10 + (m.credential ? 5 : 0);
-    for (const m of members) {
+    for (const m of filtered) {
       const key = m.personKey || m.id;
       if (!clinicsByPerson.has(key)) clinicsByPerson.set(key, new Set());
       clinicsByPerson.get(key)!.add(m.provider.id);
@@ -521,6 +544,16 @@ export class ProvidersController {
     const isAdmin = roles.includes("GOSTORK_ADMIN");
     const isProviderUser = hasProviderRole(roles) && !isAdmin;
 
+    // Post-fetch marketplace filters (carrier-level insurance + LGBTQ+ care).
+    const insuranceCarrier = query.insurance ? insuranceCarrierOf(query.insurance) : null;
+    const wantsLgbtq = query.lgbtq === "true";
+    const applyMarketplaceFilters = (rows: any[]) =>
+      rows.filter((p) => {
+        if (insuranceCarrier && !acceptsInsuranceCarrier(p.acceptedInsurance, insuranceCarrier)) return false;
+        if (wantsLgbtq && !(Array.isArray(p.ivfAcceptingPatients) && (p.ivfAcceptingPatients as string[]).includes("gay_couple"))) return false;
+        return true;
+      });
+
     if (isParent) {
       where.services = { some: { status: "APPROVED" } };
       const providers = await this.prisma.provider.findMany({
@@ -532,7 +565,7 @@ export class ProvidersController {
         },
         orderBy: { createdAt: "desc" },
       });
-      return providers;
+      return applyMarketplaceFilters(providers);
     }
 
     if (isProviderUser && user?.providerId) {
@@ -569,7 +602,7 @@ export class ProvidersController {
 
     const hasIvfFilters = query.eggSource || query.ageGroup || query.ivfHistory;
 
-    return this.prisma.provider.findMany({
+    const rows = await this.prisma.provider.findMany({
       where: Object.keys(where).length > 0 ? where : undefined,
       include: {
         services: { include: { providerType: true } },
@@ -578,6 +611,7 @@ export class ProvidersController {
       },
       orderBy,
     });
+    return applyMarketplaceFilters(rows);
   }
 
   @Get("by-type/ivf-clinic")
