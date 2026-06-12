@@ -30,6 +30,7 @@ import {
   mapDatabaseSpermDonorToSwipeProfile,
   getDonorTabs,
   getSurrogateTabs,
+  getClinicTabs,
   buildTitle,
   buildStatusLabel,
   getPhotoList,
@@ -1725,85 +1726,46 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
   const pct = rates ? Math.round(Number(rates.successRate) * 100) : null;
   const natAvg = rates ? Math.round(Number(rates.nationalAverage) * 100) : null;
   const isTop10 = rates?.top10pct === true;
-  const location = provider.locations?.[0];
-  const locationStr = location ? `${location.city || ""}${location.state ? `, ${location.state}` : ""}` : card.location;
+
+  const ageLabel = cardAgeGroup === "under_35" ? "Under 35" : cardAgeGroup === "35_37" ? "35-37" : cardAgeGroup === "38_40" ? "38-40" : "Over 40";
+  const contextLabel = cardEggSource === "donor" ? "Donor eggs" : ["Own eggs", ageLabel, cardIsNew ? "First-time IVF" : "Prior cycles"].join(" · ");
+  const clinicDoctors = Array.isArray(provider.members)
+    ? provider.members.filter((m: any) => m?.name && m?.isPublicProfile !== false).map((m: any) => ({ name: m.name }))
+    : [];
+  const tabs = getClinicTabs({
+    pct,
+    natAvg,
+    contextLabel,
+    reasons: card.reasons || [],
+    locations: provider.locations || [],
+    doctors: clinicDoctors,
+  });
+  const successBadge = pct != null ? `${pct}%${isTop10 ? " · Top 10%" : ""}` : null;
+  const logoSrc = getPhotoSrc(provider.logoUrl) || null;
+  const goToProfile = () => navigate(providerUrl, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } });
 
   return (
-    <div
-      className="min-w-[320px] max-w-[420px] w-full animate-[slideUp_0.4s_ease-out_forwards] border border-border bg-card overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
-      style={{ borderRadius: "var(--container-radius, 0.5rem)" }}
-      data-testid={`match-card-${card.providerId}`}
-      onClick={() => navigate(providerUrl, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } })}
-    >
-      <div className="p-4 space-y-3">
-        <div className="flex items-start gap-3">
-          {provider.logoUrl ? (
-            <img src={getPhotoSrc(provider.logoUrl) || undefined} alt="" className="w-10 h-10 rounded-[var(--radius)] object-contain border border-border/30 bg-background p-0.5 shrink-0" />
-          ) : (
-            <div className="w-10 h-10 rounded-[var(--radius)] flex items-center justify-center text-primary-foreground text-sm font-bold shrink-0" style={{ backgroundColor: brandColor }}>
-              {(provider.name || "C").charAt(0)}
-            </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <h3 className="text-base font-heading text-foreground leading-tight">{provider.name}</h3>
-            {locationStr && (
-              <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
-                <Globe className="w-3.5 h-3.5 shrink-0" />
-                {locationStr}
-              </p>
-            )}
-          </div>
-          {isTop10 && (
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 shrink-0">
-              Top 10%
-            </span>
-          )}
-        </div>
-
-        {pct !== null && (
-          <div>
-            <div className="flex items-baseline gap-1.5 mb-0.5">
-              <span className="text-2xl font-heading text-foreground">{pct}%</span>
-              <span className="text-sm text-muted-foreground">success rate</span>
-            </div>
-            <p className="text-xs text-muted-foreground mb-2">{cardEggSource === "donor" ? "Donor eggs" : [
-              "Own eggs",
-              cardAgeGroup === "under_35" ? "Under 35" : cardAgeGroup === "35_37" ? "35-37" : cardAgeGroup === "38_40" ? "38-40" : "Over 40",
-              cardIsNew ? "First-time IVF" : "Prior cycles",
-            ].join(" · ")}</p>
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">This clinic</span>
-                <span className="font-ui text-foreground">{pct}%</span>
-              </div>
-              <div className="h-2.5 bg-muted rounded-full overflow-hidden">
-                <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: brandColor }} />
-              </div>
-              {natAvg !== null && natAvg > 0 && (
-                <>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">National average</span>
-                    <span className="font-ui text-muted-foreground">{natAvg}%</span>
-                  </div>
-                  <div className="h-2.5 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-accent rounded-full transition-all" style={{ width: `${Math.min(natAvg, 100)}%` }} />
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
-        {card.reasons?.length > 0 && (
-          <p className="text-xs text-muted-foreground">{card.reasons.join(" · ")}</p>
-        )}
+    <div className="w-full" data-testid={`match-card-${card.providerId}`}>
+      <div className="w-full aspect-[3/4] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
+        <SwipeDeckCard
+          id={card.providerId}
+          photos={[]}
+          heroLogoUrl={logoSrc}
+          title={provider.name}
+          successBadge={successBadge}
+          tabs={tabs}
+          disableSwipe
+          chatMode
+          onPass={() => onAction(`I'm not interested in ${provider.name}. Show me another option.`)}
+          onSave={() => onAction(`I like ${provider.name}! Save as favorite. ❤️`)}
+          onViewFullProfile={goToProfile}
+        />
       </div>
-
-      <div className="border-t border-border/50 px-4 py-3 flex gap-2">
-        <Button variant="outline" className="flex-1 text-xs font-ui h-8" onClick={(e) => { e.stopPropagation(); navigate(providerUrl, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } }); }}>
+      <div className="mt-2 flex gap-2">
+        <Button variant="outline" className="flex-1 text-xs font-ui h-8" onClick={goToProfile}>
           View Details
         </Button>
-        <Button className="flex-1 text-xs font-ui h-8 text-primary-foreground" style={{ backgroundColor: brandColor }} onClick={(e) => { e.stopPropagation(); onAction(`I'd like to schedule a consultation with ${provider.name}`); }}>
+        <Button className="flex-1 text-xs font-ui h-8 text-primary-foreground" style={{ backgroundColor: brandColor }} onClick={() => onAction(`I'd like to schedule a consultation with ${provider.name}`)}>
           Schedule Consultation
         </Button>
       </div>

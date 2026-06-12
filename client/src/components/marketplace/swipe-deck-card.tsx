@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   ArrowUp, Undo2, X, Heart, Send,
-  Check, Flower2, Crown, Award,
+  Check, Flower2, Crown, Award, TrendingUp,
 } from "lucide-react";
 import type { TabSection } from "./swipe-mappers";
 import { getDonorStatusStyle } from "@/lib/donor-status";
@@ -31,6 +31,12 @@ interface SwipeDeckCardProps {
   frozenLotStatus?: "AVAILABLE" | "SOLD_OUT" | null;
   isExperienced?: boolean;
   isPremium?: boolean;
+  // Always-visible success-rate pill (e.g. "72% · Top 10%") - used by clinic
+  // and doctor cards so the key metric is never hidden behind a tab.
+  successBadge?: string | null;
+  // When the card has no face photo (clinics), render the hero as this logo on a
+  // branded background instead of the "No Photo" placeholder.
+  heroLogoUrl?: string | null;
   tabs: TabSection[];
   disableSwipe?: boolean;
   chatMode?: boolean;
@@ -58,6 +64,8 @@ export function SwipeDeckCard({
   frozenLotStatus,
   isExperienced = false,
   isPremium = false,
+  successBadge = null,
+  heroLogoUrl = null,
   tabs,
   disableSwipe = false,
   chatMode = false,
@@ -188,6 +196,17 @@ export function SwipeDeckCard({
               draggable={false}
               data-testid={`img-swipe-photo-${id}`}
             />
+          ) : heroLogoUrl ? (
+            <div className="w-full h-full bg-secondary flex items-center justify-center p-8">
+              <img
+                src={heroLogoUrl}
+                alt={title}
+                className="max-w-[70%] max-h-[45%] object-contain -translate-y-[12%]"
+                loading="eager"
+                draggable={false}
+                data-testid={`img-clinic-logo-${id}`}
+              />
+            </div>
           ) : (
             <div className="w-full h-full flex items-center justify-center text-muted-foreground">
               <span className="text-lg font-heading">No Photo</span>
@@ -255,7 +274,17 @@ export function SwipeDeckCard({
           )}
 
           <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-24 ${readOnly ? "pb-6" : "pb-24"} px-4 z-[35] pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`}>
-            <div className="flex items-center gap-1.5 mb-2">
+            <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+              {successBadge && (
+                <Badge
+                  className="bg-[hsl(var(--brand-success))]/90 text-white font-ui px-2.5 py-1 gap-1"
+                  style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+                  data-testid={`badge-success-${id}`}
+                >
+                  <TrendingUp className="w-3 h-3" />
+                  {successBadge}
+                </Badge>
+              )}
               {isPremium && (
                 <Badge
                   className="bg-[hsl(var(--brand-warning))]/90 text-white font-ui px-2.5 py-1 gap-1"
@@ -411,6 +440,53 @@ export function SwipeDeckCard({
                     );
                   })}
                   </div>
+                </div>
+              )}
+
+              {currentTab && currentTab.layoutType === "success_bars" && (
+                <div>
+                  {currentTab.title && (
+                    <p className="text-white font-heading mb-0.5 flex items-center gap-1.5" style={{ fontSize: 'var(--card-overlay-size, 16px)' }} data-testid="text-success-title">
+                      <Check className="w-4 h-4 text-accent" />
+                      {currentTab.title}
+                    </p>
+                  )}
+                  {currentTab.subtitle && (
+                    <p className="text-white/70 font-ui mb-2" style={{ fontSize: '12px' }}>{currentTab.subtitle}</p>
+                  )}
+                  {currentTab.bars && currentTab.bars.length > 0 && (
+                    <div className="space-y-1.5 mb-3" data-testid={`success-bars-${id}`}>
+                      {currentTab.bars.map((bar, i) => (
+                        <div key={`${bar.label}-${i}`}>
+                          <div className="flex items-center justify-between text-white/90 mb-0.5" style={{ fontSize: '13px' }}>
+                            <span>{bar.label}</span>
+                            <span className="font-ui">{bar.value}%</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-white/20 overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{ width: `${Math.min(bar.value, 100)}%`, backgroundColor: bar.isClinic ? 'hsl(var(--brand-success))' : 'hsl(var(--accent))' }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {currentTab.items.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {currentTab.items.map((item, i) => (
+                        <Badge
+                          key={`${item.label}-${i}`}
+                          className="bg-primary/25 text-white font-ui px-3 py-1.5 backdrop-blur-sm flex items-center gap-1.5 border border-primary/30"
+                          style={{ fontSize: 'var(--card-overlay-size, 16px)' }}
+                          data-testid={`badge-matched-${item.label.replace(/\s+/g, "-").toLowerCase()}`}
+                        >
+                          {item.label}
+                          <Check className="w-3 h-3 text-accent" />
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

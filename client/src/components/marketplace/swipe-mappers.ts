@@ -9,7 +9,7 @@ import { parseHeightToInches, resolveEthnicityTerms } from "@/lib/marketplace-fi
 import { formatMoneyDollars } from "@/lib/format-money";
 import { formatLocationDisplay } from "@/lib/format-location";
 
-export type LayoutType = "matched_bubbles" | "icon_list" | "standard_bubbles";
+export type LayoutType = "matched_bubbles" | "icon_list" | "standard_bubbles" | "success_bars";
 
 export interface TabItem {
   label: string;
@@ -18,10 +18,22 @@ export interface TabItem {
   lineBreakBefore?: boolean;
 }
 
+// A single horizontal bar in the "success_bars" layout (clinic vs national avg).
+export interface SuccessBar {
+  label: string;
+  value: number;
+  isClinic: boolean;
+}
+
 export interface TabSection {
   layoutType: LayoutType;
   title?: string;
+  // Small caption under the title - used by success_bars to show the context
+  // ("Own eggs · Under 35 · First-time IVF").
+  subtitle?: string;
   items: TabItem[];
+  // Only for the "success_bars" layout.
+  bars?: SuccessBar[];
 }
 
 // Coerce a raw DB status string to the canonical UI set. Anything outside
@@ -704,6 +716,48 @@ export function getSurrogateTabs(profile: SwipeDeckProfile, matchedPrefs: Matche
       items: validInterests.map(i => ({ label: i, value: "" })),
     });
   }
+
+  return tabs;
+}
+
+// Tabs for a clinic SwipeDeckCard. The first tab pairs the parent-matched
+// preferences with the clinic-vs-national success-rate bars (success_bars
+// layout); then Locations and Doctors-at-clinic. Callers compute pct/natAvg
+// from the parent's eggSource/ageGroup/isNewPatient context before calling.
+export function getClinicTabs(opts: {
+  pct: number | null;
+  natAvg: number | null;
+  contextLabel: string;
+  reasons: string[];
+  locations: { city?: string | null; state?: string | null }[];
+  doctors: { name: string }[];
+}): TabSection[] {
+  const tabs: TabSection[] = [];
+
+  const bars: SuccessBar[] = [];
+  if (opts.pct != null) bars.push({ label: "This clinic", value: opts.pct, isClinic: true });
+  if (opts.natAvg != null && opts.natAvg > 0) bars.push({ label: "National average", value: opts.natAvg, isClinic: false });
+  const matchedItems: TabItem[] = (opts.reasons || [])
+    .filter((r) => r && r.trim() !== "")
+    .slice(0, 6)
+    .map((r) => ({ label: r, value: "" }));
+  tabs.push({
+    layoutType: "success_bars",
+    title: "Matched to you",
+    subtitle: opts.contextLabel || undefined,
+    items: matchedItems,
+    bars,
+  });
+
+  const locItems: TabItem[] = (opts.locations || [])
+    .map((l) => ({ label: [l.city, l.state].filter(Boolean).join(", "), value: "", icon: MapPin }))
+    .filter((i) => i.label !== "");
+  if (locItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Locations", items: locItems });
+
+  const docItems: TabItem[] = (opts.doctors || [])
+    .map((d) => ({ label: d.name, value: "" }))
+    .filter((i) => i.label && i.label.trim() !== "");
+  if (docItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Doctors at this clinic", items: docItems });
 
   return tabs;
 }
