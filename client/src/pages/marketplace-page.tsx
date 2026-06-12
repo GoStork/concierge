@@ -1166,10 +1166,11 @@ function InlineLocationFilter({ providerType }: { providerType: "egg-donor" | "s
   );
 }
 
-function MarketplaceFiltersDrawer({ providerType, open, onOpenChange }: {
+function MarketplaceFiltersDrawer({ providerType, open, onOpenChange, ivfFilterProps }: {
   providerType: "egg-donor" | "surrogate" | "sperm-donor" | "ivf-clinic";
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  ivfFilterProps?: Record<string, unknown>;
 }) {
   const dispatch = useAppDispatch();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1272,7 +1273,7 @@ function MarketplaceFiltersDrawer({ providerType, open, onOpenChange }: {
             </>
           )}
           <div className="filter-list-mode">
-            <MarketplaceFilterBar providerType={providerType} hideFavorites noResults listMode />
+            <MarketplaceFilterBar providerType={providerType} hideFavorites noResults listMode {...(ivfFilterProps || {})} />
           </div>
         </div>
       </div>
@@ -1610,6 +1611,36 @@ export default function MarketplacePage() {
   });
   const myInsurance: string | null = parentProfileForFilter?.insurance || null;
 
+  // Shared IVF filter props - passed to BOTH the inline desktop/mobile bar AND the
+  // mobile master "Filters" drawer, so the drawer's controls actually do something
+  // (without these the drawer's handlers are undefined and taps are no-ops).
+  const ivfFilterProps = {
+    ivfLocation,
+    onIvfLocationChange: setIvfLocation,
+    ivfSearch: localSearch,
+    onIvfSearchChange: setIvfSearch,
+    ivfEggSource: eggSource,
+    onIvfEggSourceChange: setEggSource,
+    ivfAgeGroup: ageGroup,
+    onIvfAgeGroupChange: setAgeGroup,
+    ivfIsNewPatient: isNewPatient,
+    onIvfIsNewPatientChange: setIsNewPatient,
+    ivfSortBy: sortBy,
+    onIvfSortByChange: setSortBy,
+    hasIvfLocation: !!ivfLocation,
+    ivfInsurance: insuranceFilter,
+    onIvfInsuranceChange: (v: string) => setFilterParam("insurance", v || null),
+    ivfMyInsurance: myInsurance,
+    ivfLgbtqCare: lgbtqFilter,
+    onIvfLgbtqCareChange: (v: boolean) => setFilterParam("lgbtq", v ? "true" : null),
+    ivfSpecialty: specialtyFilter,
+    onIvfSpecialtyChange: (v: string) => setFilterParam("specialty", v || null),
+    ivfShowSpecialty: clinicView === "doctors",
+    ivfSpecialtyOptions: SPECIALTY_OPTIONS,
+    ivfClinicView: clinicView,
+    onIvfClinicViewChange: setClinicView,
+  };
+
   const ivfClinicCount = useMemo(() => {
     if (!providers || !isIvfTab) return 0;
     return providers.filter((p) =>
@@ -1695,6 +1726,7 @@ export default function MarketplacePage() {
       providerType={currentProviderType}
       open={filtersOpen}
       onOpenChange={(o) => { if (!o) closeFiltersPage(); else openFiltersPage(); }}
+      ivfFilterProps={isIvfTab ? ivfFilterProps : undefined}
     />
   ) : null;
 
@@ -1814,32 +1846,7 @@ export default function MarketplacePage() {
           <div className="mb-4" data-testid="marketplace-filter-bar-wrapper">
             <MarketplaceFilterBar
               providerType={currentProviderType}
-              {...(isIvfTab ? {
-                ivfLocation,
-                onIvfLocationChange: setIvfLocation,
-                ivfSearch: localSearch,
-                onIvfSearchChange: setIvfSearch,
-                ivfEggSource: eggSource,
-                onIvfEggSourceChange: setEggSource,
-                ivfAgeGroup: ageGroup,
-                onIvfAgeGroupChange: setAgeGroup,
-                ivfIsNewPatient: isNewPatient,
-                onIvfIsNewPatientChange: setIsNewPatient,
-                ivfSortBy: sortBy,
-                onIvfSortByChange: setSortBy,
-                hasIvfLocation: !!ivfLocation,
-                ivfInsurance: insuranceFilter,
-                onIvfInsuranceChange: (v: string) => setFilterParam("insurance", v || null),
-                ivfMyInsurance: myInsurance,
-                ivfLgbtqCare: lgbtqFilter,
-                onIvfLgbtqCareChange: (v: boolean) => setFilterParam("lgbtq", v ? "true" : null),
-                ivfSpecialty: specialtyFilter,
-                onIvfSpecialtyChange: (v: string) => setFilterParam("specialty", v || null),
-                ivfShowSpecialty: clinicView === "doctors",
-                ivfSpecialtyOptions: SPECIALTY_OPTIONS,
-                ivfClinicView: clinicView,
-                onIvfClinicViewChange: setClinicView,
-              } : {
+              {...(isIvfTab ? ivfFilterProps : {
                 location: donorLocation,
                 onLocationChange:
                   activeTab === "egg-donors" ? setEggLocation :
