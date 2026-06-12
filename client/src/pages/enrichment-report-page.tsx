@@ -57,18 +57,19 @@ function CoverageBar({ label, icon, count, total }: { label: string; icon: React
 
   return (
     <Card>
-      <CardContent className="pt-4 pb-3 px-4">
-        <div className="flex items-center gap-2 mb-2">
+      <CardContent className="p-2.5">
+        <div className="flex items-center gap-1.5 mb-1">
           {icon}
-          <span className="text-sm font-ui">{label}</span>
+          <span className="text-[11px] font-ui truncate">{label}</span>
         </div>
-        <div className="flex items-end gap-2 mb-2">
-          <span className="text-2xl font-heading">{count}</span>
-          <span className="text-sm text-muted-foreground mb-0.5">/ {total} ({pct}%)</span>
+        <div className="flex items-baseline gap-1 mb-1.5">
+          <span className="text-lg font-heading leading-none">{count}</span>
+          <span className="text-[10px] text-muted-foreground">/ {total}</span>
+          <span className="text-[10px] text-muted-foreground ml-auto font-ui">{pct}%</span>
         </div>
-        <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+        <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
           <div
-            className="h-2 rounded-full transition-all duration-500 ease-out"
+            className="h-1.5 rounded-full transition-all duration-500 ease-out"
             style={{
               width: `${pct}%`,
               backgroundColor: pct >= 80 ? "hsl(var(--brand-success))" : pct >= 50 ? "hsl(var(--brand-warning))" : "hsl(var(--destructive))",
@@ -568,46 +569,46 @@ export default function EnrichmentReportPage() {
 
       <div>
         <h3 className="text-lg font-heading mb-3">Field Coverage</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="coverage-grid">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2" data-testid="coverage-grid">
           <CoverageBar
             label="Website"
-            icon={<Globe className="w-4 h-4 text-primary" />}
+            icon={<Globe className="w-3.5 h-3.5 text-primary" />}
             count={coverage.withWebsite}
             total={coverage.totalClinics}
           />
           <CoverageBar
             label="Phone"
-            icon={<Phone className="w-4 h-4 text-primary" />}
+            icon={<Phone className="w-3.5 h-3.5 text-primary" />}
             count={coverage.withPhone}
             total={coverage.totalClinics}
           />
           <CoverageBar
             label="About"
-            icon={<FileText className="w-4 h-4 text-primary" />}
+            icon={<FileText className="w-3.5 h-3.5 text-primary" />}
             count={coverage.withAbout}
             total={coverage.totalClinics}
           />
           <CoverageBar
             label="Logo"
-            icon={<Image className="w-4 h-4 text-primary" />}
+            icon={<Image className="w-3.5 h-3.5 text-primary" />}
             count={coverage.withLogo}
             total={coverage.totalClinics}
           />
           <CoverageBar
             label="Team Members"
-            icon={<Users className="w-4 h-4 text-primary" />}
+            icon={<Users className="w-3.5 h-3.5 text-primary" />}
             count={coverage.withTeam}
             total={coverage.totalClinics}
           />
           <CoverageBar
             label="Doctor Photos"
-            icon={<Camera className="w-4 h-4 text-primary" />}
+            icon={<Camera className="w-3.5 h-3.5 text-primary" />}
             count={coverage.doctorsWithPhoto}
             total={coverage.totalDoctors}
           />
           <CoverageBar
             label="Locations"
-            icon={<MapPin className="w-4 h-4 text-primary" />}
+            icon={<MapPin className="w-3.5 h-3.5 text-primary" />}
             count={coverage.withLocations}
             total={coverage.totalClinics}
           />
