@@ -9,7 +9,7 @@ name: Nightly Sync Pinger
 #   - 06:05 UTC = 02:05 EDT (Mar-Nov, UTC-4)
 #   - 07:05 UTC = 02:05 EST (Nov-Mar, UTC-5)
 # Whichever of the two matches local 02:05 ET starts the sync; the other call
-# hits "already running" and is a no-op.
+# hits the 20h DB dedup in runNightlySync and is a no-op.
 #
 # Requires repo secret NIGHTLY_SYNC_SECRET (same value set in Replit Secrets).
 
@@ -24,22 +24,55 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Wake Replit container
+        # Replit Autoscale spins the container down when idle. At 02:00 ET the
+        # container has been cold all night, so a bare POST gets a 503 from
+        # Replit's edge before our app sees it. Hit /__health first and poll
+        # until 200 - that wakes the container without consuming the cron
+        # secret. Up to ~90s total wait.
+        run: |
+          for i in $(seq 1 18); do
+            code=$(curl -s -o /dev/null --max-time 10 -w "%{http_code}" \
+              https://go-stork.replit.app/__health || echo "000")
+            echo "Attempt $i: HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "Container warm."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::warning::Container did not return 200 within 90s; will still try the ping"
+
       - name: Trigger nightly sync on Replit
         env:
           SECRET: ${{ secrets.NIGHTLY_SYNC_SECRET }}
+        # Retry the POST too, in case the wake step ended just before the
+        # container finished initializing (between Replit edge accepting the
+        # request and our app populating prismaRef).
         run: |
           if [ -z "$SECRET" ]; then
             echo "::error::NIGHTLY_SYNC_SECRET repo secret is not set"
             exit 1
           fi
-          response=$(curl -sS --max-time 30 -w "\n%{http_code}" -X POST \
-            -H "x-cron-secret: $SECRET" \
-            https://go-stork.replit.app/api/cron/run-nightly-sync)
-          body=$(echo "$response" | sed '$d')
-          code=$(echo "$response" | tail -n 1)
-          echo "Status: $code"
-          echo "Body:   $body"
-          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
-            echo "::error::Pinger failed with HTTP $code"
-            exit 1
-          fi
+          for i in 1 2 3 4 5; do
+            response=$(curl -sS --max-time 30 -w "\n%{http_code}" -X POST \
+              -H "x-cron-secret: $SECRET" \
+              https://go-stork.replit.app/api/cron/run-nightly-sync)
+            body=$(echo "$response" | sed '$d')
+            code=$(echo "$response" | tail -n 1)
+            echo "Attempt $i: HTTP $code | Body: $body"
+            if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then
+              echo "Pinger succeeded."
+              exit 0
+            fi
+            # 503 = Replit edge cold-start or our app's "still starting" guard.
+            # Any other error code is terminal (401 bad secret, 500 server bug).
+            if [ "$code" != "503" ]; then
+              echo "::error::Pinger failed with HTTP $code (not retryable)"
+              exit 1
+            fi
+            echo "Got 503, retrying in 10s..."
+            sleep 10
+          done
+          echo "::error::Pinger still 503 after 5 retries - container never came up"
+          exit 1
