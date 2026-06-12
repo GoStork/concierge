@@ -958,7 +958,8 @@ export class ClinicEnrichmentService {
     const mergedTeam = mergeTeamMembers(sartMembers, scraped?.teamMembers || [], provider.name);
 
     // Scope team to this lab's satellites when the network has multiple labs.
-    const scopedTeam = this.scopeTeamToLab(mergedTeam, keptLocationKeys, hasSiblings, sartMembers);
+    let scopedTeam = this.scopeTeamToLab(mergedTeam, keptLocationKeys, hasSiblings, sartMembers);
+    scopedTeam = this.trimToReproductiveSpecialty(scopedTeam, sartMembers);
     if (hasSiblings) {
       console.log(`[clinic-enrichment] Scoped team for "${provider.name}": ${scopedTeam.length}/${mergedTeam.length} kept`);
     }
@@ -1168,6 +1169,45 @@ export class ClinicEnrichmentService {
     });
   }
 
+  /**
+   * Trim hospital / university "over-pull". When a fertility clinic is hosted on
+   * a big health-system domain (massgeneral.org, uwmedicine.org, montefiore.org,
+   * sbivf.com, siumed.edu ...), the scraper grabs the WHOLE institution's
+   * physician directory - cardiologists, surgeons, pediatricians - not just the
+   * REI department, so a fertility center ends up with 30-50 unrelated doctors.
+   * These are single-domain clinics, so scopeTeamToLab (multi-lab) does not
+   * catch them.
+   *
+   * Heuristic: only engages for suspiciously large rosters (> THRESHOLD). For a
+   * large roster, keep a doctor only if it is a SART member (authoritative for
+   * THIS fertility clinic) OR its name/title/bio shows a reproductive-medicine
+   * specialty. Small rosters are left untouched - a dedicated clinic's own site
+   * lists its own fertility doctors even when a bio snippet lacks a keyword, so
+   * we don't risk dropping them. If the filter would remove everyone (no SART,
+   * no keyword anywhere) we keep the original rather than show an empty card.
+   */
+  private trimToReproductiveSpecialty<T extends { name: string; title: string | null; bio: string | null }>(
+    team: T[],
+    sartMembers: SartMember[],
+  ): T[] {
+    const THRESHOLD = 12;
+    if (team.length <= THRESHOLD) return team;
+
+    const sartKeys = new Set(sartMembers.map(m => normalizeMemberKey(m.name)).filter(k => k.length >= 4));
+    const REPRO = /\b(reproductive|fertility|infertil|ivf|in[\s-]?vitro|REI|ob[\s-]?gyn|obstetric|gynecolog|androlog|embryolog)\b/i;
+
+    const trimmed = team.filter(m => {
+      if (sartKeys.has(normalizeMemberKey(m.name))) return true;
+      return REPRO.test(`${m.name} ${m.title || ""} ${m.bio || ""}`);
+    });
+
+    if (trimmed.length === 0) return team; // never make a clinic worse than before
+    if (trimmed.length < team.length) {
+      console.log(`[clinic-enrichment] Trimmed hospital over-pull: ${team.length} -> ${trimmed.length} reproductive-relevant`);
+    }
+    return trimmed;
+  }
+
   private async syncLocations(
     providerId: string,
     providerName: string,
@@ -1330,7 +1370,8 @@ export class ClinicEnrichmentService {
 
     const mergedTeam = mergeTeamMembers(sartMembers, scraped.teamMembers || [], provider.name);
 
-    const scopedTeam = this.scopeTeamToLab(mergedTeam, keptLocationKeys, hasSiblings, sartMembers);
+    let scopedTeam = this.scopeTeamToLab(mergedTeam, keptLocationKeys, hasSiblings, sartMembers);
+    scopedTeam = this.trimToReproductiveSpecialty(scopedTeam, sartMembers);
     if (hasSiblings) {
       console.log(`[clinic-enrichment] reSync: Scoped team for "${provider.name}": ${scopedTeam.length}/${mergedTeam.length} kept`);
     }
