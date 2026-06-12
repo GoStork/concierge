@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { ProviderWithRelations } from "@shared/schema";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import ManageServicesDialog, { SERVICE_STATUS_STYLES as STATUS_STYLES } from "@/components/manage-services-dialog";
+import { LocationSearchInput } from "@/components/location-search-input";
 
 type ProviderData = {
   id: string;
@@ -161,16 +162,14 @@ export default function AdminProvidersPage() {
           <PopoverContent className="w-64 p-3" align="start">
             <div className="space-y-2">
               <span className="text-sm font-medium">Location</span>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  className="pl-9"
-                  placeholder="City or state..."
-                  value={locationSearch}
-                  onChange={(e) => setLocationSearch(e.target.value)}
-                  data-testid="input-admin-location"
-                />
-              </div>
+              <LocationSearchInput
+                value={locationSearch}
+                onValueChange={setLocationSearch}
+                onSelect={(commit) => setLocationSearch(commit)}
+                placeholder="City or state..."
+                autoFocus
+                testId="input-admin-location"
+              />
               {locationSearch && (
                 <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => setLocationSearch("")} data-testid="clear-admin-location">
                   Clear

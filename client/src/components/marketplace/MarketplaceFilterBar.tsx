@@ -15,6 +15,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { formatMoneyDollars } from "@/lib/format-money";
 import { formatLocationDisplay } from "@/lib/format-location";
+import { LocationSearchInput } from "@/components/location-search-input";
 import { InsurancePicker } from "@/components/ui/insurance-picker";
 import { parseInsuranceValue } from "@shared/insurance-data";
 
@@ -465,8 +466,9 @@ const TINDER_LABEL_INACTIVE = `${TINDER_LABEL_BASE} text-white/80`;
 
 // Location input that holds its own state and only syncs to parent on commit.
 // Bypasses a vaul/iOS bug where a controlled input inside a drawer loses focus
-// on every keystroke when the parent component re-renders.
-// Also shows Nominatim/OSM autocomplete suggestions for city/state/country.
+// on every keystroke when the parent component re-renders. The autocomplete
+// itself lives in the shared <LocationSearchInput>; this wrapper only adds the
+// drawer-safe local state and the marketplace Redux dispatch on select.
 function LocationDrawerInput({
   initialValue,
   onCommit,
@@ -482,10 +484,6 @@ function LocationDrawerInput({
 }) {
   const dispatch = useAppDispatch();
   const [localValue, setLocalValue] = useState(initialValue);
-  const [suggestions, setSuggestions] = useState<{ label: string; commit: string }[]>([]);
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   // Re-sync if the parent value changes (e.g. cleared externally) but only if
   // the local input is empty - so we don't clobber what the user just picked
@@ -495,105 +493,27 @@ function LocationDrawerInput({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialValue]);
 
-  const runSearch = useCallback(async (q: string) => {
-    if (q.trim().length < 3) {
-      setSuggestions([]);
-      setOpen(false);
-      return;
-    }
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        q,
-        format: "json",
-        addressdetails: "1",
-        limit: "5",
-        "accept-language": "en",
-      });
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
-        headers: { "Accept-Language": "en" },
-      });
-      const data = await res.json();
-      const mapped = (data || [])
-        .filter((item: any) => item.address)
-        .map((item: any) => {
-          const a = item.address;
-          const city = a.city || a.town || a.village || a.hamlet || a.county || "";
-          const state = a.state || a.region || "";
-          const country = a.country || "";
-          const rawLabel = [city, state, country].filter(Boolean).join(", ");
-          const label = formatLocationDisplay(rawLabel) || rawLabel;
-          // Marketplace filter takes a single string; commit the most-specific non-empty match.
-          // Prefer city, fall back to state, fall back to country.
-          const commit = city || state || country || rawLabel;
-          return { label, commit };
-        })
-        .filter((s: { label: string }) => s.label);
-      setSuggestions(mapped);
-      setOpen(mapped.length > 0);
-    } catch {
-      setSuggestions([]);
-      setOpen(false);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = e.target.value;
-    setLocalValue(v);
-    onCommit(v);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => runSearch(v), 350);
-  };
-
-  const pick = (s: { label: string; commit: string }) => {
-    setLocalValue(s.label);
-    // Dispatch directly to Redux too - the URL->useEffect->Redux flow has a tick of latency
-    // that can race with the drawer close. Direct dispatch guarantees the filter is set
-    // before the swipe deck re-renders.
-    dispatch(setFilter({ key: "location", values: s.commit ? [s.commit] : [] }));
-    onCommit(s.commit);
-    setOpen(false);
-    setSuggestions([]);
-    onClose();
-  };
-
   return (
-    <div className="relative" data-vaul-no-drag>
-      <div className="relative">
-        <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          data-vaul-no-drag
-          autoFocus
-          className="pl-9"
-          placeholder={placeholder}
-          value={localValue}
-          onChange={handleChange}
-          onKeyDown={(e) => { if (e.key === "Enter") { setOpen(false); onClose(); } }}
-          data-testid={testId}
-        />
-      </div>
-      {open && suggestions.length > 0 && (
-        <div className="mt-2 border rounded-md bg-background shadow-sm max-h-60 overflow-y-auto" data-vaul-no-drag>
-          {suggestions.map((s, i) => (
-            <button
-              key={`${s.label}-${i}`}
-              type="button"
-              className="w-full text-left px-3 py-2 text-sm hover:bg-muted active:bg-muted flex items-center gap-2"
-              onClick={() => pick(s)}
-              data-testid={`${testId}-suggestion-${i}`}
-            >
-              <MapPin className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-              <span>{s.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-      {loading && !open && (
-        <p className="mt-1 text-xs text-muted-foreground">Searching...</p>
-      )}
-    </div>
+    <LocationSearchInput
+      value={localValue}
+      onValueChange={(v) => {
+        setLocalValue(v);
+        onCommit(v);
+      }}
+      onSelect={(commit, label) => {
+        setLocalValue(label);
+        // Dispatch directly to Redux too - the URL->useEffect->Redux flow has a tick
+        // of latency that can race with the drawer close. Direct dispatch guarantees
+        // the filter is set before the swipe deck re-renders.
+        dispatch(setFilter({ key: "location", values: commit ? [commit] : [] }));
+        onCommit(commit);
+        onClose();
+      }}
+      placeholder={placeholder}
+      testId={testId}
+      autoFocus
+      noDrag
+    />
   );
 }
 

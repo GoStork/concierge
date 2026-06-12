@@ -19,6 +19,7 @@ import { matchesFilter, matchesSameSexCoupleRequirement, matchesInternationalReq
 import { useAppSelector, useAppDispatch } from "@/store";
 import { setMarketplaceSearchQuery, setMarketplaceTab, toggleFavoriteDonor, passDonor, undoPassDonor, loadDonorPreferences, setShowFavoritesOnly, setShowSkippedOnly, setShowExperiencedOnly, setFilter, clearFilters } from "@/store/uiSlice";
 import { MarketplaceFilterBar } from "@/components/marketplace/MarketplaceFilterBar";
+import { LocationSearchInput } from "@/components/location-search-input";
 import { Tabs as UnderlineTabs, TabsList as UnderlineTabsList, TabsTrigger as UnderlineTabsTrigger } from "@/components/ui/underline-tabs";
 import { Drawer as FullDrawer, DrawerContent as FullDrawerContent } from "@/components/ui/drawer";
 import { Check as CheckIcon } from "lucide-react";
@@ -1005,9 +1006,6 @@ function InlineLocationFilter({ providerType }: { providerType: "egg-donor" | "s
   const selected = urlValue ? urlValue.split(',').map(s => s.trim()).filter(Boolean) : [];
 
   const [query, setQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<{ label: string; commit: string }[]>([]);
-  const [loading, setLoading] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   const writeLocations = useCallback((next: string[]) => {
     const joined = next.join(',');
@@ -1019,66 +1017,11 @@ function InlineLocationFilter({ providerType }: { providerType: "egg-donor" | "s
     }, { replace: true });
   }, [setSearchParams, locationKey]);
 
-  const runSearch = useCallback(async (q: string) => {
-    if (q.trim().length < 3) {
-      setSuggestions([]);
-      return;
-    }
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        q,
-        format: 'json',
-        addressdetails: '1',
-        limit: '5',
-        'accept-language': 'en',
-      });
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
-        headers: { 'Accept-Language': 'en' },
-      });
-      const data = await res.json();
-      const mapped = (data || [])
-        .filter((item: any) => item.address)
-        .map((item: any) => {
-          const a = item.address;
-          const city = a.city || a.town || a.village || a.hamlet || a.county || '';
-          const state = a.state || a.region || '';
-          const country = a.country || '';
-          const rawLabel = [city, state, country].filter(Boolean).join(', ');
-          const commit = city || state || country || rawLabel;
-          return { label: rawLabel, commit };
-        })
-        .filter((s: { label: string }) => s.label);
-      // Nominatim returns multiple geographic entries (country, ISO entity,
-      // admin boundary) that collapse to the same display label after our
-      // city/state/country reduction - e.g. "Taiwan" shows up twice for a
-      // "Taiwan" query. Dedupe by label, keeping first occurrence.
-      const seen = new Set<string>();
-      const deduped = mapped.filter((s: { label: string }) => {
-        if (seen.has(s.label)) return false;
-        seen.add(s.label);
-        return true;
-      });
-      setSuggestions(deduped);
-    } catch {
-      setSuggestions([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const handleQueryChange = (v: string) => {
-    setQuery(v);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => runSearch(v), 350);
-  };
-
   const addLocation = (loc: string) => {
     if (!loc) return;
     if (selected.includes(loc)) return;
     writeLocations([...selected, loc]);
     setQuery('');
-    setSuggestions([]);
   };
 
   const removeLocation = (loc: string) => {
@@ -1122,46 +1065,16 @@ function InlineLocationFilter({ providerType }: { providerType: "egg-donor" | "s
         </div>
       )}
 
-      <div className="relative">
-        <Input
-          value={query}
-          onChange={(e) => handleQueryChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && query.trim()) {
-              e.preventDefault();
-              if (suggestions[0]) {
-                addLocation(suggestions[0].commit);
-              } else {
-                addLocation(query.trim());
-              }
-            }
-          }}
-          placeholder={selected.length > 0 ? "Add another location" : "City, state, or country"}
-          className="bg-muted border-0 font-ui"
-          data-testid="input-location-inline"
-        />
-        {(suggestions.length > 0 || loading) && (
-          <div
-            className="absolute left-0 right-0 top-full mt-1 z-20 bg-card border border-border rounded-[var(--radius)] shadow-lg max-h-64 overflow-y-auto"
-            data-testid="location-suggestions"
-          >
-            {loading && suggestions.length === 0 && (
-              <div className="px-3 py-2 text-sm font-ui text-muted-foreground">Searching...</div>
-            )}
-            {suggestions.map((s, i) => (
-              <button
-                key={`${s.commit}-${i}`}
-                onClick={() => addLocation(s.commit)}
-                className="w-full px-3 py-2 text-left text-sm font-ui hover:bg-muted transition-colors flex items-center gap-2"
-                data-testid={`location-suggestion-${i}`}
-              >
-                <MapPin className="w-4 h-4 text-muted-foreground shrink-0" />
-                <span className="text-foreground">{s.label}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      <LocationSearchInput
+        value={query}
+        onValueChange={setQuery}
+        onSelect={(commit) => addLocation(commit)}
+        placeholder={selected.length > 0 ? "Add another location" : "City, state, or country"}
+        inputClassName="bg-muted border-0 font-ui"
+        overlayDropdown
+        testId="input-location-inline"
+        suggestionTestId={(i) => `location-suggestion-${i}`}
+      />
     </div>
   );
 }
