@@ -2041,6 +2041,23 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
     fetchProfile();
   }, [card.providerId, card.type, isClinic, isAgency, isCountryProgram]);
 
+  // Hooks must run unconditionally, BEFORE any early return below (clinic /
+  // agency / loading branches). A photo-less card first renders the loading
+  // branch and then re-renders with a profile; if these hooks sat after that
+  // early return, the second render would call more hooks than the first
+  // ("Rendered more hooks than during the previous render").
+  const { viewedIds, previousVisitAt } = useMarketplaceViewContext();
+  const profileId = profile?.id;
+  const profileTypeForView: "egg-donor" | "surrogate" | "sperm-donor" =
+    cardType.toLowerCase() === "surrogate" ? "surrogate"
+      : cardType.toLowerCase() === "sperm donor" ? "sperm-donor"
+        : "egg-donor";
+  // The moment the AI surfaces a MATCH_CARD in chat, count it as having shown
+  // the parent this profile - so its "New" badge clears in marketplace views.
+  useEffect(() => {
+    if (profileId) recordProfileView(profileId, profileTypeForView);
+  }, [profileId, profileTypeForView]);
+
   if (isClinic) {
     return <ClinicMatchCard card={card} brandColor={brandColor} onAction={onAction} onViewProfile={onViewProfile} />;
   }
@@ -2068,20 +2085,6 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
       </div>
     );
   }
-
-  const { viewedIds, previousVisitAt } = useMarketplaceViewContext();
-
-  const profileId = profile?.id;
-  const profileTypeForView: "egg-donor" | "surrogate" | "sperm-donor" =
-    cardType.toLowerCase() === "surrogate" ? "surrogate"
-      : cardType.toLowerCase() === "sperm donor" ? "sperm-donor"
-      : "egg-donor";
-  // The moment the AI surfaces a MATCH_CARD in chat, count it as having
-  // shown the parent this profile - so its "New" badge clears in any
-  // subsequent marketplace view.
-  useEffect(() => {
-    if (profileId) recordProfileView(profileId, profileTypeForView);
-  }, [profileId, profileTypeForView]);
 
   if (profile) {
     const t = cardType.toLowerCase();
