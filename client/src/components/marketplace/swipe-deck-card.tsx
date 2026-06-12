@@ -131,6 +131,9 @@ export function SwipeDeckCard({
   const saveBtnScale = useTransform(x, [0, FADE_START, SWIPE_THRESHOLD], [1, 1.1, 1.35]);
   const otherBtnOpacity = useTransform(x, [-FADE_END, -FADE_START, 0, FADE_START, FADE_END], [0, 0.8, 1, 0.8, 0]);
 
+  // Drop photos that 404'd so the remaining (working) faces fill every face-slide
+  // instead of one slide collapsing to the branded background.
+  const usablePhotos = photos.filter((p) => !erroredPhotos[p]);
   // firstSlidePlain (clinics): the first slide shows NO photo (clean branded
   // background) so the logo/name/success rate read clearly; the photos (doctor
   // faces) start on slide 1. In that mode the slide count follows the tabs.
@@ -139,7 +142,7 @@ export function SwipeDeckCard({
     : Math.max(photos.length, tabs.length, 1);
   const currentTab = tabs.length > 0 && slideIndex < tabs.length ? tabs[slideIndex] : null;
   const photoSlide = firstSlidePlain ? slideIndex - 1 : slideIndex;
-  const currentPhotoIndex = photos.length > 0 && photoSlide >= 0 ? photoSlide % photos.length : -1;
+  const currentPhotoIndex = usablePhotos.length > 0 && photoSlide >= 0 ? photoSlide % usablePhotos.length : -1;
 
   useEffect(() => {
     setSlideIndex(0);
@@ -187,8 +190,7 @@ export function SwipeDeckCard({
     }
   }, [animateSwipe, controls]);
 
-  const rawPhoto = photos[currentPhotoIndex] || null;
-  const currentPhoto = rawPhoto && !erroredPhotos[rawPhoto] ? rawPhoto : null;
+  const currentPhoto = currentPhotoIndex >= 0 ? (usablePhotos[currentPhotoIndex] || null) : null;
 
   return (
     <div className="w-full h-full p-[3px]" data-testid={`swipe-card-${id}`}>
