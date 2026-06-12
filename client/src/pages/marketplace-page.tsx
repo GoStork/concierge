@@ -1837,6 +1837,8 @@ export default function MarketplacePage() {
                 onIvfSpecialtyChange: (v: string) => setFilterParam("specialty", v || null),
                 ivfShowSpecialty: clinicView === "doctors",
                 ivfSpecialtyOptions: SPECIALTY_OPTIONS,
+                ivfClinicView: clinicView,
+                onIvfClinicViewChange: setClinicView,
               } : {
                 location: donorLocation,
                 onLocationChange:
@@ -1901,7 +1903,7 @@ export default function MarketplacePage() {
           </div>
         ) : (
           <>
-            {isIvfTab && !showFavoritesOnly && (
+            {isIvfTab && !showFavoritesOnly && !isMobile && (
               <div className="flex justify-center mb-5">
                 <div className="inline-flex rounded-full border border-border/60 p-0.5 bg-background" data-testid="toggle-clinic-view">
                   {(["clinics", "doctors"] as const).map((v) => (

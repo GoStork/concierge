@@ -57,7 +57,6 @@ function CarrierLogo({ carrier, size = 32 }: { carrier: InsuranceCarrier; size?:
  */
 export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...rest }: InsurancePickerProps) {
   const [carrier, setCarrier] = useState<string>("");
-  const [plan, setPlan] = useState<string>(ALL_PLANS);
   const [checked, setChecked] = useState<string[]>([]);
   const [search, setSearch] = useState("");
 
@@ -65,8 +64,14 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
   const plans = carrier ? plansForCarrier(carrier) : [];
 
   function pick(c: string) {
+    // Single mode (a parent's own plan): if the carrier has no plan breakdown,
+    // commit it immediately - there is nothing further to choose.
+    if (mode === "single" && plansForCarrier(c).length === 0) {
+      onChange([c]);
+      setCarrier("");
+      return;
+    }
     setCarrier(c);
-    setPlan(ALL_PLANS);
     setSearch("");
     // Pre-check the plans already accepted for this carrier (edit-in-place).
     setChecked(
@@ -74,6 +79,14 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
         .filter((v) => parseInsuranceValue(v).carrier === c)
         .map((v) => parseInsuranceValue(v).plan ?? ALL_PLANS),
     );
+  }
+
+  // single (parent): commit the carrier + chosen plan as soon as a plan is
+  // picked from the dropdown - no separate "Set" button.
+  function commitSinglePlan(p: string) {
+    if (!carrier) return;
+    onChange([makeInsuranceValue(carrier, p === ALL_PLANS ? undefined : p)]);
+    setCarrier("");
   }
 
   function toggleChecked(p: string) {
@@ -95,13 +108,6 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
     onChange([...others, ...newValues]);
     setCarrier("");
     setChecked([]);
-  }
-
-  // single (parent): one carrier + plan.
-  function setSingle() {
-    if (!carrier) return;
-    onChange([makeInsuranceValue(carrier, plan)]);
-    setCarrier("");
   }
 
   function removeCarrier(c: string) {
@@ -171,7 +177,7 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
           {!search.trim() && (
             <div className="space-y-2">
               <p className="text-xs font-ui text-muted-foreground">Popular carriers</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {popularCarriers().map((c) => (
                   <button
                     key={c.carrier}
@@ -238,20 +244,15 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
               <Plus className="w-3.5 h-3.5" /> {mode === "single" ? "Set" : "Add"}
             </Button>
           ) : mode === "single" ? (
-            <div className="flex flex-wrap items-end gap-2">
-              <div className="space-y-1 flex-1 min-w-[160px]">
-                <label className="text-xs text-muted-foreground">Plan</label>
-                <Select value={plan} onValueChange={setPlan} disabled={disabled}>
-                  <SelectTrigger className="h-9" data-testid="select-insurance-plan"><SelectValue placeholder={ALL_PLANS} /></SelectTrigger>
-                  <SelectContent className="max-h-72">
-                    <SelectItem value={ALL_PLANS}>{ALL_PLANS}</SelectItem>
-                    {plans.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button type="button" size="sm" className="h-9 gap-1.5" onClick={setSingle} disabled={disabled} data-testid="button-insurance-add">
-                <Plus className="w-3.5 h-3.5" /> Set
-              </Button>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Choose your plan</label>
+              <Select value="" onValueChange={commitSinglePlan} disabled={disabled}>
+                <SelectTrigger className="h-9" data-testid="select-insurance-plan"><SelectValue placeholder="Select your plan" /></SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value={ALL_PLANS}>{ALL_PLANS}</SelectItem>
+                  {plans.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
           ) : (
             <>

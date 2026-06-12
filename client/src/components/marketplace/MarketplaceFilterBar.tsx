@@ -82,6 +82,8 @@ interface MarketplaceFilterBarProps {
   onIvfSpecialtyChange?: (value: string) => void;
   ivfShowSpecialty?: boolean;
   ivfSpecialtyOptions?: string[];
+  ivfClinicView?: "clinics" | "doctors";
+  onIvfClinicViewChange?: (value: "clinics" | "doctors") => void;
   location?: string;
   onLocationChange?: (value: string) => void;
   hasLocation?: boolean;
@@ -1485,6 +1487,8 @@ export function MarketplaceFilterBar({
   onIvfSpecialtyChange,
   ivfShowSpecialty,
   ivfSpecialtyOptions,
+  ivfClinicView,
+  onIvfClinicViewChange,
   location,
   onLocationChange,
   hasLocation,
@@ -1547,6 +1551,12 @@ export function MarketplaceFilterBar({
   const [locationDrawerOpen, setLocationDrawerOpen] = useState(false);
   const ivfInsuranceCarrier = ivfInsurance ? parseInsuranceValue(ivfInsurance).carrier : "";
   const ivfMyInsuranceCarrier = ivfMyInsurance ? parseInsuranceValue(ivfMyInsurance).carrier : "";
+  const ivfPatientCount = [ivfEggSource, ivfAgeGroup, ivfIsNewPatient].filter(Boolean).length;
+  const ivfPatientPills = [
+    EGG_SOURCE_OPTIONS.find((o) => o.value === ivfEggSource)?.label,
+    AGE_GROUP_OPTIONS.find((o) => o.value === ivfAgeGroup)?.label,
+    IVF_HISTORY_OPTIONS.find((o) => o.value === ivfIsNewPatient)?.label,
+  ].filter(Boolean) as string[];
 
   const ivfMobileFilterButtons = isIvf ? (
     <>
@@ -1579,67 +1589,52 @@ export function MarketplaceFilterBar({
 
       <Drawer>
         <DrawerTrigger asChild>
-          <button className={tinderLabel(false, darkLabels)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-ivf-egg-source">
-            Egg Source
+          <button className={tinderLabel(ivfPatientCount > 0, darkLabels)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-ivf-patient">
+            <span className="filter-row-label">Your IVF</span>
+            {listMode && <SelectedPillsInTrigger values={ivfPatientPills} />}
           </button>
         </DrawerTrigger>
         <DrawerContent>
-          <DrawerHeader><DrawerTitle>Egg Source</DrawerTitle></DrawerHeader>
-          <div className="p-4 space-y-2">
-            {EGG_SOURCE_OPTIONS.map((opt) => (
-              <Button key={opt.value} variant={ivfEggSource === opt.value ? "default" : "outline"} className="w-full justify-start" onClick={() => onIvfEggSourceChange?.(opt.value)} data-testid={`ivf-egg-source-${opt.value}`}>
-                {opt.label}
-              </Button>
-            ))}
+          <DrawerHeader><DrawerTitle>Your IVF</DrawerTitle></DrawerHeader>
+          <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
+            <div className="space-y-2">
+              <p className="text-xs font-ui text-muted-foreground">Egg source</p>
+              {EGG_SOURCE_OPTIONS.map((opt) => (
+                <Button key={opt.value} variant={ivfEggSource === opt.value ? "default" : "outline"} className="w-full justify-start" onClick={() => onIvfEggSourceChange?.(ivfEggSource === opt.value ? "" : opt.value)} data-testid={`ivf-egg-source-${opt.value}`}>
+                  {opt.label}
+                </Button>
+              ))}
+            </div>
+            <div className={`space-y-2 ${ivfAgeDisabled ? "opacity-50 pointer-events-none" : ""}`}>
+              <p className="text-xs font-ui text-muted-foreground">Your age</p>
+              {AGE_GROUP_OPTIONS.map((opt) => (
+                <Button key={opt.value} variant={ivfAgeGroup === opt.value ? "default" : "outline"} className="w-full justify-start" disabled={ivfAgeDisabled} onClick={() => onIvfAgeGroupChange?.(ivfAgeGroup === opt.value ? "" : opt.value)} data-testid={`ivf-age-${opt.value}`}>
+                  {opt.label}
+                </Button>
+              ))}
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs font-ui text-muted-foreground">IVF history</p>
+              {IVF_HISTORY_OPTIONS.map((opt) => (
+                <Button key={opt.value} variant={ivfIsNewPatient === opt.value ? "default" : "outline"} className="w-full justify-start" onClick={() => onIvfIsNewPatientChange?.(ivfIsNewPatient === opt.value ? "" : opt.value)} data-testid={`ivf-history-${opt.value}`}>
+                  {opt.label}
+                </Button>
+              ))}
+            </div>
           </div>
         </DrawerContent>
       </Drawer>
 
-      <Drawer>
-        <DrawerTrigger asChild>
-          <button className={`${tinderLabel(false, darkLabels)} ${ivfAgeDisabled ? "opacity-50" : ""}`} style={TINDER_LABEL_STYLE} disabled={ivfAgeDisabled} data-testid="filter-btn-ivf-age">
-            Your Age
-          </button>
-        </DrawerTrigger>
-        <DrawerContent>
-          <DrawerHeader><DrawerTitle>Your Age</DrawerTitle></DrawerHeader>
-          <div className="p-4 space-y-2">
-            {AGE_GROUP_OPTIONS.map((opt) => (
-              <Button key={opt.value} variant={ivfAgeGroup === opt.value ? "default" : "outline"} className="w-full justify-start" onClick={() => onIvfAgeGroupChange?.(opt.value)} data-testid={`ivf-age-${opt.value}`}>
-                {opt.label}
-              </Button>
-            ))}
-          </div>
-        </DrawerContent>
-      </Drawer>
-
-      <Drawer>
-        <DrawerTrigger asChild>
-          <button className={tinderLabel(false, darkLabels)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-ivf-history">
-            IVF History
-          </button>
-        </DrawerTrigger>
-        <DrawerContent>
-          <DrawerHeader><DrawerTitle>IVF History</DrawerTitle></DrawerHeader>
-          <div className="p-4 space-y-2">
-            {IVF_HISTORY_OPTIONS.map((opt) => (
-              <Button key={opt.value} variant={ivfIsNewPatient === opt.value ? "default" : "outline"} className="w-full justify-start" onClick={() => onIvfIsNewPatientChange?.(opt.value)} data-testid={`ivf-history-${opt.value}`}>
-                {opt.label}
-              </Button>
-            ))}
-          </div>
-        </DrawerContent>
-      </Drawer>
-
-      <Drawer>
+      <Drawer handleOnly repositionInputs={false} snapPoints={[1]} shouldScaleBackground={false} noBodyStyles>
         <DrawerTrigger asChild>
           <button className={tinderLabel(!!ivfInsurance, darkLabels)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-ivf-insurance">
-            {ivfInsuranceCarrier || "Insurance"}
+            <span className="filter-row-label">Insurance</span>
+            {listMode && <SelectedPillsInTrigger values={ivfInsuranceCarrier ? [ivfInsuranceCarrier] : []} />}
           </button>
         </DrawerTrigger>
-        <DrawerContent>
+        <DrawerContent className="h-full mt-0">
           <DrawerHeader><DrawerTitle>Insurance</DrawerTitle></DrawerHeader>
-          <div className="p-4 space-y-2">
+          <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-2" style={{ WebkitOverflowScrolling: "touch" }}>
             {ivfMyInsurance && ivfInsurance !== ivfMyInsurance && (
               <Button variant="outline" className="w-full justify-start" onClick={() => onIvfInsuranceChange?.(ivfMyInsurance)} data-testid="filter-insurance-mine-mobile">
                 Accepts my insurance ({ivfMyInsuranceCarrier})
@@ -1659,25 +1654,37 @@ export function MarketplaceFilterBar({
         </DrawerContent>
       </Drawer>
 
-      <button
-        className={tinderLabel(!!ivfLgbtqCare, darkLabels)}
-        style={TINDER_LABEL_STYLE}
-        onClick={() => onIvfLgbtqCareChange?.(!ivfLgbtqCare)}
-        data-testid="filter-btn-ivf-lgbtq"
-      >
-        LGBTQ+ care
-      </button>
+      <Drawer>
+        <DrawerTrigger asChild>
+          <button className={tinderLabel(!!ivfLgbtqCare, darkLabels)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-ivf-lgbtq">
+            <span className="filter-row-label">LGBTQ+ care</span>
+            {listMode && <SelectedPillsInTrigger values={ivfLgbtqCare ? ["On"] : []} />}
+          </button>
+        </DrawerTrigger>
+        <DrawerContent>
+          <DrawerHeader><DrawerTitle>LGBTQ+ care</DrawerTitle></DrawerHeader>
+          <div className="p-4 space-y-2">
+            <Button variant={ivfLgbtqCare ? "default" : "outline"} className="w-full justify-start" onClick={() => onIvfLgbtqCareChange?.(true)} data-testid="ivf-lgbtq-yes">
+              LGBTQ-friendly only
+            </Button>
+            <Button variant={!ivfLgbtqCare ? "default" : "outline"} className="w-full justify-start" onClick={() => onIvfLgbtqCareChange?.(false)} data-testid="ivf-lgbtq-any">
+              Any
+            </Button>
+          </div>
+        </DrawerContent>
+      </Drawer>
 
       {ivfShowSpecialty && (
-        <Drawer>
+        <Drawer handleOnly repositionInputs={false} snapPoints={[1]} shouldScaleBackground={false} noBodyStyles>
           <DrawerTrigger asChild>
             <button className={tinderLabel(!!ivfSpecialty, darkLabels)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-ivf-specialty">
-              {ivfSpecialty || "Specialty"}
+              <span className="filter-row-label">Specialty</span>
+              {listMode && <SelectedPillsInTrigger values={ivfSpecialty ? [ivfSpecialty] : []} />}
             </button>
           </DrawerTrigger>
-          <DrawerContent>
+          <DrawerContent className="h-full mt-0">
             <DrawerHeader><DrawerTitle>Specialty</DrawerTitle></DrawerHeader>
-            <div className="p-4 space-y-2 max-h-[60vh] overflow-y-auto">
+            <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-2" style={{ WebkitOverflowScrolling: "touch" }}>
               <Button variant={!ivfSpecialty ? "default" : "outline"} className="w-full justify-start" onClick={() => onIvfSpecialtyChange?.("")} data-testid="ivf-specialty-all-mobile">
                 All specialties
               </Button>
@@ -1872,6 +1879,7 @@ export function MarketplaceFilterBar({
 
   const [locationPopoverOpen, setLocationPopoverOpen] = useState(false);
   const [insurancePopoverOpen, setInsurancePopoverOpen] = useState(false);
+  const [mobileSearchExpanded, setMobileSearchExpanded] = useState(false);
 
   const ivfDesktopFilterButtons = isIvf ? (
     <>
@@ -1908,54 +1916,38 @@ export function MarketplaceFilterBar({
 
       <Popover>
         <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" className="shrink-0 h-9 font-ui rounded-full gap-1 px-3.5" style={{ fontSize: 'var(--badge-text-size, 13px)' }} data-testid="filter-btn-ivf-egg-source">
-            {EGG_SOURCE_OPTIONS.find(o => o.value === ivfEggSource)?.label || "Egg Source"}
+          <Button variant={ivfPatientCount > 0 ? "default" : "outline"} size="sm" className="shrink-0 h-9 font-ui rounded-full gap-1 px-3.5" style={{ fontSize: 'var(--badge-text-size, 13px)' }} data-testid="filter-btn-ivf-patient">
+            Your IVF
+            {ivfPatientCount > 0 && <span className="font-normal opacity-80">({ivfPatientCount})</span>}
             <ChevronDown className="w-3.5 h-3.5" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-48 p-2" align="start">
-          <div className="space-y-1">
-            {EGG_SOURCE_OPTIONS.map((opt) => (
-              <Button key={opt.value} variant={ivfEggSource === opt.value ? "default" : "ghost"} size="sm" className="w-full justify-start text-xs" onClick={() => onIvfEggSourceChange?.(opt.value)} data-testid={`ivf-egg-source-${opt.value}`}>
-                {opt.label}
-              </Button>
-            ))}
-          </div>
-        </PopoverContent>
-      </Popover>
-
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" className={`shrink-0 h-9 font-ui rounded-full gap-1 px-3.5 ${ivfAgeDisabled ? "opacity-50" : ""}`} style={{ fontSize: 'var(--badge-text-size, 13px)' }} disabled={ivfAgeDisabled} data-testid="filter-btn-ivf-age">
-            {AGE_GROUP_OPTIONS.find(o => o.value === ivfAgeGroup)?.label || "Your Age"}
-            <ChevronDown className="w-3.5 h-3.5" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-40 p-2" align="start">
-          <div className="space-y-1">
-            {AGE_GROUP_OPTIONS.map((opt) => (
-              <Button key={opt.value} variant={ivfAgeGroup === opt.value ? "default" : "ghost"} size="sm" className="w-full justify-start text-xs" onClick={() => onIvfAgeGroupChange?.(opt.value)} data-testid={`ivf-age-${opt.value}`}>
-                {opt.label}
-              </Button>
-            ))}
-          </div>
-        </PopoverContent>
-      </Popover>
-
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" className="shrink-0 h-9 font-ui rounded-full gap-1 px-3.5" style={{ fontSize: 'var(--badge-text-size, 13px)' }} data-testid="filter-btn-ivf-history">
-            {IVF_HISTORY_OPTIONS.find(o => o.value === ivfIsNewPatient)?.label || "IVF History"}
-            <ChevronDown className="w-3.5 h-3.5" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-48 p-2" align="start">
-          <div className="space-y-1">
-            {IVF_HISTORY_OPTIONS.map((opt) => (
-              <Button key={opt.value} variant={ivfIsNewPatient === opt.value ? "default" : "ghost"} size="sm" className="w-full justify-start text-xs" onClick={() => onIvfIsNewPatientChange?.(opt.value)} data-testid={`ivf-history-${opt.value}`}>
-                {opt.label}
-              </Button>
-            ))}
+        <PopoverContent className="w-60 p-3" align="start">
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <p className="text-xs font-ui text-muted-foreground">Egg source</p>
+              {EGG_SOURCE_OPTIONS.map((opt) => (
+                <Button key={opt.value} variant={ivfEggSource === opt.value ? "default" : "ghost"} size="sm" className="w-full justify-start text-xs" onClick={() => onIvfEggSourceChange?.(ivfEggSource === opt.value ? "" : opt.value)} data-testid={`ivf-egg-source-${opt.value}`}>
+                  {opt.label}
+                </Button>
+              ))}
+            </div>
+            <div className={`space-y-1 ${ivfAgeDisabled ? "opacity-50 pointer-events-none" : ""}`}>
+              <p className="text-xs font-ui text-muted-foreground">Your age</p>
+              {AGE_GROUP_OPTIONS.map((opt) => (
+                <Button key={opt.value} variant={ivfAgeGroup === opt.value ? "default" : "ghost"} size="sm" className="w-full justify-start text-xs" disabled={ivfAgeDisabled} onClick={() => onIvfAgeGroupChange?.(ivfAgeGroup === opt.value ? "" : opt.value)} data-testid={`ivf-age-${opt.value}`}>
+                  {opt.label}
+                </Button>
+              ))}
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-ui text-muted-foreground">IVF history</p>
+              {IVF_HISTORY_OPTIONS.map((opt) => (
+                <Button key={opt.value} variant={ivfIsNewPatient === opt.value ? "default" : "ghost"} size="sm" className="w-full justify-start text-xs" onClick={() => onIvfIsNewPatientChange?.(ivfIsNewPatient === opt.value ? "" : opt.value)} data-testid={`ivf-history-${opt.value}`}>
+                  {opt.label}
+                </Button>
+              ))}
+            </div>
           </div>
         </PopoverContent>
       </Popover>
@@ -1967,7 +1959,7 @@ export function MarketplaceFilterBar({
             <ChevronDown className="w-3.5 h-3.5" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-80 p-3" align="start">
+        <PopoverContent className="w-[30rem] max-w-[calc(100vw-2rem)] p-3 max-h-[70vh] overflow-y-auto" align="start">
           <div className="space-y-2">
             {ivfMyInsurance && ivfInsurance !== ivfMyInsurance && (
               <Button variant="outline" size="sm" className="w-full justify-start rounded-full text-xs" onClick={() => { onIvfInsuranceChange?.(ivfMyInsurance); setInsurancePopoverOpen(false); }} data-testid="filter-insurance-mine">
@@ -2292,33 +2284,66 @@ export function MarketplaceFilterBar({
     return <>{mobileFilterButtons}</>;
   }
 
+  const showClinicViewToggle = isIvf && !!ivfClinicView && !!onIvfClinicViewChange;
+
   if (isMobile) {
     return (
       <>
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-hide" data-testid="filter-bar-mobile">
-          <div className="relative shrink-0 flex-1 min-w-[140px]">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <Input
-              data-testid="input-search-mobile"
-              className="pl-8 h-9 text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              placeholder={currentSearchPlaceholderMobile}
-              value={currentSearchValue}
-              onChange={(e) => handleSearchChange(e.target.value)}
-            />
-            {currentSearchValue && (
+        <div className="flex items-center gap-2 pb-2" data-testid="filter-bar-mobile">
+          {mobileSearchExpanded || currentSearchValue ? (
+            <div className="relative flex-1 min-w-0">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                data-testid="input-search-mobile"
+                autoFocus={mobileSearchExpanded && !currentSearchValue}
+                className="pl-8 pr-8 h-9 text-sm focus-visible:ring-0 focus-visible:ring-offset-0 rounded-full"
+                placeholder={currentSearchPlaceholderMobile}
+                value={currentSearchValue}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                onBlur={() => { if (!currentSearchValue) setMobileSearchExpanded(false); }}
+              />
               <button
-                className="absolute right-2 top-1/2 -translate-y-1/2"
-                onClick={() => handleSearchChange("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2"
+                onClick={() => { handleSearchChange(""); setMobileSearchExpanded(false); }}
                 data-testid="button-clear-search-mobile"
               >
                 <X className="w-3.5 h-3.5 text-muted-foreground" />
               </button>
-            )}
-          </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setMobileSearchExpanded(true)}
+              className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full border border-border/60 text-foreground hover:bg-muted transition-colors"
+              aria-label="Search"
+              data-testid="button-expand-search-mobile"
+            >
+              <Search className="w-4 h-4" />
+            </button>
+          )}
+
+          {showClinicViewToggle && !mobileSearchExpanded && !currentSearchValue && (
+            <div className="flex-1 flex justify-center min-w-0">
+              <div className="inline-flex rounded-full border border-border/60 p-0.5 bg-background" data-testid="toggle-clinic-view-mobile">
+                {(["clinics", "doctors"] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => onIvfClinicViewChange?.(v)}
+                    className={`px-3.5 py-1 text-xs rounded-full transition-colors capitalize ${ivfClinicView === v ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+                    data-testid={`toggle-view-${v}-mobile`}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <Select value={currentSortValue} onValueChange={handleSortChange}>
-            <SelectTrigger className="h-9 w-auto shrink-0 gap-1 text-xs focus:ring-0 focus:ring-offset-0" data-testid="select-sort-mobile">
+            <SelectTrigger className="h-9 w-auto shrink-0 gap-1 text-xs focus:ring-0 focus:ring-offset-0 rounded-full" data-testid="select-sort-mobile">
               <ArrowUpDown className="w-3.5 h-3.5 shrink-0" />
-              <SelectValue placeholder="Sort" />
+              {!showClinicViewToggle && <SelectValue placeholder="Sort" />}
             </SelectTrigger>
             <SelectContent>
               {currentSortOptions.map((opt) => (
@@ -2329,9 +2354,13 @@ export function MarketplaceFilterBar({
             </SelectContent>
           </Select>
         </div>
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide" data-testid="filter-buttons-mobile">
-          {mobileFilterButtons}
-        </div>
+        {/* IVF filters live in the master "Filters" drawer (listMode); skip the
+            duplicate inline pill row on the IVF tab to keep the header clean. */}
+        {(!isIvf || listMode) && (
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide" data-testid="filter-buttons-mobile">
+            {mobileFilterButtons}
+          </div>
+        )}
 
         {activeCount > 0 && !isIvf && (
           <div className="flex items-center gap-1.5 mt-2 flex-wrap" data-testid="active-filter-pills-mobile">
