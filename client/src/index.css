@@ -30,18 +30,19 @@
 :root {
   /* Medical/Clean Theme: Teal, Blue, White, Soft Gray */
   /* Primary: Trustworthy Teal */
-  --primary: 183 100% 25%; /* #004D4D - Deep Teal */
+  --primary: 178 87% 24%; /* #08726F - Hinge teal (GoStork Teal template) */
   --primary-foreground: 0 0% 100%;
   
   /* Secondary: Soft Sage/Mint */
   --secondary: 160 30% 96%;
   --secondary-foreground: 183 100% 25%;
   
-  /* Accent: Dusty Mauve. Brand accent for alternate emphasis / non-CTA
-     surfaces (see CLAUDE.md "Use the FULL brand palette"). White text
-     hits WCAG AA contrast on the full-opacity surface. */
-  --accent: 322 18% 58%; /* #A8829A - Dusty Mauve */
-  --accent-foreground: 0 0% 100%;
+  /* Accent: Hinge orchid purple. Brand accent for alternate emphasis /
+     non-CTA surfaces (see CLAUDE.md "Use the FULL brand palette"). This is
+     only the pre-JS fallback - the live value comes from SiteSettings.accentColor
+     and is injected by applyBrandToDocument(). */
+  --accent: 285 34% 48%; /* #8F51A3 - Hinge+ purple (sampled) */
+  --accent-foreground: 0 0% 100%; /* white, like the Hinge button */
   
   /* Backgrounds */
   --background: 210 20% 96%; /* Light blue-gray - lifts pure-white cards */
