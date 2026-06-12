@@ -489,8 +489,20 @@ async function authenticateAndGetCookies(
     console.log(`[donor-sync] Authenticated with ${cookieMap.size} cookies`);
     return { ok: true, cookies: dedupedCookies };
   } catch (err: any) {
-    const reason = `exception during auth: ${err.message}`;
-    console.error(`[donor-sync] Authentication error: ${err.message}`);
+    // Node's undici wraps low-level errors (DNS, TCP, TLS) as a generic
+    // "fetch failed" message; the actual cause (ENOTFOUND, ECONNRESET,
+    // ECONNREFUSED, UND_ERR_SOCKET, certificate errors) is on err.cause.
+    // Without surfacing it we can't distinguish "site blocked our egress"
+    // from "site is down" from "credentials wrong".
+    const causeStr = (() => {
+      const c: any = err.cause;
+      if (!c) return "";
+      if (c.code) return ` (cause: ${c.code}${c.hostname ? ` ${c.hostname}` : ""}${c.errno ? ` errno=${c.errno}` : ""})`;
+      if (c.message) return ` (cause: ${c.message})`;
+      try { return ` (cause: ${JSON.stringify(c).slice(0, 200)})`; } catch { return ""; }
+    })();
+    const reason = `exception during auth: ${err.message}${causeStr}`;
+    console.error(`[donor-sync] Authentication error: ${err.message}${causeStr}`);
     return { ok: false, reason };
   }
 }
