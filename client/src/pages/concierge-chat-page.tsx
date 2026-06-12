@@ -1729,9 +1729,18 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
 
   const ageLabel = cardAgeGroup === "under_35" ? "Under 35" : cardAgeGroup === "35_37" ? "35-37" : cardAgeGroup === "38_40" ? "38-40" : "Over 40";
   const contextLabel = cardEggSource === "donor" ? "Donor eggs" : ["Own eggs", ageLabel, cardIsNew ? "First-time IVF" : "Prior cycles"].join(" · ");
-  const clinicDoctors = Array.isArray(provider.members)
-    ? provider.members.filter((m: any) => m?.name && m?.isPublicProfile !== false).map((m: any) => ({ name: m.name }))
-    : [];
+  const members: any[] = Array.isArray(provider.members) ? provider.members.filter((m: any) => m?.isPublicProfile !== false) : [];
+  // Use the clinic's doctors' faces as the card background (like donor cards);
+  // fall back to a branded background when no doctor has a photo.
+  const doctorPhotos: string[] = members
+    .map((m: any) => getPhotoSrc(m?.photoUrl))
+    .filter((src: any): src is string => !!src)
+    .slice(0, 5);
+  const clinicDoctors = members.filter((m: any) => m?.name).map((m: any) => ({ name: m.name }));
+  const primaryLocation = provider.locations?.[0];
+  const primaryLocationLabel = primaryLocation
+    ? [primaryLocation.city, primaryLocation.state].filter(Boolean).join(", ")
+    : null;
   const tabs = getClinicTabs({
     pct,
     natAvg,
@@ -1739,8 +1748,11 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
     reasons: card.reasons || [],
     locations: provider.locations || [],
     doctors: clinicDoctors,
+    primaryLocationLabel,
   });
-  const successBadge = pct != null ? `${pct}%${isTop10 ? " · Top 10%" : ""}` : null;
+  // Drop the redundant percentage (it already shows in the success bars); keep
+  // only the Top-10% signal as the always-visible badge.
+  const successBadge = isTop10 ? "Top 10%" : null;
   const logoSrc = getPhotoSrc(provider.logoUrl) || null;
   const goToProfile = () => navigate(providerUrl, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } });
 
@@ -1749,8 +1761,8 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
       <div className="w-full aspect-[3/4] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
         <SwipeDeckCard
           id={card.providerId}
-          photos={[]}
-          heroLogoUrl={logoSrc}
+          photos={doctorPhotos}
+          titleLogoUrl={logoSrc}
           title={provider.name}
           successBadge={successBadge}
           tabs={tabs}

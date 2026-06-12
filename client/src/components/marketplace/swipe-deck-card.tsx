@@ -31,12 +31,13 @@ interface SwipeDeckCardProps {
   frozenLotStatus?: "AVAILABLE" | "SOLD_OUT" | null;
   isExperienced?: boolean;
   isPremium?: boolean;
-  // Always-visible success-rate pill (e.g. "72% · Top 10%") - used by clinic
-  // and doctor cards so the key metric is never hidden behind a tab.
+  // Always-visible pill in the badge row (e.g. "Top 10%") - used by clinic and
+  // doctor cards so a key signal is never hidden behind a tab.
   successBadge?: string | null;
-  // When the card has no face photo (clinics), render the hero as this logo on a
-  // branded background instead of the "No Photo" placeholder.
-  heroLogoUrl?: string | null;
+  // A small logo rendered next to the title (clinic logo), since clinics have no
+  // face photo of their own. When there are no `photos` the hero falls back to a
+  // clean branded background (not a giant logo watermark).
+  titleLogoUrl?: string | null;
   tabs: TabSection[];
   disableSwipe?: boolean;
   chatMode?: boolean;
@@ -65,7 +66,7 @@ export function SwipeDeckCard({
   isExperienced = false,
   isPremium = false,
   successBadge = null,
-  heroLogoUrl = null,
+  titleLogoUrl = null,
   tabs,
   disableSwipe = false,
   chatMode = false,
@@ -196,21 +197,11 @@ export function SwipeDeckCard({
               draggable={false}
               data-testid={`img-swipe-photo-${id}`}
             />
-          ) : heroLogoUrl ? (
-            <div className="w-full h-full bg-secondary flex items-center justify-center p-8">
-              <img
-                src={heroLogoUrl}
-                alt={title}
-                className="max-w-[70%] max-h-[45%] object-contain -translate-y-[12%]"
-                loading="eager"
-                draggable={false}
-                data-testid={`img-clinic-logo-${id}`}
-              />
-            </div>
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-              <span className="text-lg font-heading">No Photo</span>
-            </div>
+            <div
+              className="w-full h-full bg-gradient-to-br from-[hsl(var(--secondary))] via-[hsl(var(--secondary))] to-[hsl(var(--muted))]"
+              data-testid={`hero-branded-${id}`}
+            />
           )}
 
           <div className={`absolute top-0 left-0 right-0 bg-gradient-to-b from-black/50 via-black/20 to-transparent h-28 z-[15] pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`} />
@@ -377,9 +368,18 @@ export function SwipeDeckCard({
               )}
             </div>
 
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-white font-heading leading-tight" style={{ fontSize: 'var(--card-title-size, 24px)' }} data-testid={`text-name-${id}`}>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                {titleLogoUrl && (
+                  <img
+                    src={titleLogoUrl}
+                    alt=""
+                    className="w-10 h-10 rounded-md object-contain bg-white/95 p-1 shrink-0 shadow-sm"
+                    draggable={false}
+                    data-testid={`title-logo-${id}`}
+                  />
+                )}
+                <h3 className="text-white font-heading leading-tight truncate" style={{ fontSize: 'var(--card-title-size, 24px)' }} data-testid={`text-name-${id}`}>
                   {title}
                 </h3>
               </div>

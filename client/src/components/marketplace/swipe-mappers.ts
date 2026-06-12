@@ -731,16 +731,25 @@ export function getClinicTabs(opts: {
   reasons: string[];
   locations: { city?: string | null; state?: string | null }[];
   doctors: { name: string }[];
+  // The clinic's primary location, shown as the first matched-preference bubble.
+  primaryLocationLabel?: string | null;
+  // Published cost items, when available. Always renders a Costs tab; falls back
+  // to a "shared on consultation" note when the clinic has no published pricing.
+  costs?: { label: string }[];
 }): TabSection[] {
   const tabs: TabSection[] = [];
 
   const bars: SuccessBar[] = [];
   if (opts.pct != null) bars.push({ label: "This clinic", value: opts.pct, isClinic: true });
   if (opts.natAvg != null && opts.natAvg > 0) bars.push({ label: "National average", value: opts.natAvg, isClinic: false });
-  const matchedItems: TabItem[] = (opts.reasons || [])
-    .filter((r) => r && r.trim() !== "")
-    .slice(0, 6)
-    .map((r) => ({ label: r, value: "" }));
+  const matchedItems: TabItem[] = [];
+  if (opts.primaryLocationLabel) matchedItems.push({ label: opts.primaryLocationLabel, value: "", icon: MapPin });
+  matchedItems.push(
+    ...(opts.reasons || [])
+      .filter((r) => r && r.trim() !== "")
+      .slice(0, 5)
+      .map((r) => ({ label: r, value: "" })),
+  );
   tabs.push({
     layoutType: "success_bars",
     title: "Matched to you",
@@ -748,6 +757,12 @@ export function getClinicTabs(opts: {
     items: matchedItems,
     bars,
   });
+
+  // Costs tab always present so the structure is consistent across clinics.
+  const costItems: TabItem[] = (opts.costs && opts.costs.length > 0)
+    ? opts.costs.map((c) => ({ label: c.label, value: "", icon: DollarSign }))
+    : [{ label: "Pricing shared on your free consultation", value: "", icon: DollarSign }];
+  tabs.push({ layoutType: "icon_list", title: "Costs", items: costItems });
 
   const locItems: TabItem[] = (opts.locations || [])
     .map((l) => ({ label: [l.city, l.state].filter(Boolean).join(", "), value: "", icon: MapPin }))
