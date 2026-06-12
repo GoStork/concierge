@@ -1554,10 +1554,12 @@ export function MarketplaceFilterBar({
   const [ivfSpecialtyDrawerOpen, setIvfSpecialtyDrawerOpen] = useState(false);
   const ivfInsuranceCarrier = ivfInsurance ? parseInsuranceValue(ivfInsurance).carrier : "";
   const ivfMyInsuranceCarrier = ivfMyInsurance ? parseInsuranceValue(ivfMyInsurance).carrier : "";
-  const ivfPatientCount = [ivfEggSource, ivfAgeGroup, ivfIsNewPatient].filter(Boolean).length;
+  // Age is irrelevant once eggs/embryos come from a donor, so it is disabled in
+  // the panel - keep it out of the summary count + pills too.
+  const ivfPatientCount = [ivfEggSource, ivfAgeDisabled ? "" : ivfAgeGroup, ivfIsNewPatient].filter(Boolean).length;
   const ivfPatientPills = [
     EGG_SOURCE_OPTIONS.find((o) => o.value === ivfEggSource)?.label,
-    AGE_GROUP_OPTIONS.find((o) => o.value === ivfAgeGroup)?.label,
+    ivfAgeDisabled ? undefined : AGE_GROUP_OPTIONS.find((o) => o.value === ivfAgeGroup)?.label,
     IVF_HISTORY_OPTIONS.find((o) => o.value === ivfIsNewPatient)?.label,
   ].filter(Boolean) as string[];
 

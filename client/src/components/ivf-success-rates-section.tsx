@@ -60,39 +60,34 @@ function BarChart({
 }) {
   const yTicks = [0, 20, 40, 60, 80, 100];
   const chartHeight = 200;
-  const barWidth = 56;
-  const gap = 24;
 
   return (
-    <div className="flex items-end gap-0" data-testid="chart-bars">
-      <div className="flex flex-col justify-between items-end pr-2 shrink-0" style={{ height: chartHeight }}>
-        {yTicks.slice().reverse().map((tick) => (
-          <span key={tick} className="text-[10px] text-muted-foreground leading-none">{tick}</span>
-        ))}
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <div className="relative" style={{ height: chartHeight }}>
-          {yTicks.map((tick) => (
-            <div
-              key={tick}
-              className="absolute left-0 right-0 border-t border-border/30"
-              style={{ bottom: `${(tick / 100) * chartHeight}px` }}
-            />
+    <div data-testid="chart-bars">
+      <div className="flex items-stretch gap-0">
+        <div className="flex flex-col justify-between items-end pr-2 shrink-0" style={{ height: chartHeight }}>
+          {yTicks.slice().reverse().map((tick) => (
+            <span key={tick} className="text-[10px] text-muted-foreground leading-none">{tick}</span>
           ))}
+        </div>
 
-          <div
-            className="absolute bottom-0 left-0 right-0 flex justify-start pl-4"
-            style={{ gap: `${gap}px` }}
-          >
-            {bars.map((bar, idx) => {
-              const clinicH = Math.max((bar.value / 100) * chartHeight, 1);
-              const natH = Math.max((bar.natAvg / 100) * chartHeight, 1);
-              const dimmed = highlightIndex !== undefined && idx !== highlightIndex;
-              return (
-                <div key={bar.testId} className="flex flex-col items-center" style={{ width: barWidth }}>
-                  <div className="flex items-end gap-1 relative" style={{ height: chartHeight }}>
-                    <div className="relative group" style={{ width: (barWidth - 4) / 2 }}>
+        <div className="flex-1 min-w-0">
+          <div className="relative" style={{ height: chartHeight }}>
+            {yTicks.map((tick) => (
+              <div
+                key={tick}
+                className="absolute left-0 right-0 border-t border-border/30"
+                style={{ bottom: `${(tick / 100) * chartHeight}px` }}
+              />
+            ))}
+
+            <div className="absolute inset-0 flex items-end">
+              {bars.map((bar, idx) => {
+                const clinicH = Math.max((bar.value / 100) * chartHeight, 1);
+                const natH = Math.max((bar.natAvg / 100) * chartHeight, 1);
+                const dimmed = highlightIndex !== undefined && idx !== highlightIndex;
+                return (
+                  <div key={bar.testId} className="flex-1 min-w-0 flex items-end justify-center gap-0.5 px-1">
+                    <div className="relative w-full max-w-[22px]">
                       <div
                         className="w-full rounded-t-sm transition-all duration-500"
                         style={{
@@ -101,11 +96,11 @@ function BarChart({
                         }}
                         data-testid={`bar-clinic-${bar.testId}`}
                       />
-                      <div className={`absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-heading whitespace-nowrap ${dimmed ? "text-muted-foreground/40" : "text-foreground"}`}>
+                      <div className={`absolute -top-4 left-1/2 -translate-x-1/2 text-[9px] font-heading whitespace-nowrap ${dimmed ? "text-muted-foreground/40" : "text-foreground"}`}>
                         {bar.value.toFixed(0)}%
                       </div>
                     </div>
-                    <div className="relative group" style={{ width: (barWidth - 4) / 2 }}>
+                    <div className="relative w-full max-w-[22px]">
                       <div
                         className="w-full rounded-t-sm transition-all duration-500"
                         style={{
@@ -114,31 +109,29 @@ function BarChart({
                         }}
                         data-testid={`bar-natavg-${bar.testId}`}
                       />
-                      <div className={`absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] whitespace-nowrap ${dimmed ? "text-muted-foreground/30" : "text-muted-foreground"}`}>
+                      <div className={`absolute -top-4 left-1/2 -translate-x-1/2 text-[9px] whitespace-nowrap ${dimmed ? "text-muted-foreground/30" : "text-muted-foreground"}`}>
                         {bar.natAvg.toFixed(0)}%
                       </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
 
-        <div className="flex items-center border-t border-border/50 pt-2 pl-4">
-          <div className="flex justify-start" style={{ gap: `${gap}px` }}>
+          <div className="flex border-t border-border/50 pt-2">
             {bars.map((bar, idx) => {
               const dimmed = highlightIndex !== undefined && idx !== highlightIndex;
               return (
-                <div key={bar.testId} className="text-center" style={{ width: barWidth }}>
-                  <span className={`text-xs font-ui ${dimmed ? "text-muted-foreground/40" : highlightIndex !== undefined && idx === highlightIndex ? "text-foreground font-heading" : "text-muted-foreground"}`} data-testid={`label-${bar.testId}`}>
+                <div key={bar.testId} className="flex-1 min-w-0 text-center px-1">
+                  <span className={`text-[11px] leading-tight font-ui block ${dimmed ? "text-muted-foreground/40" : highlightIndex !== undefined && idx === highlightIndex ? "text-foreground font-heading" : "text-muted-foreground"}`} data-testid={`label-${bar.testId}`}>
                     {bar.label}
                   </span>
                 </div>
               );
             })}
           </div>
-          <span className="text-[10px] text-muted-foreground font-ui pl-3 shrink-0">{xAxisLabel}</span>
+          <p className="text-[10px] text-muted-foreground font-ui text-center pt-1">{xAxisLabel}</p>
         </div>
       </div>
     </div>
