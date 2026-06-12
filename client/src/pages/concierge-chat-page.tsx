@@ -1789,6 +1789,7 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
           photos={doctorPhotos}
           title={provider.name}
           pinnedHeader={{ logoUrl: logoSrc, title: provider.name, location: primaryLocationLabel, badge: successBadge }}
+          firstSlidePlain
           tabs={tabs}
           disableSwipe
           chatMode

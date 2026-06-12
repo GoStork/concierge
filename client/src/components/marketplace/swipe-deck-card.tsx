@@ -47,6 +47,9 @@ interface SwipeDeckCardProps {
     location?: string | null;
     badge?: string | null;
   } | null;
+  // Clinics: keep the first slide photo-free (clean branded background) so the
+  // header + success rate read clearly; doctor-face photos start on slide 1.
+  firstSlidePlain?: boolean;
   tabs: TabSection[];
   disableSwipe?: boolean;
   chatMode?: boolean;
@@ -77,6 +80,7 @@ export function SwipeDeckCard({
   successBadge = null,
   titleLogoUrl = null,
   pinnedHeader = null,
+  firstSlidePlain = false,
   tabs,
   disableSwipe = false,
   chatMode = false,
@@ -127,9 +131,15 @@ export function SwipeDeckCard({
   const saveBtnScale = useTransform(x, [0, FADE_START, SWIPE_THRESHOLD], [1, 1.1, 1.35]);
   const otherBtnOpacity = useTransform(x, [-FADE_END, -FADE_START, 0, FADE_START, FADE_END], [0, 0.8, 1, 0.8, 0]);
 
-  const totalSlides = Math.max(photos.length, tabs.length, 1);
+  // firstSlidePlain (clinics): the first slide shows NO photo (clean branded
+  // background) so the logo/name/success rate read clearly; the photos (doctor
+  // faces) start on slide 1. In that mode the slide count follows the tabs.
+  const totalSlides = firstSlidePlain
+    ? Math.max(tabs.length, 1)
+    : Math.max(photos.length, tabs.length, 1);
   const currentTab = tabs.length > 0 && slideIndex < tabs.length ? tabs[slideIndex] : null;
-  const currentPhotoIndex = photos.length > 0 ? slideIndex % photos.length : 0;
+  const photoSlide = firstSlidePlain ? slideIndex - 1 : slideIndex;
+  const currentPhotoIndex = photos.length > 0 && photoSlide >= 0 ? photoSlide % photos.length : -1;
 
   useEffect(() => {
     setSlideIndex(0);
