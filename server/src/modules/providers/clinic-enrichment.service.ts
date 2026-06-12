@@ -714,17 +714,23 @@ async function geminiWebsiteSearch(
   return null;
 }
 
+// Normalize a person's name to a comparison key (strips credentials, accents,
+// punctuation). Shared by mergeTeamMembers and scopeTeamToLab so SART-origin
+// matching uses the exact same keying as the merge.
+function normalizeMemberKey(name: string): string {
+  return name
+    .replace(/,?\s*(MD|DO|PhD|MBA|FACOG|MSc|RN|NP|PA|FACS|HCLD|TS|ELD|Jr\.?|Sr\.?|III|II|IV)\b/gi, "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z]/g, "");
+}
+
 export function mergeTeamMembers(
   sartMembers: SartMember[],
   scrapedMembers: Array<{ name: string; title: string | null; bio: string | null; photoUrl: string | null; isMedicalDirector: boolean; locationHints: string[] }>,
   providerName: string,
 ): Array<{ name: string; title: string | null; bio: string | null; photoUrl: string | null; isMedicalDirector: boolean; locationHints: string[] }> {
-  const normalizeKey = (name: string): string =>
-    name
-      .replace(/,?\s*(MD|DO|PhD|MBA|FACOG|MSc|RN|NP|PA|FACS|HCLD|TS|ELD|Jr\.?|Sr\.?|III|II|IV)\b/gi, "")
-      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z]/g, "");
+  const normalizeKey = normalizeMemberKey;
 
   const mergedMap = new Map<string, { name: string; title: string | null; bio: string | null; photoUrl: string | null; isMedicalDirector: boolean; locationHints: string[]; fromSart: boolean }>();
 
@@ -952,7 +958,7 @@ export class ClinicEnrichmentService {
     const mergedTeam = mergeTeamMembers(sartMembers, scraped?.teamMembers || [], provider.name);
 
     // Scope team to this lab's satellites when the network has multiple labs.
-    const scopedTeam = this.scopeTeamToLab(mergedTeam, keptLocationKeys, hasSiblings);
+    const scopedTeam = this.scopeTeamToLab(mergedTeam, keptLocationKeys, hasSiblings, sartMembers);
     if (hasSiblings) {
       console.log(`[clinic-enrichment] Scoped team for "${provider.name}": ${scopedTeam.length}/${mergedTeam.length} kept`);
     }
@@ -1113,38 +1119,42 @@ export class ClinicEnrichmentService {
    * Scope a merged team roster to a single lab when the website is a shared
    * multi-lab network. Used by both the full and re-sync enrichment paths.
    *
-   * The hard part: we can only scope a doctor to a lab when the SITE tells us
-   * where the doctor works (via locationHints, which the scraper derives from
-   * per-location team pages + bio city mentions). Many network sites list every
-   * physician on ONE global /our-team page with no per-location mapping - in
-   * that case NO doctor has a hint, and the previous "drop doctors with no hint"
-   * rule silently zeroed out the entire roster (this was 83 of 112 missing-team
-   * clinics: CCRM, Boston IVF, Aspire, Pinnacle, ...).
+   * The hard part: a doctor can only be attributed to a lab when we have a
+   * trustworthy signal. We have two:
+   *   1. SART - the SART directory lists doctors keyed to the SPECIFIC clinic
+   *      (CDC lab), so SART members are authoritative for THIS lab.
+   *   2. locationHints - the scraper maps a scraped doctor to a location page /
+   *      bio city. Reliable when present.
    *
-   * New rule:
-   *  - No sibling labs           -> keep everyone (nothing to scope against).
-   *  - Siblings, but NO doctor has any location hint (site provides no mapping)
-   *                              -> keep everyone; we cannot prove who works where,
-   *                                 and showing the network's REIs beats showing none.
-   *  - Siblings AND the site maps at least some doctors -> trust the mapping:
-   *      * doctor mapped to one of THIS lab's kept locations -> keep
-   *      * doctor with no hint at all (e.g. network-wide medical director)
-   *        -> keep (cannot disprove they serve this lab)
-   *      * doctor mapped ONLY to other labs' locations -> drop
+   * A previous version kept the ENTIRE scraped roster when no doctor had a hint,
+   * which dumped whole network rosters onto one lab (SGF Houston got 98 doctors,
+   * CCRM labs 49-67 - the full Shady Grove / CCRM physician lists). That is
+   * worse than useless.
+   *
+   * Rule:
+   *  - No sibling labs -> keep everyone (single clinic, nothing to scope).
+   *  - Siblings -> keep a member only if:
+   *      * it is a SART member (authoritative for this lab), OR
+   *      * it has a locationHint matching one of this lab's kept locations.
+   *    Everything else (scraped-only doctors we cannot attribute) is dropped.
+   *
+   * Result for a big network with a global team page and no per-doctor mapping:
+   * the lab keeps just its SART doctors (SGF Houston -> 3) instead of 98.
    */
-  private scopeTeamToLab<T extends { locationHints: string[] }>(
+  private scopeTeamToLab<T extends { name: string; locationHints: string[] }>(
     mergedTeam: T[],
     keptLocationKeys: Set<string>,
     hasSiblings: boolean,
+    sartMembers: SartMember[],
   ): T[] {
     if (!hasSiblings) return mergedTeam;
 
-    const anyHints = mergedTeam.some(m => m.locationHints.length > 0);
-    if (!anyHints) return mergedTeam; // site gives no location mapping -> keep all
+    const sartKeys = new Set(sartMembers.map(m => normalizeMemberKey(m.name)).filter(k => k.length >= 4));
+    const keptCities = Array.from(keptLocationKeys).map(k => k.split("|")[0]).filter(Boolean);
 
-    const keptCities = [...keptLocationKeys].map(k => k.split("|")[0]).filter(Boolean);
     return mergedTeam.filter(m => {
-      if (m.locationHints.length === 0) return true; // unmapped -> keep (network-wide)
+      if (sartKeys.has(normalizeMemberKey(m.name))) return true; // authoritative per-lab
+      if (m.locationHints.length === 0) return false; // scraped-only, unattributable -> drop
       return m.locationHints.some(hint => {
         const h = hint.toLowerCase();
         return keptCities.some(city => h.includes(city));
@@ -1307,7 +1317,7 @@ export class ClinicEnrichmentService {
 
     const mergedTeam = mergeTeamMembers(sartMembers, scraped.teamMembers || [], provider.name);
 
-    const scopedTeam = this.scopeTeamToLab(mergedTeam, keptLocationKeys, hasSiblings);
+    const scopedTeam = this.scopeTeamToLab(mergedTeam, keptLocationKeys, hasSiblings, sartMembers);
     if (hasSiblings) {
       console.log(`[clinic-enrichment] reSync: Scoped team for "${provider.name}": ${scopedTeam.length}/${mergedTeam.length} kept`);
     }
@@ -1478,6 +1488,84 @@ export class ClinicEnrichmentService {
     return null;
   }
 
+  /**
+   * Process a list of clinics with bounded concurrency, shared by the full and
+   * targeted enrichment paths. Each clinic is handed to `processOne`, which
+   * returns whether the clinic was enriched (false/null = skipped).
+   *
+   * Concurrency is env-configurable via ENRICHMENT_CONCURRENCY (default 10,
+   * capped 1..20). N workers pull from a shared index; counters and the job's
+   * progress row are updated as each clinic completes. JS is single-threaded so
+   * the shared counters need no locking. Supersession (a newer run took over)
+   * and admin-cancel (job status flipped away from PROCESSING) are checked
+   * before each clinic is picked up; the cancel check is throttled so we don't
+   * hammer the DB with one findUnique per clinic per worker.
+   *
+   * No inter-clinic sleep: concurrency provides natural pacing and the per-call
+   * retry/backoff (isRetryableError) absorbs transient Gemini/SART rate limits.
+   */
+  private async processConcurrently(
+    jobId: string,
+    runId: string,
+    providers: Array<{ id: string; name: string }>,
+    total: number,
+    start: { processed: number; errors: number; skipped: number },
+    processOne: (provider: { id: string; name: string }) => Promise<boolean | null>,
+  ): Promise<{ processed: number; errors: number; skipped: number; stopped: boolean }> {
+    const concurrency = Math.max(1, Math.min(20, parseInt(process.env.ENRICHMENT_CONCURRENCY || "10", 10) || 10));
+    let processed = start.processed;
+    let errors = start.errors;
+    let skipped = start.skipped;
+    let next = 0;
+    let stopped = false;
+    let lastCancelCheckAt = 0;
+    let cancelStatusOk = true;
+
+    const stillRunning = async (): Promise<boolean> => {
+      if (this.activeRunId !== runId) return false;
+      const now = Date.now();
+      if (now - lastCancelCheckAt > 2500) {
+        lastCancelCheckAt = now;
+        const job = await this.prisma.cdcSyncJob.findUnique({
+          where: { id: jobId },
+          select: { enrichmentStatus: true },
+        });
+        cancelStatusOk = job?.enrichmentStatus === "PROCESSING";
+      }
+      return cancelStatusOk;
+    };
+
+    console.log(`[clinic-enrichment] Processing ${providers.length} clinics with concurrency=${concurrency}`);
+
+    const worker = async (): Promise<void> => {
+      while (true) {
+        if (!(await stillRunning())) { stopped = true; return; }
+        const i = next++;
+        if (i >= providers.length) return;
+        const provider = providers[i];
+        try {
+          const enriched = await processOne(provider);
+          if (!enriched) skipped++;
+        } catch (err: any) {
+          errors++;
+          console.error(`[clinic-enrichment] Error enriching "${provider.name}" (after retries):`, err.message);
+        }
+        processed++;
+        await this.prisma.cdcSyncJob.updateMany({
+          where: { id: jobId, enrichmentStatus: "PROCESSING" },
+          data: {
+            enrichmentProcessed: Math.min(processed, total),
+            enrichmentErrors: errors,
+            enrichmentSkipped: skipped,
+          },
+        });
+      }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(concurrency, providers.length) }, () => worker()));
+    return { processed, errors, skipped, stopped };
+  }
+
   async runTargetedEnrichment(jobId: string, mode: "skipped" | "team" | "logo" | "about" | "phone" | "locations" | "urls" | "doctors-nppes" | "doctors-abog" | "doctors-bio" | "doctors-all"): Promise<void> {
     const runId = crypto.randomUUID();
     this.activeRunId = runId;
@@ -1577,61 +1665,29 @@ export class ClinicEnrichmentService {
       // counter no longer animates from zero, which is an acceptable trade for
       // not destroying data on a transient infra hiccup.
 
-      let processed = 0;
-      let errors = 0;
-      let skipped = 0;
-
-      for (const provider of providersToEnrich) {
-        if (this.activeRunId !== runId) {
-          console.log(`[clinic-enrichment] Run ${runId.slice(0, 8)} superseded, stopping at ${processed}/${total}`);
-          return;
+      const processOne = async (provider: { id: string; name: string }): Promise<boolean | null> => {
+        if (isDoctorMode) {
+          await this.enrichClinicDoctorData(provider.id, doctorSourceFilter[mode]);
+          return true; // doctor modes have no skip concept
         }
-
-        const currentJob = await this.prisma.cdcSyncJob.findUnique({
-          where: { id: jobId },
-          select: { enrichmentStatus: true },
-        });
-        if (currentJob?.enrichmentStatus !== "PROCESSING") {
-          console.log(`[clinic-enrichment] Enrichment cancelled (status: ${currentJob?.enrichmentStatus}), halting at ${processed}/${total}`);
-          return;
+        if (mode === "urls") {
+          await this.prisma.provider.update({ where: { id: provider.id }, data: { websiteUrl: null } });
+          return await this.enrichWithRetry(provider.id, provider.name);
         }
-
-        try {
-          if (isDoctorMode) {
-            await this.enrichClinicDoctorData(provider.id, doctorSourceFilter[mode]);
-          } else if (mode === "urls") {
-            await this.prisma.provider.update({
-              where: { id: provider.id },
-              data: { websiteUrl: null },
-            });
-            const enriched = await this.enrichWithRetry(provider.id, provider.name);
-            if (!enriched) skipped++;
-          } else if (mode === "locations") {
-            const enriched = await this.reSyncLocationsAndTeamWithRetry(provider.id, provider.name);
-            if (!enriched) skipped++;
-          } else {
-            const enriched = await this.enrichWithRetry(provider.id, provider.name);
-            if (!enriched) skipped++;
-          }
-        } catch (err: any) {
-          errors++;
-          console.error(`[clinic-enrichment] Error enriching "${provider.name}" (after retries):`, err.message);
+        if (mode === "locations") {
+          return await this.reSyncLocationsAndTeamWithRetry(provider.id, provider.name);
         }
+        return await this.enrichWithRetry(provider.id, provider.name);
+      };
 
-        if (this.activeRunId !== runId) return;
+      const { processed, errors, skipped, stopped } = await this.processConcurrently(
+        jobId, runId, providersToEnrich, total, { processed: 0, errors: 0, skipped: 0 }, processOne,
+      );
 
-        processed++;
-        await this.prisma.cdcSyncJob.updateMany({
-          where: { id: jobId, enrichmentStatus: "PROCESSING" },
-          data: { enrichmentProcessed: processed, enrichmentErrors: errors, enrichmentSkipped: skipped },
-        });
-
-        if (processed < total) {
-          await sleep(3000);
-        }
+      if (stopped || this.activeRunId !== runId) {
+        console.log(`[clinic-enrichment] Targeted run ${runId.slice(0, 8)} stopped early at ${processed}/${total}`);
+        return;
       }
-
-      if (this.activeRunId !== runId) return;
 
       const finalUpdate = await this.prisma.cdcSyncJob.updateMany({
         where: { id: jobId, enrichmentStatus: "PROCESSING" },
@@ -1747,57 +1803,17 @@ export class ClinicEnrichmentService {
         return;
       }
 
-      let processed = Math.min(previousProcessed, total);
-      let errors = previousErrors;
-      let skipped = previousSkipped;
+      const { processed, errors, skipped, stopped } = await this.processConcurrently(
+        jobId,
+        runId,
+        providersToEnrich,
+        total,
+        { processed: Math.min(previousProcessed, total), errors: previousErrors, skipped: previousSkipped },
+        (provider) => this.enrichWithRetry(provider.id, provider.name),
+      );
 
-      for (const provider of providersToEnrich) {
-        if (this.activeRunId !== runId) {
-          console.log(`[clinic-enrichment] Run ${runId.slice(0, 8)} superseded by newer run, stopping at ${processed}/${total}`);
-          return;
-        }
-
-        const currentJob = await this.prisma.cdcSyncJob.findUnique({
-          where: { id: jobId },
-          select: { enrichmentStatus: true },
-        });
-        if (currentJob?.enrichmentStatus !== "PROCESSING") {
-          console.log(`[clinic-enrichment] Enrichment cancelled or stopped (status: ${currentJob?.enrichmentStatus}), halting at ${processed}/${total}`);
-          return;
-        }
-
-        try {
-          const enriched = await this.enrichWithRetry(provider.id, provider.name);
-          if (!enriched) {
-            skipped++;
-          }
-        } catch (err: any) {
-          errors++;
-          console.error(`[clinic-enrichment] Error enriching "${provider.name}" (after retries):`, err.message);
-        }
-
-        if (this.activeRunId !== runId) {
-          console.log(`[clinic-enrichment] Run ${runId.slice(0, 8)} superseded by newer run, stopping at ${processed}/${total}`);
-          return;
-        }
-
-        processed++;
-        await this.prisma.cdcSyncJob.updateMany({
-          where: { id: jobId, enrichmentStatus: "PROCESSING" },
-          data: {
-            enrichmentProcessed: Math.min(processed, total),
-            enrichmentErrors: errors,
-            enrichmentSkipped: skipped,
-          },
-        });
-
-        if (processed < total) {
-          await sleep(3000);
-        }
-      }
-
-      if (this.activeRunId !== runId) {
-        console.log(`[clinic-enrichment] Run ${runId.slice(0, 8)} superseded before final update, skipping COMPLETED write`);
+      if (stopped || this.activeRunId !== runId) {
+        console.log(`[clinic-enrichment] Run ${runId.slice(0, 8)} stopped early at ${processed}/${total}, skipping COMPLETED write`);
         return;
       }
 
