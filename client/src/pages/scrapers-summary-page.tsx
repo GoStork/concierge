@@ -1282,7 +1282,7 @@ export default function ScrapersSummaryPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-5 gap-2 md:gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-4 mb-6">
         <Card>
           <CardContent className="pt-4 pb-3 px-4">
             <div className="text-2xl font-heading" data-testid="text-total-providers">{totalProviders}</div>
