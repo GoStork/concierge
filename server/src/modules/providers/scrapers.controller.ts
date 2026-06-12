@@ -102,12 +102,28 @@ export class ScrapersController {
     try {
       const staleJobs = await this.prisma.cdcSyncJob.findMany({
         where: { enrichmentStatus: { in: ["PROCESSING", "PENDING"] } },
-        select: { id: true, year: true, enrichmentProcessed: true, enrichmentTotal: true, enrichmentSkipped: true },
+        select: { id: true, year: true, enrichmentProcessed: true, enrichmentTotal: true, enrichmentSkipped: true, enrichmentMode: true },
       });
 
+      const TARGETED_MODES = new Set([
+        "skipped", "team", "logo", "about", "phone", "locations", "urls",
+        "doctors-nppes", "doctors-abog", "doctors-bio", "doctors-all",
+      ]);
+
       for (const job of staleJobs) {
-        console.log(`[CDC Sync] Auto-resuming enrichment for job ${job.id} (year ${job.year}) - was at ${job.enrichmentProcessed}/${job.enrichmentTotal}`);
-        this.clinicEnrichmentService.runEnrichment(job.id);
+        const mode = (job as any).enrichmentMode as string | null;
+        // Resume the ACTUAL mode that was interrupted. Without this, a targeted
+        // run (Phone/About/Team/...) interrupted by a server restart would come
+        // back as a FULL enrichment, because the old code always called
+        // runEnrichment(). full/null -> the full pipeline; anything else -> its
+        // targeted mode.
+        if (mode && TARGETED_MODES.has(mode)) {
+          console.log(`[CDC Sync] Auto-resuming targeted enrichment "${mode}" for job ${job.id} (year ${job.year})`);
+          this.clinicEnrichmentService.runTargetedEnrichment(job.id, mode as any);
+        } else {
+          console.log(`[CDC Sync] Auto-resuming full enrichment for job ${job.id} (year ${job.year}) - was at ${job.enrichmentProcessed}/${job.enrichmentTotal}`);
+          this.clinicEnrichmentService.runEnrichment(job.id);
+        }
       }
     } catch (err) {
       console.error("[CDC Sync] Failed to auto-resume enrichments:", err);
