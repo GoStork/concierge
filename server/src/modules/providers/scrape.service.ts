@@ -817,9 +817,7 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
       const origin = new URL(effectiveUrl).origin;
       const COMMON_DOCTOR_PATHS = [
         "/our-physicians", "/physicians", "/doctors", "/our-doctors", "/providers",
-        "/our-providers", "/our-team", "/team", "/meet-the-team", "/meet-our-team",
-        "/staff", "/our-staff", "/specialists", "/fertility-specialists",
-        "/about-us/our-team", "/about/our-team", "/our-physicians-and-staff",
+        "/our-team", "/team", "/meet-the-team", "/staff", "/our-staff",
       ];
       const guessed = COMMON_DOCTOR_PATHS.map(p => `${origin}${p}`);
       subpageUrls = [...new Set([...subpageUrls, ...guessed])];
