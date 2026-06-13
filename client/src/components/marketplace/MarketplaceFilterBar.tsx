@@ -83,8 +83,6 @@ interface MarketplaceFilterBarProps {
   onIvfSpecialtyChange?: (value: string) => void;
   ivfShowSpecialty?: boolean;
   ivfSpecialtyOptions?: string[];
-  ivfClinicView?: "clinics" | "doctors";
-  onIvfClinicViewChange?: (value: "clinics" | "doctors") => void;
   location?: string;
   onLocationChange?: (value: string) => void;
   hasLocation?: boolean;
@@ -1407,8 +1405,6 @@ export function MarketplaceFilterBar({
   onIvfSpecialtyChange,
   ivfShowSpecialty,
   ivfSpecialtyOptions,
-  ivfClinicView,
-  onIvfClinicViewChange,
   location,
   onLocationChange,
   hasLocation,
@@ -2203,7 +2199,6 @@ export function MarketplaceFilterBar({
     return <>{mobileFilterButtons}</>;
   }
 
-  const showClinicViewToggle = isIvf && !!ivfClinicView && !!onIvfClinicViewChange;
 
   if (isMobile) {
     return (
@@ -2241,28 +2236,12 @@ export function MarketplaceFilterBar({
             </button>
           )}
 
-          {showClinicViewToggle && !mobileSearchExpanded && !currentSearchValue && (
-            <div className="flex-1 flex justify-center min-w-0">
-              <div className="inline-flex rounded-full border border-border/60 p-0.5 bg-background" data-testid="toggle-clinic-view-mobile">
-                {(["clinics", "doctors"] as const).map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => onIvfClinicViewChange?.(v)}
-                    className={`px-3.5 py-1 text-xs rounded-full transition-colors capitalize ${ivfClinicView === v ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-                    data-testid={`toggle-view-${v}-mobile`}
-                  >
-                    {v}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          <div className="flex-1" />
 
           <Select value={currentSortValue} onValueChange={handleSortChange}>
             <SelectTrigger className="h-9 w-auto shrink-0 gap-1 text-xs focus:ring-0 focus:ring-offset-0 rounded-full" data-testid="select-sort-mobile">
               <ArrowUpDown className="w-3.5 h-3.5 shrink-0" />
-              {!showClinicViewToggle && <SelectValue placeholder="Sort" />}
+              <SelectValue placeholder="Sort" />
             </SelectTrigger>
             <SelectContent>
               {currentSortOptions.map((opt) => (

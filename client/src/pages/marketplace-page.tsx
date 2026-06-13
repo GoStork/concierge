@@ -1687,13 +1687,6 @@ export default function MarketplacePage() {
     enabled: isProviderTab,
   });
 
-  // Clinics | Doctors view toggle (IVF tab only), stored in the URL.
-  const clinicView: "clinics" | "doctors" = isIvfTab && searchParams.get("clinicView") === "doctors" ? "doctors" : "clinics";
-  const setClinicView = (v: "clinics" | "doctors") => {
-    const next = new URLSearchParams(searchParams);
-    if (v === "doctors") next.set("clinicView", "doctors"); else next.delete("clinicView");
-    setSearchParams(next, { replace: true });
-  };
   const doctorQueryParams = new URLSearchParams(
     Object.entries({
       search: ivfSearch,
@@ -1714,7 +1707,7 @@ export default function MarketplacePage() {
       if (!res.ok) throw new Error("Failed to fetch doctors");
       return res.json();
     },
-    enabled: isDoctorTab || (isIvfTab && clinicView === "doctors"),
+    enabled: isDoctorTab,
   });
 
   const setFilterParam = (key: string, value: string | null) => {
@@ -1757,10 +1750,8 @@ export default function MarketplacePage() {
     onIvfLgbtqCareChange: (v: boolean) => setFilterParam("lgbtq", v ? "true" : null),
     ivfSpecialty: specialtyFilter,
     onIvfSpecialtyChange: (v: string) => setFilterParam("specialty", v || null),
-    ivfShowSpecialty: isDoctorTab || clinicView === "doctors",
+    ivfShowSpecialty: isDoctorTab,
     ivfSpecialtyOptions: SPECIALTY_OPTIONS,
-    ivfClinicView: clinicView,
-    onIvfClinicViewChange: setClinicView,
   };
 
   const ivfClinicCount = useMemo(() => {
@@ -1902,8 +1893,6 @@ export default function MarketplacePage() {
                       <p className="font-ui text-sm text-white/55 mt-1">Saving clinics is coming soon. For now, browse them on the Discover tab.</p>
                     </div>
                   </div>
-                ) : clinicView === "doctors" ? (
-                  <DoctorDeckGrid doctors={doctors} loading={doctorsLoading} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} />
                 ) : (
                   <IvfClinicDeckGrid providers={providers} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} sortBy={sortBy} />
                 )
@@ -2046,23 +2035,6 @@ export default function MarketplacePage() {
           </div>
         ) : (
           <>
-            {isIvfTab && !showFavoritesOnly && !isMobile && (
-              <div className="flex justify-center mb-5">
-                <div className="inline-flex rounded-full border border-border/60 p-0.5 bg-background" data-testid="toggle-clinic-view">
-                  {(["clinics", "doctors"] as const).map((v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => setClinicView(v)}
-                      className={`px-4 py-1.5 text-sm rounded-full transition-colors capitalize ${clinicView === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-                      data-testid={`toggle-view-${v}`}
-                    >
-                      {v}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
             {isIvfTab && (
               showFavoritesOnly ? (
                 <div className="flex items-center justify-center py-20 px-6 text-center" data-testid="saved-empty-clinics">
@@ -2072,8 +2044,6 @@ export default function MarketplacePage() {
                     <p className="font-ui text-sm text-muted-foreground mt-1">Saving clinics is coming soon. For now, browse them on the Discover tab.</p>
                   </div>
                 </div>
-              ) : clinicView === "doctors" ? (
-                <DoctorDeckGrid doctors={doctors} loading={doctorsLoading} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} />
               ) : (
                 <IvfClinicDeckGrid
                   providers={providers}
