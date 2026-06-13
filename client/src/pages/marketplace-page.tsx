@@ -1007,10 +1007,11 @@ const PARENT_TYPE_MAP: Record<string, { id: string; label: string }> = {
   "Sperm Donor": { id: "sperm-donors", label: "Sperm" },
   "Surrogate": { id: "surrogates", label: "Surrogates" },
   "Fertility Clinic": { id: "ivf-clinics", label: "Clinics" },
-  // Doctors is a first-class provider type (Path B), not tied to a specific
-  // interestedService - it is always offered in the Explore picker.
-  "Fertility Doctor": { id: "doctors", label: "Doctors" },
 };
+// Doctors (Path B) has no interestedService of its own - doctors practice at
+// clinics, so the Doctors type is offered exactly when IVF Clinics is (see
+// parentAvailableTypes). It still gets its own first-class tab + Explore card.
+const DOCTORS_TYPE = { id: "doctors", label: "Doctors" };
 const PARENT_TYPE_ORDER = ["egg-donors", "sperm-donors", "surrogates", "ivf-clinics", "doctors"];
 
 function DeckTypeSwitcher({ types, activeTab, onSelect, theme }: {
@@ -1569,7 +1570,9 @@ export default function MarketplacePage() {
       .map(s => PARENT_TYPE_MAP[s])
       .filter(Boolean);
     const fallback = Object.values(PARENT_TYPE_MAP);
-    const types = mapped.length > 0 ? mapped : fallback;
+    const base = mapped.length > 0 ? mapped : fallback;
+    // Doctors is offered exactly when IVF Clinics is (doctors practice at clinics).
+    const types = base.some(t => t.id === "ivf-clinics") ? [...base, DOCTORS_TYPE] : base;
     return PARENT_TYPE_ORDER
       .map(id => types.find(t => t.id === id))
       .filter(Boolean) as { id: string; label: string }[];

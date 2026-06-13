@@ -38,7 +38,7 @@ import {
 import { hasProviderRole } from "@shared/roles";
 import { MeetingReminderPopup } from "@/components/meeting-reminder-popup";
 
-import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, AgencyIcon, SpermIcon } from "@/components/icons/marketplace-icons";
+import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, AgencyIcon, SpermIcon, DoctorIcon } from "@/components/icons/marketplace-icons";
 import { ExploreProviderPicker } from "@/components/marketplace/explore-provider-picker";
 import { useAppDispatch, useAppSelector } from "@/store";
 import { setMarketplaceTab } from "@/store/uiSlice";
@@ -726,6 +726,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     { id: "egg-donors", label: "Egg Donors", mobileLabel: "Donors", icon: EggDonorIcon },
     { id: "surrogates", label: "Surrogates", mobileLabel: "Surrogates", icon: SurrogateIcon },
     { id: "ivf-clinics", label: "IVF Clinics", mobileLabel: "IVF", icon: IvfClinicIcon },
+    { id: "doctors", label: "Doctors", mobileLabel: "Doctors", icon: DoctorIcon },
     { id: "sperm-donors", label: "Sperm Donors", mobileLabel: "Sperm", icon: SpermIcon },
   ];
 
