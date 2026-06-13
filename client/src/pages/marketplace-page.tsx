@@ -343,6 +343,10 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
   const showFavoritesOnly = useAppSelector((s) => s.ui.showFavoritesOnly);
   const showSkippedOnly = useAppSelector((s) => s.ui.showSkippedOnly);
   const [currentIndex, setCurrentIndex] = useState(0);
+  // Back-button support: stack of acted clinic ids (most recent last) + the id to
+  // pin to the front of the deck after an undo, so "back" shows the last card.
+  const [history, setHistory] = useState<string[]>([]);
+  const [pinFrontId, setPinFrontId] = useState<string | null>(null);
   const isNew = isNewPatient !== "false";
 
   const syncPref = (prefType: "favorite" | "skip", id: string, action: "add" | "remove") => {
@@ -376,10 +380,16 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
         default: return bRate - aRate;
       }
     });
-    return withRates.map((x) => x.provider);
-  }, [providers, eggSource, sortBy, showFavoritesOnly, favoritedClinics, showSkippedOnly, passedClinics]);
+    const arr = withRates.map((x) => x.provider);
+    // After an undo, surface the restored clinic as the current card.
+    if (pinFrontId) {
+      const i = arr.findIndex((p) => p.id === pinFrontId);
+      if (i > 0) { const [item] = arr.splice(i, 1); arr.unshift(item); }
+    }
+    return arr;
+  }, [providers, eggSource, sortBy, showFavoritesOnly, favoritedClinics, showSkippedOnly, passedClinics, pinFrontId]);
 
-  useEffect(() => { setCurrentIndex(0); }, [showFavoritesOnly, showSkippedOnly, providers]);
+  useEffect(() => { setCurrentIndex(0); setHistory([]); setPinFrontId(null); }, [showFavoritesOnly, showSkippedOnly, providers]);
 
   const goToProfile = (id: string) => {
     const params = new URLSearchParams();
@@ -389,19 +399,30 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
     const qs = params.toString();
     navigate(`/providers/${id}${qs ? `?${qs}` : ""}`);
   };
+  // Saving/passing removes the clinic from `sorted` (saved + passed are hidden
+  // from Explore), which auto-advances - so do NOT bump the index (that would skip
+  // the previewed card). Record it for the back button instead.
   const handleSave = (id: string) => {
     const fav = favoritedClinics.includes(id);
     dispatch(toggleFavoriteClinic(id));
     syncPref("favorite", id, fav ? "remove" : "add");
-    // No index bump: saving removes the clinic from `sorted` (saved are hidden
-    // from Explore), which auto-advances - matches handlePass.
+    setHistory((h) => [...h, id]);
+    setPinFrontId(null);
   };
   const handlePass = (id: string) => {
     dispatch(passClinic(id));
     syncPref("skip", id, "add");
-    // Do NOT advance the index here: passing removes the clinic from `sorted`
-    // (the filter above), which auto-advances. Incrementing too would skip the
-    // card that was previewed behind the current one (mirrors DonorGrid).
+    setHistory((h) => [...h, id]);
+    setPinFrontId(null);
+  };
+  // Back button: undo the last save/pass and surface that clinic as current.
+  const goBack = () => {
+    const lastId = history[history.length - 1];
+    if (!lastId) return;
+    if (passedClinics.includes(lastId)) { dispatch(undoPassClinic(lastId)); syncPref("skip", lastId, "remove"); }
+    else if (favoritedClinics.includes(lastId)) { dispatch(toggleFavoriteClinic(lastId)); syncPref("favorite", lastId, "remove"); }
+    setHistory((h) => h.slice(0, -1));
+    setPinFrontId(lastId);
   };
 
   const renderCard = (p: ProviderWithRelations, swipe: boolean) => (
@@ -416,7 +437,11 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
       isPassed={passedClinics.includes(p.id)}
       onSave={() => handleSave(p.id)}
       onPass={() => handlePass(p.id)}
-      onUndo={passedClinics.includes(p.id) ? () => { dispatch(undoPassClinic(p.id)); syncPref("skip", p.id, "remove"); } : undefined}
+      onUndo={
+        swipe && history.length > 0 ? goBack
+          : passedClinics.includes(p.id) ? () => { dispatch(undoPassClinic(p.id)); syncPref("skip", p.id, "remove"); }
+            : undefined
+      }
       onViewProfile={() => goToProfile(p.id)}
     />
   );
@@ -484,6 +509,10 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
   const showFavoritesOnly = useAppSelector((s) => s.ui.showFavoritesOnly);
   const showSkippedOnly = useAppSelector((s) => s.ui.showSkippedOnly);
   const [currentIndex, setCurrentIndex] = useState(0);
+  // Back-button support: acted doctor slugs (most recent last) + the slug to pin
+  // to the front after an undo so "back" shows the last card.
+  const [history, setHistory] = useState<string[]>([]);
+  const [pinFrontId, setPinFrontId] = useState<string | null>(null);
 
   const ageLabel = ageGroup === "under_35" ? "Under 35" : ageGroup === "35_37" ? "35-37" : ageGroup === "38_40" ? "38-40" : "Over 40";
   const contextLabel = eggSource === "donor" ? "Donor eggs" : ["Own eggs", ageLabel, isNewPatient === "true" ? "First-time IVF" : "Prior cycles"].join(" · ");
@@ -494,7 +523,7 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
   };
 
   const filtered = useMemo(() => {
-    return (doctors || []).filter((d) => {
+    const arr = (doctors || []).filter((d) => {
       if (showFavoritesOnly && !favoritedSlugs.includes(d.slug)) return false;
       if (showSkippedOnly && !passedSlugs.includes(d.slug)) return false;
       if (!showSkippedOnly && passedSlugs.includes(d.slug)) return false;
@@ -502,20 +531,38 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
       if (!showFavoritesOnly && favoritedSlugs.includes(d.slug)) return false;
       return true;
     });
-  }, [doctors, showFavoritesOnly, favoritedSlugs, showSkippedOnly, passedSlugs]);
+    // After an undo, surface the restored doctor as the current card.
+    if (pinFrontId) {
+      const i = arr.findIndex((d) => d.slug === pinFrontId);
+      if (i > 0) { const [item] = arr.splice(i, 1); arr.unshift(item); }
+    }
+    return arr;
+  }, [doctors, showFavoritesOnly, favoritedSlugs, showSkippedOnly, passedSlugs, pinFrontId]);
 
-  useEffect(() => { setCurrentIndex(0); }, [showFavoritesOnly, showSkippedOnly, doctors]);
+  useEffect(() => { setCurrentIndex(0); setHistory([]); setPinFrontId(null); }, [showFavoritesOnly, showSkippedOnly, doctors]);
 
+  // Saving/passing removes the doctor from `filtered` (auto-advances), so no index
+  // bump. Record it for the back button.
   const handleSave = (slug: string) => {
     const isFav = favoritedSlugs.includes(slug);
     dispatch(toggleFavoriteDoctor(slug));
     syncPref("favorite", slug, isFav ? "remove" : "add");
-    // No index bump: saving/passing removes the doctor from `filtered`, which
-    // auto-advances. Incrementing too would skip the previewed card.
+    setHistory((h) => [...h, slug]);
+    setPinFrontId(null);
   };
   const handlePass = (slug: string) => {
     dispatch(passDoctor(slug));
     syncPref("skip", slug, "add");
+    setHistory((h) => [...h, slug]);
+    setPinFrontId(null);
+  };
+  const goBack = () => {
+    const lastSlug = history[history.length - 1];
+    if (!lastSlug) return;
+    if (passedSlugs.includes(lastSlug)) { dispatch(undoPassDoctor(lastSlug)); syncPref("skip", lastSlug, "remove"); }
+    else if (favoritedSlugs.includes(lastSlug)) { dispatch(toggleFavoriteDoctor(lastSlug)); syncPref("favorite", lastSlug, "remove"); }
+    setHistory((h) => h.slice(0, -1));
+    setPinFrontId(lastSlug);
   };
 
   const renderCard = (doctor: DoctorCardData & { slug: string }, swipe: boolean) => {
@@ -535,7 +582,11 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
         isPassed={passedSlugs.includes(doctor.slug)}
         onSave={() => handleSave(doctor.slug)}
         onPass={() => handlePass(doctor.slug)}
-        onUndo={passedSlugs.includes(doctor.slug) ? () => { dispatch(undoPassDoctor(doctor.slug)); syncPref("skip", doctor.slug, "remove"); } : undefined}
+        onUndo={
+          swipe && history.length > 0 ? goBack
+            : passedSlugs.includes(doctor.slug) ? () => { dispatch(undoPassDoctor(doctor.slug)); syncPref("skip", doctor.slug, "remove"); }
+              : undefined
+        }
         onViewFullProfile={() => navigate(`/doctors/${doctor.slug}`)}
       />
     );
@@ -748,6 +799,10 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
   const showSkippedOnly = useAppSelector((state) => state.ui.showSkippedOnly);
   const showExperiencedOnly = useAppSelector((state) => state.ui.showExperiencedOnly);
   const [currentIndex, setCurrentIndex] = useState(0);
+  // Back-button support: acted donor ids (most recent last) + the id to pin to
+  // the front after an undo, so "back" shows the last card.
+  const [history, setHistory] = useState<string[]>([]);
+  const [pinFrontId, setPinFrontId] = useState<string | null>(null);
   const { user } = useAuth();
   const { viewedIds, previousVisitAt } = useMarketplaceViewContext();
 
@@ -773,8 +828,13 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
       );
     });
     if (result) result = sortDonors(result, sortBy);
+    // After an undo, surface the restored donor as the current card.
+    if (result && pinFrontId) {
+      const i = result.findIndex((d) => d.id === pinFrontId);
+      if (i > 0) { const [item] = result.splice(i, 1); result.unshift(item); }
+    }
     return result;
-  }, [donors, searchQuery, activeFilters, sortBy, showFavoritesOnly, favoritedIds, showSkippedOnly, passedIds, showExperiencedOnly, userCountry, userIdentification]);
+  }, [donors, searchQuery, activeFilters, sortBy, showFavoritesOnly, favoritedIds, showSkippedOnly, passedIds, showExperiencedOnly, userCountry, userIdentification, pinFrontId]);
 
   useEffect(() => {
     onFilteredCountChange?.(filtered?.length ?? 0);
@@ -821,6 +881,8 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
 
   useEffect(() => {
     setCurrentIndex(0);
+    setHistory([]);
+    setPinFrontId(null);
   }, [searchQuery, activeFilters, sortBy, showFavoritesOnly, showSkippedOnly, showExperiencedOnly]);
 
   useEffect(() => {
@@ -873,20 +935,34 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
     fetch(`/api/donor-preferences/${prefType}/${donorId}`, { method, credentials: "include" }).catch(() => {});
   };
 
+  // Saving/passing removes the donor from `filtered` (saved + passed are hidden
+  // from Explore), which auto-advances - so no index bump. Record it for the back
+  // button instead.
   const handleSave = (donorId: string) => {
     recordProfileView(donorId, type);
     const isFav = favoritedIds.includes(donorId);
     dispatch(toggleFavoriteDonor(donorId));
     syncPref("favorite", donorId, isFav ? "remove" : "add");
-    // No index bump: saving removes the donor from `filtered` (saved are hidden
-    // from Explore), which auto-advances. Incrementing too would skip the card
-    // previewed behind the current one.
+    setHistory((h) => [...h, donorId]);
+    setPinFrontId(null);
   };
 
   const handlePass = (donorId: string) => {
     recordProfileView(donorId, type);
     dispatch(passDonor(donorId));
     syncPref("skip", donorId, "add");
+    setHistory((h) => [...h, donorId]);
+    setPinFrontId(null);
+  };
+
+  // Back button: undo the last save/pass and surface that donor as current.
+  const goBack = () => {
+    const lastId = history[history.length - 1];
+    if (!lastId) return;
+    if (passedIds.includes(lastId)) { dispatch(undoPassDonor(lastId)); syncPref("skip", lastId, "remove"); }
+    else if (favoritedIds.includes(lastId)) { dispatch(toggleFavoriteDonor(lastId)); syncPref("favorite", lastId, "remove"); }
+    setHistory((h) => h.slice(0, -1));
+    setPinFrontId(lastId);
   };
 
   if (isMobile) {
@@ -959,18 +1035,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
               isSaved={favoritedIds.includes(currentDonor.id)}
               onPass={() => handlePass(currentDonor.id)}
               onSave={() => handleSave(currentDonor.id)}
-              onUndo={currentIndex > 0 ? () => {
-                const prevDonor = filtered[currentIndex - 1];
-                if (prevDonor && passedIds.includes(prevDonor.id)) {
-                  dispatch(undoPassDonor(prevDonor.id));
-                  syncPref("skip", prevDonor.id, "remove");
-                }
-                if (prevDonor && favoritedIds.includes(prevDonor.id)) {
-                  dispatch(toggleFavoriteDonor(prevDonor.id));
-                  syncPref("favorite", prevDonor.id, "remove");
-                }
-                setCurrentIndex((prev) => prev - 1);
-              } : undefined}
+              onUndo={history.length > 0 ? goBack : undefined}
               onMessage={() => { recordProfileView(currentDonor.id, type); navigate(`/concierge?donorId=${currentDonor.id}&donorType=${type}&providerId=${currentDonor.providerId}&photoUrl=${encodeURIComponent(currentDonor.photoUrl || "")}`); }}
               onViewFullProfile={() => { recordProfileView(currentDonor.id, type); navigate(`/${typeToUrlSlug(type)}/${currentDonor.providerId}/${currentDonor.id}`, { state: { initialPhotoUrl: currentDonor.photoUrl } }); }}
             />
