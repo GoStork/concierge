@@ -393,7 +393,8 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
     const fav = favoritedClinics.includes(id);
     dispatch(toggleFavoriteClinic(id));
     syncPref("favorite", id, fav ? "remove" : "add");
-    if (isMobile) setCurrentIndex((p) => p + 1);
+    // No index bump: saving removes the clinic from `sorted` (saved are hidden
+    // from Explore), which auto-advances - matches handlePass.
   };
   const handlePass = (id: string) => {
     dispatch(passClinic(id));
@@ -509,12 +510,12 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
     const isFav = favoritedSlugs.includes(slug);
     dispatch(toggleFavoriteDoctor(slug));
     syncPref("favorite", slug, isFav ? "remove" : "add");
-    if (isMobile) setCurrentIndex((p) => p + 1);
+    // No index bump: saving/passing removes the doctor from `filtered`, which
+    // auto-advances. Incrementing too would skip the previewed card.
   };
   const handlePass = (slug: string) => {
     dispatch(passDoctor(slug));
     syncPref("skip", slug, "add");
-    if (isMobile) setCurrentIndex((p) => p + 1);
   };
 
   const renderCard = (doctor: DoctorCardData & { slug: string }, swipe: boolean) => {
@@ -574,11 +575,11 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
       <div className="h-full" data-testid="doctor-swipe-deck-mobile">
         <div className="relative h-full w-full">
           {next && (
-            <div className="absolute inset-0 z-0" data-testid={`doctor-card-next-${next.slug}`}>
+            <div key={`doctor-next-${next.slug}`} className="absolute inset-0 z-0" data-testid={`doctor-card-next-${next.slug}`}>
               {renderCard(next, false)}
             </div>
           )}
-          <div className="absolute inset-0 z-10" data-testid={`doctor-card-container-${current.slug}`}>
+          <div key={`doctor-cur-${current.slug}`} className="absolute inset-0 z-10" data-testid={`doctor-card-container-${current.slug}`}>
             {renderCard(current, true)}
           </div>
         </div>
@@ -877,7 +878,9 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
     const isFav = favoritedIds.includes(donorId);
     dispatch(toggleFavoriteDonor(donorId));
     syncPref("favorite", donorId, isFav ? "remove" : "add");
-    setCurrentIndex((prev) => prev + 1);
+    // No index bump: saving removes the donor from `filtered` (saved are hidden
+    // from Explore), which auto-advances. Incrementing too would skip the card
+    // previewed behind the current one.
   };
 
   const handlePass = (donorId: string) => {
