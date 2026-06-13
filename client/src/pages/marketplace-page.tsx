@@ -357,6 +357,8 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
       if (showFavoritesOnly && !favoritedClinics.includes(p.id)) return false;
       if (showSkippedOnly && !passedClinics.includes(p.id)) return false;
       if (!showSkippedOnly && passedClinics.includes(p.id)) return false;
+      // Explore/Discover hides already-saved clinics (they live in the Saved tab).
+      if (!showFavoritesOnly && favoritedClinics.includes(p.id)) return false;
       return true;
     });
     const withRates = visible.map((p) => ({ provider: p, rate: pickMatchedRate((p as any).ivfSuccessRates, eggSource) }));
@@ -495,6 +497,8 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
       if (showFavoritesOnly && !favoritedSlugs.includes(d.slug)) return false;
       if (showSkippedOnly && !passedSlugs.includes(d.slug)) return false;
       if (!showSkippedOnly && passedSlugs.includes(d.slug)) return false;
+      // Explore/Discover hides already-saved doctors (they live in the Saved tab).
+      if (!showFavoritesOnly && favoritedSlugs.includes(d.slug)) return false;
       return true;
     });
   }, [doctors, showFavoritesOnly, favoritedSlugs, showSkippedOnly, passedSlugs]);
@@ -754,6 +758,9 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
       if (showFavoritesOnly && !favoritedIds.includes(d.id)) return false;
       if (showSkippedOnly && !passedIds.includes(d.id)) return false;
       if (!showSkippedOnly && passedIds.includes(d.id)) return false;
+      // Explore/Discover shows only un-acted profiles: hide already-saved ones
+      // (they live in the Saved tab), just like passed ones are hidden.
+      if (!showFavoritesOnly && favoritedIds.includes(d.id)) return false;
       if (showExperiencedOnly && !((d as any).isExperienced || (d as any).isPremium)) return false;
       if (!omniSearch(d, searchQuery)) return false;
       if (type === "surrogate") {
