@@ -346,6 +346,37 @@ async function fetchHtmlWithBrowser(url: string, timeoutMs = 45000): Promise<{ h
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     await page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {});
     await page.waitForTimeout(1200).catch(() => {});
+
+    // Dismiss cookie-consent overlays. Many clinic sites gate their real content
+    // behind a consent banner - without accepting, the rendered DOM is just the
+    // banner (35-63 chars), so the roster/photos never get scraped. Click the
+    // first matching "accept" control, then let content settle.
+    const consentSelectors = [
+      "#onetrust-accept-btn-handler",
+      "#truste-consent-button",
+      'button[aria-label*="accept" i]',
+      'button:has-text("Accept All")',
+      'button:has-text("Accept all")',
+      'button:has-text("Accept Cookies")',
+      'button:has-text("Allow all")',
+      'button:has-text("I Accept")',
+      'button:has-text("I Agree")',
+      'button:has-text("Got it")',
+      'button:has-text("Accept")',
+      'button:has-text("Agree")',
+      '[class*="cookie" i] button',
+    ];
+    for (const sel of consentSelectors) {
+      try {
+        const btn = page.locator(sel).first();
+        if (await btn.isVisible({ timeout: 500 })) {
+          await btn.click({ timeout: 2000 });
+          await page.waitForTimeout(1200).catch(() => {});
+          break;
+        }
+      } catch { /* selector not present / not clickable - try next */ }
+    }
+
     const html = await page.content();
     const finalUrl = page.url() || url;
     console.log(`[scraper] Browser-rendered ${url} -> ${visibleTextLength(html)} chars of text`);

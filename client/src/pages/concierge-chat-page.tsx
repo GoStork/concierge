@@ -1769,6 +1769,7 @@ function DoctorMatchCard({ card, brandColor, onAction }: { card: DoctorCard; bra
           photoLabels={photoLabels}
           title={card.name}
           pinnedHeader={{ logoUrl: logoSrc, title: card.name, location: headerLocation, badge: successBadge }}
+          monogramName={card.name}
           firstSlidePlain={firstSlidePlain}
           tabs={tabs}
           disableSwipe

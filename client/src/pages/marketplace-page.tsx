@@ -520,6 +520,7 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
         photoLabels={photoLabels}
         title={doctor.name}
         pinnedHeader={{ logoUrl: logoSrc, title: doctor.name, location: headerLocation, badge: successBadge }}
+        monogramName={doctor.name}
         firstSlidePlain={firstSlidePlain}
         tabs={tabs}
         disableSwipe={!swipe}

@@ -51,6 +51,10 @@ interface SwipeDeckCardProps {
   // Clinics: keep the first slide photo-free (clean branded background) so the
   // header + success rate read clearly; doctor-face photos start on slide 1.
   firstSlidePlain?: boolean;
+  // Doctor cards only: the doctor's name. When a doctor has NO headshot, the hero
+  // renders a tasteful brand initials monogram (not the clinic logo / a blank
+  // box), so a photo-less doctor still reads as a person. Leave null for clinics.
+  monogramName?: string | null;
   // Map of photo URL -> a label (e.g. the doctor's name). On the photo slides the
   // pinned header shows this label instead of the title, so each face is named.
   photoLabels?: Record<string, string>;
@@ -72,6 +76,21 @@ interface SwipeDeckCardProps {
 const SWIPE_THRESHOLD = 150;
 const SWIPE_EXIT_DISTANCE = 500;
 
+// Initials for the photo-less doctor monogram: first letter of the first and last
+// real name tokens (titles + credentials stripped), e.g. "Dr. John A. Smith MD" -> "JS".
+function initialsFromName(name: string): string {
+  const tokens = name
+    .replace(/\b(Dr|Mr|Mrs|Ms|Prof)\.?\b/gi, "")
+    .replace(/,?\s*(MD|DO|PhD|MBA|FACOG|MSc|RN|NP|PA|FACS|HCLD|TS|ELD|Jr|Sr|III|II|IV)\b/gi, "")
+    .trim()
+    .split(/\s+/)
+    .filter((t) => /[a-z]/i.test(t));
+  if (tokens.length === 0) return "";
+  const first = tokens[0][0];
+  const last = tokens.length > 1 ? tokens[tokens.length - 1][0] : "";
+  return (first + last).toUpperCase();
+}
+
 export function SwipeDeckCard({
   id,
   photos,
@@ -85,6 +104,7 @@ export function SwipeDeckCard({
   titleLogoUrl = null,
   pinnedHeader = null,
   firstSlidePlain = false,
+  monogramName = null,
   photoLabels,
   tabs,
   disableSwipe = false,
@@ -149,9 +169,11 @@ export function SwipeDeckCard({
   const currentTab = tabs.length > 0 && slideIndex < tabs.length ? tabs[slideIndex] : null;
   const photoSlide = firstSlidePlain ? slideIndex - 1 : slideIndex;
   const currentPhotoIndex = usablePhotos.length > 0 && photoSlide >= 0 ? photoSlide % usablePhotos.length : -1;
-  // Clinic "cover" = the first slide: a clean cream panel with the logo + name
-  // centered and the success rate in dark text (the doctor-face tabs follow).
-  const isCover = firstSlidePlain && slideIndex === 0 && !!pinnedHeader;
+  // Cream "cover" panel (logo + name centered, content in dark text). Used on
+  // slide 0 of any firstSlidePlain card, AND on EVERY slide when the card has no
+  // photos at all (clinics + photo-less doctors) - so every tab keeps the same
+  // clean cream background as the first tab instead of switching to a dark face.
+  const isCover = firstSlidePlain && !!pinnedHeader && (slideIndex === 0 || usablePhotos.length === 0);
 
   useEffect(() => {
     setSlideIndex(0);
@@ -201,6 +223,10 @@ export function SwipeDeckCard({
 
   const currentPhoto = currentPhotoIndex >= 0 ? (usablePhotos[currentPhotoIndex] || null) : null;
 
+  // Photo-less DOCTOR cards show a brand initials monogram so they still read as a
+  // person (not a blank box or the clinic logo). Clinics pass no monogramName.
+  const monogramInitials = monogramName ? initialsFromName(monogramName) : "";
+
   return (
     <div className="w-full h-full p-[3px]" data-testid={`swipe-card-${id}`}>
       <motion.div
@@ -233,6 +259,16 @@ export function SwipeDeckCard({
               onError={() => { if (currentPhoto) setErroredPhotos((p) => ({ ...p, [currentPhoto]: true })); }}
               data-testid={`img-swipe-photo-${id}`}
             />
+          ) : monogramInitials ? (
+            // Photo-less doctor: brand initials monogram on a soft brand gradient.
+            <div
+              className="w-full h-full bg-gradient-to-br from-[hsl(var(--primary))] via-[hsl(var(--primary))] to-[hsl(var(--accent))] flex items-center justify-center"
+              data-testid={`hero-monogram-${id}`}
+            >
+              <span className="font-heading text-white/95 leading-none" style={{ fontSize: 'clamp(72px, 28vw, 160px)' }}>
+                {monogramInitials}
+              </span>
+            </div>
           ) : pinnedHeader ? (
             // Clinic / doctor with no photo: solid cream, IDENTICAL to the clinic
             // cover, so a photo-less doctor card matches the clinic's first tab.
@@ -257,9 +293,18 @@ export function SwipeDeckCard({
               </button>
 
               <div className="flex-1 flex flex-col items-center justify-center text-center gap-2 min-h-0 pt-2">
-                {pinnedHeader.logoUrl && (
+                {monogramInitials && !currentPhoto ? (
+                  // Photo-less doctor: brand initials avatar instead of the clinic
+                  // logo, so the cover reads as a person, not a clinic.
+                  <div
+                    className="w-[88px] h-[88px] rounded-full shrink-0 shadow-sm flex items-center justify-center bg-gradient-to-br from-[hsl(var(--primary))] to-[hsl(var(--accent))]"
+                    data-testid={`pinned-monogram-${id}`}
+                  >
+                    <span className="font-heading text-white/95 leading-none" style={{ fontSize: '34px' }}>{monogramInitials}</span>
+                  </div>
+                ) : pinnedHeader.logoUrl ? (
                   <img src={pinnedHeader.logoUrl} alt="" className="w-[72px] h-[72px] rounded-xl object-contain bg-white p-2 shrink-0 shadow-sm border border-border/30" draggable={false} data-testid={`pinned-logo-${id}`} />
-                )}
+                ) : null}
                 <h3 className="text-foreground font-heading leading-snug line-clamp-2 px-2" style={{ fontSize: '20px' }} data-testid={`text-name-${id}`}>
                   {pinnedHeader.title}
                 </h3>

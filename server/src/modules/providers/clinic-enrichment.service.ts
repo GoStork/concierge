@@ -725,6 +725,22 @@ function normalizeMemberKey(name: string): string {
     .replace(/[^a-z]/g, "");
 }
 
+// Order- and middle-initial-independent identity key. "Smith, John H. MD" and
+// "Dr. John Smith" both collapse to "johnsmith", so a SART roster (last-first,
+// with middle initials) still matches a website roster (first-last). Single-letter
+// tokens (initials) are dropped, and both first + last must agree - so this is safe
+// to use for photo matching without risking the wrong face on a doctor card.
+function nameSortKey(name: string): string {
+  const cleaned = name
+    .replace(/\b(Dr|Mr|Mrs|Ms|Prof)\.?\s+/gi, "")
+    .replace(/,?\s*(MD|DO|PhD|MBA|FACOG|MSc|RN|NP|PA|FACS|HCLD|TS|ELD|Jr\.?|Sr\.?|III|II|IV)\b/gi, "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  const tokens = cleaned.split(/[^a-z]+/).filter(t => t.length >= 2);
+  if (tokens.length < 2) return ""; // need at least first + last to be safe
+  return [...tokens].sort().join("");
+}
+
 export function mergeTeamMembers(
   sartMembers: SartMember[],
   scrapedMembers: Array<{ name: string; title: string | null; bio: string | null; photoUrl: string | null; isMedicalDirector: boolean; locationHints: string[] }>,
@@ -1340,15 +1356,29 @@ export class ClinicEnrichmentService {
     if (!scraped) return false;
 
     const scrapedPhotoByKey = new Map<string, string>();
+    // Secondary index keyed by order-independent sort key. Only keep keys that map
+    // to a SINGLE scraped person - if two scraped doctors collapse to the same sort
+    // key (rare), we drop it rather than risk attaching the wrong face.
+    const sortKeyCounts = new Map<string, number>();
+    const scrapedPhotoBySortKey = new Map<string, string>();
     for (const tm of scraped.teamMembers || []) {
       if (!tm.photoUrl) continue;
       const key = normalizeMemberKey(tm.name);
       if (key.length >= 4 && !scrapedPhotoByKey.has(key)) scrapedPhotoByKey.set(key, tm.photoUrl);
+      const sk = nameSortKey(tm.name);
+      if (sk) {
+        sortKeyCounts.set(sk, (sortKeyCounts.get(sk) || 0) + 1);
+        if (!scrapedPhotoBySortKey.has(sk)) scrapedPhotoBySortKey.set(sk, tm.photoUrl);
+      }
     }
 
     let filled = 0;
     for (const m of missing) {
-      const candidate = scrapedPhotoByKey.get(normalizeMemberKey(m.name));
+      let candidate = scrapedPhotoByKey.get(normalizeMemberKey(m.name));
+      if (!candidate) {
+        const sk = nameSortKey(m.name);
+        if (sk && sortKeyCounts.get(sk) === 1) candidate = scrapedPhotoBySortKey.get(sk);
+      }
       if (!candidate) continue;
       const persisted = await persistPhotoToGcs(candidate, this.storageService);
       if (persisted) {
