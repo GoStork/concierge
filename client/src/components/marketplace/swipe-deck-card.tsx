@@ -284,7 +284,10 @@ export function SwipeDeckCard({
                 <ArrowUp className="w-5 h-5 text-foreground" strokeWidth={2.5} />
               </button>
 
-              <div className="flex-1 flex flex-col items-center justify-center text-center gap-2 min-h-0 pt-2">
+              {/* Header is FIXED at the top (shrink-0) so the logo + name + location
+                  stay in the exact same place when cycling tabs - only the content
+                  below changes. */}
+              <div className="shrink-0 flex flex-col items-center text-center gap-2 pt-2">
                 {monogramInitials && !currentPhoto ? (
                   // Photo-less doctor: brand initials avatar instead of the clinic
                   // logo, so the cover reads as a person, not a clinic.
@@ -304,7 +307,7 @@ export function SwipeDeckCard({
               </div>
 
               {currentTab && (
-                <div className="shrink-0 overflow-hidden">
+                <div className="flex-1 flex flex-col justify-center min-h-0 overflow-hidden mt-4">
                   {currentTab.title && (
                     <p className="text-[hsl(var(--primary))] font-heading mb-1 flex items-center gap-1.5" style={{ fontSize: '15px' }}>
                       <Check className="w-4 h-4 shrink-0" strokeWidth={2.5} />
