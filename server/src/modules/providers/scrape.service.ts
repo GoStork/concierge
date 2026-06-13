@@ -327,6 +327,19 @@ function looksLikeJsShell(html: string): boolean {
   return visibleTextLength(html) < 500 && /<script/i.test(html);
 }
 
+// A Cloudflare / managed-challenge interstitial ("Just a moment...", the
+// _cf_chl_opt bootstrap, or "enable javascript and cookies"). Headless browsers
+// can't solve these, so when we see one the page is a bot wall, not real content.
+// Guard on small size so a real page that merely mentions Cloudflare isn't flagged.
+function isBotChallenge(html: string): boolean {
+  if (visibleTextLength(html) > 1500) return false;
+  return (
+    /_cf_chl_opt\b/i.test(html) ||
+    /<title>\s*just a moment/i.test(html) ||
+    /(enable javascript and cookies to continue|cf-browser-verification|challenge-platform)/i.test(html)
+  );
+}
+
 async function fetchHtmlWithBrowser(url: string, timeoutMs = 45000): Promise<{ html: string; finalUrl: string } | null> {
   const browser = await getRenderBrowser();
   if (!browser) return null;
@@ -379,6 +392,15 @@ async function fetchHtmlWithBrowser(url: string, timeoutMs = 45000): Promise<{ h
 
     const html = await page.content();
     const finalUrl = page.url() || url;
+    // Cloudflare (and similar) managed-challenge interstitials: a headless browser
+    // can't solve these, so the "rendered" HTML is just the "Just a moment..."
+    // challenge shell. Detect it and report distinctly so these clinics are
+    // visibly categorized as bot-walled (a true hard floor) instead of looking
+    // like a generic empty scrape - and so we don't keep burning retries on them.
+    if (isBotChallenge(html)) {
+      console.log(`[scraper] Bot-challenge wall (Cloudflare/managed) blocked ${url} - not solvable headless, skipping`);
+      return null;
+    }
     console.log(`[scraper] Browser-rendered ${url} -> ${visibleTextLength(html)} chars of text`);
     return { html: html.slice(0, 500000), finalUrl };
   } catch (err: any) {
