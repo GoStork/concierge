@@ -85,6 +85,27 @@ export function SpermIcon({ className }: IconProps) {
   );
 }
 
+export function DoctorIcon({ className }: IconProps) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      {/* Head + shoulders (the doctor) with a small medical cross on the chest */}
+      <circle cx="12" cy="6" r="3.5" />
+      <path d="M5.5 20v-1a6.5 6.5 0 0 1 13 0v1" />
+      <line x1="12" y1="12.5" x2="12" y2="16" />
+      <line x1="10.25" y1="14.25" x2="13.75" y2="14.25" />
+    </svg>
+  );
+}
+
 export function AgencyIcon({ className }: IconProps) {
   return (
     <svg

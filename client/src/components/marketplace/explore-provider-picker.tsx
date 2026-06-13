@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Stethoscope } from "lucide-react";
+import { X } from "lucide-react";
 import { useAppDispatch } from "@/store";
 import { setMarketplaceTab } from "@/store/uiSlice";
-import { EggDonorIcon, SpermIcon, SurrogateIcon, IvfClinicIcon } from "@/components/icons/marketplace-icons";
+import { EggDonorIcon, SpermIcon, SurrogateIcon, IvfClinicIcon, DoctorIcon } from "@/components/icons/marketplace-icons";
 
 /**
  * Explore "explode" picker - a monday.com-style fan that blooms 5 provider cards
@@ -36,14 +36,14 @@ type Provider = {
   Icon: (props: { className?: string }) => JSX.Element;
 };
 
-// Left -> right across the fan. Doctors is first-class (Path B). The Doctors icon
-// is a temporary lucide glyph here; commit (e) swaps in the brand DoctorIcon.
+// Left -> right across the fan. All 5 are first-class and symmetric (Doctors via
+// Path B), each with a brand line icon.
 const PROVIDERS: Provider[] = [
   { id: "egg-donors", label: "Eggs", Icon: EggDonorIcon },
   { id: "sperm-donors", label: "Sperm", Icon: SpermIcon },
   { id: "surrogates", label: "Surrogates", Icon: SurrogateIcon },
   { id: "ivf-clinics", label: "Clinics", Icon: IvfClinicIcon },
-  { id: "doctors", label: "Doctors", Icon: (p) => <Stethoscope {...p} /> },
+  { id: "doctors", label: "Doctors", Icon: DoctorIcon },
 ];
 
 // Resting offset + tilt for card i. Index 0 sits on the left, last on the right.
