@@ -307,7 +307,11 @@ export function SwipeDeckCard({
               </div>
 
               {currentTab && (
-                <div className="flex-1 flex flex-col justify-center min-h-0 overflow-hidden mt-4">
+                // Top-aligned (justify-start) so each tab's section header
+                // ("Matched to you" / "Costs" / "Locations" / "Doctors...") sits at
+                // the SAME fixed spot right under the logo+name on every tab; the
+                // items below grow downward.
+                <div className="flex-1 flex flex-col justify-start min-h-0 overflow-hidden mt-4">
                   {currentTab.title && (
                     <p className="text-[hsl(var(--primary))] font-heading mb-1 flex items-center gap-1.5" style={{ fontSize: '15px' }}>
                       <Check className="w-4 h-4 shrink-0" strokeWidth={2.5} />
